@@ -269,7 +269,8 @@ private:
     /// does not include the final back edge closing the cycle because the
     /// first SWAP changes the token (the qubit) on the target, invalidating
     /// the edge in F.
-    [[nodiscard]] std::optional<SmallVector<IndexPairType>> findHappySWAPChain() const {
+    [[nodiscard]] std::optional<SmallVector<IndexPairType>>
+    findHappySWAPChain() const {
       const auto optCycle = f_.findCycle();
       if (!optCycle) {
         return std::nullopt;
@@ -304,8 +305,9 @@ private:
   private:
     /// Return true, if moving the program qubit on hardware qubit u to hardware
     /// qubit v brings it closer to its destination hardware qubit.
-    [[nodiscard]] bool shouldAddEdge(const size_t u, const size_t v, const Layout& from,
-                       const Layout& to) const {
+    [[nodiscard]] bool shouldAddEdge(const size_t u, const size_t v,
+                                     const Layout& from,
+                                     const Layout& to) const {
       const auto dest = to.getHardwareIndex(from.getProgramIndex(u));
       return device_->distanceBetween(v, dest) <
              device_->distanceBetween(u, dest);
@@ -784,7 +786,7 @@ private:
   /// Return the SWAP sequence to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   [[nodiscard]] SmallVector<IndexPairType> restore(const Layout& from,
-                                     const Layout& to) const {
+                                                   const Layout& to) const {
     Layout curr(from);
     FGraph f(device);
     SmallVector<IndexPairType> swaps;
@@ -819,7 +821,8 @@ private:
   /// Return a pair of SWAP sequences to transform two layouts into each other.
   /// Inspired by the 4-Approximation algorithm described in arXiv:1602.05150v3,
   /// with the key difference that the goal permutation is not static.
-  [[nodiscard]] std::pair<SmallVector<IndexPairType>, SmallVector<IndexPairType>>
+  [[nodiscard]] std::pair<SmallVector<IndexPairType>,
+                          SmallVector<IndexPairType>>
   converge(const Layout& lhs, const Layout& rhs) const {
     std::array layouts{Layout(lhs), Layout(rhs)};
     std::array graphs{FGraph(device), FGraph(device)};
