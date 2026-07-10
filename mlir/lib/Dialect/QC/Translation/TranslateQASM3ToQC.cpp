@@ -227,8 +227,6 @@ public:
 
     // Collect measurement results for all output bit registers
     SmallVector<Value> returnValues;
-    SmallVector<Type> returnTypes;
-    auto i1Type = builder.getI1Type();
     for (const auto& regName : outputRegisters) {
       auto it = bitValues.find(regName);
       if (it == bitValues.end()) {
@@ -250,11 +248,10 @@ public:
           return nullptr;
         }
         returnValues.push_back(bit);
-        returnTypes.push_back(i1Type);
       }
     }
 
-    builder.retype(returnTypes);
+    builder.retype(ValueRange(returnValues).getTypes());
     return builder.finalize(returnValues);
   }
 
