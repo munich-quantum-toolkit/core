@@ -39,9 +39,7 @@ namespace {
 struct QuantumComputationTranslationTestCase {
   std::string name;
   mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
-  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder,
-                          llvm::SmallVector<mlir::Value>>
-      referenceBuilder;
+  mqt::test::NamedMLIRBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream&
   operator<<(std::ostream& os,
@@ -92,8 +90,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  auto reference =
-      mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());

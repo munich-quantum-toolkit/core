@@ -1233,4 +1233,14 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::build(
   return builder.finalize(result);
 }
 
+OwningOpRef<ModuleOp> QCOProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<Value(QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
+  return builder.finalize(result);
+}
+
 } // namespace mlir::qco

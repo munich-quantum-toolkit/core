@@ -35,8 +35,8 @@ namespace {
 
 struct QIRTestCase {
   std::string name;
-  mqt::test::SingleResultBuilder<QIRProgramBuilder> programBuilder;
-  mqt::test::SingleResultBuilder<QIRProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QIRProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
@@ -69,8 +69,8 @@ TEST_P(QIRTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = QIRProgramBuilder::build(context.get(), programBuilder.fn,
-                                          QIRProgramBuilder::Profile::Adaptive);
+  auto program = mqt::test::buildMLIRProgram(
+      context.get(), programBuilder, QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -79,8 +79,8 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = QIRProgramBuilder::build(
-      context.get(), referenceBuilder.fn, QIRProgramBuilder::Profile::Adaptive);
+  auto reference = mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder, QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

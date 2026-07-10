@@ -40,7 +40,7 @@ namespace {
 struct QASM3TranslationTestCase {
   std::string name;
   std::string source;
-  mqt::test::MultiResultBuilder<qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QASM3TranslationTestCase& test);
@@ -129,7 +129,7 @@ static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
   return {c0, c1, c2, c3, c4, c5};
 }
 
-static SmallVector<Value> ifNot(qc::QCProgramBuilder& b) {
+static Value ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
@@ -137,7 +137,7 @@ static SmallVector<Value> ifNot(qc::QCProgramBuilder& b) {
   auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
   auto out = b.measure(q[0]);
-  return {out};
+  return out;
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -155,8 +155,7 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
 
-  auto reference =
-      qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

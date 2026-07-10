@@ -1195,6 +1195,18 @@ public:
   build(MLIRContext* context,
         const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc);
 
+  /**
+   * @brief Convenience method for building quantum programs with one return
+   * value.
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QCProgramBuilder
+   * and returns the single result value of the desired quantum program.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const function_ref<Value(QCProgramBuilder&)>& buildFunc);
+
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 

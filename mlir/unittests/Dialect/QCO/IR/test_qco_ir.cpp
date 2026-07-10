@@ -41,8 +41,8 @@ namespace {
 
 struct QCOTestCase {
   std::string name;
-  mqt::test::MultiResultBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::MultiResultBuilder<QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
@@ -76,7 +76,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = QCOProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -85,7 +85,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -145,7 +145,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
   auto refBuilder =
-      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
@@ -189,8 +189,8 @@ TEST_F(QCOTest, IfOpParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
   EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
 
-  auto refBuilder = QCOProgramBuilder::build(
-      context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor).fn);
+  auto refBuilder = mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor));
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());

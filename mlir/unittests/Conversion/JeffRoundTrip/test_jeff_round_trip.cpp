@@ -45,8 +45,8 @@ namespace {
 
 struct JeffRoundTripTestCase {
   std::string name;
-  mqt::test::MultiResultBuilder<qco::QCOProgramBuilder> programBuilder;
-  mqt::test::MultiResultBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);
@@ -94,8 +94,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   const auto name = " (" + nameStr + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program =
-      qco::QCOProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -129,8 +128,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      qco::QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

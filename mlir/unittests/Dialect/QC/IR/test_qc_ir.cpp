@@ -38,8 +38,8 @@ namespace {
 
 struct QCTestCase {
   std::string name;
-  mqt::test::MultiResultBuilder<QCProgramBuilder> programBuilder;
-  mqt::test::MultiResultBuilder<QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QCProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
@@ -76,7 +76,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = QCProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -85,7 +85,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

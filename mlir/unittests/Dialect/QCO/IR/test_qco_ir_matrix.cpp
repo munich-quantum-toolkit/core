@@ -105,8 +105,8 @@ namespace {
 
 struct QCOMatrixTestCase {
   std::string name;
-  mqt::test::MultiResultBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::MultiResultBuilder<QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 };
 
 class QCOMatrixTest : public testing::TestWithParam<QCOMatrixTestCase> {

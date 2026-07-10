@@ -52,8 +52,8 @@ using namespace mlir::qc;
 using namespace mlir::qco;
 using namespace mlir::qir;
 
-using QCProgramBuilderFn = MultiResultBuilder<QCProgramBuilder>;
-using QIRProgramBuilderFn = SingleResultBuilder<QIRProgramBuilder>;
+using QCProgramBuilderFn = NamedMLIRBuilder<QCProgramBuilder>;
+using QIRProgramBuilderFn = NamedMLIRBuilder<QIRProgramBuilder>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
 namespace {
@@ -105,15 +105,15 @@ protected:
 
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
-    auto module = QCProgramBuilder::build(context.get(), builder.fn);
+    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
-    auto module = QIRProgramBuilder::build(
-        context.get(), builder.fn, QIRProgramBuilder::Profile::Adaptive);
+    auto module = mqt::test::buildMLIRProgram(
+        context.get(), builder, QIRProgramBuilder::Profile::Adaptive);
     EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
   }
@@ -168,7 +168,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   } else {
     ASSERT_TRUE(testCase.qcProgramBuilder);
     module =
-        QCProgramBuilder::build(context.get(), testCase.qcProgramBuilder.fn);
+        mqt::test::buildMLIRProgram(context.get(), testCase.qcProgramBuilder);
     ASSERT_TRUE(module);
     printer.record(module.get(), "QC Input" + name);
   }
@@ -213,12 +213,12 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
-  auto module = QCProgramBuilder::build(
-      context.get(), [&](QCProgramBuilder& b) -> SmallVector<Value> {
+  auto module =
+      QCProgramBuilder::build(context.get(), [&](QCProgramBuilder& b) {
         auto q = b.allocQubit();
         b.rz(1.0, q);
         b.rx(1.0, q);
-        return {b.measure(q)};
+        return b.measure(q);
       });
   ASSERT_TRUE(module);
 
@@ -237,12 +237,12 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
-  auto module = QCProgramBuilder::build(
-      context.get(), [&](QCProgramBuilder& b) -> SmallVector<Value> {
+  auto module =
+      QCProgramBuilder::build(context.get(), [&](QCProgramBuilder& b) {
         auto q = b.allocQubit();
         b.x(q);
         b.h(q);
-        return {b.measure(q)};
+        return b.measure(q);
       });
   ASSERT_TRUE(module);
 

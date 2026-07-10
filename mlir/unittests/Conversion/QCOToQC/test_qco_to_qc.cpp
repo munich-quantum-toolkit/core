@@ -44,8 +44,8 @@ namespace {
 
 struct QCOToQCTestCase {
   std::string name;
-  mqt::test::MultiResultBuilder<qco::QCOProgramBuilder> programBuilder;
-  mqt::test::MultiResultBuilder<qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCOToQCTestCase& info);
@@ -88,8 +88,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   const auto name = " (" + nameStr + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program =
-      qco::QCOProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -106,8 +105,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
