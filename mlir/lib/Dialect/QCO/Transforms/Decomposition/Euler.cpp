@@ -84,14 +84,7 @@ namespace mlir::qco::decomposition {
   return std::abs(angle) <= utils::TOLERANCE;
 }
 
-/**
- * @brief Emits `qco.gphase` when `phase` is outside tolerance.
- *
- * @param builder Builder for the operation.
- * @param loc Location of the operation.
- * @param phase Global phase in radians.
- */
-static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   if (isNearZeroRotationAngle(mod2pi(phase))) {
     return;
   }
@@ -101,21 +94,6 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
 //===----------------------------------------------------------------------===//
 // Euler decomposition (angles)
 //===----------------------------------------------------------------------===//
-
-/**
- * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
- * unitary.
- */
-namespace {
-
-struct EulerAngles {
-  double theta = 0.0;  ///< Middle rotation angle.
-  double phi = 0.0;    ///< First outer rotation angle.
-  double lambda = 0.0; ///< Second outer rotation angle.
-  double phase = 0.0;  ///< Global phase in radians.
-};
-
-} // namespace
 
 /**
  * @brief Z-Y-Z Euler angles and global phase for a 2x2 unitary.
@@ -182,7 +160,7 @@ struct EulerAngles {
 }
 
 /**
- * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ·RY·RZ` phase fix).
+ * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ*RY*RZ` phase fix).
  *
  * @param matrix Single-qubit unitary to decompose.
  * @return `U`-gate angles and global phase.
@@ -197,15 +175,7 @@ struct EulerAngles {
           .phase = phase - (0.5 * (phi + lambda))};
 }
 
-/**
- * @brief Extracts `(theta, phi, lambda, phase)` for all Euler bases.
- *
- * @param matrix The single-qubit unitary to decompose.
- * @param basis The target Euler basis.
- * @return The extracted Euler angles and global phase.
- */
-[[nodiscard]] static EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
-                                                   const EulerBasis basis) {
+EulerAngles anglesFromUnitary(const Matrix2x2& matrix, const EulerBasis basis) {
   switch (basis) {
   case EulerBasis::ZYZ:
   case EulerBasis::ZSXX:
@@ -215,6 +185,7 @@ struct EulerAngles {
   case EulerBasis::XZX:
     return paramsXZX(matrix);
   case EulerBasis::XYX:
+  case EulerBasis::R:
     return paramsXYX(matrix);
   case EulerBasis::U:
     return paramsU(matrix);
@@ -235,7 +206,7 @@ namespace {
  * `RZ`/`RY`/`RX` use @p theta as the rotation angle; `U` uses all three angles.
  */
 struct SynthesisStep {
-  enum class Kind : std::uint8_t { RZ, RY, RX, SX, X, U };
+  enum class Kind : std::uint8_t { RZ, RY, RX, SX, X, U, R };
 
   Kind kind = Kind::RZ;
   double theta = 0.0;
@@ -265,6 +236,19 @@ struct Unitary1QEulerPlan {
   }
 
   /**
+   * @brief Appends a native `R(angle, axis)` step for non-negligible angles.
+   *
+   * @param angle The rotation angle in radians.
+   * @param axis The rotation axis in the XY-plane (`0` for `Rx`, `pi/2` for
+   *             `Ry`).
+   */
+  void appendRStep(const double angle, const double axis) {
+    if (!isNearZeroRotationAngle(angle)) {
+      steps.emplace_back(SynthesisStep::Kind::R, angle, axis);
+    }
+  }
+
+  /**
    * @brief Appends the decomposition for @p basis based on @p angles.
    *
    * @param angles The angles to use for the decomposition.
@@ -289,6 +273,9 @@ struct Unitary1QEulerPlan {
       case EulerBasis::XZX:
       case EulerBasis::XYX:
         appendRotation(SynthesisStep::Kind::RX, angles.phi + angles.lambda);
+        break;
+      case EulerBasis::R:
+        appendRStep(angles.phi + angles.lambda, 0.0);
         break;
       case EulerBasis::U:
         steps.emplace_back(SynthesisStep::Kind::U, 0.0, angles.phi,
@@ -322,6 +309,13 @@ struct Unitary1QEulerPlan {
       appendRotation(SynthesisStep::Kind::RX, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
       appendRotation(SynthesisStep::Kind::RX, angles.phi);
+      phase = angles.phase;
+      break;
+    case EulerBasis::R:
+      appendRStep(angles.lambda, 0.0);
+      steps.emplace_back(SynthesisStep::Kind::R, angles.theta,
+                         std::numbers::pi / 2.0);
+      appendRStep(angles.phi, 0.0);
       phase = angles.phase;
       break;
     case EulerBasis::U:
@@ -413,6 +407,9 @@ emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
       qubit =
           UOp::create(builder, loc, qubit, theta, phi, lambda).getQubitOut();
       break;
+    case SynthesisStep::Kind::R:
+      qubit = ROp::create(builder, loc, qubit, theta, phi).getQubitOut();
+      break;
     }
   }
   emitGPhaseIfNeeded(builder, loc, plan.phase);
@@ -427,6 +424,7 @@ std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
       .Case("xyx", EulerBasis::XYX)
       .Case("u", EulerBasis::U)
       .Case("zsxx", EulerBasis::ZSXX)
+      .Case("r", EulerBasis::R)
       .Default(std::nullopt);
 }
 

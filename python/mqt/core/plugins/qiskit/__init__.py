@@ -36,6 +36,7 @@ if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugi
         UnsupportedFormatError,
         UnsupportedOperationError,
     )
+    from .gates import MoveGate
     from .job import QDMIJob
     from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
@@ -45,6 +46,7 @@ if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugi
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
+        "MoveGate",
         "QDMIBackend",
         "QDMIEstimator",
         "QDMIJob",

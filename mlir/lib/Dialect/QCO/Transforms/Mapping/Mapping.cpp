@@ -11,42 +11,49 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Graph.h"
+#include "mlir/Dialect/QCO/Utils/Layout.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <memory>
-#include <numeric>
+#include <optional>
 #include <random>
 #include <ranges>
-#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -64,235 +71,115 @@ namespace {
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
-  using IndexType = size_t;
-  using IndexPairType = std::pair<IndexType, IndexType>;
+  using IndexPairType = std::pair<size_t, size_t>;
   using Window = SmallVector<IndexPairType>;
-  using Neighbours = SmallVector<SmallVector<size_t, 4>>;
+  using Wires = SmallVector<WireIterator>;
+  using RecursiveRoutingStackItem = std::pair<Operation*, SmallVector<size_t>>;
+  using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
-  enum class RoutingMode : std::uint8_t { Cold, Hot };
+  enum class RoutingMode : bool { Cold, Hot };
 
-  /**
-   * @brief A qubit layout that maps program and hardware indices without
-   * storing Values. Used for efficient memory usage when Value tracking isn't
-   * needed.
-   *
-   * Note that we use the terminology "hardware" and "program" qubits here,
-   * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
-   * are C++ keywords.
-   */
-  class [[nodiscard]] Layout {
+  class AugmentedDevice {
   public:
-    /**
-     * @brief Constructs the identity (i->i) layout.
-     * @param nqubits The number of qubits.
-     * @return The identity layout.
-     */
-    static Layout identity(const size_t nqubits) {
-      Layout layout(nqubits);
-      for (size_t i = 0; i < nqubits; ++i) {
-        layout.add(i, i);
-      }
-      return layout;
+    explicit AugmentedDevice(
+        const DenseSet<std::pair<size_t, size_t>>& couplingSet)
+        : coupling_(couplingSet), dist_(coupling_.getDistMatrix()) {}
+
+    /// Return the device's number of qubits.
+    [[nodiscard]] size_t nqubits() const { return coupling_.getNumNodes(); }
+
+    /// Return true if two qubits are adjacent.
+    [[nodiscard]] bool areAdjacent(const size_t u, const size_t v) const {
+      return dist_[u][v] == 1UL;
     }
 
-    /**
-     * @brief Constructs a random layout.
-     * @param nqubits The number of qubits.
-     * @param seed A seed for randomization.
-     * @return The random layout.
-     */
-    static Layout random(const size_t nqubits, const size_t seed) {
-      SmallVector<IndexType> mapping(nqubits);
-      std::iota(mapping.begin(), mapping.end(), IndexType{0});
-      std::ranges::shuffle(mapping, std::mt19937_64{seed});
-
-      Layout layout(nqubits);
-      for (const auto [prog, hw] : enumerate(mapping)) {
-        layout.add(prog, hw);
-      }
-
-      return layout;
-    }
-
-    /**
-     * @brief Insert program:hardware index mapping.
-     * @param prog The program index.
-     * @param hw The hardware index.
-     */
-    void add(IndexType prog, IndexType hw) {
-      assert(prog < programToHardware_.size() &&
-             "add: program index out of bounds");
-      assert(hw < hardwareToProgram_.size() &&
-             "add: hardware index out of bounds");
-      programToHardware_[prog] = hw;
-      hardwareToProgram_[hw] = prog;
-    }
-
-    /**
-     * @brief Look up program index for a hardware index.
-     * @param hw The hardware index.
-     * @return The program index of the respective hardware index.
-     */
-    [[nodiscard]] IndexType getProgramIndex(const IndexType hw) const {
-      assert(hw < hardwareToProgram_.size() &&
-             "getProgramIndex: hardware index out of bounds");
-      return hardwareToProgram_[hw];
-    }
-
-    /**
-     * @brief Look up hardware index for a program index.
-     * @param prog The program index.
-     * @return The hardware index of the respective program index.
-     */
-    [[nodiscard]] IndexType getHardwareIndex(const IndexType prog) const {
-      assert(prog < programToHardware_.size() &&
-             "getHardwareIndex: program index out of bounds");
-      return programToHardware_[prog];
-    }
-
-    /**
-     * @brief Convenience function to lookup multiple hardware indices at once.
-     * @param progs The program indices.
-     * @return A tuple of hardware indices.
-     */
-    template <typename... ProgIndices>
-      requires(sizeof...(ProgIndices) > 0) &&
-              ((std::is_convertible_v<ProgIndices, IndexType>) && ...)
-    [[nodiscard]] auto getHardwareIndices(ProgIndices... progs) const {
-      return std::tuple{getHardwareIndex(static_cast<IndexType>(progs))...};
-    }
-
-    /**
-     * @brief Convenience function to lookup multiple program indices at once.
-     * @param hws The hardware indices.
-     * @return A tuple of program indices.
-     */
-    template <typename... HwIndices>
-      requires(sizeof...(HwIndices) > 0) &&
-              ((std::is_convertible_v<HwIndices, size_t>) && ...)
-    [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
-      return std::tuple{getProgramIndex(static_cast<IndexType>(hws))...};
-    }
-
-    /**
-     * @brief Swap the mapping to program indices of two hardware indices.
-     */
-    void swap(const IndexType hw0, const IndexType hw1) {
-      const auto prog0 = hardwareToProgram_[hw0];
-      const auto prog1 = hardwareToProgram_[hw1];
-
-      std::swap(hardwareToProgram_[hw0], hardwareToProgram_[hw1]);
-      std::swap(programToHardware_[prog0], programToHardware_[prog1]);
-    }
-
-    /**
-     * @returns the number of qubits managed by the layout.
-     */
-    [[nodiscard]] size_t nqubits() const { return programToHardware_.size(); }
-
-    /**
-     * @returns the program to hardware mapping.
-     */
-    [[nodiscard]] ArrayRef<IndexType> getProgramToHardware() const {
-      return programToHardware_;
-    }
-
-  protected:
-    /**
-     * @brief Maps a program qubit index to its hardware index.
-     */
-    SmallVector<IndexType> programToHardware_;
-
-    /**
-     * @brief Maps a hardware qubit index to its program index.
-     */
-    SmallVector<IndexType> hardwareToProgram_;
-
-  private:
-    explicit Layout(const size_t nqubits)
-        : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
-  };
-
-  class [[nodiscard]] AugmentedDevice {
-  public:
-    AugmentedDevice() = default;
-
-    AugmentedDevice(size_t nqubits, const Edges& coupling)
-        : nqubits_(nqubits), dist_(findAllShortestPaths(nqubits, coupling)),
-          coupling_(coupling), neighbours_(nqubits) {
-      for (const auto& [u, v] : coupling_) {
-        neighbours_[u].push_back(v);
-      }
-    }
-
-    /**
-     * @returns the device's number of qubits.
-     */
-    [[nodiscard]] size_t nqubits() const { return nqubits_; }
-
-    /**
-     * @returns true if @p u and @p v are adjacent.
-     */
-    [[nodiscard]] bool areAdjacent(size_t u, size_t v) const {
-      return coupling_.contains(std::make_pair(u, v));
-    }
-
-    /**
-     * @returns the length of the shortest path between @p u and @p v.
-     */
-    [[nodiscard]] size_t distanceBetween(size_t u, size_t v) const {
-      if (dist_[u][v] == UINT64_MAX) {
+    /// Return the length of the shortest path between two qubits.
+    [[nodiscard]] size_t distanceBetween(const size_t u, const size_t v) const {
+      const auto dist = dist_[u][v];
+      if (dist == UINT64_MAX) {
         report_fatal_error("Failed to compute the distance between qubits " +
                            Twine(u) + " and " + Twine(v));
       }
-      return dist_[u][v];
+      return dist;
     }
 
-    /**
-     * @returns all neighbours of @p u.
-     */
-    [[nodiscard]] ArrayRef<size_t> neighboursOf(size_t u) const {
-      return neighbours_[u];
+    /// Return the qubit identifiers.
+    [[nodiscard]] SmallVector<size_t> qubits() const {
+      return coupling_.getNodes();
     }
 
-    /**
-     * @returns the max degree (connectivity) of any qubit of the device.
-     */
-    [[nodiscard]] size_t maxDegree() const {
-      size_t deg = 0;
-      for (const auto& nbrs : neighbours_) {
-        deg = std::max(deg, nbrs.size());
+    /// Return all neighbours of a qubit.
+    [[nodiscard]] ArrayRef<size_t> neighboursOf(const size_t u) const {
+      return coupling_.getNeighbours(u);
+    }
+
+    /// Return the max degree (connectivity) of any qubit of the device.
+    [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
+
+  private:
+    Graph coupling_;
+    Graph::DistanceMatrix dist_;
+  };
+
+  struct WireInfos {
+    /// Return the mapped wire index of a program index.
+    [[nodiscard]] size_t lookupIndex(const size_t prog) const {
+      return programToIndex_[prog];
+    }
+
+    /// Return the mapped program index of a wire index.
+    [[nodiscard]] size_t lookupProgram(const size_t index) const {
+      return indexToProgram_[index];
+    }
+
+    /// Bidirectionally map a wire index to a program index.
+    /// Overwrites existing mappings.
+    void map(const size_t index, const size_t prog) {
+      if (index >= indexToProgram_.size()) {
+        indexToProgram_.resize(index + 1);
       }
-      return deg;
+      if (prog >= programToIndex_.size()) {
+        programToIndex_.resize(prog + 1);
+      }
+      indexToProgram_[index] = prog;
+      programToIndex_[prog] = index;
+    }
+
+    /// Swap two program indices.
+    void swap(const size_t prog0, const size_t prog1) {
+      const auto i0 = lookupIndex(prog0);
+      const auto i1 = lookupIndex(prog1);
+      std::swap(programToIndex_[prog0], programToIndex_[prog1]);
+      std::swap(indexToProgram_[i0], indexToProgram_[i1]);
     }
 
   private:
-    size_t nqubits_{};
-    Matrix dist_;
-    Edges coupling_;
-    Neighbours neighbours_;
+    /// Maps the i-th wire index to a program index.
+    SmallVector<size_t> indexToProgram_;
+    /// Maps a program index to the i-th wire index.
+    SmallVector<size_t> programToIndex_;
   };
 
-  struct [[nodiscard]] Trial {
-    explicit Trial(Layout layout) : layout(std::move(layout)) {}
-
-    Layout layout;
-    size_t nswaps{};
-    bool success{false};
+  /// Statistics collected while routing.
+  struct Statistics {
+    size_t nswaps{0};
   };
 
-  /**
-   * @brief Parameters influencing the behavior of the A* search algorithm.
-   */
-  struct [[nodiscard]] Parameters {
+  /// Parameters influencing the behavior of the A* search algorithm.
+  struct Parameters {
     float alpha;
     float lambda;
   };
 
-  /**
-   * @brief Describes a node in the A* search graph.
-   */
-  struct [[nodiscard]] Node {
+  /// Utility-struct for routing functions.
+  struct RoutingBundle {
+    Wires wires;
+    WireInfos infos;
+    Layout layout;
+  };
+
+  /// Describes a node in the A* search graph.
+  struct Node {
     struct ComparePointer {
       bool operator()(const Node* lhs, const Node* rhs) const {
         return lhs->f > rhs->f;
@@ -305,17 +192,13 @@ private:
     size_t depth;
     float f;
 
-    /**
-     * @brief Construct a root node with the given layout. Initialize the
-     * sequence with an empty vector and set the cost to zero.
-     */
+    /// Construct a root node with the given layout. Initialize the
+    /// sequence with an empty vector and set the cost to zero.
     explicit Node(Layout layout)
         : layout(std::move(layout)), parent(nullptr), depth(0), f(0) {}
 
-    /**
-     * @brief Construct a non-root node from its parent node. Apply the given
-     * swap to the layout of the parent node.
-     */
+    /// Construct a non-root node from its parent node. Apply the given swap to
+    /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
          const AugmentedDevice& device, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
@@ -324,36 +207,29 @@ private:
       f = g(params.alpha) + h(window, device, params); // NOLINT
     }
 
-    /**
-     * @returns true if the current SWAP sequence makes all gates in the front
-     * executable.
-     */
+    /// Return true, if the current SWAP sequence makes all gates in the front
+    /// executable.
     [[nodiscard]] bool isGoal(const IndexPairType& front,
                               const AugmentedDevice& device) const {
-      return device.areAdjacent(layout.getHardwareIndex(front.first),
-                                layout.getHardwareIndex(front.second));
+      const auto [hw0, hw1] =
+          layout.getHardwareIndices(front.first, front.second);
+      return device.areAdjacent(hw0, hw1);
     }
 
   private:
-    /**
-     * @brief Calculate the path cost for the A* search algorithm.
-     *
-     * The path cost function is the weighted sum of the currently required
-     * SWAPs.
-     */
+    /// Calculate the path cost for the A* search algorithm.
+    /// The path costs are the weighted sum of the currently required SWAPs.
     [[nodiscard]] float g(const float alpha) const {
       return alpha * static_cast<float>(depth);
     }
 
-    /**
-     * @brief Calculate the heuristic cost for the A* search algorithm.
-     *
-     * Computes the minimal number of SWAPs required to route each gate in
-     * each layer. For each gate, this is determined by the shortest distance
-     * between its hardware qubits. Intuitively, this is the number of SWAPs
-     * that a naive router would insert to route the layers (with a constant
-     * layout).
-     */
+    /// Calculate the heuristic cost for the A* search algorithm.
+    ///
+    /// Computes the minimal number of SWAPs required to route each gate in
+    /// each layer. For each gate, this is determined by the shortest distance
+    /// between its hardware qubits. Intuitively, this is the number of SWAPs
+    /// that a naive router would insert to route the layers (with a constant
+    /// layout).
     [[nodiscard]] float h(const Window& window, const AugmentedDevice& device,
                           const Parameters& params) const {
       float costs{0};
@@ -370,26 +246,107 @@ private:
     }
   };
 
+  /// Describes the graph F of arXiv:1602.05150v3.
+  struct FGraph {
+    explicit FGraph(std::shared_ptr<AugmentedDevice> device)
+        : f_(device->qubits()), device_(std::move(device)) {};
+
+    /// Build F-graph: Add edges to F for each edge in the coupling graph.
+    /// Note that this assumes that the coupling graph is directed, but
+    /// symmetric (essentially: undirected).
+    void construct(const Layout& from, const Layout& to) {
+      for (const auto u : device_->qubits()) {
+        for (const auto v : device_->neighboursOf(u)) {
+          if (shouldAddEdge(u, v, from, to)) {
+            f_.addEdge(u, v);
+          }
+        }
+      }
+    }
+
+    /// Try to find a directed cycle in the F graph. If there is one,
+    /// we can apply a happy swap chain. Note that this happy swap chain
+    /// does not include the final back edge closing the cycle because the
+    /// first SWAP changes the token (the qubit) on the target, invalidating
+    /// the edge in F.
+    [[nodiscard]] std::optional<SmallVector<IndexPairType>>
+    findHappySWAPChain() const {
+      const auto optCycle = f_.findCycle();
+      if (!optCycle) {
+        return std::nullopt;
+      }
+      const auto& cycle = *optCycle;
+
+      SmallVector<IndexPairType> swaps;
+      for (size_t i = cycle.size() - 1; i > 0; --i) {
+        swaps.emplace_back(cycle[i], cycle[i - 1]);
+      }
+      return swaps;
+    }
+
+    /// Find an unhappy SWAP. That is, find an edge (u, v), where exchanging u
+    /// and v, reduces u's distance to its target location (by one) and
+    /// increases v's distance from 0 (already at the correct location) to one.
+    [[nodiscard]] std::optional<IndexPairType> findUnhappySWAP() const {
+      for (const auto u : f_.getNodes()) {
+        for (const auto v : f_.getNeighbours(u)) {
+          if (f_.getDegree(v) == 0) {
+            return {{u, v}};
+          }
+        }
+      }
+
+      return std::nullopt;
+    }
+
+    /// Reset the F graph for rebuilding.
+    void reset() { f_.clearEdges(); }
+
+  private:
+    /// Return true, if moving the program qubit on hardware qubit u to hardware
+    /// qubit v brings it closer to its destination hardware qubit.
+    [[nodiscard]] bool shouldAddEdge(const size_t u, const size_t v,
+                                     const Layout& from,
+                                     const Layout& to) const {
+      const auto dest = to.getHardwareIndex(from.getProgramIndex(u));
+      return device_->distanceBetween(v, dest) <
+             device_->distanceBetween(u, dest);
+    }
+
+    Graph f_;
+    std::shared_ptr<AugmentedDevice> device_;
+  };
+
 public:
+  /// Construct default mapping pass.
   MappingPass() = default;
-  explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
-  explicit MappingPass(size_t nqubits, const Edges& coupling,
-                       MappingPassOptions options = {})
-      : MappingPassBase(options), device(nqubits, coupling) {}
+
+  /// Construct default mapping pass with options.
+  explicit MappingPass(const MappingPassOptions& options)
+      : MappingPassBase(options) {}
+
+  /// Construct mapping from coupling set.
+  explicit MappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
+                       const MappingPassOptions& options)
+      : MappingPassBase(options),
+        device(std::make_shared<AugmentedDevice>(couplingSet)) {}
 
 protected:
   void runOnOperation() override {
-    assert(alpha > 0 && "runOnOperation: expected alpha > 0");
-    assert(niterations > 0 && "runOnOperation: expected niterations > 0");
-    assert(ntrials > 0 && "runOnOperation: expected ntrials > 0");
+    assert(alpha > 0 && "expected alpha > 0");
+    assert(niterations > 0 && "expected niterations > 0");
+    assert(ntrials > 0 && "expected ntrials > 0");
 
-    std::mt19937_64 rng{seed};
+    if (!device) {
+      llvm::reportFatalUsageError("No device specified!");
+    }
+
     IRRewriter rewriter(&getContext());
 
-    ModuleOp m = getOperation();
-    auto func = getEntryPoint(m);
+    auto mod = getOperation();
+    auto func = getEntryPoint(mod);
     if (!func) {
-      m.emitError() << "does not contain an entry point function";
+      mod.emitError() << "does not contain an entry point function";
       signalPassFailure();
       return;
     }
@@ -400,93 +357,125 @@ protected:
       return;
     }
 
-    if (comp->size() > device.nqubits()) {
-      m.emitError() << "requires " + Twine(comp.value().size()) +
-                           " qubits. However, the architecture only supports " +
-                           Twine(device.nqubits()) + "qubits.";
+    auto& body = func.getFunctionBody();
+    auto& [wires, infos] = *comp;
+
+    if (wires.size() > device->nqubits()) {
+      func.emitError()
+          << "requires " + Twine(wires.size()) +
+                 " qubits. However, the architecture only supports " +
+                 Twine(device->nqubits()) + "qubits.";
       signalPassFailure();
       return;
     }
 
-    // Create trials for initial layout refining. Currently, this includes
-    // `ntrials` many random layouts.
-    SmallVector<Trial> trials;
-    trials.reserve(ntrials);
-    for (size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(Layout::random(device.nqubits(), rng()));
-    }
-
-    // Execute each of the trials (possibly in parallel). Collect the results
-    // and find the one with the fewest SWAPs on the final backwards pass.
-    parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-      if (const auto res = refineLayout(*comp, trial.layout); succeeded(res)) {
-        trial.success = true;
-        trial.nswaps = *res;
-      }
-    });
-
-    Trial* best = findBestTrial(trials);
-    if (best == nullptr) {
-      func.emitError() << "failed to find the best layout trial";
+    auto layout = generateLayout(wires, infos);
+    if (failed(layout)) {
+      func->emitError() << "failed to refine random initial layouts.";
       signalPassFailure();
       return;
     }
 
-    // Perform placement and hot routing by inserting SWAPs into the IR.
-    auto placedWires = place(func, best->layout, rewriter);
+    std::tie(wires, infos) = std::move(place(body, *layout, rewriter));
+
+    Statistics stats;
+    RoutingBundle bundle{.wires = std::move(wires),
+                         .infos = std::move(infos),
+                         .layout = std::move(*layout)};
+
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-        placedWires, best->layout, &rewriter);
-    if (failed(res)) {
-      func.emitError() << "failed to map the " << func.getName() << " function";
+        bundle, stats, &rewriter);
+    if (res.failed()) {
+      func.emitError() << "failed to map the function";
       signalPassFailure();
       return;
     }
 
     // Collect statistics.
-    numSwaps += *res;
+    numSwaps += stats.nswaps;
 
     // Fix SSA Dominance issues.
-    for_each(func.getFunctionBody().getBlocks(),
-             [](Block& b) { sortTopologically(&b); });
+    for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
   }
 
 private:
-  /**
-   * @brief Collect wires of the quantum computation before placement.
-   * @details
-   * The mapping pass currently assumes that the quantum computation allocates
-   * all tensors at the start of the function. The required qubits are extracted
-   * from these tensors and used for the computation. Finally, the qubits are
-   * inserted back into the tensors at the end of the function.
-   * Thus, a valid program has the following structure:
-   *
-   *    T ⨉ [qtensor::AllocOp]
-   *  → N ⨉ [qtensor::ExtractOp]
-   *  → (Computation)
-   *  → N ⨉ [qtensor::InsertOp]
-   *  → T ⨉ [qtensor::DeallocOp]
-   *
-   * @returns a vector of wire iterator, or failure() if any of the above
-   * assumptions are violated.
-   */
-  static FailureOr<SmallVector<WireIterator>>
-  getComputation(func::FuncOp func) {
-    if (!func.getOps<AllocOp>().empty()) {
-      func.emitError() << "must not contain qco.alloc operations";
-      return failure();
+  /// Extend the init arguments of an `scf::ForOp` by adding a given range of
+  /// additional SSA values. Replaces the existing operation and returns the
+  /// newly created one.
+  static scf::ForOp extend(scf::ForOp forOp, ValueRange addons,
+                           IRRewriter& rewriter) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(forOp);
+
+    const auto res =
+        forOp.replaceWithAdditionalIterOperands(rewriter, addons, true);
+    assert(succeeded(res));
+    auto newForOp = cast<scf::ForOp>(*res);
+
+    for (const auto [before, after] : llvm::zip_equal(
+             addons, newForOp.getResults().take_back(addons.size()))) {
+      rewriter.replaceAllUsesExcept(before, after, newForOp);
+    }
+    return newForOp;
+  }
+
+  /// Extend the qubit arguments of an `IfOp` by adding a given range of
+  /// additional SSA values. Replaces the existing operation and returns the
+  /// newly created one.
+  static IfOp extend(IfOp ifOp, ValueRange addons, IRRewriter& rewriter) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(ifOp);
+
+    auto newIfOp = ifOp.replaceWithAdditionalQubits(rewriter, addons);
+
+    for (const auto [before, after] : llvm::zip_equal(
+             addons, newIfOp->getResults().take_back(addons.size()))) {
+      rewriter.replaceAllUsesExcept(before, after, newIfOp);
     }
 
-    SmallVector<WireIterator> wires;
-    for (auto tensor : func.getOps<qtensor::AllocOp>()) {
+    return newIfOp;
+  }
+
+  /// Return the wires of a dynamic computation.
+  /// The mapping pass currently assumes that
+  /// - there are no `qco.alloc` operation
+  /// - there is an "extraction" and "insertion" phase, where the i-th extract
+  ///   defines the i-th program qubit
+  /// Thus, supported programs have the following structure:
+  ///
+  ///   T ⨉ [qtensor::AllocOp]
+  /// → N ⨉ [qtensor::ExtractOp]
+  /// → (Computation)
+  /// → N ⨉ [qtensor::InsertOp]
+  /// → T ⨉ [qtensor::DeallocOp]
+  ///
+  /// If any of the above assumptions are violated, the function returns
+  /// failure.
+  static FailureOr<std::pair<Wires, WireInfos>>
+  getComputation(func::FuncOp func) {
+    if (!func.getOps<AllocOp>().empty()) {
+      return func.emitError() << "must not contain qco.alloc operations";
+    }
+
+    Wires wires;
+    WireInfos infos;
+
+    for (auto alloc : func.getOps<qtensor::AllocOp>()) {
       bool isInitPhase = true;
-      TensorIterator it(tensor.getResult());
+      TensorIterator it(alloc.getResult());
       for (; it != std::default_sentinel; ++it) {
         if (auto extract = dyn_cast<ExtractOp>(it.operation())) {
           if (!isInitPhase) {
-            func.emitError() << "must extract and insert all qubits at once.";
-            return failure();
+            return func.emitError()
+                   << "must extract and insert all qubits at once.";
           }
-          wires.emplace_back(extract.getResult());
+
+          const auto qubit = extract.getResult();
+          const auto index = wires.size();
+
+          wires.emplace_back(qubit);
+          infos.map(index, index);
+
           continue;
         }
 
@@ -496,36 +485,36 @@ private:
         }
       }
     }
-    return wires;
+
+    return std::make_pair(wires, infos);
   }
 
-  /**
-   * @brief Perform placement by replacing dynamic with static qubits.
-   * @details
-   * Creates static qubits and replaces the extracted qubits with it.
-   * Moreover, the function extends the computation with as many static qubits
-   * as the architecture supports.
-   * @returns a vector of wire iterators, where the i-th wire points at the i-th
-   * static program qubit.
-   */
-  static SmallVector<WireIterator>
-  place(func::FuncOp func, const Layout& layout, IRRewriter& rewriter) {
+  /// Perform placement by
+  /// - initializing as many hardware qubits as the architecture supports
+  /// - replacing dynamic with static qubits
+  /// - extending the inputs of `scf::ForOp` to all hardware qubits.
+  ///
+  /// Analogously to the getComputation function, the i-th extract
+  /// operation defines the i-th program qubit.
+  static std::pair<Wires, WireInfos> place(Region& body, const Layout& layout,
+                                           IRRewriter& rewriter) {
     SmallVector<StaticOp> staticOps;
     staticOps.reserve(layout.nqubits());
 
     // Create and save static qubit operations.
-    rewriter.setInsertionPointToStart(&func.getFunctionBody().front());
+    rewriter.setInsertionPointToStart(&body.front());
     for (size_t i = 0; i < layout.nqubits(); ++i) {
-      const auto op = StaticOp::create(rewriter, func.getLoc(), i);
+      const auto op = StaticOp::create(rewriter, body.getLoc(), i);
       staticOps.emplace_back(op);
       rewriter.setInsertionPointAfter(op);
     }
 
     // Replace extract ops and collect in program-qubit order.
-    SmallVector<WireIterator> placedWires(layout.nqubits());
 
-    size_t prog = 0UL;
-    for (auto alloc : make_early_inc_range(func.getOps<qtensor::AllocOp>())) {
+    Wires wires;
+    WireInfos infos;
+
+    for (auto alloc : make_early_inc_range(body.getOps<qtensor::AllocOp>())) {
       TensorIterator it(alloc.getResult());
       while (it != std::default_sentinel) {
         // Get the operation and early increment to avoid issues after erasure.
@@ -534,6 +523,7 @@ private:
 
         TypeSwitch<Operation*>(curr)
             .Case<ExtractOp>([&](auto op) {
+              const auto prog = wires.size();
               const auto hw = layout.getHardwareIndex(prog);
               const auto qubit = staticOps[hw].getQubit();
 
@@ -541,8 +531,8 @@ private:
               rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
               rewriter.eraseOp(op);
 
-              placedWires[prog] = WireIterator(qubit);
-              ++prog;
+              wires.emplace_back(qubit);
+              infos.map(prog, prog);
             })
             .Case<InsertOp>([&](auto op) {
               rewriter.setInsertionPointAfter(op);
@@ -557,84 +547,162 @@ private:
     }
 
     // Create sinks for remaining, unused, static qubits.
-    rewriter.setInsertionPoint(func.getFunctionBody().back().getTerminator());
-    for (; prog < layout.nqubits(); ++prog) {
+
+    rewriter.setInsertionPoint(body.back().getTerminator());
+    for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
       const auto qubit = staticOps[hw].getQubit();
-      placedWires[prog] = WireIterator(qubit);
-      SinkOp::create(rewriter, func->getLoc(), qubit);
+
+      wires.emplace_back(qubit);
+      infos.map(prog, prog);
+
+      SinkOp::create(rewriter, body.getLoc(), qubit);
     }
 
-    return placedWires;
+    // Finally, update the SCF operations such that they take all static qubits
+    // as input. To handle recursively nested SCF operations, use a stack of
+    // (region, mapping) pairs.
+
+    SmallVector<std::pair<Region&, DenseSet<Value>>> stack;
+    stack.emplace_back(body, DenseSet<Value>{});
+
+    while (!stack.empty()) {
+      for (auto [region, qubits] = stack.pop_back_val();
+           Operation& op : make_early_inc_range(region.getOps())) {
+        TypeSwitch<Operation*>(&op)
+            .Case<StaticOp>(
+                [&](StaticOp staticOp) { qubits.insert(staticOp.getQubit()); })
+            .Case<UnitaryOpInterface>([&](UnitaryOpInterface& uOp) {
+              for (const auto [pred, succ] : llvm::zip_equal(
+                       uOp.getInputQubits(), uOp.getOutputQubits())) {
+                qubits.insert(succ);
+                qubits.erase(pred);
+              }
+            })
+            .Case<scf::ForOp>([&](scf::ForOp forOp) {
+              assert(qubits.size() == layout.nqubits());
+
+              llvm::for_each(forOp.getInits(),
+                             [&](Value v) { qubits.erase(v); });
+
+              auto newForOp = extend(forOp, to_vector(qubits), rewriter);
+              for (const auto [init, result] : llvm::zip_equal(
+                       newForOp.getInits(), *newForOp.getLoopResults())) {
+                qubits.insert(result);
+                qubits.erase(init);
+              }
+
+              stack.emplace_back(
+                  newForOp.getRegion(),
+                  DenseSet<Value>(newForOp.getRegionIterArgs().begin(),
+                                  newForOp.getRegionIterArgs().end()));
+            })
+            .Case<IfOp>([&](IfOp ifOp) {
+              assert(qubits.size() == layout.nqubits());
+
+              llvm::for_each(ifOp.getQubits(),
+                             [&](Value v) { qubits.erase(v); });
+
+              auto newIfOp = extend(ifOp, to_vector(qubits), rewriter);
+
+              for (const auto [qubit, result] :
+                   llvm::zip_equal(newIfOp.getQubits(), newIfOp.getResults())) {
+                qubits.insert(result);
+                qubits.erase(qubit);
+              }
+
+              const auto thenArgs = newIfOp.getThenRegion().getArguments();
+              const auto elseArgs = newIfOp.getElseRegion().getArguments();
+              stack.emplace_back(
+                  newIfOp.getThenRegion(),
+                  DenseSet<Value>(thenArgs.begin(), thenArgs.end()));
+              stack.emplace_back(
+                  newIfOp.getElseRegion(),
+                  DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
+            })
+            .Case<ResetOp, MeasureOp>([&](auto resetOp) {
+              qubits.insert(resetOp.getQubitOut());
+              qubits.erase(resetOp.getQubitIn());
+            })
+            .Case<AllocOp, qtensor::AllocOp>([&](auto) {
+              llvm::reportFatalInternalError("unexpected dynamic qubit alloc");
+            });
+      }
+    }
+
+    return {wires, infos};
   }
 
-  /**
-   * @brief Find the best trial result in terms of the number of SWAPs.
-   * @returns the best trial result or nullptr if no result is valid.
-   */
-  [[nodiscard]] static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
+  /// Execute `ntrials` many (parallel) initial layout refinement trials and
+  /// return the heuristically best one.
+  ///
+  /// The function uses the SABRE Approach to improve the initial layout:
+  /// Traverse the layers of the program from left-to-right-to-left and
+  /// cold-route along the way. Repeat this procedure "niterations" times and
+  /// finally find the trial with the fewest SWAPs on the final backwards pass
+  /// and return the respective layout.
+  FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
+    std::mt19937_64 rng{seed};
+
+    struct Trial {
+      RoutingBundle bundle;
+      Statistics stats{};
+      bool success{false};
+    };
+
+    SmallVector<Trial, 0> trials;
+    trials.reserve(ntrials);
+    for (size_t i = 0; i < ntrials; ++i) {
+      trials.emplace_back(
+          RoutingBundle{.wires = wires,
+                        .infos = infos,
+                        .layout = Layout::random(device->nqubits(), rng())});
+    }
+
+    parallelForEach(&getContext(), trials, [&, this](Trial& t) {
+      for (size_t i = 0; i < niterations; ++i) {
+        if (route<WireDirection::Forward>(t.bundle, t.stats).failed()) {
+          return;
+        }
+        t.stats.nswaps = 0;
+        if (route<WireDirection::Backward>(t.bundle, t.stats).failed()) {
+          return;
+        }
+      }
+
+      t.success = true;
+    });
+
     Trial* best = nullptr;
-    for (auto& trial : trials) {
-      if (!trial.success) {
-        continue;
-      }
-
-      if (best == nullptr || best->nswaps > trial.nswaps) {
-        best = &trial;
+    for (Trial& t : trials) {
+      if (t.success &&
+          (best == nullptr || best->stats.nswaps > t.stats.nswaps)) {
+        best = &t;
       }
     }
 
-    return best;
-  }
-
-  /**
-   * @brief Refine the trial's layout and count #swaps for the final backwards
-   * pass.
-   * @details Use the SABRE Approach to improve the initial layout:
-   * Traverse the layers from left-to-right-to-left and cold-route
-   * along the way. Repeat this procedure "niterations" times.
-   * @returns failure() if routing fails.
-   */
-  FailureOr<size_t> refineLayout(SmallVector<WireIterator> wires,
-                                 Layout& layout) {
-    size_t nswaps{0};
-    for (size_t i = 0; i < niterations; ++i) {
-      if (failed(route<WireDirection::Forward>(wires, layout))) {
-        return failure();
-      }
-
-      const auto resB = route<WireDirection::Backward>(wires, layout);
-      if (failed(resB)) {
-        return failure();
-      }
-      nswaps = *resB;
+    if (best == nullptr) {
+      return failure();
     }
 
-    return nswaps;
+    return best->bundle.layout;
   }
 
-  /**
-   * @brief Perform A* search to find a sequence of SWAPs that makes the
-   * two-qubit operations inside the first layer (the front) executable.
-   * @details
-   * The iteration budget is b^{3} node expansions, i.e. roughly a depth-3
-   * search in a tree with branching factor b. A hard cap prevents impractical
-   * runtimes on larger architectures.
-   *
-   * The branching factor b of the A* search is the product of the
-   * architecture's maximum qubit degree and the maximum number of two-qubit
-   * gates in any layer:
-   *
-   * b = maxDegree × ⌈N/2⌉
-   *
-   * @returns a vector of hardware-index pairs (each denoting a SWAP) or
-   * failure() if A* fails.
-   */
-  [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
-  search(const Window& window, const Layout& layout) {
+  /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
+  /// inside the first layer executable.
+  ///
+  /// The iteration budget is b^{3} node expansions, i.e. roughly a depth-3
+  /// search in a tree with branching factor b, where b is the product of the
+  /// architecture's maximum qubit degree and the maximum number of two-qubit
+  /// gates in any layer: `b = maxDegree × ⌈N/2⌉`. A hard cap prevents
+  /// impractical runtimes on larger architectures.
+  ///
+  /// Returns `failure`, if the A* search fails.
+  FailureOr<SmallVector<IndexPairType>> search(const Window& window,
+                                               const Layout& layout) const {
     constexpr size_t cap = 25'000'000UL;
 
-    const size_t b = device.maxDegree() * ((device.nqubits() + 1) / 2);
+    const size_t b = device->maxDegree() * ((device->nqubits() + 1) / 2);
     const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -645,14 +713,14 @@ private:
 
     // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
-    if (root->isGoal(window.front(), device)) {
+    if (root->isGoal(window.front(), *device)) {
       return SmallVector<IndexPairType>{};
     }
 
     frontier.emplace(root);
 
-    DenseMap<ArrayRef<IndexType>, size_t> bestDepth;
-    DenseSet<IndexPairType> expansionSet;
+    DenseMap<ArrayRef<size_t>, size_t> bestDepth;
+    SmallVector<IndexPairType, 6> expansionSet;
 
     size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -667,8 +735,8 @@ private:
       const auto [it, inserted] = bestDepth.try_emplace(
           curr->layout.getProgramToHardware(), curr->depth);
       if (!inserted) {
-        const auto otherDepth = it->getSecond();
-        if (curr->depth >= otherDepth) {
+        if (const auto otherDepth = it->getSecond();
+            curr->depth >= otherDepth) {
           ++i;
           continue;
         }
@@ -676,13 +744,13 @@ private:
         it->second = curr->depth;
       }
 
-      // If the currently visited node is a goal node, reconstruct the sequence
-      // of SWAPs from this node to the root.
+      // If the currently visited node is a goal node, reconstruct the
+      // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), device)) {
+      if (curr->isGoal(window.front(), *device)) {
         SmallVector<IndexPairType> seq(curr->depth);
         size_t j = seq.size() - 1;
-        for (Node* n = curr; n->parent != nullptr; n = n->parent) {
+        for (const Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
           --j;
         }
@@ -691,21 +759,21 @@ private:
       }
 
       // Given a layout, create child-nodes for each possible SWAP
-      // between two neighbouring hardware qubits.
+      // between two neighboring hardware qubits.
 
       expansionSet.clear();
-      const auto& [q0, q1] = window.front();
-      for (const auto prog : {q0, q1}) {
+      for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         for (const auto hw0 = curr->layout.getHardwareIndex(prog);
-             const auto hw1 : device.neighboursOf(hw0)) {
+             const auto hw1 : device->neighboursOf(hw0)) {
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
-          if (!expansionSet.insert(swap).second) {
+          if (is_contained(expansionSet, swap)) {
             continue;
           }
+          expansionSet.push_back(swap);
 
           frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                             window, device, params));
+                                             window, *device, params));
         }
       }
 
@@ -715,85 +783,171 @@ private:
     return failure();
   }
 
-  /**
-   * @brief Skip a qubit-pair block.
-   * @details Traverses the pair of wire iterators in tandem until a two-qubit
-   * operation is found. If the two-qubit operation is equivalent, continue.
-   * Otherwise stop.
-   */
+  /// Return the SWAP sequence to move from one layout to another.
+  /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
+  [[nodiscard]] SmallVector<IndexPairType> restore(const Layout& from,
+                                                   const Layout& to) const {
+    Layout curr(from);
+    FGraph f(device);
+    SmallVector<IndexPairType> swaps;
+
+    while (true) {
+      f.reset();
+      f.construct(curr, to);
+
+      if (const auto happy = f.findHappySWAPChain()) {
+        for (const auto& swap : *happy) {
+          swaps.emplace_back(swap);
+          curr.swap(swap.first, swap.second);
+        }
+        continue;
+      }
+
+      // If there are no happy or unhappy swaps anymore,
+      // the final placement of every token is reached.
+
+      const auto unhappy = f.findUnhappySWAP();
+      if (!unhappy) {
+        break;
+      }
+
+      swaps.emplace_back(*unhappy);
+      curr.swap(unhappy->first, unhappy->second);
+    }
+
+    return swaps;
+  }
+
+  /// Return a pair of SWAP sequences to transform two layouts into each other.
+  /// Inspired by the 4-Approximation algorithm described in arXiv:1602.05150v3,
+  /// with the key difference that the goal permutation is not static.
+  [[nodiscard]] std::pair<SmallVector<IndexPairType>,
+                          SmallVector<IndexPairType>>
+  converge(const Layout& lhs, const Layout& rhs) const {
+    std::array layouts{Layout(lhs), Layout(rhs)};
+    std::array graphs{FGraph(device), FGraph(device)};
+    std::array<SmallVector<IndexPairType>, 2> swaps{};
+
+    std::mt19937 gen(seed);
+    std::uniform_int_distribution coin(0, 1);
+
+    while (true) {
+      size_t i = 0;
+      for (; i < 2; ++i) {
+        FGraph& f = graphs[i];
+
+        f.reset();
+        f.construct(layouts[i], layouts[(i + 1) % 2]);
+
+        if (const auto happy = f.findHappySWAPChain()) {
+          for (const auto& swap : *happy) {
+            swaps[i].emplace_back(swap);
+            layouts[i].swap(swap.first, swap.second);
+          }
+          break;
+        }
+      }
+
+      // If we exit early from the loop, we've found a happy SWAP chain.
+      if (i != 2) {
+        continue;
+      }
+
+      // Otherwise, we randomly apply an unhappy SWAP to one of the layouts.
+      // If there is no happy or unhappy swaps anymore, the final placement of
+      // every token is reached.
+
+      i = coin(gen);
+
+      const auto unhappy = graphs[i].findUnhappySWAP();
+      if (!unhappy) {
+        break;
+      }
+
+      swaps[i].emplace_back(*unhappy);
+      layouts[i].swap(unhappy->first, unhappy->second);
+    }
+
+    return {std::move(swaps[0]), std::move(swaps[1])};
+  }
+
+  /// Skip to the end of the two-qubit block for both wire iterators, where
+  /// initially both must point at the same two-qubit operation.
   template <WireDirection Direction>
-  static void skipQubitPairBlock(WireIterator& w0, WireIterator& w1) {
+  static void skipQubitPairBlock(WireIterator& it0, WireIterator& it1) {
     using Traits = WireTraversalTraits<Direction>;
 
-    WireIterator curr0(w0);
-    WireIterator curr1(w1);
+    // Traverses the pair of wire iterators in tandem until a two-qubit
+    // operation is found. If the two-qubit operation is equivalent, continue.
+    // Otherwise, stop.
+
+    std::array block{it0, it1};
     while (true) {
-      while (Traits::isActive(curr0)) {
-        std::ranges::advance(curr0, Traits::stride());
-      }
+      for (auto& it : block) {
+        while (Traits::isActive(it)) {
+          std::ranges::advance(it, Traits::stride());
 
-      if (curr0 == std::default_sentinel) {
-        return;
-      }
+          if (it.operation() == nullptr) { // isa<Blockargument>
+            return;
+          }
 
-      while (Traits::isActive(curr1)) {
-        std::ranges::advance(curr1, Traits::stride());
-      }
+          if (auto u = dyn_cast<UnitaryOpInterface>(it.operation());
+              u && u.getNumQubits() > 1) {
+            // Handle two-qubit barrier edge case explicitly.
+            if (isa<BarrierOp>(u) && u.getNumQubits() != 2) {
+              return;
+            }
+            // Otherwise stop for subsequent two-qubit unitary comparison.
+            break;
+          }
+        }
 
-      if (curr1 == std::default_sentinel) {
-        return;
-      }
-
-      if (curr0.operation() != curr1.operation()) {
-        return;
-      }
-
-      // Handle two-qubit barrier edge case explicitly.
-      if (auto barrier = dyn_cast<BarrierOp>(curr0.operation())) {
-        if (barrier.getNumQubits() != 2) {
+        if (it == std::default_sentinel) {
           return;
         }
       }
 
-      w0 = curr0;
-      w1 = curr1;
+      if (block[0].operation() != block[1].operation()) {
+        return;
+      }
+
+      it0 = block[0];
+      it1 = block[1];
     }
   }
 
-  /**
-   * @brief Build and return window of layers.
-   * @details Traverses the circuit-layers until the desired window sizes is
-   * reached. Assumes that wires[i] = i-th program qubit. The size of the window
-   * is 1 + nlookahead.
-   * @returns window of layers.
-   */
+  /// Return a window of layers with a maximum size of `1 + nlookahead`.
   template <WireDirection Direction>
-  Window getWindow(ArrayRef<WireIterator> baseWires) {
+  Window getWindow(Wires wires, const WireInfos& infos) {
     Window window;
     window.reserve(1 + nlookahead);
 
-    SmallVector<WireIterator> wires(baseWires);
-    std::ignore = walkProgramGraph<Direction>(
+    walkProgramGraph<Direction>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
 
-          for (const auto& [op, progs] : ready) {
-            if (isa<BarrierOp>(op)) {
-              released.emplace_back(op);
-              continue;
+          for (const auto& [op, indices] : ready) {
+            if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+              const auto i0 = indices[0];
+              const auto i1 = indices[1];
+
+              const auto prog0 = infos.lookupProgram(i0);
+              const auto prog1 = infos.lookupProgram(i1);
+
+              window.emplace_back(prog0, prog1);
+              if (window.size() == 1 + nlookahead) {
+                return WalkResult::interrupt();
+              }
+
+              skipQubitPairBlock<Direction>(wires[i0], wires[i1]);
+              released.emplace_back(u);
+              return WalkResult::advance();
             }
 
-            const auto p0 = progs[0];
-            const auto p1 = progs[1];
-            window.emplace_back(p0, p1);
-            if (window.size() == 1 + nlookahead) {
-              return WalkResult::interrupt();
-            }
-
-            skipQubitPairBlock<Direction>(wires[p0], wires[p1]);
-            released.emplace_back(wires[p0].operation());
+            released.emplace_back(op);
+            return WalkResult::advance();
           }
 
           return WalkResult::advance();
@@ -802,79 +956,268 @@ private:
     return window;
   }
 
-  /**
-   * @brief Advance past all executable gates.
-   * @details Traverses the multi-qubit gates of the circuit until no more
-   * executable gates are found.
-   */
+  /// Insert SWAP operations, exchanging two qubits, virtually
+  /// (`RoutingMode::Cold`) or into the IR (`RoutingMode::Hot`). The function
+  /// expects that each wire points at the correct insertion point.
+  template <RoutingMode Mode>
+  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
+                          Statistics& stats, IRRewriter* rewriter) {
+    auto& [wires, infos, layout] = bundle;
+    for (const auto& [hw0, hw1] : swaps) {
+      if constexpr (Mode == RoutingMode::Hot) {
+        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
+
+        const auto i0 = infos.lookupIndex(prog0);
+        const auto i1 = infos.lookupIndex(prog1);
+
+        auto& w0 = wires[i0];
+        auto& w1 = wires[i1];
+
+        const auto in0 = w0.qubit();
+        const auto in1 = w1.qubit();
+
+        rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot => Forward.
+        auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
+
+        const auto out0 = swapOp.getQubit0Out();
+        const auto out1 = swapOp.getQubit1Out();
+
+        rewriter->replaceAllUsesExcept(in0, out1, swapOp);
+        rewriter->replaceAllUsesExcept(in1, out0, swapOp);
+
+        infos.swap(prog0, prog1);
+
+        std::advance(w0, 1); // Move to SWAP.
+        std::advance(w1, 1);
+      }
+
+      layout.swap(hw0, hw1);
+    }
+
+    stats.nswaps += swaps.size();
+  }
+
+  /// Advance past all executable gates and return operations with nested
+  /// regions and the respective wire indices. Stops when no more executable
+  /// gates are found. After the function returns, the wires point at the
+  /// results of non-executable gates or operations with nested regions.
   template <WireDirection Direction>
-  void skipExecutableGates(MutableArrayRef<WireIterator> wires,
-                           Layout& layout) {
-    std::ignore = walkProgramGraph<Direction>(
+  RecursiveRoutingStack advance(Wires& wires, const WireInfos& infos,
+                                const Layout& layout) {
+    RecursiveRoutingStack stack;
+
+    // Advance wires past all executable gates and push operations with
+    // nested regions and the respective wire indices of their inputs onto the
+    // result stack.
+
+    walkProgramGraph<Direction>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
 
-          for (const auto& [op, progs] : ready) {
-            if (isa<BarrierOp>(op)) {
-              released.emplace_back(op);
-              continue;
-            }
-
-            const auto [hw0, hw1] =
-                layout.getHardwareIndices(progs[0], progs[1]);
-
-            if (device.areAdjacent(hw0, hw1)) {
-              released.emplace_back(op);
-            }
+          for (const auto& [readyOp, indices] : ready) {
+            TypeSwitch<Operation*>(readyOp)
+                .template Case<BarrierOp>(
+                    [&](BarrierOp op) { released.emplace_back(op); })
+                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+                  const auto prog0 = infos.lookupProgram(indices[0]);
+                  const auto prog1 = infos.lookupProgram(indices[1]);
+                  if (const auto [hw0, hw1] =
+                          layout.getHardwareIndices(prog0, prog1);
+                      device->areAdjacent(hw0, hw1)) {
+                    released.emplace_back(op);
+                  }
+                })
+                .template Case<scf::ForOp, IfOp>(
+                    [&](auto op) { stack.emplace_back(op, indices); });
           }
 
-          // Stop, if there are no more ready AND executable gates.
           if (released.empty()) {
             return WalkResult::interrupt();
           }
 
           return WalkResult::advance();
         });
+
+    return stack;
   }
 
-  /**
-   * @brief Route via SWAP insertion.
-   * @details Iterates over a dynamically computed window of layers and uses A*
-   * search to find a sequence of SWAPs that makes that layer executable.
-   * Depending on the template parameter, this function only updates
-   * (and hence modifies) the layout or also inserts the SWAPs into the IR.
-   * @returns failure() if A* search isn't able to find a solution, the number
-   * of SWAPs otherwise.
-   */
-  template <WireDirection Direction, RoutingMode mode = RoutingMode::Cold>
-  FailureOr<size_t> route(SmallVector<WireIterator>& wires, Layout& layout,
-                          IRRewriter* rewriter = nullptr) {
-    using Traits = WireTraversalTraits<Direction>;
+  /// Processes the recursive stack item by routing the nested operation and
+  /// inserting epilogue SWAPs.
+  template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
+    requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
+  LogicalResult dispatch(const RecursiveRoutingStackItem& item,
+                         RoutingBundle& parent, Statistics& stats,
+                         IRRewriter* rewriter = nullptr) {
+    const auto& [op, indices] = item;
+    return TypeSwitch<Operation*, LogicalResult>(op)
+        .template Case<scf::ForOp>([&](scf::ForOp forOp) {
+          RoutingBundle child{.layout = parent.layout};
 
-    size_t nswaps{0};
+          // Map parent (results) to child values (iter args). Going
+          // forwards, the recursive routing starts at block
+          // arguments, while the backwards go starts at the yielded
+          // values.
+
+          for (size_t i : indices) {
+            const auto prog = parent.infos.lookupProgram(i);
+            const auto res = cast<OpResult>(parent.wires[i].qubit());
+            const auto arg = forOp.getTiedLoopRegionIterArg(res);
+            const auto index = child.wires.size();
+
+            if constexpr (Direction == WireDirection::Forward) {
+              child.wires.emplace_back(arg);
+            } else {
+              const auto yield = forOp.getTiedLoopYieldedValue(arg)->get();
+              child.wires.emplace_back(yield);
+            }
+            child.infos.map(index, prog);
+          }
+
+          if (failed(route<Direction, Mode>(child, stats, rewriter))) {
+            return failure();
+          }
+
+          const auto swaps = restore(child.layout, parent.layout);
+
+          if constexpr (Mode == RoutingMode::Hot) {
+
+            // After routing the loop body, all iterators point to
+            // std::default_sentinel. To move the iterators to the
+            // correct qubit SSA values for the epilogue SWAPs,
+            // decrement each twice: (sentinel → yield →
+            // unitary/block arg).
+
+            for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+          }
+
+          insertSWAPs<Mode>(swaps, child, stats, rewriter);
+
+          if constexpr (Mode == RoutingMode::Hot) {
+            sortTopologically(forOp.getBody());
+          }
+
+          // Finally, move past the operation with nested regions by
+          // incrementing the respective global wires.
+
+          for_each(indices, [&](size_t i) {
+            std::advance(parent.wires[i],
+                         WireTraversalTraits<Direction>::stride());
+          });
+
+          return success();
+        })
+        .template Case<IfOp>([&](IfOp ifOp) {
+          std::array children{RoutingBundle{.layout = parent.layout},
+                              RoutingBundle{.layout = parent.layout}};
+
+          // Map parent (results) to child values (qubits). Going
+          // forwards, the recursive routing starts at block
+          // arguments, while the backwards go starts at the yielded
+          // values.
+
+          for (size_t i : indices) {
+            const auto prog = parent.infos.lookupProgram(i);
+            const auto res = cast<OpResult>(parent.wires[i].qubit());
+            const auto index = children[0].wires.size();
+
+            OpOperand* qubit = ifOp.getTiedQubit(res);
+            const std::array args{ifOp.getTiedThenBlockArgument(qubit),
+                                  ifOp.getTiedElseBlockArgument(qubit)};
+
+            if constexpr (Direction == WireDirection::Forward) {
+              for (size_t j = 0; j < children.size(); ++j) {
+                children[j].wires.emplace_back(args[j]);
+                children[j].infos.map(index, prog);
+              }
+            } else {
+              const std::array yields{
+                  ifOp.getTiedThenYieldedValue(args[0])->get(),
+                  ifOp.getTiedElseYieldedValue(args[1])->get()};
+              for (size_t j = 0; j < children.size(); ++j) {
+                children[j].wires.emplace_back(yields[j]);
+                children[j].infos.map(index, prog);
+              }
+            }
+          }
+
+          for (auto& child : children) {
+            if (failed(route<Direction, Mode>(child, stats, rewriter))) {
+              return failure();
+            }
+          }
+
+          if constexpr (Mode == RoutingMode::Hot) {
+
+            // After routing the branch body, all iterators point to
+            // std::default_sentinel. To move the iterators to the
+            // correct qubit SSA values for the epilogue SWAPs,
+            // decrement each twice: (sentinel → yield →
+            // unitary/block arg).
+
+            for_each(children[0].wires, [](auto& it) { std::advance(it, -2); });
+            for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
+          }
+
+          const auto [fst, snd] =
+              converge(children[0].layout, children[1].layout);
+
+          insertSWAPs<Mode>(fst, children[0], stats, rewriter);
+          insertSWAPs<Mode>(snd, children[1], stats, rewriter);
+
+          if constexpr (Mode == RoutingMode::Hot) {
+
+            // The IfOp implements the SingleBlockImplicitTerminator trait.
+            assert(ifOp.getThenRegion().hasOneBlock());
+            assert(ifOp.getElseRegion().hasOneBlock());
+
+            sortTopologically(&ifOp.getThenRegion().getBlocks().front());
+            sortTopologically(&ifOp.getElseRegion().getBlocks().front());
+          }
+
+          // Finally, move past the operation with nested regions by
+          // incrementing the respective global wires.
+
+          for_each(indices, [&](size_t i) {
+            std::advance(parent.wires[i],
+                         WireTraversalTraits<Direction>::stride());
+          });
+
+          return success();
+        })
+        .Default([](Operation*) { return failure(); });
+  }
+
+  /// Iterates over a dynamically computed window of layers and uses A* search
+  /// to find a SWAP sequence that makes each layer executable. Depending on
+  /// the template parameter, this function only updates the layout or also
+  /// inserts the SWAPs into the IR. The function returns `failure` if A* is
+  /// unable to find a solution.
+  template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
+    requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
+  LogicalResult route(RoutingBundle& bundle, Statistics& stats,
+                      IRRewriter* rewriter = nullptr) {
+    auto& [wires, infos, layout] = bundle;
+
     while (true) {
-      skipExecutableGates<Direction>(wires, layout);
 
-      const auto window = getWindow<Direction>(wires);
-      if (window.empty()) {
-        break;
+      while (true) {
+        const auto stack = advance<Direction>(wires, infos, layout);
+        if (stack.empty()) {
+          break;
+        }
+        for (const auto& item : stack) {
+          if (dispatch<Direction, Mode>(item, bundle, stats, rewriter)
+                  .failed()) {
+            return failure();
+          }
+        }
       }
 
-      if constexpr (mode == RoutingMode::Hot) {
-
-        // At this point the wire iterators either point to
-        // std::default_sentinel or a multi-qubit gate (including barriers) of
-        // the current or subsequent layers. The former must be decremented
-        // twice (sentinel -> sink -> unitary/static). For the latter we simply
-        // must ensure the insertion point is before the multi-qubit gates.
-
-        for (auto& it : wires) {
-          std::ranges::advance(it, it == std::default_sentinel
-                                       ? -2 * Traits::stride()
-                                       : -Traits::stride());
-        }
+      const auto window = getWindow<Direction>(wires, infos);
+      if (window.empty()) {
+        break;
       }
 
       const auto swaps = search(window, layout);
@@ -882,65 +1225,64 @@ private:
         return failure();
       }
 
-      for (const auto& [hw0, hw1] : *swaps) {
-        if constexpr (mode == RoutingMode::Hot) {
-          const auto& [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
-          const auto& w0 = wires[prog0];
-          const auto& w1 = wires[prog1];
+      if constexpr (Mode == RoutingMode::Hot) {
 
-          assert(!isa<SinkOp>(w0.operation()));
-          assert(!isa<SinkOp>(w1.operation()));
+        // At this point the wire iterators either point to
+        // std::default_sentinel or a multi-qubit gate (incl. barriers) of
+        // the current or subsequent layers. The former must be decremented
+        // twice (sentinel → sink → unitary/static). For the latter, we
+        // must ensure the insertion point is before the multi-qubit gates.
 
-          const auto in0 = w0.qubit();
-          const auto in1 = w1.qubit();
-
-          rewriter->setInsertionPointAfter(in0.getDefiningOp());
-          auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
-
-          const auto out0 = swapOp.getQubit0Out();
-          const auto out1 = swapOp.getQubit1Out();
-
-          rewriter->replaceAllUsesExcept(in0, out1, swapOp);
-          rewriter->replaceAllUsesExcept(in1, out0, swapOp);
-
-          // Preserve program-indexed wire semantics.
-          wires[prog0] = WireIterator(out1);
-          wires[prog1] = WireIterator(out0);
-
-          assert(isa<SWAPOp>(w0.operation()));
-          assert(isa<SWAPOp>(w1.operation()));
+        for (auto& it : wires) {
+          std::advance(it, it == std::default_sentinel ? -2 : -1);
         }
-        layout.swap(hw0, hw1);
       }
 
-      if constexpr (mode == RoutingMode::Hot) {
+      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+
+      if constexpr (Mode == RoutingMode::Hot) {
 
         // After SWAP insertion, a wire is either untouched by the SWAP
-        // insertion or pointing at a SWAP operation. If the former is the case,
-        // incrementing the wire iterator will undo the previous decrement,
-        // leaving it at the same position as before the SWAP insertion.
-        // Otherwise, an increment will move the iterator to the multi-qubit op
-        // of the current or subsequent layer or to a sink (and thus
-        // std::default_sentinel).
+        // insertion or pointing at a SWAP operation. If the former is the
+        // case, incrementing the wire iterator will undo the previous
+        // decrement, leaving it at the same position as before the SWAP
+        // insertion. Otherwise, an increment will move the iterator to the
+        // multi-qubit op of the current or subsequent layer or to a sink (and
+        // thus std::default_sentinel).
 
-        for_each(wires,
-                 [](auto& it) { std::ranges::advance(it, Traits::stride()); });
+        for_each(wires, [](auto& it) { std::advance(it, 1); });
       }
-
-      nswaps += swaps->size();
     }
 
-    return nswaps;
+    return success();
   }
 
-  AugmentedDevice device;
+  std::shared_ptr<AugmentedDevice> device;
 };
 
 } // namespace
 
-std::unique_ptr<Pass> createMappingPass(size_t nqubits, const Edges& coupling,
-                                        MappingPassOptions options) {
-  return std::make_unique<MappingPass>(nqubits, coupling, options);
+std::unique_ptr<Pass>
+createMappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
+                  MappingPassOptions options) {
+
+  // Verify the assumption that the coupling set is symmetric:
+  // For every edge (u, v) in the set, (v, u) must also be present.
+
+  for (const auto& [u, v] : couplingSet) {
+    if (u == v) {
+      llvm::reportFatalUsageError("Found an invalid (u, u) edge.");
+    }
+
+    if (!couplingSet.contains({v, u})) {
+      llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
+                                  Twine(u) + ", " + Twine(v) +
+                                  ") exists but (" + Twine(v) + ", " +
+                                  Twine(u) + ") does not.");
+    }
+  }
+
+  return std::make_unique<MappingPass>(couplingSet, options);
 }
 
 } // namespace mlir::qco

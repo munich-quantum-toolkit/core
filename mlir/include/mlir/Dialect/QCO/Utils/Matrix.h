@@ -15,9 +15,11 @@
 
 #include <array>
 #include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace mlir::qco {
@@ -30,7 +32,10 @@ inline constexpr double MATRIX_TOLERANCE = 1e-14;
 
 class DynamicMatrix;
 struct Matrix4x4;
-struct SymmetricEigen4;
+struct SymmetricEigenDecomposition4x4;
+struct EigenDecomposition;
+struct EigenDecomposition2x2;
+struct EigenDecomposition4x4;
 
 /**
  * @brief 1x1 matrix for global-phase gates.
@@ -47,7 +52,9 @@ struct Matrix1x1 {
    * @param m00 Element at row 0, column 0.
    * @return A new `Matrix1x1` with the given element.
    */
-  [[nodiscard]] static Matrix1x1 fromElements(Complex m00);
+  [[nodiscard]] static constexpr Matrix1x1 fromElements(Complex m00) {
+    return {m00};
+  }
 
   /**
    * @brief Mutable element access with `(row, col)` indexing.
@@ -55,7 +62,7 @@ struct Matrix1x1 {
    * @param col Column index (must be `0`).
    * @return Reference to the sole matrix entry.
    */
-  [[nodiscard]] Complex& operator()(std::size_t row, std::size_t col);
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /**
    * @brief Const element access with `(row, col)` indexing.
@@ -63,7 +70,7 @@ struct Matrix1x1 {
    * @param col Column index (must be `0`).
    * @return Copy of the sole matrix entry.
    */
-  [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /**
    * @brief Element-wise scaling by a complex scalar.
@@ -101,6 +108,13 @@ struct Matrix1x1 {
    * @return `true` when @p src is 1x1.
    */
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
+
+  /**
+   * @brief Computes the eigendecomposition of this matrix.
+   *
+   * @return The single eigenpair.
+   */
+  [[nodiscard]] EigenDecomposition eigenDecomposition() const;
 };
 
 /**
@@ -111,11 +125,11 @@ struct Matrix1x1 {
  */
 struct Matrix2x2 {
   /// Number of rows.
-  static constexpr std::size_t K_ROWS = 2;
+  static constexpr size_t K_ROWS = 2;
   /// Number of columns.
-  static constexpr std::size_t K_COLS = 2;
+  static constexpr size_t K_COLS = 2;
   /// Total number of stored elements.
-  static constexpr std::size_t K_SIZE_AT_COMPILE_TIME = 4;
+  static constexpr size_t K_SIZE_AT_COMPILE_TIME = 4;
 
   /// Flat row-major storage of all matrix entries.
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
@@ -128,10 +142,12 @@ struct Matrix2x2 {
    * @param m11 Element at row 1, column 1.
    * @return A new `Matrix2x2` with the given elements.
    */
-  [[nodiscard]] static Matrix2x2 fromElements(const Complex& m00,
-                                              const Complex& m01,
-                                              const Complex& m10,
-                                              const Complex& m11);
+  [[nodiscard]] static constexpr Matrix2x2 fromElements(const Complex& m00,
+                                                        const Complex& m01,
+                                                        const Complex& m10,
+                                                        const Complex& m11) {
+    return {{m00, m01, m10, m11}};
+  }
 
   /**
    * @brief Returns the 2x2 identity matrix.
@@ -145,7 +161,7 @@ struct Matrix2x2 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Reference to the element at `(row, col)`.
    */
-  [[nodiscard]] Complex& operator()(std::size_t row, std::size_t col);
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /**
    * @brief Const element access.
@@ -153,7 +169,7 @@ struct Matrix2x2 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Copy of the element at `(row, col)`.
    */
-  [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /**
    * @brief Matrix product `*this * rhs`.
@@ -235,6 +251,14 @@ struct Matrix2x2 {
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 
   /**
+   * @brief Computes the eigendecomposition of this complex matrix.
+   *
+   * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+   * non-finite eigenvalues.
+   */
+  [[nodiscard]] std::optional<EigenDecomposition2x2> eigenDecomposition() const;
+
+  /**
    * @brief Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
    * space.
    *
@@ -247,8 +271,8 @@ struct Matrix2x2 {
    * @param qubitIndex Wire index to act on.
    * @return Embedded unitary as a dynamic matrix.
    */
-  [[nodiscard]] DynamicMatrix embedInNqubit(std::size_t numQubits,
-                                            std::size_t qubitIndex) const;
+  [[nodiscard]] DynamicMatrix embedInNqubit(size_t numQubits,
+                                            size_t qubitIndex) const;
 
   /**
    * @brief Embed this single-qubit matrix into a two-qubit Hilbert space.
@@ -256,7 +280,7 @@ struct Matrix2x2 {
    * @param qubitIndex Wire index (`0` = high bit / MSB, `1` = low bit).
    * @return The `4x4` embedded unitary.
    */
-  [[nodiscard]] Matrix4x4 embedInTwoQubit(std::size_t qubitIndex) const;
+  [[nodiscard]] Matrix4x4 embedInTwoQubit(size_t qubitIndex) const;
 };
 
 /**
@@ -267,11 +291,11 @@ struct Matrix2x2 {
  */
 struct Matrix4x4 {
   /// Number of rows.
-  static constexpr std::size_t K_ROWS = 4;
+  static constexpr size_t K_ROWS = 4;
   /// Number of columns.
-  static constexpr std::size_t K_COLS = 4;
+  static constexpr size_t K_COLS = 4;
   /// Total number of stored elements.
-  static constexpr std::size_t K_SIZE_AT_COMPILE_TIME = 16;
+  static constexpr size_t K_SIZE_AT_COMPILE_TIME = 16;
 
   /// Flat row-major storage of all matrix entries.
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
@@ -296,23 +320,28 @@ struct Matrix4x4 {
    * @param m33 Element at row 3, column 3.
    * @return A new `Matrix4x4` with the given elements.
    */
-  [[nodiscard]] static Matrix4x4
+  [[nodiscard]] static constexpr Matrix4x4
   fromElements(const Complex& m00, const Complex& m01, const Complex& m02,
                const Complex& m03, const Complex& m10, const Complex& m11,
                const Complex& m12, const Complex& m13, const Complex& m20,
                const Complex& m21, const Complex& m22, const Complex& m23,
                const Complex& m30, const Complex& m31, const Complex& m32,
-               const Complex& m33);
+               const Complex& m33) {
+    return {m00, m01, m02, m03,  // row 0
+            m10, m11, m12, m13,  // row 1
+            m20, m21, m22, m23,  // row 2
+            m30, m31, m32, m33}; // row 3
+  }
 
   /**
    * @brief Returns the 4x4 identity matrix.
    * @return Identity matrix with ones on the diagonal.
    */
   [[nodiscard]] static constexpr Matrix4x4 identity() {
-    return {{1, 0, 0, 0,   // row 0
-             0, 1, 0, 0,   // row 1
-             0, 0, 1, 0,   // row 2
-             0, 0, 0, 1}}; // row 3
+    return {1, 0, 0, 0,  // row 0
+            0, 1, 0, 0,  // row 1
+            0, 0, 1, 0,  // row 2
+            0, 0, 0, 1}; // row 3
   }
 
   /**
@@ -321,7 +350,7 @@ struct Matrix4x4 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Reference to the element at `(row, col)`.
    */
-  [[nodiscard]] Complex& operator()(std::size_t row, std::size_t col);
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /**
    * @brief Const element access.
@@ -329,7 +358,7 @@ struct Matrix4x4 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Copy of the element at `(row, col)`.
    */
-  [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /**
    * @brief Matrix product `*this * rhs`.
@@ -397,12 +426,34 @@ struct Matrix4x4 {
 
   /**
    * @brief Builds a diagonal matrix from four diagonal entries.
-   * @param diagonalEntries Diagonal entries `(m00, m11, m22, m33)`; must have
-   *        length `K_ROWS`.
+   * @param m00 Diagonal entry at `(0, 0)`.
+   * @param m11 Diagonal entry at `(1, 1)`.
+   * @param m22 Diagonal entry at `(2, 2)`.
+   * @param m33 Diagonal entry at `(3, 3)`.
+   * @return Diagonal matrix with the given entries.
+   */
+  [[nodiscard]] static constexpr Matrix4x4 fromDiagonal(const Complex& m00,
+                                                        const Complex& m11,
+                                                        const Complex& m22,
+                                                        const Complex& m33) {
+    return {m00, 0,   0,   0,    // row 0
+            0,   m11, 0,   0,    // row 1
+            0,   0,   m22, 0,    // row 2
+            0,   0,   0,   m33}; // row 3
+  }
+
+  /**
+   * @brief Builds a diagonal matrix from an array of four diagonal entries.
+   * @param diagonalEntries Array of diagonal entries in order `(m00, m11, m22,
+   * m33)`.
    * @return Diagonal matrix with the given entries.
    */
   [[nodiscard]] static Matrix4x4
-  fromDiagonal(ArrayRef<Complex> diagonalEntries);
+  fromDiagonal(ArrayRef<Complex> diagonalEntries) {
+    assert(diagonalEntries.size() == K_ROWS);
+    return fromDiagonal(diagonalEntries[0], diagonalEntries[1],
+                        diagonalEntries[2], diagonalEntries[3]);
+  }
 
   /**
    * @brief Kronecker product `lhs (x) rhs` of two single-qubit matrices.
@@ -422,28 +473,28 @@ struct Matrix4x4 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Array of the four column entries.
    */
-  [[nodiscard]] std::array<Complex, K_ROWS> column(std::size_t col) const;
+  [[nodiscard]] std::array<Complex, K_ROWS> column(size_t col) const;
 
   /**
    * @brief Overwrites column @p col with @p values.
    * @param col Column index in `[0, K_COLS)`.
    * @param values New column entries, top to bottom; must have length `K_ROWS`.
    */
-  void setColumn(std::size_t col, ArrayRef<Complex> values);
+  void setColumn(size_t col, ArrayRef<Complex> values);
 
   /**
    * @brief Returns the entries of row @p row, left to right.
    * @param row Row index in `[0, K_ROWS)`.
    * @return View over the four row entries.
    */
-  [[nodiscard]] ArrayRef<const Complex> row(std::size_t row) const;
+  [[nodiscard]] ArrayRef<const Complex> row(size_t row) const;
 
   /**
    * @brief Overwrites row @p row with @p values.
    * @param row Row index in `[0, K_ROWS)`.
    * @param values New row entries, left to right; must have length `K_COLS`.
    */
-  void setRow(std::size_t row, ArrayRef<Complex> values);
+  void setRow(size_t row, ArrayRef<Complex> values);
 
   /**
    * @brief Returns the element-wise real parts in row-major order.
@@ -479,6 +530,38 @@ struct Matrix4x4 {
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 
   /**
+   * @brief Constructs a matrix from row-major real entries (imaginary part
+   * zero).
+   *
+   * @param entries Row-major storage with length `16`.
+   * @return A new `Matrix4x4` with the given real entries.
+   */
+  [[nodiscard]] static Matrix4x4 fromRealRowMajor(ArrayRef<double> entries);
+
+  /**
+   * @brief Computes the eigendecomposition of this complex matrix.
+   *
+   * Uses the same EISPACK `corth`/`comqr2` path as @ref
+   * DynamicMatrix::eigenDecomposition, specialized for `4x4`.
+   *
+   * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
+   */
+  [[nodiscard]] std::optional<EigenDecomposition4x4> eigenDecomposition() const;
+
+  /**
+   * @brief Computes the eigendecomposition of this real symmetric matrix.
+   *
+   * Uses the real parts of @p *this; imaginary parts must be negligible.
+   * Householder tridiagonalization (EISPACK `tred2`) followed by implicit QL
+   * iteration (`tql2`).
+   *
+   * @pre The real parts form a symmetric matrix.
+   * @return Ascending eigenvalues and matching eigenvectors (as columns).
+   */
+  [[nodiscard]] SymmetricEigenDecomposition4x4
+  symmetricEigenDecomposition() const;
+
+  /**
    * @brief Embed this two-qubit matrix into an @p numQubits-qubit Hilbert
    * space.
    *
@@ -491,9 +574,8 @@ struct Matrix4x4 {
    * @param q1Index Wire index of operand 1.
    * @return Embedded unitary as a dynamic matrix.
    */
-  [[nodiscard]] DynamicMatrix embedInNqubit(std::size_t numQubits,
-                                            std::size_t q0Index,
-                                            std::size_t q1Index) const;
+  [[nodiscard]] DynamicMatrix embedInNqubit(size_t numQubits, size_t q0Index,
+                                            size_t q1Index) const;
 
   /**
    * @brief Reorder this matrix to act on qubits `{0, 1}`.
@@ -501,34 +583,8 @@ struct Matrix4x4 {
    * @param q0Index Wire index of operand 0; @p q1Index wire index of operand 1.
    * @return Reordered copy of this matrix.
    */
-  [[nodiscard]] Matrix4x4 reorderForQubits(std::size_t q0Index,
-                                           std::size_t q1Index) const;
-
-  /**
-   * @brief Computes the eigendecomposition of this real symmetric matrix.
-   *
-   * @copydoc Matrix4x4::symmetricEigen4(const std::array<double, 16>&)
-   *
-   * @pre Entries are real (imaginary parts must be negligible). The real parts
-   * must form a symmetric matrix; imaginary parts are ignored.
-   */
-  [[nodiscard]] SymmetricEigen4 symmetricEigen4() const;
-
-  /**
-   * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
-   *
-   * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
-   * QL iteration (`tql2`) on the tridiagonal form.
-   *
-   * @pre @p symmetric is real and symmetric: `symmetric[i,j] == symmetric[j,i]`
-   * for all `i, j`. Only the lower triangle (including the diagonal) is read,
-   * but supplying a non-symmetric matrix yields undefined numerical results.
-   *
-   * @param symmetric Row-major real symmetric `4x4` matrix.
-   * @return Ascending eigenvalues and matching eigenvectors (as columns).
-   */
-  [[nodiscard]] static SymmetricEigen4
-  symmetricEigen4(const std::array<double, 16>& symmetric);
+  [[nodiscard]] Matrix4x4 reorderForQubits(size_t q0Index,
+                                           size_t q1Index) const;
 };
 
 /**
@@ -547,7 +603,7 @@ public:
    * @brief Creates a zero-initialized square matrix.
    * @param dim Side length of the square matrix.
    */
-  explicit DynamicMatrix(std::int64_t dim);
+  explicit DynamicMatrix(int64_t dim);
 
   /**
    * @brief Creates a dynamic matrix from a fixed 2x2 matrix.
@@ -577,7 +633,7 @@ public:
    * @param dim Side length of the identity matrix.
    * @return Identity matrix with ones on the diagonal.
    */
-  [[nodiscard]] static DynamicMatrix identity(std::int64_t dim);
+  [[nodiscard]] static DynamicMatrix identity(int64_t dim);
 
   /**
    * @brief Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
@@ -590,13 +646,13 @@ public:
    * @brief Returns the number of rows.
    * @return Matrix dimension.
    */
-  [[nodiscard]] std::int64_t rows() const;
+  [[nodiscard]] int64_t rows() const;
 
   /**
    * @brief Returns the number of columns.
    * @return Matrix dimension.
    */
-  [[nodiscard]] std::int64_t cols() const;
+  [[nodiscard]] int64_t cols() const;
 
   /**
    * @brief Mutable element access.
@@ -604,7 +660,7 @@ public:
    * @param col Column index in `[0, dim)`.
    * @return Reference to the element at `(row, col)`.
    */
-  [[nodiscard]] Complex& operator()(std::int64_t row, std::int64_t col);
+  [[nodiscard]] Complex& operator()(int64_t row, int64_t col);
 
   /**
    * @brief Const element access.
@@ -612,7 +668,7 @@ public:
    * @param col Column index in `[0, dim)`.
    * @return Copy of the element at `(row, col)`.
    */
-  [[nodiscard]] Complex operator()(std::int64_t row, std::int64_t col) const;
+  [[nodiscard]] Complex operator()(int64_t row, int64_t col) const;
 
   /**
    * @brief Copies a 2x2 block into the bottom-right corner.
@@ -728,6 +784,40 @@ public:
   [[nodiscard]] DynamicMatrix operator*(const DynamicMatrix& rhs) const;
 
   /**
+   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
+   * @param lhs Left-hand factor.
+   */
+  void premultiplyBy(const DynamicMatrix& lhs);
+
+  /**
+   * @brief Premultiplies by a single-qubit gate embedded on @p qubitIndex.
+   *
+   * Uses the same MSB-first wire convention as @ref Matrix2x2::embedInNqubit.
+   *
+   * @param gate Single-qubit unitary.
+   * @param numQubits Number of qubits in this matrix.
+   * @param qubitIndex Target wire index.
+   */
+  void premultiplyByEmbedded1Q(const Matrix2x2& gate, size_t numQubits,
+                               size_t qubitIndex);
+
+  /**
+   * @brief Premultiplies by a two-qubit gate embedded on @p q0Index and @p
+   * q1Index.
+   *
+   * @p gate must already be reordered for wires @p q0Index and @p q1Index when
+   * @p numQubits is 2. Uses the same MSB-first convention as @ref
+   * Matrix4x4::embedInNqubit.
+   *
+   * @param gate Two-qubit unitary.
+   * @param numQubits Number of qubits in this matrix.
+   * @param q0Index First target wire index.
+   * @param q1Index Second target wire index.
+   */
+  void premultiplyByEmbedded2Q(const Matrix4x4& gate, size_t numQubits,
+                               size_t q0Index, size_t q1Index);
+
+  /**
    * @brief Element-wise scaling by a complex scalar.
    * @param scalar Factor applied to every matrix entry.
    * @return Scaled copy of this matrix.
@@ -749,25 +839,32 @@ public:
    */
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
+  /**
+   * @brief Computes the eigendecomposition of this square matrix.
+   *
+   * Dispatches by dimension: empty matrices return `std::nullopt`; `1x1`,
+   * `2x2`, and `4x4` delegate to the corresponding fixed-size @ref
+   * eigenDecomposition members (lifting to @ref EigenDecomposition where
+   * needed); all other square sizes use an internal EISPACK-based solver
+   * (`corth`/`comqr2`).
+   *
+   * @return Eigenpairs, or `std::nullopt` if this matrix is empty or the
+   * solver does not converge.
+   */
+  [[nodiscard]] std::optional<EigenDecomposition> eigenDecomposition() const;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
 
 /**
- * @brief Type trait for the four supported matrix types.
- *
- * True for @ref Matrix1x1, @ref Matrix2x2, @ref Matrix4x4, and @ref
- * DynamicMatrix.
- *
- * @tparam T Candidate type.
+ * @brief Concept for the four supported matrix types.
  */
 template <typename T>
-inline constexpr bool
-    is_supported_matrix_v = // NOLINT(readability-identifier-naming)
-    std::disjunction_v<std::is_same<T, Matrix1x1>, std::is_same<T, Matrix2x2>,
-                       std::is_same<T, Matrix4x4>,
-                       std::is_same<T, DynamicMatrix>>;
+concept SupportedMatrix =
+    std::same_as<T, Matrix1x1> || std::same_as<T, Matrix2x2> ||
+    std::same_as<T, Matrix4x4> || std::same_as<T, DynamicMatrix>;
 
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`). Provided so generic code can scale a matrix from
@@ -788,11 +885,70 @@ inline constexpr bool
  * corresponding orthonormal eigenvectors as columns (column `j` is the
  * eigenvector for `eigenvalues[j]`).
  */
-struct SymmetricEigen4 {
+struct SymmetricEigenDecomposition4x4 {
   /// Eigenvalues in ascending order.
   std::array<double, 4> eigenvalues{};
   /// Orthonormal eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   Matrix4x4 eigenvectors{};
+};
+
+/**
+ * @brief Eigenvalues and eigenvectors of a complex `4x4` matrix.
+ *
+ * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+ * eigenvector for `eigenvalues[j]`).
+ */
+struct EigenDecomposition4x4 {
+  /// Eigenvalues in no particular order.
+  std::array<Complex, 4> eigenvalues{};
+  /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
+  Matrix4x4 eigenvectors{};
+};
+
+/**
+ * @brief Eigenvalues and eigenvectors of a complex `2x2` matrix.
+ *
+ * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+ * eigenvector for `eigenvalues[j]`).
+ */
+struct EigenDecomposition2x2 {
+  /// Eigenvalues in no particular order.
+  std::array<Complex, 2> eigenvalues{};
+  /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
+  Matrix2x2 eigenvectors{};
+};
+
+/**
+ * @brief Eigenvalues and eigenvectors of a square complex matrix.
+ *
+ * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+ * eigenvector for `eigenvalues[j]`).
+ */
+struct EigenDecomposition {
+  /// Eigenvalues in no particular order.
+  SmallVector<Complex, 8> eigenvalues;
+  /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
+  DynamicMatrix eigenvectors;
+
+  /**
+   * @brief Lifts a fixed `2x2` eigendecomposition to dynamic storage.
+   *
+   * @param eigen2 Fixed-size eigenpairs from @ref
+   * Matrix2x2::eigenDecomposition.
+   * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
+   */
+  [[nodiscard]] static EigenDecomposition
+  from(const EigenDecomposition2x2& eigen2);
+
+  /**
+   * @brief Lifts a fixed `4x4` eigendecomposition to dynamic storage.
+   *
+   * @param eigen4 Fixed-size eigenpairs from @ref
+   * Matrix4x4::eigenDecomposition.
+   * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
+   */
+  [[nodiscard]] static EigenDecomposition
+  from(const EigenDecomposition4x4& eigen4);
 };
 
 } // namespace mlir::qco

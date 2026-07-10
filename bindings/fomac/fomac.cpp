@@ -117,13 +117,13 @@ Returns:
     List of available devices.)pb");
 
   // Job class
-  auto job = nb::class_<fomac::Session::Job>(
+  auto job = nb::class_<fomac::Job>(
       m, "Job", "A job represents a submitted quantum program execution.");
 
-  job.def("check", &fomac::Session::Job::check,
+  job.def("check", &fomac::Job::check,
           "Returns the current status of the job.");
 
-  job.def("wait", &fomac::Session::Job::wait, "timeout"_a = 0,
+  job.def("wait", &fomac::Job::wait, "timeout"_a = 0,
           R"pb(Waits for the job to complete.
 
 Args:
@@ -132,41 +132,38 @@ Args:
 Returns:
     True if the job completed within the timeout, False otherwise.)pb");
 
-  job.def("cancel", &fomac::Session::Job::cancel, "Cancels the job.");
+  job.def("cancel", &fomac::Job::cancel, "Cancels the job.");
 
-  job.def("get_shots", &fomac::Session::Job::getShots,
+  job.def("get_shots", &fomac::Job::getShots,
           "Returns the raw shot results from the job.");
 
-  job.def("get_counts", &fomac::Session::Job::getCounts,
+  job.def("get_counts", &fomac::Job::getCounts,
           "Returns the measurement counts from the job.");
 
-  job.def("get_dense_statevector", &fomac::Session::Job::getDenseStateVector,
+  job.def("get_dense_statevector", &fomac::Job::getDenseStateVector,
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_dense_probabilities",
-          &fomac::Session::Job::getDenseProbabilities,
+  job.def("get_dense_probabilities", &fomac::Job::getDenseProbabilities,
           "Returns the dense probabilities from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_statevector", &fomac::Session::Job::getSparseStateVector,
+  job.def("get_sparse_statevector", &fomac::Job::getSparseStateVector,
           "Returns the sparse statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_probabilities",
-          &fomac::Session::Job::getSparseProbabilities,
+  job.def("get_sparse_probabilities", &fomac::Job::getSparseProbabilities,
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
-  job.def_prop_ro("id", &fomac::Session::Job::getId, "The job ID.");
+  job.def_prop_ro("id", &fomac::Job::getId, "The job ID.");
 
-  job.def_prop_ro("program_format", &fomac::Session::Job::getProgramFormat,
+  job.def_prop_ro("program_format", &fomac::Job::getProgramFormat,
                   "The format of the submitted program.");
 
-  job.def_prop_ro("program", &fomac::Session::Job::getProgram,
-                  "The submitted program.");
+  job.def_prop_ro("program", &fomac::Job::getProgram, "The submitted program.");
 
-  job.def_prop_ro("num_shots", &fomac::Session::Job::getNumShots,
+  job.def_prop_ro("num_shots", &fomac::Job::getNumShots,
                   "The number of shots.");
 
   job.def(nb::self == nb::self,
@@ -203,7 +200,7 @@ Returns:
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
   // Device class
-  auto device = nb::class_<fomac::Session::Device>(
+  auto device = nb::class_<fomac::Device>(
       m, "Device",
       "A device represents a quantum device with its properties and "
       "capabilities.");
@@ -217,68 +214,66 @@ Returns:
       .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
       .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
 
-  device.def("name", &fomac::Session::Device::getName,
+  device.def("name", &fomac::Device::getName,
              "Returns the name of the device.");
 
-  device.def("version", &fomac::Session::Device::getVersion,
+  device.def("version", &fomac::Device::getVersion,
              "Returns the version of the device.");
 
-  device.def("status", &fomac::Session::Device::getStatus,
+  device.def("status", &fomac::Device::getStatus,
              "Returns the current status of the device.");
 
-  device.def("library_version", &fomac::Session::Device::getLibraryVersion,
+  device.def("library_version", &fomac::Device::getLibraryVersion,
              "Returns the version of the library used to define the device.");
 
-  device.def("qubits_num", &fomac::Session::Device::getQubitsNum,
+  device.def("qubits_num", &fomac::Device::getQubitsNum,
              "Returns the number of qubits available on the device.");
 
-  device.def("sites", &fomac::Session::Device::getSites,
+  device.def("sites", &fomac::Device::getSites,
              "Returns the list of all sites (zone and regular sites) available "
              "on the device.");
 
-  device.def("regular_sites", &fomac::Session::Device::getRegularSites,
+  device.def("regular_sites", &fomac::Device::getRegularSites,
              "Returns the list of regular sites (without zone sites) available "
              "on the device.");
 
-  device.def("zones", &fomac::Session::Device::getZones,
+  device.def("zones", &fomac::Device::getZones,
              "Returns the list of zone sites (without regular sites) available "
              "on the device.");
 
-  device.def("operations", &fomac::Session::Device::getOperations,
+  device.def("operations", &fomac::Device::getOperations,
              "Returns the list of operations supported by the device.");
 
-  device.def("coupling_map", &fomac::Session::Device::getCouplingMap,
+  device.def("coupling_map", &fomac::Device::getCouplingMap,
              "Returns the coupling map of the device as a list of site pairs.");
 
-  device.def("needs_calibration", &fomac::Session::Device::getNeedsCalibration,
+  device.def("needs_calibration", &fomac::Device::getNeedsCalibration,
              "Returns whether the device needs calibration.");
 
-  device.def("length_unit", &fomac::Session::Device::getLengthUnit,
+  device.def("length_unit", &fomac::Device::getLengthUnit,
              "Returns the unit of length used by the device.");
 
-  device.def("length_scale_factor",
-             &fomac::Session::Device::getLengthScaleFactor,
+  device.def("length_scale_factor", &fomac::Device::getLengthScaleFactor,
              "Returns the scale factor for length used by the device.");
 
-  device.def("duration_unit", &fomac::Session::Device::getDurationUnit,
+  device.def("duration_unit", &fomac::Device::getDurationUnit,
              "Returns the unit of duration used by the device.");
 
-  device.def("duration_scale_factor",
-             &fomac::Session::Device::getDurationScaleFactor,
+  device.def("duration_scale_factor", &fomac::Device::getDurationScaleFactor,
              "Returns the scale factor for duration used by the device.");
 
-  device.def("min_atom_distance", &fomac::Session::Device::getMinAtomDistance,
+  device.def("min_atom_distance", &fomac::Device::getMinAtomDistance,
              "Returns the minimum atom distance on the device.");
 
   device.def("supported_program_formats",
-             &fomac::Session::Device::getSupportedProgramFormats,
+             &fomac::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
-  device.def("submit_job", &fomac::Session::Device::submitJob, "program"_a,
+  device.def("submit_job", &fomac::Device::submitJob, "program"_a,
              "program_format"_a, "num_shots"_a,
              nb::rv_policy::reference_internal, "Submits a job to the device.");
 
-  device.def("__repr__", [](const fomac::Session::Device& dev) {
+  device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
 
@@ -288,50 +283,48 @@ Returns:
              nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Site class
-  auto site = nb::class_<fomac::Session::Device::Site>(
+  auto site = nb::class_<fomac::Site>(
       device, "Site",
       "A site represents a potential qubit location on a quantum device.");
 
-  site.def("index", &fomac::Session::Device::Site::getIndex,
-           "Returns the index of the site.");
+  site.def("index", &fomac::Site::getIndex, "Returns the index of the site.");
 
-  site.def("t1", &fomac::Session::Device::Site::getT1,
+  site.def("t1", &fomac::Site::getT1,
            "Returns the T1 coherence time of the site.");
 
-  site.def("t2", &fomac::Session::Device::Site::getT2,
+  site.def("t2", &fomac::Site::getT2,
            "Returns the T2 coherence time of the site.");
 
-  site.def("name", &fomac::Session::Device::Site::getName,
-           "Returns the name of the site.");
+  site.def("name", &fomac::Site::getName, "Returns the name of the site.");
 
-  site.def("x_coordinate", &fomac::Session::Device::Site::getXCoordinate,
+  site.def("x_coordinate", &fomac::Site::getXCoordinate,
            "Returns the x coordinate of the site.");
 
-  site.def("y_coordinate", &fomac::Session::Device::Site::getYCoordinate,
+  site.def("y_coordinate", &fomac::Site::getYCoordinate,
            "Returns the y coordinate of the site.");
 
-  site.def("z_coordinate", &fomac::Session::Device::Site::getZCoordinate,
+  site.def("z_coordinate", &fomac::Site::getZCoordinate,
            "Returns the z coordinate of the site.");
 
-  site.def("is_zone", &fomac::Session::Device::Site::isZone,
+  site.def("is_zone", &fomac::Site::isZone,
            "Returns whether the site is a zone.");
 
-  site.def("x_extent", &fomac::Session::Device::Site::getXExtent,
+  site.def("x_extent", &fomac::Site::getXExtent,
            "Returns the x extent of the site.");
 
-  site.def("y_extent", &fomac::Session::Device::Site::getYExtent,
+  site.def("y_extent", &fomac::Site::getYExtent,
            "Returns the y extent of the site.");
 
-  site.def("z_extent", &fomac::Session::Device::Site::getZExtent,
+  site.def("z_extent", &fomac::Site::getZExtent,
            "Returns the z extent of the site.");
 
-  site.def("module_index", &fomac::Session::Device::Site::getModuleIndex,
+  site.def("module_index", &fomac::Site::getModuleIndex,
            "Returns the index of the module the site belongs to.");
 
-  site.def("submodule_index", &fomac::Session::Device::Site::getSubmoduleIndex,
+  site.def("submodule_index", &fomac::Site::getSubmoduleIndex,
            "Returns the index of the submodule the site belongs to.");
 
-  site.def("__repr__", [](const fomac::Session::Device::Site& s) {
+  site.def("__repr__", [](const fomac::Site& s) {
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
 
@@ -341,78 +334,68 @@ Returns:
            nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Operation class
-  auto operation = nb::class_<fomac::Session::Device::Operation>(
+  auto operation = nb::class_<fomac::Operation>(
       device, "Operation",
       "An operation represents a quantum operation that can be performed on a "
       "quantum device.");
 
-  operation.def("name", &fomac::Session::Device::Operation::getName,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Session::Device::Site>{},
+  operation.def("name", &fomac::Operation::getName,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the name of the operation.");
 
-  operation.def("qubits_num", &fomac::Session::Device::Operation::getQubitsNum,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Session::Device::Site>{},
+  operation.def("qubits_num", &fomac::Operation::getQubitsNum,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of qubits the operation acts on.");
 
-  operation.def(
-      "parameters_num", &fomac::Session::Device::Operation::getParametersNum,
-      "sites"_a.sig("...") = std::vector<fomac::Session::Device::Site>{},
-      "params"_a.sig("...") = std::vector<double>{},
-      "Returns the number of parameters the operation has.");
+  operation.def("parameters_num", &fomac::Operation::getParametersNum,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
+                "Returns the number of parameters the operation has.");
 
-  operation.def("duration", &fomac::Session::Device::Operation::getDuration,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Session::Device::Site>{},
+  operation.def("duration", &fomac::Operation::getDuration,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the duration of the operation.");
 
-  operation.def("fidelity", &fomac::Session::Device::Operation::getFidelity,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Session::Device::Site>{},
+  operation.def("fidelity", &fomac::Operation::getFidelity,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the fidelity of the operation.");
 
-  operation.def("interaction_radius",
-                &fomac::Session::Device::Operation::getInteractionRadius,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Session::Device::Site>{},
+  operation.def("interaction_radius", &fomac::Operation::getInteractionRadius,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the interaction radius of the operation.");
 
-  operation.def(
-      "blocking_radius", &fomac::Session::Device::Operation::getBlockingRadius,
-      "sites"_a.sig("...") = std::vector<fomac::Session::Device::Site>{},
-      "params"_a.sig("...") = std::vector<double>{},
-      "Returns the blocking radius of the operation.");
+  operation.def("blocking_radius", &fomac::Operation::getBlockingRadius,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
+                "Returns the blocking radius of the operation.");
 
-  operation.def(
-      "idling_fidelity", &fomac::Session::Device::Operation::getIdlingFidelity,
-      "sites"_a.sig("...") = std::vector<fomac::Session::Device::Site>{},
-      "params"_a.sig("...") = std::vector<double>{},
-      "Returns the idling fidelity of the operation.");
+  operation.def("idling_fidelity", &fomac::Operation::getIdlingFidelity,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
+                "Returns the idling fidelity of the operation.");
 
-  operation.def("is_zoned", &fomac::Session::Device::Operation::isZoned,
+  operation.def("is_zoned", &fomac::Operation::isZoned,
                 "Returns whether the operation is zoned.");
 
-  operation.def("sites", &fomac::Session::Device::Operation::getSites,
+  operation.def("sites", &fomac::Operation::getSites,
                 "Returns the list of sites the operation can be performed on.");
 
-  operation.def("site_pairs", &fomac::Session::Device::Operation::getSitePairs,
+  operation.def("site_pairs", &fomac::Operation::getSitePairs,
                 "Returns the list of site pairs the local 2-qubit operation "
                 "can be performed on.");
 
   operation.def("mean_shuttling_speed",
-                &fomac::Session::Device::Operation::getMeanShuttlingSpeed,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Session::Device::Site>{},
+                &fomac::Operation::getMeanShuttlingSpeed,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the mean shuttling speed of the operation.");
 
-  operation.def("__repr__", [](const fomac::Session::Device::Operation& op) {
+  operation.def("__repr__", [](const fomac::Operation& op) {
     return "<Operation name=\"" + op.getName() + "\">";
   });
 
@@ -436,7 +419,7 @@ Returns:
          const std::optional<std::string>& custom3 = std::nullopt,
          const std::optional<std::string>& custom4 = std::nullopt,
          const std::optional<std::string>& custom5 =
-             std::nullopt) -> fomac::Session::Device {
+             std::nullopt) -> fomac::Device {
         const qdmi::DeviceSessionConfig config{.baseUrl = baseUrl,
                                                .token = token,
                                                .authFile = authFile,
@@ -450,7 +433,7 @@ Returns:
                                                .custom5 = custom5};
         auto* const qdmiDevice = qdmi::Driver::get().addDynamicDeviceLibrary(
             libraryPath, prefix, config);
-        return fomac::Session::Device::fromQDMIDevice(qdmiDevice);
+        return fomac::Session::createSessionlessDevice(qdmiDevice);
       },
       "library_path"_a, "prefix"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
