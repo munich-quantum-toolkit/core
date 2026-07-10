@@ -865,40 +865,29 @@ private:
     return status;
   }
 
-  LogicalResult emitBroadcastedGateCall(
-      const GateInfo& gate, llvm::StringRef id, ValueRange parameters,
-      llvm::ArrayRef<Modifier> modifiers,
-      const SmallVector<SmallVector<Value>>& operands, llvm::SMLoc loc) {
-    const auto broadcastWidth = operands.front().size();
-    for (const auto& operand : operands) {
-      if (operand.size() != broadcastWidth) {
-        return error(loc, "all broadcasting operands must have the same width");
-      }
-    }
-
-    auto split =
-        splitControlsAndTargets<SmallVector<Value>>(modifiers, operands, loc);
+  /// Emit a single (non-broadcast) invocation of a gate on already-resolved
+  /// single-qubit @p operands.
+  LogicalResult
+  emitGateInvocation(const std::variant<GateInfo, StoredGate>& definition,
+                     llvm::StringRef id, ValueRange parameters,
+                     llvm::ArrayRef<Modifier> modifiers,
+                     const SmallVector<Value>& operands, llvm::SMLoc loc) {
+    auto split = splitControlsAndTargets<Value>(modifiers, operands, loc);
     if (failed(split)) {
       return failure();
     }
+    if (const auto* compound = std::get_if<StoredGate>(&definition)) {
+      return emitCompoundGate(*compound, parameters, split->targets,
+                              split->posControls, split->negControls,
+                              split->invert, loc);
+    }
+    const auto& gate = std::get<GateInfo>(definition);
     auto gateFn = resolveStandardGate(gate, id, parameters, loc);
     if (failed(gateFn)) {
       return failure();
     }
-
-    for (size_t b = 0; b < broadcastWidth; ++b) {
-      const auto slice = [&](const SmallVector<SmallVector<Value>>& lists) {
-        SmallVector<Value> qubits;
-        qubits.reserve(lists.size());
-        for (const auto& list : lists) {
-          qubits.push_back(list[b]);
-        }
-        return qubits;
-      };
-      emitStandardGate(**gateFn, parameters, slice(split->targets),
-                       slice(split->posControls), slice(split->negControls),
-                       split->invert);
-    }
+    emitStandardGate(**gateFn, parameters, split->targets, split->posControls,
+                     split->negControls, split->invert);
     return success();
   }
 
@@ -919,55 +908,59 @@ private:
       parameters.push_back(*value);
     }
 
-    SmallVector<Value> operands;
-    SmallVector<SmallVector<Value>> broadcasting;
+    // Resolve operands in order, remembering which are whole registers. If any
+    // operand is a register, the call is broadcast over the qubits of the
+    // register(s); all such registers must have the same length, and any
+    // single-qubit operands are repeated in each iteration.
+    SmallVector<std::variant<Value, SmallVector<Value>>> resolvedOperands;
+    resolvedOperands.reserve(call.operands.size());
+    std::optional<size_t> broadcastWidth;
     for (const auto& operand : call.operands) {
       auto resolved = resolveOperand(operand, scope);
       if (failed(resolved)) {
         return failure();
       }
-      if (const auto* value = std::get_if<Value>(&*resolved)) {
-        operands.push_back(*value);
-      } else {
-        broadcasting.push_back(std::get<SmallVector<Value>>(*resolved));
+      if (const auto* reg = std::get_if<SmallVector<Value>>(&*resolved)) {
+        if (broadcastWidth && *broadcastWidth != reg->size()) {
+          return error(call.loc,
+                       "all broadcasting operands must have the same width");
+        }
+        broadcastWidth = reg->size();
+      }
+      resolvedOperands.push_back(std::move(*resolved));
+    }
+
+    // No registers: a single invocation on the resolved qubits.
+    if (!broadcastWidth) {
+      SmallVector<Value> operands;
+      operands.reserve(resolvedOperands.size());
+      for (const auto& resolved : resolvedOperands) {
+        operands.push_back(std::get<Value>(resolved));
+      }
+      return emitGateInvocation(it->second, call.identifier, parameters,
+                                call.modifiers, operands, call.loc);
+    }
+
+    if (std::holds_alternative<StoredGate>(it->second)) {
+      return error(call.loc,
+                   "broadcasted compound gates are not supported yet");
+    }
+
+    for (size_t b = 0; b < *broadcastWidth; ++b) {
+      SmallVector<Value> operands;
+      operands.reserve(resolvedOperands.size());
+      for (const auto& resolved : resolvedOperands) {
+        if (const auto* value = std::get_if<Value>(&resolved)) {
+          operands.push_back(*value);
+        } else {
+          operands.push_back(std::get<SmallVector<Value>>(resolved)[b]);
+        }
+      }
+      if (failed(emitGateInvocation(it->second, call.identifier, parameters,
+                                    call.modifiers, operands, call.loc))) {
+        return failure();
       }
     }
-
-    if (!broadcasting.empty() && !operands.empty()) {
-      return error(call.loc, "gate operands must be single qubits or quantum "
-                             "registers and not a mix of both");
-    }
-
-    if (!broadcasting.empty()) {
-      if (std::holds_alternative<StoredGate>(it->second)) {
-        return error(call.loc,
-                     "broadcasted compound gates are not supported yet");
-      }
-      return emitBroadcastedGateCall(std::get<GateInfo>(it->second),
-                                     call.identifier, parameters,
-                                     call.modifiers, broadcasting, call.loc);
-    }
-
-    auto split =
-        splitControlsAndTargets<Value>(call.modifiers, operands, call.loc);
-    if (failed(split)) {
-      return failure();
-    }
-
-    if (const auto* compound = std::get_if<StoredGate>(&it->second)) {
-      return emitCompoundGate(*compound, parameters, split->targets,
-                              split->posControls, split->negControls,
-                              split->invert, call.loc);
-    }
-
-    const auto& gate = std::get<GateInfo>(it->second);
-    auto gateFn =
-        resolveStandardGate(gate, call.identifier, parameters, call.loc);
-    if (failed(gateFn)) {
-      return failure();
-    }
-    emitStandardGate(**gateFn, parameters, split->targets, split->posControls,
-                     split->negControls, split->invert);
     return success();
   }
 

@@ -141,6 +141,17 @@ static void nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
   });
 }
 
+// `cx q, r;` with a register `q` and a single qubit `r` broadcasts over the
+// register: the register is indexed per iteration while the single qubit is
+// repeated.
+static void broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto r = b.allocQubit();
+  b.cx(q[0], r);
+  b.cx(q[1], r);
+  b.cx(q[2], r);
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -464,4 +475,13 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{
             "NestedForLoopCtrlOpWithExtractedQubit",
             qasm::nestedForLoopCtrlOpWithExtractedQubit,
-            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)},
+        QASM3TranslationTestCase{
+            "BroadcastRegisterAndQubit",
+            R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+qubit r;
+cx q, r;
+)qasm",
+            MQT_NAMED_BUILDER(broadcastRegisterAndQubit)}));
