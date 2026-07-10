@@ -362,7 +362,7 @@ public:
       if (failed(emitted)) {
         return failure();
       }
-      parameterConstants.insert(id, *emitted);
+      numericConstants.insert(id, *emitted);
       return success();
     }
     case VariableKind::Int: {
@@ -833,9 +833,9 @@ private:
           static_cast<size_t>(std::distance(targets.begin(), it)));
     }
 
-    ValueScope parameterScope(parameterConstants);
+    ValueScope parameterScope(numericConstants);
     for (const auto& [name, value] : zip_equal(gate.parameters, parameters)) {
-      parameterConstants.insert(name, value);
+      numericConstants.insert(name, value);
     }
 
     auto status = success();
@@ -1165,7 +1165,7 @@ private:
   }
 
   FailureOr<Value> resolveParameter(StringRef name, SMLoc loc) {
-    if (auto value = parameterConstants.lookup(name)) {
+    if (auto value = numericConstants.lookup(name)) {
       return value;
     }
     // An integer constant used as an angle is materialized as an `f64`.
@@ -1285,8 +1285,8 @@ private:
 
   StringSet<> declaredNames;
 
-  ValueTable parameterConstants;
-  ValueScope parameterConstantsScope{parameterConstants};
+  ValueTable numericConstants;
+  ValueScope numericConstantsScope{numericConstants};
   IntegerTable integerConstants;
   IntegerScope integerConstantsScope{integerConstants};
   ValueTable booleanConstants;
