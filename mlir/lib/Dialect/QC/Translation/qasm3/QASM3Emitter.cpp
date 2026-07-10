@@ -57,6 +57,7 @@ namespace {
 
 using qasm3::GateInfo;
 
+using detail::BitReference;
 using detail::Condition;
 using detail::Expr;
 using detail::GateCall;
@@ -64,17 +65,18 @@ using detail::Lexer;
 using detail::Modifier;
 using detail::Operand;
 using detail::Parser;
-using detail::Reference;
 
-/// Signature: (builder, gate operands, gate parameters).
-using GateFn = std::function<void(QCProgramBuilder&, ValueRange, ValueRange)>;
-
-/// A stored compound-gate definition. Array members are bump-allocated by the
-/// parser and remain valid for the duration of the import.
+/**
+ * @brief A stored compound-gate definition.
+ *
+ * @details
+ * Array members are bump-allocated by the parser and remain valid for the
+ * duration of the import.
+ */
 struct StoredGate {
-  llvm::ArrayRef<llvm::StringRef> parameters;
-  llvm::ArrayRef<llvm::StringRef> targets;
-  llvm::ArrayRef<GateCall> body;
+  ArrayRef<StringRef> parameters;
+  ArrayRef<StringRef> targets;
+  ArrayRef<GateCall> body;
 };
 
 /**
@@ -93,7 +95,7 @@ struct QubitBinding {
 using QubitScope = llvm::StringMap<QubitBinding>;
 
 /// Look up a built-in numeric constant and emit it as an `f64`-typed value.
-std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
+std::optional<Value> lookupBuiltinConstant(StringRef name,
                                            QCProgramBuilder& builder) {
   auto constant = [&](double value) -> Value {
     return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
@@ -110,6 +112,10 @@ std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
   }
   return std::nullopt;
 }
+
+/// Signature: (builder, gate operands, gate parameters). Owns the callable, as
+/// `GATE_DISPATCH` outlives the lambdas that build it.
+using GateFn = std::function<void(QCProgramBuilder&, ValueRange, ValueRange)>;
 
 /// Build the table mapping each gate identifier to a `QCProgramBuilder`
 /// emitter.
@@ -245,13 +251,13 @@ llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Lowers OpenQASM 3 parse events to QC-dialect operations.
+ * @brief Lowers OpenQASM 3 parse events to QC operations.
  *
  * @details
  * Models the sink concept consumed by `Parser`. All events emit eagerly via the
- * `QCProgramBuilder` and report errors as diagnostics through `LogicalResult`;
- * name resolution, semantic validation, and target-specific restrictions are
- * handled here.
+ * `QCProgramBuilder` and report errors as diagnostics through `LogicalResult`.
+ * Handles name resolution, semantic validation, and target-specific
+ * restrictions.
  */
 class QCEmitter {
 public:
@@ -263,18 +269,26 @@ public:
 
   //===--- Diagnostics --------------------------------------------------===//
 
-  LogicalResult error(llvm::SMLoc loc, const Twine& message) {
-    return emitError(translate(loc), message);
+  LogicalResult error(SMLoc loc, const Twine& message) {
+    Location location = UnknownLoc::get(builder.getContext());
+    if (loc.isValid()) {
+      const auto [line, col] = sourceMgr.getLineAndColumn(loc);
+      location =
+          FileLineColLoc::get(builder.getStringAttr("<qasm3>"), line, col);
+    }
+    return emitError(location, message);
   }
 
-  //===--- Program events -----------------------------------------------===//
+  //===--- Version ------------------------------------------------------===//
 
   LogicalResult version(double /*version*/) {
-    // The version declaration has no effect on translation.
+    // The version declaration has no effect on the translation.
     return success();
   }
 
-  LogicalResult include(llvm::SMLoc loc, llvm::StringRef filename) {
+  //===--- Include ------------------------------------------------------===//
+
+  LogicalResult include(SMLoc loc, StringRef filename) {
     if (filename != "stdgates.inc" && filename != "qelib1.inc") {
       return error(loc, "unsupported include '" + filename +
                             "'; only 'stdgates.inc' and 'qelib1.inc' are "
@@ -283,26 +297,28 @@ public:
     return success();
   }
 
-  LogicalResult scalarDecl(llvm::SMLoc loc, detail::ScalarType type,
-                           llvm::StringRef id, const Expr* initializer) {
+  //===--- Declarations and assignments ---------------------------------===//
+
+  LogicalResult numericDecl(SMLoc loc, detail::NumericType type, StringRef id,
+                            const Expr* initializer) {
     if (failed(declare(loc, id))) {
       return failure();
     }
     switch (type) {
-    case detail::ScalarType::Float:
+    case detail::NumericType::Float:
       variableKinds[id] = VariableKind::Float;
       break;
-    case detail::ScalarType::Int:
+    case detail::NumericType::Int:
       variableKinds[id] = VariableKind::Int;
       break;
     }
     if (initializer != nullptr) {
-      return assignScalar(id, *initializer);
+      return assignNumeric(id, *initializer);
     }
     return success();
   }
 
-  LogicalResult boolDecl(llvm::SMLoc loc, llvm::StringRef id,
+  LogicalResult boolDecl(SMLoc loc, StringRef id,
                          const Condition* initializer) {
     if (failed(declare(loc, id))) {
       return failure();
@@ -314,18 +330,17 @@ public:
     return success();
   }
 
-  LogicalResult scalarAssign(llvm::SMLoc /*loc*/, llvm::StringRef id,
-                             const Expr& value) {
-    return assignScalar(id, value);
+  LogicalResult numericAssign(SMLoc /*loc*/, StringRef id, const Expr& value) {
+    return assignNumeric(id, value);
   }
 
-  LogicalResult boolAssign(llvm::SMLoc /*loc*/, llvm::StringRef id,
+  LogicalResult boolAssign(SMLoc /*loc*/, StringRef id,
                            const Condition& value) {
     return assignBool(id, value);
   }
 
   [[nodiscard]] std::optional<detail::ClassicalKind>
-  classicalKind(llvm::StringRef id) const {
+  classicalKind(StringRef id) const {
     auto it = variableKinds.find(id);
     if (it == variableKinds.end()) {
       return std::nullopt;
@@ -334,10 +349,15 @@ public:
                                             : detail::ClassicalKind::Numeric;
   }
 
-  /// Bind (or rebind) a numeric scalar `id` to the value of @p value. Shared by
-  /// `scalarDecl` and `scalarAssign`.
-  LogicalResult assignScalar(llvm::StringRef id, const Expr& value) {
-    if (variableKinds.lookup(id) == VariableKind::Float) {
+  /**
+   * @brief Bind a numeric variable @p id to the value of @p value.
+   *
+   * @details
+   * Shared  by `numericDecl` and `numericAssign`.
+   */
+  LogicalResult assignNumeric(StringRef id, const Expr& value) {
+    switch (variableKinds.lookup(id)) {
+    case VariableKind::Float: {
       auto emitted = emitAngle(value);
       if (failed(emitted)) {
         return failure();
@@ -345,17 +365,26 @@ public:
       parameterConstants.insert(id, *emitted);
       return success();
     }
-    auto emitted = evaluateConstant(value);
-    if (failed(emitted)) {
-      return failure();
+    case VariableKind::Int: {
+      auto emitted = evaluateConstant(value);
+      if (failed(emitted)) {
+        return failure();
+      }
+      integerConstants.insert(id, *emitted);
+      return success();
     }
-    integerConstants.insert(id, *emitted);
-    return success();
+    default:
+      llvm_unreachable("unknown variable kind");
+    }
   }
 
-  /// Bind (or rebind) a boolean scalar `id`. Shared by `boolDecl` and
-  /// `boolAssign`.
-  LogicalResult assignBool(llvm::StringRef id, const Condition& value) {
+  /**
+   * @brief Bind a boolean variable @p id to the value of @p value.
+   *
+   * @details
+   * Shared  by `boolDecl` and `boolAssign`.
+   */
+  LogicalResult assignBool(StringRef id, const Condition& value) {
     auto emitted = emitCondition(value);
     if (failed(emitted)) {
       return failure();
@@ -364,8 +393,7 @@ public:
     return success();
   }
 
-  LogicalResult qubitRegister(llvm::SMLoc loc, llvm::StringRef id,
-                              const Expr* size) {
+  LogicalResult qubitRegister(SMLoc loc, StringRef id, const Expr* size) {
     if (failed(declare(loc, id))) {
       return failure();
     }
@@ -383,8 +411,7 @@ public:
     return success();
   }
 
-  LogicalResult classicalRegister(llvm::SMLoc loc, llvm::StringRef id,
-                                  const Expr* size) {
+  LogicalResult classicalRegister(SMLoc loc, StringRef id, const Expr* size) {
     if (failed(declare(loc, id))) {
       return failure();
     }
@@ -400,9 +427,9 @@ public:
     return success();
   }
 
-  //===--- Measurement, reset, barrier ----------------------------------===//
+  //===--- Measure ------------------------------------------------------===//
 
-  LogicalResult measure(llvm::SMLoc loc, const Reference& target,
+  LogicalResult measure(SMLoc loc, const BitReference& target,
                         const Operand& operand) {
     auto bits = resolveClassicalBits(target);
     if (failed(bits)) {
@@ -413,8 +440,8 @@ public:
       return failure();
     }
     SmallVector<Value> qubits;
-    if (std::holds_alternative<Value>(*resolved)) {
-      qubits.push_back(std::get<Value>(*resolved));
+    if (auto* qubit = std::get_if<Value>(&*resolved)) {
+      qubits.push_back(*qubit);
     } else {
       qubits = std::get<SmallVector<Value>>(*resolved);
     }
@@ -422,7 +449,7 @@ public:
       return error(loc, "the classical register and the quantum register must "
                         "have the same width");
     }
-    for (const auto& [bit, qubit] : llvm::zip_equal(*bits, qubits)) {
+    for (const auto& [bit, qubit] : zip_equal(*bits, qubits)) {
       auto result = MeasureOp::create(
                         builder, qubit, builder.getStringAttr(bit.registerName),
                         builder.getI64IntegerAttr(bit.registerSize),
@@ -438,13 +465,15 @@ public:
     return success();
   }
 
-  LogicalResult reset(llvm::SMLoc /*loc*/, const Operand& operand) {
+  //===--- Reset --------------------------------------------------------===//
+
+  LogicalResult reset(SMLoc /*loc*/, const Operand& operand) {
     auto resolved = resolveOperand(operand, qubitRegisters);
     if (failed(resolved)) {
       return failure();
     }
-    if (std::holds_alternative<Value>(*resolved)) {
-      builder.reset(std::get<Value>(*resolved));
+    if (auto* qubit = std::get_if<Value>(&*resolved)) {
+      builder.reset(*qubit);
     } else {
       for (auto qubit : std::get<SmallVector<Value>>(*resolved)) {
         builder.reset(qubit);
@@ -453,17 +482,19 @@ public:
     return success();
   }
 
-  LogicalResult barrier(llvm::SMLoc /*loc*/, llvm::ArrayRef<Operand> operands) {
+  //===--- Barrier ------------------------------------------------------===//
+
+  LogicalResult barrier(SMLoc /*loc*/, ArrayRef<Operand> operands) {
     SmallVector<Value> qubits;
     for (const auto& operand : operands) {
       auto resolved = resolveOperand(operand, qubitRegisters);
       if (failed(resolved)) {
         return failure();
       }
-      if (std::holds_alternative<Value>(*resolved)) {
-        qubits.push_back(std::get<Value>(*resolved));
+      if (auto* qubit = std::get_if<Value>(&*resolved)) {
+        qubits.push_back(*qubit);
       } else {
-        llvm::append_range(qubits, std::get<SmallVector<Value>>(*resolved));
+        append_range(qubits, std::get<SmallVector<Value>>(*resolved));
       }
     }
     builder.barrier(qubits);
@@ -472,10 +503,10 @@ public:
 
   //===--- Gate definitions and calls -----------------------------------===//
 
-  LogicalResult gateDefinition(llvm::SMLoc loc, llvm::StringRef id,
-                               llvm::ArrayRef<llvm::StringRef> parameters,
-                               llvm::ArrayRef<llvm::StringRef> targets,
-                               llvm::ArrayRef<GateCall> body) {
+  LogicalResult gateDefinition(SMLoc loc, StringRef id,
+                               ArrayRef<StringRef> parameters,
+                               ArrayRef<StringRef> targets,
+                               ArrayRef<GateCall> body) {
     if (gates.contains(id)) {
       return error(loc, "gate '" + id + "' already declared");
     }
@@ -504,7 +535,7 @@ public:
 
   //===--- Control flow -------------------------------------------------===//
 
-  LogicalResult conditionOnly(llvm::SMLoc /*loc*/, const Condition& condition) {
+  LogicalResult ifConditionOnly(SMLoc /*loc*/, const Condition& condition) {
     return LogicalResult{emitCondition(condition)};
   }
 
@@ -513,19 +544,18 @@ public:
     OpBuilder::InsertPoint savedInsertionPoint;
   };
 
-  FailureOr<IfScope> ifBegin(llvm::SMLoc /*loc*/, const Condition& condition,
+  FailureOr<IfScope> ifBegin(SMLoc /*loc*/, const Condition& condition,
                              bool invert) {
-    auto value = emitCondition(condition);
-    if (failed(value)) {
+    auto condOrFailure = emitCondition(condition);
+    if (failed(condOrFailure)) {
       return failure();
     }
-    Value condValue = *value;
+    auto cond = *condOrFailure;
     if (invert) {
       auto trueValue = builder.boolConstant(true);
-      condValue =
-          arith::XOrIOp::create(builder, condValue, trueValue).getResult();
+      cond = arith::XOrIOp::create(builder, cond, trueValue).getResult();
     }
-    auto ifOp = scf::IfOp::create(builder, condValue, /*withElseRegion=*/false);
+    auto ifOp = scf::IfOp::create(builder, cond, /*withElseRegion=*/false);
     IfScope scope{.op = ifOp,
                   .savedInsertionPoint = builder.saveInsertionPoint()};
     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
@@ -546,8 +576,8 @@ public:
     return success();
   }
 
-  LogicalResult forStmt(llvm::SMLoc loc, llvm::StringRef variable,
-                        const Expr& start, const Expr& step, const Expr& stop,
+  LogicalResult forStmt(SMLoc loc, StringRef variable, const Expr& start,
+                        const Expr& step, const Expr& stop,
                         function_ref<LogicalResult()> body) {
     auto stepConstant = evaluateConstant(step);
     if (failed(stepConstant)) {
@@ -564,37 +594,35 @@ public:
       return failure();
     }
 
-    // OpenQASM 3's range is inclusive of the stop value.
+    // OpenQASM 3's range is inclusive of the stop value
     auto one =
         arith::ConstantOp::create(builder, builder.getIndexAttr(1)).getResult();
-    Value inclusiveStop =
+    auto inclusiveStop =
         arith::AddIOp::create(builder, *stopValue, one).getResult();
 
     ValueScope loopScope(loopVariables);
     ValueScope loadScope(dynamicallyLoadedQubits);
 
-    LogicalResult status = success();
+    auto status = success();
     builder.scfFor(*startValue, inclusiveStop, *stepValue, [&](Value iv) {
       loopVariables.insert(variable, iv);
-      if (succeeded(status)) {
-        status = body();
-      }
+      status = body();
     });
     return status;
   }
 
-  LogicalResult whileStmt(llvm::SMLoc /*loc*/, const Condition& condition,
+  LogicalResult whileStmt(SMLoc /*loc*/, const Condition& condition,
                           function_ref<LogicalResult()> body) {
-    LogicalResult status = success();
+    auto status = success();
     builder.scfWhile(
         [&] {
           ValueScope loadScope(dynamicallyLoadedQubits);
-          auto value = emitCondition(condition);
-          if (failed(value)) {
+          auto cond = emitCondition(condition);
+          if (failed(cond)) {
             status = failure();
             builder.scfCondition(builder.boolConstant(false));
           } else {
-            builder.scfCondition(*value);
+            builder.scfCondition(*cond);
           }
         },
         [&] {
@@ -607,108 +635,126 @@ public:
   }
 
 private:
-  using ScopedValueTable = llvm::ScopedHashTable<llvm::StringRef, Value>;
-  using ValueScope = llvm::ScopedHashTableScope<llvm::StringRef, Value>;
-  using IntegerTable = llvm::ScopedHashTable<llvm::StringRef, int64_t>;
-  using IntegerScope = llvm::ScopedHashTableScope<llvm::StringRef, int64_t>;
+  using ValueTable = llvm::ScopedHashTable<StringRef, Value>;
+  using ValueScope = llvm::ScopedHashTableScope<StringRef, Value>;
+  using IntegerTable = llvm::ScopedHashTable<StringRef, int64_t>;
+  using IntegerScope = llvm::ScopedHashTableScope<StringRef, int64_t>;
 
-  /// The declared type of a classical scalar variable, tracked so that
-  /// assignments know how to lower their right-hand side.
+  /**
+   * @brief The declared type of a classical scalar variable.
+   *
+   * @details
+   * Tracked so that assignments know how to lower their right-hand side.
+   */
   enum class VariableKind : uint8_t { Float, Int, Bool };
 
-  //===--- Locations ----------------------------------------------------===//
+  //===--- Declarations -------------------------------------------------===//
 
-  Location translate(llvm::SMLoc loc) {
-    if (!loc.isValid()) {
-      return UnknownLoc::get(builder.getContext());
-    }
-    const auto [line, col] = sourceMgr.getLineAndColumn(loc);
-    return FileLineColLoc::get(builder.getStringAttr("<qasm3>"), line, col);
-  }
-
-  //===--- Symbol declarations ------------------------------------------===//
-
-  LogicalResult declare(llvm::SMLoc loc, llvm::StringRef id) {
+  LogicalResult declare(SMLoc loc, StringRef id) {
     if (!declaredNames.insert(id).second) {
       return error(loc, "identifier '" + id + "' already declared");
     }
     return success();
   }
 
-  //===--- Conditions ---------------------------------------------------===//
+  //===--- Gate calls ---------------------------------------------------===//
 
-  FailureOr<Value> emitCondition(const Condition& condition) {
-    switch (condition.kind) {
-    case Condition::Kind::Measurement: {
-      auto resolved = resolveOperand(condition.operand, qubitRegisters);
-      if (failed(resolved)) {
-        return failure();
-      }
-      if (!std::holds_alternative<Value>(*resolved)) {
-        return error(condition.loc,
-                     "measurement condition must be a single qubit");
-      }
-      return builder.measure(std::get<Value>(*resolved));
+  LogicalResult emitGateCall(const GateCall& call, const QubitScope& scope) {
+    auto it = gates.find(call.identifier);
+    if (it == gates.end()) {
+      return error(call.loc, "no OpenQASM definition found for gate '" +
+                                 call.identifier + "'");
     }
-    case Condition::Kind::Bit:
-      // A bare identifier may name a declared `bool`; otherwise it is a
-      // classical bit reference.
-      if (condition.bit.index == nullptr) {
-        if (Value value = booleanConstants.lookup(condition.bit.identifier)) {
-          return value;
-        }
-      }
-      return lookupBitValue(condition.bit);
-    case Condition::Kind::Literal:
-      return builder.boolConstant(condition.literalValue);
-    case Condition::Kind::Not: {
-      auto value = emitCondition(*condition.lhs);
+
+    // Resolve parameters
+    SmallVector<Value> parameters;
+    parameters.reserve(call.parameters.size());
+    for (const auto* argument : call.parameters) {
+      auto value = emitAngle(*argument);
       if (failed(value)) {
         return failure();
       }
-      auto trueValue = builder.boolConstant(true);
-      return arith::XOrIOp::create(builder, *value, trueValue).getResult();
+      parameters.push_back(*value);
     }
-    case Condition::Kind::And:
-    case Condition::Kind::Or: {
-      auto lhs = emitCondition(*condition.lhs);
-      auto rhs = emitCondition(*condition.rhs);
-      if (failed(lhs) || failed(rhs)) {
+
+    // Resolve operands. If any operand is a register, the call is broadcast
+    // over the qubits of the register(s). All registers must have the same
+    // length, and any single-qubit operands are repeated in each iteration.
+    SmallVector<std::variant<Value, SmallVector<Value>>> resolvedOperands;
+    resolvedOperands.reserve(call.operands.size());
+    std::optional<size_t> broadcastWidth;
+    for (const auto& operand : call.operands) {
+      auto resolved = resolveOperand(operand, scope);
+      if (failed(resolved)) {
         return failure();
       }
-      if (condition.kind == Condition::Kind::And) {
-        return arith::AndIOp::create(builder, *lhs, *rhs).getResult();
+      if (const auto* reg = std::get_if<SmallVector<Value>>(&*resolved)) {
+        if (broadcastWidth && *broadcastWidth != reg->size()) {
+          return error(call.loc,
+                       "all broadcasting operands must have the same width");
+        }
+        broadcastWidth = reg->size();
       }
-      return arith::OrIOp::create(builder, *lhs, *rhs).getResult();
+      resolvedOperands.push_back(std::move(*resolved));
     }
+
+    // No broadcasting
+    if (!broadcastWidth) {
+      SmallVector<Value> operands;
+      operands.reserve(resolvedOperands.size());
+      for (const auto& resolved : resolvedOperands) {
+        operands.push_back(std::get<Value>(resolved));
+      }
+      return emitGateInvocation(it->second, call.identifier, parameters,
+                                call.modifiers, operands, call.loc);
     }
-    llvm_unreachable("unknown condition kind");
+
+    if (std::holds_alternative<StoredGate>(it->second)) {
+      return error(call.loc,
+                   "broadcasted compound gates are not supported yet");
+    }
+
+    for (size_t b = 0; b < *broadcastWidth; ++b) {
+      SmallVector<Value> operands;
+      operands.reserve(resolvedOperands.size());
+      for (const auto& resolved : resolvedOperands) {
+        if (const auto* value = std::get_if<Value>(&resolved)) {
+          operands.push_back(*value);
+        } else {
+          operands.push_back(std::get<SmallVector<Value>>(resolved)[b]);
+        }
+      }
+      if (failed(emitGateInvocation(it->second, call.identifier, parameters,
+                                    call.modifiers, operands, call.loc))) {
+        return failure();
+      }
+    }
+    return success();
   }
 
-  FailureOr<Value> lookupBitValue(const Reference& bit) {
-    auto it = bitValues.find(bit.identifier);
-    if (it == bitValues.end()) {
-      return error(bit.loc, "no classical bit of register '" + bit.identifier +
-                                "' has been measured yet");
-    }
-    const auto& registerBits = it->second;
-
-    if (bit.index == nullptr) {
-      return registerBits[0];
-    }
-    auto index = evaluateConstant(*bit.index);
-    if (failed(index)) {
+  LogicalResult
+  emitGateInvocation(const std::variant<GateInfo, StoredGate>& definition,
+                     StringRef id, ValueRange parameters,
+                     ArrayRef<Modifier> modifiers,
+                     const SmallVector<Value>& operands, SMLoc loc) {
+    auto split = splitControlsAndTargets<Value>(modifiers, operands, loc);
+    if (failed(split)) {
       return failure();
     }
-    const auto i = static_cast<size_t>(*index);
-    if (i >= registerBits.size() || !registerBits[i]) {
-      return error(bit.loc, "bit " + Twine(*index) + " of register '" +
-                                bit.identifier + "' has not been measured yet");
+    if (const auto* compound = std::get_if<StoredGate>(&definition)) {
+      return emitCompoundGate(*compound, parameters, split->targets,
+                              split->posControls, split->negControls,
+                              split->invert, loc);
     }
-    return registerBits[i];
+    const auto& gate = std::get<GateInfo>(definition);
+    auto gateFn = resolveStandardGate(gate, id, parameters, loc);
+    if (failed(gateFn)) {
+      return failure();
+    }
+    emitStandardGate(**gateFn, parameters, split->targets, split->posControls,
+                     split->negControls, split->invert);
+    return success();
   }
-
-  //===--- Gate calls ---------------------------------------------------===//
 
   template <typename T> struct ControlsAndTargets {
     bool invert = false;
@@ -730,8 +776,8 @@ private:
 
   template <typename T>
   FailureOr<ControlsAndTargets<T>>
-  splitControlsAndTargets(llvm::ArrayRef<Modifier> modifiers,
-                          const SmallVector<T>& operands, llvm::SMLoc loc) {
+  splitControlsAndTargets(ArrayRef<Modifier> modifiers,
+                          const SmallVector<T>& operands, SMLoc loc) {
     ControlsAndTargets<T> result;
     size_t numControls = 0;
     for (const auto& modifier : modifiers) {
@@ -760,14 +806,62 @@ private:
       }
       }
     }
-    result.targets = llvm::to_vector(llvm::drop_begin(operands, numControls));
+    result.targets = to_vector(drop_begin(operands, numControls));
     return result;
   }
 
+  LogicalResult emitCompoundGate(const StoredGate& gate, ValueRange parameters,
+                                 ValueRange targets, ValueRange posControls,
+                                 ValueRange negControls, bool invert,
+                                 SMLoc loc) {
+    if (gate.parameters.size() != parameters.size()) {
+      return error(loc, "invalid number of parameters for compound gate");
+    }
+    if (gate.targets.size() != targets.size()) {
+      return error(loc, "invalid number of target qubits for compound gate");
+    }
+
+    // Map each internal target name to its position(s) in the operand list.
+    // Positions may repeat if the qubits are aliased within a modifier region.
+    llvm::StringMap<SmallVector<size_t>> targetsMap;
+    for (const auto& [targetName, target] : zip_equal(gate.targets, targets)) {
+      auto it = llvm::find(targets, target);
+      if (it == targets.end()) {
+        return error(loc, "target '" + targetName + "' not found in operands");
+      }
+      targetsMap[targetName].push_back(
+          static_cast<size_t>(std::distance(targets.begin(), it)));
+    }
+
+    ValueScope parameterScope(parameterConstants);
+    for (const auto& [name, value] : zip_equal(gate.parameters, parameters)) {
+      parameterConstants.insert(name, value);
+    }
+
+    auto status = success();
+    auto bodyFn = [&](ValueRange qubits) {
+      QubitScope localScope;
+      for (const auto& [name, indices] : targetsMap) {
+        SmallVector<Value> args;
+        for (auto index : indices) {
+          args.push_back(qubits[index]);
+        }
+        localScope[name] = {.memref = nullptr, .qubits = std::move(args)};
+      }
+      for (const auto& bodyCall : gate.body) {
+        if (succeeded(status)) {
+          status = emitGateCall(bodyCall, localScope);
+        }
+      }
+    };
+    emitModifiedGate(bodyFn, targets, posControls, negControls, invert);
+    return status;
+  }
+
   FailureOr<const GateFn*> resolveStandardGate(const GateInfo& gate,
-                                               llvm::StringRef id,
+                                               StringRef id,
                                                ValueRange parameters,
-                                               llvm::SMLoc loc) {
+                                               SMLoc loc) {
     const auto it = GATE_DISPATCH.find(id);
     if (it == GATE_DISPATCH.end()) {
       return error(loc, "no MLIR definition found for gate '" + id + "'");
@@ -817,151 +911,29 @@ private:
     emitModifiedGate(bodyFn, targets, posControls, negControls, invert);
   }
 
-  LogicalResult emitCompoundGate(const StoredGate& gate, ValueRange parameters,
-                                 ValueRange targets, ValueRange posControls,
-                                 ValueRange negControls, bool invert,
-                                 llvm::SMLoc loc) {
-    if (gate.parameters.size() != parameters.size() ||
-        gate.targets.size() != targets.size()) {
-      return error(loc, "invalid number of arguments for compound gate");
+  //===--- Bit reference resolution -------------------------------------===//
+
+  FailureOr<Value> lookupBitValue(const BitReference& bit) {
+    auto it = bitValues.find(bit.identifier);
+    if (it == bitValues.end()) {
+      return error(bit.loc, "no classical bit of register '" + bit.identifier +
+                                "' has been measured yet");
     }
+    const auto& registerBits = it->second;
 
-    // Map each internal target name to its position(s) in the operand list.
-    // Positions may repeat if the qubits are aliased within a modifier region.
-    llvm::StringMap<SmallVector<size_t>> targetsMap;
-    for (const auto& [targetName, target] :
-         llvm::zip_equal(gate.targets, targets)) {
-      auto iter = llvm::find(targets, target);
-      if (iter == targets.end()) {
-        return error(loc, "target '" + targetName + "' not found in operands");
-      }
-      targetsMap[targetName].push_back(
-          static_cast<size_t>(std::distance(targets.begin(), iter)));
+    if (bit.index == nullptr) {
+      return registerBits[0];
     }
-
-    ValueScope parameterScope(parameterConstants);
-    for (const auto& [name, value] :
-         llvm::zip_equal(gate.parameters, parameters)) {
-      parameterConstants.insert(name, value);
-    }
-
-    LogicalResult status = success();
-    auto bodyFn = [&](ValueRange qubits) {
-      QubitScope localScope;
-      for (const auto& [name, indices] : targetsMap) {
-        SmallVector<Value> args;
-        for (auto index : indices) {
-          args.push_back(qubits[index]);
-        }
-        localScope[name] = {.memref = nullptr, .qubits = std::move(args)};
-      }
-      for (const auto& bodyCall : gate.body) {
-        if (succeeded(status)) {
-          status = emitGateCall(bodyCall, localScope);
-        }
-      }
-    };
-    emitModifiedGate(bodyFn, targets, posControls, negControls, invert);
-    return status;
-  }
-
-  /// Emit a single (non-broadcast) invocation of a gate on already-resolved
-  /// single-qubit @p operands.
-  LogicalResult
-  emitGateInvocation(const std::variant<GateInfo, StoredGate>& definition,
-                     llvm::StringRef id, ValueRange parameters,
-                     llvm::ArrayRef<Modifier> modifiers,
-                     const SmallVector<Value>& operands, llvm::SMLoc loc) {
-    auto split = splitControlsAndTargets<Value>(modifiers, operands, loc);
-    if (failed(split)) {
+    auto index = evaluateConstant(*bit.index);
+    if (failed(index)) {
       return failure();
     }
-    if (const auto* compound = std::get_if<StoredGate>(&definition)) {
-      return emitCompoundGate(*compound, parameters, split->targets,
-                              split->posControls, split->negControls,
-                              split->invert, loc);
+    const auto i = static_cast<size_t>(*index);
+    if (i >= registerBits.size() || !registerBits[i]) {
+      return error(bit.loc, "bit " + Twine(*index) + " of register '" +
+                                bit.identifier + "' has not been measured yet");
     }
-    const auto& gate = std::get<GateInfo>(definition);
-    auto gateFn = resolveStandardGate(gate, id, parameters, loc);
-    if (failed(gateFn)) {
-      return failure();
-    }
-    emitStandardGate(**gateFn, parameters, split->targets, split->posControls,
-                     split->negControls, split->invert);
-    return success();
-  }
-
-  LogicalResult emitGateCall(const GateCall& call, const QubitScope& scope) {
-    auto it = gates.find(call.identifier);
-    if (it == gates.end()) {
-      return error(call.loc, "no OpenQASM definition found for gate '" +
-                                 call.identifier + "'");
-    }
-
-    SmallVector<Value> parameters;
-    parameters.reserve(call.parameters.size());
-    for (const auto* argument : call.parameters) {
-      auto value = emitAngle(*argument);
-      if (failed(value)) {
-        return failure();
-      }
-      parameters.push_back(*value);
-    }
-
-    // Resolve operands in order, remembering which are whole registers. If any
-    // operand is a register, the call is broadcast over the qubits of the
-    // register(s); all such registers must have the same length, and any
-    // single-qubit operands are repeated in each iteration.
-    SmallVector<std::variant<Value, SmallVector<Value>>> resolvedOperands;
-    resolvedOperands.reserve(call.operands.size());
-    std::optional<size_t> broadcastWidth;
-    for (const auto& operand : call.operands) {
-      auto resolved = resolveOperand(operand, scope);
-      if (failed(resolved)) {
-        return failure();
-      }
-      if (const auto* reg = std::get_if<SmallVector<Value>>(&*resolved)) {
-        if (broadcastWidth && *broadcastWidth != reg->size()) {
-          return error(call.loc,
-                       "all broadcasting operands must have the same width");
-        }
-        broadcastWidth = reg->size();
-      }
-      resolvedOperands.push_back(std::move(*resolved));
-    }
-
-    // No registers: a single invocation on the resolved qubits.
-    if (!broadcastWidth) {
-      SmallVector<Value> operands;
-      operands.reserve(resolvedOperands.size());
-      for (const auto& resolved : resolvedOperands) {
-        operands.push_back(std::get<Value>(resolved));
-      }
-      return emitGateInvocation(it->second, call.identifier, parameters,
-                                call.modifiers, operands, call.loc);
-    }
-
-    if (std::holds_alternative<StoredGate>(it->second)) {
-      return error(call.loc,
-                   "broadcasted compound gates are not supported yet");
-    }
-
-    for (size_t b = 0; b < *broadcastWidth; ++b) {
-      SmallVector<Value> operands;
-      operands.reserve(resolvedOperands.size());
-      for (const auto& resolved : resolvedOperands) {
-        if (const auto* value = std::get_if<Value>(&resolved)) {
-          operands.push_back(*value);
-        } else {
-          operands.push_back(std::get<SmallVector<Value>>(resolved)[b]);
-        }
-      }
-      if (failed(emitGateInvocation(it->second, call.identifier, parameters,
-                                    call.modifiers, operands, call.loc))) {
-        return failure();
-      }
-    }
-    return success();
+    return registerBits[i];
   }
 
   //===--- Operand resolution -------------------------------------------===//
@@ -1017,9 +989,9 @@ private:
     case Expr::Kind::Int:
     case Expr::Kind::Float:
       return true;
-    case Expr::Kind::Ident:
+    case Expr::Kind::Identifier:
       // A declared integer constant folds; a loop variable does not.
-      return integerConstants.count(expr.ident) != 0;
+      return integerConstants.count(expr.identifier) != 0;
     case Expr::Kind::Neg:
       return isConstantIndex(*expr.lhs);
     case Expr::Kind::Add:
@@ -1037,8 +1009,8 @@ private:
       return std::to_string(expr.intValue);
     case Expr::Kind::Float:
       return std::to_string(expr.floatValue);
-    case Expr::Kind::Ident:
-      return expr.ident.str();
+    case Expr::Kind::Identifier:
+      return expr.identifier.str();
     case Expr::Kind::Neg:
       return "(-" + indexKey(*expr.lhs) + ")";
     case Expr::Kind::Add:
@@ -1053,7 +1025,7 @@ private:
     llvm_unreachable("unknown expression kind");
   }
 
-  FailureOr<Value> loadDynamicElement(llvm::StringRef name, Value memref,
+  FailureOr<Value> loadDynamicElement(StringRef name, Value memref,
                                       const Expr& indexExpr) {
     const std::string key = name.str() + "[" + indexKey(indexExpr) + "]";
     if (Value cached = dynamicallyLoadedQubits.lookup(key)) {
@@ -1063,13 +1035,13 @@ private:
     if (failed(index)) {
       return failure();
     }
-    Value loaded = builder.memrefLoad(memref, *index);
+    auto loaded = builder.memrefLoad(memref, *index);
     dynamicallyLoadedQubits.insert(keySaver.save(key), loaded);
     return loaded;
   }
 
   FailureOr<SmallVector<QCProgramBuilder::Bit>>
-  resolveClassicalBits(const Reference& reference) {
+  resolveClassicalBits(const BitReference& reference) {
     auto it = classicalRegisters.find(reference.identifier);
     if (it == classicalRegisters.end()) {
       return error(reference.loc,
@@ -1095,7 +1067,58 @@ private:
     return bits;
   }
 
-  //===--- Expression lowering ------------------------------------------===//
+  //===--- Conditions ---------------------------------------------------===//
+
+  FailureOr<Value> emitCondition(const Condition& condition) {
+    switch (condition.kind) {
+    case Condition::Kind::Measurement: {
+      auto resolved = resolveOperand(condition.operand, qubitRegisters);
+      if (failed(resolved)) {
+        return failure();
+      }
+      auto* qubit = std::get_if<Value>(&*resolved);
+      if (qubit == nullptr) {
+        return error(condition.loc,
+                     "measurement condition must be a single qubit");
+      }
+      return builder.measure(*qubit);
+    }
+    case Condition::Kind::Bit:
+      // A bare identifier may name a declared `bool`; otherwise it is a
+      // classical bit reference.
+      if (condition.bit.index == nullptr) {
+        if (Value value = booleanConstants.lookup(condition.bit.identifier)) {
+          return value;
+        }
+      }
+      return lookupBitValue(condition.bit);
+    case Condition::Kind::Literal:
+      return builder.boolConstant(condition.literalValue);
+    case Condition::Kind::Not: {
+      auto value = emitCondition(*condition.lhs);
+      if (failed(value)) {
+        return failure();
+      }
+      auto trueValue = builder.boolConstant(true);
+      return arith::XOrIOp::create(builder, *value, trueValue).getResult();
+    }
+    case Condition::Kind::And:
+    case Condition::Kind::Or: {
+      auto lhs = emitCondition(*condition.lhs);
+      auto rhs = emitCondition(*condition.rhs);
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      if (condition.kind == Condition::Kind::And) {
+        return arith::AndIOp::create(builder, *lhs, *rhs).getResult();
+      }
+      return arith::OrIOp::create(builder, *lhs, *rhs).getResult();
+    }
+    }
+    llvm_unreachable("unknown condition kind");
+  }
+
+  //===--- Expressions --------------------------------------------------===//
 
   FailureOr<Value> emitAngle(const Expr& expr) {
     switch (expr.kind) {
@@ -1108,8 +1131,8 @@ private:
       return arith::ConstantOp::create(builder,
                                        builder.getF64FloatAttr(expr.floatValue))
           .getResult();
-    case Expr::Kind::Ident:
-      return resolveParameter(expr.ident, expr.loc);
+    case Expr::Kind::Identifier:
+      return resolveParameter(expr.identifier, expr.loc);
     case Expr::Kind::Neg: {
       auto operand = emitAngle(*expr.lhs);
       if (failed(operand)) {
@@ -1141,8 +1164,8 @@ private:
     llvm_unreachable("unknown expression kind");
   }
 
-  FailureOr<Value> resolveParameter(llvm::StringRef name, llvm::SMLoc loc) {
-    if (Value value = parameterConstants.lookup(name)) {
+  FailureOr<Value> resolveParameter(StringRef name, SMLoc loc) {
+    if (auto value = parameterConstants.lookup(name)) {
       return value;
     }
     // An integer constant used as an angle is materialized as an `f64`.
@@ -1193,14 +1216,14 @@ private:
         return arith::DivSIOp::create(builder, *lhs, *rhs).getResult();
       }
     }
-    case Expr::Kind::Ident:
-      if (Value value = loopVariables.lookup(expr.ident)) {
+    case Expr::Kind::Identifier:
+      if (Value value = loopVariables.lookup(expr.identifier)) {
         return value;
       }
-      if (integerConstants.count(expr.ident) != 0) {
+      if (integerConstants.count(expr.identifier) != 0) {
         return arith::ConstantOp::create(
-                   builder,
-                   builder.getIndexAttr(integerConstants.lookup(expr.ident)))
+                   builder, builder.getIndexAttr(
+                                integerConstants.lookup(expr.identifier)))
             .getResult();
       }
       return error(expr.loc, "expected an integer expression");
@@ -1244,9 +1267,9 @@ private:
         return *lhs / *rhs;
       }
     }
-    case Expr::Kind::Ident:
-      if (integerConstants.count(expr.ident) != 0) {
-        return integerConstants.lookup(expr.ident);
+    case Expr::Kind::Identifier:
+      if (integerConstants.count(expr.identifier) != 0) {
+        return integerConstants.lookup(expr.identifier);
       }
       return error(expr.loc, "expected a constant integer expression");
     case Expr::Kind::Float:
@@ -1260,17 +1283,17 @@ private:
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
 
-  llvm::StringSet<> declaredNames;
+  StringSet<> declaredNames;
 
-  ScopedValueTable parameterConstants;
+  ValueTable parameterConstants;
   ValueScope parameterConstantsScope{parameterConstants};
   IntegerTable integerConstants;
   IntegerScope integerConstantsScope{integerConstants};
-  ScopedValueTable booleanConstants;
+  ValueTable booleanConstants;
   ValueScope booleanConstantsScope{booleanConstants};
-  ScopedValueTable loopVariables;
+  ValueTable loopVariables;
   ValueScope loopVariablesScope{loopVariables};
-  ScopedValueTable dynamicallyLoadedQubits;
+  ValueTable dynamicallyLoadedQubits;
   ValueScope dynamicallyLoadedQubitsScope{dynamicallyLoadedQubits};
 
   llvm::BumpPtrAllocator keyStorage;
@@ -1288,11 +1311,10 @@ private:
 
 namespace detail {
 
-OwningOpRef<ModuleOp> importQASM3(llvm::SourceMgr& sourceMgr,
-                                  MLIRContext* context) {
+OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
+                                         MLIRContext* context) {
   const auto bufferId = sourceMgr.getMainFileID();
-  const llvm::StringRef buffer =
-      sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
+  const StringRef buffer = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
 
   Lexer lexer(buffer);
   QCEmitter emitter(context, sourceMgr);
@@ -1301,11 +1323,11 @@ OwningOpRef<ModuleOp> importQASM3(llvm::SourceMgr& sourceMgr,
 
   emitter.initialize();
   const auto status = parser.parseProgram();
-  auto module = emitter.finalize();
+  auto mod = emitter.finalize();
   if (failed(status)) {
     return nullptr;
   }
-  return module;
+  return mod;
 }
 
 } // namespace detail

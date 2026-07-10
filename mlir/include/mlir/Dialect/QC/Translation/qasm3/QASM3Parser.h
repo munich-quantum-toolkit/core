@@ -29,84 +29,115 @@
 
 namespace mlir::qc::detail {
 
-//===----------------------------------------------------------------------===//
-// Transient parse vocabulary
-//
-// These types are the vocabulary the parser hands to a sink. They are cheap,
-// trivially destructible, and (where they need to outlive a single statement,
-// i.e. gate-definition bodies) allocated in a bump allocator. There is no
-// persistent whole-program syntax tree: flat statements stream straight to the
-// sink as they are recognized.
-//===----------------------------------------------------------------------===//
+/**
+ * @defgroup ParseVocabulary Transient parse vocabulary
+ * @brief The vocabulary the parser hands to a sink.
+ *
+ * @details
+ * These types are cheap, trivially destructible, and (where they need to
+ * outlive a single statement, i.e. gate-definition bodies) allocated in a bump
+ * allocator. There is no persistent whole-program syntax tree: flat statements
+ * stream straight to the sink as they are recognized.
+ */
 
-/// A (sub-)expression. Bump-allocated; children are borrowed pointers.
+/**
+ * @ingroup ParseVocabulary
+ * @brief A (sub-)expression.
+ *
+ * @details
+ * Bump-allocated; children are borrowed pointers.
+ */
 struct Expr {
-  enum class Kind : uint8_t { Int, Float, Ident, Neg, Add, Sub, Mul, Div };
+  enum class Kind : uint8_t { Int, Float, Identifier, Neg, Add, Sub, Mul, Div };
 
+  SMLoc loc;
   Kind kind = Kind::Int;
   int64_t intValue = 0;
   double floatValue = 0.0;
-  llvm::StringRef ident;
+  StringRef identifier;
   const Expr* lhs = nullptr;
   const Expr* rhs = nullptr;
-  llvm::SMLoc loc;
 };
 
-/// A gate modifier: `inv @`, `pow(e) @`, `ctrl(e) @`, or `negctrl(e) @`.
+/**
+ * @ingroup ParseVocabulary
+ * @brief A gate modifier: `inv @`, `pow(e) @`, `ctrl(e) @`, or `negctrl(e) @`.
+ */
 struct Modifier {
   enum class Kind : uint8_t { Inv, Pow, Ctrl, NegCtrl };
   Kind kind = Kind::Inv;
-  const Expr* argument = nullptr; ///< `pow`/`ctrl`/`negctrl` argument, or null.
+  const Expr* argument = nullptr;
 };
 
-/// A gate operand: a (possibly indexed) identifier, or a hardware qubit.
+/**
+ * @ingroup ParseVocabulary
+ * @brief A gate operand: a (possibly indexed) identifier, or a hardware qubit.
+ */
 struct Operand {
-  llvm::StringRef identifier;
+  SMLoc loc;
+  StringRef identifier;
   const Expr* index = nullptr;
   std::optional<uint64_t> hardwareQubit;
-  llvm::SMLoc loc;
 };
 
-/// A (possibly indexed) classical reference, e.g. `c` or `c[0]`.
-struct Reference {
-  llvm::StringRef identifier;
+/// A (possibly indexed) classical reference (e.g., `c` or `c[0]`).
+struct BitReference {
+  SMLoc loc;
+  StringRef identifier;
   const Expr* index = nullptr;
-  llvm::SMLoc loc;
 };
 
-/// A resolved gate call. Array members are borrowed for the duration of the
-/// sink call (top-level) or bump-allocated (gate-definition bodies).
+/**
+ * @ingroup ParseVocabulary
+ * @brief A resolved gate call.
+ *
+ * @details
+ * Array members are borrowed for the duration of the sink call (top-level) or
+ * bump-allocated (gate-definition bodies).
+ */
 struct GateCall {
-  llvm::StringRef identifier;
-  llvm::ArrayRef<Modifier> modifiers;
-  llvm::ArrayRef<const Expr*> parameters;
-  llvm::ArrayRef<Operand> operands;
-  llvm::SMLoc loc;
+  SMLoc loc;
+  StringRef identifier;
+  ArrayRef<Modifier> modifiers;
+  ArrayRef<const Expr*> parameters;
+  ArrayRef<Operand> operands;
 };
 
-/// A branch condition: a boolean-valued expression. Bump-allocated; children
-/// are borrowed pointers. Register comparisons (e.g. `c == 5`) are not yet
-/// supported.
+/**
+ * @ingroup ParseVocabulary
+ * @brief A branch condition: a boolean-valued expression.
+ *
+ * @details
+ * Bump-allocated; children are borrowed pointers. Register comparisons (e.g.,
+ * `c == 5`) are not supported yet.
+ */
 struct Condition {
   enum class Kind : uint8_t { Measurement, Bit, Literal, Not, And, Or };
+
+  SMLoc loc;
   Kind kind = Kind::Bit;
   Operand operand;                ///< For `Measurement`.
-  Reference bit;                  ///< For `Bit`.
+  BitReference bit;               ///< For `Bit`.
   bool literalValue = false;      ///< For `Literal`.
   const Condition* lhs = nullptr; ///< For `Not`, `And`, and `Or`.
   const Condition* rhs = nullptr; ///< For `And` and `Or`.
-  llvm::SMLoc loc;
 };
 
-/// A supported arithmetic scalar declaration type (`bool` is handled
-/// separately, as its initializer is a boolean condition). `const` and
-/// non-`const` declarations are lowered identically, so constness is not
-/// tracked here.
-enum class ScalarType : uint8_t { Float, Int };
-
-/// The kind of a declared classical variable, used to select the grammar of an
-/// assignment's right-hand side (arithmetic vs. boolean).
+/**
+ * @ingroup ParseVocabulary
+ * @brief The kind of a declared classical variable.
+ *
+ * @details
+ * Used to select the grammar of an assignment's right-hand side (numeric vs.
+ * boolean).
+ */
 enum class ClassicalKind : uint8_t { Numeric, Boolean };
+
+/**
+ * @ingroup ParseVocabulary
+ * @brief A numeric declaration type.
+ */
+enum class NumericType : uint8_t { Float, Int };
 
 //===----------------------------------------------------------------------===//
 // Sink concept
@@ -126,36 +157,36 @@ enum class ClassicalKind : uint8_t { Numeric, Boolean };
  * materialized.
  */
 template <class S>
-concept QASMSink = requires(
-    S s, llvm::SMLoc loc, llvm::StringRef str, const Expr& expr,
-    const Operand& operand, const Reference& reference,
-    const Condition& condition, const GateCall& call,
-    llvm::ArrayRef<Operand> operands, llvm::ArrayRef<llvm::StringRef> names,
-    llvm::ArrayRef<GateCall> body, llvm::function_ref<LogicalResult()> cont,
-    double d, bool flag, ScalarType scalarType) {
-  s.error(loc, str);
-  s.version(d);
-  s.include(loc, str);
-  s.scalarDecl(loc, scalarType, str, &expr);
-  s.boolDecl(loc, str, &condition);
-  s.scalarAssign(loc, str, expr);
-  s.boolAssign(loc, str, condition);
-  s.classicalKind(str);
-  s.qubitRegister(loc, str, &expr);
-  s.classicalRegister(loc, str, &expr);
-  s.measure(loc, reference, operand);
-  s.reset(loc, operand);
-  s.barrier(loc, operands);
-  s.gateCall(call);
-  s.gateDefinition(loc, str, names, names, body);
-  s.conditionOnly(loc, condition);
-  s.ifBegin(loc, condition, flag);
-  s.forStmt(loc, str, expr, expr, expr, cont);
-  s.whileStmt(loc, condition, cont);
-  // The sink must additionally provide `ifElse(scope)` and `ifEnd(scope,
-  // bool)` taking the opaque scope returned by `ifBegin`; those are not
-  // expressible here without naming the scope type.
-};
+concept QASMSink =
+    requires(S s, SMLoc loc, StringRef str, const Expr& expr,
+             const Operand& operand, const BitReference& reference,
+             const Condition& condition, const GateCall& call,
+             ArrayRef<Operand> operands, ArrayRef<StringRef> names,
+             ArrayRef<GateCall> body, function_ref<LogicalResult()> cont,
+             double d, bool flag, NumericType numericType) {
+      s.error(loc, str);
+      s.version(d);
+      s.include(loc, str);
+      s.numericDecl(loc, numericType, str, &expr);
+      s.boolDecl(loc, str, &condition);
+      s.numericAssign(loc, str, expr);
+      s.boolAssign(loc, str, condition);
+      s.classicalKind(str);
+      s.qubitRegister(loc, str, &expr);
+      s.classicalRegister(loc, str, &expr);
+      s.measure(loc, reference, operand);
+      s.reset(loc, operand);
+      s.barrier(loc, operands);
+      s.gateCall(call);
+      s.gateDefinition(loc, str, names, names, body);
+      s.ifConditionOnly(loc, condition);
+      s.ifBegin(loc, condition, flag);
+      s.forStmt(loc, str, expr, expr, expr, cont);
+      s.whileStmt(loc, condition, cont);
+      // The sink must additionally provide `ifElse(scope)` and `ifEnd(scope,
+      // bool)` taking the opaque scope returned by `ifBegin`; those are not
+      // expressible here without naming the scope type.
+    };
 
 //===----------------------------------------------------------------------===//
 // Parser
@@ -181,7 +212,7 @@ public:
   }
 
   [[nodiscard]] LogicalResult parseProgram() {
-    while (!isAtEnd()) {
+    while (!atEnd()) {
       if (failed(parseStatement())) {
         return failure();
       }
@@ -199,7 +230,7 @@ private:
 
   [[nodiscard]] const Token& current() const { return currentToken; }
   [[nodiscard]] const Token& peek() const { return nextToken; }
-  [[nodiscard]] bool isAtEnd() const {
+  [[nodiscard]] bool atEnd() const {
     return currentToken.kind == TokenKind::Eof;
   }
 
@@ -222,8 +253,7 @@ private:
     return new (allocator.Allocate<Condition>()) Condition();
   }
 
-  template <class T>
-  [[nodiscard]] llvm::ArrayRef<T> copyToArena(llvm::ArrayRef<T> values) {
+  template <class T> [[nodiscard]] ArrayRef<T> copyToArena(ArrayRef<T> values) {
     if (values.empty()) {
       return {};
     }
@@ -254,13 +284,13 @@ private:
     case TokenKind::Qubit:
       return parseQuantumDecl();
     case TokenKind::Qreg:
-      return parseOldStyleDecl(/*classical=*/false);
-    case TokenKind::CReg:
-      return parseOldStyleDecl(/*classical=*/true);
+      return parseQregDecl();
     case TokenKind::Bit:
       return parseClassicalDecl();
+    case TokenKind::CReg:
+      return parseCregDecl();
     case TokenKind::Gate:
-      return parseGateDefinition();
+      return parseGateStatement();
     case TokenKind::Opaque:
       return sink.error(current().loc,
                         "opaque gate declarations are not supported");
@@ -301,7 +331,7 @@ private:
   [[nodiscard]] LogicalResult parseBlock() {
     if (current().kind == TokenKind::LBrace) {
       advance();
-      while (!isAtEnd() && current().kind != TokenKind::RBrace) {
+      while (!atEnd() && current().kind != TokenKind::RBrace) {
         if (failed(parseStatement())) {
           return failure();
         }
@@ -311,7 +341,23 @@ private:
     return parseStatement();
   }
 
-  //===--- Version and include ------------------------------------------===//
+  //===--- Helpers ------------------------------------------------------===//
+
+  [[nodiscard]] FailureOr<const Expr*> parseDesignator() {
+    if (failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    auto expr = parseExpression();
+    if (failed(expr)) {
+      return failure();
+    }
+    if (failed(expect(TokenKind::RBracket))) {
+      return failure();
+    }
+    return *expr;
+  }
+
+  //===--- Version ------------------------------------------------------===//
 
   [[nodiscard]] LogicalResult parseVersion() {
     advance(); // OPENQASM
@@ -331,13 +377,15 @@ private:
     return sink.version(version);
   }
 
+  //===--- Include ------------------------------------------------------===//
+
   [[nodiscard]] LogicalResult parseInclude() {
     const auto loc = current().loc;
     advance(); // include
     if (current().kind != TokenKind::StringLiteral) {
       return sink.error(current().loc, "expected a string literal");
     }
-    const auto filename = current().spelling;
+    const auto filename = current().stringValue;
     advance();
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
@@ -347,24 +395,22 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  /// Parse `[const] (int|uint|float|bool) <id> = <initializer>;`. `const` and
-  /// non-`const` declarations are parsed and lowered identically. `bool`
-  /// initializers are boolean conditions; all others are arithmetic.
+  /// Parse `[const] (int|uint|float|bool) <id> = <initializer>;`.
   [[nodiscard]] LogicalResult parseScalarDeclaration() {
     const auto loc = current().loc;
     if (current().kind == TokenKind::Const) {
       advance(); // const
     }
 
-    ScalarType scalarType = ScalarType::Float;
+    NumericType numericType = NumericType::Float;
     bool isBool = false;
     switch (current().kind) {
     case TokenKind::Float:
-      scalarType = ScalarType::Float;
+      numericType = NumericType::Float;
       break;
     case TokenKind::Int:
     case TokenKind::Uint:
-      scalarType = ScalarType::Int;
+      numericType = NumericType::Int;
       break;
     case TokenKind::Bool:
       isBool = true;
@@ -382,11 +428,9 @@ private:
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected identifier");
     }
-    const auto id = current().spelling;
+    const auto id = current().identifier;
     advance();
 
-    // The initializer is optional; an uninitialized variable can be given a
-    // value later by an assignment.
     const bool hasInitializer = current().kind == TokenKind::Equals;
     if (hasInitializer) {
       advance();
@@ -418,9 +462,10 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.scalarDecl(loc, scalarType, id, initializer);
+    return sink.numericDecl(loc, numericType, id, initializer);
   }
 
+  /// Parse `qubit[<n>] <id>;`.
   [[nodiscard]] LogicalResult parseQuantumDecl() {
     const auto loc = current().loc;
     advance(); // qubit
@@ -435,7 +480,7 @@ private:
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected identifier");
     }
-    const auto id = current().spelling;
+    const auto id = current().identifier;
     advance();
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
@@ -443,13 +488,14 @@ private:
     return sink.qubitRegister(loc, id, size);
   }
 
-  [[nodiscard]] LogicalResult parseOldStyleDecl(const bool classical) {
+  /// Parse `qreg <id>[<n>];`.
+  [[nodiscard]] LogicalResult parseQregDecl() {
     const auto loc = current().loc;
-    advance(); // qreg / creg
+    advance(); // qreg
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected identifier");
     }
-    const auto id = current().spelling;
+    const auto id = current().identifier;
     advance();
     const Expr* size = nullptr;
     if (current().kind == TokenKind::LBracket) {
@@ -462,10 +508,10 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return classical ? sink.classicalRegister(loc, id, size)
-                     : sink.qubitRegister(loc, id, size);
+    return sink.qubitRegister(loc, id, size);
   }
 
+  /// Parse `bit[<n>] <id> (= <measurement>);`.
   [[nodiscard]] LogicalResult parseClassicalDecl() {
     const auto loc = current().loc;
     advance(); // bit
@@ -480,7 +526,7 @@ private:
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected identifier");
     }
-    const auto id = current().spelling;
+    const auto id = current().identifier;
     advance();
 
     std::optional<Operand> measureSource;
@@ -503,38 +549,45 @@ private:
       return failure();
     }
     if (measureSource) {
-      const Reference target{.identifier = id, .index = nullptr, .loc = loc};
+      const BitReference target{.loc = loc, .identifier = id, .index = nullptr};
       return sink.measure(loc, target, *measureSource);
     }
     return success();
   }
 
-  [[nodiscard]] mlir::FailureOr<const Expr*> parseDesignator() {
-    if (failed(expect(TokenKind::LBracket))) {
+  /// Parse `creg <id>[<n>];`.
+  [[nodiscard]] LogicalResult parseCregDecl() {
+    const auto loc = current().loc;
+    advance(); // creg
+    if (current().kind != TokenKind::Identifier) {
+      return sink.error(current().loc, "expected identifier");
+    }
+    const auto id = current().identifier;
+    advance();
+    const Expr* size = nullptr;
+    if (current().kind == TokenKind::LBracket) {
+      auto designator = parseDesignator();
+      if (failed(designator)) {
+        return failure();
+      }
+      size = *designator;
+    }
+    if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    auto expr = parseExpression();
-    if (failed(expr)) {
-      return failure();
-    }
-    if (failed(expect(TokenKind::RBracket))) {
-      return failure();
-    }
-    return *expr;
+    return sink.classicalRegister(loc, id, size);
   }
 
-  //===--- Assignment and measurement -----------------------------------===//
+  //===--- Assignment ---------------------------------------------------===//
 
-  /// Parse `<ref> = measure <operand>;` (measurement) or `<id> = <value>;`
-  /// (classical-scalar assignment). The value grammar follows the target's
-  /// declared kind.
+  /// Parse `<id> = measure <operand>;` or `<id> = <value>;`.
   [[nodiscard]] LogicalResult parseAssignment() {
     const auto loc = current().loc;
-    auto target = parseReference();
+    auto target = parseBitReference();
     if (failed(target)) {
       return failure();
     }
-    const Reference& reference = *target;
+    const BitReference& reference = *target;
 
     if (current().kind == TokenKind::CompoundAssign) {
       return sink.error(current().loc,
@@ -544,7 +597,7 @@ private:
       return failure();
     }
 
-    // Measurement assignment: `<ref> = measure <operand>;`.
+    // Measure assignment
     if (current().kind == TokenKind::Measure) {
       advance();
       auto operand = parseGateOperand();
@@ -557,7 +610,7 @@ private:
       return sink.measure(loc, reference, *operand);
     }
 
-    // Value assignment to a classical scalar.
+    // Value assignment
     const auto kind = sink.classicalKind(reference.identifier);
     if (!kind) {
       return sink.error(reference.loc,
@@ -586,8 +639,10 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.scalarAssign(loc, reference.identifier, **value);
+    return sink.numericAssign(loc, reference.identifier, **value);
   }
+
+  //===--- Measure ------------------------------------------------------===//
 
   [[nodiscard]] LogicalResult parseMeasure() {
     const auto loc = current().loc;
@@ -599,7 +654,7 @@ private:
     if (failed(expect(TokenKind::Arrow))) {
       return failure();
     }
-    auto target = parseReference();
+    auto target = parseBitReference();
     if (failed(target)) {
       return failure();
     }
@@ -609,12 +664,27 @@ private:
     return sink.measure(loc, *target, *operand);
   }
 
-  //===--- Barrier and reset --------------------------------------------===//
+  //===--- Reset --------------------------------------------------------===//
+
+  [[nodiscard]] LogicalResult parseReset() {
+    const auto loc = current().loc;
+    advance(); // reset
+    auto operand = parseGateOperand();
+    if (failed(operand)) {
+      return failure();
+    }
+    if (failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    return sink.reset(loc, *operand);
+  }
+
+  //===--- Barrier ------------------------------------------------------===//
 
   [[nodiscard]] LogicalResult parseBarrier() {
     const auto loc = current().loc;
     advance(); // barrier
-    llvm::SmallVector<Operand> operands;
+    SmallVector<Operand> operands;
     while (current().kind != TokenKind::Semicolon) {
       auto operand = parseGateOperand();
       if (failed(operand)) {
@@ -630,305 +700,19 @@ private:
     return sink.barrier(loc, operands);
   }
 
-  [[nodiscard]] LogicalResult parseReset() {
-    const auto loc = current().loc;
-    advance(); // reset
-    auto operand = parseGateOperand();
-    if (failed(operand)) {
-      return failure();
-    }
-    if (failed(expect(TokenKind::Semicolon))) {
-      return failure();
-    }
-    return sink.reset(loc, *operand);
-  }
-
-  //===--- Control flow -------------------------------------------------===//
-
-  [[nodiscard]] LogicalResult parseIf() {
-    const auto loc = current().loc;
-    advance(); // if
-    if (failed(expect(TokenKind::LParen))) {
-      return failure();
-    }
-    auto condition = parseCondition();
-    if (failed(condition)) {
-      return failure();
-    }
-    const Condition& cond = **condition;
-    if (failed(expect(TokenKind::RParen))) {
-      return failure();
-    }
-
-    const bool thenEmpty =
-        current().kind == TokenKind::LBrace && peek().kind == TokenKind::RBrace;
-    if (thenEmpty) {
-      advance(); // {
-      advance(); // }
-      if (current().kind != TokenKind::Else) {
-        return sink.conditionOnly(loc, cond);
-      }
-      advance(); // else
-      auto scope = sink.ifBegin(loc, cond, /*invert=*/true);
-      if (failed(scope)) {
-        return failure();
-      }
-      if (failed(parseBlock())) {
-        return failure();
-      }
-      return sink.ifEnd(*scope, /*hadElse=*/false);
-    }
-
-    auto scope = sink.ifBegin(loc, cond, /*invert=*/false);
-    if (failed(scope)) {
-      return failure();
-    }
-    if (failed(parseBlock())) {
-      return failure();
-    }
-
-    if (current().kind == TokenKind::Else) {
-      advance(); // else
-      const bool elseEmpty = current().kind == TokenKind::LBrace &&
-                             peek().kind == TokenKind::RBrace;
-      if (elseEmpty) {
-        advance(); // {
-        advance(); // }
-        return sink.ifEnd(*scope, /*hadElse=*/false);
-      }
-      if (failed(sink.ifElse(*scope))) {
-        return failure();
-      }
-      if (failed(parseBlock())) {
-        return failure();
-      }
-      return sink.ifEnd(*scope, /*hadElse=*/true);
-    }
-    return sink.ifEnd(*scope, /*hadElse=*/false);
-  }
-
-  [[nodiscard]] LogicalResult parseFor() {
-    const auto loc = current().loc;
-    advance(); // for
-    if (current().kind != TokenKind::Int && current().kind != TokenKind::Uint) {
-      return sink.error(current().loc, "expected 'int' or 'uint' after 'for'");
-    }
-    advance();
-    if (current().kind != TokenKind::Identifier) {
-      return sink.error(current().loc, "expected loop variable");
-    }
-    const auto variable = current().spelling;
-    advance();
-    if (failed(expect(TokenKind::In)) || failed(expect(TokenKind::LBracket))) {
-      return failure();
-    }
-    auto start = parseExpression();
-    if (failed(start)) {
-      return failure();
-    }
-    if (failed(expect(TokenKind::Colon))) {
-      return failure();
-    }
-    auto second = parseExpression();
-    if (failed(second)) {
-      return failure();
-    }
-
-    const Expr* step = nullptr;
-    const Expr* stop = nullptr;
-    if (current().kind == TokenKind::Colon) {
-      advance();
-      auto third = parseExpression();
-      if (failed(third)) {
-        return failure();
-      }
-      step = *second;
-      stop = *third;
-    } else {
-      auto* one = makeExpr();
-      one->kind = Expr::Kind::Int;
-      one->intValue = 1;
-      one->loc = loc;
-      step = one;
-      stop = *second;
-    }
-    if (failed(expect(TokenKind::RBracket))) {
-      return failure();
-    }
-
-    return sink.forStmt(loc, variable, **start, *step, *stop,
-                        [this] { return parseBlock(); });
-  }
-
-  [[nodiscard]] LogicalResult parseWhile() {
-    const auto loc = current().loc;
-    advance(); // while
-    if (failed(expect(TokenKind::LParen))) {
-      return failure();
-    }
-    auto condition = parseCondition();
-    if (failed(condition)) {
-      return failure();
-    }
-    const Condition& cond = **condition;
-    if (failed(expect(TokenKind::RParen))) {
-      return failure();
-    }
-    return sink.whileStmt(loc, cond, [this] { return parseBlock(); });
-  }
-
-  /// cond := andCond ('||' andCond)*
-  [[nodiscard]] mlir::FailureOr<const Condition*> parseCondition() {
-    auto lhs = parseAndCondition();
-    if (failed(lhs)) {
-      return failure();
-    }
-    const Condition* result = *lhs;
-    while (current().kind == TokenKind::PipePipe) {
-      const auto loc = current().loc;
-      advance();
-      auto rhs = parseAndCondition();
-      if (failed(rhs)) {
-        return failure();
-      }
-      result = makeBinaryCondition(Condition::Kind::Or, result, *rhs, loc);
-    }
-    return result;
-  }
-
-  /// andCond := unaryCond ('&&' unaryCond)*
-  [[nodiscard]] mlir::FailureOr<const Condition*> parseAndCondition() {
-    auto lhs = parseUnaryCondition();
-    if (failed(lhs)) {
-      return failure();
-    }
-    const Condition* result = *lhs;
-    while (current().kind == TokenKind::AmpAmp) {
-      const auto loc = current().loc;
-      advance();
-      auto rhs = parseUnaryCondition();
-      if (failed(rhs)) {
-        return failure();
-      }
-      result = makeBinaryCondition(Condition::Kind::And, result, *rhs, loc);
-    }
-    return result;
-  }
-
-  /// unaryCond := ('!' | '~') unaryCond | primaryCond
-  [[nodiscard]] mlir::FailureOr<const Condition*> parseUnaryCondition() {
-    if (current().kind == TokenKind::ExclamationPoint ||
-        current().kind == TokenKind::Tilde) {
-      const auto loc = current().loc;
-      advance();
-      auto operand = parseUnaryCondition();
-      if (failed(operand)) {
-        return failure();
-      }
-      auto* condition = makeCondition();
-      condition->kind = Condition::Kind::Not;
-      condition->loc = loc;
-      condition->lhs = *operand;
-      return condition;
-    }
-    return parsePrimaryCondition();
-  }
-
-  /// primaryCond := 'measure' gateOperand | '(' cond ')' | reference
-  [[nodiscard]] mlir::FailureOr<const Condition*> parsePrimaryCondition() {
-    const auto loc = current().loc;
-
-    if (current().kind == TokenKind::True ||
-        current().kind == TokenKind::False) {
-      auto* condition = makeCondition();
-      condition->kind = Condition::Kind::Literal;
-      condition->literalValue = current().kind == TokenKind::True;
-      condition->loc = loc;
-      advance();
-      return finishPrimaryCondition(condition);
-    }
-
-    if (current().kind == TokenKind::Measure) {
-      advance();
-      auto operand = parseGateOperand();
-      if (failed(operand)) {
-        return failure();
-      }
-      auto* condition = makeCondition();
-      condition->kind = Condition::Kind::Measurement;
-      condition->operand = *operand;
-      condition->loc = loc;
-      return finishPrimaryCondition(condition);
-    }
-
-    if (current().kind == TokenKind::LParen) {
-      advance();
-      auto inner = parseCondition();
-      if (failed(inner)) {
-        return failure();
-      }
-      if (failed(expect(TokenKind::RParen))) {
-        return failure();
-      }
-      return finishPrimaryCondition(*inner);
-    }
-
-    if (current().kind == TokenKind::Identifier) {
-      auto bit = parseReference();
-      if (failed(bit)) {
-        return failure();
-      }
-      auto* condition = makeCondition();
-      condition->kind = Condition::Kind::Bit;
-      condition->bit = *bit;
-      condition->loc = loc;
-      return finishPrimaryCondition(condition);
-    }
-
-    return sink.error(loc, "unsupported condition expression");
-  }
-
-  /// Reject a register comparison (e.g. `c == 5`) trailing a primary.
-  [[nodiscard]] mlir::FailureOr<const Condition*>
-  finishPrimaryCondition(const Condition* condition) {
-    switch (current().kind) {
-    case TokenKind::EqualsEquals:
-    case TokenKind::NotEquals:
-    case TokenKind::Less:
-    case TokenKind::LessEquals:
-    case TokenKind::Greater:
-    case TokenKind::GreaterEquals:
-      return sink.error(current().loc,
-                        "register comparisons are not supported");
-    default:
-      return condition;
-    }
-  }
-
-  [[nodiscard]] Condition* makeBinaryCondition(const Condition::Kind kind,
-                                               const Condition* lhs,
-                                               const Condition* rhs,
-                                               const llvm::SMLoc loc) {
-    auto* condition = makeCondition();
-    condition->kind = kind;
-    condition->loc = loc;
-    condition->lhs = lhs;
-    condition->rhs = rhs;
-    return condition;
-  }
-
   //===--- Gate definitions and calls -----------------------------------===//
 
-  [[nodiscard]] LogicalResult parseGateDefinition() {
+  [[nodiscard]] LogicalResult parseGateStatement() {
     const auto loc = current().loc;
     advance(); // gate
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected gate name");
     }
-    const auto id = current().spelling;
+    const auto id = current().identifier;
     advance();
 
-    llvm::SmallVector<llvm::StringRef> parameters;
+    // Parse parameters
+    SmallVector<StringRef> parameters;
     if (current().kind == TokenKind::LParen) {
       advance();
       if (failed(parseIdentifierList(parameters))) {
@@ -939,21 +723,23 @@ private:
       }
     }
 
-    llvm::SmallVector<llvm::StringRef> targets;
+    // Parse target qubits
+    SmallVector<StringRef> targets;
     if (failed(parseIdentifierList(targets))) {
       return failure();
     }
 
+    // Parse body
     if (failed(expect(TokenKind::LBrace))) {
       return failure();
     }
-    llvm::SmallVector<GateCall> body;
+    SmallVector<GateCall> body;
     while (current().kind != TokenKind::RBrace) {
       // Bodies outlive this frame, so the call's arrays are copied into the
       // arena; the scratch buffers below are discarded.
-      llvm::SmallVector<Modifier> callModifiers;
-      llvm::SmallVector<const Expr*> callParameters;
-      llvm::SmallVector<Operand> callOperands;
+      SmallVector<Modifier> callModifiers;
+      SmallVector<const Expr*> callParameters;
+      SmallVector<Operand> callOperands;
       auto call = parseGateCall(callModifiers, callParameters, callOperands,
                                 /*persist=*/true);
       if (failed(call)) {
@@ -965,17 +751,17 @@ private:
       return failure();
     }
 
-    return sink.gateDefinition(loc, id, copyToArena(llvm::ArrayRef(parameters)),
-                               copyToArena(llvm::ArrayRef(targets)),
-                               copyToArena(llvm::ArrayRef(body)));
+    return sink.gateDefinition(loc, id, copyToArena(ArrayRef(parameters)),
+                               copyToArena(ArrayRef(targets)),
+                               copyToArena(ArrayRef(body)));
   }
 
   [[nodiscard]] LogicalResult parseGateCallStatement() {
     // The scratch buffers must outlive the sink call, so they live here rather
     // than inside `parseGateCall`.
-    llvm::SmallVector<Modifier> modifiers;
-    llvm::SmallVector<const Expr*> parameters;
-    llvm::SmallVector<Operand> operands;
+    SmallVector<Modifier> modifiers;
+    SmallVector<const Expr*> parameters;
+    SmallVector<Operand> operands;
     auto call = parseGateCall(modifiers, parameters, operands,
                               /*persist=*/false);
     if (failed(call)) {
@@ -984,10 +770,10 @@ private:
     return sink.gateCall(*call);
   }
 
-  [[nodiscard]] mlir::FailureOr<GateCall>
-  parseGateCall(llvm::SmallVectorImpl<Modifier>& modifiers,
-                llvm::SmallVectorImpl<const Expr*>& parameters,
-                llvm::SmallVectorImpl<Operand>& operands, const bool persist) {
+  [[nodiscard]] FailureOr<GateCall>
+  parseGateCall(SmallVectorImpl<Modifier>& modifiers,
+                SmallVectorImpl<const Expr*>& parameters,
+                SmallVectorImpl<Operand>& operands, const bool persist) {
     GateCall call;
     call.loc = current().loc;
 
@@ -1005,16 +791,22 @@ private:
       }
     }
 
-    if (current().kind == TokenKind::Gphase) {
+    switch (current().kind) {
+    case TokenKind::Gphase: {
       call.identifier = "gphase";
       advance();
-    } else if (current().kind == TokenKind::Identifier) {
-      call.identifier = current().spelling;
+      break;
+    }
+    case TokenKind::Identifier: {
+      call.identifier = current().identifier;
       advance();
-    } else {
+      break;
+    }
+    default:
       return sink.error(current().loc, "expected gate name");
     }
 
+    // Parse parameters
     if (current().kind == TokenKind::LParen) {
       advance();
       while (current().kind != TokenKind::RParen) {
@@ -1036,6 +828,7 @@ private:
                         "gate calls with designators are not supported yet");
     }
 
+    // Parse target qubits
     while (current().kind != TokenKind::Semicolon) {
       auto operand = parseGateOperand();
       if (failed(operand)) {
@@ -1050,12 +843,12 @@ private:
     advance(); // ;
 
     // Top-level calls are consumed by the sink while the caller's buffers are
-    // still alive, so borrowing them is safe. Gate-definition bodies outlive
-    // this frame, so their arrays are copied into the arena.
+    // still alive, so borrowing them is safe. Gate definitions outlive this
+    // frame, so their arrays are copied into the arena.
     if (persist) {
-      call.modifiers = copyToArena(llvm::ArrayRef(modifiers));
-      call.parameters = copyToArena(llvm::ArrayRef(parameters));
-      call.operands = copyToArena(llvm::ArrayRef(operands));
+      call.modifiers = copyToArena(ArrayRef(modifiers));
+      call.parameters = copyToArena(ArrayRef(parameters));
+      call.operands = copyToArena(ArrayRef(operands));
       return call;
     }
     call.modifiers = modifiers;
@@ -1064,7 +857,7 @@ private:
     return call;
   }
 
-  [[nodiscard]] mlir::FailureOr<Modifier> parseModifier() {
+  [[nodiscard]] FailureOr<Modifier> parseModifier() {
     Modifier modifier;
     switch (current().kind) {
     case TokenKind::Inv:
@@ -1111,7 +904,7 @@ private:
     }
   }
 
-  [[nodiscard]] mlir::FailureOr<Operand> parseGateOperand() {
+  [[nodiscard]] FailureOr<Operand> parseGateOperand() {
     Operand operand;
     operand.loc = current().loc;
     if (current().kind == TokenKind::HardwareQubit) {
@@ -1122,65 +915,336 @@ private:
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected a gate operand");
     }
-    operand.identifier = current().spelling;
+    operand.identifier = current().identifier;
     advance();
+    const Expr* index = nullptr;
     if (current().kind == TokenKind::LBracket) {
-      advance();
-      auto index = parseExpression();
-      if (failed(index)) {
+      auto designator = parseDesignator();
+      if (failed(designator)) {
         return failure();
       }
-      operand.index = *index;
-      if (failed(expect(TokenKind::RBracket))) {
-        return failure();
-      }
+      index = *designator;
     }
+    operand.index = index;
     return operand;
   }
 
-  [[nodiscard]] mlir::FailureOr<Reference> parseReference() {
-    Reference reference;
+  [[nodiscard]] FailureOr<BitReference> parseBitReference() {
+    BitReference reference;
     reference.loc = current().loc;
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected an identifier");
     }
-    reference.identifier = current().spelling;
+    reference.identifier = current().identifier;
     advance();
+    const Expr* index = nullptr;
     if (current().kind == TokenKind::LBracket) {
-      advance();
-      auto index = parseExpression();
-      if (failed(index)) {
+      auto designator = parseDesignator();
+      if (failed(designator)) {
         return failure();
       }
-      reference.index = *index;
-      if (failed(expect(TokenKind::RBracket))) {
-        return failure();
-      }
+      index = *designator;
     }
+    reference.index = index;
     return reference;
   }
 
   [[nodiscard]] LogicalResult
-  parseIdentifierList(llvm::SmallVectorImpl<llvm::StringRef>& identifiers) {
+  parseIdentifierList(SmallVectorImpl<StringRef>& identifiers) {
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected an identifier");
     }
-    identifiers.push_back(current().spelling);
+    identifiers.push_back(current().identifier);
     advance();
     while (current().kind == TokenKind::Comma) {
       advance();
       if (current().kind != TokenKind::Identifier) {
         return sink.error(current().loc, "expected an identifier");
       }
-      identifiers.push_back(current().spelling);
+      identifiers.push_back(current().identifier);
       advance();
     }
     return success();
   }
 
+  //===--- Control flow -------------------------------------------------===//
+
+  [[nodiscard]] LogicalResult parseIf() {
+    const auto loc = current().loc;
+    advance(); // if
+    if (failed(expect(TokenKind::LParen))) {
+      return failure();
+    }
+    auto conditionOrFailure = parseCondition();
+    if (failed(conditionOrFailure)) {
+      return failure();
+    }
+    const auto& condition = **conditionOrFailure;
+    if (failed(expect(TokenKind::RParen))) {
+      return failure();
+    }
+
+    const bool thenEmpty =
+        current().kind == TokenKind::LBrace && peek().kind == TokenKind::RBrace;
+    if (thenEmpty) {
+      advance(); // {
+      advance(); // }
+      if (current().kind != TokenKind::Else) {
+        return sink.ifConditionOnly(loc, condition);
+      }
+      advance(); // else
+      auto scope = sink.ifBegin(loc, condition, /*invert=*/true);
+      if (failed(scope)) {
+        return failure();
+      }
+      if (failed(parseBlock())) {
+        return failure();
+      }
+      return sink.ifEnd(*scope, /*hadElse=*/false);
+    }
+
+    auto scope = sink.ifBegin(loc, condition, /*invert=*/false);
+    if (failed(scope)) {
+      return failure();
+    }
+    if (failed(parseBlock())) {
+      return failure();
+    }
+
+    if (current().kind == TokenKind::Else) {
+      advance(); // else
+      const bool elseEmpty = current().kind == TokenKind::LBrace &&
+                             peek().kind == TokenKind::RBrace;
+      if (elseEmpty) {
+        advance(); // {
+        advance(); // }
+        return sink.ifEnd(*scope, /*hadElse=*/false);
+      }
+      if (failed(sink.ifElse(*scope))) {
+        return failure();
+      }
+      if (failed(parseBlock())) {
+        return failure();
+      }
+      return sink.ifEnd(*scope, /*hadElse=*/true);
+    }
+
+    return sink.ifEnd(*scope, /*hadElse=*/false);
+  }
+
+  [[nodiscard]] LogicalResult parseFor() {
+    const auto loc = current().loc;
+    advance(); // for
+    if (current().kind != TokenKind::Int && current().kind != TokenKind::Uint) {
+      return sink.error(current().loc, "expected 'int' or 'uint' after 'for'");
+    }
+    advance(); // type
+    if (current().kind != TokenKind::Identifier) {
+      return sink.error(current().loc, "expected loop variable");
+    }
+    const auto variable = current().identifier;
+    advance(); // identifier
+    if (failed(expect(TokenKind::In)) || failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    auto start = parseExpression();
+    if (failed(start)) {
+      return failure();
+    }
+    if (failed(expect(TokenKind::Colon))) {
+      return failure();
+    }
+    auto second = parseExpression();
+    if (failed(second)) {
+      return failure();
+    }
+
+    const Expr* step = nullptr;
+    const Expr* stop = nullptr;
+    if (current().kind == TokenKind::Colon) {
+      advance();
+      auto third = parseExpression();
+      if (failed(third)) {
+        return failure();
+      }
+      step = *second;
+      stop = *third;
+    } else {
+      auto* one = makeExpr();
+      one->loc = loc;
+      one->kind = Expr::Kind::Int;
+      one->intValue = 1;
+      step = one;
+      stop = *second;
+    }
+    if (failed(expect(TokenKind::RBracket))) {
+      return failure();
+    }
+
+    return sink.forStmt(loc, variable, **start, *step, *stop,
+                        [this] { return parseBlock(); });
+  }
+
+  [[nodiscard]] LogicalResult parseWhile() {
+    const auto loc = current().loc;
+    advance(); // while
+    if (failed(expect(TokenKind::LParen))) {
+      return failure();
+    }
+    auto conditionOrFailure = parseCondition();
+    if (failed(conditionOrFailure)) {
+      return failure();
+    }
+    const auto& condition = **conditionOrFailure;
+    if (failed(expect(TokenKind::RParen))) {
+      return failure();
+    }
+    return sink.whileStmt(loc, condition, [this] { return parseBlock(); });
+  }
+
+  //===--- Conditions --------------------------------------------------===//
+
+  /// cond := andCond ('||' andCond)*
+  [[nodiscard]] FailureOr<const Condition*> parseCondition() {
+    auto lhs = parseAndCondition();
+    if (failed(lhs)) {
+      return failure();
+    }
+    const auto* result = *lhs;
+    while (current().kind == TokenKind::PipePipe) {
+      const auto loc = current().loc;
+      advance();
+      auto rhs = parseAndCondition();
+      if (failed(rhs)) {
+        return failure();
+      }
+      result = makeBinaryCondition(Condition::Kind::Or, result, *rhs, loc);
+    }
+    return result;
+  }
+
+  /// andCond := unaryCond ('&&' unaryCond)*
+  [[nodiscard]] FailureOr<const Condition*> parseAndCondition() {
+    auto lhs = parseUnaryCondition();
+    if (failed(lhs)) {
+      return failure();
+    }
+    const auto* result = *lhs;
+    while (current().kind == TokenKind::AmpAmp) {
+      const auto loc = current().loc;
+      advance();
+      auto rhs = parseUnaryCondition();
+      if (failed(rhs)) {
+        return failure();
+      }
+      result = makeBinaryCondition(Condition::Kind::And, result, *rhs, loc);
+    }
+    return result;
+  }
+
+  /// unaryCond := ('!' | '~') unaryCond | primaryCond
+  [[nodiscard]] FailureOr<const Condition*> parseUnaryCondition() {
+    if (current().kind == TokenKind::ExclamationPoint ||
+        current().kind == TokenKind::Tilde) {
+      const auto loc = current().loc;
+      advance();
+      auto operand = parseUnaryCondition();
+      if (failed(operand)) {
+        return failure();
+      }
+      auto* condition = makeCondition();
+      condition->loc = loc;
+      condition->kind = Condition::Kind::Not;
+      condition->lhs = *operand;
+      return condition;
+    }
+    return parsePrimaryCondition();
+  }
+
+  /// primaryCond := 'measure' gateOperand | '(' cond ')' | reference
+  [[nodiscard]] FailureOr<const Condition*> parsePrimaryCondition() {
+    const auto loc = current().loc;
+    switch (current().kind) {
+    case TokenKind::True:
+    case TokenKind::False: {
+      auto* condition = makeCondition();
+      condition->loc = loc;
+      condition->kind = Condition::Kind::Literal;
+      condition->literalValue = current().kind == TokenKind::True;
+      advance();
+      return finishPrimaryCondition(condition);
+    }
+    case TokenKind::Measure: {
+      advance();
+      auto operand = parseGateOperand();
+      if (failed(operand)) {
+        return failure();
+      }
+      auto* condition = makeCondition();
+      condition->loc = loc;
+      condition->kind = Condition::Kind::Measurement;
+      condition->operand = *operand;
+      return finishPrimaryCondition(condition);
+    }
+    case TokenKind::LParen: {
+      advance();
+      auto inner = parseCondition();
+      if (failed(inner)) {
+        return failure();
+      }
+      if (failed(expect(TokenKind::RParen))) {
+        return failure();
+      }
+      return finishPrimaryCondition(*inner);
+    }
+    case TokenKind::Identifier: {
+      auto bit = parseBitReference();
+      if (failed(bit)) {
+        return failure();
+      }
+      auto* condition = makeCondition();
+      condition->loc = loc;
+      condition->kind = Condition::Kind::Bit;
+      condition->bit = *bit;
+      return finishPrimaryCondition(condition);
+    }
+    default:
+      return sink.error(loc, "unsupported condition expression");
+    }
+  }
+
+  /// Reject a register comparison (e.g. `c == 5`) trailing a primary.
+  [[nodiscard]] FailureOr<const Condition*>
+  finishPrimaryCondition(const Condition* condition) {
+    switch (current().kind) {
+    case TokenKind::EqualsEquals:
+    case TokenKind::NotEquals:
+    case TokenKind::Less:
+    case TokenKind::LessEquals:
+    case TokenKind::Greater:
+    case TokenKind::GreaterEquals:
+      return sink.error(current().loc,
+                        "register comparisons are not supported");
+    default:
+      return condition;
+    }
+  }
+
+  [[nodiscard]] Condition* makeBinaryCondition(const Condition::Kind kind,
+                                               const Condition* lhs,
+                                               const Condition* rhs,
+                                               const SMLoc loc) {
+    auto* condition = makeCondition();
+    condition->loc = loc;
+    condition->kind = kind;
+    condition->lhs = lhs;
+    condition->rhs = rhs;
+    return condition;
+  }
+
   //===--- Expressions --------------------------------------------------===//
 
-  [[nodiscard]] mlir::FailureOr<const Expr*> parseExpression() {
+  [[nodiscard]] FailureOr<const Expr*> parseExpression() {
     auto lhs = parseTerm();
     if (failed(lhs)) {
       return failure();
@@ -1201,7 +1265,7 @@ private:
     return result;
   }
 
-  [[nodiscard]] mlir::FailureOr<const Expr*> parseTerm() {
+  [[nodiscard]] FailureOr<const Expr*> parseTerm() {
     auto lhs = parseUnary();
     if (failed(lhs)) {
       return failure();
@@ -1222,7 +1286,7 @@ private:
     return result;
   }
 
-  [[nodiscard]] mlir::FailureOr<const Expr*> parseUnary() {
+  [[nodiscard]] FailureOr<const Expr*> parseUnary() {
     if (current().kind == TokenKind::Minus) {
       const auto loc = current().loc;
       advance();
@@ -1231,15 +1295,15 @@ private:
         return failure();
       }
       auto* expr = makeExpr();
-      expr->kind = Expr::Kind::Neg;
       expr->loc = loc;
+      expr->kind = Expr::Kind::Neg;
       expr->lhs = *operand;
       return expr;
     }
     return parsePrimary();
   }
 
-  [[nodiscard]] mlir::FailureOr<const Expr*> parsePrimary() {
+  [[nodiscard]] FailureOr<const Expr*> parsePrimary() {
     auto* expr = makeExpr();
     expr->loc = current().loc;
     switch (current().kind) {
@@ -1254,8 +1318,8 @@ private:
       advance();
       return expr;
     case TokenKind::Identifier:
-      expr->kind = Expr::Kind::Ident;
-      expr->ident = current().spelling;
+      expr->kind = Expr::Kind::Identifier;
+      expr->identifier = current().identifier;
       advance();
       return expr;
     case TokenKind::LParen: {
@@ -1275,10 +1339,10 @@ private:
   }
 
   [[nodiscard]] Expr* makeBinary(const Expr::Kind kind, const Expr* lhs,
-                                 const Expr* rhs, const llvm::SMLoc loc) {
+                                 const Expr* rhs, const SMLoc loc) {
     auto* expr = makeExpr();
-    expr->kind = kind;
     expr->loc = loc;
+    expr->kind = kind;
     expr->lhs = lhs;
     expr->rhs = rhs;
     return expr;

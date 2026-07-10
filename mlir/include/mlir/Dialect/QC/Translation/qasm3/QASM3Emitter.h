@@ -25,19 +25,19 @@ class ModuleOp;
 namespace qc::detail {
 
 /**
- * @brief Import an OpenQASM 3 program into a QC-dialect module.
+ * @brief Translate an OpenQASM 3 program to a QC program.
  *
  * @details
  * Lexes, parses, and lowers @p sourceMgr's main buffer in a single pass. On any
  * error, a diagnostic is emitted through @p context and a null module is
  * returned.
  *
- * @param sourceMgr Source manager whose main buffer holds the program.
+ * @param sourceMgr Source manager containing the OpenQASM 3 program.
  * @param context The MLIRContext to create the module in.
- * @return The imported module, or null on failure.
+ * @return A module containing the QC program.
  */
-[[nodiscard]] OwningOpRef<ModuleOp> importQASM3(llvm::SourceMgr& sourceMgr,
-                                                MLIRContext* context);
+[[nodiscard]] OwningOpRef<ModuleOp>
+translateQASM3ToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context);
 
 } // namespace qc::detail
 

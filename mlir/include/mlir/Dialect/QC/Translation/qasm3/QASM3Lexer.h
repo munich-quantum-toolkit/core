@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/SMLoc.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 
@@ -45,7 +46,8 @@ enum class TokenKind : uint8_t {
   Pow,
   Ctrl,
   NegCtrl,
-  // Type keywords (only a subset is supported; the rest produce diagnostics)
+
+  // Types
   Int,
   Uint,
   Bool,
@@ -85,7 +87,7 @@ enum class TokenKind : uint8_t {
   ExclamationPoint,
   AmpAmp,         // `&&`
   PipePipe,       // `||`
-  CompoundAssign, // any `<op>=` such as `+=`, `-=`, ...
+  CompoundAssign, // `+=`, `-=`, ...
 
   // Comparisons
   EqualsEquals,
@@ -97,14 +99,20 @@ enum class TokenKind : uint8_t {
 };
 
 /// A human-readable name for @p kind, used in diagnostics.
-[[nodiscard]] llvm::StringRef describe(TokenKind kind);
+[[nodiscard]] StringRef describe(TokenKind kind);
 
-/// A single lexical token. Spellings are zero-copy views into the source
-/// buffer; literals are pre-parsed.
+/**
+ * @brief A single lexical token.
+ *
+ * @details
+ * Spellings are zero-copy views into the source buffer. Literals are
+ * pre-parsed.
+ */
 struct Token {
   TokenKind kind = TokenKind::Eof;
-  llvm::StringRef spelling; ///< Identifier text or string-literal contents.
-  llvm::SMLoc loc;
+  SMLoc loc;
+  StringRef identifier;  ///< For `Identifier` tokens.
+  StringRef stringValue; ///< For `StringLiteral` tokens.
   int64_t intValue = 0;
   double floatValue = 0.0;
 };
@@ -119,8 +127,7 @@ struct Token {
  */
 class Lexer {
 public:
-  explicit Lexer(llvm::StringRef buffer)
-      : cur(buffer.begin()), end(buffer.end()) {}
+  explicit Lexer(StringRef buffer) : cur(buffer.begin()), end(buffer.end()) {}
 
   /// Produce the next token, or an `Eof`/`Error` token at the end/on failure.
   [[nodiscard]] Token next();

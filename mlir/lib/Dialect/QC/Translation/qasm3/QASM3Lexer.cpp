@@ -13,6 +13,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/SMLoc.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 
@@ -20,18 +21,18 @@ namespace mlir::qc::detail {
 
 namespace {
 
-[[nodiscard]] bool isIdentifierStart(char c) {
+[[nodiscard]] bool canStartIdentifier(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
          static_cast<unsigned char>(c) >= 0x80; // allow UTF-8 (e.g. π, τ, ℇ)
 }
 
-[[nodiscard]] bool isIdentifierContinue(char c) {
-  return isIdentifierStart(c) || (c >= '0' && c <= '9');
+[[nodiscard]] bool canContinueIdentifier(char c) {
+  return canStartIdentifier(c) || (c >= '0' && c <= '9');
 }
 
 [[nodiscard]] bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
-[[nodiscard]] TokenKind keywordKind(llvm::StringRef text) {
+[[nodiscard]] TokenKind keywordKind(StringRef text) {
   return llvm::StringSwitch<TokenKind>(text)
       .Case("OPENQASM", TokenKind::OpenQASM)
       .Case("include", TokenKind::Include)
@@ -68,7 +69,7 @@ namespace {
 
 } // namespace
 
-llvm::StringRef describe(const TokenKind kind) {
+StringRef describe(const TokenKind kind) {
   switch (kind) {
   case TokenKind::Eof:
     return "end of input";
@@ -143,14 +144,16 @@ void Lexer::skipTrivia() {
 }
 
 Token Lexer::lexIdentifierOrKeyword(const char* start) {
-  while (!atEnd() && isIdentifierContinue(*cur)) {
+  while (!atEnd() && canContinueIdentifier(*cur)) {
     ++cur;
   }
-  const llvm::StringRef text(start, static_cast<size_t>(cur - start));
+  const StringRef text(start, static_cast<size_t>(cur - start));
   Token token;
+  token.loc = SMLoc::getFromPointer(start);
   token.kind = keywordKind(text);
-  token.spelling = text;
-  token.loc = llvm::SMLoc::getFromPointer(start);
+  if (token.kind == TokenKind::Identifier) {
+    token.identifier = text;
+  }
   return token;
 }
 
@@ -176,10 +179,9 @@ Token Lexer::lexNumber(const char* start) {
       ++cur;
     }
   }
-  const llvm::StringRef text(start, static_cast<size_t>(cur - start));
+  const StringRef text(start, static_cast<size_t>(cur - start));
   Token token;
-  token.loc = llvm::SMLoc::getFromPointer(start);
-  token.spelling = text;
+  token.loc = SMLoc::getFromPointer(start);
   if (isFloat) {
     token.kind = TokenKind::FloatLiteral;
     if (text.getAsDouble(token.floatValue)) {
@@ -201,14 +203,14 @@ Token Lexer::lexString(const char* start) {
     ++cur;
   }
   Token token;
-  token.loc = llvm::SMLoc::getFromPointer(start);
+  token.loc = SMLoc::getFromPointer(start);
   if (atEnd()) {
     token.kind = TokenKind::Error;
     return token;
   }
   token.kind = TokenKind::StringLiteral;
-  token.spelling =
-      llvm::StringRef(contentStart, static_cast<size_t>(cur - contentStart));
+  token.stringValue =
+      StringRef(contentStart, static_cast<size_t>(cur - contentStart));
   ++cur; // consume closing quote
   return token;
 }
@@ -220,9 +222,8 @@ Token Lexer::lexHardwareQubit(const char* start) {
     ++cur;
   }
   Token token;
-  token.loc = llvm::SMLoc::getFromPointer(start);
-  const llvm::StringRef digits(digitsStart,
-                               static_cast<size_t>(cur - digitsStart));
+  token.loc = SMLoc::getFromPointer(start);
+  const StringRef digits(digitsStart, static_cast<size_t>(cur - digitsStart));
   if (digits.empty() || digits.getAsInteger(10, token.intValue)) {
     token.kind = TokenKind::Error;
     return token;
@@ -235,7 +236,7 @@ Token Lexer::next() {
   skipTrivia();
 
   Token token;
-  token.loc = llvm::SMLoc::getFromPointer(cur);
+  token.loc = SMLoc::getFromPointer(cur);
   if (atEnd()) {
     token.kind = TokenKind::Eof;
     return token;
@@ -244,7 +245,7 @@ Token Lexer::next() {
   const char* start = cur;
   const char c = *cur;
 
-  if (isIdentifierStart(c)) {
+  if (canStartIdentifier(c)) {
     return lexIdentifierOrKeyword(start);
   }
   if (isDigit(c)) {
@@ -257,7 +258,7 @@ Token Lexer::next() {
     return lexHardwareQubit(start);
   }
 
-  // Punctuation and operators.
+  // Punctuation and operators
   const auto peek = [&](const char expected) {
     return (cur + 1) != end && cur[1] == expected;
   };

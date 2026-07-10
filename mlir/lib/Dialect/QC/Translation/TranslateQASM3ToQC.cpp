@@ -29,10 +29,9 @@ namespace mlir::qc {
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
                                          MLIRContext* context) {
-  // Route diagnostics through the source manager so errors carry source
-  // locations and snippets.
+  // Route diagnostics through source manager
   const SourceMgrDiagnosticHandler handler(sourceMgr, context);
-  return detail::importQASM3(sourceMgr, context);
+  return detail::translateQASM3ToQC(sourceMgr, context);
 }
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(StringRef source,
