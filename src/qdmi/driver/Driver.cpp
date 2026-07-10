@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <cstring>
 #include <exception>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -33,6 +32,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <filesystem>
 #else
 #include <dlfcn.h>
 #endif // _WIN32
@@ -92,31 +93,7 @@ namespace {
   reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>((lib)), (sym)))
 #define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))
 #else
-namespace {
-/// Loads the device library with the given name, searching in the driver
-/// directory if no path is specified.
-[[nodiscard]] auto loadDeviceLibrary(const char* libName) -> void* {
-  const auto requested = std::filesystem::path(libName);
-
-  if (requested.has_parent_path()) {
-    return dlopen(libName, RTLD_NOW | RTLD_LOCAL);
-  }
-
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<const void*>(&loadDeviceLibrary), &info) != 0 &&
-      info.dli_fname != nullptr) {
-    const auto path =
-        std::filesystem::path(info.dli_fname).parent_path() / requested;
-    if (auto* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-        handle != nullptr) {
-      return handle;
-    }
-  }
-  return dlopen(libName, RTLD_NOW | RTLD_LOCAL);
-}
-} // namespace
-
-#define DL_OPEN(lib) loadDeviceLibrary((lib))
+#define DL_OPEN(lib) dlopen((lib), RTLD_NOW | RTLD_LOCAL)
 #define DL_SYM(lib, sym) dlsym((lib), (sym))
 #define DL_CLOSE(lib) dlclose((lib))
 #endif

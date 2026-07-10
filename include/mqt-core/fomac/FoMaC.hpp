@@ -28,9 +28,12 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace fomac {
+using CustomJobParameter = std::variant<bool, int, double, std::string>;
+
 /**
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
@@ -317,18 +320,14 @@ public:
   [[nodiscard]] std::vector<QDMI_Program_Format>
   getSupportedProgramFormats() const;
 
-  template <typename T1 = std::monostate, typename T2 = std::monostate,
-            typename T3 = std::monostate, typename T4 = std::monostate,
-            typename T5 = std::monostate>
-
   /// @see QDMI_job_submit
-  [[nodiscard]] Job
-  submitJob(const std::string& program, QDMI_Program_Format format,
-            size_t numShots, const std::optional<T1>& custom1 = std::nullopt,
-            const std::optional<T2>& custom2 = std::nullopt,
-            const std::optional<T3>& custom3 = std::nullopt,
-            const std::optional<T4>& custom4 = std::nullopt,
-            const std::optional<T5>& custom5 = std::nullopt) const;
+  [[nodiscard]] Job submitJob(
+      const std::string& program, QDMI_Program_Format format, size_t numShots,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
@@ -402,26 +401,28 @@ private:
 
   friend class Session;
 
-  template <typename T>
-  static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
-                                const std::optional<T>& value) {
+  static void
+  setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
+                    const std::optional<CustomJobParameter>& value) {
     if (!value.has_value()) {
       return;
     }
 
-    if constexpr (std::is_same_v<T, std::string>) {
-      qdmi::throwIfError(
-          QDMI_job_set_parameter(job, param, value->size() + 1, value->c_str()),
-          "Setting custom parameter");
-    } else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, float> ||
-                         std::is_same_v<T, double>) {
-      qdmi::throwIfError(
-          QDMI_job_set_parameter(job, param, sizeof(T), &value.value()),
-          "Setting custom parameter");
-    } else {
-      throw std::runtime_error("Unsupported custom job parameter type, must be "
-                               "string, int, float, or double");
-    }
+    std::visit(
+        [&](const auto& customValue) {
+          using T = std::decay_t<decltype(customValue)>;
+          if constexpr (std::is_same_v<T, std::string>) {
+            qdmi::throwIfError(QDMI_job_set_parameter(job, param,
+                                                      customValue.size() + 1,
+                                                      customValue.c_str()),
+                               "Setting custom parameter");
+          } else {
+            qdmi::throwIfError(
+                QDMI_job_set_parameter(job, param, sizeof(T), &customValue),
+                "Setting custom parameter");
+          }
+        },
+        value.value());
   }
 };
 
@@ -528,14 +529,14 @@ static_assert(!std::is_copy_assignable<Job>());
 static_assert(std::is_move_constructible<Job>());
 static_assert(std::is_move_assignable<Job>());
 
-template <typename T1, typename T2, typename T3, typename T4, typename T5>
-Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format, const size_t numShots,
-                      const std::optional<T1>& custom1,
-                      const std::optional<T2>& custom2,
-                      const std::optional<T3>& custom3,
-                      const std::optional<T4>& custom4,
-                      const std::optional<T5>& custom5) const {
+inline Job
+Device::submitJob(const std::string& program, const QDMI_Program_Format format,
+                  const size_t numShots,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job};

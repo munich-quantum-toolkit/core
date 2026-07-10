@@ -32,6 +32,28 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
+namespace {
+[[nodiscard]] auto customJobParameterFromPython(const nb::object& value)
+    -> std::optional<fomac::CustomJobParameter> {
+  if (value.is_none()) {
+    return std::nullopt;
+  }
+  if (nb::isinstance<nb::bool_>(value)) {
+    return nb::cast<bool>(value);
+  }
+  if (nb::isinstance<nb::str>(value)) {
+    return nb::cast<std::string>(value);
+  }
+  if (nb::isinstance<nb::int_>(value)) {
+    return nb::cast<int>(value);
+  }
+  if (nb::isinstance<nb::float_>(value)) {
+    return nb::cast<double>(value);
+  }
+  throw nb::type_error("custom parameter must be str, int, float, or bool");
+}
+} // namespace
+
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   // Session class
   auto session = nb::class_<fomac::Session>(
@@ -273,18 +295,26 @@ Returns:
       "submit_job",
       [](const fomac::Device& self, const std::string& program,
          const QDMI_Program_Format programFormat, const size_t numShots,
-         const std::optional<std::string>& custom1,
-         const std::optional<std::string>& custom2,
-         const std::optional<std::string>& custom3,
-         const std::optional<std::string>& custom4,
-         const std::optional<std::string>& custom5) {
-        return self.submitJob(program, programFormat, numShots, custom1,
-                              custom2, custom3, custom4, custom5);
+         const nb::object& custom1, const nb::object& custom2,
+         const nb::object& custom3, const nb::object& custom4,
+         const nb::object& custom5) {
+        return self.submitJob(program, programFormat, numShots,
+                              customJobParameterFromPython(custom1),
+                              customJobParameterFromPython(custom2),
+                              customJobParameterFromPython(custom3),
+                              customJobParameterFromPython(custom4),
+                              customJobParameterFromPython(custom5));
       },
       "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
-      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-      "custom5"_a = std::nullopt, nb::rv_policy::reference_internal,
+      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+      nb::sig("def submit_job(self, program: str, program_format: "
+              "ProgramFormat, num_shots: int, *, custom1: str | int | float | "
+              "bool | None = None, custom2: str | int | float | bool | None "
+              "= None, custom3: str | int | float | bool | None = None, "
+              "custom4: str | int | float | bool | None = None, custom5: str "
+              "| int | float | bool | None = None) -> Job"),
       "Submits a job to the device.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
