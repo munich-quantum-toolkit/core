@@ -72,7 +72,7 @@ void staticQubitsWithCtrl(QCProgramBuilder& b) {
 
 void staticQubitsWithInv(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
-  b.inv({q0}, [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q0, [&](Value qubit) { b.t(qubit); });
 }
 
 void staticQubitsWithDuplicates(QCProgramBuilder& b) {
@@ -85,7 +85,7 @@ void staticQubitsWithDuplicates(QCProgramBuilder& b) {
   b.p(std::numbers::pi / 2., q1a);
   b.rzz(0.123, q0b, q1b);
   b.cx(q0b, q1b);
-  b.inv({q0a}, [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q0a, [&](Value qubit) { b.t(qubit); });
 }
 
 void staticQubitsCanonical(QCProgramBuilder& b) {
@@ -96,7 +96,7 @@ void staticQubitsCanonical(QCProgramBuilder& b) {
   b.p(std::numbers::pi / 2., q1);
   b.rzz(0.123, q0, q1);
   b.cx(q0, q1);
-  b.inv({q0}, [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q0, [&](Value qubit) { b.t(qubit); });
 }
 
 void allocDeallocPair(QCProgramBuilder& b) {
@@ -204,8 +204,7 @@ void multipleControlledGlobalPhase(QCProgramBuilder& b) {
 
 void nestedControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.ctrl(q[0], {q[1]},
-         [&](ValueRange targets) { b.cgphase(0.123, targets[0]); });
+  b.ctrl(q[0], q[1], [&](Value target) { b.cgphase(0.123, target); });
 }
 
 void trivialControlledGlobalPhase(QCProgramBuilder& b) {
@@ -214,7 +213,7 @@ void trivialControlledGlobalPhase(QCProgramBuilder& b) {
 }
 
 void inverseGlobalPhase(QCProgramBuilder& b) {
-  b.inv({}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
+  b.inv(ValueRange{}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
 }
 
 void inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {
@@ -251,7 +250,7 @@ void trivialControlledIdentity(QCProgramBuilder& b) {
 
 void inverseIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.id(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.id(qubit); });
 }
 
 void inverseMultipleControlledIdentity(QCProgramBuilder& b) {
@@ -296,7 +295,7 @@ void repeatedControlledX(QCProgramBuilder& b) {
 
 void inverseX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.x(qubit); });
 }
 
 void inverseMultipleControlledX(QCProgramBuilder& b) {
@@ -333,7 +332,7 @@ void trivialControlledY(QCProgramBuilder& b) {
 
 void inverseY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.y(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.y(qubit); });
 }
 
 void inverseMultipleControlledY(QCProgramBuilder& b) {
@@ -370,7 +369,7 @@ void trivialControlledZ(QCProgramBuilder& b) {
 
 void inverseZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.z(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.z(qubit); });
 }
 
 void inverseMultipleControlledZ(QCProgramBuilder& b) {
@@ -407,7 +406,7 @@ void trivialControlledH(QCProgramBuilder& b) {
 
 void inverseH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.h(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.h(qubit); });
 }
 
 void inverseMultipleControlledH(QCProgramBuilder& b) {
@@ -449,7 +448,7 @@ void trivialControlledS(QCProgramBuilder& b) {
 
 void inverseS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.s(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.s(qubit); });
 }
 
 void inverseMultipleControlledS(QCProgramBuilder& b) {
@@ -486,7 +485,7 @@ void trivialControlledSdg(QCProgramBuilder& b) {
 
 void inverseSdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.sdg(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.sdg(qubit); });
 }
 
 void inverseMultipleControlledSdg(QCProgramBuilder& b) {
@@ -523,7 +522,7 @@ void trivialControlledT(QCProgramBuilder& b) {
 
 void inverseT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.t(qubit); });
 }
 
 void inverseMultipleControlledT(QCProgramBuilder& b) {
@@ -560,7 +559,7 @@ void trivialControlledTdg(QCProgramBuilder& b) {
 
 void inverseTdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.tdg(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.tdg(qubit); });
 }
 
 void inverseMultipleControlledTdg(QCProgramBuilder& b) {
@@ -597,7 +596,7 @@ void trivialControlledSx(QCProgramBuilder& b) {
 
 void inverseSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.sx(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.sx(qubit); });
 }
 
 void inverseMultipleControlledSx(QCProgramBuilder& b) {
@@ -634,7 +633,7 @@ void trivialControlledSxdg(QCProgramBuilder& b) {
 
 void inverseSxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.sxdg(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.sxdg(qubit); });
 }
 
 void inverseMultipleControlledSxdg(QCProgramBuilder& b) {
@@ -672,7 +671,7 @@ void trivialControlledRx(QCProgramBuilder& b) {
 
 void inverseRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.rx(-0.123, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.rx(-0.123, qubit); });
 }
 
 void inverseMultipleControlledRx(QCProgramBuilder& b) {
@@ -710,7 +709,7 @@ void trivialControlledRy(QCProgramBuilder& b) {
 
 void inverseRy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.ry(-0.456, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.ry(-0.456, qubit); });
 }
 
 void inverseMultipleControlledRy(QCProgramBuilder& b) {
@@ -748,7 +747,7 @@ void trivialControlledRz(QCProgramBuilder& b) {
 
 void inverseRz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.rz(-0.789, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.rz(-0.789, qubit); });
 }
 
 void inverseMultipleControlledRz(QCProgramBuilder& b) {
@@ -786,7 +785,7 @@ void trivialControlledP(QCProgramBuilder& b) {
 
 void inverseP(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.p(-0.123, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.p(-0.123, qubit); });
 }
 
 void inverseMultipleControlledP(QCProgramBuilder& b) {
@@ -825,7 +824,7 @@ void trivialControlledR(QCProgramBuilder& b) {
 
 void inverseR(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.r(-0.123, 0.456, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.r(-0.123, 0.456, qubit); });
 }
 
 void inverseMultipleControlledR(QCProgramBuilder& b) {
@@ -865,8 +864,7 @@ void trivialControlledU2(QCProgramBuilder& b) {
 void inverseU2(QCProgramBuilder& b) {
   constexpr double pi = std::numbers::pi;
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0],
-        [&](ValueRange qubits) { b.u2(-0.567 + pi, -0.234 - pi, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.u2(-0.567 + pi, -0.234 - pi, qubit); });
 }
 
 void inverseMultipleControlledU2(QCProgramBuilder& b) {
@@ -906,7 +904,7 @@ void trivialControlledU(QCProgramBuilder& b) {
 
 void inverseU(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.u(-0.1, -0.3, -0.2, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.u(-0.1, -0.3, -0.2, qubit); });
 }
 
 void inverseMultipleControlledU(QCProgramBuilder& b) {
@@ -1343,12 +1341,12 @@ void barrierMultipleQubits(QCProgramBuilder& b) {
 
 void singleControlledBarrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[1], q[0], [&](ValueRange targets) { b.barrier(targets[0]); });
+  b.ctrl(q[1], q[0], [&](Value target) { b.barrier({target}); });
 }
 
 void inverseBarrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.barrier(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.barrier(qubit); });
 }
 
 void trivialCtrl(QCProgramBuilder& b) {
@@ -1360,7 +1358,7 @@ void trivialCtrl(QCProgramBuilder& b) {
 void emptyCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
-  b.ctrl({q[0]}, {q[1]}, [&](ValueRange /*targets*/) {});
+  b.ctrl(q[0], q[1], [&](Value /*target*/) {});
 }
 
 void nestedCtrl(QCProgramBuilder& b) {

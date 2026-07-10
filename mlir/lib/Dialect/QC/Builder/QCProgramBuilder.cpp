@@ -30,6 +30,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -245,7 +246,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(ValueRange controls,         \
                                                   Value target) {              \
     ctrl(controls, target,                                                     \
-         [&](ValueRange targets) { OP_CLASS::create(*this, targets[0]); });    \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg); });        \
     return *this;                                                              \
   }
 
@@ -281,9 +282,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param);                              \
-    });                                                                        \
+    ctrl(controls, target,                                                     \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg, param); }); \
     return *this;                                                              \
   }
 
@@ -316,8 +316,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       Value target) {                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param1, param2);                     \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2);                      \
     });                                                                        \
     return *this;                                                              \
   }
@@ -354,8 +354,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param1, param2, param3);             \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2, param3);              \
     });                                                                        \
     return *this;                                                              \
   }
@@ -477,10 +477,33 @@ QCProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
 }
 
 QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls, Value target,
+                       const function_ref<void(Value)>& body) {
+  checkFinalized();
+  CtrlOp::create(*this, controls, target, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::ctrl(Value control, Value target,
+                       const function_ref<void(Value)>& body) {
+  checkFinalized();
+  CtrlOp::create(*this, control, target, body);
+  return *this;
+}
+
+QCProgramBuilder&
 QCProgramBuilder::inv(ValueRange qubits,
                       const function_ref<void(ValueRange)>& body) {
   checkFinalized();
   InvOp::create(*this, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::inv(Value qubit,
+                                        const function_ref<void(Value)>& body) {
+  checkFinalized();
+  InvOp::create(*this, qubit, body);
   return *this;
 }
 
