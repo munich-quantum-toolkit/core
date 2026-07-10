@@ -12,6 +12,12 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
+  ([**@rturrado**])
+- ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
+  ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
+- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
+  ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
@@ -621,6 +627,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
 [#1870]: https://github.com/munich-quantum-toolkit/core/pull/1870
