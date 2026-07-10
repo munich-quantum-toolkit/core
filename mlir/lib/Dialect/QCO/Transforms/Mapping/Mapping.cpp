@@ -269,7 +269,7 @@ private:
     /// does not include the final back edge closing the cycle because the
     /// first SWAP changes the token (the qubit) on the target, invalidating
     /// the edge in F.
-    std::optional<SmallVector<IndexPairType>> findHappySWAPChain() const {
+    [[nodiscard]] std::optional<SmallVector<IndexPairType>> findHappySWAPChain() const {
       const auto optCycle = f_.findCycle();
       if (!optCycle) {
         return std::nullopt;
@@ -286,7 +286,7 @@ private:
     /// Find an unhappy SWAP. That is, find an edge (u, v), where exchanging u
     /// and v, reduces u's distance to its target location (by one) and
     /// increases v's distance from 0 (already at the correct location) to one.
-    std::optional<IndexPairType> findUnhappySWAP() const {
+    [[nodiscard]] std::optional<IndexPairType> findUnhappySWAP() const {
       for (const auto u : f_.getNodes()) {
         for (const auto v : f_.getNeighbours(u)) {
           if (f_.getDegree(v) == 0) {
@@ -304,7 +304,7 @@ private:
   private:
     /// Return true, if moving the program qubit on hardware qubit u to hardware
     /// qubit v brings it closer to its destination hardware qubit.
-    bool shouldAddEdge(const size_t u, const size_t v, const Layout& from,
+    [[nodiscard]] bool shouldAddEdge(const size_t u, const size_t v, const Layout& from,
                        const Layout& to) const {
       const auto dest = to.getHardwareIndex(from.getProgramIndex(u));
       return device_->distanceBetween(v, dest) <
@@ -783,7 +783,7 @@ private:
 
   /// Return the SWAP sequence to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
-  SmallVector<IndexPairType> restore(const Layout& from,
+  [[nodiscard]] SmallVector<IndexPairType> restore(const Layout& from,
                                      const Layout& to) const {
     Layout curr(from);
     FGraph f(device);
@@ -819,7 +819,7 @@ private:
   /// Return a pair of SWAP sequences to transform two layouts into each other.
   /// Inspired by the 4-Approximation algorithm described in arXiv:1602.05150v3,
   /// with the key difference that the goal permutation is not static.
-  std::pair<SmallVector<IndexPairType>, SmallVector<IndexPairType>>
+  [[nodiscard]] std::pair<SmallVector<IndexPairType>, SmallVector<IndexPairType>>
   converge(const Layout& lhs, const Layout& rhs) const {
     std::array layouts{Layout(lhs), Layout(rhs)};
     std::array graphs{FGraph(device), FGraph(device)};
