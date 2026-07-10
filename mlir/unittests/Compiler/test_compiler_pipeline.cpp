@@ -43,7 +43,6 @@
 #include <iosfwd>
 #include <memory>
 #include <string>
-#include <utility>
 
 namespace mqt::test::compiler {
 

@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <numbers>

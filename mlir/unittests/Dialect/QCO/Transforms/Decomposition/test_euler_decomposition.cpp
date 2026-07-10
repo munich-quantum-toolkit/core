@@ -18,6 +18,8 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -109,7 +111,7 @@ class EulerSynthesisExactTest
  */
 static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
                                            ValueRange qubits) {
-  return llvm::to_vector(
+  return to_vector(
       llvm::map_range(qubits, [&](Value q) { return b.measure(q).second; }));
 }
 

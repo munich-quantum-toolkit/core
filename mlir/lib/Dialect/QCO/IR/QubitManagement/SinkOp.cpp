@@ -67,7 +67,7 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
 /**
  * @brief Remove dead gates.
  */
-struct DeadGateElimination final : public OpRewritePattern<SinkOp> {
+struct DeadGateElimination final : OpRewritePattern<SinkOp> {
 
   explicit DeadGateElimination(MLIRContext* context)
       : OpRewritePattern(context) {}
@@ -76,7 +76,7 @@ struct DeadGateElimination final : public OpRewritePattern<SinkOp> {
                                 PatternRewriter& rewriter) const override {
     Value currentValue = op.getQubit();
     auto* currentOp = currentValue.getDefiningOp();
-    bool success = false;
+    auto success = false;
     while (currentOp != nullptr) {
       if (!checkDeadGate(currentOp)) {
         break;

@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/Support/ErrorHandling.h>

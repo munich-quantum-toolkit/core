@@ -14,17 +14,17 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdlib>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -92,13 +92,10 @@ buildMLIRProgram(mlir::MLIRContext* context,
                  const NamedMLIRBuilder<BuilderT>& builder, Args&&... args) {
   return std::visit(
       [&]<typename T>(T fn) -> mlir::OwningOpRef<mlir::ModuleOp> {
-        using FnT = std::decay_t<T>;
-        if constexpr (std::is_same_v<FnT, std::monostate>) {
-          return {};
-        } else if constexpr (requires {
-                               BuilderT::build(context, fn,
-                                               std::forward<Args>(args)...);
-                             }) {
+        if constexpr (requires {
+                        BuilderT::build(context, fn,
+                                        std::forward<Args>(args)...);
+                      }) {
           return BuilderT::build(context, fn, std::forward<Args>(args)...);
         } else {
           return {};
