@@ -12,27 +12,24 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSwitch.h>
-#include <llvm/Support/SMLoc.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cstdint>
+#include <cstddef>
 
 namespace mlir::qc::detail {
 
-namespace {
-
-[[nodiscard]] bool canStartIdentifier(char c) {
+[[nodiscard]] static bool canStartIdentifier(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
          static_cast<unsigned char>(c) >= 0x80; // allow UTF-8 (e.g. π, τ, ℇ)
 }
 
-[[nodiscard]] bool canContinueIdentifier(char c) {
+[[nodiscard]] static bool canContinueIdentifier(char c) {
   return canStartIdentifier(c) || (c >= '0' && c <= '9');
 }
 
-[[nodiscard]] bool isDigit(char c) { return c >= '0' && c <= '9'; }
+[[nodiscard]] static bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
-[[nodiscard]] TokenKind keywordKind(StringRef text) {
+[[nodiscard]] static TokenKind keywordKind(StringRef text) {
   return llvm::StringSwitch<TokenKind>(text)
       .Case("OPENQASM", TokenKind::OpenQASM)
       .Case("include", TokenKind::Include)
@@ -66,8 +63,6 @@ namespace {
       .Case("false", TokenKind::False)
       .Default(TokenKind::Identifier);
 }
-
-} // namespace
 
 StringRef describe(const TokenKind kind) {
   switch (kind) {
@@ -131,7 +126,7 @@ void Lexer::skipTrivia() {
     }
     if (c == '/' && (cur + 1) != end && cur[1] == '*') {
       cur += 2;
-      while (!atEnd() && !(*cur == '*' && (cur + 1) != end && cur[1] == '/')) {
+      while (!atEnd() && (*cur != '*' || (cur + 1) == end || cur[1] != '/')) {
         ++cur;
       }
       if (!atEnd()) {

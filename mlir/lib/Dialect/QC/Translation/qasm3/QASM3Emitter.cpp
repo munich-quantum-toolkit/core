@@ -42,9 +42,11 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iterator>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -52,8 +54,6 @@
 #include <variant>
 
 namespace mlir::qc {
-
-namespace {
 
 using qasm3::GateInfo;
 
@@ -65,6 +65,8 @@ using detail::Lexer;
 using detail::Modifier;
 using detail::Operand;
 using detail::Parser;
+
+namespace {
 
 /**
  * @brief A stored compound-gate definition.
@@ -94,32 +96,15 @@ struct QubitBinding {
 
 using QubitScope = llvm::StringMap<QubitBinding>;
 
-/// Look up a built-in numeric constant and emit it as an `f64`-typed value.
-std::optional<Value> lookupBuiltinConstant(StringRef name,
-                                           QCProgramBuilder& builder) {
-  auto constant = [&](double value) -> Value {
-    return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
-        .getResult();
-  };
-  if (name == "pi" || name == "π") {
-    return constant(std::numbers::pi);
-  }
-  if (name == "tau" || name == "τ") {
-    return constant(2 * std::numbers::pi);
-  }
-  if (name == "euler" || name == "ℇ") {
-    return constant(std::numbers::e);
-  }
-  return std::nullopt;
-}
-
 /// Signature: (builder, gate operands, gate parameters). Owns the callable, as
 /// `GATE_DISPATCH` outlives the lambdas that build it.
 using GateFn = std::function<void(QCProgramBuilder&, ValueRange, ValueRange)>;
 
+} // namespace
+
 /// Build the table mapping each gate identifier to a `QCProgramBuilder`
 /// emitter.
-llvm::StringMap<GateFn> buildGateDispatch() {
+static llvm::StringMap<GateFn> buildGateDispatch() {
   llvm::StringMap<GateFn> d;
 
   // ZeroTargetOneParameter
@@ -221,11 +206,8 @@ llvm::StringMap<GateFn> buildGateDispatch() {
   return d;
 }
 
-/// Map from gate identifier to `QCProgramBuilder` emitter.
-const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
-
 /// Build the table mapping a gate identifier to its metadata.
-llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
+static llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
   llvm::StringMap<std::variant<GateInfo, StoredGate>> t;
   for (const auto& [name, gate] : qasm3::STANDARD_GATES) {
     const auto* standard = dynamic_cast<qasm3::StandardGate*>(gate.get());
@@ -246,9 +228,33 @@ llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
   return t;
 }
 
+/// Look up a built-in numeric constant and emit it as an `f64`-typed value.
+static std::optional<Value> lookupBuiltinConstant(StringRef name,
+                                                  QCProgramBuilder& builder) {
+  auto constant = [&](double value) -> Value {
+    return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
+        .getResult();
+  };
+  if (name == "pi" || name == "π") {
+    return constant(std::numbers::pi);
+  }
+  if (name == "tau" || name == "τ") {
+    return constant(2 * std::numbers::pi);
+  }
+  if (name == "euler" || name == "ℇ") {
+    return constant(std::numbers::e);
+  }
+  return std::nullopt;
+}
+
 //===----------------------------------------------------------------------===//
 // QCEmitter
 //===----------------------------------------------------------------------===//
+
+namespace {
+
+/// Map from gate identifier to `QCProgramBuilder` emitter.
+const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 
 /**
  * @brief Lowers OpenQASM 3 parse events to QC operations.
@@ -978,7 +984,7 @@ private:
     return std::variant<Value, SmallVector<Value>>{*loaded};
   }
 
-  bool isConstantIndex(const Expr& expr) const {
+  [[nodiscard]] bool isConstantIndex(const Expr& expr) const {
     switch (expr.kind) {
     case Expr::Kind::Int:
     case Expr::Kind::Float:
@@ -1277,7 +1283,7 @@ private:
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
 
-  StringSet<> declaredNames;
+  llvm::StringSet<> declaredNames;
 
   ValueTable numericConstants;
   ValueScope numericConstantsScope{numericConstants};
