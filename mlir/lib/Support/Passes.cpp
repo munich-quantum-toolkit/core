@@ -60,6 +60,11 @@ void populateQIRCleanupPipeline(PassManager& pm, bool useAdaptive) {
   pm.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
 }
 
+void populateJeffCleanupPipeline(PassManager& pm) {
+  addSimplificationPasses(pm);
+  pm.addPass(createRemoveDeadValuesPass());
+}
+
 [[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
   return runWithPassManager(module, populateQCCleanupPipeline,
                             "Failed to run QC cleanup pipeline.");
@@ -76,4 +81,9 @@ void populateQIRCleanupPipeline(PassManager& pm, bool useAdaptive) {
       module,
       [&](PassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
       "Failed to run QIR cleanup pipeline.");
+}
+
+[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp module) {
+  return runWithPassManager(module, populateJeffCleanupPipeline,
+                            "Failed to run Jeff cleanup pipeline.");
 }

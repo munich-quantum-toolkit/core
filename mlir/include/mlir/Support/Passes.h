@@ -45,6 +45,14 @@ void populateQCOCleanupPipeline(mlir::PassManager& pm);
 void populateQIRCleanupPipeline(mlir::PassManager& pm, bool useAdaptive);
 
 /**
+ * @brief Populate a `jeff`-oriented cleanup pipeline on the given pass manager.
+ * @details Adds generic cleanup and dead-value removal. This matches the QCO
+ * cleanup minus the QTensor-specific shrink pass, as QTensor operations no
+ * longer exist once lowered into the `jeff` dialect.
+ */
+void populateJeffCleanupPipeline(mlir::PassManager& pm);
+
+/**
  * @brief Run the QC-oriented cleanup pipeline on a module.
  */
 [[nodiscard]] mlir::LogicalResult runQCCleanupPipeline(mlir::ModuleOp module);
@@ -59,3 +67,8 @@ void populateQIRCleanupPipeline(mlir::PassManager& pm, bool useAdaptive);
  */
 [[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp module,
                                                         bool useAdaptive);
+
+/**
+ * @brief Run the `jeff`-oriented cleanup pipeline on a module.
+ */
+[[nodiscard]] mlir::LogicalResult runJeffCleanupPipeline(mlir::ModuleOp module);
