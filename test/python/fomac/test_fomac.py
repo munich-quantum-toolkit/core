@@ -421,18 +421,23 @@ c = measure q;
     assert job.num_shots == 100
 
 
-def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
+@pytest.mark.parametrize("custom_kwarg", ["custom1", "custom2", "custom3", "custom4", "custom5"])
+def test_device_submit_job_forwards_custom_parameters(ddsim_device: Device, custom_kwarg: str) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, **{custom_kwarg: "value"})
+
+
+@pytest.mark.parametrize("custom_value", ["value", 42, 1.5, True])
+def test_device_submit_job_accepts_custom_parameter_types(ddsim_device: Device, custom_value: object) -> None:
+    """Test that submit_job accepts supported custom parameter types."""
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
-    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom3="value")
-    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom4="value")
-    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom5="value")
+        ddsim_device.submit_job(
+            "OPENQASM 3.0;",
+            ProgramFormat.QASM3,
+            1,
+            custom1=cast("str | int | float | bool", custom_value),
+        )
 
 
 def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:

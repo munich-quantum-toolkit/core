@@ -14,11 +14,11 @@
 #include "qdmi/types.h"
 
 #include <qdmi/client.h>
+#include <stddef.h>
 
 #include <algorithm>
 #include <complex>
 #include <concepts>
-#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <map>
