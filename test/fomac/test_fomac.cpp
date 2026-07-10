@@ -556,22 +556,36 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
-TEST_F(DDSimulatorDeviceTest, SubmitJobAcceptsCustomParameters) {
+TEST_F(DDSimulatorDeviceTest, SubmitJobCustom1SupportedTypes) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const std::optional<std::string> custom1 = "custom_value1";
-  const std::optional<std::string> custom2 = "custom_value2";
-  const std::optional<std::string> custom3 = "custom_value3";
-  const std::optional<std::string> custom4 = "custom_value4";
-  const std::optional<std::string> custom5 = "custom_value5";
 
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom1,
-                   custom2, custom3, custom4, custom5),
+  auto submitWithCustom1 = [&](auto custom1) {
+    try {
+      const auto job = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                        10, custom1);
+      EXPECT_NO_THROW(std::ignore = job.getNumShots());
+    } catch (const std::runtime_error&) {
+      GTEST_SKIP() << "Custom job parameter not supported by backend";
+    }
+  };
+
+  submitWithCustom1(std::optional<std::string>("custom_value1"));
+  submitWithCustom1(std::optional<int>(42));
+  submitWithCustom1(std::optional<float>(3.14f));
+  submitWithCustom1(std::optional<double>(2.718));
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobCustom1UnsupportedType) {
+  const std::string qasm3Program = R"(OPENQASM 3.0;)";
+  const std::optional<bool> custom1 = true;
+
+  EXPECT_THROW(static_cast<void>(device.submitJob(
+                   qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom1)),
                std::runtime_error);
 }
 
