@@ -75,7 +75,9 @@ public:
   [[nodiscard]] size_t getNumNodes() const { return adj_.size(); }
 
   /// Return the degree of a node.
-  [[nodiscard]] size_t getDegree(size_t id) { return adj_.at(id).size(); }
+  [[nodiscard]] size_t getDegree(const size_t id) const {
+    return adj_.at(id).size();
+  }
 
   /// Return the max degree of the graph.
   [[nodiscard]] size_t getMaxDegree() const;
