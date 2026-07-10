@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <cstring>
 #include <exception>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -33,6 +32,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <filesystem>
 #else
 #include <dlfcn.h>
 #endif // _WIN32
@@ -92,31 +93,7 @@ namespace {
   reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>((lib)), (sym)))
 #define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))
 #else
-namespace {
-/// Loads the device library with the given name, searching in the driver
-/// directory if no path is specified.
-[[nodiscard]] auto loadDeviceLibrary(const char* libName) -> void* {
-  const auto requested = std::filesystem::path(libName);
-
-  if (requested.has_parent_path()) {
-    return dlopen(libName, RTLD_NOW | RTLD_LOCAL);
-  }
-
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<const void*>(&loadDeviceLibrary), &info) != 0 &&
-      info.dli_fname != nullptr) {
-    const auto path =
-        std::filesystem::path(info.dli_fname).parent_path() / requested;
-    if (auto* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-        handle != nullptr) {
-      return handle;
-    }
-  }
-  return dlopen(libName, RTLD_NOW | RTLD_LOCAL);
-}
-} // namespace
-
-#define DL_OPEN(lib) loadDeviceLibrary((lib))
+#define DL_OPEN(lib) dlopen((lib), RTLD_NOW | RTLD_LOCAL)
 #define DL_SYM(lib, sym) dlsym((lib), (sym))
 #define DL_CLOSE(lib) dlclose((lib))
 #endif
@@ -298,16 +275,6 @@ namespace {
     return QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT;
   case QDMI_JOB_PARAMETER_SHOTSNUM:
     return QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM;
-  case QDMI_JOB_PARAMETER_CUSTOM1:
-    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM1;
-  case QDMI_JOB_PARAMETER_CUSTOM2:
-    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM2;
-  case QDMI_JOB_PARAMETER_CUSTOM3:
-    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM3;
-  case QDMI_JOB_PARAMETER_CUSTOM4:
-    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM4;
-  case QDMI_JOB_PARAMETER_CUSTOM5:
-    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM5;
   default:
     return QDMI_DEVICE_JOB_PARAMETER_MAX;
   }
@@ -319,8 +286,7 @@ QDMI_Job_impl_d::~QDMI_Job_impl_d() {
 }
 auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
                                    const void* value) const -> int {
-  if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(param, QDMI_JOB_PARAMETER)) {
+  if ((value != nullptr && size == 0) || param >= QDMI_JOB_PARAMETER_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return device_->getLibrary().device_job_set_parameter(
