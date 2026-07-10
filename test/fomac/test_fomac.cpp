@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 namespace fomac {
@@ -557,12 +558,7 @@ c = measure q;)";
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustom1SupportedTypes) {
-  const std::string qasm3Program = R"(
-OPENQASM 3.0;
-qubit[1] q;
-bit[1] c;
-c[0] = measure q[0];
-)";
+  const std::string qasm3Program = R"(OPENQASM 3.0;)";
 
   auto submitWithCustom1 = [&](auto custom1) {
     try {
@@ -574,19 +570,10 @@ c[0] = measure q[0];
     }
   };
 
-  submitWithCustom1(std::optional<std::string>("custom_value1"));
-  submitWithCustom1(std::optional<int>(42));
-  submitWithCustom1(std::optional<float>(3.14f));
-  submitWithCustom1(std::optional<double>(2.718));
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobCustom1UnsupportedType) {
-  const std::string qasm3Program = R"(OPENQASM 3.0;)";
-  const std::optional<bool> custom1 = true;
-
-  EXPECT_THROW(static_cast<void>(device.submitJob(
-                   qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom1)),
-               std::runtime_error);
+  submitWithCustom1(std::string("custom"));
+  submitWithCustom1(42);
+  submitWithCustom1(3.14);
+  submitWithCustom1(true);
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {

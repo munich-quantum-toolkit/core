@@ -257,11 +257,11 @@ class Device:
         program_format: ProgramFormat,
         num_shots: int,
         *,
-        custom1: str | None = None,
-        custom2: str | None = None,
-        custom3: str | None = None,
-        custom4: str | None = None,
-        custom5: str | None = None,
+        custom1: str | float | bool | None = None,
+        custom2: str | float | bool | None = None,
+        custom3: str | float | bool | None = None,
+        custom4: str | float | bool | None = None,
+        custom5: str | float | bool | None = None,
     ) -> Job:
         """Submits a job to the device."""
 

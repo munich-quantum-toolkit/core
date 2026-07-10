@@ -422,17 +422,17 @@ c = measure q;
 
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
-    """Test that submit_job handles custom job parameters (even though no current device uses them)."""
-    with pytest.raises(RuntimeError, match=r"Setting custom job parameter 1: Not supported\."):
-        ddsim_device.submit_job("""OPENQASM 3.0;""", ProgramFormat.QASM3, 1, custom1="cstm")
-    with pytest.raises(RuntimeError, match=r"Setting custom job parameter 2: Not supported\."):
-        ddsim_device.submit_job("""OPENQASM 3.0;""", ProgramFormat.QASM3, 1, custom2="cstm")
-    with pytest.raises(RuntimeError, match=r"Setting custom job parameter 3: Not supported\."):
-        ddsim_device.submit_job("""OPENQASM 3.0;""", ProgramFormat.QASM3, 1, custom3="cstm")
-    with pytest.raises(RuntimeError, match=r"Setting custom job parameter 4: Not supported\."):
-        ddsim_device.submit_job("""OPENQASM 3.0;""", ProgramFormat.QASM3, 1, custom4="cstm")
-    with pytest.raises(RuntimeError, match=r"Setting custom job parameter 5: Not supported\."):
-        ddsim_device.submit_job("""OPENQASM 3.0;""", ProgramFormat.QASM3, 1, custom5="cstm")
+    """Test that submit_job forwards custom job parameters to DDSIM."""
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom3="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom4="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom5="value")
 
 
 def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
