@@ -222,6 +222,10 @@ public:
 
   OwningOpRef<ModuleOp> finalize() {
     if (outputRegisters.empty()) {
+      outputRegisters = allBitRegisters;
+    }
+
+    if (outputRegisters.empty()) {
       return builder.finalize();
     }
 
@@ -270,6 +274,9 @@ private:
 
   /// Map from classical-register name to measurement results.
   llvm::StringMap<SmallVector<Value>> bitValues;
+
+  /// Names of all bit registers, in declaration order.
+  SmallVector<std::string> allBitRegisters;
 
   /// Names of classical registers declared as output, in declaration order.
   SmallVector<std::string> outputRegisters;
@@ -397,10 +404,12 @@ public:
     case qasm3::Int:
     case qasm3::Uint: {
       classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
-      if ((stmt->isOutput || openQASM2CompatMode) &&
-          sizedType->type == qasm3::Bit) {
-        // We return `output` bits in QASM3, or all named bits in QASM2.
-        outputRegisters.push_back(id);
+      if (sizedType->type == qasm3::Bit) {
+        allBitRegisters.push_back(id);
+        if (stmt->isOutput || openQASM2CompatMode) {
+          // We return `output` bits in QASM3, or all named bits in QASM2.
+          outputRegisters.push_back(id);
+        }
       }
       break;
     }
