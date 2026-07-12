@@ -19,6 +19,7 @@
 #include <nanobind/stl/optional.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>   // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 
@@ -291,31 +292,12 @@ Returns:
              &fomac::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
-  device.def(
-      "submit_job",
-      [](const fomac::Device& self, const std::string& program,
-         const QDMI_Program_Format programFormat, const size_t numShots,
-         const nb::object& custom1, const nb::object& custom2,
-         const nb::object& custom3, const nb::object& custom4,
-         const nb::object& custom5) {
-        return self.submitJob(program, programFormat, numShots,
-                              customJobParameterFromPython(custom1),
-                              customJobParameterFromPython(custom2),
-                              customJobParameterFromPython(custom3),
-                              customJobParameterFromPython(custom4),
-                              customJobParameterFromPython(custom5));
-      },
-      "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
-      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-      nb::sig("def submit_job(self, program: str, program_format: "
-              "ProgramFormat, num_shots: int, *, custom1: str | int | float | "
-              "bool | None = None, custom2: str | int | float | bool | None "
-              "= None, custom3: str | int | float | bool | None = None, "
-              "custom4: str | int | float | bool | None = None, custom5: str "
-              "| int | float | bool | None = None) -> Job"),
-      "Submits a job to the device.");
+  device.def("submit_job", &fomac::Device::submitJob, "program"_a,
+             "program_format"_a, "num_shots"_a, nb::kw_only(),
+             "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+             "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+             "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+             "Submits a job to the device.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
