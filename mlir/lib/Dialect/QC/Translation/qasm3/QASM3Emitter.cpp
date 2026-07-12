@@ -23,7 +23,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -313,39 +312,37 @@ public:
 
   //===--- Declarations and assignments ---------------------------------===//
 
-  LogicalResult numericDecl(SMLoc loc, detail::NumericType type, StringRef id,
-                            const Expr* initializer) {
-    if (failed(declare(loc, id))) {
-      return failure();
-    }
-    switch (type) {
-    case detail::NumericType::Float:
-      variableKinds[id] = VariableKind::Float;
-      break;
-    case detail::NumericType::Int:
-      variableKinds[id] = VariableKind::Int;
-      break;
-    }
+  LogicalResult intDecl(SMLoc /*loc*/, StringRef id, const Expr* initializer,
+                        bool isConst) {
     if (initializer != nullptr) {
-      return assignNumeric(id, *initializer);
+      return assignInt(id, *initializer, isConst);
     }
     return success();
   }
 
-  LogicalResult boolDecl(SMLoc loc, StringRef id,
-                         const Condition* initializer) {
-    if (failed(declare(loc, id))) {
-      return failure();
+  LogicalResult floatDecl(SMLoc /*loc*/, StringRef id,
+                          const Expr* initializer) {
+    if (initializer != nullptr) {
+      return assignFloat(id, *initializer);
     }
-    variableKinds[id] = VariableKind::Bool;
+    return success();
+  }
+
+  LogicalResult boolDecl(SMLoc /*loc*/, StringRef id,
+                         const Condition* initializer) {
     if (initializer != nullptr) {
       return assignBool(id, *initializer);
     }
     return success();
   }
 
-  LogicalResult numericAssign(SMLoc /*loc*/, StringRef id, const Expr& value) {
-    return assignNumeric(id, value);
+  LogicalResult intAssign(SMLoc /*loc*/, StringRef id, const Expr& value) {
+    // The parser rejects assignments to a `const`
+    return assignInt(id, value, /*isConst=*/false);
+  }
+
+  LogicalResult floatAssign(SMLoc /*loc*/, StringRef id, const Expr& value) {
+    return assignFloat(id, value);
   }
 
   LogicalResult boolAssign(SMLoc /*loc*/, StringRef id,
@@ -353,70 +350,58 @@ public:
     return assignBool(id, value);
   }
 
-  [[nodiscard]] std::optional<detail::ClassicalKind>
-  classicalKind(StringRef id) const {
-    auto it = variableKinds.find(id);
-    if (it == variableKinds.end()) {
-      return std::nullopt;
-    }
-    return it->second == VariableKind::Bool ? detail::ClassicalKind::Boolean
-                                            : detail::ClassicalKind::Numeric;
-  }
-
   /**
-   * @brief Bind a numeric variable @p id to the value of @p value.
+   * @brief Bind an integer variable @p id to the value of @p value.
    *
    * @details
-   * Shared  by `numericDecl` and `numericAssign`.
+   * If @p isConst, the value is evaluated at compile time and stored in
+   * `constantIntegers`. Otherwise, the value is emitted as a runtime value and
+   * stored in `dynamicIntegers`.
    */
-  LogicalResult assignNumeric(StringRef id, const Expr& value) {
-    switch (variableKinds.lookup(id)) {
-    case VariableKind::Float: {
-      auto emitted = emitFloat(value);
-      if (failed(emitted)) {
+  LogicalResult assignInt(StringRef id, const Expr& value, bool isConst) {
+    if (isConst) {
+      auto folded = evaluateConstant(value);
+      if (failed(folded)) {
         return failure();
       }
-      numericConstants.insert(id, *emitted);
+      constantIntegers.insert(id, *folded);
       return success();
     }
-    case VariableKind::Int: {
-      auto emitted = evaluateConstant(value);
-      if (failed(emitted)) {
-        return failure();
-      }
-      integerConstants.insert(id, *emitted);
-      return success();
+    auto emitted = emitIndex(value);
+    if (failed(emitted)) {
+      return failure();
     }
-    default:
-      llvm_unreachable("unknown variable kind");
-    }
+    dynamicIntegers.insert(id, *emitted);
+    return success();
   }
 
-  /**
-   * @brief Bind a boolean variable @p id to the value of @p value.
-   *
-   * @details
-   * Shared  by `boolDecl` and `boolAssign`.
-   */
+  /// Bind a floating-point variable @p id to the value of @p value.
+  LogicalResult assignFloat(StringRef id, const Expr& value) {
+    auto emitted = emitFloat(value);
+    if (failed(emitted)) {
+      return failure();
+    }
+    floatValues.insert(id, *emitted);
+    return success();
+  }
+
+  /// Bind a boolean variable @p id to the value of @p value.
   LogicalResult assignBool(StringRef id, const Condition& value) {
     auto emitted = emitCondition(value);
     if (failed(emitted)) {
       return failure();
     }
-    booleanConstants.insert(id, *emitted);
+    booleanValues.insert(id, *emitted);
     return success();
   }
 
-  LogicalResult qubitRegister(SMLoc loc, StringRef id, const Expr* size) {
-    if (failed(declare(loc, id))) {
-      return failure();
-    }
+  LogicalResult qubitRegister(SMLoc /*loc*/, StringRef id, const Expr* size) {
     if (size != nullptr) {
-      auto count = evaluateConstant(*size);
-      if (failed(count)) {
+      auto sizeConstant = evaluateConstant(*size);
+      if (failed(sizeConstant)) {
         return failure();
       }
-      const auto [value, qubits] = builder.allocQubitRegister(*count);
+      const auto [value, qubits] = builder.allocQubitRegister(*sizeConstant);
       qubitRegisters[id] = {.memref = value, .qubits = qubits};
     } else {
       qubitRegisters[id] = {.memref = nullptr,
@@ -427,21 +412,21 @@ public:
 
   LogicalResult classicalRegister(SMLoc loc, StringRef id, const Expr* size,
                                   bool isOutput) {
-    if (failed(declare(loc, id))) {
-      return failure();
-    }
-    int64_t count = 1;
     if (size != nullptr) {
-      auto evaluated = evaluateConstant(*size);
-      if (failed(evaluated)) {
+      auto sizeConstant = evaluateConstant(*size);
+      if (failed(sizeConstant)) {
         return failure();
       }
-      count = *evaluated;
+      classicalRegisters.push_back(
+          {.loc = loc,
+           .reg = builder.allocClassicalBitRegister(*sizeConstant, id.str()),
+           .isOutput = isOutput});
+    } else {
+      classicalRegisters.push_back(
+          {.loc = loc,
+           .reg = builder.allocClassicalBitRegister(1, id.str()),
+           .isOutput = isOutput});
     }
-    classicalRegisters.push_back(
-        {.loc = loc,
-         .reg = builder.allocClassicalBitRegister(count, id.str()),
-         .isOutput = isOutput});
     return success();
   }
 
@@ -455,7 +440,7 @@ public:
     }
     auto* creg = *cregOrFailure;
 
-    auto bits = resolveClassicalBits(*creg, target);
+    auto bits = resolveBitReference(*creg, target);
     if (failed(bits)) {
       return failure();
     }
@@ -613,14 +598,15 @@ public:
       return failure();
     }
 
+    auto foldedStep = tryEvaluateConstant(step);
+    if (failed(foldedStep)) {
+      return failure();
+    }
+
     // The magnitude of a statically negative step, or 0 if the step counts up
     // or is only known dynamically.
     int64_t stride = 0;
-    if (isConstantIndex(step)) {
-      auto stepConstant = evaluateConstant(step);
-      if (failed(stepConstant)) {
-        return failure();
-      }
+    if (const std::optional<int64_t> stepConstant = *foldedStep) {
       if (*stepConstant == 0) {
         return error(loc, "for loops with a zero step are not supported");
       }
@@ -668,7 +654,7 @@ public:
               .getResult();
     }
 
-    ValueScope loopScope(loopVariables);
+    ValueScope ivScope(dynamicIntegers);
     ValueScope loadScope(dynamicallyLoadedQubits);
 
     auto status = success();
@@ -680,7 +666,7 @@ public:
         resolvedIv =
             arith::SubIOp::create(builder, *startValue, offset).getResult();
       }
-      loopVariables.insert(variable, resolvedIv);
+      dynamicIntegers.insert(variable, resolvedIv);
       status = body();
     });
     return status;
@@ -714,23 +700,6 @@ private:
   using ValueScope = llvm::ScopedHashTableScope<StringRef, Value>;
   using IntegerTable = llvm::ScopedHashTable<StringRef, int64_t>;
   using IntegerScope = llvm::ScopedHashTableScope<StringRef, int64_t>;
-
-  /**
-   * @brief The declared type of a classical scalar variable.
-   *
-   * @details
-   * Tracked so that assignments know how to lower their right-hand side.
-   */
-  enum class VariableKind : uint8_t { Float, Int, Bool };
-
-  //===--- Declarations -------------------------------------------------===//
-
-  LogicalResult declare(SMLoc loc, StringRef id) {
-    if (!declaredNames.insert(id).second) {
-      return error(loc, "identifier '" + id + "' already declared");
-    }
-    return success();
-  }
 
   //===--- Gate calls ---------------------------------------------------===//
 
@@ -833,7 +802,7 @@ private:
     SmallVector<T> targets;
   };
 
-  FailureOr<size_t> controlCount(const Expr* argument) {
+  FailureOr<size_t> getControlCount(const Expr* argument) {
     if (argument == nullptr) {
       return static_cast<size_t>(1);
     }
@@ -859,7 +828,7 @@ private:
         return error(loc, "power modifiers are not supported yet");
       case Modifier::Kind::Ctrl:
       case Modifier::Kind::NegCtrl: {
-        auto count = controlCount(modifier.argument);
+        auto count = getControlCount(modifier.argument);
         if (failed(count)) {
           return failure();
         }
@@ -903,9 +872,9 @@ private:
           static_cast<size_t>(std::distance(targets.begin(), it)));
     }
 
-    ValueScope parameterScope(numericConstants);
+    ValueScope parameterScope(floatValues);
     for (const auto& [name, value] : zip_equal(gate.parameters, parameters)) {
-      numericConstants.insert(name, value);
+      floatValues.insert(name, value);
     }
 
     auto status = success();
@@ -1001,28 +970,23 @@ private:
     if (failed(creg)) {
       return failure();
     }
-
     const auto& registerBits = (*creg)->bits;
     if (registerBits.empty()) {
       return error(bit.loc, "no classical bit of register '" + bit.identifier +
                                 "' has been measured yet");
     }
-
     if (bit.index == nullptr) {
       return registerBits[0];
     }
-
     auto index = evaluateConstant(*bit.index);
     if (failed(index)) {
       return failure();
     }
-
     const auto i = static_cast<size_t>(*index);
     if (i >= registerBits.size() || !registerBits[i]) {
       return error(bit.loc, "bit " + Twine(*index) + " of register '" +
                                 bit.identifier + "' has not been measured yet");
     }
-
     return registerBits[i];
   }
 
@@ -1049,13 +1013,14 @@ private:
       return std::variant<Value, SmallVector<Value>>{qubits};
     }
 
-    const auto& indexExpr = *operand.index;
-    if (isConstantIndex(indexExpr)) {
-      auto index = evaluateConstant(indexExpr);
-      if (failed(index)) {
-        return failure();
-      }
-      const auto i = static_cast<size_t>(*index);
+    const auto& index = *operand.index;
+
+    auto foldedIndex = tryEvaluateConstant(index);
+    if (failed(foldedIndex)) {
+      return failure();
+    }
+    if (const std::optional<int64_t> indexConstant = *foldedIndex) {
+      const auto i = static_cast<size_t>(*indexConstant);
       if (i >= qubits.size()) {
         return error(operand.loc, "qubit index out of bounds");
       }
@@ -1066,30 +1031,11 @@ private:
       return error(operand.loc,
                    "dynamic qubit indexing requires a qubit register");
     }
-    auto loaded = loadDynamicElement(operand.identifier, memref, indexExpr);
+    auto loaded = loadDynamicElement(operand.identifier, memref, index);
     if (failed(loaded)) {
       return failure();
     }
     return std::variant<Value, SmallVector<Value>>{*loaded};
-  }
-
-  [[nodiscard]] bool isConstantIndex(const Expr& expr) const {
-    switch (expr.kind) {
-    case Expr::Kind::Int:
-    case Expr::Kind::Float:
-      return true;
-    case Expr::Kind::Identifier:
-      // A declared integer constant folds; a loop variable does not.
-      return integerConstants.count(expr.identifier) != 0;
-    case Expr::Kind::Neg:
-      return isConstantIndex(*expr.lhs);
-    case Expr::Kind::Add:
-    case Expr::Kind::Sub:
-    case Expr::Kind::Mul:
-    case Expr::Kind::Div:
-      return isConstantIndex(*expr.lhs) && isConstantIndex(*expr.rhs);
-    }
-    llvm_unreachable("unknown expression kind");
   }
 
   static std::string indexKey(const Expr& expr) {
@@ -1115,12 +1061,12 @@ private:
   }
 
   FailureOr<Value> loadDynamicElement(StringRef name, Value memref,
-                                      const Expr& indexExpr) {
-    const std::string key = name.str() + "[" + indexKey(indexExpr) + "]";
+                                      const Expr& expr) {
+    const std::string key = name.str() + "[" + indexKey(expr) + "]";
     if (Value cached = dynamicallyLoadedQubits.lookup(key)) {
       return cached;
     }
-    auto index = emitIndex(indexExpr);
+    auto index = emitIndex(expr);
     if (failed(index)) {
       return failure();
     }
@@ -1130,10 +1076,9 @@ private:
   }
 
   FailureOr<SmallVector<QCProgramBuilder::Bit>>
-  resolveClassicalBits(const ClassicalRegisterInfo& info,
-                       const BitReference& reference) {
+  resolveBitReference(const ClassicalRegisterInfo& info,
+                      const BitReference& reference) {
     const auto& creg = info.reg;
-
     SmallVector<QCProgramBuilder::Bit> bits;
     if (reference.index == nullptr) {
       for (int64_t i = 0; i < creg.size; ++i) {
@@ -1172,7 +1117,7 @@ private:
       // A bare identifier may name a declared `bool`; otherwise it is a
       // classical bit reference.
       if (condition.bit.index == nullptr) {
-        if (Value value = booleanConstants.lookup(condition.bit.identifier)) {
+        if (Value value = booleanValues.lookup(condition.bit.identifier)) {
           return value;
         }
       }
@@ -1250,14 +1195,19 @@ private:
   }
 
   FailureOr<Value> resolveParameter(StringRef name, SMLoc loc) {
-    if (auto value = numericConstants.lookup(name)) {
+    if (auto value = floatValues.lookup(name)) {
       return value;
     }
-    // An integer constant used as an angle is materialized as an `f64`.
-    if (integerConstants.count(name) != 0) {
+    if (auto value = constantIntegers.lookup(name)) {
       return arith::ConstantOp::create(
-                 builder, builder.getF64FloatAttr(static_cast<double>(
-                              integerConstants.lookup(name))))
+                 builder, builder.getF64FloatAttr(static_cast<double>(value)))
+          .getResult();
+    }
+    if (auto value = dynamicIntegers.lookup(name)) {
+      auto integer =
+          arith::IndexCastOp::create(builder, builder.getI64Type(), value)
+              .getResult();
+      return arith::SIToFPOp::create(builder, builder.getF64Type(), integer)
           .getResult();
     }
     if (auto value = lookupBuiltinConstant(name, builder)) {
@@ -1302,14 +1252,11 @@ private:
       }
     }
     case Expr::Kind::Identifier:
-      if (Value value = loopVariables.lookup(expr.identifier)) {
-        return value;
+      if (auto value = constantIntegers.lookup(expr.identifier)) {
+        return builder.indexConstant(value);
       }
-      if (integerConstants.count(expr.identifier) != 0) {
-        return arith::ConstantOp::create(
-                   builder, builder.getIndexAttr(
-                                integerConstants.lookup(expr.identifier)))
-            .getResult();
+      if (auto value = dynamicIntegers.lookup(expr.identifier)) {
+        return value;
       }
       return error(expr.loc, "expected an integer expression");
     case Expr::Kind::Float:
@@ -1318,49 +1265,73 @@ private:
     llvm_unreachable("unknown expression kind");
   }
 
-  FailureOr<int64_t> evaluateConstant(const Expr& expr) {
+  /**
+   * @brief Fold @p expr to a compile-time integer constant.
+   *
+   * @details
+   * A `std::nullopt` result means @p expr is not a compile-time constant, which
+   * is not necessarily an error: the caller decides whether to require one or
+   * to fall back to emitting the expression. A constant expression that is
+   * malformed is diagnosed and returns failure.
+   */
+  FailureOr<std::optional<int64_t>> tryEvaluateConstant(const Expr& expr) {
     switch (expr.kind) {
     case Expr::Kind::Int:
-      return expr.intValue;
-    case Expr::Kind::Neg: {
-      auto operand = evaluateConstant(*expr.lhs);
-      if (failed(operand)) {
-        return failure();
+      return std::optional{expr.intValue};
+    case Expr::Kind::Float:
+      return std::optional<int64_t>{};
+    case Expr::Kind::Identifier:
+      if (auto value = constantIntegers.lookup(expr.identifier)) {
+        return std::optional{value};
       }
-      return -*operand;
+      return std::optional<int64_t>{};
+    case Expr::Kind::Neg: {
+      auto operand = tryEvaluateConstant(*expr.lhs);
+      if (failed(operand) || !*operand) {
+        return operand;
+      }
+      return std::optional{-**operand};
     }
     case Expr::Kind::Add:
     case Expr::Kind::Sub:
     case Expr::Kind::Mul:
     case Expr::Kind::Div: {
-      auto lhs = evaluateConstant(*expr.lhs);
-      auto rhs = evaluateConstant(*expr.rhs);
+      auto lhs = tryEvaluateConstant(*expr.lhs);
+      auto rhs = tryEvaluateConstant(*expr.rhs);
       if (failed(lhs) || failed(rhs)) {
         return failure();
       }
+      if (!*lhs || !*rhs) {
+        return std::optional<int64_t>{};
+      }
       switch (expr.kind) {
       case Expr::Kind::Add:
-        return *lhs + *rhs;
+        return std::optional{**lhs + **rhs};
       case Expr::Kind::Sub:
-        return *lhs - *rhs;
+        return std::optional{**lhs - **rhs};
       case Expr::Kind::Mul:
-        return *lhs * *rhs;
+        return std::optional{**lhs * **rhs};
       default:
-        if (*rhs == 0) {
+        if (**rhs == 0) {
           return error(expr.loc, "division by zero in constant expression");
         }
-        return *lhs / *rhs;
+        return std::optional{**lhs / **rhs};
       }
     }
-    case Expr::Kind::Identifier:
-      if (integerConstants.count(expr.identifier) != 0) {
-        return integerConstants.lookup(expr.identifier);
-      }
-      return error(expr.loc, "expected a constant integer expression");
-    case Expr::Kind::Float:
-      return error(expr.loc, "expected a constant integer expression");
     }
     llvm_unreachable("unknown expression kind");
+  }
+
+  /// Fold @p expr to a compile-time integer constant, requiring that it is one.
+  FailureOr<int64_t> evaluateConstant(const Expr& expr) {
+    auto folded = tryEvaluateConstant(expr);
+    if (failed(folded)) {
+      return failure();
+    }
+    if (!*folded) {
+      return error(expr.loc, "expected a constant integer expression");
+    }
+    return **folded;
   }
 
   //===--- State --------------------------------------------------------===//
@@ -1368,23 +1339,22 @@ private:
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
 
-  llvm::StringSet<> declaredNames;
+  ValueTable floatValues;
+  ValueScope floatValuesScope{floatValues};
 
-  ValueTable numericConstants;
-  ValueScope numericConstantsScope{numericConstants};
-  IntegerTable integerConstants;
-  IntegerScope integerConstantsScope{integerConstants};
-  ValueTable booleanConstants;
-  ValueScope booleanConstantsScope{booleanConstants};
-  ValueTable loopVariables;
-  ValueScope loopVariablesScope{loopVariables};
+  IntegerTable constantIntegers;
+  IntegerScope constantIntegersScope{constantIntegers};
+  ValueTable dynamicIntegers;
+  ValueScope dynamicIntegersScope{dynamicIntegers};
+
+  ValueTable booleanValues;
+  ValueScope booleanValuesScope{booleanValues};
+
   ValueTable dynamicallyLoadedQubits;
   ValueScope dynamicallyLoadedQubitsScope{dynamicallyLoadedQubits};
 
   llvm::BumpPtrAllocator keyStorage;
   llvm::StringSaver keySaver{keyStorage};
-
-  llvm::StringMap<VariableKind> variableKinds;
 
   QubitScope qubitRegisters;
   SmallVector<ClassicalRegisterInfo> classicalRegisters;

@@ -15,8 +15,10 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/SMLoc.h>
 #include <mlir/Support/LLVM.h>
 
@@ -123,22 +125,6 @@ struct Condition {
   const Condition* rhs = nullptr; ///< For `And` and `Or`.
 };
 
-/**
- * @ingroup ParseVocabulary
- * @brief The kind of a declared classical variable.
- *
- * @details
- * Used to select the grammar of an assignment's right-hand side (numeric vs.
- * boolean).
- */
-enum class ClassicalKind : uint8_t { Numeric, Boolean };
-
-/**
- * @ingroup ParseVocabulary
- * @brief A numeric declaration type.
- */
-enum class NumericType : uint8_t { Float, Int };
-
 //===----------------------------------------------------------------------===//
 // Sink concept
 //===----------------------------------------------------------------------===//
@@ -163,14 +149,15 @@ concept QASMSink =
              const Condition& condition, const GateCall& call,
              ArrayRef<Operand> operands, ArrayRef<StringRef> names,
              ArrayRef<GateCall> body, function_ref<LogicalResult()> cont,
-             double d, bool flag, NumericType numericType) {
+             double d, bool flag) {
       s.error(loc, str);
       s.include(loc, str);
-      s.numericDecl(loc, numericType, str, &expr);
       s.boolDecl(loc, str, &condition);
-      s.numericAssign(loc, str, expr);
+      s.intDecl(loc, str, &expr, flag);
+      s.floatDecl(loc, str, &expr);
       s.boolAssign(loc, str, condition);
-      s.classicalKind(str);
+      s.intAssign(loc, str, expr);
+      s.floatAssign(loc, str, expr);
       s.qubitRegister(loc, str, &expr);
       s.classicalRegister(loc, str, &expr, flag);
       s.measure(loc, reference, operand);
@@ -220,6 +207,36 @@ public:
   }
 
 private:
+  /**
+   * @brief A declared name.
+   *
+   * @details
+   * The parser owns the names a program declares: it rejects redeclarations,
+   * chooses the grammar of an assignment from what its target names, and
+   * rejects an assignment to a `const`. Each declaration and assignment tells
+   * the sink the type it needs, so the sink keeps no symbol table of its own.
+   */
+  struct Symbol {
+    enum class Kind : uint8_t {
+      Bool,
+      Int,
+      Float,
+      QubitRegister,
+      ClassicalRegister
+    };
+
+    Kind kind = Kind::Int;
+    bool isConst = false; ///< Relevant if a scalar.
+  };
+
+  /// Record a declaration of @p id, rejecting a redeclaration.
+  [[nodiscard]] LogicalResult declare(SMLoc loc, StringRef id, Symbol symbol) {
+    if (!symbols.insert({id, symbol}).second) {
+      return sink.error(loc, "identifier '" + id + "' already declared");
+    }
+    return success();
+  }
+
   //===--- Token scaffolding --------------------------------------------===//
 
   void advance() {
@@ -270,9 +287,9 @@ private:
     case TokenKind::Include:
       return parseInclude();
     case TokenKind::Const:
+    case TokenKind::Bool:
     case TokenKind::Int:
     case TokenKind::Uint:
-    case TokenKind::Bool:
     case TokenKind::Float:
       return parseScalarDeclaration();
     case TokenKind::Angle:
@@ -399,22 +416,24 @@ private:
   /// Parse `[const] (int|uint|float|bool) <id> = <initializer>;`.
   [[nodiscard]] LogicalResult parseScalarDeclaration() {
     const auto loc = current().loc;
+
+    bool isConst = false;
     if (current().kind == TokenKind::Const) {
+      isConst = true;
       advance(); // const
     }
 
-    NumericType numericType = NumericType::Float;
-    bool isBool = false;
+    typename Symbol::Kind kind{};
     switch (current().kind) {
-    case TokenKind::Float:
-      numericType = NumericType::Float;
+    case TokenKind::Bool:
+      kind = Symbol::Kind::Bool;
       break;
     case TokenKind::Int:
     case TokenKind::Uint:
-      numericType = NumericType::Int;
+      kind = Symbol::Kind::Int;
       break;
-    case TokenKind::Bool:
-      isBool = true;
+    case TokenKind::Float:
+      kind = Symbol::Kind::Float;
       break;
     case TokenKind::Angle:
     case TokenKind::Duration:
@@ -436,8 +455,16 @@ private:
     if (hasInitializer) {
       advance();
     }
+    if (isConst && !hasInitializer) {
+      return sink.error(loc, "'const' declaration of '" + id +
+                                 "' requires an initializer");
+    }
 
-    if (isBool) {
+    if (failed(declare(loc, id, {.kind = kind, .isConst = isConst}))) {
+      return failure();
+    }
+
+    if (kind == Symbol::Kind::Bool) {
       const Condition* initializer = nullptr;
       if (hasInitializer) {
         auto condition = parseCondition();
@@ -463,7 +490,10 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.numericDecl(loc, numericType, id, initializer);
+    if (kind == Symbol::Kind::Int) {
+      return sink.intDecl(loc, id, initializer, isConst);
+    }
+    return sink.floatDecl(loc, id, initializer);
   }
 
   /// Parse `qubit[<n>] <id>;`.
@@ -484,6 +514,9 @@ private:
     const auto id = current().identifier;
     advance();
     if (failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    if (failed(declare(loc, id, {.kind = Symbol::Kind::QubitRegister}))) {
       return failure();
     }
     return sink.qubitRegister(loc, id, size);
@@ -507,6 +540,9 @@ private:
       size = *designator;
     }
     if (failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    if (failed(declare(loc, id, {.kind = Symbol::Kind::QubitRegister}))) {
       return failure();
     }
     return sink.qubitRegister(loc, id, size);
@@ -556,6 +592,9 @@ private:
       return failure();
     }
 
+    if (failed(declare(loc, id, {.kind = Symbol::Kind::ClassicalRegister}))) {
+      return failure();
+    }
     if (failed(sink.classicalRegister(loc, id, size, isOutput))) {
       return failure();
     }
@@ -586,13 +625,83 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
+    if (failed(declare(loc, id, {.kind = Symbol::Kind::ClassicalRegister}))) {
+      return failure();
+    }
     return sink.classicalRegister(loc, id, size, /*isOutput=*/false);
   }
 
   //===--- Assignment ---------------------------------------------------===//
 
-  /// Parse `<id> = measure <operand>;` or `<id> = <value>;`.
+  /// Parse an assignment.
   [[nodiscard]] LogicalResult parseAssignment() {
+    const auto loc = current().loc;
+    const auto id = current().identifier;
+    const auto it = symbols.find(id);
+    if (it == symbols.end()) {
+      return sink.error(loc, "unknown identifier '" + id + "'");
+    }
+    switch (it->second.kind) {
+    case Symbol::Kind::Bool:
+    case Symbol::Kind::Int:
+    case Symbol::Kind::Float:
+      return parseScalarAssignment(it->second);
+    case Symbol::Kind::ClassicalRegister:
+      return parseMeasureAssignment();
+    case Symbol::Kind::QubitRegister:
+      return sink.error(loc, "cannot assign to qubit register '" + id + "'");
+    }
+    llvm_unreachable("unknown symbol kind");
+  }
+
+  /// Parse `<id> = <value>;`.
+  [[nodiscard]] LogicalResult parseScalarAssignment(Symbol symbol) {
+    const auto loc = current().loc;
+    const auto id = current().identifier;
+    advance(); // identifier
+
+    if (current().kind == TokenKind::LBracket) {
+      return sink.error(current().loc,
+                        "cannot assign to an element of a scalar");
+    }
+    if (symbol.isConst) {
+      return sink.error(loc,
+                        "cannot assign to the 'const' variable '" + id + "'");
+    }
+    if (current().kind == TokenKind::CompoundAssign) {
+      return sink.error(current().loc,
+                        "compound assignments are not supported yet");
+    }
+    if (failed(expect(TokenKind::Equals))) {
+      return failure();
+    }
+
+    if (symbol.kind == Symbol::Kind::Bool) {
+      auto condition = parseCondition();
+      if (failed(condition)) {
+        return failure();
+      }
+      if (failed(expect(TokenKind::Semicolon))) {
+        return failure();
+      }
+      return sink.boolAssign(loc, id, **condition);
+    }
+
+    auto value = parseExpression();
+    if (failed(value)) {
+      return failure();
+    }
+    if (failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    if (symbol.kind == Symbol::Kind::Int) {
+      return sink.intAssign(loc, id, **value);
+    }
+    return sink.floatAssign(loc, id, **value);
+  }
+
+  /// Parse `<bit-reference> = measure <operand>;`.
+  [[nodiscard]] LogicalResult parseMeasureAssignment() {
     const auto loc = current().loc;
     auto target = parseBitReference();
     if (failed(target)) {
@@ -607,50 +716,20 @@ private:
     if (failed(expect(TokenKind::Equals))) {
       return failure();
     }
-
-    // Measure assignment
-    if (current().kind == TokenKind::Measure) {
-      advance();
-      auto operand = parseGateOperand();
-      if (failed(operand)) {
-        return failure();
-      }
-      if (failed(expect(TokenKind::Semicolon))) {
-        return failure();
-      }
-      return sink.measure(loc, reference, *operand);
-    }
-
-    // Value assignment
-    const auto kind = sink.classicalKind(reference.identifier);
-    if (!kind) {
+    if (current().kind != TokenKind::Measure) {
       return sink.error(reference.loc,
                         "cannot assign to '" + reference.identifier + "'");
     }
-    if (reference.index != nullptr) {
-      return sink.error(reference.loc,
-                        "cannot assign to an element of a scalar");
-    }
+    advance(); // measure
 
-    if (*kind == ClassicalKind::Boolean) {
-      auto condition = parseCondition();
-      if (failed(condition)) {
-        return failure();
-      }
-      if (failed(expect(TokenKind::Semicolon))) {
-        return failure();
-      }
-      return sink.boolAssign(loc, reference.identifier, **condition);
-    }
-
-    auto value = parseExpression();
-    if (failed(value)) {
+    auto operand = parseGateOperand();
+    if (failed(operand)) {
       return failure();
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.numericAssign(loc, reference.identifier, **value);
+    return sink.measure(loc, reference, *operand);
   }
 
   //===--- Measure ------------------------------------------------------===//
@@ -1364,6 +1443,7 @@ private:
   llvm::BumpPtrAllocator& allocator;
   Token currentToken;
   Token nextToken;
+  llvm::StringMap<Symbol> symbols;
 };
 
 } // namespace mlir::qc::detail
