@@ -233,7 +233,7 @@ known-first-party = ["mqt.core"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
 "mlir/unittests/**/*.py" = ["INP001", "T201"]
-"*.pyi" = ["D418", "E501", "PYI021"]
+"*.pyi" = ["D418", "E501", "PYI021", "PYI011"]
 "*.ipynb" = [
     "D",    # pydocstyle
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
