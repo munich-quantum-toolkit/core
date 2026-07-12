@@ -373,7 +373,7 @@ public:
   LogicalResult assignNumeric(StringRef id, const Expr& value) {
     switch (variableKinds.lookup(id)) {
     case VariableKind::Float: {
-      auto emitted = emitAngle(value);
+      auto emitted = emitFloat(value);
       if (failed(emitted)) {
         return failure();
       }
@@ -746,7 +746,7 @@ private:
     SmallVector<Value> parameters;
     parameters.reserve(call.parameters.size());
     for (const auto* argument : call.parameters) {
-      auto value = emitAngle(*argument);
+      auto value = emitFloat(*argument);
       if (failed(value)) {
         return failure();
       }
@@ -1206,7 +1206,7 @@ private:
 
   //===--- Expressions --------------------------------------------------===//
 
-  FailureOr<Value> emitAngle(const Expr& expr) {
+  FailureOr<Value> emitFloat(const Expr& expr) {
     switch (expr.kind) {
     case Expr::Kind::Int:
       return arith::ConstantOp::create(
@@ -1220,7 +1220,7 @@ private:
     case Expr::Kind::Identifier:
       return resolveParameter(expr.identifier, expr.loc);
     case Expr::Kind::Neg: {
-      auto operand = emitAngle(*expr.lhs);
+      auto operand = emitFloat(*expr.lhs);
       if (failed(operand)) {
         return failure();
       }
@@ -1230,8 +1230,8 @@ private:
     case Expr::Kind::Sub:
     case Expr::Kind::Mul:
     case Expr::Kind::Div: {
-      auto lhs = emitAngle(*expr.lhs);
-      auto rhs = emitAngle(*expr.rhs);
+      auto lhs = emitFloat(*expr.lhs);
+      auto rhs = emitFloat(*expr.rhs);
       if (failed(lhs) || failed(rhs)) {
         return failure();
       }
