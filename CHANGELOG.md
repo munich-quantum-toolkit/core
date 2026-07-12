@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add support for custom job parameters to C++ and Python FoMaC library
+  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -627,6 +629,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
 [#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
