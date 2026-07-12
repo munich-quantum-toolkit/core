@@ -26,7 +26,6 @@
 #include <string>
 #include <thread>
 #include <tuple>
-#include <type_traits>
 #include <vector>
 
 namespace fomac {
@@ -558,7 +557,7 @@ c = measure q;)";
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
-  constexpr std::string qasm3Program = R"(OPENQASM 3.0;)";
+  constexpr auto qasm3Program = "OPENQASM 3.0;";
 
   auto submitWithCustoms = [&](auto custom, const size_t which) {
     try {
