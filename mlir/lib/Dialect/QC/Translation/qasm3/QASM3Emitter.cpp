@@ -608,33 +608,80 @@ public:
   LogicalResult forStmt(SMLoc loc, StringRef variable, const Expr& start,
                         const Expr& step, const Expr& stop,
                         function_ref<LogicalResult()> body) {
-    auto stepConstant = evaluateConstant(step);
-    if (failed(stepConstant)) {
-      return failure();
-    }
-    if (*stepConstant < 1) {
-      return error(loc, "for loops with a non-positive step are not supported");
-    }
-
     auto startValue = emitIndex(start);
-    auto stepValue = emitIndex(step);
     auto stopValue = emitIndex(stop);
-    if (failed(startValue) || failed(stepValue) || failed(stopValue)) {
+    if (failed(startValue) || failed(stopValue)) {
       return failure();
     }
 
-    // OpenQASM 3's range is inclusive of the stop value
-    auto one =
-        arith::ConstantOp::create(builder, builder.getIndexAttr(1)).getResult();
-    auto inclusiveStop =
-        arith::AddIOp::create(builder, *stopValue, one).getResult();
+    // The magnitude of a statically negative step, or 0 if the step counts up
+    // or is only known dynamically.
+    int64_t stride = 0;
+    if (isConstantIndex(step)) {
+      auto stepConstant = evaluateConstant(step);
+      if (failed(stepConstant)) {
+        return failure();
+      }
+      if (*stepConstant == 0) {
+        return error(loc, "for loops with a zero step are not supported");
+      }
+      if (*stepConstant < 0) {
+        stride = -*stepConstant;
+      }
+    }
+
+    Value resolvedStart;
+    Value resolvedStep;
+    Value resolvedStop;
+    Value strideValue;
+    if (stride != 0) {
+      // A negative step counts down, which `scf.for` cannot express. Count the
+      // iterations up instead and recompute the loop variable from the
+      // induction variable below, which preserves both the values the loop
+      // visits and the order in which it visits them. The loop runs
+      // `max(0, (start - stop) / stride + 1)` times.
+      auto zero = builder.indexConstant(0);
+      auto one = builder.indexConstant(1);
+      strideValue = builder.indexConstant(stride);
+      auto span =
+          arith::SubIOp::create(builder, *startValue, *stopValue).getResult();
+      auto steps =
+          arith::DivSIOp::create(builder, span, strideValue).getResult();
+      auto count = arith::AddIOp::create(builder, steps, one).getResult();
+      auto isPositive =
+          arith::CmpIOp::create(builder, arith::CmpIPredicate::sgt, count, zero)
+              .getResult();
+      resolvedStart = zero;
+      resolvedStop =
+          arith::SelectOp::create(builder, isPositive, count, zero).getResult();
+      resolvedStep = one;
+    } else {
+      auto stepValue = emitIndex(step);
+      if (failed(stepValue)) {
+        return failure();
+      }
+      resolvedStart = *startValue;
+      resolvedStep = *stepValue;
+      // Add 1 to make the stop value inclusive, as OpenQASM 3's for loops are
+      // inclusive.
+      resolvedStop =
+          arith::AddIOp::create(builder, *stopValue, builder.indexConstant(1))
+              .getResult();
+    }
 
     ValueScope loopScope(loopVariables);
     ValueScope loadScope(dynamicallyLoadedQubits);
 
     auto status = success();
-    builder.scfFor(*startValue, inclusiveStop, *stepValue, [&](Value iv) {
-      loopVariables.insert(variable, iv);
+    builder.scfFor(resolvedStart, resolvedStop, resolvedStep, [&](Value iv) {
+      Value resolvedIv = iv;
+      if (stride != 0) {
+        auto offset =
+            arith::MulIOp::create(builder, iv, strideValue).getResult();
+        resolvedIv =
+            arith::SubIOp::create(builder, *startValue, offset).getResult();
+      }
+      loopVariables.insert(variable, resolvedIv);
       status = body();
     });
     return status;

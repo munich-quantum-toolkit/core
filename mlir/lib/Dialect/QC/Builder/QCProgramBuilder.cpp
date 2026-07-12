@@ -87,6 +87,11 @@ Value QCProgramBuilder::intConstant(const int64_t value) {
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
+Value QCProgramBuilder::indexConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getIndexAttr(value)).getResult();
+}
+
 Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
   if (index >= qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
