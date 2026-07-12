@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -40,7 +41,7 @@ namespace {
  * @brief Check whether @p input unambiguously looks like source text.
  */
 [[nodiscard]] bool isSourceString(const std::string_view input) {
-  return input.find("\n") != std::string_view::npos ||
+  return input.find('\n') != std::string_view::npos ||
          input.find("OPENQASM") != std::string_view::npos ||
          input.starts_with("module");
 }
@@ -147,7 +148,9 @@ programFromString(const std::string& input) {
  */
 [[nodiscard]] nb::object toPython(mlir::CompilerProgram&& program) {
   return std::visit(
-      [](auto&& value) -> nb::object { return nb::cast(std::move(value)); },
+      []<typename T>(T&& value) -> nb::object {
+        return nb::cast(std::forward<T>(value));
+      },
       std::move(program));
 }
 

@@ -11,6 +11,7 @@
 #include "mlir/Compiler/Programs.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -30,6 +31,7 @@
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -51,16 +53,19 @@
 #include <mlir/Target/LLVMIR/ModuleTranslation.h>
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
+#include <string>
+#include <system_error>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace mlir {
 
-namespace {
-
-[[nodiscard]] std::shared_ptr<MLIRContext> createCompilerContext() {
+[[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, cf::ControlFlowDialect,
@@ -74,16 +79,17 @@ namespace {
   return context;
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp> parseMLIRString(MLIRContext* context,
-                                                    const std::string& source) {
-  auto module = parseSourceString<ModuleOp>(llvm::StringRef(source), context);
+[[nodiscard]] static OwningOpRef<ModuleOp>
+parseMLIRString(MLIRContext* context, const std::string& source) {
+  auto module = parseSourceString<ModuleOp>(StringRef(source), context);
   if (!module) {
     throw std::runtime_error("Failed to parse MLIR source string.");
   }
   return module;
 }
 
-[[nodiscard]] llvm::SourceMgr openSourceMgr(const std::filesystem::path& path) {
+[[nodiscard]] static llvm::SourceMgr
+openSourceMgr(const std::filesystem::path& path) {
   std::string errorMessage;
   auto file = openInputFile(path.string(), &errorMessage);
   if (!file) {
@@ -92,11 +98,11 @@ namespace {
   }
 
   llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return sourceMgr;
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp>
+[[nodiscard]] static OwningOpRef<ModuleOp>
 parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
   const auto sourceMgr = openSourceMgr(path);
   auto module = parseSourceFile<ModuleOp>(sourceMgr, context);
@@ -108,16 +114,14 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
 }
 
 template <class PopulatePasses>
-void runPasses(ModuleOp module, PopulatePasses&& populatePasses,
-               const llvm::StringRef failureMessage) {
+static void runPasses(ModuleOp module, PopulatePasses&& populatePasses,
+                      const StringRef failureMessage) {
   PassManager pm(module.getContext());
-  populatePasses(pm);
+  std::forward<PopulatePasses>(populatePasses)(pm);
   if (failed(pm.run(module))) {
     throw std::runtime_error(failureMessage.str());
   }
 }
-
-} // namespace
 
 Program::Program(Storage storage) : storage_(std::move(storage)) {}
 
@@ -136,24 +140,27 @@ std::string Program::str() const { return captureIR(module()); }
 
 Program::Storage Program::cloneStorage() const {
   const auto cloned = cast<ModuleOp>(module()->clone());
-  return {storage_.context, OwningOpRef<ModuleOp>(cloned)};
+  return {.context = storage_.context, .module = OwningOpRef<ModuleOp>(cloned)};
 }
 
 Program::Storage Program::releaseStorage() && {
   if (!storage_.module) {
     throw std::runtime_error("This program was already consumed.");
   }
-  return {std::move(storage_.context), std::move(storage_.module)};
+  return {.context = std::move(storage_.context),
+          .module = std::move(storage_.module)};
 }
 
 QCProgram QCProgram::fromMLIRString(const std::string& source) {
   auto context = createCompilerContext();
-  return QCProgram({context, parseMLIRString(context.get(), source)});
+  return QCProgram(
+      {.context = context, .module = parseMLIRString(context.get(), source)});
 }
 
 QCProgram QCProgram::fromMLIRFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
-  return QCProgram({context, parseMLIRFile(context.get(), path)});
+  return QCProgram(
+      {.context = context, .module = parseMLIRFile(context.get(), path)});
 }
 
 QCProgram QCProgram::fromQASMString(const std::string& source) {
@@ -162,7 +169,8 @@ QCProgram QCProgram::fromQASMString(const std::string& source) {
   if (!module) {
     throw std::runtime_error("Failed to translate OpenQASM 3 source to QC.");
   }
-  return QCProgram({std::move(context), std::move(module)});
+  return QCProgram(
+      {.context = std::move(context), .module = std::move(module)});
 }
 
 QCProgram QCProgram::fromQASMFile(const std::filesystem::path& path) {
@@ -173,7 +181,8 @@ QCProgram QCProgram::fromQASMFile(const std::filesystem::path& path) {
     throw std::runtime_error("Failed to translate OpenQASM 3 file '" +
                              path.string() + "' to QC.");
   }
-  return QCProgram({std::move(context), std::move(module)});
+  return QCProgram(
+      {.context = std::move(context), .module = std::move(module)});
 }
 
 QCProgram
@@ -183,7 +192,8 @@ QCProgram::fromQuantumComputation(const ::qc::QuantumComputation& computation) {
   if (!module) {
     throw std::runtime_error("Failed to translate QuantumComputation to QC.");
   }
-  return QCProgram({std::move(context), std::move(module)});
+  return QCProgram(
+      {.context = std::move(context), .module = std::move(module)});
 }
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
@@ -218,12 +228,14 @@ QIRProgram QCProgram::intoQIR(const QIRProfile profile) && {
 
 QCOProgram QCOProgram::fromMLIRString(const std::string& source) {
   auto context = createCompilerContext();
-  return QCOProgram({context, parseMLIRString(context.get(), source)});
+  return QCOProgram(
+      {.context = context, .module = parseMLIRString(context.get(), source)});
 }
 
 QCOProgram QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
-  return QCOProgram({context, parseMLIRFile(context.get(), path)});
+  return QCOProgram(
+      {.context = context, .module = parseMLIRFile(context.get(), path)});
 }
 
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
@@ -269,7 +281,8 @@ JeffProgram JeffProgram::fromFile(const std::filesystem::path& path) {
     throw std::runtime_error("Failed to deserialize Jeff file '" +
                              path.string() + "'.");
   }
-  return JeffProgram({std::move(context), std::move(module)});
+  return JeffProgram(
+      {.context = std::move(context), .module = std::move(module)});
 }
 
 JeffProgram JeffProgram::fromBytes(const std::string& bytes) {
@@ -286,7 +299,8 @@ JeffProgram JeffProgram::fromBytes(const std::string& bytes) {
   if (!module) {
     throw std::runtime_error("Failed to deserialize Jeff bytes.");
   }
-  return JeffProgram({std::move(context), std::move(module)});
+  return JeffProgram(
+      {.context = std::move(context), .module = std::move(module)});
 }
 
 JeffProgram JeffProgram::copy() const { return JeffProgram(cloneStorage()); }
@@ -369,15 +383,15 @@ CompilerProgram runDefaultPipeline(CompilerProgram&& program,
                                 ? PipelineDialect::QCO
                                 : PipelineDialect::QC;
   Program::Storage storage = std::visit(
-      [](auto&& value) -> Program::Storage {
-        using ProgramType = std::remove_cvref_t<decltype(value)>;
+      []<typename T>(T&& value) -> Program::Storage {
+        using ProgramType = std::remove_cvref_t<T>;
         if constexpr (std::is_same_v<ProgramType, JeffProgram>) {
-          return std::move(std::move(value).intoQCO()).releaseStorage();
+          return std::move(std::forward<T>(value).intoQCO()).releaseStorage();
         } else if constexpr (std::is_same_v<ProgramType, QIRProgram>) {
           throw std::invalid_argument(
               "QIR programs cannot be used as compiler pipeline input.");
         } else {
-          return std::move(value).releaseStorage();
+          return std::forward<T>(value).releaseStorage();
         }
       },
       std::move(program));
@@ -386,12 +400,22 @@ CompilerProgram runDefaultPipeline(CompilerProgram&& program,
   pipelineConfig.convertToQIRBase = output == ProgramFormat::QIRBase;
   pipelineConfig.convertToQIRAdaptive = output == ProgramFormat::QIRAdaptive;
 
-  const auto target =
-      output == ProgramFormat::QCO    ? PipelineDialect::QCO
-      : output == ProgramFormat::Jeff ? PipelineDialect::Jeff
-      : output == ProgramFormat::QIRBase || output == ProgramFormat::QIRAdaptive
-          ? PipelineDialect::QIR
-          : PipelineDialect::QC;
+  auto target = PipelineDialect::QC;
+  switch (output) {
+  case ProgramFormat::QCO:
+    target = PipelineDialect::QCO;
+    break;
+  case ProgramFormat::Jeff:
+    target = PipelineDialect::Jeff;
+    break;
+  case ProgramFormat::QIRBase:
+  case ProgramFormat::QIRAdaptive:
+    target = PipelineDialect::QIR;
+    break;
+  case ProgramFormat::QCImport:
+  case ProgramFormat::QC:
+    break;
+  }
   if (const QuantumCompilerPipeline pipeline(pipelineConfig);
       failed(pipeline.run(*storage.module, inputDialect, target))) {
     throw std::runtime_error("Failed to run the default compiler pipeline.");

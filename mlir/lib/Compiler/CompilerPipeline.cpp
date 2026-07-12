@@ -73,21 +73,27 @@ struct Stage {
   PopulatePasses populatePasses;
   std::string CompilationRecord::* field;
 };
+} // namespace
 
-void populateInitialQCCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+static void
+populateInitialQCCleanup(PassManager& pm,
+                         [[maybe_unused]] const QuantumCompilerConfig& config) {
   populateQCCleanupPipeline(pm);
 }
 
-void populateQCToQCO(PassManager& pm, const QuantumCompilerConfig&) {
+static void
+populateQCToQCO(PassManager& pm,
+                [[maybe_unused]] const QuantumCompilerConfig& config) {
   pm.addPass(createQCToQCO());
 }
 
-void populateInitialQCOCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+static void populateInitialQCOCleanup(
+    PassManager& pm, [[maybe_unused]] const QuantumCompilerConfig& config) {
   populateQCOCleanupPipeline(pm);
 }
 
-void populateOptimizations(PassManager& pm,
-                           const QuantumCompilerConfig& config) {
+static void populateOptimizations(PassManager& pm,
+                                  const QuantumCompilerConfig& config) {
   if (!config.disableMergeSingleQubitRotationGates) {
     pm.addPass(qco::createMergeSingleQubitRotationGates());
   }
@@ -96,23 +102,32 @@ void populateOptimizations(PassManager& pm,
   }
 }
 
-void populateQCOToJeff(PassManager& pm, const QuantumCompilerConfig&) {
+static void
+populateQCOToJeff(PassManager& pm,
+                  [[maybe_unused]] const QuantumCompilerConfig& config) {
   pm.addPass(createQCOToJeff());
 }
 
-void populateJeffCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+static void
+populateJeffCleanup(PassManager& pm,
+                    [[maybe_unused]] const QuantumCompilerConfig& config) {
   populateJeffCleanupPipeline(pm);
 }
 
-void populateQCOToQC(PassManager& pm, const QuantumCompilerConfig&) {
+static void
+populateQCOToQC(PassManager& pm,
+                [[maybe_unused]] const QuantumCompilerConfig& config) {
   pm.addPass(createQCOToQC());
 }
 
-void populateFinalQCCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+static void
+populateFinalQCCleanup(PassManager& pm,
+                       [[maybe_unused]] const QuantumCompilerConfig& config) {
   populateQCCleanupPipeline(pm);
 }
 
-void populateQCToQIR(PassManager& pm, const QuantumCompilerConfig& config) {
+static void populateQCToQIR(PassManager& pm,
+                            const QuantumCompilerConfig& config) {
   if (config.convertToQIRAdaptive) {
     pm.addPass(createQCToQIRAdaptive());
     return;
@@ -120,10 +135,10 @@ void populateQCToQIR(PassManager& pm, const QuantumCompilerConfig& config) {
   pm.addPass(createQCToQIRBase());
 }
 
-void populateQIRCleanup(PassManager& pm, const QuantumCompilerConfig& config) {
+static void populateQIRCleanup(PassManager& pm,
+                               const QuantumCompilerConfig& config) {
   populateQIRCleanupPipeline(pm, config.convertToQIRAdaptive);
 }
-} // namespace
 
 LogicalResult QuantumCompilerPipeline::run(ModuleOp module,
                                            const PipelineDialect from,
@@ -166,34 +181,47 @@ LogicalResult QuantumCompilerPipeline::run(ModuleOp module,
   // conditionally.
   llvm::SmallVector<Stage, 10> stages;
   if (from == PipelineDialect::QC) {
-    stages.push_back({"QC Import", nullptr, &CompilationRecord::afterQCImport});
-    stages.push_back({"Initial QC Cleanup", &populateInitialQCCleanup,
-                      &CompilationRecord::afterInitialCanon});
-    stages.push_back({"QC → QCO Conversion", &populateQCToQCO,
-                      &CompilationRecord::afterQCOConversion});
+    stages.push_back({.name = "QC Import",
+                      .populatePasses = nullptr,
+                      .field = &CompilationRecord::afterQCImport});
+    stages.push_back({.name = "Initial QC Cleanup",
+                      .populatePasses = &populateInitialQCCleanup,
+                      .field = &CompilationRecord::afterInitialCanon});
+    stages.push_back({.name = "QC → QCO Conversion",
+                      .populatePasses = &populateQCToQCO,
+                      .field = &CompilationRecord::afterQCOConversion});
   }
-  stages.push_back({"Initial QCO Cleanup", &populateInitialQCOCleanup,
-                    &CompilationRecord::afterQCOCanon});
-  stages.push_back({"Optimization Passes", &populateOptimizations,
-                    &CompilationRecord::afterOptimization});
-  stages.push_back({"Final QCO Cleanup", &populateInitialQCOCleanup,
-                    &CompilationRecord::afterOptimizationCanon});
+  stages.push_back({.name = "Initial QCO Cleanup",
+                    .populatePasses = &populateInitialQCOCleanup,
+                    .field = &CompilationRecord::afterQCOCanon});
+  stages.push_back({.name = "Optimization Passes",
+                    .populatePasses = &populateOptimizations,
+                    .field = &CompilationRecord::afterOptimization});
+  stages.push_back({.name = "Final QCO Cleanup",
+                    .populatePasses = &populateInitialQCOCleanup,
+                    .field = &CompilationRecord::afterOptimizationCanon});
 
   if (to == PipelineDialect::Jeff) {
-    stages.push_back({"QCO → Jeff Conversion", &populateQCOToJeff,
-                      &CompilationRecord::afterJeffConversion});
-    stages.push_back({"Jeff Cleanup", &populateJeffCleanup,
-                      &CompilationRecord::afterJeffCanon});
+    stages.push_back({.name = "QCO → Jeff Conversion",
+                      .populatePasses = &populateQCOToJeff,
+                      .field = &CompilationRecord::afterJeffConversion});
+    stages.push_back({.name = "Jeff Cleanup",
+                      .populatePasses = &populateJeffCleanup,
+                      .field = &CompilationRecord::afterJeffCanon});
   } else if (to != PipelineDialect::QCO) {
-    stages.push_back({"QCO → QC Conversion", &populateQCOToQC,
-                      &CompilationRecord::afterQCConversion});
-    stages.push_back({"Final QC Cleanup", &populateFinalQCCleanup,
-                      &CompilationRecord::afterQCCanon});
+    stages.push_back({.name = "QCO → QC Conversion",
+                      .populatePasses = &populateQCOToQC,
+                      .field = &CompilationRecord::afterQCConversion});
+    stages.push_back({.name = "Final QC Cleanup",
+                      .populatePasses = &populateFinalQCCleanup,
+                      .field = &CompilationRecord::afterQCCanon});
     if (to == PipelineDialect::QIR) {
-      stages.push_back({"QC → QIR Conversion", &populateQCToQIR,
-                        &CompilationRecord::afterQIRConversion});
-      stages.push_back({"QIR Cleanup", &populateQIRCleanup,
-                        &CompilationRecord::afterQIRCanon});
+      stages.push_back({.name = "QC → QIR Conversion",
+                        .populatePasses = &populateQCToQIR,
+                        .field = &CompilationRecord::afterQIRConversion});
+      stages.push_back({.name = "QIR Cleanup",
+                        .populatePasses = &populateQIRCleanup,
+                        .field = &CompilationRecord::afterQIRCanon});
     }
   }
 
@@ -207,7 +235,8 @@ LogicalResult QuantumCompilerPipeline::run(ModuleOp module,
   const auto totalStages = static_cast<int>(stages.size());
   auto currentStage = 0;
   for (const auto& stage : stages) {
-    if (stage.populatePasses && failed(runStage(stage.populatePasses))) {
+    if (stage.populatePasses != nullptr &&
+        failed(runStage(stage.populatePasses))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {

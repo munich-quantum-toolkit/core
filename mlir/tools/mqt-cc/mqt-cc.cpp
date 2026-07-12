@@ -25,7 +25,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/SystemUtils.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Bytecode/BytecodeWriter.h>
@@ -42,11 +41,11 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Export.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -119,17 +118,24 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::init(false));
 
 namespace {
-
-enum class InputFormat { MLIR, QCO, QASM, Jeff };
-enum class OutputFormat { QCImport, QC, QCO, QIRBase, QIRAdaptive, Jeff };
+enum class InputFormat : std::uint8_t { MLIR, QCO, QASM, Jeff };
+enum class OutputFormat : std::uint8_t {
+  QCImport,
+  QC,
+  QCO,
+  QIRBase,
+  QIRAdaptive,
+  Jeff
+};
 
 struct ParsedProgram {
   OwningOpRef<ModuleOp> module;
   PipelineDialect dialect = PipelineDialect::QC;
 };
+} // namespace
 
-[[nodiscard]] std::optional<InputFormat>
-parseInputFormat(const llvm::StringRef format, const llvm::StringRef filename) {
+[[nodiscard]] static std::optional<InputFormat>
+parseInputFormat(const StringRef format, const StringRef filename) {
   if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
     return InputFormat::MLIR;
   }
@@ -148,8 +154,8 @@ parseInputFormat(const llvm::StringRef format, const llvm::StringRef filename) {
   return std::nullopt;
 }
 
-[[nodiscard]] std::optional<OutputFormat>
-parseOutputFormat(const llvm::StringRef format) {
+[[nodiscard]] static std::optional<OutputFormat>
+parseOutputFormat(const StringRef format) {
   if (format == "qc-import") {
     return OutputFormat::QCImport;
   }
@@ -170,8 +176,6 @@ parseOutputFormat(const llvm::StringRef format) {
   }
   return std::nullopt;
 }
-
-} // namespace
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -238,7 +242,7 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
-  return {std::move(module), PipelineDialect::QCO};
+  return {.module = std::move(module), .dialect = PipelineDialect::QCO};
 }
 
 /**
@@ -280,15 +284,15 @@ static void printRecordedStage(const StringRef title, const std::string& ir) {
  * @brief Write a module to an output file
  */
 template <typename ModuleType>
-static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
+static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
     llvm::errs() << errorMessage << "\n";
-    return mlir::failure();
+    return failure();
   }
 
-  if constexpr (std::is_same_v<ModuleType, mlir::ModuleOp>) {
+  if constexpr (std::is_same_v<ModuleType, ModuleOp>) {
     if (filename == "-") {
       mod.print(output->os());
     } else {
@@ -307,11 +311,11 @@ static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   output->os().flush();
   if (output->os().has_error()) {
     llvm::errs() << "I/O error while writing output file: " << filename << "\n";
-    return mlir::failure();
+    return failure();
   }
 
   output->keep();
-  return mlir::success();
+  return success();
 }
 
 int main(int argc, char** argv) {
@@ -400,12 +404,22 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto target =
-      *parsedOutputFormat == OutputFormat::QCO    ? PipelineDialect::QCO
-      : *parsedOutputFormat == OutputFormat::Jeff ? PipelineDialect::Jeff
-      : config.convertToQIRBase || config.convertToQIRAdaptive
-          ? PipelineDialect::QIR
-          : PipelineDialect::QC;
+  auto target = PipelineDialect::QC;
+  switch (*parsedOutputFormat) {
+  case OutputFormat::QCO:
+    target = PipelineDialect::QCO;
+    break;
+  case OutputFormat::Jeff:
+    target = PipelineDialect::Jeff;
+    break;
+  case OutputFormat::QIRBase:
+  case OutputFormat::QIRAdaptive:
+    target = PipelineDialect::QIR;
+    break;
+  case OutputFormat::QCImport:
+  case OutputFormat::QC:
+    break;
+  }
 
   // Run the compilation pipeline unless the requested QC import checkpoint is
   // already represented by the frontend result.
