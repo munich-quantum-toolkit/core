@@ -28,9 +28,12 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace fomac {
+using CustomJobParameter = std::variant<std::string, bool, int, double>;
+
 /**
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
@@ -105,8 +108,7 @@ template <typename U> struct remove_optional<std::optional<U>> {
  * with the underlying type of optional without caring about its optionality.
  * @tparam T The type to strip optional from.
  */
-template <typename T>
-using remove_optional_t = typename remove_optional<T>::type;
+template <typename T> using remove_optional_t = remove_optional<T>::type;
 
 /**
  * @brief Concept for types that are either size_constructible_contiguous_range
@@ -211,7 +213,7 @@ private:
   /// Query a session property.
   template <size_constructible_contiguous_range T>
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
-    using StrippedValueType = typename remove_optional_t<T>::value_type;
+    using StrippedValueType = remove_optional_t<T>::value_type;
 
     size_t size = 0;
     qdmi::throwIfError(QDMI_session_query_session_property(session_.get(), prop,
@@ -318,9 +320,13 @@ public:
   getSupportedProgramFormats() const;
 
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(const std::string& program,
-                              QDMI_Program_Format format,
-                              size_t numShots) const;
+  [[nodiscard]] Job submitJob(
+      const std::string& program, QDMI_Program_Format format, size_t numShots,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
@@ -388,6 +394,9 @@ private:
       return value;
     }
   }
+
+  static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
+                                const CustomJobParameter& value);
 
   /// @brief The underlying device pointer.
   QDMI_Device device_;
@@ -566,8 +575,8 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
     if constexpr (string_or_optional_string<T>) {
       size_t size = 0;
-      auto result = QDMI_device_query_site_property(*device_, site_, prop, 0,
-                                                    nullptr, &size);
+      const auto result = QDMI_device_query_site_property(*device_, site_, prop,
+                                                          0, nullptr, &size);
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
@@ -576,8 +585,6 @@ private:
       qdmi::throwIfError(result,
                          std::string("Querying size") + qdmi::toString(prop));
       std::string value(size - 1, '\0');
-      result = QDMI_device_query_site_property(*device_, site_, prop, size,
-                                               value.data(), nullptr);
       qdmi::throwIfError(QDMI_device_query_site_property(*device_, site_, prop,
                                                          size, value.data(),
                                                          nullptr),
