@@ -117,11 +117,9 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     });
     rewriter.replaceOpWithNewOp<PowOp>(
         invOp, negExponent, qubits, [&](ValueRange powArgs) {
-          auto* powBody = rewriter.getInsertionBlock();
           // Inner pow body args now match the new pow's args positionally.
-          rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
-                                     powBody->begin(), powArgs);
-          rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
+          utils::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
+                                           rewriter);
         });
     return success();
   }

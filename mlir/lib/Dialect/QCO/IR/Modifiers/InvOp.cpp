@@ -136,13 +136,8 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     auto newPow =
         PowOp::create(rewriter, invOp.getLoc(), qubits, negExponent,
                       [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
-                        auto* powBody = rewriter.getInsertionBlock();
-                        rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
-                                                   powBody->begin(), powArgs);
-                        auto yieldedValues =
-                            llvm::to_vector(powBody->back().getOperands());
-                        rewriter.eraseOp(&powBody->back());
-                        return yieldedValues;
+                        return utils::inlineBodyReturningYields(
+                            *innerPow.getBody(), powArgs, rewriter);
                       });
 
     // The new pow's operands may be a permutation of the inv's, so map each
@@ -285,6 +280,11 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
               newLambda = arith::AddFOp::create(rewriter, loc, newLambda, pi);
               rewriter.replaceOpWithNewOp<U2Op>(g, g.getInputTarget(0), newPhi,
                                                 newLambda);
+              return success();
+            })
+            .Case<DCXOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<DCXOp>(g, g.getInputTarget(1),
+                                                 g.getInputTarget(0));
               return success();
             })
             .Case<RXXOp>([&](auto g) {

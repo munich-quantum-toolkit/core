@@ -21,7 +21,6 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -125,10 +124,6 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
     if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
       return failure();
     }
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
-    if (!inner) {
-      return failure();
-    }
     utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
@@ -153,10 +148,6 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
-    if (!inner) {
-      return failure();
-    }
     const auto exponent = op.getExponentValue();
     // U^{-r} = (U^{-1})^r only when r is an integer: for fractional r,
     // eigenvalue -1 yields (-1)^{-r} ≠ (-1)^r (conjugated phase factors).
@@ -168,14 +159,13 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     auto qubits = llvm::to_vector(op.getQubits());
     rewriter.replaceOpWithNewOp<PowOp>(
         op, -exp, qubits, [&](ValueRange powArgs) {
-          InvOp::create(rewriter, op.getLoc(), powArgs, [&](ValueRange) {
-            auto* invBody = rewriter.getInsertionBlock();
-            // Inline the old pow body, remapping its block args to the new
-            // inv body's block args.
-            rewriter.inlineBlockBefore(op.getBody(), invBody, invBody->begin(),
-                                       invBody->getArguments());
-            rewriter.eraseOp(&invBody->back()); // erase the inlined YieldOp
-          });
+          InvOp::create(rewriter, op.getLoc(), powArgs,
+                        [&](ValueRange invArgs) {
+                          // Inline the old pow body, remapping its block args to
+                          // the new inv body's block args.
+                          utils::inlineBodyReturningYields(*op.getBody(),
+                                                           invArgs, rewriter);
+                        });
         });
     return success();
   }
@@ -208,11 +198,9 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
     rewriter.replaceOpWithNewOp<PowOp>(
         op, merged, qubits, [&](ValueRange powArgs) {
-          auto* newBody = rewriter.getInsertionBlock();
           // Inner pow body args now match the new pow's args positionally.
-          rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
-                                     newBody->begin(), powArgs);
-          rewriter.eraseOp(&newBody->back()); // erase the inlined YieldOp
+          utils::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
+                                           rewriter);
         });
     return success();
   }
@@ -474,9 +462,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         // --- Hermitian gates (integer exponent): even => erase/id, odd => gate
         // --- pow(n) { h } => id (n even) | h (n odd)
         .Case<HOp>([&](auto) {
-          if (!utils::isIntegerExponent(r)) {
-            return failure();
-          }
           if (utils::isEvenExponent(r)) {
             // pow(even) { h } => identity. Erase it.
             rewriter.eraseOp(op);
@@ -492,9 +477,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         })
         // pow(n) { ecr/swap } => erase (n even) | ecr/swap (n odd)
         .Case<ECROp, SWAPOp>([&](auto) {
-          if (!utils::isIntegerExponent(r)) {
-            return failure();
-          }
           if (utils::isEvenExponent(r)) {
             // pow(even) { ecr/swap } => identity. Erase it.
             rewriter.eraseOp(op);
@@ -550,11 +532,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 } // namespace
 
 std::optional<double> PowOp::getExponentValue() {
-  FloatAttr attr;
-  if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    return std::nullopt;
-  }
-  return attr.getValueAsDouble();
+  return utils::valueToDouble(getExponent());
 }
 
 size_t PowOp::getNumBodyUnitaries() {

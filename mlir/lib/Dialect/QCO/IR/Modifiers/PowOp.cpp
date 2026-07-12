@@ -25,7 +25,6 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -174,13 +173,8 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
           return InvOp::create(
                      rewriter, op.getLoc(), powArgs,
                      [&](ValueRange invArgs) -> SmallVector<Value> {
-                       auto* invBody = rewriter.getInsertionBlock();
-                       rewriter.inlineBlockBefore(op.getBody(), invBody,
-                                                  invBody->begin(), invArgs);
-                       auto yieldedValues =
-                           llvm::to_vector(invBody->back().getOperands());
-                       rewriter.eraseOp(&invBody->back());
-                       return yieldedValues;
+                       return utils::inlineBodyReturningYields(
+                           *op.getBody(), invArgs, rewriter);
                      })
               .getResults();
         });
@@ -221,15 +215,10 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     auto newPow =
         PowOp::create(rewriter, op.getLoc(), qubits, merged,
                       [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
-                        auto* newBody = rewriter.getInsertionBlock();
                         // Inner pow body args now match the new pow's args
                         // positionally.
-                        rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
-                                                   newBody->begin(), powArgs);
-                        auto yieldedValues =
-                            llvm::to_vector(newBody->back().getOperands());
-                        rewriter.eraseOp(&newBody->back());
-                        return yieldedValues;
+                        return utils::inlineBodyReturningYields(
+                            *innerPow.getBody(), powArgs, rewriter);
                       });
 
     // The merged pow's operands may be a permutation of the outer pow's, so map
@@ -584,11 +573,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 } // namespace
 
 std::optional<double> PowOp::getExponentValue() {
-  FloatAttr attr;
-  if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    return std::nullopt;
-  }
-  return attr.getValueAsDouble();
+  return utils::valueToDouble(getExponent());
 }
 
 size_t PowOp::getNumBodyUnitaries() {
