@@ -632,8 +632,8 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
     if constexpr (string_or_optional_string<T>) {
       size_t size = 0;
-      auto result = QDMI_device_query_site_property(*device_, site_, prop, 0,
-                                                    nullptr, &size);
+      const auto result = QDMI_device_query_site_property(*device_, site_, prop,
+                                                          0, nullptr, &size);
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
@@ -642,8 +642,6 @@ private:
       qdmi::throwIfError(result,
                          std::string("Querying size") + qdmi::toString(prop));
       std::string value(size - 1, '\0');
-      result = QDMI_device_query_site_property(*device_, site_, prop, size,
-                                               value.data(), nullptr);
       qdmi::throwIfError(QDMI_device_query_site_property(*device_, site_, prop,
                                                          size, value.data(),
                                                          nullptr),
