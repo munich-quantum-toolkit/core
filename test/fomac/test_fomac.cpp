@@ -557,23 +557,47 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
-TEST_F(DDSimulatorDeviceTest, SubmitJobCustom1SupportedTypes) {
-  const std::string qasm3Program = R"(OPENQASM 3.0;)";
+TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
+  constexpr std::string qasm3Program = R"(OPENQASM 3.0;)";
 
-  auto submitWithCustom1 = [&](auto custom1) {
+  auto submitWithCustoms = [&](auto custom, const size_t which) {
     try {
-      const auto job = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
-                                        10, custom1);
-      EXPECT_NO_THROW(std::ignore = job.getNumShots());
-    } catch (const std::runtime_error&) {
-      GTEST_SKIP() << "Custom job parameter not supported by backend";
+      switch (which) {
+      case 1:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        break;
+      case 2:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, custom);
+        break;
+      case 3:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, custom);
+        break;
+      case 4:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
+        break;
+      case 5:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                         custom);
+        break;
+      default:
+        throw std::invalid_argument("Invalid 'which' value");
+      }
+    } catch (const std::runtime_error& e) {
+      const std::string errorMsg(e.what());
+      EXPECT_TRUE(errorMsg.find("Setting custom parameter") !=
+                  std::string::npos);
     }
   };
-
-  submitWithCustom1(std::string("custom"));
-  submitWithCustom1(42);
-  submitWithCustom1(3.14);
-  submitWithCustom1(true);
+  for (size_t i = 1; i <= 5; ++i) {
+    submitWithCustoms(std::string("custom"), i);
+    submitWithCustoms(42, i);
+    submitWithCustoms(3.14, i);
+    submitWithCustoms(true, i);
+  }
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
