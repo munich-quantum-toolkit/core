@@ -33,28 +33,6 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-namespace {
-[[nodiscard]] auto customJobParameterFromPython(const nb::object& value)
-    -> std::optional<fomac::CustomJobParameter> {
-  if (value.is_none()) {
-    return std::nullopt;
-  }
-  if (nb::isinstance<nb::bool_>(value)) {
-    return nb::cast<bool>(value);
-  }
-  if (nb::isinstance<nb::str>(value)) {
-    return nb::cast<std::string>(value);
-  }
-  if (nb::isinstance<nb::int_>(value)) {
-    return nb::cast<int>(value);
-  }
-  if (nb::isinstance<nb::float_>(value)) {
-    return nb::cast<double>(value);
-  }
-  throw nb::type_error("custom parameter must be str, int, float, or bool");
-}
-} // namespace
-
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   // Session class
   auto session = nb::class_<fomac::Session>(
