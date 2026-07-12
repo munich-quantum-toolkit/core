@@ -18,7 +18,15 @@ import pytest
 from qiskit import QuantumCircuit
 
 from mqt.core.ir import QuantumComputation
-from mqt.core.mlir import compile_program
+from mqt.core.mlir import (
+    JeffProgram,
+    OutputFormat,
+    QCOProgram,
+    QCProgram,
+    QIRProfile,
+    QIRProgram,
+    compile_program,
+)
 
 MLIR_STRING = r"""module {
   func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
@@ -62,13 +70,15 @@ def test_compile_program_jeff_file() -> None:
     path = Path(__file__).parent.parent / "circuits" / "bell.jeff"
 
     result = compile_program(path)
-    assert _sort_constants(result) == _sort_constants(MLIR_STRING)
+    assert isinstance(result, QCProgram)
+    assert _sort_constants(result.ir) == _sort_constants(MLIR_STRING)
 
 
 def test_compile_program_mlir_string() -> None:
     """Compile an MLIR string."""
     result = compile_program(MLIR_STRING)
-    assert result == MLIR_STRING
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
 
 
 def test_compile_program_mlir_file(tmp_path: Path) -> None:
@@ -77,13 +87,23 @@ def test_compile_program_mlir_file(tmp_path: Path) -> None:
     path.write_text(MLIR_STRING, encoding="utf-8")
 
     result = compile_program(path)
-    assert result == MLIR_STRING
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
 
 
 def test_compile_program_qasm_string() -> None:
     """Compile an OpenQASM string."""
     result = compile_program(QASM_STRING)
-    assert result == MLIR_STRING
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
+
+
+def test_compile_program_single_line_qasm_string() -> None:
+    """Compile a single-line OpenQASM source string."""
+    result = compile_program(QASM_STRING.replace("\n", " "))
+
+    assert isinstance(result, QCProgram)
+    assert "qc.h" in result.ir
 
 
 def test_compile_program_qasm_file(tmp_path: Path) -> None:
@@ -92,7 +112,8 @@ def test_compile_program_qasm_file(tmp_path: Path) -> None:
     path.write_text(QASM_STRING, encoding="utf-8")
 
     result = compile_program(path)
-    assert result == MLIR_STRING
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
 
 
 def test_compile_program_quantum_computation() -> None:
@@ -102,7 +123,8 @@ def test_compile_program_quantum_computation() -> None:
     qc.cx(0, 1)
 
     result = compile_program(qc)
-    assert result == MLIR_STRING
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
 
 
 def test_compile_program_qiskit_quantum_circuit() -> None:
@@ -112,15 +134,73 @@ def test_compile_program_qiskit_quantum_circuit() -> None:
     qc.cx(0, 1)
 
     result = compile_program(qc)
-    assert result == MLIR_STRING
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
+
+
+def test_jeff_program_round_trip(tmp_path: Path) -> None:
+    """Store and load a `JeffProgram` through bytes and a file."""
+    path = tmp_path / "program.jeff"
+    result = compile_program(QASM_STRING, output=OutputFormat.JEFF)
+    assert isinstance(result, JeffProgram)
+
+    path.write_bytes(result.to_bytes())
+    loaded = JeffProgram.from_file(path)
+    restored = compile_program(loaded, output=OutputFormat.QC)
+    assert isinstance(restored, QCProgram)
+    assert _sort_constants(restored.ir) == _sort_constants(MLIR_STRING)
+
+
+def test_compile_program_jeff_input_runs_from_qco(tmp_path: Path) -> None:
+    """Compile a serialized Jeff program through the QCO pipeline entry point."""
+    path = tmp_path / "program.jeff"
+    compile_program(QASM_STRING, output=OutputFormat.JEFF).write(path)
+
+    result = compile_program(path, output=OutputFormat.QCO)
+
+    assert isinstance(result, QCOProgram)
+    assert "qco." in result.ir
+
+
+def test_program_conversions_are_composable() -> None:
+    """Compose frontend, cleanup, conversion, and optimization stages."""
+    source = QCProgram.from_qasm_str(QASM_STRING)
+    qco = source.to_qco(copy=True)
+    assert source.is_valid
+    assert isinstance(qco, QCOProgram)
+
+    qco.cleanup()
+    qco.optimize()
+    result = qco.to_qc()
+    assert not qco.is_valid
+    result.cleanup()
+    assert _sort_constants(result.ir) == _sort_constants(MLIR_STRING)
 
 
 def test_compile_program_convert_to_qir() -> None:
-    """Compile with `convert_to_qir_base` enabled."""
-    result = compile_program(QASM_STRING, convert_to_qir_base=True)
+    """Compile with the QIR Base Profile output format."""
+    result = compile_program(QASM_STRING, output=OutputFormat.QIR_BASE)
 
-    assert "; ModuleID" in result
-    assert "@__quantum__qis__h__body" in result
+    assert isinstance(result, QIRProgram)
+    assert "; ModuleID" in result.llvm_ir
+    assert "@__quantum__qis__h__body" in result.llvm_ir
+
+
+def test_compile_program_output_format_convert_to_qir() -> None:
+    """Lower a QC program directly to the QIR Adaptive Profile."""
+    result = QCProgram.from_qasm_str(QASM_STRING).to_qir(QIRProfile.ADAPTIVE)
+
+    assert isinstance(result, QIRProgram)
+    assert result.profile == QIRProfile.ADAPTIVE
+    assert "@__quantum__qis__h__body" in result.llvm_ir
+
+
+def test_compile_program_qc_import_output() -> None:
+    """Expose QC directly after the frontend translation."""
+    result = compile_program(QASM_STRING, output=OutputFormat.QC_IMPORT)
+
+    assert isinstance(result, QCProgram)
+    assert "qc.h" in result.ir
 
 
 def test_compile_program_fails_for_missing_file() -> None:

@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/CompilerPipeline.h"
 
+#include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
@@ -18,6 +19,7 @@
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
@@ -58,174 +60,161 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
   }
 }
 
-LogicalResult
-QuantumCompilerPipeline::runPipeline(ModuleOp module,
-                                     CompilationRecord* record) const {
+namespace {
+using PopulatePasses = void (*)(PassManager&, const QuantumCompilerConfig&);
+
+/// A single compilation stage and its optional IR snapshot.
+///
+/// A stage with a null @c populatePasses function only records or prints the
+/// initial import checkpoint. Function pointers avoid the heap allocations and
+/// type erasure associated with `std::function` in this hot orchestration path.
+struct Stage {
+  StringRef name;
+  PopulatePasses populatePasses;
+  std::string CompilationRecord::* field;
+};
+
+void populateInitialQCCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+  populateQCCleanupPipeline(pm);
+}
+
+void populateQCToQCO(PassManager& pm, const QuantumCompilerConfig&) {
+  pm.addPass(createQCToQCO());
+}
+
+void populateInitialQCOCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+  populateQCOCleanupPipeline(pm);
+}
+
+void populateOptimizations(PassManager& pm,
+                           const QuantumCompilerConfig& config) {
+  if (!config.disableMergeSingleQubitRotationGates) {
+    pm.addPass(qco::createMergeSingleQubitRotationGates());
+  }
+  if (config.enableHadamardLifting) {
+    pm.addPass(qco::createHadamardLifting());
+  }
+}
+
+void populateQCOToJeff(PassManager& pm, const QuantumCompilerConfig&) {
+  pm.addPass(createQCOToJeff());
+}
+
+void populateJeffCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+  populateJeffCleanupPipeline(pm);
+}
+
+void populateQCOToQC(PassManager& pm, const QuantumCompilerConfig&) {
+  pm.addPass(createQCOToQC());
+}
+
+void populateFinalQCCleanup(PassManager& pm, const QuantumCompilerConfig&) {
+  populateQCCleanupPipeline(pm);
+}
+
+void populateQCToQIR(PassManager& pm, const QuantumCompilerConfig& config) {
+  if (config.convertToQIRAdaptive) {
+    pm.addPass(createQCToQIRAdaptive());
+    return;
+  }
+  pm.addPass(createQCToQIRBase());
+}
+
+void populateQIRCleanup(PassManager& pm, const QuantumCompilerConfig& config) {
+  populateQIRCleanupPipeline(pm, config.convertToQIRAdaptive);
+}
+} // namespace
+
+LogicalResult QuantumCompilerPipeline::run(ModuleOp module,
+                                           const PipelineDialect from,
+                                           const PipelineDialect to,
+                                           CompilationRecord* record) const {
   if (config_.convertToQIRBase && config_.convertToQIRAdaptive) {
     llvm::errs()
         << "convertToQIRBase and convertToQIRAdaptive are mutually "
            "exclusive; only one QIR profile can be targeted at a time.\n";
     return failure();
   }
-  const auto convertToQIR =
-      config_.convertToQIRAdaptive || config_.convertToQIRBase;
 
-  // Ensure printIRAfterAllStages implies recordIntermediates
-  if (config_.printIRAfterAllStages &&
-      (!config_.recordIntermediates || record == nullptr)) {
-    llvm::errs() << "printIRAfterAllStages requires recordIntermediates to be "
-                    "enabled and the record pointer to be non-null.\n";
+  if (from != PipelineDialect::QC && from != PipelineDialect::QCO) {
+    llvm::errs() << "The compiler pipeline can only be entered at the QC or "
+                    "QCO dialect.\n";
+    return failure();
+  }
+  if (to != PipelineDialect::QC && to != PipelineDialect::QCO &&
+      to != PipelineDialect::QIR && to != PipelineDialect::Jeff) {
+    llvm::errs() << "The compiler pipeline received an unknown target "
+                    "dialect.\n";
     return failure();
   }
 
-  auto runStage = [&](auto&& populatePasses) -> LogicalResult {
+  const auto hasQIRProfile =
+      config_.convertToQIRBase || config_.convertToQIRAdaptive;
+  if (to == PipelineDialect::QIR && !hasQIRProfile) {
+    llvm::errs() << "Lowering to QIR requires selecting either the Base or "
+                    "Adaptive QIR profile.\n";
+    return failure();
+  }
+  if (to != PipelineDialect::QIR && hasQIRProfile) {
+    llvm::errs() << "A QIR profile can only be selected when lowering to "
+                    "QIR.\n";
+    return failure();
+  }
+
+  // Assemble the stages required to lower from `from` to `to`. Every run passes
+  // through the optimized-QCO checkpoint; the entry and exit legs are appended
+  // conditionally.
+  llvm::SmallVector<Stage, 10> stages;
+  if (from == PipelineDialect::QC) {
+    stages.push_back({"QC Import", nullptr, &CompilationRecord::afterQCImport});
+    stages.push_back({"Initial QC Cleanup", &populateInitialQCCleanup,
+                      &CompilationRecord::afterInitialCanon});
+    stages.push_back({"QC → QCO Conversion", &populateQCToQCO,
+                      &CompilationRecord::afterQCOConversion});
+  }
+  stages.push_back({"Initial QCO Cleanup", &populateInitialQCOCleanup,
+                    &CompilationRecord::afterQCOCanon});
+  stages.push_back({"Optimization Passes", &populateOptimizations,
+                    &CompilationRecord::afterOptimization});
+  stages.push_back({"Final QCO Cleanup", &populateInitialQCOCleanup,
+                    &CompilationRecord::afterOptimizationCanon});
+
+  if (to == PipelineDialect::Jeff) {
+    stages.push_back({"QCO → Jeff Conversion", &populateQCOToJeff,
+                      &CompilationRecord::afterJeffConversion});
+    stages.push_back({"Jeff Cleanup", &populateJeffCleanup,
+                      &CompilationRecord::afterJeffCanon});
+  } else if (to != PipelineDialect::QCO) {
+    stages.push_back({"QCO → QC Conversion", &populateQCOToQC,
+                      &CompilationRecord::afterQCConversion});
+    stages.push_back({"Final QC Cleanup", &populateFinalQCCleanup,
+                      &CompilationRecord::afterQCCanon});
+    if (to == PipelineDialect::QIR) {
+      stages.push_back({"QC → QIR Conversion", &populateQCToQIR,
+                        &CompilationRecord::afterQIRConversion});
+      stages.push_back({"QIR Cleanup", &populateQIRCleanup,
+                        &CompilationRecord::afterQIRCanon});
+    }
+  }
+
+  auto runStage = [&](const PopulatePasses populatePasses) {
     PassManager pm(module.getContext());
     configurePassManager(pm);
-    populatePasses(pm);
+    populatePasses(pm, config_);
     return pm.run(module);
   };
 
-  // Determine total number of stages for progress indication
-  // 1. QC import
-  // 2. QC cleanup
-  // 3. QC-to-QCO conversion
-  // 4. QCO cleanup
-  // 5. Optimization passes
-  // 6. QCO cleanup
-  // 7. QCO-to-QC conversion
-  // 8. QC cleanup
-  // 9. QC-to-QIR conversion (optional)
-  // 10. QIR cleanup (optional)
-  auto totalStages = 8;
-  if (convertToQIR) {
-    totalStages += 2;
-  }
+  const auto totalStages = static_cast<int>(stages.size());
   auto currentStage = 0;
-
-  // Stage 1: QC import
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCImport = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "QC Import", ++currentStage, totalStages);
-    }
-  }
-
-  // Stage 2: QC cleanup
-  if (failed(
-          runStage([&](PassManager& pm) { populateQCCleanupPipeline(pm); }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterInitialCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial QC Cleanup", ++currentStage,
-                       totalStages);
-    }
-  }
-  // Stage 3: QC-to-QCO conversion
-  if (failed(runStage([&](PassManager& pm) { pm.addPass(createQCToQCO()); }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCOConversion = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "QC → QCO Conversion", ++currentStage,
-                       totalStages);
-    }
-  }
-  // Stage 4: QCO cleanup
-  if (failed(
-          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCOCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial QCO Cleanup", ++currentStage,
-                       totalStages);
-    }
-  }
-  // Stage 5: Optimization passes
-  if (failed(runStage([&](PassManager& pm) {
-        if (!config_.disableMergeSingleQubitRotationGates) {
-          pm.addPass(qco::createMergeSingleQubitRotationGates());
-        }
-        if (config_.enableHadamardLifting) {
-          pm.addPass(qco::createHadamardLifting());
-        }
-      }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterOptimization = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Optimization Passes", ++currentStage,
-                       totalStages);
-    }
-  }
-  // Stage 6: QCO cleanup
-  if (failed(
-          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterOptimizationCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QCO Cleanup", ++currentStage,
-                       totalStages);
-    }
-  }
-  // Stage 7: QCO-to-QC conversion
-  if (failed(runStage([&](PassManager& pm) { pm.addPass(createQCOToQC()); }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCConversion = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "QCO → QC Conversion", ++currentStage,
-                       totalStages);
-    }
-  }
-  // Stage 8: QC cleanup
-  if (failed(
-          runStage([&](PassManager& pm) { populateQCCleanupPipeline(pm); }))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QC Cleanup", ++currentStage, totalStages);
-    }
-  }
-  // Stage 9: QC-to-QIR conversion (optional)
-  if (convertToQIR) {
-    if (failed(runStage([&](PassManager& pm) {
-          if (config_.convertToQIRAdaptive) {
-            pm.addPass(createQCToQIRAdaptive());
-          } else {
-            pm.addPass(createQCToQIRBase());
-          }
-        }))) {
+  for (const auto& stage : stages) {
+    if (stage.populatePasses && failed(runStage(stage.populatePasses))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {
-      record->afterQIRConversion = captureIR(module);
-      if (config_.printIRAfterAllStages) {
-        prettyPrintStage(module, "QC → QIR Conversion", ++currentStage,
-                         totalStages);
-      }
+      record->*(stage.field) = captureIR(module);
     }
-    // Stage 10: QIR cleanup (optional)
-    if (failed(runStage([&](PassManager& pm) {
-          populateQIRCleanupPipeline(pm, config_.convertToQIRAdaptive);
-        }))) {
-      return failure();
-    }
-    if (record != nullptr && config_.recordIntermediates) {
-      record->afterQIRCanon = captureIR(module);
-      if (config_.printIRAfterAllStages) {
-        prettyPrintStage(module, "QIR Cleanup", ++currentStage, totalStages);
-      }
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, stage.name, ++currentStage, totalStages);
     }
   }
 
@@ -245,6 +234,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     llvm::errs().flush();
   }
   return success();
+}
+
+LogicalResult
+QuantumCompilerPipeline::runPipeline(ModuleOp module,
+                                     CompilationRecord* record) const {
+  const auto convertToQIR =
+      config_.convertToQIRAdaptive || config_.convertToQIRBase;
+  return run(module, PipelineDialect::QC,
+             convertToQIR ? PipelineDialect::QIR : PipelineDialect::QC, record);
 }
 
 std::string captureIR(ModuleOp module) {

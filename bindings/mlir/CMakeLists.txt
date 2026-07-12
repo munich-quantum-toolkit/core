@@ -23,15 +23,6 @@ if(NOT TARGET ${TARGET_NAME})
     .
     LINK_LIBS
     MQTCompilerPipeline
-    MLIRQCTranslation
-    MLIRParser
-    MLIRJeffTranslation
-    MLIRJeffToQCO
-    MLIRQCOToQC
-    MLIRTargetLLVMIRExport
-    MLIRBuiltinToLLVMIRTranslation
-    MLIRLLVMToLLVMIRTranslation
-    MQT::MLIRSupport
     MQT::CoreIR)
 
   # install the Python stub file in editable mode for better IDE support

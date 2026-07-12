@@ -10,13 +10,33 @@
 
 #pragma once
 
-#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstdint>
 #include <string>
 
 namespace mlir {
 class ModuleOp;
+class PassManager;
+
+/**
+ * @brief Dialect checkpoints of the quantum compiler pipeline
+ *
+ * @details
+ * Identifies the intermediate representations at which the pipeline can be
+ * entered or exited. A run may enter at @ref PipelineDialect::QC or
+ * @ref PipelineDialect::QCO and exit at any of the four checkpoints.
+ */
+enum class PipelineDialect : std::uint8_t {
+  /// QC dialect (reference semantics)
+  QC,
+  /// QCO dialect (value semantics)
+  QCO,
+  /// QIR (Quantum Intermediate Representation)
+  QIR,
+  /// `jeff` dialect (serializable value semantics)
+  Jeff,
+};
 
 /**
  * @brief Configuration for the quantum compiler pipeline
@@ -70,6 +90,8 @@ struct CompilationRecord {
   std::string afterQCCanon;
   std::string afterQIRConversion;
   std::string afterQIRCanon;
+  std::string afterJeffConversion;
+  std::string afterJeffCanon;
 };
 
 /**
@@ -77,19 +99,21 @@ struct CompilationRecord {
  *
  * @details
  * Provides a high-level interface for compiling quantum programs through
- * the MQT compiler infrastructure. The pipeline stages are:
+ * the MQT compiler infrastructure. A run enters at a source dialect
+ * (@ref PipelineDialect::QC or @ref PipelineDialect::QCO) and exits at a
+ * target dialect (@ref PipelineDialect::QC, @ref PipelineDialect::QCO,
+ * @ref PipelineDialect::QIR, or @ref PipelineDialect::Jeff), executing only
+ * the stages in between:
  *
- * 1. QC dialect (reference semantics) - imported from
- * qc::QuantumComputation
+ * 1. QC dialect (reference semantics) - imported from qc::QuantumComputation
  * 2. QC cleanup pipeline
  * 3. QCO dialect (value semantics) - enables SSA-based optimizations
  * 4. QCO cleanup pipeline
  * 5. Quantum optimization passes
  * 6. QCO cleanup pipeline
- * 7. QC dialect - converted back for backend lowering
- * 8. QC cleanup pipeline
- * 9. QIR (Quantum Intermediate Representation) - optional final lowering
- * 10. QIR cleanup pipeline
+ * 7a. QC dialect - converted back for backend lowering, then QC cleanup, then
+ *     optional QIR lowering and cleanup, or
+ * 7b. `jeff` dialect - converted for serialization, then `jeff` cleanup.
  *
  * Following MLIR best practices, simplification and dead-value cleanup are
  * run after each major transformation stage.
@@ -103,14 +127,9 @@ public:
    * @brief Run the complete compilation pipeline on a module
    *
    * @details
-   * Executes all enabled compilation stages on the provided MLIR module.
-   * If recordIntermediates is enabled in the config, captures IR snapshots
-   * at every stage (10 snapshots total for full pipeline).
-   *
-   * Automatically configures the PassManager with:
-   * - Timing statistics if enableTiming is true
-   * - Pass statistics if enableStatistics is true
-   * - IR printing after each stage if printIRAfterAllStages is true
+   * Convenience wrapper around @ref run that enters at
+   * @ref PipelineDialect::QC and exits at @ref PipelineDialect::QIR if a QIR
+   * profile is configured, or @ref PipelineDialect::QC otherwise.
    *
    * @param module The MLIR module to compile
    * @param record Optional pointer to record intermediate states
@@ -118,6 +137,32 @@ public:
    */
   LogicalResult runPipeline(ModuleOp module,
                             CompilationRecord* record = nullptr) const;
+
+  /**
+   * @brief Run the compilation stages between two dialect checkpoints
+   *
+   * @details
+   * Executes the enabled compilation stages required to lower @p module from
+   * @p from to @p to. If recordIntermediates is enabled in the config,
+   * captures an IR snapshot after each stage.
+   *
+   * The target is required to be a forward lowering target. In particular,
+   * QIR requires exactly one QIR profile to be selected in the configuration,
+   * while all other targets require no QIR profile.
+   *
+   * Automatically configures the PassManager with:
+   * - Timing statistics if enableTiming is true
+   * - Pass statistics if enableStatistics is true
+   * - IR printing after each stage if printIRAfterAllStages is true
+   *
+   * @param module The MLIR module to compile
+   * @param from The dialect the module is currently in (QC or QCO)
+   * @param to The dialect to lower the module to
+   * @param record Optional pointer to record intermediate states
+   * @return success() if compilation succeeded, failure() otherwise
+   */
+  LogicalResult run(ModuleOp module, PipelineDialect from, PipelineDialect to,
+                    CompilationRecord* record = nullptr) const;
 
 private:
   /**

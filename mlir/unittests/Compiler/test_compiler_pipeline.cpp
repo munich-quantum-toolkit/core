@@ -11,6 +11,8 @@
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Compiler/Programs.h"
+#include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
@@ -24,6 +26,7 @@
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
+#include <jeff/IR/JeffDialect.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -36,6 +39,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
 
 #include <cstdlib>
 #include <iosfwd>
@@ -90,7 +94,7 @@ protected:
                     mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
                     mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
                     mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
-                    mlir::LLVM::LLVMDialect>();
+                    mlir::LLVM::LLVMDialect, mlir::jeff::JeffDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -243,6 +247,122 @@ TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+}
+
+/**
+ * @brief Test: entering the pipeline at QCO yields the same result as QC
+ *
+ * @details
+ * The `jeff` import path hands the pipeline an already-QCO module. This test
+ * proves that entering at QCO (skipping the QC → QCO leg) converges to the same
+ * final QC IR as the ordinary QC entry point for the same program.
+ */
+TEST_F(CompilerPipelineTest, RunFromQCOMatchesRunFromQC) {
+  const auto buildQC = [this] {
+    return mlir::qc::QCProgramBuilder::build(context.get(),
+                                             [](mlir::qc::QCProgramBuilder& b) {
+                                               const auto q = b.allocQubit();
+                                               b.h(q);
+                                               b.rz(1.0, q);
+                                             });
+  };
+
+  const mlir::QuantumCompilerPipeline pipeline;
+
+  // Reference: enter at QC.
+  auto fromQC = buildQC();
+  ASSERT_TRUE(fromQC);
+  ASSERT_TRUE(pipeline
+                  .run(fromQC.get(), mlir::PipelineDialect::QC,
+                       mlir::PipelineDialect::QC)
+                  .succeeded());
+
+  // Under test: convert to QCO first, then enter at QCO.
+  auto fromQCO = buildQC();
+  ASSERT_TRUE(fromQCO);
+  {
+    mlir::PassManager pm(context.get());
+    pm.addPass(mlir::createQCToQCO());
+    ASSERT_TRUE(pm.run(fromQCO.get()).succeeded());
+  }
+  ASSERT_TRUE(pipeline
+                  .run(fromQCO.get(), mlir::PipelineDialect::QCO,
+                       mlir::PipelineDialect::QC)
+                  .succeeded());
+
+  EXPECT_TRUE(mlir::verify(*fromQC).succeeded());
+  EXPECT_TRUE(mlir::verify(*fromQCO).succeeded());
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(fromQC.get(), fromQCO.get()));
+}
+
+/**
+ * @brief Test: lowering to the `jeff` dialect populates the record and verifies
+ */
+TEST_F(CompilerPipelineTest, RunToJeffProducesValidModule) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [](mlir::qc::QCProgramBuilder& b) {
+        const auto q = b.allocQubit();
+        b.h(q);
+      });
+  ASSERT_TRUE(module);
+
+  mlir::QuantumCompilerConfig config;
+  config.recordIntermediates = true;
+  const mlir::QuantumCompilerPipeline pipeline(config);
+
+  mlir::CompilationRecord record;
+  ASSERT_TRUE(pipeline
+                  .run(module.get(), mlir::PipelineDialect::QC,
+                       mlir::PipelineDialect::Jeff, &record)
+                  .succeeded());
+
+  EXPECT_FALSE(record.afterJeffConversion.empty());
+  EXPECT_FALSE(record.afterJeffCanon.empty());
+
+  auto reparsed = parseRecordedModule(record.afterJeffCanon);
+  ASSERT_TRUE(reparsed);
+  EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
+}
+
+/**
+ * @brief Test: QIR lowering requires an explicit target profile
+ */
+TEST_F(CompilerPipelineTest, RunToQIRRequiresProfile) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [](mlir::qc::QCProgramBuilder& b) { b.allocQubit(); });
+  ASSERT_TRUE(module);
+
+  const mlir::QuantumCompilerPipeline pipeline;
+  EXPECT_TRUE(pipeline
+                  .run(module.get(), mlir::PipelineDialect::QC,
+                       mlir::PipelineDialect::QIR)
+                  .failed());
+}
+
+/**
+ * @brief Test: typed programs transfer ownership between compiler dialects
+ */
+TEST_F(CompilerPipelineTest, TypedProgramsComposeWithoutImplicitCopies) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+
+  auto qc = mlir::QCProgram::fromQASMString(qasm);
+  auto qco = std::move(qc).intoQCO();
+  EXPECT_FALSE(qc.isValid());
+  EXPECT_TRUE(qco.isValid());
+
+  qco.cleanup();
+  qco.optimize();
+  auto roundTrip = std::move(qco).intoQC();
+  EXPECT_FALSE(qco.isValid());
+  roundTrip.cleanup();
+  auto reparsed = parseRecordedModule(roundTrip.str());
+  ASSERT_TRUE(reparsed);
+  EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(

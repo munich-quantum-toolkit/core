@@ -9,50 +9,17 @@
  */
 
 #include "ir/QuantumComputation.hpp"
-#include "mlir/Compiler/CompilerPipeline.h"
-#include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
-#include "mlir/Conversion/QCOToQC/QCOToQC.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
-#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Support/Passes.h"
+#include "mlir/Compiler/Programs.h"
 
-#include <jeff/IR/JeffDialect.h>
-#include <jeff/Translation/Deserialize.hpp>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Support/SMLoc.h>
-#include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/FileUtilities.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
-#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
-#include <mlir/Target/LLVMIR/ModuleTranslation.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
 
 #include <filesystem>
-#include <memory>
 #include <stdexcept>
 #include <string>
-#include <system_error>
-#include <unordered_map>
+#include <string_view>
 #include <utility>
+#include <variant>
 
 namespace mqt {
 
@@ -62,253 +29,155 @@ using namespace nb::literals;
 namespace {
 
 /**
- * @brief Construct and initialize the MLIR context used by the compiler.
+ * @brief Resolve a Python path-like object to a filesystem path string.
  */
-[[nodiscard]] std::unique_ptr<mlir::MLIRContext> createCompilerContext() {
-  mlir::DialectRegistry registry;
-  registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                  mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
-                  mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                  mlir::scf::SCFDialect, mlir::LLVM::LLVMDialect,
-                  mlir::memref::MemRefDialect, mlir::jeff::JeffDialect>();
-  mlir::registerBuiltinDialectTranslation(registry);
-  mlir::registerLLVMDialectTranslation(registry);
-
-  auto context = std::make_unique<mlir::MLIRContext>(registry);
-  context->loadAllAvailableDialects();
-  return context;
+[[nodiscard]] std::string fspath(const nb::object& pathLike) {
+  return nb::cast<std::string>(
+      nb::module_::import_("os").attr("fspath")(pathLike));
 }
 
 /**
- * @brief Deserialize a `.jeff` file and convert the program to QC.
+ * @brief Check whether @p input unambiguously looks like source text.
  */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromJeffFile(mlir::MLIRContext* context, const std::string& path) {
-  auto mod = deserializeFromFile(context, path);
-  if (!mod) {
-    throw std::runtime_error(std::string("Failed to deserialize jeff file '") +
-                             path + "'.");
+[[nodiscard]] bool isSourceString(const std::string_view input) {
+  return input.find("\n") != std::string_view::npos ||
+         input.find("OPENQASM") != std::string_view::npos ||
+         input.starts_with("module");
+}
+
+/**
+ * @brief Construct a frontend program from a string containing source or path.
+ */
+[[nodiscard]] mlir::CompilerProgram
+programFromString(const std::string& input) {
+  if (isSourceString(input)) {
+    if (input.find("OPENQASM") != std::string::npos) {
+      return mlir::QCProgram::fromQASMString(input);
+    }
+    return mlir::QCProgram::fromMLIRString(input);
   }
 
-  mlir::PassManager pm(mod->getContext());
-  pm.addPass(mlir::createJeffToQCO());
-  populateQCOCleanupPipeline(pm);
-  pm.addPass(mlir::createQCOToQC());
-  populateQCCleanupPipeline(pm);
-
-  if (mlir::failed(pm.run(*mod))) {
-    throw std::runtime_error("Failed to convert from jeff to QC.");
-  }
-
-  return mod;
-}
-
-/**
- * @brief Open a file and wrap it in a `SourceMgr` ready for parsing.
- */
-[[nodiscard]] llvm::SourceMgr openSourceMgr(const std::string& path) {
-  std::string errorMessage;
-  auto file = mlir::openInputFile(path, &errorMessage);
-  if (!file) {
-    throw std::runtime_error(std::string("Failed to load file '") + path +
-                             "': '" + errorMessage + "'");
-  }
-
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
-  return sourceMgr;
-}
-
-/**
- * @brief Parse an MLIR source string into a module.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromMlirString(mlir::MLIRContext* context, const std::string& text) {
-  return mlir::parseSourceString<mlir::ModuleOp>(llvm::StringRef(text),
-                                                 context);
-}
-
-/**
- * @brief Parse a `.mlir` file into a module.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromMlirFile(mlir::MLIRContext* context, const std::string& path) {
-  const auto sourceMgr = openSourceMgr(path);
-  return parseSourceFile<mlir::ModuleOp>(sourceMgr, context);
-}
-
-/**
- * @brief Parse an OpenQASM source string and translate it to a QC program.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromQasmString(mlir::MLIRContext* context,
-                     const std::string& qasmSource) {
-  return mlir::qc::translateQASM3ToQC(qasmSource, context);
-}
-
-/**
- * @brief Parse a `.qasm` file and translate it to a QC program.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
-  auto sourceMgr = openSourceMgr(path);
-  return mlir::qc::translateQASM3ToQC(sourceMgr, context);
-}
-
-/**
- * @brief Parse a source string into an MLIR module.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromSourceString(mlir::MLIRContext* context, const std::string& input) {
-  if (input.find("OPENQASM") != std::string::npos) {
-    return moduleFromQasmString(context, input);
-  }
-
-  if (auto mod = moduleFromMlirString(context, input)) {
-    return mod;
-  }
-
-  throw std::runtime_error("Failed to parse source string.");
-}
-
-/**
- * @brief Resolve a string to an MLIR module.
- *
- * @details The string can be a source string or a path to a file.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromString(mlir::MLIRContext* context, const std::string& input) {
-  if (input.find('\n') != std::string::npos) {
-    return moduleFromSourceString(context, input);
-  }
-
-  const auto path = std::filesystem::path(input);
+  const std::filesystem::path path(input);
   if (path.empty()) {
-    return moduleFromSourceString(context, input);
+    return mlir::QCProgram::fromMLIRString(input);
   }
 
-  std::error_code ec;
-  const auto status = std::filesystem::status(path, ec);
-  if (ec) {
-    throw std::runtime_error(std::string("Failed to inspect path '") + input +
-                             "': " + ec.message());
+  std::error_code error;
+  const auto exists = std::filesystem::exists(path, error);
+  if (error) {
+    throw std::runtime_error("Failed to inspect path '" + input +
+                             "': " + error.message());
   }
-  if (!std::filesystem::exists(status)) {
-    throw std::runtime_error(std::string("Input file '") + input +
-                             "' does not exist.");
-  }
-  if (!std::filesystem::is_regular_file(status)) {
-    throw std::runtime_error(std::string("Input path '") + input +
-                             "' is not a file.");
-  }
-
-  using ModuleLoader = mlir::OwningOpRef<mlir::ModuleOp> (*)(
-      mlir::MLIRContext*, const std::string&);
-  static const std::unordered_map<std::string, ModuleLoader> loaders{
-      {".jeff", &moduleFromJeffFile},
-      {".mlir", &moduleFromMlirFile},
-      {".qasm", &moduleFromQasmFile},
-  };
 
   const auto extension = path.extension().string();
-  const auto it = loaders.find(extension);
-  if (it == loaders.end()) {
-    throw std::runtime_error(std::string("Input file '") + input +
-                             "' has unsupported extension '" + extension +
-                             "'.");
+  if (!exists) {
+    if (extension == ".jeff" || extension == ".mlir" || extension == ".qasm") {
+      throw std::runtime_error("Input file '" + input + "' does not exist.");
+    }
+    return mlir::QCProgram::fromMLIRString(input);
   }
-  return it->second(context, input);
+  if (!std::filesystem::is_regular_file(path, error) || error) {
+    throw std::runtime_error("Input path '" + input + "' is not a file.");
+  }
+
+  if (extension == ".jeff") {
+    return mlir::JeffProgram::fromFile(path);
+  }
+  if (extension == ".mlir") {
+    return mlir::QCProgram::fromMLIRFile(path);
+  }
+  if (extension == ".qasm") {
+    return mlir::QCProgram::fromQASMFile(path);
+  }
+  throw std::runtime_error("Input file '" + input +
+                           "' has unsupported extension '" + extension + "'.");
 }
 
 /**
- * @brief Translate a `QuantumComputation` to a QC program.
+ * @brief Convert a Python object to a compiler program.
+ *
+ * @details Program objects are copied by default so the high-level entry point
+ * behaves like a conventional compiler function. Set @p inplace to transfer
+ * ownership from a program object instead.
  */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromQuantumComputation(mlir::MLIRContext* context,
-                             const qc::QuantumComputation& computation) {
-  auto mod = mlir::translateQuantumComputationToQC(context, computation);
-  if (!mod) {
-    throw std::runtime_error("Failed to translate QuantumComputation to MLIR.");
-  }
-  return mod;
-}
-
-/**
- * @brief Convert a generic Python object to an MLIR module.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromInputProgram(mlir::MLIRContext* context, const nb::object& program) {
+[[nodiscard]] mlir::CompilerProgram programFromInput(const nb::object& program,
+                                                     const bool inplace) {
   if (nb::isinstance<nb::str>(program)) {
-    return moduleFromString(context, nb::cast<std::string>(program));
+    return programFromString(nb::cast<std::string>(program));
   }
-
   if (nb::hasattr(program, "__fspath__")) {
-    const auto path = nb::cast<std::string>(
-        nb::module_::import_("os").attr("fspath")(program));
-    return moduleFromString(context, path);
+    return programFromString(fspath(program));
   }
-
   if (nb::isinstance<qc::QuantumComputation>(program)) {
-    const auto& qc = nb::cast<const qc::QuantumComputation&>(program);
-    return moduleFromQuantumComputation(context, qc);
+    return mlir::QCProgram::fromQuantumComputation(
+        nb::cast<const qc::QuantumComputation&>(program));
   }
 
+  if (nb::isinstance<mlir::QCProgram>(program)) {
+    auto& value = nb::cast<mlir::QCProgram&>(program);
+    return inplace ? mlir::CompilerProgram(std::move(value))
+                   : mlir::CompilerProgram(value.copy());
+  }
+  if (nb::isinstance<mlir::QCOProgram>(program)) {
+    auto& value = nb::cast<mlir::QCOProgram&>(program);
+    return inplace ? mlir::CompilerProgram(std::move(value))
+                   : mlir::CompilerProgram(value.copy());
+  }
+  if (nb::isinstance<mlir::JeffProgram>(program)) {
+    auto& value = nb::cast<mlir::JeffProgram&>(program);
+    return inplace ? mlir::CompilerProgram(std::move(value))
+                   : mlir::CompilerProgram(value.copy());
+  }
   const auto programType =
       nb::cast<std::string>(program.type().attr("__name__"));
-  if (programType == "QuantumCircuit") {
-    const auto& qc = nb::cast<qc::QuantumComputation>(
+  const auto programModule =
+      nb::cast<std::string>(program.type().attr("__module__"));
+  if (programType == "QuantumCircuit" && programModule.starts_with("qiskit.")) {
+    const auto computation = nb::cast<qc::QuantumComputation>(
         nb::module_::import_("mqt.core.load").attr("load")(program));
-    return moduleFromQuantumComputation(context, qc);
+    return mlir::QCProgram::fromQuantumComputation(computation);
   }
 
-  throw std::runtime_error(std::string("Program type ") + programType +
+  throw std::runtime_error("Program type " + programType +
                            " is not supported.");
 }
 
 /**
- * @brief Compile a program and return the final MLIR module as a string.
+ * @brief Convert a C++ compiler program variant into its Python object.
  */
-[[nodiscard]] std::string
-compileProgram(const nb::object& program, const bool convertToQIRBase,
-               const bool convertToQIRAdaptive,
+[[nodiscard]] nb::object toPython(mlir::CompilerProgram&& program) {
+  return std::visit(
+      [](auto&& value) -> nb::object { return nb::cast(std::move(value)); },
+      std::move(program));
+}
+
+/**
+ * @brief Run the coordinated default pipeline and return a typed program.
+ */
+[[nodiscard]] nb::object
+compileProgram(const nb::object& program, const mlir::ProgramFormat output,
+               const bool inplace,
                const bool disableMergeSingleQubitRotationGates,
                const bool enableHadamardLifting, const bool enableTiming,
                const bool enableStatistics) {
-  auto context = createCompilerContext();
-
-  auto mod = moduleFromInputProgram(context.get(), program);
-  if (!mod) {
-    throw std::runtime_error("Failed to create MLIR module.");
-  }
-
   mlir::QuantumCompilerConfig config;
-  config.convertToQIRBase = convertToQIRBase;
-  config.convertToQIRAdaptive = convertToQIRAdaptive;
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;
 
-  if (const mlir::QuantumCompilerPipeline pipeline(config);
-      mlir::failed(pipeline.runPipeline(mod.get()))) {
-    throw std::runtime_error("Failed to run compilation pipeline.");
-  }
+  return toPython(mlir::runDefaultPipeline(programFromInput(program, inplace),
+                                           output, config));
+}
 
-  if (convertToQIRBase || convertToQIRAdaptive) {
-    llvm::LLVMContext llvmContext;
-    std::unique_ptr<llvm::Module> llvmMod =
-        mlir::translateModuleToLLVMIR(*mod, llvmContext);
-    if (!llvmMod) {
-      throw std::runtime_error("Failed to translate MLIR module to LLVM IR.");
-    }
-    std::string result;
-    llvm::raw_string_ostream os(result);
-    llvmMod->print(os, nullptr);
-    return result;
+template <class ProgramType>
+[[nodiscard]] ProgramType copiedOrConsumed(ProgramType& program,
+                                           const bool copy) {
+  if (copy) {
+    return program.copy();
   }
-
-  return mlir::captureIR(mod.get());
+  return std::move(program);
 }
 
 } // namespace
@@ -320,29 +189,180 @@ MQT Core MLIR compiler bindings.
 
   nb::module_::import_("mqt.core.ir");
 
-  m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
-        "convert_to_qir_base"_a = false, "convert_to_qir_adaptive"_a = false,
-        "disable_merge_single_qubit_rotation_gates"_a = false,
-        "enable_hadamard_lifting"_a = false, "enable_timing"_a = false,
-        "enable_statistics"_a = false,
-        R"pb(
-Compile an input quantum program with the MQT MLIR compiler pipeline.
+  nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
+      .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")
+      .value("ADAPTIVE", mlir::QIRProfile::Adaptive,
+             "The QIR Adaptive Profile.");
+  nb::enum_<mlir::ProgramFormat>(m, "OutputFormat",
+                                 "Default compiler output formats.")
+      .value("QC_IMPORT", mlir::ProgramFormat::QCImport,
+             "QC directly after frontend import.")
+      .value("QC", mlir::ProgramFormat::QC,
+             "QC after the optimized QCO round trip.")
+      .value("QCO", mlir::ProgramFormat::QCO, "Optimized QCO.")
+      .value("JEFF", mlir::ProgramFormat::Jeff, "Serializable Jeff MLIR.")
+      .value("QIR_BASE", mlir::ProgramFormat::QIRBase,
+             "QIR for the Base Profile.")
+      .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
+             "QIR for the Adaptive Profile.");
 
-Args:
-    program: Input program in one of the supported forms:
-        - Path to a `.jeff`, `.mlir`, or `.qasm` file
-        - MLIR or OpenQASM source string
-        - :class:`mqt.core.ir.QuantumComputation`
-        - :class:`~qiskit.circuit.QuantumCircuit`
-    convert_to_qir_base: Whether to lower the result to a QIR program compliant with the Base Profile.
-    convert_to_qir_adaptive: Whether to lower the result to QIR program compliant with the Adaptive Profile.
-    disable_merge_single_qubit_rotation_gates: Disable quaternion-based rotation merging.
-    enable_hadamard_lifting: Enable Hadamard lifting optimization.
-    enable_timing: Enable MLIR pass timing.
-    enable_statistics: Enable MLIR pass statistics.
+  auto program = nb::class_<mlir::Program>(m, "Program");
+  program.def_prop_ro("is_valid", &mlir::Program::isValid)
+      .def_prop_ro("ir", &mlir::Program::str)
+      .def("__str__", &mlir::Program::str);
 
-Returns:
-    The final MLIR module as text.
+  auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(m, "QCProgram");
+  qcProgram
+      .def_static("from_mlir_str", &mlir::QCProgram::fromMLIRString, "source"_a)
+      .def_static(
+          "from_mlir_file",
+          [](const nb::object& path) {
+            return mlir::QCProgram::fromMLIRFile(fspath(path));
+          },
+          "path"_a,
+          nb::sig("def from_mlir_file(path: str | os.PathLike[str]) "
+                  "-> QCProgram"))
+      .def_static("from_qasm_str", &mlir::QCProgram::fromQASMString, "source"_a)
+      .def_static(
+          "from_qasm_file",
+          [](const nb::object& path) {
+            return mlir::QCProgram::fromQASMFile(fspath(path));
+          },
+          "path"_a,
+          nb::sig("def from_qasm_file(path: str | os.PathLike[str]) "
+                  "-> QCProgram"))
+      .def_static("from_quantum_computation",
+                  &mlir::QCProgram::fromQuantumComputation, "computation"_a,
+                  nb::sig("def from_quantum_computation(computation: "
+                          "mqt.core.ir.QuantumComputation) -> QCProgram"))
+      .def_static(
+          "from_qiskit",
+          [](const nb::object& circuit) {
+            const auto computation = nb::cast<qc::QuantumComputation>(
+                nb::module_::import_("mqt.core.load").attr("load")(circuit));
+            return mlir::QCProgram::fromQuantumComputation(computation);
+          },
+          "circuit"_a,
+          nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
+                  "-> QCProgram"))
+      .def("copy", &mlir::QCProgram::copy)
+      .def("cleanup", &mlir::QCProgram::cleanup)
+      .def(
+          "to_qco",
+          [](mlir::QCProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            return std::move(source).intoQCO();
+          },
+          nb::kw_only(), "copy"_a = false)
+      .def(
+          "to_qir",
+          [](mlir::QCProgram& value, const mlir::QIRProfile profile,
+             const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            return std::move(source).intoQIR(profile);
+          },
+          "profile"_a, nb::kw_only(), "copy"_a = false);
+
+  auto qcoProgram =
+      nb::class_<mlir::QCOProgram, mlir::Program>(m, "QCOProgram");
+  qcoProgram
+      .def_static("from_mlir_str", &mlir::QCOProgram::fromMLIRString,
+                  "source"_a)
+      .def_static(
+          "from_mlir_file",
+          [](const nb::object& path) {
+            return mlir::QCOProgram::fromMLIRFile(fspath(path));
+          },
+          "path"_a,
+          nb::sig("def from_mlir_file(path: str | os.PathLike[str]) "
+                  "-> QCOProgram"))
+      .def("copy", &mlir::QCOProgram::copy)
+      .def("cleanup", &mlir::QCOProgram::cleanup)
+      .def("optimize", &mlir::QCOProgram::optimize, nb::kw_only(),
+           "merge_single_qubit_rotations"_a = true,
+           "enable_hadamard_lifting"_a = false)
+      .def(
+          "to_qc",
+          [](mlir::QCOProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            return std::move(source).intoQC();
+          },
+          nb::kw_only(), "copy"_a = false)
+      .def(
+          "to_jeff",
+          [](mlir::QCOProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            return std::move(source).intoJeff();
+          },
+          nb::kw_only(), "copy"_a = false);
+
+  auto jeffProgram =
+      nb::class_<mlir::JeffProgram, mlir::Program>(m, "JeffProgram");
+  jeffProgram
+      .def_static(
+          "from_file",
+          [](const nb::object& path) {
+            return mlir::JeffProgram::fromFile(fspath(path));
+          },
+          "path"_a,
+          nb::sig("def from_file(path: str | os.PathLike[str]) "
+                  "-> JeffProgram"))
+      .def_static(
+          "from_bytes",
+          [](const nb::bytes& bytes) {
+            return mlir::JeffProgram::fromBytes(nb::cast<std::string>(bytes));
+          },
+          "data"_a)
+      .def("copy", &mlir::JeffProgram::copy)
+      .def("cleanup", &mlir::JeffProgram::cleanup)
+      .def("to_bytes",
+           [](const mlir::JeffProgram& value) {
+             const auto bytes = value.toBytes();
+             return nb::bytes(bytes.data(), bytes.size());
+           })
+      .def(
+          "write",
+          [](const mlir::JeffProgram& value, const nb::object& path) {
+            value.write(fspath(path));
+          },
+          "path"_a,
+          nb::sig("def write(self, path: str | os.PathLike[str]) -> None"))
+      .def(
+          "to_qco",
+          [](mlir::JeffProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            return std::move(source).intoQCO();
+          },
+          nb::kw_only(), "copy"_a = false);
+
+  auto qirProgram =
+      nb::class_<mlir::QIRProgram, mlir::Program>(m, "QIRProgram");
+  qirProgram.def("copy", &mlir::QIRProgram::copy)
+      .def("cleanup", &mlir::QIRProgram::cleanup)
+      .def_prop_ro("profile", &mlir::QIRProgram::profile)
+      .def_prop_ro("llvm_ir", &mlir::QIRProgram::llvmIR);
+
+  m.def(
+      "compile_program", &compileProgram, "program"_a, nb::kw_only(),
+      "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
+      "disable_merge_single_qubit_rotation_gates"_a = false,
+      "enable_hadamard_lifting"_a = false, "enable_timing"_a = false,
+      "enable_statistics"_a = false,
+      nb::sig("def compile_program(program: str | os.PathLike[str] | "
+              "mqt.core.ir.QuantumComputation | qiskit.circuit.QuantumCircuit "
+              "| QCProgram | QCOProgram | JeffProgram, *, "
+              "output: OutputFormat = OutputFormat.QC, inplace: bool = False, "
+              "disable_merge_single_qubit_rotation_gates: bool = False, "
+              "enable_hadamard_lifting: bool = False, "
+              "enable_timing: bool = False, enable_statistics: bool = False) "
+              "-> QCProgram | QCOProgram | JeffProgram | QIRProgram"),
+      R"pb(
+Run the coordinated default MQT compiler pipeline.
+
+Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,
+and typed compiler programs can be combined with any supported output format.
+Typed program inputs are copied by default; set `inplace=True` to consume them.
+Use the typed programs directly to construct a custom pipeline stage by stage.
 )pb");
 }
 
