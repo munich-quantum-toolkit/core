@@ -32,7 +32,7 @@
 #include <vector>
 
 namespace fomac {
-using CustomJobParameter = std::variant<bool, int, double, std::string>;
+using CustomJobParameter = std::variant<std::string, bool, int, double>;
 
 /**
  * @brief Concept for ranges that are contiguous in memory and can be
