@@ -201,48 +201,18 @@ static llvm::StringMap<GateFn> buildGateDispatch() {
     b.cswap(q[0], q[1], q[2]);
   }; // alias
 
-  // Multi-controlled gates
-  auto mcxFn = [](auto& b, auto q, auto) { b.mcx(q.drop_back(1), q.back()); };
-  d["mcx"] = mcxFn;
-  d["mcx_gray"] = mcxFn;
-
-  d["mcx_vchain"] = [](auto& b, auto q, auto) {
-    const size_t n = q.size() - ((q.size() + 1) / 2) + 2;
-    b.mcx(q.slice(0, n - 1), q[n - 1]);
-  };
-
-  d["mcx_recursive"] = [](auto& b, auto q, auto) {
-    const size_t n = (q.size() > 5) ? q.size() - 1 : q.size();
-    b.mcx(q.slice(0, n - 1), q[n - 1]);
-  };
-
-  d["mcphase"] = [](auto& b, auto q, auto p) {
-    b.mcp(p[0], q.drop_back(1), q.back());
-  };
-
   return d;
 }
 
 /// Build the table mapping a gate identifier to its metadata.
 static llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
-  llvm::StringMap<std::variant<GateInfo, StoredGate>> t;
+  llvm::StringMap<std::variant<GateInfo, StoredGate>> table;
   for (const auto& [name, gate] : qasm3::STANDARD_GATES) {
     const auto* standard = dynamic_cast<qasm3::StandardGate*>(gate.get());
     assert(standard != nullptr && "STANDARD_GATES entry is not a StandardGate");
-    t.insert({name, standard->info});
+    table.insert({name, standard->info});
   }
-
-  constexpr GateInfo mcxInfo{
-      .nControls = 0, .nTargets = 0, .nParameters = 0, .type = ::qc::OpType::X};
-  t["mcx"] = mcxInfo;
-  t["mcx_gray"] = mcxInfo;
-  t["mcx_vchain"] = mcxInfo;
-  t["mcx_recursive"] = mcxInfo;
-
-  t["mcphase"] = GateInfo{
-      .nControls = 0, .nTargets = 0, .nParameters = 1, .type = ::qc::OpType::P};
-
-  return t;
+  return table;
 }
 
 /// Look up a built-in numeric constant and emit it as an `f64`-typed value.
