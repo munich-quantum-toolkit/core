@@ -28,7 +28,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace fomac {
@@ -285,33 +287,68 @@ std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
 }
 
 Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format,
-                      const size_t numShots) const {
+                      const QDMI_Program_Format format, const size_t numShots,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
-  Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
+  Job jobWrapper{job};
 
-  // Set program format
   qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                             sizeof(format), &format),
                      "Setting program format");
-
-  // Set program
   qdmi::throwIfError(
       QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
                              program.size() + 1, program.c_str()),
       "Setting program");
-
-  // Set number of shots
   qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
                                             QDMI_JOB_PARAMETER_SHOTSNUM,
                                             sizeof(numShots), &numShots),
                      "Setting number of shots");
 
-  // Submit the job
+  if (custom1.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, *custom1);
+  }
+  if (custom2.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2, *custom2);
+  }
+  if (custom3.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3, *custom3);
+  }
+  if (custom4.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4, *custom4);
+  }
+  if (custom5.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5, *custom5);
+  }
+
   qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
+}
+
+void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
+                               const CustomJobParameter& value) {
+  std::visit(
+      [&]<typename CustomValue>(const CustomValue& customValue) {
+        using T = std::decay_t<CustomValue>;
+        if constexpr (std::is_same_v<T, std::string>) {
+          qdmi::throwIfError(QDMI_job_set_parameter(job, param,
+                                                    customValue.size() + 1,
+                                                    customValue.c_str()),
+                             "Setting custom parameter");
+        } else {
+          static_assert(std::is_trivially_copyable_v<T>,
+                        "Custom job parameters must be trivially copyable");
+          qdmi::throwIfError(
+              QDMI_job_set_parameter(job, param, sizeof(T), &customValue),
+              "Setting custom parameter");
+        }
+      },
+      value);
 }
 
 QDMI_Job_Status Job::check() const {

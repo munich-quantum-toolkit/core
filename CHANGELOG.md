@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add support for custom job parameters to C++ and Python FoMaC library
+  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
+
 ## [3.7.0] - 2026-07-09
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
@@ -565,6 +570,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
