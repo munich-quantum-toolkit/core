@@ -284,6 +284,71 @@ std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
+Job Device::submitJob(const std::string& program,
+                      const QDMI_Program_Format format, const size_t numShots,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
+  QDMI_Job job = nullptr;
+  qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
+  Job jobWrapper{job};
+
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                            sizeof(format), &format),
+                     "Setting program format");
+  qdmi::throwIfError(
+      QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
+                             program.size() + 1, program.c_str()),
+      "Setting program");
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_SHOTSNUM,
+                                            sizeof(numShots), &numShots),
+                     "Setting number of shots");
+
+  if (custom1.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, *custom1);
+  }
+  if (custom2.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2, *custom2);
+  }
+  if (custom3.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3, *custom3);
+  }
+  if (custom4.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4, *custom4);
+  }
+  if (custom5.has_value()) {
+    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5, *custom5);
+  }
+
+  qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
+  return jobWrapper;
+}
+
+void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
+                               const CustomJobParameter& value) {
+  std::visit(
+      [&]<typename CustomValue>(const CustomValue& customValue) {
+        using T = std::decay_t<CustomValue>;
+        if constexpr (std::is_same_v<T, std::string>) {
+          qdmi::throwIfError(QDMI_job_set_parameter(job, param,
+                                                    customValue.size() + 1,
+                                                    customValue.c_str()),
+                             "Setting custom parameter");
+        } else {
+          static_assert(std::is_trivially_copyable_v<T>,
+                        "Custom job parameters must be trivially copyable");
+          qdmi::throwIfError(
+              QDMI_job_set_parameter(job, param, sizeof(T), &customValue),
+              "Setting custom parameter");
+        }
+      },
+      value);
+}
+
 QDMI_Job_Status Job::check() const {
   QDMI_Job_Status status{};
   qdmi::throwIfError(QDMI_job_check(job_.get(), &status),
