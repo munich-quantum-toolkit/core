@@ -96,6 +96,23 @@ struct QubitBinding {
 
 using QubitScope = llvm::StringMap<QubitBinding>;
 
+/**
+ * @brief A declared classical register.
+ *
+ * @details
+ * Registers are held in a vector in declaration order, so that the order in
+ * which they are returned from the generated function is deterministic.
+ */
+struct ClassicalRegisterInfo {
+  /// The location of the declaration, used to anchor diagnostics.
+  SMLoc loc;
+  QCProgramBuilder::ClassicalRegister reg;
+  /// The measured value of each bit. Empty until the register is measured.
+  SmallVector<Value> bits;
+  /// Whether the register was declared with the `output` directive.
+  bool isOutput = false;
+};
+
 /// Signature: (builder, gate operands, gate parameters). Owns the callable, as
 /// `GATE_DISPATCH` outlives the lambdas that build it.
 using GateFn = std::function<void(QCProgramBuilder&, ValueRange, ValueRange)>;
@@ -272,34 +289,30 @@ public:
 
   void initialize() { builder.initialize(); }
 
-  OwningOpRef<ModuleOp> finalize() {
-    if (outputRegisters.empty()) {
+  FailureOr<OwningOpRef<ModuleOp>> finalize() {
+    if (classicalRegisters.empty()) {
       return builder.finalize();
     }
 
-    SmallVector<Value> returnValues;
-    for (const auto& name : outputRegisters) {
-      auto it = bitValues.find(name);
-      if (it == bitValues.end()) {
-        llvm::errs() << "Output register '" << name
-                     << "' was never measured.\n";
-        return nullptr;
-      }
+    // Without an output directive, every classical register is returned
+    const bool hasOutputs =
+        any_of(classicalRegisters,
+               [](const ClassicalRegisterInfo& info) { return info.isOutput; });
 
-      auto expectedSize = classicalRegisters[name].size;
-      if (it->second.size() < expectedSize) {
-        llvm::errs() << "Not all bits of output register '" << name
-                     << "' have been measured.\n";
-        return nullptr;
+    SmallVector<Value> returnValues;
+    for (const auto& info : classicalRegisters) {
+      if (hasOutputs && !info.isOutput) {
+        continue;
       }
-      for (auto bit : it->second) {
-        if (!bit) {
-          llvm::errs() << "Not all bits of output register '" << name
-                       << "' have been measured.\n";
-          return nullptr;
-        }
-        returnValues.push_back(bit);
+      if (info.bits.empty()) {
+        return error(info.loc, "output register '" + StringRef(info.reg.name) +
+                                   "' is never measured");
       }
+      if (info.bits.size() < static_cast<size_t>(info.reg.size)) {
+        return error(info.loc, "not all bits of output register '" +
+                                   StringRef(info.reg.name) + "' are measured");
+      }
+      append_range(returnValues, info.bits);
     }
 
     builder.retype(ValueRange(returnValues).getTypes());
@@ -443,7 +456,8 @@ public:
     return success();
   }
 
-  LogicalResult classicalRegister(SMLoc loc, StringRef id, const Expr* size) {
+  LogicalResult classicalRegister(SMLoc loc, StringRef id, const Expr* size,
+                                  bool isOutput) {
     if (failed(declare(loc, id))) {
       return failure();
     }
@@ -455,8 +469,10 @@ public:
       }
       count = *evaluated;
     }
-    classicalRegisters[id] = builder.allocClassicalBitRegister(count, id.str());
-    outputRegisters.push_back(id);
+    classicalRegisters.push_back(
+        {.loc = loc,
+         .reg = builder.allocClassicalBitRegister(count, id.str()),
+         .isOutput = isOutput});
     return success();
   }
 
@@ -464,37 +480,47 @@ public:
 
   LogicalResult measure(SMLoc loc, const BitReference& target,
                         const Operand& operand) {
-    auto bits = resolveClassicalBits(target);
+    auto cregOrFailure = findClassicalRegister(target.loc, target.identifier);
+    if (failed(cregOrFailure)) {
+      return failure();
+    }
+    auto* creg = *cregOrFailure;
+
+    auto bits = resolveClassicalBits(*creg, target);
     if (failed(bits)) {
       return failure();
     }
+
     auto resolved = resolveOperand(operand, qubitRegisters);
     if (failed(resolved)) {
       return failure();
     }
+
     SmallVector<Value> qubits;
     if (auto* qubit = std::get_if<Value>(&*resolved)) {
       qubits.push_back(*qubit);
     } else {
       qubits = std::get<SmallVector<Value>>(*resolved);
     }
+
     if (bits->size() != qubits.size()) {
       return error(loc, "the classical register and the quantum register must "
                         "have the same width");
     }
+
     for (const auto& [bit, qubit] : zip_equal(*bits, qubits)) {
       auto result = MeasureOp::create(
                         builder, qubit, builder.getStringAttr(bit.registerName),
                         builder.getI64IntegerAttr(bit.registerSize),
                         builder.getI64IntegerAttr(bit.registerIndex))
                         .getResult();
-      auto& registerBits = bitValues[bit.registerName];
       const auto index = static_cast<size_t>(bit.registerIndex);
-      if (registerBits.size() <= index) {
-        registerBits.resize(index + 1);
+      if (creg->bits.size() <= index) {
+        creg->bits.resize(index + 1);
       }
-      registerBits[index] = result;
+      creg->bits[index] = result;
     }
+
     return success();
   }
 
@@ -941,26 +967,46 @@ private:
 
   //===--- Bit reference resolution -------------------------------------===//
 
+  /// Look up the classical register named @p name.
+  FailureOr<ClassicalRegisterInfo*> findClassicalRegister(SMLoc loc,
+                                                          StringRef name) {
+    auto* it =
+        find_if(classicalRegisters, [&](const ClassicalRegisterInfo& info) {
+          return StringRef(info.reg.name) == name;
+        });
+    if (it == classicalRegisters.end()) {
+      return error(loc, "unknown classical register '" + name + "'");
+    }
+    return it;
+  }
+
   FailureOr<Value> lookupBitValue(const BitReference& bit) {
-    auto it = bitValues.find(bit.identifier);
-    if (it == bitValues.end()) {
+    auto creg = findClassicalRegister(bit.loc, bit.identifier);
+    if (failed(creg)) {
+      return failure();
+    }
+
+    const auto& registerBits = (*creg)->bits;
+    if (registerBits.empty()) {
       return error(bit.loc, "no classical bit of register '" + bit.identifier +
                                 "' has been measured yet");
     }
-    const auto& registerBits = it->second;
 
     if (bit.index == nullptr) {
       return registerBits[0];
     }
+
     auto index = evaluateConstant(*bit.index);
     if (failed(index)) {
       return failure();
     }
+
     const auto i = static_cast<size_t>(*index);
     if (i >= registerBits.size() || !registerBits[i]) {
       return error(bit.loc, "bit " + Twine(*index) + " of register '" +
                                 bit.identifier + "' has not been measured yet");
     }
+
     return registerBits[i];
   }
 
@@ -1068,13 +1114,9 @@ private:
   }
 
   FailureOr<SmallVector<QCProgramBuilder::Bit>>
-  resolveClassicalBits(const BitReference& reference) {
-    auto it = classicalRegisters.find(reference.identifier);
-    if (it == classicalRegisters.end()) {
-      return error(reference.loc,
-                   "unknown classical register '" + reference.identifier + "'");
-    }
-    const auto& creg = it->second;
+  resolveClassicalBits(const ClassicalRegisterInfo& info,
+                       const BitReference& reference) {
+    const auto& creg = info.reg;
 
     SmallVector<QCProgramBuilder::Bit> bits;
     if (reference.index == nullptr) {
@@ -1329,9 +1371,7 @@ private:
   llvm::StringMap<VariableKind> variableKinds;
 
   QubitScope qubitRegisters;
-  llvm::StringMap<QCProgramBuilder::ClassicalRegister> classicalRegisters;
-  SmallVector<StringRef> outputRegisters;
-  llvm::StringMap<SmallVector<Value>> bitValues;
+  SmallVector<ClassicalRegisterInfo> classicalRegisters;
   llvm::StringMap<std::variant<GateInfo, StoredGate>> gates;
 };
 
@@ -1352,10 +1392,10 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
   emitter.initialize();
   const auto status = parser.parseProgram();
   auto mod = emitter.finalize();
-  if (failed(status)) {
+  if (failed(status) || failed(mod)) {
     return nullptr;
   }
-  return mod;
+  return std::move(*mod);
 }
 
 } // namespace detail

@@ -172,7 +172,7 @@ concept QASMSink =
       s.boolAssign(loc, str, condition);
       s.classicalKind(str);
       s.qubitRegister(loc, str, &expr);
-      s.classicalRegister(loc, str, &expr);
+      s.classicalRegister(loc, str, &expr, flag);
       s.measure(loc, reference, operand);
       s.reset(loc, operand);
       s.barrier(loc, operands);
@@ -285,9 +285,11 @@ private:
     case TokenKind::Qreg:
       return parseQregDecl();
     case TokenKind::Bit:
-      return parseClassicalDecl();
+      return parseClassicalDecl(/*isOutput=*/false);
     case TokenKind::CReg:
       return parseCregDecl();
+    case TokenKind::Output:
+      return parseOutputDecl();
     case TokenKind::Gate:
       return parseGateStatement();
     case TokenKind::Opaque:
@@ -510,8 +512,18 @@ private:
     return sink.qubitRegister(loc, id, size);
   }
 
+  /// Parse `output bit[<n>] <id> (= <measurement>);`.
+  [[nodiscard]] LogicalResult parseOutputDecl() {
+    advance(); // output
+    if (current().kind != TokenKind::Bit) {
+      return sink.error(current().loc,
+                        "only 'bit' registers can be declared as outputs");
+    }
+    return parseClassicalDecl(/*isOutput=*/true);
+  }
+
   /// Parse `bit[<n>] <id> (= <measurement>);`.
-  [[nodiscard]] LogicalResult parseClassicalDecl() {
+  [[nodiscard]] LogicalResult parseClassicalDecl(bool isOutput) {
     const auto loc = current().loc;
     advance(); // bit
     const Expr* size = nullptr;
@@ -544,7 +556,7 @@ private:
       return failure();
     }
 
-    if (failed(sink.classicalRegister(loc, id, size))) {
+    if (failed(sink.classicalRegister(loc, id, size, isOutput))) {
       return failure();
     }
     if (measureSource) {
@@ -574,7 +586,7 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.classicalRegister(loc, id, size);
+    return sink.classicalRegister(loc, id, size, /*isOutput=*/false);
   }
 
   //===--- Assignment ---------------------------------------------------===//

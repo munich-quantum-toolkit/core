@@ -902,7 +902,7 @@ if (c) {
     h r[i];
   }
 }
-bit[1] out = measure q;
+output bit[1] out = measure q;
 )qasm";
 
 // --- WhileOp -------------------------------------------------------------- //

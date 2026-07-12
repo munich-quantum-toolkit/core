@@ -41,6 +41,7 @@ namespace mlir::qc::detail {
       .Case("creg", TokenKind::CReg)
       .Case("gate", TokenKind::Gate)
       .Case("opaque", TokenKind::Opaque)
+      .Case("output", TokenKind::Output)
       .Case("barrier", TokenKind::Barrier)
       .Case("reset", TokenKind::Reset)
       .Case("measure", TokenKind::Measure)

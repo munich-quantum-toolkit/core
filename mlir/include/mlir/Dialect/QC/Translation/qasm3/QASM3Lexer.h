@@ -33,6 +33,7 @@ enum class TokenKind : uint8_t {
   CReg,
   Gate,
   Opaque,
+  Output,
   Barrier,
   Reset,
   Measure,
