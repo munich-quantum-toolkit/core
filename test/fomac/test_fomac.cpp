@@ -21,6 +21,7 @@
 #include <fstream>
 #include <new>
 #include <numbers>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
