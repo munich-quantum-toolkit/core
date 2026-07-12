@@ -17,20 +17,25 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdlib>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::test {
 
-template <typename BuilderT> struct NamedBuilder {
+template <typename BuilderT, typename RetT = void> struct NamedBuilder {
   const char* name = nullptr;
-  void (*fn)(BuilderT&) = nullptr;
+  RetT (*fn)(BuilderT&) = nullptr;
 
-  constexpr NamedBuilder(const char* nameIn, void (*fnIn)(BuilderT&)) noexcept
+  constexpr NamedBuilder(const char* nameIn, RetT (*fnIn)(BuilderT&)) noexcept
       : name(nameIn), fn(fnIn) {}
 
   // NOLINTNEXTLINE(*-explicit-constructor)
@@ -41,10 +46,62 @@ template <typename BuilderT> struct NamedBuilder {
   }
 };
 
+template <typename BuilderT, typename RetT>
+[[nodiscard]] constexpr NamedBuilder<BuilderT, RetT>
+namedBuilder(const char* name, RetT (*fn)(BuilderT&)) noexcept {
+  return NamedBuilder<BuilderT, RetT>{name, fn};
+}
+
+template <typename BuilderT> struct NamedMLIRBuilder {
+  using SingleFn = mlir::Value (*)(BuilderT&);
+  using MultiFn = mlir::SmallVector<mlir::Value> (*)(BuilderT&);
+
+  const char* name = nullptr;
+  std::variant<std::monostate, SingleFn, MultiFn> fn;
+
+  constexpr NamedMLIRBuilder(const char* nameIn, SingleFn fnIn) noexcept
+      : name(nameIn), fn(fnIn) {}
+
+  constexpr NamedMLIRBuilder(const char* nameIn, MultiFn fnIn) noexcept
+      : name(nameIn), fn(fnIn) {}
+
+  // NOLINTNEXTLINE(*-explicit-constructor)
+  constexpr NamedMLIRBuilder(std::nullptr_t) noexcept : fn(std::monostate{}) {}
+
+  [[nodiscard]] constexpr explicit operator bool() const noexcept {
+    return !std::holds_alternative<std::monostate>(fn);
+  }
+};
+
 template <typename BuilderT>
-[[nodiscard]] constexpr NamedBuilder<BuilderT>
-namedBuilder(const char* name, void (*fn)(BuilderT&)) noexcept {
-  return NamedBuilder<BuilderT>{name, fn};
+[[nodiscard]] constexpr NamedMLIRBuilder<BuilderT>
+namedBuilder(const char* name, mlir::Value (*fn)(BuilderT&)) noexcept {
+  return NamedMLIRBuilder<BuilderT>{name, fn};
+}
+
+template <typename BuilderT>
+[[nodiscard]] constexpr NamedMLIRBuilder<BuilderT>
+namedBuilder(const char* name,
+             mlir::SmallVector<mlir::Value> (*fn)(BuilderT&)) noexcept {
+  return NamedMLIRBuilder<BuilderT>{name, fn};
+}
+
+template <typename BuilderT, typename... Args>
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+buildMLIRProgram(mlir::MLIRContext* context,
+                 const NamedMLIRBuilder<BuilderT>& builder, Args&&... args) {
+  return std::visit(
+      [&]<typename T>(T fn) -> mlir::OwningOpRef<mlir::ModuleOp> {
+        if constexpr (requires {
+                        BuilderT::build(context, fn,
+                                        std::forward<Args>(args)...);
+                      }) {
+          return BuilderT::build(context, fn, std::forward<Args>(args)...);
+        } else {
+          return {};
+        }
+      },
+      builder.fn);
 }
 
 [[nodiscard]] constexpr const char* displayName(const char* name) noexcept {
