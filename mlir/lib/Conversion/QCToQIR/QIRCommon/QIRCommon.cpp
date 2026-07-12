@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -22,6 +23,8 @@
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -426,6 +429,9 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
     auto fnDec =
         getOrCreateFunctionDeclaration(builder, main, QIR_RECORD_OUTPUT, fnSig);
     for (const auto& [index, ptr] : resultPtrs) {
+      if (!state.recordedIndices.contains(index)) {
+        continue;
+      }
       auto label = createResultLabel(builder, main,
                                      "__unnamed__" + std::to_string(index))
                        .getResult();
@@ -440,6 +446,9 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
     auto fnDec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_ARRAY_RECORD_OUTPUT, fnSig);
     for (const auto& [name, results] : resultArrays) {
+      if (!state.recordedArrays.contains(name)) {
+        continue;
+      }
       auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
       auto label = createResultLabel(builder, main, name).getResult();
       LLVM::CallOp::create(builder, main->getLoc(), fnDec,
@@ -461,6 +470,51 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
   patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp,
                ConvertQCStaticOp, ConvertQCGPhaseOp>(typeConverter, ctx,
                                                      &state);
+}
+
+void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
+  moduleOp->walk([&](func::FuncOp funcOp) {
+    // First, check if the given function is the main entrypoint or not.
+    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+    bool isEntryPoint = false;
+    if (passthrough) {
+      isEntryPoint = llvm::any_of(passthrough, [](Attribute attr) {
+        auto strAttr = dyn_cast<StringAttr>(attr);
+        return strAttr && strAttr.getValue() == "entry_point";
+      });
+    }
+    if (!isEntryPoint) {
+      return;
+    }
+
+    funcOp.walk([&](func::ReturnOp returnOp) {
+      SmallVector<Value> keptOperands;
+      SmallVector<Type> keptReturnTypes;
+
+      for (auto operand : returnOp.getOperands()) {
+        if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
+          state.returnedMeasurements.insert(measureOp.getOperation());
+        } else {
+          keptOperands.push_back(operand);
+          keptReturnTypes.push_back(operand.getType());
+        }
+      }
+
+      if (keptOperands.empty() && !returnOp.getOperands().empty()) {
+        OpBuilder builder(returnOp);
+        auto zero =
+            arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
+        keptOperands.push_back(zero);
+        keptReturnTypes.push_back(zero.getType());
+      }
+
+      returnOp.getOperandsMutable().assign(keptOperands);
+
+      funcOp.setFunctionType(FunctionType::get(
+          funcOp.getContext(), funcOp.getFunctionType().getInputs(),
+          keptReturnTypes));
+    });
+  });
 }
 
 } // namespace mlir
