@@ -108,8 +108,7 @@ template <typename U> struct remove_optional<std::optional<U>> {
  * with the underlying type of optional without caring about its optionality.
  * @tparam T The type to strip optional from.
  */
-template <typename T>
-using remove_optional_t = typename remove_optional<T>::type;
+template <typename T> using remove_optional_t = remove_optional<T>::type;
 
 /**
  * @brief Concept for types that are either size_constructible_contiguous_range
@@ -214,7 +213,7 @@ private:
   /// Query a session property.
   template <size_constructible_contiguous_range T>
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
-    using StrippedValueType = typename remove_optional_t<T>::value_type;
+    using StrippedValueType = remove_optional_t<T>::value_type;
 
     size_t size = 0;
     qdmi::throwIfError(QDMI_session_query_session_property(session_.get(), prop,
