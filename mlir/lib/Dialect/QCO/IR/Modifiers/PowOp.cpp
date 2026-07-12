@@ -170,12 +170,11 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     rewriter.replaceOpWithNewOp<PowOp>(
         op, op.getQubitsIn(), -exp,
         [&](ValueRange powArgs) -> SmallVector<Value> {
-          return InvOp::create(
-                     rewriter, op.getLoc(), powArgs,
-                     [&](ValueRange invArgs) -> SmallVector<Value> {
-                       return utils::inlineBodyReturningYields(
-                           *op.getBody(), invArgs, rewriter);
-                     })
+          return InvOp::create(rewriter, op.getLoc(), powArgs,
+                               [&](ValueRange invArgs) -> SmallVector<Value> {
+                                 return utils::inlineBodyReturningYields(
+                                     *op.getBody(), invArgs, rewriter);
+                               })
               .getResults();
         });
 

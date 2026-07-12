@@ -161,8 +161,8 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
         op, -exp, qubits, [&](ValueRange powArgs) {
           InvOp::create(rewriter, op.getLoc(), powArgs,
                         [&](ValueRange invArgs) {
-                          // Inline the old pow body, remapping its block args to
-                          // the new inv body's block args.
+                          // Inline the old pow body, remapping its block args
+                          // to the new inv body's block args.
                           utils::inlineBodyReturningYields(*op.getBody(),
                                                            invArgs, rewriter);
                         });

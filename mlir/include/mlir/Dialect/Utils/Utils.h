@@ -320,16 +320,16 @@ inline void inlineModifierBody(Operation* op, Block& body,
  * @brief Inline @p source into the block currently being built and return the
  * values its terminator yielded.
  *
- * @details Intended for use inside a modifier's body-builder callback, where the
- * current insertion block is the freshly created (still terminator-less) body of
- * the op under construction. Inlines @p source at the start of that block,
- * substituting @p source's block arguments with @p blockArgReplacements, then
- * drops @p source's terminator and returns the values it yielded so the caller
- * can re-yield them.
+ * @details Intended for use inside a modifier's body-builder callback, where
+ * the current insertion block is the freshly created (still terminator-less)
+ * body of the op under construction. Inlines @p source at the start of that
+ * block, substituting @p source's block arguments with @p blockArgReplacements,
+ * then drops @p source's terminator and returns the values it yielded so the
+ * caller can re-yield them.
  *
- * Unlike @c inlineModifierBody, this does not replace an existing op: it splices
- * a body into the block being constructed and hands back the yielded values. In
- * dialects whose bodies yield nothing, the returned vector is empty.
+ * Unlike @c inlineModifierBody, this does not replace an existing op: it
+ * splices a body into the block being constructed and hands back the yielded
+ * values. In dialects whose bodies yield nothing, the returned vector is empty.
  */
 [[nodiscard]] inline SmallVector<Value>
 inlineBodyReturningYields(Block& source, ValueRange blockArgReplacements,
