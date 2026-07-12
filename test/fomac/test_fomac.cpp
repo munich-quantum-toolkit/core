@@ -21,6 +21,7 @@
 #include <fstream>
 #include <new>
 #include <numbers>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -554,6 +555,49 @@ c = measure q;)";
   EXPECT_EQ(job.getNumShots(), 100);
   EXPECT_TRUE(job.wait());
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
+  constexpr auto qasm3Program = "OPENQASM 3.0;";
+
+  auto submitWithCustoms = [&](auto custom, const size_t which) {
+    try {
+      switch (which) {
+      case 1:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        break;
+      case 2:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, custom);
+        break;
+      case 3:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, custom);
+        break;
+      case 4:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
+        break;
+      case 5:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                         custom);
+        break;
+      default:
+        throw std::invalid_argument("Invalid 'which' value");
+      }
+    } catch (const std::runtime_error& e) {
+      const std::string errorMsg(e.what());
+      EXPECT_TRUE(errorMsg.find("Setting custom parameter") !=
+                  std::string::npos);
+    }
+  };
+  for (size_t i = 1; i <= 5; ++i) {
+    submitWithCustoms(std::string("custom"), i);
+    submitWithCustoms(42, i);
+    submitWithCustoms(3.14, i);
+    submitWithCustoms(true, i);
+  }
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
