@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QC/Translation/qasm3/QASM3Emitter.h"
 
-#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/qasm3/QASM3Lexer.h"
