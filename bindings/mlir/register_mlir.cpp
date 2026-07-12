@@ -190,6 +190,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 MQT Core MLIR compiler bindings.
 )pb";
 
+  nb::module_::import_("typing");
   nb::module_::import_("mqt.core.ir");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
@@ -345,21 +346,12 @@ MQT Core MLIR compiler bindings.
       .def_prop_ro("profile", &mlir::QIRProgram::profile)
       .def_prop_ro("llvm_ir", &mlir::QIRProgram::llvmIR);
 
-  m.def(
-      "compile_program", &compileProgram, "program"_a, nb::kw_only(),
-      "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
-      "disable_merge_single_qubit_rotation_gates"_a = false,
-      "enable_hadamard_lifting"_a = false, "enable_timing"_a = false,
-      "enable_statistics"_a = false,
-      nb::sig("def compile_program(program: str | os.PathLike[str] | "
-              "mqt.core.ir.QuantumComputation | qiskit.circuit.QuantumCircuit "
-              "| QCProgram | QCOProgram | JeffProgram, *, "
-              "output: OutputFormat = OutputFormat.QC, inplace: bool = False, "
-              "disable_merge_single_qubit_rotation_gates: bool = False, "
-              "enable_hadamard_lifting: bool = False, "
-              "enable_timing: bool = False, enable_statistics: bool = False) "
-              "-> QCProgram | QCOProgram | JeffProgram | QIRProgram"),
-      R"pb(
+  m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
+        "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
+        "disable_merge_single_qubit_rotation_gates"_a = false,
+        "enable_hadamard_lifting"_a = false, "enable_timing"_a = false,
+        "enable_statistics"_a = false,
+        R"pb(
 Run the coordinated default MQT compiler pipeline.
 
 Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,

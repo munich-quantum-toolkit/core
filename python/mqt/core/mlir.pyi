@@ -10,21 +10,11 @@
 
 import enum
 import os
-from typing import Literal, TypeAlias, overload
+from typing import Literal, overload
 
 import qiskit
 
 import mqt.core.ir
-
-InputProgram: TypeAlias = (
-    str
-    | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
-    | qiskit.circuit.QuantumCircuit
-    | QCProgram
-    | QCOProgram
-    | JeffProgram
-)
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -112,26 +102,30 @@ class QIRProgram(Program):
 
 @overload
 def compile_program(
-    program: InputProgram,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
     *,
-    output: Literal[OutputFormat.QC_IMPORT, OutputFormat.QC] = ...,
+    output: Literal[OutputFormat.QC] = ...,
     inplace: bool = False,
     disable_merge_single_qubit_rotation_gates: bool = False,
     enable_hadamard_lifting: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-) -> QCProgram:
-    """Run the coordinated default MQT compiler pipeline.
-
-    Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,
-    and typed compiler programs can be combined with any supported output format.
-    Typed program inputs are copied by default; set `inplace=True` to consume them.
-    Use the typed programs directly to construct a custom pipeline stage by stage.
-    """
-
+) -> QCProgram: ...
 @overload
 def compile_program(
-    program: InputProgram,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
     *,
     output: Literal[OutputFormat.QCO],
     inplace: bool = False,
@@ -142,7 +136,13 @@ def compile_program(
 ) -> QCOProgram: ...
 @overload
 def compile_program(
-    program: InputProgram,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
     *,
     output: Literal[OutputFormat.JEFF],
     inplace: bool = False,
@@ -153,7 +153,13 @@ def compile_program(
 ) -> JeffProgram: ...
 @overload
 def compile_program(
-    program: InputProgram,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
     *,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
@@ -164,7 +170,13 @@ def compile_program(
 ) -> QIRProgram: ...
 @overload
 def compile_program(
-    program: InputProgram,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
     *,
     output: OutputFormat,
     inplace: bool = False,
@@ -172,4 +184,11 @@ def compile_program(
     enable_hadamard_lifting: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-) -> QCProgram | QCOProgram | JeffProgram | QIRProgram: ...
+) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
+    """Run the coordinated default MQT compiler pipeline.
+
+    Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,
+    and typed compiler programs can be combined with any supported output format.
+    Typed program inputs are copied by default; set `inplace=True` to consume them.
+    Use the typed programs directly to construct a custom pipeline stage by stage.
+    """
