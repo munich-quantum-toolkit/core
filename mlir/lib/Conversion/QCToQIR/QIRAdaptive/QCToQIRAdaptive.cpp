@@ -373,12 +373,19 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
     // Get result pointer
     Value result;
+    const bool shouldRecord =
+        state.returnedMeasurements.contains(op.getOperation());
+
     if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
       const auto registerName = op.getRegisterName().value();
       const auto registerSize =
           static_cast<int64_t>(op.getRegisterSize().value());
       const auto registerIndex =
           static_cast<int64_t>(op.getRegisterIndex().value());
+
+      if (shouldRecord) {
+        state.recordedArrays.insert(state.stringSaver.save(registerName));
+      }
 
       // Create result register if it does not exist yet
       if (!resultArrays.contains(registerName)) {
@@ -415,8 +422,12 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       result = loadedResults.at({registerName, registerIndex});
     } else {
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-      result = createPointerFromIndex(rewriter, op.getLoc(), resultPtrs.size());
-      resultPtrs.try_emplace(resultPtrs.size(), result);
+      auto index = resultPtrs.size();
+      if (shouldRecord) {
+        state.recordedIndices.insert(index);
+      }
+      result = createPointerFromIndex(rewriter, op.getLoc(), index);
+      resultPtrs.try_emplace(index, result);
     }
 
     rewriter.restoreInsertionPoint(savedInsertionPoint);
@@ -620,7 +631,10 @@ protected:
       }
     }
 
-    // Stage 2: Convert func dialect to LLVM
+    // Stage 2.0: Strip returned measurements from func::ReturnOp
+    stripReturnedMeasurements(moduleOp, state);
+
+    // Stage 2.1: Convert func dialect to LLVM
     {
       RewritePatternSet funcPatterns(ctx);
       target.addIllegalDialect<func::FuncDialect>();

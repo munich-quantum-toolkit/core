@@ -1541,7 +1541,7 @@ void QuantumComputation::measure(const Targets& qubits,
   emplace_back<NonUnitaryOperation>(qubits, bits);
 }
 
-void QuantumComputation::measureAll(const bool addBits) {
+void QuantumComputation::measureAll(const bool addBits, const bool addBarrier) {
   if (addBits) {
     addClassicalRegister(getNqubits(), "meas");
   }
@@ -1553,7 +1553,9 @@ void QuantumComputation::measureAll(const bool addBits) {
     throw std::runtime_error(ss.str());
   }
 
-  barrier();
+  if (addBarrier) {
+    barrier();
+  }
   Qubit start = 0U;
   if (addBits) {
     start = static_cast<Qubit>(classicalRegisters.at("meas").getStartIndex());

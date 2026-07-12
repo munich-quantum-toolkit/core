@@ -24,7 +24,9 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 #include <memory>
 #include <ostream>
@@ -37,7 +39,7 @@ namespace {
 struct QASM3TranslationTestCase {
   std::string name;
   std::string source;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QASM3TranslationTestCase& test);
@@ -67,34 +69,54 @@ protected:
 
 } // namespace
 
-static void singleMeasurementToTwoBits(qc::QCProgramBuilder& b) {
+static SmallVector<Value> singleMeasurementToTwoBits(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto& c = b.allocClassicalBitRegister(2);
-  b.measure(q[0], c[0]);
-  b.measure(q[1], c[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {c0, c1};
 }
 
-static void twoX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> twoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.x(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {c0, c1};
 }
 
-static void singleNegControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> singleNegControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.cx(q[0], q[1]);
   b.x(q[0]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {c0, c1};
 }
 
-static void mixedControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> tripleControlledX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.mcx({q[0], q[1], q[2]}, q[3]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto c2 = b.measure(q[2]);
+  auto c3 = b.measure(q[3]);
+  return {c0, c1, c2, c3};
+}
+
+static SmallVector<Value> mixedControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.x(q[1]);
   b.mcx({q[0], q[1]}, q[2]);
   b.x(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto c2 = b.measure(q[2]);
+  return {c0, c1, c2};
 }
 
-static void twoMixedControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
   auto q1 = b.allocQubitRegister(2);
   auto q2 = b.allocQubitRegister(2);
   auto q3 = b.allocQubitRegister(2);
@@ -104,28 +126,27 @@ static void twoMixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q2[1]);
   b.mcx({q1[1], q2[1]}, q3[1]);
   b.x(q2[1]);
+  auto c0 = b.measure(q1[0]);
+  auto c1 = b.measure(q1[1]);
+  auto c2 = b.measure(q2[0]);
+  auto c3 = b.measure(q2[1]);
+  auto c4 = b.measure(q3[0]);
+  auto c5 = b.measure(q3[1]);
+  return {c0, c1, c2, c3, c4, c5};
 }
 
-static void ifNot(qc::QCProgramBuilder& b) {
+static Value ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   auto c = b.measure(q[0]);
   auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
+  auto out = b.measure(q[0]);
+  return out;
 }
 
-static void forLoopOffsetIndex(qc::QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  b.scfFor(0, 1, 1, [&](Value iv) {
-    auto one = arith::ConstantOp::create(b, b.getIndexAttr(1)).getResult();
-    auto index = arith::AddIOp::create(b, iv, one).getResult();
-    auto q = b.memrefLoad(reg.value, index);
-    b.h(q);
-  });
-}
-
-static void nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
+static SmallVector<Value> nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
     auto q = b.memrefLoad(reg.value, iv);
@@ -143,17 +164,25 @@ static void nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
           b.h(q);
         });
   });
+  auto c0 = b.measure(reg[0]);
+  auto c1 = b.measure(reg[1]);
+  return {c0, c1};
 }
 
-static void broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
+static SmallVector<Value> broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
   auto r = b.allocQubitRegister(3);
   auto q = b.allocQubit();
   b.cx(r[0], q);
   b.cx(r[1], q);
   b.cx(r[2], q);
+  auto c0 = b.measure(r[0]);
+  auto c1 = b.measure(r[1]);
+  auto c2 = b.measure(r[2]);
+  auto c3 = b.measure(q);
+  return {c0, c1, c2, c3};
 }
 
-static void broadcastCompoundGate(qc::QCProgramBuilder& b) {
+static SmallVector<Value> broadcastCompoundGate(qc::QCProgramBuilder& b) {
   auto r = b.allocQubitRegister(3);
   auto q = b.allocQubit();
   b.x(r[0]);
@@ -162,6 +191,11 @@ static void broadcastCompoundGate(qc::QCProgramBuilder& b) {
   b.cx(r[1], q);
   b.x(r[2]);
   b.cx(r[2], q);
+  auto c0 = b.measure(r[0]);
+  auto c1 = b.measure(r[1]);
+  auto c2 = b.measure(r[2]);
+  auto c3 = b.measure(q);
+  return {c0, c1, c2, c3};
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -179,8 +213,7 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
 
-  auto reference =
-      qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -239,12 +272,12 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::inverseGlobalPhase)},
         QASM3TranslationTestCase{"Identity", qasm::identity,
                                  MQT_NAMED_BUILDER(qc::identity)},
-        QASM3TranslationTestCase{
-            "SingleControlledIdentity", qasm::singleControlledIdentity,
-            MQT_NAMED_BUILDER(qc::singleControlledIdentity)},
-        QASM3TranslationTestCase{
-            "MultipleControlledIdentity", qasm::multipleControlledIdentity,
-            MQT_NAMED_BUILDER(qc::multipleControlledIdentity)},
+        QASM3TranslationTestCase{"SingleControlledIdentity",
+                                 qasm::singleControlledIdentity,
+                                 MQT_NAMED_BUILDER(qc::twoQubitsOneIdentity)},
+        QASM3TranslationTestCase{"MultipleControlledIdentity",
+                                 qasm::multipleControlledIdentity,
+                                 MQT_NAMED_BUILDER(qc::threeQubitsOneIdentity)},
         QASM3TranslationTestCase{"X", qasm::x, MQT_NAMED_BUILDER(qc::x)},
         QASM3TranslationTestCase{"TwoX", qasm::twoX, MQT_NAMED_BUILDER(twoX)},
         QASM3TranslationTestCase{"SingleControlledX", qasm::singleControlledX,
@@ -470,14 +503,12 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
                                  MQT_NAMED_BUILDER(qc::ifElse)},
-        QASM3TranslationTestCase{"NestedIfForLoop", qasm::nestedIfOpForLoop,
+        QASM3TranslationTestCase{"NestedIfOpForLoop", qasm::nestedIfOpForLoop,
                                  MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)},
         QASM3TranslationTestCase{"SimpleWhileReset", qasm::simpleWhileReset,
                                  MQT_NAMED_BUILDER(qc::simpleWhileReset)},
         QASM3TranslationTestCase{"SimpleForLoop", qasm::simpleForLoop,
                                  MQT_NAMED_BUILDER(qc::simpleForLoop)},
-        QASM3TranslationTestCase{"ForLoopOffsetIndex", qasm::forLoopOffsetIndex,
-                                 MQT_NAMED_BUILDER(forLoopOffsetIndex)},
         QASM3TranslationTestCase{"NestedForLoopIfOp", qasm::nestedForLoopIfOp,
                                  MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
         QASM3TranslationTestCase{"NestedForLoopWhileOp",

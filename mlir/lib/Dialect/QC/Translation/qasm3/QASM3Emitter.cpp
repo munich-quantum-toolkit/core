@@ -271,7 +271,40 @@ public:
       : builder(ctx), sourceMgr(sourceMgr), gates(buildGateTable()) {}
 
   void initialize() { builder.initialize(); }
-  OwningOpRef<ModuleOp> finalize() { return builder.finalize(); }
+
+  OwningOpRef<ModuleOp> finalize() {
+    if (outputRegisters.empty()) {
+      return builder.finalize();
+    }
+
+    SmallVector<Value> returnValues;
+    for (const auto& name : outputRegisters) {
+      auto it = bitValues.find(name);
+      if (it == bitValues.end()) {
+        llvm::errs() << "Output register '" << name
+                     << "' was never measured.\n";
+        return nullptr;
+      }
+
+      auto expectedSize = classicalRegisters[name].size;
+      if (it->second.size() < expectedSize) {
+        llvm::errs() << "Not all bits of output register '" << name
+                     << "' have been measured.\n";
+        return nullptr;
+      }
+      for (auto bit : it->second) {
+        if (!bit) {
+          llvm::errs() << "Not all bits of output register '" << name
+                       << "' have been measured.\n";
+          return nullptr;
+        }
+        returnValues.push_back(bit);
+      }
+    }
+
+    builder.retype(ValueRange(returnValues).getTypes());
+    return builder.finalize(returnValues);
+  }
 
   //===--- Diagnostics --------------------------------------------------===//
 
@@ -423,6 +456,7 @@ public:
       count = *evaluated;
     }
     classicalRegisters[id] = builder.allocClassicalBitRegister(count, id.str());
+    outputRegisters.push_back(id);
     return success();
   }
 
@@ -1296,6 +1330,7 @@ private:
 
   QubitScope qubitRegisters;
   llvm::StringMap<QCProgramBuilder::ClassicalRegister> classicalRegisters;
+  SmallVector<StringRef> outputRegisters;
   llvm::StringMap<SmallVector<Value>> bitValues;
   llvm::StringMap<std::variant<GateInfo, StoredGate>> gates;
 };
