@@ -782,18 +782,21 @@ const std::string rccx = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 rccx q[0], q[1], q[2];
+bit[3] c = measure q;
 )qasm";
 
 const std::string singleControlledRccx = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[4] q;
 ctrl @ rccx q[0], q[1], q[2], q[3];
+bit[4] c = measure q;
 )qasm";
 
 const std::string multipleControlledRccx = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[5] q;
 ctrl(2) @ rccx q[0], q[1], q[2], q[3], q[4];
+bit[5] c = measure q;
 )qasm";
 
 const std::string barrier = R"qasm(OPENQASM 3.0;

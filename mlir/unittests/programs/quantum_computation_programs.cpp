@@ -628,16 +628,19 @@ void multipleControlledXxMinusYY(QuantumComputation& comp) {
 void rccx(QuantumComputation& comp) {
   comp.addQubitRegister(3);
   comp.rccx(0, 1, 2);
+  comp.measureAll(true, false);
 }
 
 void singleControlledRccx(QuantumComputation& comp) {
   comp.addQubitRegister(4);
   comp.crccx(0, 1, 2, 3);
+  comp.measureAll(true, false);
 }
 
 void multipleControlledRccx(QuantumComputation& comp) {
   comp.addQubitRegister(5);
   comp.mcrccx({0, 1}, 2, 3, 4);
+  comp.measureAll(true, false);
 }
 
 void barrier(QuantumComputation& comp) {
