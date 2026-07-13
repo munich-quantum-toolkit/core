@@ -12,13 +12,13 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
+  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
-- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
-  [**@burgholzer**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
