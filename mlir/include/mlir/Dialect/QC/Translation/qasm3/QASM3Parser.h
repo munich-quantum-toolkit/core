@@ -235,6 +235,8 @@ public:
       : lexer(lexer), sink(sink), allocator(allocator) {
     currentToken = lexer.next();
     nextToken = lexer.next();
+    // Initialize the outermost scope
+    scopes.emplace_back();
   }
 
   [[nodiscard]] LogicalResult parseProgram() {
@@ -269,9 +271,48 @@ private:
     bool isConst = false; ///< Relevant if a scalar.
   };
 
-  /// Record a declaration of @p id, rejecting a redeclaration.
+  /**
+   * @brief A lexical scope.
+   *
+   * @details
+   * Names declared while it is alive go out of scope when it is destroyed.
+   */
+  class SymbolScope {
+  public:
+    explicit SymbolScope(Parser& parser) : parser(parser) {
+      parser.scopes.emplace_back();
+    }
+    ~SymbolScope() { parser.scopes.pop_back(); }
+
+    SymbolScope(const SymbolScope&) = delete;
+    SymbolScope& operator=(const SymbolScope&) = delete;
+    SymbolScope(SymbolScope&&) = delete;
+    SymbolScope& operator=(SymbolScope&&) = delete;
+
+  private:
+    Parser& parser;
+  };
+
+  /// Lookup the symbol @p id refers to.
+  [[nodiscard]] const Symbol* lookup(StringRef id) const {
+    for (const auto& scope : reverse(scopes)) {
+      const auto it = scope.find(id);
+      if (it != scope.end()) {
+        return &it->second;
+      }
+    }
+    return nullptr;
+  }
+
+  /**
+   * @brief Declare @p id in the innermost scope.
+   *
+   * @details
+   * A name may be redeclared in an inner scope, where it shadows the outer one
+   * until that scope ends, but not twice in the same scope.
+   */
   [[nodiscard]] LogicalResult declare(SMLoc loc, StringRef id, Symbol symbol) {
-    if (!symbols.insert({id, symbol}).second) {
+    if (!scopes.back().insert({id, symbol}).second) {
       return sink.error(loc, "identifier '" + id + "' already declared");
     }
     return success();
@@ -387,6 +428,13 @@ private:
   /// Parse a `{ ... }` block or a single statement, emitting into whatever
   /// region the sink has made current.
   [[nodiscard]] LogicalResult parseBlock() {
+    const SymbolScope scope(*this);
+    return parseBlockInScope();
+  }
+
+  /// Parse a `{ ... }` block or a single statement into the current scope,
+  /// which the caller has already opened.
+  [[nodiscard]] LogicalResult parseBlockInScope() {
     if (current().kind == TokenKind::LBrace) {
       advance();
       while (!atEnd() && current().kind != TokenKind::RBrace) {
@@ -677,15 +725,15 @@ private:
   [[nodiscard]] LogicalResult parseAssignment() {
     const auto loc = current().loc;
     const auto id = current().identifier;
-    const auto it = symbols.find(id);
-    if (it == symbols.end()) {
+    const auto* symbol = lookup(id);
+    if (symbol == nullptr) {
       return sink.error(loc, "unknown identifier '" + id + "'");
     }
-    switch (it->second.kind) {
+    switch (symbol->kind) {
     case Symbol::Kind::Bool:
     case Symbol::Kind::Int:
     case Symbol::Kind::Float:
-      return parseScalarAssignment(it->second);
+      return parseScalarAssignment(*symbol);
     case Symbol::Kind::ClassicalRegister:
       return parseMeasureAssignment();
     case Symbol::Kind::QubitRegister:
@@ -706,7 +754,12 @@ private:
     }
     if (symbol.isConst) {
       return sink.error(loc,
-                        "cannot assign to the 'const' variable '" + id + "'");
+                        "cannot assign to the 'const'-declared '" + id + "'");
+    }
+    if (!scopes.back().contains(id)) {
+      return sink.error(loc, "cannot assign to '" + id +
+                                 "' from inside a block; it is declared in an "
+                                 "enclosing scope");
     }
     if (current().kind == TokenKind::CompoundAssign) {
       return sink.error(current().loc,
@@ -743,11 +796,12 @@ private:
   /// Parse `<bit-reference> = measure <operand>;`.
   [[nodiscard]] LogicalResult parseMeasureAssignment() {
     const auto loc = current().loc;
+
     auto target = parseBitReference();
     if (failed(target)) {
       return failure();
     }
-    const BitReference& reference = *target;
+    const auto& reference = *target;
 
     if (current().kind == TokenKind::CompoundAssign) {
       return sink.error(current().loc,
@@ -756,11 +810,9 @@ private:
     if (failed(expect(TokenKind::Equals))) {
       return failure();
     }
-    if (current().kind != TokenKind::Measure) {
-      return sink.error(reference.loc,
-                        "cannot assign to '" + reference.identifier + "'");
+    if (failed(expect(TokenKind::Measure))) {
+      return failure();
     }
-    advance(); // measure
 
     auto operand = parseGateOperand();
     if (failed(operand)) {
@@ -1165,15 +1217,18 @@ private:
   [[nodiscard]] LogicalResult parseFor() {
     const auto loc = current().loc;
     advance(); // for
+
     if (current().kind != TokenKind::Int && current().kind != TokenKind::Uint) {
       return sink.error(current().loc, "expected 'int' or 'uint' after 'for'");
     }
     advance(); // type
+
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected loop variable");
     }
-    const auto variable = current().identifier;
+    const auto iv = current();
     advance(); // identifier
+
     if (failed(expect(TokenKind::In)) || failed(expect(TokenKind::LBracket))) {
       return failure();
     }
@@ -1211,8 +1266,16 @@ private:
       return failure();
     }
 
-    return sink.forStmt(loc, variable, **start, *step, *stop,
-                        [this] { return parseBlock(); });
+    // The loop variable lives in the body's scope, as if it were declared as
+    // its first statement. It is therefore not visible to the range expressions
+    // above, and it cannot be redeclared directly in the body.
+    const SymbolScope scope(*this);
+    if (failed(declare(iv.loc, iv.identifier, {.kind = Symbol::Kind::Int}))) {
+      return failure();
+    }
+
+    return sink.forStmt(loc, iv.identifier, **start, *step, *stop,
+                        [this] { return parseBlockInScope(); });
   }
 
   [[nodiscard]] LogicalResult parseWhile() {
@@ -1528,7 +1591,7 @@ private:
   llvm::BumpPtrAllocator& allocator;
   Token currentToken;
   Token nextToken;
-  llvm::StringMap<Symbol> symbols;
+  SmallVector<llvm::StringMap<Symbol>> scopes;
 };
 
 } // namespace mlir::qc::detail

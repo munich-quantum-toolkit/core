@@ -46,6 +46,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -249,6 +250,48 @@ const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
  */
 class QCEmitter {
 public:
+  /**
+   * @brief What a declared classical name is bound to.
+   *
+   * @details
+   * Every classical name shares one scoped table, so that lookup follows the
+   * lexical scopes rather than the declared type. That is what lets an inner
+   * declaration shadow an outer one of a *different* type, as the language
+   * requires.
+   */
+  struct Binding {
+    enum class Kind : uint8_t { ConstInt, Int, Float, Bool };
+
+    Kind kind = Kind::ConstInt;
+    int64_t constant = 0; ///< If `ConstInt`.
+    Value value;          ///< If `Int` (`index`), `Float` (`f64`), or `Bool`.
+  };
+
+private:
+  using ValueTable = llvm::ScopedHashTable<StringRef, Value>;
+  using ValueScope = llvm::ScopedHashTableScope<StringRef, Value>;
+  using BindingTable = llvm::ScopedHashTable<StringRef, Binding>;
+  using BindingScope = llvm::ScopedHashTableScope<StringRef, Binding>;
+
+public:
+  /**
+   * @brief The bindings of one lexical scope.
+   *
+   * @details
+   * Everything bound while it is alive goes out of scope when it is destroyed,
+   * so a block can shadow a name from an enclosing scope. Loaded qubits are
+   * scoped too: a value loaded inside a region does not dominate its uses
+   * outside it.
+   */
+  struct DeclarationScope {
+    explicit DeclarationScope(QCEmitter& emitter)
+        : bindings(emitter.bindings),
+          loadedQubits(emitter.dynamicallyLoadedQubits) {}
+
+    BindingScope bindings;
+    ValueScope loadedQubits;
+  };
+
   QCEmitter(MLIRContext* ctx, llvm::SourceMgr& sourceMgr)
       : builder(ctx), sourceMgr(sourceMgr), gates(buildGateTable()) {}
 
@@ -353,7 +396,7 @@ public:
     if (failed(emitted)) {
       return failure();
     }
-    booleanValues.insert(id, *emitted);
+    bindings.insert(id, {.kind = Binding::Kind::Bool, .value = *emitted});
     return success();
   }
 
@@ -361,9 +404,8 @@ public:
    * @brief Bind an integer variable @p id to the value of @p value.
    *
    * @details
-   * If @p isConst, the value is evaluated at compile time and stored in
-   * `intConstants`. Otherwise, the value is emitted as a runtime value and
-   * stored in `intValues`.
+   * A `const` integer is folded at compile time, which is what lets it size a
+   * qubit register. Any other integer becomes a runtime value.
    */
   LogicalResult assignInt(StringRef id, const Expr& value, bool isConst) {
     if (isConst) {
@@ -371,14 +413,15 @@ public:
       if (failed(folded)) {
         return failure();
       }
-      intConstants.insert(id, *folded);
+      bindings.insert(id,
+                      {.kind = Binding::Kind::ConstInt, .constant = *folded});
       return success();
     }
     auto emitted = emitIndex(value);
     if (failed(emitted)) {
       return failure();
     }
-    intValues.insert(id, *emitted);
+    bindings.insert(id, {.kind = Binding::Kind::Int, .value = *emitted});
     return success();
   }
 
@@ -388,7 +431,7 @@ public:
     if (failed(emitted)) {
       return failure();
     }
-    floatValues.insert(id, *emitted);
+    bindings.insert(id, {.kind = Binding::Kind::Float, .value = *emitted});
     return success();
   }
 
@@ -549,9 +592,20 @@ public:
     return LogicalResult{emitCondition(condition)};
   }
 
+  /**
+   * @brief The state of an `if` statement being emitted.
+   *
+   * @details
+   * The `then` and `else` branches are separate scopes, so `scope` is replaced
+   * when the `else` branch opens and released when the `if` ends. It is held
+   * indirectly because a `DeclarationScope` cannot be moved, whereas this
+   * handle is returned by value.
+   */
   struct IfScope {
     scf::IfOp op;
     OpBuilder::InsertPoint savedInsertionPoint;
+    std::unique_ptr<QCProgramBuilder::RegionScope> region;
+    std::unique_ptr<DeclarationScope> scope;
   };
 
   FailureOr<IfScope> ifBegin(SMLoc /*loc*/, const Condition& condition,
@@ -569,12 +623,20 @@ public:
     IfScope scope{.op = ifOp,
                   .savedInsertionPoint = builder.saveInsertionPoint()};
     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+    scope.region = std::make_unique<QCProgramBuilder::RegionScope>(
+        builder, &ifOp.getThenRegion());
+    scope.scope = std::make_unique<DeclarationScope>(*this);
     return scope;
   }
 
   LogicalResult ifElse(IfScope& scope) {
+    scope.region.reset();
+    scope.scope.reset();
     auto* elseBlock = builder.createBlock(&scope.op.getElseRegion());
     builder.setInsertionPointToStart(elseBlock);
+    scope.region = std::make_unique<QCProgramBuilder::RegionScope>(
+        builder, &scope.op.getElseRegion());
+    scope.scope = std::make_unique<DeclarationScope>(*this);
     return success();
   }
 
@@ -582,6 +644,8 @@ public:
     if (hadElse) {
       scf::YieldOp::create(builder);
     }
+    scope.region.reset();
+    scope.scope.reset();
     builder.restoreInsertionPoint(scope.savedInsertionPoint);
     return success();
   }
@@ -651,8 +715,9 @@ public:
               .getResult();
     }
 
-    ValueScope ivScope(intValues);
-    ValueScope loadScope(dynamicallyLoadedQubits);
+    // The loop variable lives in the body's scope, as if it were declared as
+    // its first statement.
+    const DeclarationScope scope(*this);
 
     auto status = success();
     builder.scfFor(resolvedStart, resolvedStop, resolvedStep, [&](Value iv) {
@@ -663,7 +728,8 @@ public:
         resolvedIv =
             arith::SubIOp::create(builder, *startValue, offset).getResult();
       }
-      intValues.insert(variable, resolvedIv);
+      bindings.insert(variable,
+                      {.kind = Binding::Kind::Int, .value = resolvedIv});
       status = body();
     });
     return status;
@@ -674,7 +740,9 @@ public:
     auto status = success();
     builder.scfWhile(
         [&] {
-          ValueScope loadScope(dynamicallyLoadedQubits);
+          // A value loaded in the before region does not dominate the after
+          // region, so each gets a scope of its own.
+          const DeclarationScope scope(*this);
           auto cond = emitCondition(condition);
           if (failed(cond)) {
             status = failure();
@@ -684,7 +752,7 @@ public:
           }
         },
         [&] {
-          ValueScope loadScope(dynamicallyLoadedQubits);
+          const DeclarationScope scope(*this);
           if (succeeded(status)) {
             status = body();
           }
@@ -693,10 +761,16 @@ public:
   }
 
 private:
-  using ValueTable = llvm::ScopedHashTable<StringRef, Value>;
-  using ValueScope = llvm::ScopedHashTableScope<StringRef, Value>;
-  using IntegerTable = llvm::ScopedHashTable<StringRef, int64_t>;
-  using IntegerScope = llvm::ScopedHashTableScope<StringRef, int64_t>;
+  //===--- Bindings -----------------------------------------------------===//
+
+  /// The binding of the classical name @p name, or `std::nullopt` if no such
+  /// name is in scope.
+  [[nodiscard]] std::optional<Binding> lookupBinding(StringRef name) const {
+    if (bindings.count(name) == 0) {
+      return std::nullopt;
+    }
+    return bindings.lookup(name);
+  }
 
   //===--- Gate calls ---------------------------------------------------===//
 
@@ -869,9 +943,9 @@ private:
           static_cast<size_t>(std::distance(targets.begin(), it)));
     }
 
-    ValueScope parameterScope(floatValues);
+    BindingScope parameterScope(bindings);
     for (const auto& [name, value] : zip_equal(gate.parameters, parameters)) {
-      floatValues.insert(name, value);
+      bindings.insert(name, {.kind = Binding::Kind::Float, .value = value});
     }
 
     auto status = success();
@@ -1121,8 +1195,9 @@ private:
       // A bare identifier may name a declared `bool`; otherwise it is a
       // classical bit reference.
       if (condition.bit.index == nullptr) {
-        if (Value value = booleanValues.lookup(condition.bit.identifier)) {
-          return value;
+        const auto binding = lookupBinding(condition.bit.identifier);
+        if (binding && binding->kind == Binding::Kind::Bool) {
+          return binding->value;
         }
       }
       return lookupBitValue(condition.bit);
@@ -1239,18 +1314,23 @@ private:
   }
 
   FailureOr<Value> resolveParameter(StringRef name, SMLoc loc) {
-    if (auto value = floatValues.lookup(name)) {
-      return value;
-    }
-    if (auto value = intConstants.lookup(name)) {
-      return builder.floatConstant(static_cast<double>(value));
-    }
-    if (auto value = intValues.lookup(name)) {
-      auto integer =
-          arith::IndexCastOp::create(builder, builder.getI64Type(), value)
-              .getResult();
-      return arith::SIToFPOp::create(builder, builder.getF64Type(), integer)
-          .getResult();
+    if (const auto binding = lookupBinding(name)) {
+      switch (binding->kind) {
+      case Binding::Kind::Float:
+        return binding->value;
+      case Binding::Kind::ConstInt:
+        return builder.floatConstant(static_cast<double>(binding->constant));
+      case Binding::Kind::Int: {
+        // A runtime integer used as an angle is converted to an `f64`.
+        auto integer = arith::IndexCastOp::create(builder, builder.getI64Type(),
+                                                  binding->value)
+                           .getResult();
+        return arith::SIToFPOp::create(builder, builder.getF64Type(), integer)
+            .getResult();
+      }
+      case Binding::Kind::Bool:
+        return error(loc, "expected a numeric expression");
+      }
     }
     if (auto value = lookupBuiltinConstant(name, builder)) {
       return *value;
@@ -1300,14 +1380,16 @@ private:
         llvm_unreachable("unknown binary operator");
       }
     }
-    case Expr::Kind::Identifier:
-      if (auto value = intConstants.lookup(expr.identifier)) {
-        return builder.indexConstant(value);
+    case Expr::Kind::Identifier: {
+      const auto binding = lookupBinding(expr.identifier);
+      if (binding && binding->kind == Binding::Kind::ConstInt) {
+        return builder.indexConstant(binding->constant);
       }
-      if (auto value = intValues.lookup(expr.identifier)) {
-        return value;
+      if (binding && binding->kind == Binding::Kind::Int) {
+        return binding->value;
       }
       return error(expr.loc, "expected an integer expression");
+    }
     case Expr::Kind::ArcCos:
     case Expr::Kind::ArcSin:
     case Expr::Kind::ArcTan:
@@ -1338,11 +1420,13 @@ private:
       return std::optional{expr.intValue};
     case Expr::Kind::Float:
       return error(expr.loc, "expected an integer expression");
-    case Expr::Kind::Identifier:
-      if (auto value = intConstants.lookup(expr.identifier)) {
-        return std::optional{value};
+    case Expr::Kind::Identifier: {
+      const auto binding = lookupBinding(expr.identifier);
+      if (binding && binding->kind == Binding::Kind::ConstInt) {
+        return std::optional{binding->constant};
       }
       return std::optional<int64_t>{};
+    }
     case Expr::Kind::Neg: {
       auto operand = tryEvaluateIntConstant(*expr.lhs);
       if (failed(operand) || !*operand) {
@@ -1427,16 +1511,9 @@ private:
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
 
-  ValueTable booleanValues;
-  ValueScope booleanValuesScope{booleanValues};
-
-  IntegerTable intConstants;
-  IntegerScope intConstantsScope{intConstants};
-  ValueTable intValues;
-  ValueScope intValuesScope{intValues};
-
-  ValueTable floatValues;
-  ValueScope floatValuesScope{floatValues};
+  /// Every classical name, in one table so that shadowing is purely lexical.
+  BindingTable bindings;
+  BindingScope bindingsScope{bindings};
 
   ValueTable dynamicallyLoadedQubits;
   ValueScope dynamicallyLoadedQubitsScope{dynamicallyLoadedQubits};
