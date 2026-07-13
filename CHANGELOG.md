@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
+  libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 
@@ -570,6 +572,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
