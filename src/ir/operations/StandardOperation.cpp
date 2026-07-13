@@ -317,7 +317,7 @@ void StandardOperation::dumpOpenQASM2(
     }
   }
 
-  dumpGateType(of, op, qubitMap);
+  dumpGateType(of, op, qubitMap, false);
 
   if (!isSpecialGate) {
     // apply X operations to negate the respective controls again
@@ -333,13 +333,12 @@ void StandardOperation::dumpOpenQASM3(
     std::ostream& of, std::ostringstream& op,
     const QubitIndexToRegisterMap& qubitMap) const {
   dumpControls(op);
-
-  dumpGateType(of, op, qubitMap);
+  dumpGateType(of, op, qubitMap, true);
 }
 
-void StandardOperation::dumpGateType(
-    std::ostream& of, std::ostringstream& op,
-    const QubitIndexToRegisterMap& qubitMap) const {
+void StandardOperation::dumpGateType(std::ostream& of, std::ostringstream& op,
+                                     const QubitIndexToRegisterMap& qubitMap,
+                                     const bool openQASM3) const {
   // Dump the operation name and parameters.
   switch (type) {
   case GPhase:
@@ -451,10 +450,26 @@ void StandardOperation::dumpGateType(
     op << "xx_plus_yy(" << parameter[0] << "," << parameter[1] << ")";
     break;
   case RCCX:
-    // qelib1.inc uses rc3x for the 4-qubit gate; OpenQASM 3 uses ctrl @ rccx.
-    op << (controls.size() == 1 && op.str().find("ctrl") == std::string::npos
-               ? "rc3x"
-               : "rccx");
+    if (openQASM3) {
+      assert(targets.size() == 3);
+      const auto& a = qubitMap.at(targets[0]).second;
+      const auto& b = qubitMap.at(targets[1]).second;
+      const auto& c = qubitMap.at(targets[2]).second;
+      const auto p = op.str();
+
+      of << p << "u2(0, pi) " << c << ";\n";
+      of << p << "u1(pi/4) " << c << ";\n";
+      of << p << "cx " << b << ", " << c << ";\n";
+      of << p << "u1(-pi/4) " << c << ";\n";
+      of << p << "cx " << a << ", " << c << ";\n";
+      of << p << "u1(pi/4) " << c << ";\n";
+      of << p << "cx " << b << ", " << c << ";\n";
+      of << p << "u1(-pi/4) " << c << ";\n";
+      of << p << "u2(0, pi) " << c << ";\n";
+      return;
+    }
+    // qelib1.inc uses rc3x for the 4-qubit gate.
+    op << (controls.size() == 1 ? "rc3x" : "rccx");
     break;
   case SWAP:
     op << "swap";

@@ -500,15 +500,19 @@ TEST_F(IO, NativeThreeQubitGateImportAndExport) {
   for (const auto& gate : gates) {
     std::stringstream ss{};
     ss << header << gate << " q[0], q[1], q[2];\n";
-    const auto target = ss.str();
-    qc = qasm3::Importer::imports(target);
-    std::cout << qc << "\n";
+    const auto source = ss.str();
+    qc = qasm3::Importer::imports(source);
+    EXPECT_EQ(qc.front()->getType(), qc::RCCX);
+
     std::ostringstream oss{};
     qc.dumpOpenQASM(oss, true);
-    std::cout << oss.str() << "\n";
-    EXPECT_STREQ(oss.str().c_str(), target.c_str());
+    const auto exported = oss.str();
+    EXPECT_EQ(exported.find("rccx"), std::string::npos);
+    EXPECT_NE(exported.find("cx "), std::string::npos);
+    EXPECT_NE(exported.find("u2(0, pi)"), std::string::npos);
+
+    EXPECT_NO_THROW(qasm3::Importer::imports(exported));
     qc.reset();
-    std::cout << "---\n";
   }
 }
 

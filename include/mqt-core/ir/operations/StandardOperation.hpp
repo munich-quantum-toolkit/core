@@ -132,7 +132,8 @@ protected:
                      const QubitIndexToRegisterMap& qubitMap) const;
 
   void dumpGateType(std::ostream& of, std::ostringstream& op,
-                    const QubitIndexToRegisterMap& qubitMap) const;
+                    const QubitIndexToRegisterMap& qubitMap,
+                    bool openQASM3) const;
 
   void dumpControls(std::ostringstream& op) const;
 };

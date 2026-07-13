@@ -563,12 +563,14 @@ def test_backend_supports_rccx_gate(ddsim_backend: QDMIBackend) -> None:
     assert "rccx" in ddsim_backend.target.operation_names
 
     qc = QuantumCircuit(3)
+    qc.x(0)
+    qc.x(1)
     qc.rccx(0, 1, 2)
     qc.measure_all()
 
     job = ddsim_backend.run(qc, shots=100)
     counts = job.result().get_counts()
-    assert sum(counts.values()) == 100
+    assert counts == {"111": 100}
 
 
 def test_backend_supports_cz_gate(ddsim_backend: QDMIBackend) -> None:

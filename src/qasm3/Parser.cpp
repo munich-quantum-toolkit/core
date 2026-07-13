@@ -280,6 +280,9 @@ void Parser::parseInclude() {
   if (in->fail()) {
     if (filename == "stdgates.inc" || filename == "qelib1.inc") {
       // stdgates.inc is included implicitly; qelib1 gates are native builtins.
+      if (includeDebugInfo) {
+        includeDebugInfo = includeDebugInfo->parent;
+      }
       return;
     }
     error(current(), "Failed to open file " + filename + ".");

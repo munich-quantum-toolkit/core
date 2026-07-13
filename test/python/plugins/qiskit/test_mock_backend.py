@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 from qiskit import qasm2, qasm3
 from qiskit.circuit import Clbit, Parameter, QuantumCircuit
+from qiskit.circuit.library import RCCXGate
 
 from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
@@ -443,6 +444,7 @@ def test_backend_exposes_rccx_gate(
 
     assert "rccx" in backend.target.operation_names
     rccx_instruction = backend.target.operation_from_name("rccx")
+    assert isinstance(rccx_instruction, RCCXGate)
     assert rccx_instruction.name == "rccx"
     assert rccx_instruction.num_qubits == 3
 
@@ -637,6 +639,7 @@ def test_map_operation_to_rccx_gate() -> None:
     """RCCX operations map to Qiskit's RCCXGate."""
     gate = QDMIBackend._map_operation_to_gate("rccx")  # noqa: SLF001
     assert gate is not None
+    assert isinstance(gate, RCCXGate)
     assert gate.name == "rccx"
     assert gate.num_qubits == 3
 
