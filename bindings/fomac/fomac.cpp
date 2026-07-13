@@ -19,6 +19,7 @@
 #include <nanobind/stl/optional.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>   // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 
@@ -270,8 +271,11 @@ Returns:
              "Returns the list of program formats supported by the device.");
 
   device.def("submit_job", &fomac::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a,
-             nb::rv_policy::reference_internal, "Submits a job to the device.");
+             "program_format"_a, "num_shots"_a, nb::kw_only(),
+             "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+             "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+             "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+             "Submits a job to the device.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";

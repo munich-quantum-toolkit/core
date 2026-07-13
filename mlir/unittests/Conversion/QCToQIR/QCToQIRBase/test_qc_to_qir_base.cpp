@@ -29,6 +29,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <iosfwd>
@@ -42,8 +43,8 @@ namespace {
 
 struct QCToQIRBaseTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<qir::QIRProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRBaseTestCase& info);
@@ -85,7 +86,7 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = qc::QCProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -102,9 +103,8 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn,
-                                    qir::QIRProgramBuilder::Profile::Base);
+  auto reference = mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder, qir::QIRProgramBuilder::Profile::Base);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -123,16 +123,16 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseBarrierOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::alloc1QubitRegister<>)},
         QCToQIRBaseTestCase{"BarrierTwoQubits",
                             MQT_NAMED_BUILDER(qc::barrierTwoQubits),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::allocQubitRegister<>)},
         QCToQIRBaseTestCase{"BarrierMultipleQubits",
                             MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::alloc3QubitRegister<>)},
         QCToQIRBaseTestCase{"SingleControlledBarrier",
                             MQT_NAMED_BUILDER(qc::singleControlledBarrier),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)}));
+                            MQT_NAMED_BUILDER(qir::allocQubitRegister<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/DcxOp.cpp
@@ -141,13 +141,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseDCXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx),
-                            MQT_NAMED_BUILDER(qir::dcx)},
+                            MQT_NAMED_BUILDER(qir::dcx<>)},
         QCToQIRBaseTestCase{"SingleControlledDCX",
                             MQT_NAMED_BUILDER(qc::singleControlledDcx),
-                            MQT_NAMED_BUILDER(qir::singleControlledDcx)},
+                            MQT_NAMED_BUILDER(qir::singleControlledDcx<>)},
         QCToQIRBaseTestCase{"MultipleControlledDCX",
                             MQT_NAMED_BUILDER(qc::multipleControlledDcx),
-                            MQT_NAMED_BUILDER(qir::multipleControlledDcx)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledDcx<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RCCXOp
@@ -156,13 +156,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRCCXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RCCX", MQT_NAMED_BUILDER(qc::rccx),
-                            MQT_NAMED_BUILDER(qir::rccx)},
+                            MQT_NAMED_BUILDER(qir::rccx<>)},
         QCToQIRBaseTestCase{"SingleControlledRCCX",
                             MQT_NAMED_BUILDER(qc::singleControlledRccx),
-                            MQT_NAMED_BUILDER(qir::singleControlledRccx)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRccx<>)},
         QCToQIRBaseTestCase{"MultipleControlledRCCX",
                             MQT_NAMED_BUILDER(qc::multipleControlledRccx),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRccx)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRccx<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/EcrOp.cpp
@@ -171,13 +171,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseECROpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr),
-                            MQT_NAMED_BUILDER(qir::ecr)},
+                            MQT_NAMED_BUILDER(qir::ecr<>)},
         QCToQIRBaseTestCase{"SingleControlledECR",
                             MQT_NAMED_BUILDER(qc::singleControlledEcr),
-                            MQT_NAMED_BUILDER(qir::singleControlledEcr)},
+                            MQT_NAMED_BUILDER(qir::singleControlledEcr<>)},
         QCToQIRBaseTestCase{"MultipleControlledECR",
                             MQT_NAMED_BUILDER(qc::multipleControlledEcr),
-                            MQT_NAMED_BUILDER(qir::multipleControlledEcr)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledEcr<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/GphaseOp.cpp
@@ -185,7 +185,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(QCToQIRBaseGPhaseOpTest, QCToQIRBaseTest,
                          testing::Values(QCToQIRBaseTestCase{
                              "GlobalPhase", MQT_NAMED_BUILDER(qc::globalPhase),
-                             MQT_NAMED_BUILDER(qir::globalPhase)}));
+                             MQT_NAMED_BUILDER(qir::globalPhase<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/HOp.cpp
@@ -194,16 +194,16 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseHOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"H", MQT_NAMED_BUILDER(qc::h),
-                            MQT_NAMED_BUILDER(qir::h)},
+                            MQT_NAMED_BUILDER(qir::h<>)},
         QCToQIRBaseTestCase{"SingleControlledH",
                             MQT_NAMED_BUILDER(qc::singleControlledH),
-                            MQT_NAMED_BUILDER(qir::singleControlledH)},
+                            MQT_NAMED_BUILDER(qir::singleControlledH<>)},
         QCToQIRBaseTestCase{"MultipleControlledH",
                             MQT_NAMED_BUILDER(qc::multipleControlledH),
-                            MQT_NAMED_BUILDER(qir::multipleControlledH)},
+                            MQT_NAMED_BUILDER(qir::multipleControlledH<>)},
         QCToQIRBaseTestCase{"HWithoutRegister",
                             MQT_NAMED_BUILDER(qc::hWithoutRegister),
-                            MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
+                            MQT_NAMED_BUILDER(qir::hWithoutRegister<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/IdOp.cpp
@@ -212,28 +212,29 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseIDOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
-                            MQT_NAMED_BUILDER(qir::identity)},
+                            MQT_NAMED_BUILDER(qir::identity<>)},
         QCToQIRBaseTestCase{"SingleControlledIdentity",
                             MQT_NAMED_BUILDER(qc::singleControlledIdentity),
-                            MQT_NAMED_BUILDER(qir::identity)},
+                            MQT_NAMED_BUILDER(qir::twoQubitsOneIdentity<>)},
         QCToQIRBaseTestCase{"MultipleControlledIdentity",
                             MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-                            MQT_NAMED_BUILDER(qir::identity)}));
+                            MQT_NAMED_BUILDER(qir::threeQubitsOneIdentity<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/IswapOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseiSWAPOpTest, QCToQIRBaseTest,
-    testing::Values(
-        QCToQIRBaseTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap),
-                            MQT_NAMED_BUILDER(qir::iswap)},
-        QCToQIRBaseTestCase{"SingleControllediSWAP",
-                            MQT_NAMED_BUILDER(qc::singleControlledIswap),
-                            MQT_NAMED_BUILDER(qir::singleControlledIswap)},
-        QCToQIRBaseTestCase{"MultipleControllediSWAP",
-                            MQT_NAMED_BUILDER(qc::multipleControlledIswap),
-                            MQT_NAMED_BUILDER(qir::multipleControlledIswap)}));
+    testing::Values(QCToQIRBaseTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap),
+                                        MQT_NAMED_BUILDER(qir::iswap<>)},
+                    QCToQIRBaseTestCase{
+                        "SingleControllediSWAP",
+                        MQT_NAMED_BUILDER(qc::singleControlledIswap),
+                        MQT_NAMED_BUILDER(qir::singleControlledIswap<>)},
+                    QCToQIRBaseTestCase{
+                        "MultipleControllediSWAP",
+                        MQT_NAMED_BUILDER(qc::multipleControlledIswap),
+                        MQT_NAMED_BUILDER(qir::multipleControlledIswap<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/POp.cpp
@@ -242,13 +243,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBasePOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"P", MQT_NAMED_BUILDER(qc::p),
-                            MQT_NAMED_BUILDER(qir::p)},
+                            MQT_NAMED_BUILDER(qir::p<>)},
         QCToQIRBaseTestCase{"SingleControlledP",
                             MQT_NAMED_BUILDER(qc::singleControlledP),
-                            MQT_NAMED_BUILDER(qir::singleControlledP)},
+                            MQT_NAMED_BUILDER(qir::singleControlledP<>)},
         QCToQIRBaseTestCase{"MultipleControlledP",
                             MQT_NAMED_BUILDER(qc::multipleControlledP),
-                            MQT_NAMED_BUILDER(qir::multipleControlledP)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledP<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/ROp.cpp
@@ -257,13 +258,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseROpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"R", MQT_NAMED_BUILDER(qc::r),
-                            MQT_NAMED_BUILDER(qir::r)},
+                            MQT_NAMED_BUILDER(qir::r<>)},
         QCToQIRBaseTestCase{"SingleControlledR",
                             MQT_NAMED_BUILDER(qc::singleControlledR),
-                            MQT_NAMED_BUILDER(qir::singleControlledR)},
+                            MQT_NAMED_BUILDER(qir::singleControlledR<>)},
         QCToQIRBaseTestCase{"MultipleControlledR",
                             MQT_NAMED_BUILDER(qc::multipleControlledR),
-                            MQT_NAMED_BUILDER(qir::multipleControlledR)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledR<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RxOp.cpp
@@ -272,13 +273,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RX", MQT_NAMED_BUILDER(qc::rx),
-                            MQT_NAMED_BUILDER(qir::rx)},
+                            MQT_NAMED_BUILDER(qir::rx<>)},
         QCToQIRBaseTestCase{"SingleControlledRX",
                             MQT_NAMED_BUILDER(qc::singleControlledRx),
-                            MQT_NAMED_BUILDER(qir::singleControlledRx)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRx<>)},
         QCToQIRBaseTestCase{"MultipleControlledRX",
                             MQT_NAMED_BUILDER(qc::multipleControlledRx),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRx)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRx<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RxxOp.cpp
@@ -287,13 +288,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRXXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RXX", MQT_NAMED_BUILDER(qc::rxx),
-                            MQT_NAMED_BUILDER(qir::rxx)},
+                            MQT_NAMED_BUILDER(qir::rxx<>)},
         QCToQIRBaseTestCase{"SingleControlledRXX",
                             MQT_NAMED_BUILDER(qc::singleControlledRxx),
-                            MQT_NAMED_BUILDER(qir::singleControlledRxx)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRxx<>)},
         QCToQIRBaseTestCase{"MultipleControlledRXX",
                             MQT_NAMED_BUILDER(qc::multipleControlledRxx),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRxx)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRxx<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RyOp.cpp
@@ -302,13 +303,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRYOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RY", MQT_NAMED_BUILDER(qc::ry),
-                            MQT_NAMED_BUILDER(qir::ry)},
+                            MQT_NAMED_BUILDER(qir::ry<>)},
         QCToQIRBaseTestCase{"SingleControlledRY",
                             MQT_NAMED_BUILDER(qc::singleControlledRy),
-                            MQT_NAMED_BUILDER(qir::singleControlledRy)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRy<>)},
         QCToQIRBaseTestCase{"MultipleControlledRY",
                             MQT_NAMED_BUILDER(qc::multipleControlledRy),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRy)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRy<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RyyOp.cpp
@@ -317,13 +318,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRYYOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RYY", MQT_NAMED_BUILDER(qc::ryy),
-                            MQT_NAMED_BUILDER(qir::ryy)},
+                            MQT_NAMED_BUILDER(qir::ryy<>)},
         QCToQIRBaseTestCase{"SingleControlledRYY",
                             MQT_NAMED_BUILDER(qc::singleControlledRyy),
-                            MQT_NAMED_BUILDER(qir::singleControlledRyy)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRyy<>)},
         QCToQIRBaseTestCase{"MultipleControlledRYY",
                             MQT_NAMED_BUILDER(qc::multipleControlledRyy),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRyy)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRyy<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RzOp.cpp
@@ -332,13 +333,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRZOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz),
-                            MQT_NAMED_BUILDER(qir::rz)},
+                            MQT_NAMED_BUILDER(qir::rz<>)},
         QCToQIRBaseTestCase{"SingleControlledRZ",
                             MQT_NAMED_BUILDER(qc::singleControlledRz),
-                            MQT_NAMED_BUILDER(qir::singleControlledRz)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRz<>)},
         QCToQIRBaseTestCase{"MultipleControlledRZ",
                             MQT_NAMED_BUILDER(qc::multipleControlledRz),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRz)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRz<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RzxOp.cpp
@@ -347,13 +348,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRZXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RZX", MQT_NAMED_BUILDER(qc::rzx),
-                            MQT_NAMED_BUILDER(qir::rzx)},
+                            MQT_NAMED_BUILDER(qir::rzx<>)},
         QCToQIRBaseTestCase{"SingleControlledRZX",
                             MQT_NAMED_BUILDER(qc::singleControlledRzx),
-                            MQT_NAMED_BUILDER(qir::singleControlledRzx)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRzx<>)},
         QCToQIRBaseTestCase{"MultipleControlledRZX",
                             MQT_NAMED_BUILDER(qc::multipleControlledRzx),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRzx)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRzx<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/RzzOp.cpp
@@ -362,13 +363,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseRZZOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"RZZ", MQT_NAMED_BUILDER(qc::rzz),
-                            MQT_NAMED_BUILDER(qir::rzz)},
+                            MQT_NAMED_BUILDER(qir::rzz<>)},
         QCToQIRBaseTestCase{"SingleControlledRZZ",
                             MQT_NAMED_BUILDER(qc::singleControlledRzz),
-                            MQT_NAMED_BUILDER(qir::singleControlledRzz)},
+                            MQT_NAMED_BUILDER(qir::singleControlledRzz<>)},
         QCToQIRBaseTestCase{"MultipleControlledRZZ",
                             MQT_NAMED_BUILDER(qc::multipleControlledRzz),
-                            MQT_NAMED_BUILDER(qir::multipleControlledRzz)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledRzz<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/SOp.cpp
@@ -377,13 +378,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseSOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"S", MQT_NAMED_BUILDER(qc::s),
-                            MQT_NAMED_BUILDER(qir::s)},
+                            MQT_NAMED_BUILDER(qir::s<>)},
         QCToQIRBaseTestCase{"SingleControlledS",
                             MQT_NAMED_BUILDER(qc::singleControlledS),
-                            MQT_NAMED_BUILDER(qir::singleControlledS)},
+                            MQT_NAMED_BUILDER(qir::singleControlledS<>)},
         QCToQIRBaseTestCase{"MultipleControlledS",
                             MQT_NAMED_BUILDER(qc::multipleControlledS),
-                            MQT_NAMED_BUILDER(qir::multipleControlledS)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledS<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/SdgOp.cpp
@@ -392,13 +393,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseSdgOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"Sdg", MQT_NAMED_BUILDER(qc::sdg),
-                            MQT_NAMED_BUILDER(qir::sdg)},
+                            MQT_NAMED_BUILDER(qir::sdg<>)},
         QCToQIRBaseTestCase{"SingleControlledSdg",
                             MQT_NAMED_BUILDER(qc::singleControlledSdg),
-                            MQT_NAMED_BUILDER(qir::singleControlledSdg)},
+                            MQT_NAMED_BUILDER(qir::singleControlledSdg<>)},
         QCToQIRBaseTestCase{"MultipleControlledSdg",
                             MQT_NAMED_BUILDER(qc::multipleControlledSdg),
-                            MQT_NAMED_BUILDER(qir::multipleControlledSdg)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledSdg<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/SwapOp.cpp
@@ -407,13 +408,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseSWAPOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"SWAP", MQT_NAMED_BUILDER(qc::swap),
-                            MQT_NAMED_BUILDER(qir::swap)},
+                            MQT_NAMED_BUILDER(qir::swap<>)},
         QCToQIRBaseTestCase{"SingleControlledSWAP",
                             MQT_NAMED_BUILDER(qc::singleControlledSwap),
-                            MQT_NAMED_BUILDER(qir::singleControlledSwap)},
+                            MQT_NAMED_BUILDER(qir::singleControlledSwap<>)},
         QCToQIRBaseTestCase{"MultipleControlledSWAP",
                             MQT_NAMED_BUILDER(qc::multipleControlledSwap),
-                            MQT_NAMED_BUILDER(qir::multipleControlledSwap)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledSwap<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/SxOp.cpp
@@ -422,13 +423,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseSXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"SX", MQT_NAMED_BUILDER(qc::sx),
-                            MQT_NAMED_BUILDER(qir::sx)},
+                            MQT_NAMED_BUILDER(qir::sx<>)},
         QCToQIRBaseTestCase{"SingleControlledSX",
                             MQT_NAMED_BUILDER(qc::singleControlledSx),
-                            MQT_NAMED_BUILDER(qir::singleControlledSx)},
+                            MQT_NAMED_BUILDER(qir::singleControlledSx<>)},
         QCToQIRBaseTestCase{"MultipleControlledSX",
                             MQT_NAMED_BUILDER(qc::multipleControlledSx),
-                            MQT_NAMED_BUILDER(qir::multipleControlledSx)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledSx<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/SxdgOp.cpp
@@ -437,13 +438,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseSXdgOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"SXdg", MQT_NAMED_BUILDER(qc::sxdg),
-                            MQT_NAMED_BUILDER(qir::sxdg)},
+                            MQT_NAMED_BUILDER(qir::sxdg<>)},
         QCToQIRBaseTestCase{"SingleControlledSXdg",
                             MQT_NAMED_BUILDER(qc::singleControlledSxdg),
-                            MQT_NAMED_BUILDER(qir::singleControlledSxdg)},
+                            MQT_NAMED_BUILDER(qir::singleControlledSxdg<>)},
         QCToQIRBaseTestCase{"MultipleControlledSXdg",
                             MQT_NAMED_BUILDER(qc::multipleControlledSxdg),
-                            MQT_NAMED_BUILDER(qir::multipleControlledSxdg)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledSxdg<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/TOp.cpp
@@ -452,13 +453,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseTOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
-                            MQT_NAMED_BUILDER(qir::t_)},
+                            MQT_NAMED_BUILDER(qir::t_<>)},
         QCToQIRBaseTestCase{"SingleControlledT",
                             MQT_NAMED_BUILDER(qc::singleControlledT),
-                            MQT_NAMED_BUILDER(qir::singleControlledT)},
+                            MQT_NAMED_BUILDER(qir::singleControlledT<>)},
         QCToQIRBaseTestCase{"MultipleControlledT",
                             MQT_NAMED_BUILDER(qc::multipleControlledT),
-                            MQT_NAMED_BUILDER(qir::multipleControlledT)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledT<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/TdgOp.cpp
@@ -467,13 +468,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseTdgOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"Tdg", MQT_NAMED_BUILDER(qc::tdg),
-                            MQT_NAMED_BUILDER(qir::tdg)},
+                            MQT_NAMED_BUILDER(qir::tdg<>)},
         QCToQIRBaseTestCase{"SingleControlledTdg",
                             MQT_NAMED_BUILDER(qc::singleControlledTdg),
-                            MQT_NAMED_BUILDER(qir::singleControlledTdg)},
+                            MQT_NAMED_BUILDER(qir::singleControlledTdg<>)},
         QCToQIRBaseTestCase{"MultipleControlledTdg",
                             MQT_NAMED_BUILDER(qc::multipleControlledTdg),
-                            MQT_NAMED_BUILDER(qir::multipleControlledTdg)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledTdg<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/U2Op.cpp
@@ -482,13 +483,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseU2OpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"U2", MQT_NAMED_BUILDER(qc::u2),
-                            MQT_NAMED_BUILDER(qir::u2)},
+                            MQT_NAMED_BUILDER(qir::u2<>)},
         QCToQIRBaseTestCase{"SingleControlledU2",
                             MQT_NAMED_BUILDER(qc::singleControlledU2),
-                            MQT_NAMED_BUILDER(qir::singleControlledU2)},
+                            MQT_NAMED_BUILDER(qir::singleControlledU2<>)},
         QCToQIRBaseTestCase{"MultipleControlledU2",
                             MQT_NAMED_BUILDER(qc::multipleControlledU2),
-                            MQT_NAMED_BUILDER(qir::multipleControlledU2)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledU2<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/UOp.cpp
@@ -497,13 +498,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseUOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"U", MQT_NAMED_BUILDER(qc::u),
-                            MQT_NAMED_BUILDER(qir::u)},
+                            MQT_NAMED_BUILDER(qir::u<>)},
         QCToQIRBaseTestCase{"SingleControlledU",
                             MQT_NAMED_BUILDER(qc::singleControlledU),
-                            MQT_NAMED_BUILDER(qir::singleControlledU)},
+                            MQT_NAMED_BUILDER(qir::singleControlledU<>)},
         QCToQIRBaseTestCase{"MultipleControlledU",
                             MQT_NAMED_BUILDER(qc::multipleControlledU),
-                            MQT_NAMED_BUILDER(qir::multipleControlledU)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledU<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/XOp.cpp
@@ -512,13 +513,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseXOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"X", MQT_NAMED_BUILDER(qc::x),
-                            MQT_NAMED_BUILDER(qir::x)},
+                            MQT_NAMED_BUILDER(qir::x<>)},
         QCToQIRBaseTestCase{"SingleControlledX",
                             MQT_NAMED_BUILDER(qc::singleControlledX),
-                            MQT_NAMED_BUILDER(qir::singleControlledX)},
+                            MQT_NAMED_BUILDER(qir::singleControlledX<>)},
         QCToQIRBaseTestCase{"MultipleControlledX",
                             MQT_NAMED_BUILDER(qc::multipleControlledX),
-                            MQT_NAMED_BUILDER(qir::multipleControlledX)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledX<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/XxMinusYyOp.cpp
@@ -527,14 +528,15 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseXXMinusYYOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qc::xxMinusYY),
-                            MQT_NAMED_BUILDER(qir::xxMinusYY)},
-        QCToQIRBaseTestCase{"SingleControlledXXMinusYY",
-                            MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY),
-                            MQT_NAMED_BUILDER(qir::singleControlledXxMinusYY)},
+                            MQT_NAMED_BUILDER(qir::xxMinusYY<>)},
+        QCToQIRBaseTestCase{
+            "SingleControlledXXMinusYY",
+            MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY),
+            MQT_NAMED_BUILDER(qir::singleControlledXxMinusYY<>)},
         QCToQIRBaseTestCase{
             "MultipleControlledXXMinusYY",
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
-            MQT_NAMED_BUILDER(qir::multipleControlledXxMinusYY)}));
+            MQT_NAMED_BUILDER(qir::multipleControlledXxMinusYY<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/XxPlusYyOp.cpp
@@ -543,14 +545,14 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseXXPlusYYOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qc::xxPlusYY),
-                            MQT_NAMED_BUILDER(qir::xxPlusYY)},
+                            MQT_NAMED_BUILDER(qir::xxPlusYY<>)},
         QCToQIRBaseTestCase{"SingleControlledXXPlusYY",
                             MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY),
-                            MQT_NAMED_BUILDER(qir::singleControlledXxPlusYY)},
+                            MQT_NAMED_BUILDER(qir::singleControlledXxPlusYY<>)},
         QCToQIRBaseTestCase{
             "MultipleControlledXXPlusYY",
             MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY),
-            MQT_NAMED_BUILDER(qir::multipleControlledXxPlusYY)}));
+            MQT_NAMED_BUILDER(qir::multipleControlledXxPlusYY<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/YOp.cpp
@@ -559,13 +561,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseYOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"Y", MQT_NAMED_BUILDER(qc::y),
-                            MQT_NAMED_BUILDER(qir::y)},
+                            MQT_NAMED_BUILDER(qir::y<>)},
         QCToQIRBaseTestCase{"SingleControlledY",
                             MQT_NAMED_BUILDER(qc::singleControlledY),
-                            MQT_NAMED_BUILDER(qir::singleControlledY)},
+                            MQT_NAMED_BUILDER(qir::singleControlledY<>)},
         QCToQIRBaseTestCase{"MultipleControlledY",
                             MQT_NAMED_BUILDER(qc::multipleControlledY),
-                            MQT_NAMED_BUILDER(qir::multipleControlledY)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledY<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/ZOp.cpp
@@ -574,13 +576,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseZOpTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"Z", MQT_NAMED_BUILDER(qc::z),
-                            MQT_NAMED_BUILDER(qir::z)},
+                            MQT_NAMED_BUILDER(qir::z<>)},
         QCToQIRBaseTestCase{"SingleControlledZ",
                             MQT_NAMED_BUILDER(qc::singleControlledZ),
-                            MQT_NAMED_BUILDER(qir::singleControlledZ)},
+                            MQT_NAMED_BUILDER(qir::singleControlledZ<>)},
         QCToQIRBaseTestCase{"MultipleControlledZ",
                             MQT_NAMED_BUILDER(qc::multipleControlledZ),
-                            MQT_NAMED_BUILDER(qir::multipleControlledZ)}));
+                            MQT_NAMED_BUILDER(qir::multipleControlledZ<>)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/MeasureOp.cpp
@@ -591,23 +593,24 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
-            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
+            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit<>)},
         QCToQIRBaseTestCase{
             "RepeatedMeasurementToSameBit",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit<>)},
         QCToQIRBaseTestCase{
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits<>)},
         QCToQIRBaseTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
+            MQT_NAMED_BUILDER(
+                qir::multipleClassicalRegistersAndMeasurements<false>)},
         QCToQIRBaseTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<>)}));
 /// @}
 
 /// \name QCToQIRBase/QubitManagement/QubitManagement.cpp
@@ -616,22 +619,23 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBaseQubitManagementTest, QCToQIRBaseTest,
     testing::Values(
         QCToQIRBaseTestCase{"AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::allocQubit<>)},
         QCToQIRBaseTestCase{"AllocQubitRegister",
                             MQT_NAMED_BUILDER(qc::allocQubitRegister),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRBaseTestCase{"AllocMultipleQubitRegisters",
-                            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::allocQubitRegister<>)},
+        QCToQIRBaseTestCase{
+            "AllocMultipleQubitRegisters",
+            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
+            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegisters<>)},
         QCToQIRBaseTestCase{
             "AllocMultipleQubitRegistersWithOps",
             MQT_NAMED_BUILDER(qc::allocMultipleQubitRegistersWithOps),
-            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegistersWithOps)},
+            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegistersWithOps<>)},
         QCToQIRBaseTestCase{"AllocLargeRegister",
                             MQT_NAMED_BUILDER(qc::allocLargeRegister),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::allocQubitRegister<>)},
         QCToQIRBaseTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)},
+                            MQT_NAMED_BUILDER(qir::staticQubits)},
         QCToQIRBaseTestCase{"StaticQubitsWithOps",
                             MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
                             MQT_NAMED_BUILDER(qir::staticQubitsWithOps)},
@@ -651,5 +655,5 @@ INSTANTIATE_TEST_SUITE_P(
                             MQT_NAMED_BUILDER(qir::staticQubitsWithInv)},
         QCToQIRBaseTestCase{"AllocDeallocPair",
                             MQT_NAMED_BUILDER(qc::allocDeallocPair),
-                            MQT_NAMED_BUILDER(qir::emptyQIR)}));
+                            MQT_NAMED_BUILDER(qir::emptyQIR<>)}));
 /// @}

@@ -26,6 +26,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 #include <memory>
 #include <ostream>
@@ -36,7 +37,7 @@ namespace {
 struct QuantumComputationTranslationTestCase {
   std::string name;
   mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
-  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream&
   operator<<(std::ostream& os,
@@ -87,8 +88,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  auto reference =
-      mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
@@ -107,7 +107,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QuantumComputationTranslationTestCase{
             "AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
-            MQT_NAMED_BUILDER(mlir::qc::allocQubit)},
+            MQT_NAMED_BUILDER(mlir::qc::alloc1QubitRegister)},
         QuantumComputationTranslationTestCase{
             "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
             MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister)},
@@ -160,7 +160,7 @@ INSTANTIATE_TEST_SUITE_P(
         QuantumComputationTranslationTestCase{
             "MultipleControlledIdentity",
             MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(mlir::qc::multipleControlledIdentity)},
+            MQT_NAMED_BUILDER(mlir::qc::threeQubitsOneIdentity)},
         QuantumComputationTranslationTestCase{"X", MQT_NAMED_BUILDER(qc::x),
                                               MQT_NAMED_BUILDER(mlir::qc::x)},
         QuantumComputationTranslationTestCase{

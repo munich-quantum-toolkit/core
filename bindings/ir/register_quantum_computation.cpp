@@ -2043,15 +2043,17 @@ Args:
     qubits: The qubits to measure
     cbits: The classical bits to store the results)pb");
   qc.def("measure_all", &qc::QuantumComputation::measureAll, nb::kw_only(),
-         "add_bits"_a = true,
+         "add_bits"_a = true, "add_barrier"_a = true,
          R"pb(Measure all qubits and store the results in classical bits.
 
 Details:
     If `add_bits` is `True`, a new classical register (named "`meas`") with the same size as the number of qubits will be added to the circuit and the results will be stored in it.
     If `add_bits` is `False`, the classical register must already exist and have a sufficient number of bits to store the results.
+    If `add_barrier` is `True`, a barrier is added before the measurements.
 
 Args:
-    add_bits: Whether to explicitly add a classical register)pb");
+    add_bits: Whether to explicitly add a classical register
+    add_barrier: Whether to add a barrier before the measurements)pb");
 
   qc.def("reset", nb::overload_cast<qc::Qubit>(&qc::QuantumComputation::reset),
          "q"_a, R"pb(Add a reset operation to the circuit.

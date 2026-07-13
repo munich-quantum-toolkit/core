@@ -168,6 +168,14 @@ TEST_P(DriverJobTest, JobSetParameter) {
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
                                      sizeof(size_t), &numShots),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  constexpr std::array customParams{
+      QDMI_JOB_PARAMETER_CUSTOM1, QDMI_JOB_PARAMETER_CUSTOM2,
+      QDMI_JOB_PARAMETER_CUSTOM3, QDMI_JOB_PARAMETER_CUSTOM4,
+      QDMI_JOB_PARAMETER_CUSTOM5};
+  for (const auto param : customParams) {
+    EXPECT_THAT(QDMI_job_set_parameter(job, param, 0, nullptr),
+                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  }
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }

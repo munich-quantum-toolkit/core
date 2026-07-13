@@ -100,6 +100,23 @@ public:
    */
   void initialize();
 
+  /**
+   * @brief Initialize the builder and prepare for program construction
+   * with specified return types.
+   * @param returnType The return type for the main function
+   *
+   * @details
+   * Creates a main function with an entry_point attribute. Must be called
+   * before adding operations.
+   */
+  void initialize(Type returnType);
+
+  /**
+   * @brief Modify the return type of the main function after initialization.
+   * @param returnType The new return type for the main function
+   */
+  void retype(Type returnType);
+
   //===--------------------------------------------------------------------===//
   // Constants
   //===--------------------------------------------------------------------===//
@@ -304,6 +321,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param resultIndex The classical bit index for result pointer
+   * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
@@ -324,7 +342,7 @@ public:
    * !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, int64_t resultIndex);
+  Value measure(Value qubit, int64_t resultIndex, bool record = true);
 
   /**
    * @brief Measure a qubit into a classical register
@@ -337,6 +355,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
+   * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
@@ -360,7 +379,7 @@ public:
    * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, const Bit& bit, bool record = true);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1146,17 +1165,37 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   /**
+   * @brief Finalize the program with the given return value and return the
+   * constructed module
+   * @param returnValue The return value of the main function
+   *
+   * @details
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with the given return value, and
+   * transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
+   *
+   * The return value must have the type indicated by the function signature
+   * of the main function, which returns an `i64` by default and can be
+   * modified by passing different arguments to the `initialize()` method.
+   *
+   * @return OwningOpRef containing the constructed quantum program module
+   */
+  OwningOpRef<ModuleOp> finalize(Value returnValue);
+
+  /**
    * @brief Convenience method for building quantum programs
    * @param context The MLIR context to use for building the program
    * @param buildFunc A function that takes a reference to a QIRProgramBuilder
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module
    * will be finalized and returned after this function completes.
+   * @param profile The profile to use for the program. Defaults to Adaptive.
    * @return The module containing the quantum program built by buildFunc.
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<void(QIRProgramBuilder&)>& buildFunc,
+        const function_ref<Value(QIRProgramBuilder&)>& buildFunc,
         Profile profile = Profile::Adaptive);
 
 private:
@@ -1201,6 +1240,12 @@ private:
 
   /// Map from result index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
+
+  /// Set of array register names that should be recorded in the output.
+  DenseSet<StringRef> recordedArrays;
+
+  /// Set of unnamed result indices that should be recorded in the output.
+  DenseSet<int64_t> recordedIndices;
 
   /// Map from register to their loaded indices
   DenseMap<Value, DenseSet<Value>> loadedQubits;

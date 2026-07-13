@@ -14,7 +14,7 @@ import re
 import warnings
 from typing import TYPE_CHECKING, cast
 
-from qiskit.circuit import AncillaRegister, Clbit
+from qiskit.circuit import AncillaRegister, Clbit, ControlledGate
 from qiskit.circuit import ClassicalRegister as QiskitClassicalRegister
 from qiskit.circuit.classical import expr
 
@@ -183,6 +183,20 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
 })
 
 
+def _native_dispatch_name(instr: Instruction) -> str:
+    """Map a Qiskit instruction to the native gate name used for import dispatch.
+
+    Returns:
+        The gate name to use when dispatching to native import handlers.
+    """
+    name = instr.name
+    if isinstance(instr, ControlledGate):
+        base_gate = instr.base_gate
+        if base_gate is not None and base_gate.name in _NATIVELY_SUPPORTED_GATES:
+            return base_gate.name
+    return name
+
+
 def _emplace_operation(
     qc: QuantumComputation | CompoundOperation,
     instr: Instruction,
@@ -193,7 +207,7 @@ def _emplace_operation(
     clbit_map: Mapping[Clbit, int],
     cregs: Mapping[str, ClassicalRegister],
 ) -> list[float | ParameterExpression]:
-    name = instr.name
+    name = _native_dispatch_name(instr)
 
     if name not in _NATIVELY_SUPPORTED_GATES:
         try:
