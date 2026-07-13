@@ -77,6 +77,11 @@ void QCProgramBuilder::retype(TypeRange returnTypes) {
   mainFunc.setType(funcType);
 }
 
+Value QCProgramBuilder::floatConstant(const double value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
+}
+
 Value QCProgramBuilder::boolConstant(const bool value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();

@@ -216,18 +216,14 @@ static llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
 /// Look up a built-in numeric constant and emit it as an `f64`-typed value.
 static std::optional<Value> lookupBuiltinConstant(StringRef name,
                                                   QCProgramBuilder& builder) {
-  auto constant = [&](double value) -> Value {
-    return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
-        .getResult();
-  };
   if (name == "pi" || name == "π") {
-    return constant(std::numbers::pi);
+    return builder.floatConstant(std::numbers::pi);
   }
   if (name == "tau" || name == "τ") {
-    return constant(2 * std::numbers::pi);
+    return builder.floatConstant(2 * std::numbers::pi);
   }
   if (name == "euler" || name == "ℇ") {
-    return constant(std::numbers::e);
+    return builder.floatConstant(std::numbers::e);
   }
   return std::nullopt;
 }
@@ -1153,14 +1149,9 @@ private:
   FailureOr<Value> emitFloat(const Expr& expr) {
     switch (expr.kind) {
     case Expr::Kind::Int:
-      return arith::ConstantOp::create(
-                 builder,
-                 builder.getF64FloatAttr(static_cast<double>(expr.intValue)))
-          .getResult();
+      return builder.floatConstant(static_cast<double>(expr.intValue));
     case Expr::Kind::Float:
-      return arith::ConstantOp::create(builder,
-                                       builder.getF64FloatAttr(expr.floatValue))
-          .getResult();
+      return builder.floatConstant(expr.floatValue);
     case Expr::Kind::Identifier:
       return resolveParameter(expr.identifier, expr.loc);
     case Expr::Kind::Neg: {
@@ -1199,9 +1190,7 @@ private:
       return value;
     }
     if (auto value = constantIntegers.lookup(name)) {
-      return arith::ConstantOp::create(
-                 builder, builder.getF64FloatAttr(static_cast<double>(value)))
-          .getResult();
+      return builder.floatConstant(static_cast<double>(value));
     }
     if (auto value = dynamicIntegers.lookup(name)) {
       auto integer =
@@ -1219,16 +1208,13 @@ private:
   FailureOr<Value> emitIndex(const Expr& expr) {
     switch (expr.kind) {
     case Expr::Kind::Int:
-      return arith::ConstantOp::create(builder,
-                                       builder.getIndexAttr(expr.intValue))
-          .getResult();
+      return builder.indexConstant(expr.intValue);
     case Expr::Kind::Neg: {
       auto operand = emitIndex(*expr.lhs);
       if (failed(operand)) {
         return failure();
       }
-      auto zero = arith::ConstantOp::create(builder, builder.getIndexAttr(0))
-                      .getResult();
+      auto zero = builder.indexConstant(0);
       return arith::SubIOp::create(builder, zero, *operand).getResult();
     }
     case Expr::Kind::Add:
