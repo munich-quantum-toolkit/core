@@ -76,21 +76,21 @@ protected:
 
 } // namespace
 
-Value ifWithAngle(qco::QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
+static Value ifWithAngle(qco::QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
+  auto reg = b.allocQubitRegister(1);
   auto q0 = b.h(reg[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0);
-  q0 = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+  auto [q1, measureResult] = b.measure(q0);
+  auto q2 = b.qcoIf(measureResult, q1, [&](ValueRange args) {
     auto innerQubit = b.rx(theta, args[0]);
     return SmallVector{innerQubit};
   })[0];
-  return b.measure(q0).second;
+  return b.measure(q2).second;
 }
 
-Value forLoopWithAngle(qco::QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+static Value forLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
+  auto reg = b.allocQubitRegister(2);
   auto res = b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.rx(theta, q0);
@@ -101,11 +101,11 @@ Value forLoopWithAngle(qco::QCOProgramBuilder& b) {
   return b.measure(q).second;
 }
 
-Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  auto q0 = b.allocQubit();
+static Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto theta1 = b.floatConstant(0.123);
   auto theta2 = b.floatConstant(0.456);
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
   auto q1 = b.h(q0);
   auto [q2, cond] = b.measure(q1);
   auto res = b.qcoIf(
@@ -128,11 +128,11 @@ Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
 }
 
 static Value whileWithAngle(qco::QCOProgramBuilder& b) {
-  auto q0 = b.allocQubit();
   auto theta = b.floatConstant(0.123);
+  auto q0 = b.allocQubit();
   auto q1 = b.h(q0);
   auto res = b.scfWhile(
-      ValueRange{q1},
+      q1,
       [&](ValueRange iterArgs) {
         auto [q2, measureResult] = b.measure(iterArgs[0]);
         b.scfCondition(measureResult, q2);
