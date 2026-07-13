@@ -18,7 +18,7 @@
 
 namespace qir {
 
-/// The set of call targets that @ref stripMeasurementRelatedCalls erases.
+/// The set of call targets that @ref qir::stripMeasurementRelatedCalls erases.
 inline constexpr std::array<llvm::StringRef, 5> STRIP_TARGETS = {
     "__quantum__qis__mz__body",
     "__quantum__qis__m__body",

@@ -75,7 +75,6 @@ enum class Format : uint8_t {
  * boost::hash_combine (https://www.boost.org/LICENSE_1_0.txt)
  * @param lhs The first hash
  * @param rhs The second hash
- * @returns The combined hash
  */
 [[nodiscard]] constexpr std::size_t
 combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
