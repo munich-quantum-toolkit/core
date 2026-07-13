@@ -128,6 +128,7 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "rzx", .numSites = 2, .numParams = 1},
     OperationInfo{.name = "xx_minus_yy", .numSites = 2, .numParams = 2},
     OperationInfo{.name = "xx_plus_yy", .numSites = 2, .numParams = 2},
+    OperationInfo{.name = "rccx", .numSites = 3, .numParams = 0},
     OperationInfo{.name = "measure", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "reset", .numSites = 1, .numParams = 0},
     OperationInfo{

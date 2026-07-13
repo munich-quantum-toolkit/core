@@ -558,6 +558,19 @@ def test_job_submit_raises_error(ddsim_backend: QDMIBackend) -> None:
         job.submit()
 
 
+def test_backend_supports_rccx_gate(ddsim_backend: QDMIBackend) -> None:
+    """DDSIM backend exposes and executes native RCCX gate circuits."""
+    assert "rccx" in ddsim_backend.target.operation_names
+
+    qc = QuantumCircuit(3)
+    qc.rccx(0, 1, 2)
+    qc.measure_all()
+
+    job = ddsim_backend.run(qc, shots=100)
+    counts = job.result().get_counts()
+    assert sum(counts.values()) == 100
+
+
 def test_backend_supports_cz_gate(ddsim_backend: QDMIBackend) -> None:
     """Backend executes CZ gate circuits and returns counts."""
     qc = QuantumCircuit(2)
