@@ -29,8 +29,8 @@ releases may include breaking changes.
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
   single-qubit unitary runs via Euler resynthesis ([#1672])
   ([**@simon1hofmann**], [**@burgholzer**])
-- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
-  ([**@rturrado**])
+- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766], [#1815])
+  ([**@rturrado**], [**@burgholzer**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
   containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates

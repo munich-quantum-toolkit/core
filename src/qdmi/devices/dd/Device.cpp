@@ -146,8 +146,16 @@ makeOperationAddresses(const std::array<OperationInfo, N>& ops) {
 }
 constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
-constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
-                                                  QDMI_PROGRAM_FORMAT_QASM3};
+constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
+    QDMI_PROGRAM_FORMAT_QASM2,
+    QDMI_PROGRAM_FORMAT_QASM3,
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+    QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+    QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+    QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+    QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+#endif
+};
 
 } // namespace
 
