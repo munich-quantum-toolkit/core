@@ -32,12 +32,13 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_DECOMPOSETWOCONTROLLED
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+namespace {
 struct ControlledGateSpec {
   decomposition::ControlledTarget gate;
   std::optional<double> theta;
 };
 
-static std::optional<ControlledGateSpec>
+std::optional<ControlledGateSpec>
 matchControlledGate(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
     return ControlledGateSpec{.gate = decomposition::ControlledTarget::X,
@@ -56,7 +57,6 @@ matchControlledGate(UnitaryOpInterface inner) {
   return std::nullopt;
 }
 
-namespace {
 struct DecomposeTwoControlledPattern final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
