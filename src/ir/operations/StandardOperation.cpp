@@ -598,6 +598,7 @@ void StandardOperation::invert() {
   case H:
   case SWAP:
   case ECR:
+  case RCCX:
   case Barrier:
     break;
   // gates where we just update parameters

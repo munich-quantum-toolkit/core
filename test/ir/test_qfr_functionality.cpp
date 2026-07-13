@@ -892,6 +892,11 @@ TEST_F(QFRFunctionality, invertStandardOpParamChange) {
   op.invert();
   const auto expectedTargets = Targets{1U, 0U};
   ASSERT_EQ(op.getTargets(), expectedTargets);
+
+  auto rccxOp = StandardOperation(Targets{0U, 1U, 2U}, OpType::RCCX);
+  rccxOp.invert();
+  ASSERT_EQ(rccxOp.getType(), OpType::RCCX);
+  ASSERT_EQ(rccxOp.getTargets(), (Targets{0U, 1U, 2U}));
 }
 
 TEST_F(QFRFunctionality, invertCompoundOperation) {

@@ -42,7 +42,7 @@ namespace dd {
 namespace {
 
 MatrixDD getRccxDD(Package& dd, const qc::Controls& controls,
-                   const std::vector<qc::Qubit>& targets, const bool inverse) {
+                   const std::vector<qc::Qubit>& targets) {
   if (targets.size() != 3) {
     throw std::invalid_argument("RCCX expects exactly three target qubits");
   }
@@ -59,28 +59,17 @@ MatrixDD getRccxDD(Package& dd, const qc::Controls& controls,
     return getStandardOperationDD(dd, qc::X, {}, mergedControls, {q2});
   };
 
-  std::vector<std::function<MatrixDD()>> steps;
-  if (!inverse) {
-    steps.emplace_back([&] { return applySingle(qc::H); });
-    steps.emplace_back([&] { return applySingle(qc::T); });
-    steps.emplace_back([&] { return applyControlledX(q1); });
-    steps.emplace_back([&] { return applySingle(qc::Tdg); });
-    steps.emplace_back([&] { return applyControlledX(q0); });
-    steps.emplace_back([&] { return applySingle(qc::T); });
-    steps.emplace_back([&] { return applyControlledX(q1); });
-    steps.emplace_back([&] { return applySingle(qc::Tdg); });
-    steps.emplace_back([&] { return applySingle(qc::H); });
-  } else {
-    steps.emplace_back([&] { return applySingle(qc::H); });
-    steps.emplace_back([&] { return applySingle(qc::T); });
-    steps.emplace_back([&] { return applyControlledX(q1); });
-    steps.emplace_back([&] { return applySingle(qc::Tdg); });
-    steps.emplace_back([&] { return applyControlledX(q0); });
-    steps.emplace_back([&] { return applySingle(qc::T); });
-    steps.emplace_back([&] { return applyControlledX(q1); });
-    steps.emplace_back([&] { return applySingle(qc::Tdg); });
-    steps.emplace_back([&] { return applySingle(qc::H); });
-  }
+  const std::vector<std::function<MatrixDD()>> steps = {
+      [&] { return applySingle(qc::H); },
+      [&] { return applySingle(qc::T); },
+      [&] { return applyControlledX(q1); },
+      [&] { return applySingle(qc::Tdg); },
+      [&] { return applyControlledX(q0); },
+      [&] { return applySingle(qc::T); },
+      [&] { return applyControlledX(q1); },
+      [&] { return applySingle(qc::Tdg); },
+      [&] { return applySingle(qc::H); },
+  };
 
   auto result = Package::makeIdent();
   for (const auto& step : steps) {
@@ -117,7 +106,7 @@ MatrixDD getStandardOperationDD(Package& dd, const qc::OpType type,
           "Expected three target qubits for three-qubit gate");
     }
     if (type == qc::RCCX) {
-      return getRccxDD(dd, controls, targets, false);
+      return getRccxDD(dd, controls, targets);
     }
   }
   throw std::runtime_error("Unexpected operation type");
@@ -147,6 +136,7 @@ MatrixDD getStandardOperationDD(const qc::StandardOperation& op, Package& dd,
   case qc::Z:
   case qc::SWAP:
   case qc::ECR:
+  case qc::RCCX:
     break;
   // operations that have an inverse gate with the same parameters
   case qc::iSWAP:
@@ -185,8 +175,6 @@ MatrixDD getStandardOperationDD(const qc::StandardOperation& op, Package& dd,
     // DCX is not self-inverse, but the inverse is just swapping the targets
     std::swap(targetQubits[0], targetQubits[1]);
     break;
-  case qc::RCCX:
-    return getRccxDD(dd, controls, targetQubits, true);
   // invert all parameters
   case qc::U:
     // swap [a, b, c] to [a, c, b]
