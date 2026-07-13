@@ -789,6 +789,7 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
       spec->allowsOp(GPhaseOp::create(builder, loc, 0.1).getOperation()));
   EXPECT_TRUE(spec->allowsOp(
       UOp::create(builder, loc, q0, 0.1, 0.2, 0.3).getOperation()));
+
   auto cx = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
     return XOp::create(builder, loc, target).getOutputQubit(0);
   });
