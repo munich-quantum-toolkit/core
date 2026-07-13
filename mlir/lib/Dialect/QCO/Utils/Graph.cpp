@@ -30,6 +30,7 @@ void Graph::addEdge(size_t u, size_t v) {
 }
 
 ArrayRef<size_t> Graph::getNeighbours(size_t id) const { return adj_.at(id); }
+
 SmallVector<size_t> Graph::getNodes() const { return to_vector(adj_.keys()); }
 
 size_t Graph::getMaxDegree() const {

@@ -12,7 +12,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT MQT::CoreQIRRuntime)
 
   # Set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME

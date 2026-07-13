@@ -421,6 +421,20 @@ c = measure q;
     assert job.num_shots == 100
 
 
+def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
+    """Test that submit_job forwards custom job parameters to DDSIM."""
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom3="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom4="value")
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom5="value")
+
+
 def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
     """Test that different shot counts are correctly preserved."""
     qasm3_program = """

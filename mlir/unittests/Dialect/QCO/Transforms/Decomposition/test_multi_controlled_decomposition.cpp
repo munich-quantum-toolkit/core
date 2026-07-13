@@ -108,6 +108,7 @@ buildControlledPauliModule(MLIRContext* context, std::size_t numControls,
         } else {
           b.mcz(controls, target);
         }
+        return SmallVector<Value>{};
       });
 }
 
@@ -130,6 +131,7 @@ buildTwoControlledXModule(MLIRContext* context) {
 buildRCCXModule(MLIRContext* context) {
   return QCOProgramBuilder::build(context, [](QCOProgramBuilder& b) {
     std::ignore = b.rccx(b.staticQubit(0), b.staticQubit(1), b.staticQubit(2));
+    return SmallVector<Value>{};
   });
 }
 
@@ -137,6 +139,7 @@ buildRCCXModule(MLIRContext* context) {
 buildTwoControlledPhaseModule(MLIRContext* context, double theta) {
   return QCOProgramBuilder::build(context, [theta](QCOProgramBuilder& b) {
     b.mcp(theta, {b.staticQubit(0), b.staticQubit(1)}, b.staticQubit(2));
+    return SmallVector<Value>{};
   });
 }
 
@@ -476,6 +479,7 @@ TEST_F(McxDecompositionTest, LeavesSingleControlledXUntouched) {
   auto moduleOp =
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+        return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
@@ -495,6 +499,7 @@ TEST_F(McxDecompositionTest, LeavesSingleControlledZUntouched) {
   auto moduleOp =
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.cz(builder.staticQubit(0), builder.staticQubit(1));
+        return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
@@ -569,6 +574,7 @@ TEST_F(McxDecompositionTest,
   auto moduleOp =
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+        return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runTwoControlledPass(moduleOp.get()).succeeded());
@@ -652,6 +658,7 @@ TEST_F(McxDecompositionTest, DecomposesMcxAndMcz) {
                     builder.staticQubit(3));
         builder.mcz({builder.staticQubit(4), builder.staticQubit(5)},
                     builder.staticQubit(6));
+        return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
@@ -680,6 +687,7 @@ TEST_F(McxDecompositionTest, LeavesMultiOpCtrlUntouched) {
           const Value afterX = builder.x(targetArg);
           return builder.y(afterX);
         });
+        return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
@@ -700,6 +708,7 @@ TEST_F(McxDecompositionTest, LeavesMultiControlledHUntouched) {
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.mch({builder.staticQubit(0), builder.staticQubit(1)},
                     builder.staticQubit(2));
+        return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());

@@ -96,7 +96,7 @@ def StaticOp : QCOOp<"static", [Pure]> {
 // Measurement and Reset Operations
 //===----------------------------------------------------------------------===//
 
-def MeasureOp : QCOOp<"measure"> {
+def MeasureOp : QCOOp<"measure", [Pure]> {
   let summary = "Measure a qubit in the computational basis";
   let description = [{
         Measures a qubit in the computational (Z) basis, collapsing the state
@@ -119,8 +119,7 @@ def MeasureOp : QCOOp<"measure"> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType,
-                           "the qubit to measure", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the qubit to measure">:$qubit_in,
       OptionalAttr<StrAttr>:$register_name,
       OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
       OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
@@ -138,7 +137,7 @@ def MeasureOp : QCOOp<"measure"> {
   let hasVerifier = 1;
 }
 
-def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
+def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
   let summary = "Reset a qubit to |0⟩ state";
   let description = [{
         Resets a qubit to the |0⟩ state, regardless of its current state,
@@ -150,8 +149,7 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the qubit to reset", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the qubit to reset">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -210,7 +208,8 @@ def GPhaseOp
   let hasCanonicalizer = 1;
 }
 
-def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def IdOp
+    : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply an Id gate to a qubit";
   let description = [{
         Applies an Id gate to a qubit and returns the transformed qubit.
@@ -221,7 +220,7 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -234,7 +233,8 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def XOp
+    : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply an X gate to a qubit";
   let description = [{
         Applies an X gate to a qubit and returns the transformed qubit.
@@ -245,7 +245,7 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -258,7 +258,8 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def YOp
+    : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply a Y gate to a qubit";
   let description = [{
         Applies a Y gate to a qubit and returns the transformed qubit.
@@ -269,7 +270,7 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -282,7 +283,8 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def ZOp
+    : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply a Z gate to a qubit";
   let description = [{
         Applies a Z gate to a qubit and returns the transformed qubit.
@@ -293,7 +295,7 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -306,7 +308,8 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def HOp
+    : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply a H gate to a qubit";
   let description = [{
         Applies a H gate to a qubit and returns the transformed qubit.
@@ -317,7 +320,7 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -330,7 +333,8 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SOp
+    : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply an S gate to a qubit";
   let description = [{
         Applies an S gate to a qubit and returns the transformed qubit.
@@ -341,7 +345,7 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -354,8 +358,8 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def SdgOp
-    : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SdgOp : QCOOp<"sdg",
+                  traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply an Sdg gate to a qubit";
   let description = [{
         Applies an Sdg gate to a qubit and returns the transformed qubit.
@@ -366,7 +370,7 @@ def SdgOp
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -379,7 +383,8 @@ def SdgOp
   let hasCanonicalizer = 1;
 }
 
-def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def TOp
+    : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply a T gate to a qubit";
   let description = [{
         Applies a T gate to a qubit and returns the transformed qubit.
@@ -390,7 +395,7 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -403,8 +408,8 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def TdgOp
-    : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def TdgOp : QCOOp<"tdg",
+                  traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply a Tdg gate to a qubit";
   let description = [{
         Applies a Tdg gate to a qubit and returns the transformed qubit.
@@ -415,7 +420,7 @@ def TdgOp
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -428,7 +433,8 @@ def TdgOp
   let hasCanonicalizer = 1;
 }
 
-def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SXOp
+    : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter, Pure]> {
   let summary = "Apply an SX gate to a qubit";
   let description = [{
         Applies an SX gate to a qubit and returns the transformed qubit.
@@ -439,7 +445,7 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -452,8 +458,8 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def SXdgOp
-    : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+                                     Pure]> {
   let summary = "Apply an SXdg gate to a qubit";
   let description = [{
         Applies an SXdg gate to a qubit and returns the transformed qubit.
@@ -464,7 +470,7 @@ def SXdgOp
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -477,7 +483,8 @@ def SXdgOp
   let hasCanonicalizer = 1;
 }
 
-def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RXOp
+    : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
   let summary = "Apply an RX gate to a qubit";
   let description = [{
         Applies an RX gate to a qubit and returns the transformed qubit.
@@ -488,7 +495,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) "
@@ -507,7 +514,8 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RYOp
+    : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
   let summary = "Apply an RY gate to a qubit";
   let description = [{
         Applies an RY gate to a qubit and returns the transformed qubit.
@@ -518,7 +526,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) "
@@ -537,7 +545,8 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RZOp
+    : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
   let summary = "Apply an RZ gate to a qubit";
   let description = [{
         Applies an RZ gate to a qubit and returns the transformed qubit.
@@ -548,7 +557,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) "
@@ -567,7 +576,8 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def POp
+    : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter, Pure]> {
   let summary = "Apply a P gate to a qubit";
   let description = [{
         Applies a P gate to a qubit and returns the transformed qubit.
@@ -578,7 +588,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) "
@@ -597,7 +607,8 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+def ROp
+    : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter, Pure]> {
   let summary = "Apply an R gate to a qubit";
   let description = [{
         Applies an R gate to a qubit and returns the transformed qubit.
@@ -608,7 +619,7 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle theta in radians">:$theta,
       Arg<F64, "the rotation angle phi in radians">:$phi);
   let results = (outs QubitType:$qubit_out);
@@ -628,7 +639,8 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+def U2Op
+    : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter, Pure]> {
   let summary = "Apply a U2 gate to a qubit";
   let description = [{
         Applies a U2 gate to a qubit and returns the transformed qubit.
@@ -639,7 +651,7 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle phi in radians">:$phi,
       Arg<F64, "the rotation angle lambda in radians">:$lambda);
   let results = (outs QubitType:$qubit_out);
@@ -659,7 +671,8 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
+def UOp
+    : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter, Pure]> {
   let summary = "Apply a U gate to a qubit";
   let description = [{
         Applies a U gate to a qubit and returns the transformed qubit.
@@ -670,7 +683,7 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
         ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+  let arguments = (ins Arg<QubitType, "the target qubit">:$qubit_in,
       Arg<F64, "the rotation angle theta in radians">:$theta,
       Arg<F64, "the rotation angle phi in radians">:$phi,
       Arg<F64, "the rotation angle lambda in radians">:$lambda);
@@ -693,8 +706,8 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def SWAPOp
-    : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
+                                     Pure]> {
   let summary = "Apply a SWAP gate to two qubits";
   let description = [{
         Applies a SWAP gate to two qubits and returns the transformed qubits.
@@ -705,9 +718,8 @@ def SWAPOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` "
@@ -721,8 +733,8 @@ def SWAPOp
   let hasCanonicalizer = 1;
 }
 
-def iSWAPOp
-    : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface,
+                                       TwoTargetZeroParameter, Pure]> {
   let summary = "Apply a iSWAP gate to two qubits";
   let description = [{
         Applies a iSWAP gate to two qubits and returns the transformed qubits.
@@ -733,9 +745,8 @@ def iSWAPOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` "
@@ -747,8 +758,8 @@ def iSWAPOp
     }];
 }
 
-def DCXOp
-    : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def DCXOp : QCOOp<"dcx",
+                  traits = [UnitaryOpInterface, TwoTargetZeroParameter, Pure]> {
   let summary = "Apply a DCX gate to two qubits";
   let description = [{
         Applies a DCX gate to two qubits and returns the transformed qubits.
@@ -759,9 +770,8 @@ def DCXOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` "
@@ -811,8 +821,8 @@ def RCCXOp
     }];
 }
 
-def ECROp
-    : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def ECROp : QCOOp<"ecr",
+                  traits = [UnitaryOpInterface, TwoTargetZeroParameter, Pure]> {
   let summary = "Apply an ECR gate to two qubits";
   let description = [{
         Applies an ECR gate to two qubits and returns the transformed qubits.
@@ -823,9 +833,8 @@ def ECROp
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` "
@@ -839,7 +848,8 @@ def ECROp
   let hasCanonicalizer = 1;
 }
 
-def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RXXOp
+    : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter, Pure]> {
   let summary = "Apply an RXX gate to two qubits";
   let description = [{
         Applies an RXX gate to two qubits and returns the transformed qubits.
@@ -850,10 +860,9 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) "
@@ -872,7 +881,8 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RYYOp
+    : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter, Pure]> {
   let summary = "Apply an RYY gate to two qubits";
   let description = [{
         Applies an RYY gate to two qubits and returns the transformed qubits.
@@ -883,10 +893,9 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) "
@@ -905,7 +914,8 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RZXOp
+    : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter, Pure]> {
   let summary = "Apply an RZX gate to two qubits";
   let description = [{
         Applies an RZX gate to two qubits and returns the transformed qubits.
@@ -916,10 +926,9 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) "
@@ -938,7 +947,8 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RZZOp
+    : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter, Pure]> {
   let summary = "Apply an RZZ gate to two qubits";
   let description = [{
         Applies an RZZ gate to two qubits and returns the transformed qubits.
@@ -949,10 +959,9 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<F64, "the rotation angle theta in radians">:$theta);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat =
       "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) "
@@ -971,8 +980,8 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def XXPlusYYOp : QCOOp<"xx_plus_yy",
-                       traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface,
+                                               TwoTargetTwoParameter, Pure]> {
   let summary = "Apply an XX+YY gate to two qubits";
   let description = [{
         Applies an XX+YY gate to two qubits and returns the transformed qubits.
@@ -983,11 +992,10 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-          Arg<F64, "the rotation angle theta in radians">:$theta,
-          Arg<F64, "the rotation angle beta in radians">:$beta);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<F64, "the rotation angle theta in radians">:$theta,
+      Arg<F64, "the rotation angle beta in radians">:$beta);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in "
                        "attr-dict `:` type($qubit0_in) `,` type($qubit1_in) "
@@ -1007,8 +1015,8 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
   let hasCanonicalizer = 1;
 }
 
-def XXMinusYYOp : QCOOp<"xx_minus_yy",
-                        traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
+                                                 TwoTargetTwoParameter, Pure]> {
   let summary = "Apply an XX-YY gate to two qubits";
   let description = [{
         Applies an XX-YY gate to two qubits and returns the transformed qubits.
@@ -1019,11 +1027,10 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy",
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-          Arg<F64, "the rotation angle theta in radians">:$theta,
-          Arg<F64, "the rotation angle beta in radians">:$beta);
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<F64, "the rotation angle theta in radians">:$theta,
+      Arg<F64, "the rotation angle beta in radians">:$beta);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
   let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in "
                        "attr-dict `:` type($qubit0_in) `,` type($qubit1_in) "
@@ -1043,7 +1050,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy",
   let hasCanonicalizer = 1;
 }
 
-def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
+def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let summary = "Apply a barrier gate to a set of qubits";
   let description = [{
         Applies a barrier gate to a set of qubits and returns the transformed qubits.
@@ -1055,7 +1062,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
     }];
 
   let arguments =
-      (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in);
+      (ins Arg<Variadic<QubitType>, "the target qubits">:$qubits_in);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let assemblyFormat =
       "$qubits_in attr-dict `:` type($qubits_in) `->` type($qubits_out)";
@@ -1095,7 +1102,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
+def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike, Pure]> {
   let summary = "Yield from a modifier region";
   let description = [{
         Terminates a modifier region, yielding the transformed target qubit and qtensor values back to the enclosing modifier operation.
@@ -1118,7 +1125,7 @@ def CtrlOp : QCOOp<"ctrl",
                    traits = [UnitaryOpInterface, AttrSizedOperandSegments,
                              AttrSizedResultSegments, SameOperandsAndResultType,
                              SameOperandsAndResultShape,
-                             SingleBlockImplicitTerminator<"YieldOp">,
+                             SingleBlockImplicitTerminator<"YieldOp">, Pure,
                              RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
   let description = [{
@@ -1140,9 +1147,9 @@ def CtrlOp : QCOOp<"ctrl",
         ```
     }];
 
-  let arguments = (ins Arg<Variadic<QubitType>,
-                           "the control qubits", [MemRead]>:$controls_in,
-      Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$targets_in);
+  let arguments =
+      (ins Arg<Variadic<QubitType>, "the control qubits">:$controls_in,
+          Arg<Variadic<QubitType>, "the target qubits">:$targets_in);
   let results = (outs Variadic<QubitType>:$controls_out,
       Variadic<QubitType>:$targets_out);
   let regions = (region SizedRegion<1>:$region);
@@ -1202,7 +1209,7 @@ def CtrlOp : QCOOp<"ctrl",
 
 def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
                                    SingleBlockImplicitTerminator<"YieldOp">,
-                                   RecursiveMemoryEffects]> {
+                                   Pure, RecursiveMemoryEffects]> {
   let summary = "Invert a unitary operation";
   let description = [{
         A modifier operation that inverts the unitary operation defined in its body region.
@@ -1221,9 +1228,8 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         ```
     }];
 
-  let arguments =
-      (ins Arg<Variadic<QubitType>,
-               "the qubits involved in the operation", [MemRead]>:$qubits_in);
+  let arguments = (ins Arg<Variadic<QubitType>,
+                           "the qubits involved in the operation">:$qubits_in);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{
@@ -1286,7 +1292,7 @@ def IfOp
                         RegionBranchOpInterface, ["getNumRegionInvocations",
                                                   "getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions"]>,
-                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
+                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">, Pure,
                     RecursiveMemoryEffects]> {
 
   let summary = "If-then-else operation for linear (qubit) types";
@@ -1362,6 +1368,13 @@ def IfOp
         /// Return the yielded value that corresponds to the given argument
         /// for the else-block, or `nullptr` on failure.
         OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
+
+        /// Append the specified additional "qubit" operands: replace this
+        /// if-op with a new if-op that has the additional qubit operands.
+        /// The operands can be of qubit or qtensor type.
+        /// The branch bodies of this if-op are moved over to the new if-op.
+        /// The newly added qubits are yielded from each branch.
+        IfOp replaceWithAdditionalQubits(RewriterBase& rewriter, ValueRange addons);
     }];
 
   let extraClassDefinition = [{
