@@ -437,6 +437,19 @@ def _add_three_target_operation(
     params: Sequence[float | ParameterExpression],
     qubit_map: Mapping[Qubit, int],
 ) -> list[float | ParameterExpression]:
+    """Append a three-target standard or symbolic operation to a quantum computation.
+
+    Args:
+        qc: The quantum computation or compound operation to append to.
+        type_: The MQT operation type to create.
+        qargs: Ordered Qiskit qubits for the gate; the final three entries are
+            targets and any preceding entries are controls.
+        params: Gate parameters from the Qiskit instruction.
+        qubit_map: Mapping from Qiskit qubits to MQT qubit indices.
+
+    Returns:
+        The parsed gate parameters (numeric values or symbolic expressions).
+    """
     qubits = [qubit_map[qubit] for qubit in qargs]
     target3 = qubits.pop()
     target2 = qubits.pop()
