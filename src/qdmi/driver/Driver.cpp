@@ -169,9 +169,10 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
 #undef DL_CLOSE
 } // namespace qdmi
 
-QDMI_Device_impl_d::QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
-                                       const qdmi::DeviceSessionConfig& config,
-                                       const QDMI_Child_Device childDevice)
+QDMI_Device_impl_d::QDMI_Device_impl_d(
+    std::shared_ptr<qdmi::DeviceLibrary> lib,
+    const qdmi::DeviceSessionConfig& config,
+    QDMI_Child_Device_impl_d* const childDevice)
     : library_(std::move(lib)) {
   if (library_->device_session_alloc(&deviceSession_) != QDMI_SUCCESS) {
     throw std::runtime_error("Failed to allocate device session");
@@ -218,7 +219,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
     const auto status =
         static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
             deviceSession_, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
-            sizeof(childDevice), &childDevice));
+            sizeof(QDMI_Child_Device), static_cast<const void*>(&childDevice)));
     if (status != QDMI_SUCCESS) {
       library_->device_session_free(deviceSession_);
       deviceSession_ = nullptr;
@@ -264,7 +265,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
     status =
         static_cast<QDMI_STATUS>(library_->device_session_query_device_property(
             deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, childrenSize,
-            children.data(), nullptr));
+            static_cast<void*>(children.data()), nullptr));
     if (status != QDMI_SUCCESS) {
       library_->device_session_free(deviceSession_);
       deviceSession_ = nullptr;
@@ -275,7 +276,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
 
   try {
     childDevices_.reserve(children.size());
-    for (const auto child : children) {
+    for (auto* const child : children) {
       childDevices_.emplace_back(
           std::make_unique<QDMI_Device_impl_d>(library_, config, child));
     }

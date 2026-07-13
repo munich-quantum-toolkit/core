@@ -301,8 +301,8 @@ std::vector<Device> Device::getChildDevices() const {
   std::vector<QDMI_Device> handles(size / sizeof(QDMI_Device));
   if (size != 0) {
     result = QDMI_device_query_device_property(
-        device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, handles.data(),
-        nullptr);
+        device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
+        static_cast<void*>(handles.data()), nullptr);
     qdmi::throwIfError(result, "Querying child devices");
   }
 
@@ -310,7 +310,7 @@ std::vector<Device> Device::getChildDevices() const {
   devices.reserve(handles.size());
   std::ranges::transform(
       handles, std::back_inserter(devices),
-      [](const QDMI_Device handle) { return Device(handle); });
+      [](QDMI_Device_impl_d* const handle) { return Device(handle); });
   return devices;
 }
 
@@ -779,7 +779,7 @@ std::vector<Device> Session::getDevices() {
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(
       qdmiDevices, std::back_inserter(devices),
-      [](const QDMI_Device& dev) -> Device { return Device(dev); });
+      [](QDMI_Device_impl_d* const& dev) -> Device { return Device(dev); });
   return devices;
 }
 } // namespace fomac
