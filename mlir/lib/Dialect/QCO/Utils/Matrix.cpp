@@ -49,24 +49,24 @@ namespace mlir::qco {
 
 /// Writes the conjugate transpose of @p in into @p out (square, row-major).
 static void adjointInto(ArrayRef<Complex> in, MutableArrayRef<Complex> out,
-                        const std::size_t dim) {
-  for (std::size_t row = 0; row < dim; ++row) {
-    for (std::size_t col = 0; col < dim; ++col) {
+                        const size_t dim) {
+  for (size_t row = 0; row < dim; ++row) {
+    for (size_t col = 0; col < dim; ++col) {
       out[(row * dim) + col] = std::conj(in[(col * dim) + row]);
     }
   }
 }
 
-template <std::size_t Dim, std::size_t Size>
-static void assignFixedImpl(std::int64_t& dim, SmallVector<Complex>& data,
+template <size_t Dim, size_t Size>
+static void assignFixedImpl(int64_t& dim, SmallVector<Complex>& data,
                             const std::array<Complex, Size>& src) {
-  dim = static_cast<std::int64_t>(Dim);
+  dim = static_cast<int64_t>(Dim);
   data.assign(src.begin(), src.end());
 }
 
-template <std::size_t Dim, std::size_t Size>
+template <size_t Dim, size_t Size>
 [[nodiscard]] static bool
-isApproxFixedImpl(const std::int64_t dim, ArrayRef<Complex> data,
+isApproxFixedImpl(const int64_t dim, ArrayRef<Complex> data,
                   const std::array<Complex, Size>& other, const double tol) {
   if (std::cmp_not_equal(dim, Dim)) {
     return false;
@@ -74,18 +74,18 @@ isApproxFixedImpl(const std::int64_t dim, ArrayRef<Complex> data,
   return entriesAreApprox(data, other, tol);
 }
 
-template <std::size_t Dim, std::size_t Size>
+template <size_t Dim, size_t Size>
 [[nodiscard]] static bool
 assignFromDynamicImpl(const DynamicMatrix& src,
                       std::array<Complex, Size>& dst) {
-  if (src.rows() != static_cast<std::int64_t>(Dim) ||
-      src.cols() != static_cast<std::int64_t>(Dim)) {
+  if (src.rows() != static_cast<int64_t>(Dim) ||
+      src.cols() != static_cast<int64_t>(Dim)) {
     return false;
   }
-  for (std::size_t row = 0; row < Dim; ++row) {
-    for (std::size_t col = 0; col < Dim; ++col) {
+  for (size_t row = 0; row < Dim; ++row) {
+    for (size_t col = 0; col < Dim; ++col) {
       dst[(row * Dim) + col] =
-          src(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col));
+          src(static_cast<int64_t>(row), static_cast<int64_t>(col));
     }
   }
   return true;
@@ -111,8 +111,8 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
   assert(lhs.size() == Matrix4x4::K_SIZE_AT_COMPILE_TIME &&
          rhs.size() == Matrix4x4::K_SIZE_AT_COMPILE_TIME &&
          out.size() == Matrix4x4::K_SIZE_AT_COMPILE_TIME);
-  for (std::size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
-    const std::size_t rowBase = row * Matrix4x4::K_COLS;
+  for (size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
+    const size_t rowBase = row * Matrix4x4::K_COLS;
     const Complex& a0 = lhs[rowBase + 0];
     const Complex& a1 = lhs[rowBase + 1];
     const Complex& a2 = lhs[rowBase + 2];
@@ -124,14 +124,39 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
   }
 }
 
+/// Left-applies a 2x2 gate to a row pair (`out = gate * [a; b]`).
+static void apply2x2LeftToRowPair(const ArrayRef<Complex> gate, Complex& a,
+                                  Complex& b) {
+  assert(gate.size() == Matrix2x2::K_SIZE_AT_COMPILE_TIME);
+  const Complex newA = gate[0] * a + gate[1] * b;
+  const Complex newB = gate[2] * a + gate[3] * b;
+  a = newA;
+  b = newB;
+}
+
+/// Left-applies a 4x4 gate to a column 4-vector (`[a; b; c; d] = gate *
+/// [a; b; c; d]`).
+static void apply4x4LeftToColumn(const ArrayRef<Complex> gate, Complex& a,
+                                 Complex& b, Complex& c, Complex& d) {
+  assert(gate.size() == Matrix4x4::K_SIZE_AT_COMPILE_TIME);
+  const Complex newA = gate[0] * a + gate[1] * b + gate[2] * c + gate[3] * d;
+  const Complex newB = gate[4] * a + gate[5] * b + gate[6] * c + gate[7] * d;
+  const Complex newC = gate[8] * a + gate[9] * b + gate[10] * c + gate[11] * d;
+  const Complex newD =
+      gate[12] * a + gate[13] * b + gate[14] * c + gate[15] * d;
+  a = newA;
+  b = newB;
+  c = newC;
+  d = newD;
+}
+
 /// Returns true if @p data is approximately the @p dim x @p dim identity
 /// matrix.
-[[nodiscard]] static bool isIdentityEntries(ArrayRef<Complex> data,
-                                            const std::size_t dim,
-                                            const double tol) {
+[[nodiscard]] static bool
+isIdentityEntries(ArrayRef<Complex> data, const size_t dim, const double tol) {
   assert(data.size() >= dim * dim);
-  for (std::size_t row = 0; row < dim; ++row) {
-    for (std::size_t col = 0; col < dim; ++col) {
+  for (size_t row = 0; row < dim; ++row) {
+    for (size_t col = 0; col < dim; ++col) {
       const Complex& entry = data[(row * dim) + col];
       if (row == col) {
         if (!entryIsApprox(entry, Complex{1.0, 0.0}, tol)) {
@@ -146,65 +171,61 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
 }
 
 /// Returns @p dim as `size_t` after asserting it is non-negative and squarable.
-[[nodiscard]] static std::size_t checkedDim(const std::int64_t dim) {
+[[nodiscard]] static size_t checkedDim(const int64_t dim) {
   assert(dim >= 0 && "DynamicMatrix dimension must be non-negative");
-  const auto udim = static_cast<std::size_t>(dim);
-  assert(
-      (udim == 0 || udim <= std::numeric_limits<std::size_t>::max() / udim) &&
-      "DynamicMatrix dimension is too large to allocate storage");
+  const auto udim = static_cast<size_t>(dim);
+  assert((udim == 0 || udim <= std::numeric_limits<size_t>::max() / udim) &&
+         "DynamicMatrix dimension is too large to allocate storage");
   return udim;
 }
 
 /// Returns the flat row-major index for `(row, col)` after bounds checking.
-[[nodiscard]] static std::size_t checkedFlatIndex(const std::size_t row,
-                                                  const std::size_t col,
-                                                  const std::size_t dim) {
+[[nodiscard]] static size_t checkedFlatIndex(const size_t row, const size_t col,
+                                             const size_t dim) {
   assert(row < dim && col < dim && "matrix index out of bounds");
   return (row * dim) + col;
 }
 
-[[nodiscard]] static std::int64_t checkedFlatIndex(const std::int64_t row,
-                                                   const std::int64_t col,
-                                                   const std::int64_t dim) {
+[[nodiscard]] static int64_t
+checkedFlatIndex(const int64_t row, const int64_t col, const int64_t dim) {
   assert(row >= 0 && col >= 0 && row < dim && col < dim &&
          "matrix index out of bounds");
   return (row * dim) + col;
 }
 
-[[nodiscard]] static std::size_t checkedStorageSize(const std::int64_t dim) {
+[[nodiscard]] static size_t checkedStorageSize(const int64_t dim) {
   const auto udim = checkedDim(dim);
   return udim * udim;
 }
 
 /// Returns `2^numQubits` as `int64_t` after checking it fits.
-[[nodiscard]] static std::int64_t
-checkedHilbertDim(const std::size_t numQubits) {
-  assert(numQubits < std::numeric_limits<std::int64_t>::digits &&
+[[nodiscard]] static int64_t checkedHilbertDim(const size_t numQubits) {
+  assert(numQubits < std::numeric_limits<int64_t>::digits &&
          "Hilbert-space dimension must fit in int64_t");
-  return std::int64_t{static_cast<int64_t>(std::uint64_t{1} << numQubits)};
+  return static_cast<int64_t>(uint64_t{1} << numQubits);
 }
 
-static void validateCornerDims(const std::int64_t matrixDim,
-                               const std::int64_t blockDim) {
+static void validateCornerDims(const int64_t matrixDim,
+                               const int64_t blockDim) {
   assert(matrixDim >= 0 && blockDim >= 0 && blockDim <= matrixDim &&
          "block must fit in the bottom-right corner of the matrix");
   std::ignore = checkedDim(matrixDim);
 }
 
 /// Copies @p blockData into the bottom-right @p blockDim x @p blockDim corner.
-static void copyBottomRightCorner(const std::int64_t matrixDim,
+static void copyBottomRightCorner(const int64_t matrixDim,
                                   MutableArrayRef<Complex> matrixData,
-                                  const std::int64_t blockDim,
+                                  const int64_t blockDim,
                                   ArrayRef<Complex> blockData) {
   validateCornerDims(matrixDim, blockDim);
   assert(matrixData.size() >= checkedStorageSize(matrixDim));
   assert(blockData.size() >= checkedStorageSize(blockDim));
-  const std::int64_t offset = matrixDim - blockDim;
-  for (std::int64_t row = 0; row < blockDim; ++row) {
-    for (std::int64_t col = 0; col < blockDim; ++col) {
-      matrixData[static_cast<std::size_t>(((offset + row) * matrixDim) +
-                                          offset + col)] =
-          blockData[static_cast<std::size_t>((row * blockDim) + col)];
+  const int64_t offset = matrixDim - blockDim;
+  for (int64_t row = 0; row < blockDim; ++row) {
+    for (int64_t col = 0; col < blockDim; ++col) {
+      matrixData[static_cast<size_t>(((offset + row) * matrixDim) + offset +
+                                     col)] =
+          blockData[static_cast<size_t>((row * blockDim) + col)];
     }
   }
 }
@@ -215,9 +236,9 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
  * Qubit 0 is the MSB of @p stateIndex, matching @ref Matrix4x4::kron and
  * @ref Matrix2x2::embedInNqubit.
  */
-[[nodiscard]] static std::size_t qubitBitAt(const std::size_t stateIndex,
-                                            const std::size_t numQubits,
-                                            const std::size_t qubitIndex) {
+[[nodiscard]] static size_t qubitBitAt(const size_t stateIndex,
+                                       const size_t numQubits,
+                                       const size_t qubitIndex) {
   return (stateIndex >> (numQubits - 1 - qubitIndex)) & 1U;
 }
 
@@ -229,12 +250,10 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
  * is zero. For a single-qubit embed, pass @p skipB = @p numQubits so only @p
  * skipA is skipped.
  */
-[[nodiscard]] static bool otherQubitBitsMatch(const std::size_t row,
-                                              const std::size_t col,
-                                              const std::size_t numQubits,
-                                              const std::size_t skipA,
-                                              const std::size_t skipB) {
-  for (std::size_t q = 0; q < numQubits; ++q) {
+[[nodiscard]] static bool
+otherQubitBitsMatch(const size_t row, const size_t col, const size_t numQubits,
+                    const size_t skipA, const size_t skipB) {
+  for (size_t q = 0; q < numQubits; ++q) {
     if (q == skipA || q == skipB) {
       continue;
     }
@@ -245,13 +264,12 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
   return true;
 }
 
-Complex& Matrix1x1::operator()(const std::size_t row, const std::size_t col) {
+Complex& Matrix1x1::operator()(const size_t row, const size_t col) {
   assert(row == 0 && col == 0 && "matrix index out of bounds");
   return value;
 }
 
-Complex Matrix1x1::operator()(const std::size_t row,
-                              const std::size_t col) const {
+Complex Matrix1x1::operator()(const size_t row, const size_t col) const {
   assert(row == 0 && col == 0 && "matrix index out of bounds");
   return value;
 }
@@ -279,12 +297,11 @@ Matrix1x1& Matrix1x1::operator*=(const Complex& scalar) {
 
 Matrix1x1 Matrix1x1::adjoint() const { return fromElements(std::conj(value)); }
 
-Complex& Matrix2x2::operator()(const std::size_t row, const std::size_t col) {
+Complex& Matrix2x2::operator()(const size_t row, const size_t col) {
   return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
-Complex Matrix2x2::operator()(const std::size_t row,
-                              const std::size_t col) const {
+Complex Matrix2x2::operator()(const size_t row, const size_t col) const {
   return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
@@ -336,8 +353,8 @@ bool Matrix2x2::assignFrom(const DynamicMatrix& src) {
   return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
 }
 
-DynamicMatrix Matrix2x2::embedInNqubit(const std::size_t numQubits,
-                                       const std::size_t qubitIndex) const {
+DynamicMatrix Matrix2x2::embedInNqubit(const size_t numQubits,
+                                       const size_t qubitIndex) const {
   assert(qubitIndex < numQubits &&
          "Invalid qubit index for single-qubit embed");
   if (numQubits == 2) {
@@ -345,22 +362,22 @@ DynamicMatrix Matrix2x2::embedInNqubit(const std::size_t numQubits,
   }
   const auto dim = checkedHilbertDim(numQubits);
   DynamicMatrix out(dim);
-  const auto udim = static_cast<std::size_t>(dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
+  const auto udim = static_cast<size_t>(dim);
+  for (size_t row = 0; row < udim; ++row) {
+    for (size_t col = 0; col < udim; ++col) {
       if (!otherQubitBitsMatch(row, col, numQubits, qubitIndex, numQubits)) {
         continue;
       }
-      const std::size_t rowBit = qubitBitAt(row, numQubits, qubitIndex);
-      const std::size_t colBit = qubitBitAt(col, numQubits, qubitIndex);
-      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+      const size_t rowBit = qubitBitAt(row, numQubits, qubitIndex);
+      const size_t colBit = qubitBitAt(col, numQubits, qubitIndex);
+      out(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
           (*this)(rowBit, colBit);
     }
   }
   return out;
 }
 
-Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
+Matrix4x4 Matrix2x2::embedInTwoQubit(const size_t qubitIndex) const {
   if (qubitIndex == 0) {
     return Matrix4x4::kron(*this, Matrix2x2::identity());
   }
@@ -370,12 +387,11 @@ Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
   llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
 }
 
-Complex& Matrix4x4::operator()(const std::size_t row, const std::size_t col) {
+Complex& Matrix4x4::operator()(const size_t row, const size_t col) {
   return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
-Complex Matrix4x4::operator()(const std::size_t row,
-                              const std::size_t col) const {
+Complex Matrix4x4::operator()(const size_t row, const size_t col) const {
   return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
@@ -451,14 +467,13 @@ Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 }
 
 std::array<Complex, Matrix4x4::K_ROWS>
-Matrix4x4::column(const std::size_t col) const {
+Matrix4x4::column(const size_t col) const {
   assert(col < K_COLS && "matrix index out of bounds");
   return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
           data[(3 * K_COLS) + col]};
 }
 
-void Matrix4x4::setColumn(const std::size_t col,
-                          const ArrayRef<Complex> values) {
+void Matrix4x4::setColumn(const size_t col, const ArrayRef<Complex> values) {
   assert(col < K_COLS && "matrix index out of bounds");
   assert(values.size() == K_ROWS &&
          "setColumn requires exactly K_ROWS entries");
@@ -468,15 +483,15 @@ void Matrix4x4::setColumn(const std::size_t col,
   data[(3 * K_COLS) + col] = values[3];
 }
 
-ArrayRef<const Complex> Matrix4x4::row(const std::size_t row) const {
+ArrayRef<const Complex> Matrix4x4::row(const size_t row) const {
   assert(row < K_ROWS && "matrix index out of bounds");
   return ArrayRef(data).slice(row * K_COLS, K_COLS);
 }
 
-void Matrix4x4::setRow(const std::size_t row, const ArrayRef<Complex> values) {
+void Matrix4x4::setRow(const size_t row, const ArrayRef<Complex> values) {
   assert(row < K_ROWS && "matrix index out of bounds");
   assert(values.size() == K_COLS && "setRow requires exactly K_COLS entries");
-  const std::size_t rowBase = row * K_COLS;
+  const size_t rowBase = row * K_COLS;
   data[rowBase + 0] = values[0];
   data[rowBase + 1] = values[1];
   data[rowBase + 2] = values[2];
@@ -507,9 +522,9 @@ bool Matrix4x4::assignFrom(const DynamicMatrix& src) {
   return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
 }
 
-DynamicMatrix Matrix4x4::embedInNqubit(const std::size_t numQubits,
-                                       const std::size_t q0Index,
-                                       const std::size_t q1Index) const {
+DynamicMatrix Matrix4x4::embedInNqubit(const size_t numQubits,
+                                       const size_t q0Index,
+                                       const size_t q1Index) const {
   assert(q0Index < numQubits && q1Index < numQubits && q0Index != q1Index &&
          "Invalid qubit indices for two-qubit embed");
   if (numQubits == 2) {
@@ -517,25 +532,25 @@ DynamicMatrix Matrix4x4::embedInNqubit(const std::size_t numQubits,
   }
   const auto dim = checkedHilbertDim(numQubits);
   DynamicMatrix out(dim);
-  const auto udim = static_cast<std::size_t>(dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
+  const auto udim = static_cast<size_t>(dim);
+  for (size_t row = 0; row < udim; ++row) {
+    for (size_t col = 0; col < udim; ++col) {
       if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
         continue;
       }
-      const std::size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
-                                  qubitBitAt(row, numQubits, q1Index);
-      const std::size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
-                                  qubitBitAt(col, numQubits, q1Index);
-      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
+                             qubitBitAt(row, numQubits, q1Index);
+      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
+                             qubitBitAt(col, numQubits, q1Index);
+      out(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
           (*this)(rowPair, colPair);
     }
   }
   return out;
 }
 
-Matrix4x4 Matrix4x4::reorderForQubits(const std::size_t q0Index,
-                                      const std::size_t q1Index) const {
+Matrix4x4 Matrix4x4::reorderForQubits(const size_t q0Index,
+                                      const size_t q1Index) const {
   if (q0Index == 0 && q1Index == 1) {
     return *this;
   }
@@ -560,31 +575,30 @@ Matrix4x4 Matrix4x4::reorderForQubits(const std::size_t q0Index,
 static void symmetricTred24(ArrayRef<double> input, std::array<double, 16>& z,
                             std::array<double, 4>& diag,
                             std::array<double, 4>& subdiag) {
-  constexpr std::size_t n = 4;
-  const auto zAt = [&z](const std::size_t row,
-                        const std::size_t col) -> double& {
+  constexpr size_t n = 4;
+  const auto zAt = [&z](const size_t row, const size_t col) -> double& {
     return z[row + (col * n)];
   };
   double h = 0.0;
 
-  for (std::size_t col = 0; col < n; ++col) {
-    for (std::size_t row = col; row < n; ++row) {
+  for (size_t col = 0; col < n; ++col) {
+    for (size_t row = col; row < n; ++row) {
       zAt(row, col) = input[(row * n) + col];
     }
     diag[col] = input[((n - 1) * n) + col];
   }
 
   for (int i = static_cast<int>(n) - 1; i >= 1; --i) {
-    const auto ui = static_cast<std::size_t>(i);
-    const std::size_t l = ui - 1;
+    const auto ui = static_cast<size_t>(i);
+    const size_t l = ui - 1;
     h = 0.0;
     double scale = 0.0;
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       scale += std::abs(diag[k]);
     }
     if (scale == 0.0) {
       subdiag[ui] = diag[l];
-      for (std::size_t j = 0; j <= l; ++j) {
+      for (size_t j = 0; j <= l; ++j) {
         diag[j] = zAt(l, j);
         zAt(ui, j) = 0.0;
         zAt(j, ui) = 0.0;
@@ -592,10 +606,10 @@ static void symmetricTred24(ArrayRef<double> input, std::array<double, 16>& z,
       diag[ui] = 0.0;
       continue;
     }
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       diag[k] /= scale;
     }
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       h += diag[k] * diag[k];
     }
     const double f = diag[l];
@@ -604,32 +618,32 @@ static void symmetricTred24(ArrayRef<double> input, std::array<double, 16>& z,
     h -= f * g;
     diag[l] = f - g;
 
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       subdiag[k] = 0.0;
     }
-    for (std::size_t j = 0; j <= l; ++j) {
+    for (size_t j = 0; j <= l; ++j) {
       const double fj = diag[j];
       zAt(j, ui) = fj;
       double gj = subdiag[j] + (zAt(j, j) * fj);
-      for (std::size_t k = j + 1; k <= l; ++k) {
+      for (size_t k = j + 1; k <= l; ++k) {
         gj += zAt(k, j) * diag[k];
         subdiag[k] += zAt(k, j) * fj;
       }
       subdiag[j] = gj;
     }
     double ff = 0.0;
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       subdiag[k] /= h;
       ff += subdiag[k] * diag[k];
     }
     const double hh = 0.5 * ff / h;
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       subdiag[k] -= hh * diag[k];
     }
-    for (std::size_t j = 0; j <= l; ++j) {
+    for (size_t j = 0; j <= l; ++j) {
       const double fj = diag[j];
       const double gj = subdiag[j];
-      for (std::size_t k = j; k <= l; ++k) {
+      for (size_t k = j; k <= l; ++k) {
         zAt(k, j) -= (fj * subdiag[k]) + (gj * diag[k]);
       }
       diag[j] = zAt(l, j);
@@ -638,34 +652,34 @@ static void symmetricTred24(ArrayRef<double> input, std::array<double, 16>& z,
     diag[ui] = h;
   }
 
-  for (std::size_t i = 1; i < n; ++i) {
-    const std::size_t l = i - 1;
+  for (size_t i = 1; i < n; ++i) {
+    const size_t l = i - 1;
     zAt(n - 1, l) = zAt(l, l);
     zAt(l, l) = 1.0;
     h = diag[i];
     if (h != 0.0) {
-      for (std::size_t k = 0; k <= l; ++k) {
+      for (size_t k = 0; k <= l; ++k) {
         diag[k] = zAt(k, i) / h;
       }
-      for (std::size_t j = 0; j <= l; ++j) {
+      for (size_t j = 0; j <= l; ++j) {
         double g = 0.0;
-        for (std::size_t k = 0; k <= l; ++k) {
+        for (size_t k = 0; k <= l; ++k) {
           g += zAt(k, i) * zAt(k, j);
         }
-        for (std::size_t k = 0; k <= l; ++k) {
+        for (size_t k = 0; k <= l; ++k) {
           zAt(k, j) -= g * diag[k];
         }
       }
     }
-    for (std::size_t k = 0; k <= l; ++k) {
+    for (size_t k = 0; k <= l; ++k) {
       zAt(k, i) = 0.0;
     }
   }
 
-  for (std::size_t j = 0; j < n; ++j) {
+  for (size_t j = 0; j < n; ++j) {
     diag[j] = zAt(n - 1, j);
   }
-  for (std::size_t j = 0; j < n - 1; ++j) {
+  for (size_t j = 0; j < n - 1; ++j) {
     zAt(n - 1, j) = 0.0;
   }
   zAt(n - 1, n - 1) = 1.0;
@@ -676,25 +690,24 @@ static void symmetricTred24(ArrayRef<double> input, std::array<double, 16>& z,
 static void symmetricTql24(std::array<double, 4>& diag,
                            std::array<double, 4>& subdiag,
                            std::array<double, 16>& z) {
-  constexpr std::size_t n = 4;
-  const auto zAt = [&z](const std::size_t row,
-                        const std::size_t col) -> double& {
+  constexpr size_t n = 4;
+  const auto zAt = [&z](const size_t row, const size_t col) -> double& {
     return z[row + (col * n)];
   };
 
-  for (std::size_t i = 1; i < n; ++i) {
+  for (size_t i = 1; i < n; ++i) {
     subdiag[i - 1] = subdiag[i];
   }
   double f = 0.0;
   double tst1 = 0.0;
   subdiag[n - 1] = 0.0;
 
-  for (std::size_t l = 0; l < n; ++l) {
+  for (size_t l = 0; l < n; ++l) {
     int j = 0;
     const double h = std::abs(diag[l]) + std::abs(subdiag[l]);
     tst1 = std::max(tst1, h);
 
-    std::size_t m = l;
+    size_t m = l;
     for (; m < n; ++m) {
       const double tst2 = tst1 + std::abs(subdiag[m]);
       if (tst2 == tst1) {
@@ -709,8 +722,8 @@ static void symmetricTql24(std::array<double, 4>& diag,
         }
         ++j;
 
-        const std::size_t l1 = l + 1;
-        const std::size_t l2 = l1 + 1;
+        const size_t l1 = l + 1;
+        const size_t l2 = l1 + 1;
         const double g = diag[l];
         const double p = (diag[l1] - g) / (2.0 * subdiag[l]);
         const double r = std::hypot(p, 1.0);
@@ -718,7 +731,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
         diag[l1] = subdiag[l] * (p + std::copysign(std::abs(r), p));
         const double dl1 = diag[l1];
         const double hh = g - diag[l];
-        for (std::size_t i = l2; i < n; ++i) {
+        for (size_t i = l2; i < n; ++i) {
           diag[i] -= hh;
         }
         f += hh;
@@ -730,12 +743,12 @@ static void symmetricTql24(std::array<double, 4>& diag,
         double s = 0.0;
         double c3 = 1.0;
         double s2 = 0.0;
-        const std::size_t mml = m - l;
-        for (std::size_t ii = 1; ii <= mml; ++ii) {
+        const size_t mml = m - l;
+        for (size_t ii = 1; ii <= mml; ++ii) {
           c3 = c2;
           c2 = c;
           s2 = s;
-          const std::size_t i = m - ii;
+          const size_t i = m - ii;
           const double gi = c * subdiag[i];
           const double hi = c * pv;
           const double ri = std::hypot(pv, subdiag[i]);
@@ -744,7 +757,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
           c = pv / ri;
           pv = (c * diag[i]) - (s * gi);
           diag[i + 1] = hi + (s * ((c * gi) + (s * diag[i])));
-          for (std::size_t k = 0; k < n; ++k) {
+          for (size_t k = 0; k < n; ++k) {
             const double zkI1 = zAt(k, i + 1);
             zAt(k, i + 1) = (s * zAt(k, i)) + (c * zkI1);
             zAt(k, i) = (c * zAt(k, i)) - (s * zkI1);
@@ -763,11 +776,11 @@ static void symmetricTql24(std::array<double, 4>& diag,
     diag[l] += f;
   }
 
-  for (std::size_t ii = 1; ii < n; ++ii) {
-    const std::size_t i = ii - 1;
-    std::size_t k = i;
+  for (size_t ii = 1; ii < n; ++ii) {
+    const size_t i = ii - 1;
+    size_t k = i;
     double p = diag[i];
-    for (std::size_t j = ii; j < n; ++j) {
+    for (size_t j = ii; j < n; ++j) {
       if (diag[j] < p) {
         k = j;
         p = diag[j];
@@ -778,7 +791,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
     }
     diag[k] = diag[i];
     diag[i] = p;
-    for (std::size_t j = 0; j < n; ++j) {
+    for (size_t j = 0; j < n; ++j) {
       const double tmp = zAt(j, i);
       zAt(j, i) = zAt(j, k);
       zAt(j, k) = tmp;
@@ -810,7 +823,7 @@ symmetricEigenDecomposition4x4(const ArrayRef<double> symmetric) {
     llvm::reportFatalInternalError(
         "symmetricEigenDecomposition4x4 expects 16 row-major entries");
   }
-  constexpr std::size_t n = 4;
+  constexpr size_t n = 4;
 
   SymmetricEigenDecomposition4x4 result;
   std::array<double, 16> z{};
@@ -818,8 +831,8 @@ symmetricEigenDecomposition4x4(const ArrayRef<double> symmetric) {
   symmetricTred24(symmetric, z, result.eigenvalues, subdiag);
   symmetricTql24(result.eigenvalues, subdiag, z);
 
-  for (std::size_t col = 0; col < n; ++col) {
-    for (std::size_t row = 0; row < n; ++row) {
+  for (size_t col = 0; col < n; ++col) {
+    for (size_t row = 0; row < n; ++row) {
       result.eigenvectors(row, col) = z[row + (col * n)];
     }
   }
@@ -865,10 +878,10 @@ public:
   EispackMatrixView(MutableArrayRef<double> values, const int ld)
       : values_(values), ld_(ld) {}
 
-  [[nodiscard]] static std::size_t rowMajorIndex(const int row, const int col,
-                                                 const int ld) {
-    return static_cast<std::size_t>(row) +
-           (static_cast<std::size_t>(col) * static_cast<std::size_t>(ld));
+  [[nodiscard]] static size_t rowMajorIndex(const int row, const int col,
+                                            const int ld) {
+    return static_cast<size_t>(row) +
+           (static_cast<size_t>(col) * static_cast<size_t>(ld));
   }
 
   [[nodiscard]] double& at(const int row, const int col) {
@@ -965,11 +978,11 @@ static void eigenDecompositionReduceToHessenberg(
   EispackMatrixView matrixImag(matrixImagBuf, leadingDim);
   const auto householderRealAt =
       [&householderRealBuf](const int index) -> double& {
-    return householderRealBuf[static_cast<std::size_t>(index)];
+    return householderRealBuf[static_cast<size_t>(index)];
   };
   const auto householderImagAt =
       [&householderImagBuf](const int index) -> double& {
-    return householderImagBuf[static_cast<std::size_t>(index)];
+    return householderImagBuf[static_cast<size_t>(index)];
   };
 
   const int kp1 = rowLow + 1;
@@ -1079,19 +1092,19 @@ eigenDecompositionQrSolve(const int leadingDim, const int order,
   EispackMatrixView eigenvectorImag(eigenvectorImagBuf, leadingDim);
   const auto householderRealAt =
       [&householderRealBuf](const int index) -> double& {
-    return householderRealBuf[static_cast<std::size_t>(index)];
+    return householderRealBuf[static_cast<size_t>(index)];
   };
   const auto householderImagAt =
       [&householderImagBuf](const int index) -> double& {
-    return householderImagBuf[static_cast<std::size_t>(index)];
+    return householderImagBuf[static_cast<size_t>(index)];
   };
   const auto eigenvalueRealAt =
       [&eigenvalueRealBuf](const int index) -> double& {
-    return eigenvalueRealBuf[static_cast<std::size_t>(index)];
+    return eigenvalueRealBuf[static_cast<size_t>(index)];
   };
   const auto eigenvalueImagAt =
       [&eigenvalueImagBuf](const int index) -> double& {
-    return eigenvalueImagBuf[static_cast<std::size_t>(index)];
+    return eigenvalueImagBuf[static_cast<size_t>(index)];
   };
 
   for (int j = 0; j < order; ++j) {
@@ -1495,8 +1508,7 @@ eigenvectorColumnNorm(const int order, const int col, const int leadingDim,
                       const ArrayRef<double> eigenvectorImag) {
   double normSq = 0.0;
   for (int row = 0; row < order; ++row) {
-    const std::size_t idx =
-        EispackMatrixView::rowMajorIndex(row, col, leadingDim);
+    const size_t idx = EispackMatrixView::rowMajorIndex(row, col, leadingDim);
     normSq += (eigenvectorReal[idx] * eigenvectorReal[idx]) +
               (eigenvectorImag[idx] * eigenvectorImag[idx]);
   }
@@ -1522,17 +1534,16 @@ eigenvectorColumnNorm(const int order, const int col, const int leadingDim,
         eigenvectorImag) {
   EigenDecomposition4x4 result;
   for (int col = 0; col < K_COMPLEX_EIGEN4_SIZE; ++col) {
-    result.eigenvalues[static_cast<std::size_t>(col)] =
-        Complex(eigenvalueReal[static_cast<std::size_t>(col)],
-                eigenvalueImag[static_cast<std::size_t>(col)]);
+    result.eigenvalues[static_cast<size_t>(col)] =
+        Complex(eigenvalueReal[static_cast<size_t>(col)],
+                eigenvalueImag[static_cast<size_t>(col)]);
     const double norm =
         eigenvectorColumnNorm(K_COMPLEX_EIGEN4_SIZE, col, K_COMPLEX_EIGEN4_SIZE,
                               eigenvectorReal, eigenvectorImag);
     for (int row = 0; row < K_COMPLEX_EIGEN4_SIZE; ++row) {
-      const std::size_t idx =
+      const size_t idx =
           EispackMatrixView::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
-      result.eigenvectors(static_cast<std::size_t>(row),
-                          static_cast<std::size_t>(col)) =
+      result.eigenvectors(static_cast<size_t>(row), static_cast<size_t>(col)) =
           normalizedEigenvectorEntry(eigenvectorReal[idx], eigenvectorImag[idx],
                                      norm);
     }
@@ -1544,10 +1555,10 @@ static void splitMatrix4x4ToRealImag(
     const Matrix4x4& matrix,
     std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& matrixReal,
     std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& matrixImag) {
-  for (std::size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
-    for (std::size_t col = 0; col < Matrix4x4::K_COLS; ++col) {
+  for (size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
+    for (size_t col = 0; col < Matrix4x4::K_COLS; ++col) {
       const Complex& value = matrix(row, col);
-      const std::size_t idx = row + (col * Matrix4x4::K_ROWS);
+      const size_t idx = row + (col * Matrix4x4::K_ROWS);
       matrixReal[idx] = std::real(value);
       matrixImag[idx] = std::imag(value);
     }
@@ -1687,11 +1698,11 @@ eigenDecomposition2x2(const Matrix2x2& matrix) {
  */
 [[nodiscard]] static std::optional<EigenDecomposition>
 eigenDecompositionDynamic(const DynamicMatrix& matrix) {
-  const std::int64_t dim = matrix.rows();
+  const int64_t dim = matrix.rows();
   if (dim != matrix.cols()) {
     return std::nullopt;
   }
-  if (dim > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+  if (dim > static_cast<int64_t>(std::numeric_limits<int>::max())) {
     return std::nullopt;
   }
   assert(dim >= 3 && dim != 4);
@@ -1700,25 +1711,24 @@ eigenDecompositionDynamic(const DynamicMatrix& matrix) {
   const int rowLow = 0;
   const int rowHigh = order - 1;
 
-  const std::size_t matrixStorage =
-      (static_cast<std::size_t>(leadingDim) * static_cast<std::size_t>(order)) +
-      static_cast<std::size_t>(order) + 1U;
+  const size_t matrixStorage =
+      (static_cast<size_t>(leadingDim) * static_cast<size_t>(order)) +
+      static_cast<size_t>(order) + 1U;
   SmallVector<double> matrixReal(matrixStorage);
   SmallVector<double> matrixImag(matrixStorage);
   for (int row = 0; row < order; ++row) {
     for (int col = 0; col < order; ++col) {
       const Complex value = matrix(row, col);
-      const std::size_t idx =
-          EispackMatrixView::rowMajorIndex(row, col, leadingDim);
+      const size_t idx = EispackMatrixView::rowMajorIndex(row, col, leadingDim);
       matrixReal[idx] = std::real(value);
       matrixImag[idx] = std::imag(value);
     }
   }
 
-  SmallVector<double> householderReal(static_cast<std::size_t>(order));
-  SmallVector<double> householderImag(static_cast<std::size_t>(order));
-  SmallVector<double> eigenvalueReal(static_cast<std::size_t>(order) + 1U);
-  SmallVector<double> eigenvalueImag(static_cast<std::size_t>(order) + 1U);
+  SmallVector<double> householderReal(static_cast<size_t>(order));
+  SmallVector<double> householderImag(static_cast<size_t>(order));
+  SmallVector<double> eigenvalueReal(static_cast<size_t>(order) + 1U);
+  SmallVector<double> eigenvalueImag(static_cast<size_t>(order) + 1U);
   SmallVector<double> eigenvectorReal(matrixStorage);
   SmallVector<double> eigenvectorImag(matrixStorage);
 
@@ -1734,17 +1744,15 @@ eigenDecompositionDynamic(const DynamicMatrix& matrix) {
   }
 
   EigenDecomposition result;
-  result.eigenvalues.reserve(static_cast<std::size_t>(order));
+  result.eigenvalues.reserve(static_cast<size_t>(order));
   result.eigenvectors = DynamicMatrix(dim);
   for (int col = 0; col < order; ++col) {
-    result.eigenvalues.emplace_back(
-        eigenvalueReal[static_cast<std::size_t>(col)],
-        eigenvalueImag[static_cast<std::size_t>(col)]);
+    result.eigenvalues.emplace_back(eigenvalueReal[static_cast<size_t>(col)],
+                                    eigenvalueImag[static_cast<size_t>(col)]);
     const double norm = eigenvectorColumnNorm(order, col, leadingDim,
                                               eigenvectorReal, eigenvectorImag);
     for (int row = 0; row < order; ++row) {
-      const std::size_t idx =
-          EispackMatrixView::rowMajorIndex(row, col, leadingDim);
+      const size_t idx = EispackMatrixView::rowMajorIndex(row, col, leadingDim);
       result.eigenvectors(row, col) = normalizedEigenvectorEntry(
           eigenvectorReal[idx], eigenvectorImag[idx], norm);
     }
@@ -1766,7 +1774,7 @@ Matrix4x4 Matrix4x4::fromRealRowMajor(const ArrayRef<double> entries) {
         "Matrix4x4::fromRealRowMajor expects 16 row-major entries");
   }
   Matrix4x4 result;
-  for (std::size_t i = 0; i < K_SIZE_AT_COMPILE_TIME; ++i) {
+  for (size_t i = 0; i < K_SIZE_AT_COMPILE_TIME; ++i) {
     result.data[i] = entries[i];
   }
   return result;
@@ -1781,13 +1789,13 @@ SymmetricEigenDecomposition4x4 Matrix4x4::symmetricEigenDecomposition() const {
 }
 
 struct DynamicMatrix::Impl {
-  std::int64_t dim = 0;
+  int64_t dim = 0;
   SmallVector<Complex> data;
 };
 
 DynamicMatrix::DynamicMatrix() : impl_(std::make_unique<Impl>()) {}
 
-DynamicMatrix::DynamicMatrix(const std::int64_t dim)
+DynamicMatrix::DynamicMatrix(const int64_t dim)
     : impl_(std::make_unique<Impl>()) {
   impl_->dim = dim;
   impl_->data.assign(checkedStorageSize(dim), Complex{});
@@ -1820,14 +1828,14 @@ DynamicMatrix::operator=(DynamicMatrix&& other) noexcept = default;
 
 DynamicMatrix::~DynamicMatrix() = default;
 
-std::int64_t DynamicMatrix::rows() const { return impl_->dim; }
+int64_t DynamicMatrix::rows() const { return impl_->dim; }
 
-std::int64_t DynamicMatrix::cols() const { return impl_->dim; }
+int64_t DynamicMatrix::cols() const { return impl_->dim; }
 
-DynamicMatrix DynamicMatrix::identity(const std::int64_t dim) {
+DynamicMatrix DynamicMatrix::identity(const int64_t dim) {
   DynamicMatrix matrix(dim);
   const auto udim = checkedDim(dim);
-  for (std::size_t i = 0; i < udim; ++i) {
+  for (size_t i = 0; i < udim; ++i) {
     matrix.impl_->data[(i * udim) + i] = 1.0;
   }
   return matrix;
@@ -1837,28 +1845,24 @@ DynamicMatrix DynamicMatrix::fromAdjoint(const Matrix2x2& src) {
   return DynamicMatrix(src.adjoint());
 }
 
-Complex& DynamicMatrix::operator()(const std::int64_t row,
-                                   const std::int64_t col) {
+Complex& DynamicMatrix::operator()(const int64_t row, const int64_t col) {
   return impl_
-      ->data[static_cast<std::size_t>(checkedFlatIndex(row, col, impl_->dim))];
+      ->data[static_cast<size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
-Complex DynamicMatrix::operator()(const std::int64_t row,
-                                  const std::int64_t col) const {
+Complex DynamicMatrix::operator()(const int64_t row, const int64_t col) const {
   return impl_
-      ->data[static_cast<std::size_t>(checkedFlatIndex(row, col, impl_->dim))];
+      ->data[static_cast<size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
 void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
   copyBottomRightCorner(impl_->dim, impl_->data,
-                        static_cast<std::int64_t>(Matrix2x2::K_ROWS),
-                        block.data);
+                        static_cast<int64_t>(Matrix2x2::K_ROWS), block.data);
 }
 
 void DynamicMatrix::setBottomRightCorner(const Matrix4x4& block) {
   copyBottomRightCorner(impl_->dim, impl_->data,
-                        static_cast<std::int64_t>(Matrix4x4::K_ROWS),
-                        block.data);
+                        static_cast<int64_t>(Matrix4x4::K_ROWS), block.data);
 }
 
 void DynamicMatrix::setBottomRightCorner(const DynamicMatrix& block) {
@@ -1919,7 +1923,7 @@ Complex DynamicMatrix::trace() const {
   Complex sum{0.0, 0.0};
   const auto udim = checkedDim(impl_->dim);
   const ArrayRef<Complex> storage = impl_->data;
-  for (std::size_t i = 0; i < udim; ++i) {
+  for (size_t i = 0; i < udim; ++i) {
     sum += storage[(i * udim) + i];
   }
   return sum;
@@ -1939,10 +1943,10 @@ DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
   }
 
   const auto udim = checkedDim(impl_->dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
+  for (size_t row = 0; row < udim; ++row) {
+    for (size_t col = 0; col < udim; ++col) {
       Complex sum{0.0, 0.0};
-      for (std::size_t k = 0; k < udim; ++k) {
+      for (size_t k = 0; k < udim; ++k) {
         sum +=
             impl_->data[(row * udim) + k] * rhs.impl_->data[(k * udim) + col];
       }
@@ -1952,9 +1956,84 @@ DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
   return out;
 }
 
+void DynamicMatrix::premultiplyBy(const DynamicMatrix& lhs) {
+  *this = lhs * *this;
+}
+
+void DynamicMatrix::premultiplyByEmbedded1Q(const Matrix2x2& gate,
+                                            const size_t numQubits,
+                                            const size_t qubitIndex) {
+  assert(qubitIndex < numQubits &&
+         static_cast<uint64_t>(impl_->dim) == (uint64_t{1} << numQubits) &&
+         "Matrix dimension must match numQubits");
+  if (std::cmp_equal(impl_->dim, Matrix2x2::K_ROWS)) {
+    assert(qubitIndex == 0);
+    std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME> tmp{};
+    multiply2x2(gate.data, impl_->data, tmp);
+    impl_->data.assign(tmp.begin(), tmp.end());
+    return;
+  }
+  const auto udim = checkedDim(impl_->dim);
+  const size_t mask = size_t{1} << (numQubits - 1 - qubitIndex);
+  const size_t step = mask << 1;
+  auto& data = impl_->data;
+  for (size_t chunk = 0; chunk < udim; chunk += step) {
+    for (size_t inner = 0; inner < mask; ++inner) {
+      const size_t base = chunk | inner;
+      const size_t row1 = base | mask;
+      for (size_t col = 0; col < udim; ++col) {
+        const size_t idx0 = (base * udim) + col;
+        const size_t idx1 = (row1 * udim) + col;
+        apply2x2LeftToRowPair(gate.data, data[idx0], data[idx1]);
+      }
+    }
+  }
+}
+
+void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
+                                            const size_t numQubits,
+                                            const size_t q0Index,
+                                            const size_t q1Index) {
+  assert(q0Index < numQubits && q1Index < numQubits && q0Index != q1Index &&
+         static_cast<uint64_t>(impl_->dim) == (uint64_t{1} << numQubits) &&
+         "Matrix dimension must match numQubits");
+  if (std::cmp_equal(impl_->dim, Matrix4x4::K_ROWS)) {
+    assert(q0Index == 0 && q1Index == 1);
+    std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME> tmp{};
+    multiply4x4(gate.data, impl_->data, tmp);
+    impl_->data.assign(tmp.begin(), tmp.end());
+    return;
+  }
+  const auto udim = checkedDim(impl_->dim);
+  const size_t mask0 = size_t{1} << (numQubits - 1 - q0Index);
+  const size_t mask1 = size_t{1} << (numQubits - 1 - q1Index);
+  auto& data = impl_->data;
+  for (size_t block = 0; block < (udim >> 2); ++block) {
+    size_t base = 0;
+    size_t rest = block;
+    for (size_t q = 0; q < numQubits; ++q) {
+      if (q == q0Index || q == q1Index) {
+        continue;
+      }
+      if ((rest & 1U) != 0) {
+        base |= size_t{1} << (numQubits - 1 - q);
+      }
+      rest >>= 1U;
+    }
+    const std::array<size_t, Matrix4x4::K_ROWS> rowIdx = {
+        base, base | mask1, base | mask0, base | mask0 | mask1};
+    for (size_t col = 0; col < udim; ++col) {
+      apply4x4LeftToColumn(gate.data, data[(rowIdx[0] * udim) + col],
+                           data[(rowIdx[1] * udim) + col],
+                           data[(rowIdx[2] * udim) + col],
+                           data[(rowIdx[3] * udim) + col]);
+    }
+  }
+}
+
 DynamicMatrix DynamicMatrix::operator*(const Complex& scalar) const {
   DynamicMatrix out(impl_->dim);
-  for (std::size_t i = 0; i < impl_->data.size(); ++i) {
+  for (size_t i = 0; i < impl_->data.size(); ++i) {
     out.impl_->data[i] = impl_->data[i] * scalar;
   }
   return out;
@@ -2002,7 +2081,7 @@ EigenDecomposition::from(const EigenDecomposition4x4& eigen4) {
 }
 
 std::optional<EigenDecomposition> DynamicMatrix::eigenDecomposition() const {
-  const std::size_t dim = checkedDim(impl_->dim);
+  const size_t dim = checkedDim(impl_->dim);
   if (dim == 0) {
     return std::nullopt;
   }

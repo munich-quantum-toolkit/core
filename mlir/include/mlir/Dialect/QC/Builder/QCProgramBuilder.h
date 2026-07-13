@@ -70,13 +70,31 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Initialize the builder and prepare for program construction
+   * @brief Initialize the builder and prepare for program construction, with
+   * a default return type of i64.
    *
    * @details
    * Creates a main function with an entry_point attribute. Must be called
    * before adding operations.
    */
   void initialize();
+
+  /**
+   * @brief Initialize the builder and prepare for program construction
+   * with specified return types.
+   * @param returnTypes The return types for the main function
+   *
+   * @details
+   * Creates a main function with an entry_point attribute. Must be called
+   * before adding operations.
+   */
+  void initialize(TypeRange returnTypes);
+
+  /**
+   * @brief Modify the return types of the main function after initialization.
+   * @param returnTypes The new return types for the main function
+   */
+  void retype(TypeRange returnTypes);
 
   //===--------------------------------------------------------------------===//
   // Constants
@@ -923,6 +941,42 @@ public:
                          const function_ref<void(ValueRange)>& body);
 
   /**
+   * @brief Apply a control modifier with a single target and one-qubit body.
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctrl({q0_in, q1_in}, q2_in, [&](Value target) {
+   *   builder.x(target);
+   * });
+   * ```
+   */
+  QCProgramBuilder& ctrl(ValueRange controls, Value target,
+                         const function_ref<void(Value)>& body);
+
+  /**
+   * @brief Apply a control modifier with one control and one target.
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctrl(q0_in, q1_in, [&](Value target) {
+   *   builder.x(target);
+   * });
+   * ```
+   */
+  QCProgramBuilder& ctrl(Value control, Value target,
+                         const function_ref<void(Value)>& body);
+
+  /**
    * @brief Apply an inverse (i.e., adjoint) operation.
    *
    * @param body Function that builds the body containing the operation to
@@ -943,6 +997,23 @@ public:
    */
   QCProgramBuilder& inv(ValueRange qubits,
                         const function_ref<void(ValueRange)>& body);
+
+  /**
+   * @brief Apply an inverse modifier on a single qubit.
+   *
+   * @param qubit Qubit involved in the operation
+   * @param body Function that builds the body containing the operation to
+   * invert
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.inv(q0_in, [&](Value qubit) {
+   *   builder.h(qubit);
+   * });
+   * ```
+   */
+  QCProgramBuilder& inv(Value qubit, const function_ref<void(Value)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1092,17 +1163,49 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   /**
-   * @brief Convenience method for building quantum programs
+   * @brief Finalize the program with the given return values and return the
+   * constructed module
+   * @param returnValues Values representing the return values of the main
+   * function.
+   *
+   * @details
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with the given return values, and
+   * transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
+   *
+   * The return values must have the types indicated by the function signature
+   * of the main function, which returns an `i64` by default and can be
+   * modified by passing different arguments to the `initialize()` method.
+   *
+   * @return OwningOpRef containing the constructed quantum program module
+   */
+  OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
+
+  /**
+   * @brief Convenience method for building quantum programs.
    * @param context The MLIR context to use for building the program
    * @param buildFunc A function that takes a reference to a QCProgramBuilder
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module
-   * will be finalized and returned after this function completes.
+   * will be finalized using the returned Values after this function completes.
    * @return The module containing the quantum program built by buildFunc.
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<void(QCProgramBuilder&)>& buildFunc);
+        const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc);
+
+  /**
+   * @brief Convenience method for building quantum programs with one return
+   * value.
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QCProgramBuilder
+   * and returns the single result value of the desired quantum program.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const function_ref<Value(QCProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };

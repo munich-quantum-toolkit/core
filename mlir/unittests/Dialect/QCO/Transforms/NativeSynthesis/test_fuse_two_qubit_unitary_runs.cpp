@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -48,7 +49,13 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-using ProgramFn = void (*)(mlir::qc::QCProgramBuilder&);
+using ProgramFn = SmallVector<Value> (*)(mlir::qc::QCProgramBuilder&);
+
+static SmallVector<Value> measureAndReturn(mlir::qc::QCProgramBuilder& b,
+                                           ValueRange qubits) {
+  return llvm::to_vector(
+      llvm::map_range(qubits, [&](Value q) { return b.measure(q); }));
+}
 
 // --- Native-gateset membership check ------------------------------------- //
 
@@ -246,14 +253,15 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
 // A handful of circuits, which are crossed with the gateset table below.
 
 /// A bare SWAP (three-entangler class), the canonical two-qubit decomposition.
-static void swapTwoQ(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> swapTwoQ(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.swap(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// Rich single-qubit variety on both wires, followed by a two-qubit entangler.
-static void broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.x(q0);
@@ -264,10 +272,11 @@ static void broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
   b.ry(-0.47, q1);
   b.rz(0.29, q0);
   b.cz(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// Long single-qubit run on one wire, then an entangler (Euler-run fusion).
-static void hstycxTwoQ(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> hstycxTwoQ(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.h(q0);
@@ -275,10 +284,11 @@ static void hstycxTwoQ(mlir::qc::QCProgramBuilder& b) {
   b.t(q0);
   b.y(q0);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// Zero-angle rotations that must canonicalize away before the entangler.
-static void zeroAngleThenCz(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> zeroAngleThenCz(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.rx(0.0, q0);
@@ -286,44 +296,49 @@ static void zeroAngleThenCz(mlir::qc::QCProgramBuilder& b) {
   b.rz(0.0, q0);
   b.p(0.0, q1);
   b.cz(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// Single-qubit gates surrounding an entangler on both sides.
-static void hCxSq1(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> hCxSq1(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.h(q0);
   b.cx(q0, q1);
   b.s(q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// Three-qubit program with chained entanglers on overlapping pairs.
-static void threeQGhz(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> threeQGhz(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   const auto q2 = b.allocQubit();
   b.h(q0);
   b.cx(q0, q1);
   b.cx(q1, q2);
+  return measureAndReturn(b, {q0, q1, q2});
 }
 
 /// Single-qubit gates wrapped in an inverse modifier (no entangler).
-static void inverseTwoX(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> inverseTwoX(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
-  b.inv({q0}, [&](mlir::ValueRange qubits) {
-    b.x(qubits[0]);
-    b.x(qubits[0]);
+  b.inv(q0, [&](Value qubit) {
+    b.x(qubit);
+    b.x(qubit);
   });
+  return measureAndReturn(b, {q0});
 }
 
 /// A controlled two-gate body that must be synthesized as a two-qubit unitary.
-static void controlledXH(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> controlledXH(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
-  b.ctrl(q0, {q1}, [&](ValueRange targets) {
-    b.x(targets[0]);
-    b.h(targets[0]);
+  b.ctrl(q0, q1, [&](Value target) {
+    b.x(target);
+    b.h(target);
   });
+  return measureAndReturn(b, {q0, q1});
 }
 
 // --- Fusion-window circuits ---------------------------------------------- //
@@ -331,14 +346,16 @@ static void controlledXH(mlir::qc::QCProgramBuilder& b) {
 // These probe window geometry (where fusion starts/stops), so they run on a
 // single fixed gateset rather than the full table.
 
-static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> fusionCxCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.cx(q0, q1);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-static void fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value>
+fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.h(q0);
@@ -346,88 +363,103 @@ static void fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
   b.t(q1);
   b.s(q0);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-static void fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   const auto q2 = b.allocQubit();
   b.cx(q0, q1);
   b.cx(q1, q2);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1, q2});
 }
 
-static void fusionCxRSharedOtherPair(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value>
+fusionCxRSharedOtherPair(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   const auto q2 = b.allocQubit();
   b.cx(q0, q1);
   b.rz(0.17, q1);
   b.cx(q1, q2);
+  return measureAndReturn(b, {q0, q1, q2});
 }
 
-static void fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.cx(q0, q1);
   b.barrier({q0, q1});
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// A single-wire barrier between two entanglers: a non-walkable single-qubit
 /// shell terminates the run scan on wire A (and breaks the run-start chain of
 /// the second entangler), so neither entangler fuses.
-static void fusionCxSingleWireBarrierCx(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value>
+fusionCxSingleWireBarrierCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.cx(q0, q1);
   b.barrier({q0});
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
 /// An entangler followed by a three-qubit gate sharing both run wires: the run
 /// scan must stop at the wider gate (it is neither a single- nor a two-qubit
 /// run member) and leave it untouched, since gates on more than two qubits are
 /// out of scope for this pass rather than a failure.
-static void fusionCxThenMultiControlledX(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value>
+fusionCxThenMultiControlledX(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   const auto q2 = b.allocQubit();
   b.cx(q0, q1);
   b.mcx({q0, q1}, q2);
+  return measureAndReturn(b, {q0, q1, q2});
 }
 
-static void fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value> fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.cx(q0, q1);
   b.cx(q1, q0);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-static void fusionOffMenuGateInWindow(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value>
+fusionOffMenuGateInWindow(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.cx(q0, q1);
   b.h(q0);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-static void fusionDualWireOneQBetweenCx(mlir::qc::QCProgramBuilder& b) {
+static SmallVector<Value>
+fusionDualWireOneQBetweenCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.cx(q0, q1);
   b.rz(0.11, q0);
   b.ry(0.22, q1);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-static void determinismSwap(mlir::qc::QCProgramBuilder& b) {
+static Value determinismSwap(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   b.swap(q0, q1);
   b.dealloc(q0);
   b.dealloc(q1);
+  return b.intConstant(0);
 }
 
 namespace {
@@ -528,6 +560,17 @@ protected:
   }
 
   void expectSynthesisFailure(ProgramFn program, StringRef nativeGates) {
+    auto moduleOp = mlir::qc::QCProgramBuilder::build(context.get(), program);
+    PassManager pm(moduleOp->getContext());
+    pm.addPass(createQCToQCO());
+    pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
+        .nativeGates = nativeGates.str(),
+    }));
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  }
+
+  void expectSynthesisFailure(Value (*program)(mlir::qc::QCProgramBuilder&),
+                              StringRef nativeGates) {
     auto moduleOp = mlir::qc::QCProgramBuilder::build(context.get(), program);
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());

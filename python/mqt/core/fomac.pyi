@@ -251,7 +251,18 @@ class Device:
     def supported_program_formats(self) -> list[ProgramFormat]:
         """Returns the list of program formats supported by the device."""
 
-    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
+    def submit_job(
+        self,
+        program: str,
+        program_format: ProgramFormat,
+        num_shots: int,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
         """Submits a job to the device."""
 
     def __eq__(self, arg: object, /) -> bool: ...

@@ -21,6 +21,7 @@
 #include <fstream>
 #include <new>
 #include <numbers>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -32,35 +33,35 @@ namespace fomac {
 
 namespace {
 
-class DeviceTest : public testing::TestWithParam<Session::Device> {
+class DeviceTest : public testing::TestWithParam<Device> {
 protected:
-  Session::Device device;
+  Device device;
 
   DeviceTest() : device(GetParam()) {}
 };
 
 class SiteTest : public DeviceTest {
 protected:
-  std::vector<Session::Device::Site> sites;
+  std::vector<Site> sites;
 
   void SetUp() override { sites = device.getSites(); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  std::vector<Session::Device::Operation> operations;
+  std::vector<Operation> operations;
 
   void SetUp() override { operations = device.getOperations(); }
 };
 
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
-  Session::Device device;
+  Device device;
 
   DDSimulatorDeviceTest() : device(getDDSimulatorDevice()) {}
 
 private:
-  static auto getDDSimulatorDevice() -> Session::Device {
+  static auto getDDSimulatorDevice() -> Device {
     Session session;
     for (const auto& dev : session.getDevices()) {
       if (dev.getName() == "MQT Core DDSIM QDMI Device") {
@@ -73,11 +74,11 @@ private:
 
 class JobTest : public DDSimulatorDeviceTest {
 protected:
-  Session::Job job;
+  Job job;
 
   JobTest() : job(createTestJob()) {}
 
-  [[nodiscard]] Session::Job createTestJob() const {
+  [[nodiscard]] Job createTestJob() const {
     const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[1] q;
@@ -91,11 +92,11 @@ c[0] = measure q[0];
 
 class SimulatorJobTest : public DDSimulatorDeviceTest {
 protected:
-  Session::Job job;
+  Job job;
 
   SimulatorJobTest() : job(createTestJob()) {}
 
-  [[nodiscard]] Session::Job createTestJob() const {
+  [[nodiscard]] Job createTestJob() const {
     const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[2] q;
@@ -556,6 +557,49 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
+TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
+  constexpr auto qasm3Program = "OPENQASM 3.0;";
+
+  auto submitWithCustoms = [&](auto custom, const size_t which) {
+    try {
+      switch (which) {
+      case 1:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        break;
+      case 2:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, custom);
+        break;
+      case 3:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, custom);
+        break;
+      case 4:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
+        break;
+      case 5:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                         custom);
+        break;
+      default:
+        throw std::invalid_argument("Invalid 'which' value");
+      }
+    } catch (const std::runtime_error& e) {
+      const std::string errorMsg(e.what());
+      EXPECT_TRUE(errorMsg.find("Setting custom parameter") !=
+                  std::string::npos);
+    }
+  };
+  for (size_t i = 1; i <= 5; ++i) {
+    submitWithCustoms(std::string("custom"), i);
+    submitWithCustoms(42, i);
+    submitWithCustoms(3.14, i);
+    submitWithCustoms(true, i);
+  }
+}
+
 TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;
@@ -993,7 +1037,7 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 namespace {
 // Helper function to get all devices for parameterized tests
-auto getDevices() -> std::vector<Session::Device> {
+auto getDevices() -> std::vector<Device> {
   Session session;
   return session.getDevices();
 }
@@ -1006,7 +1050,7 @@ INSTANTIATE_TEST_SUITE_P(
     DeviceTest,
     // Parameters to test with
     testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
+    [](const testing::TestParamInfo<Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -1020,7 +1064,7 @@ INSTANTIATE_TEST_SUITE_P(
     SiteTest,
     // Parameters to test with
     testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
+    [](const testing::TestParamInfo<Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -1034,7 +1078,7 @@ INSTANTIATE_TEST_SUITE_P(
     OperationTest,
     // Parameters to test with
     testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
+    [](const testing::TestParamInfo<Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');

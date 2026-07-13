@@ -33,7 +33,10 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +44,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qtensor;
@@ -62,9 +66,11 @@ protected:
   }
 
   /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
+  template <typename BuildFn>
   [[nodiscard]] OwningOpRef<ModuleOp>
-  buildAndCanonicalize(void (*buildFn)(QCOProgramBuilder&)) const {
-    auto module = QCOProgramBuilder::build(context.get(), buildFn);
+  buildAndCanonicalize(BuildFn&& buildFn) const {
+    auto module =
+        QCOProgramBuilder::build(context.get(), std::forward<BuildFn>(buildFn));
     if (!module) {
       return {};
     }
@@ -189,8 +195,10 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 
 /// An alloc immediately followed by dealloc should be eliminated entirely.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
-  auto canonicalized =
-      buildAndCanonicalize([](QCOProgramBuilder& b) { b.qtensorAlloc(3); });
+  auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
+    b.qtensorAlloc(3);
+    return b.intConstant(0);
+  });
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
   // Both AllocOp and DeallocOp should have been erased.
@@ -416,8 +424,8 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
 
 struct QTensorIntegrationTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QTensorIntegrationTestCase& info);
@@ -449,7 +457,7 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = QCOProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QTensor IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -458,7 +466,7 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QTensor IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QTensor IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

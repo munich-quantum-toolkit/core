@@ -220,6 +220,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     // Get result pointer
     Value result;
     int64_t resultIndex = 0;
+    const bool shouldRecord =
+        state.returnedMeasurements.contains(op.getOperation());
 
     const auto nresults = resultPtrs.size();
     if (op.getRegisterIndex() && op.getRegisterName() && op.getRegisterSize()) {
@@ -232,6 +234,10 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       resultIndex = it->second + static_cast<int64_t>(registerIndex);
     } else {
       resultIndex = static_cast<int64_t>(nresults);
+    }
+
+    if (shouldRecord) {
+      state.recordedIndices.insert(resultIndex);
     }
 
     if (resultPtrs.contains(resultIndex)) {
@@ -406,7 +412,12 @@ protected:
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
-    // Stage 1: Convert func dialect to LLVM
+    LoweringState state;
+
+    // Stage 1.0: Strip returned measurements from func::ReturnOp
+    stripReturnedMeasurements(moduleOp, state);
+
+    // Stage 1.1: Convert func dialect to LLVM
     {
       RewritePatternSet funcPatterns(ctx);
       target.addIllegalDialect<func::FuncDialect>();
@@ -425,8 +436,6 @@ protected:
       signalPassFailure();
       return;
     }
-
-    LoweringState state;
 
     // Stage 2: Create block structure
     ensureBlocks(main, state);

@@ -47,12 +47,14 @@ QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
   ctx->loadDialect<QCDialect>();
 }
 
-void QCProgramBuilder::initialize() {
+void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
+
+void QCProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
   setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, {getI64Type()});
+  auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -63,6 +65,16 @@ void QCProgramBuilder::initialize() {
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
   regionStack.emplace_back(entryBlock.getParent());
+}
+
+void QCProgramBuilder::retype(TypeRange returnTypes) {
+  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
+  if (!mainFunc) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType =
+      getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
+  mainFunc.setType(funcType);
 }
 
 Value QCProgramBuilder::boolConstant(const bool value) {
@@ -245,7 +257,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(ValueRange controls,         \
                                                   Value target) {              \
     ctrl(controls, target,                                                     \
-         [&](ValueRange targets) { OP_CLASS::create(*this, targets[0]); });    \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg); });        \
     return *this;                                                              \
   }
 
@@ -281,9 +293,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param);                              \
-    });                                                                        \
+    ctrl(controls, target,                                                     \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg, param); }); \
     return *this;                                                              \
   }
 
@@ -316,8 +327,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       Value target) {                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param1, param2);                     \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2);                      \
     });                                                                        \
     return *this;                                                              \
   }
@@ -354,8 +365,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param1, param2, param3);             \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2, param3);              \
     });                                                                        \
     return *this;                                                              \
   }
@@ -477,10 +488,33 @@ QCProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
 }
 
 QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls, Value target,
+                       const function_ref<void(Value)>& body) {
+  checkFinalized();
+  CtrlOp::create(*this, controls, target, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::ctrl(Value control, Value target,
+                       const function_ref<void(Value)>& body) {
+  checkFinalized();
+  CtrlOp::create(*this, control, target, body);
+  return *this;
+}
+
+QCProgramBuilder&
 QCProgramBuilder::inv(ValueRange qubits,
                       const function_ref<void(ValueRange)>& body) {
   checkFinalized();
   InvOp::create(*this, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::inv(Value qubit,
+                                        const function_ref<void(Value)>& body) {
+  checkFinalized();
+  InvOp::create(*this, qubit, body);
   return *this;
 }
 
@@ -630,6 +664,13 @@ void QCProgramBuilder::ensureAllocationMode(
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   checkFinalized();
 
+  auto exitCode = intConstant(0);
+  return finalize({exitCode});
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
+  checkFinalized();
+
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
@@ -660,11 +701,8 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   }
   allocatedMemrefs.clear();
 
-  // Create constant 0 for successful exit code
-  auto exitCode = intConstant(0);
-
-  // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, exitCode);
+  // Add return statement with the given return values to the main function
+  func::ReturnOp::create(*this, returnValues);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
@@ -675,11 +713,22 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
 
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QCProgramBuilder&)>& buildFunc) {
+    const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc) {
   QCProgramBuilder builder(context);
   builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
+  auto result = buildFunc(builder);
+  builder.retype(ValueRange(result).getTypes());
+  return builder.finalize(result);
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<Value(QCProgramBuilder&)>& buildFunc) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qc
