@@ -16,6 +16,7 @@
 #include <qdmi/device.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -168,9 +169,9 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
 #undef DL_CLOSE
 } // namespace qdmi
 
-QDMI_Device_impl_d::QDMI_Device_impl_d(
-    std::unique_ptr<qdmi::DeviceLibrary>&& lib,
-    const qdmi::DeviceSessionConfig& config)
+QDMI_Device_impl_d::QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
+                                       const qdmi::DeviceSessionConfig& config,
+                                       const QDMI_Child_Device childDevice)
     : library_(std::move(lib)) {
   if (library_->device_session_alloc(&deviceSession_) != QDMI_SUCCESS) {
     throw std::runtime_error("Failed to allocate device session");
@@ -213,9 +214,76 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
   setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
   setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5);
 
+  if (childDevice != nullptr) {
+    const auto status =
+        static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
+            deviceSession_, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
+            sizeof(childDevice), &childDevice));
+    if (status != QDMI_SUCCESS) {
+      library_->device_session_free(deviceSession_);
+      deviceSession_ = nullptr;
+      std::ostringstream ss;
+      ss << "Failed to select child device: " << qdmi::toString(status);
+      throw std::runtime_error(ss.str());
+    }
+  }
+
   if (library_->device_session_init(deviceSession_) != QDMI_SUCCESS) {
     library_->device_session_free(deviceSession_);
+    deviceSession_ = nullptr;
     throw std::runtime_error("Failed to initialize device session");
+  }
+
+  // Child sessions represent leaf devices in the QDMI multicore
+  // workflow. Only top-level sessions discover and wrap child handles.
+  if (childDevice != nullptr) {
+    return;
+  }
+
+  size_t childrenSize = 0;
+  auto status =
+      static_cast<QDMI_STATUS>(library_->device_session_query_device_property(
+          deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
+          &childrenSize));
+  if (status == QDMI_ERROR_NOTSUPPORTED) {
+    return;
+  }
+  if (status != QDMI_SUCCESS || childrenSize % sizeof(QDMI_Child_Device) != 0) {
+    library_->device_session_free(deviceSession_);
+    deviceSession_ = nullptr;
+    if (status != QDMI_SUCCESS) {
+      throw std::runtime_error("Failed to query child devices: " +
+                               std::string(qdmi::toString(status)));
+    }
+    throw std::runtime_error("Device returned an invalid child device list");
+  }
+
+  std::vector<QDMI_Child_Device> children(childrenSize /
+                                          sizeof(QDMI_Child_Device));
+  if (childrenSize != 0) {
+    status =
+        static_cast<QDMI_STATUS>(library_->device_session_query_device_property(
+            deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, childrenSize,
+            children.data(), nullptr));
+    if (status != QDMI_SUCCESS) {
+      library_->device_session_free(deviceSession_);
+      deviceSession_ = nullptr;
+      throw std::runtime_error("Failed to query child devices: " +
+                               std::string(qdmi::toString(status)));
+    }
+  }
+
+  try {
+    childDevices_.reserve(children.size());
+    for (const auto child : children) {
+      childDevices_.emplace_back(
+          std::make_unique<QDMI_Device_impl_d>(library_, config, child));
+    }
+  } catch (...) {
+    childDevices_.clear();
+    library_->device_session_free(deviceSession_);
+    deviceSession_ = nullptr;
+    throw;
   }
 }
 
@@ -244,6 +312,25 @@ auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
 auto QDMI_Device_impl_d::queryDeviceProperty(QDMI_Device_Property prop,
                                              const size_t size, void* value,
                                              size_t* sizeRet) const -> int {
+  if (prop == QDMI_DEVICE_PROPERTY_CHILDDEVICES) {
+    if (childDevices_.empty()) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    const auto requiredSize = childDevices_.size() * sizeof(QDMI_Device);
+    if (value != nullptr) {
+      if (size < requiredSize) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      auto* devices = static_cast<QDMI_Device*>(value);
+      std::ranges::transform(
+          childDevices_, devices,
+          [](const auto& child) -> QDMI_Device { return child.get(); });
+    }
+    if (sizeRet != nullptr) {
+      *sizeRet = requiredSize;
+    }
+    return QDMI_SUCCESS;
+  }
   return library_->device_session_query_device_property(deviceSession_, prop,
                                                         size, value, sizeRet);
 }
@@ -424,7 +511,7 @@ auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const DeviceSessionConfig& config)
     -> QDMI_Device {
   devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-      std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
+      std::make_shared<DynamicDeviceLibrary>(libName, prefix), config));
   return devices_.back().get();
 }
 

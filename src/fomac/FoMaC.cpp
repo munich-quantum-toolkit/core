@@ -286,6 +286,34 @@ std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
+std::vector<Device> Device::getChildDevices() const {
+  size_t size = 0;
+  auto result = QDMI_device_query_device_property(
+      device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return {};
+  }
+  qdmi::throwIfError(result, "Querying child devices size");
+  if (size % sizeof(QDMI_Device) != 0) {
+    throw std::runtime_error("Invalid child device list size");
+  }
+
+  std::vector<QDMI_Device> handles(size / sizeof(QDMI_Device));
+  if (size != 0) {
+    result = QDMI_device_query_device_property(
+        device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, handles.data(),
+        nullptr);
+    qdmi::throwIfError(result, "Querying child devices");
+  }
+
+  std::vector<Device> devices;
+  devices.reserve(handles.size());
+  std::ranges::transform(
+      handles, std::back_inserter(devices),
+      [](const QDMI_Device handle) { return Device(handle); });
+  return devices;
+}
+
 Job Device::submitJob(const std::string& program,
                       const QDMI_Program_Format format, const size_t numShots,
                       const std::optional<CustomJobParameter>& custom1,

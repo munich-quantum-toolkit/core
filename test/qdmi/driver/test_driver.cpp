@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "fomac/FoMaC.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -18,6 +19,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <memory>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -48,6 +51,166 @@ MATCHER_P2(IsBetween, a, b,
 namespace qc {
 
 namespace {
+
+class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
+  struct Child {
+    size_t id;
+  };
+
+  struct Session {
+    ChildDeviceLibrary* library;
+    QDMI_Child_Device child = nullptr;
+    bool initialized = false;
+  };
+
+  static inline ChildDeviceLibrary* activeLibrary = nullptr;
+  std::array<Child, 2> children_{{{0}, {1}}};
+
+  [[nodiscard]] static auto asSession(const QDMI_Device_Session session)
+      -> Session* {
+    return reinterpret_cast<Session*>(session);
+  }
+
+  static auto alloc(QDMI_Device_Session* session) -> int {
+    if (session == nullptr || activeLibrary == nullptr) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto* const fakeSession = new Session{activeLibrary};
+    ++activeLibrary->allocatedSessions;
+    *session = reinterpret_cast<QDMI_Device_Session>(fakeSession);
+    return QDMI_SUCCESS;
+  }
+
+  static void free(QDMI_Device_Session session) {
+    if (session == nullptr) {
+      return;
+    }
+    auto* const fakeSession = asSession(session);
+    ++fakeSession->library->freedSessions;
+    delete fakeSession;
+  }
+
+  static auto setParameter(QDMI_Device_Session session,
+                           const QDMI_Device_Session_Parameter parameter,
+                           const size_t size, const void* value) -> int {
+    if (session == nullptr || value == nullptr || size == 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    if (parameter != QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    auto* const fakeSession = asSession(session);
+    if (fakeSession->library->rejectChildSelection ||
+        size != sizeof(QDMI_Child_Device)) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    std::memcpy(&fakeSession->child, value, sizeof(fakeSession->child));
+    fakeSession->library->selectedChildren.emplace_back(fakeSession->child);
+    return QDMI_SUCCESS;
+  }
+
+  static auto init(QDMI_Device_Session session) -> int {
+    if (session == nullptr) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    asSession(session)->initialized = true;
+    return QDMI_SUCCESS;
+  }
+
+  static auto queryDeviceProperty(QDMI_Device_Session session,
+                                  const QDMI_Device_Property property,
+                                  const size_t size, void* value,
+                                  size_t* sizeRet) -> int {
+    if (session == nullptr || (value != nullptr && size == 0)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto* const fakeSession = asSession(session);
+    if (!fakeSession->initialized) {
+      return QDMI_ERROR_BADSTATE;
+    }
+
+    if (property == QDMI_DEVICE_PROPERTY_CHILDDEVICES) {
+      if (fakeSession->child != nullptr) {
+        return QDMI_ERROR_NOTSUPPORTED;
+      }
+      auto* const library = fakeSession->library;
+      const size_t requiredSize =
+          library->malformedChildList
+              ? sizeof(QDMI_Child_Device) + 1
+              : library->children_.size() * sizeof(QDMI_Child_Device);
+      if (sizeRet != nullptr) {
+        *sizeRet = requiredSize;
+      }
+      if (value != nullptr) {
+        if (size < requiredSize || library->malformedChildList) {
+          return QDMI_ERROR_INVALIDARGUMENT;
+        }
+        std::array<QDMI_Child_Device, 2> handles{};
+        std::ranges::transform(
+            library->children_, handles.begin(), [](Child& child) {
+              return reinterpret_cast<QDMI_Child_Device>(&child);
+            });
+        std::memcpy(value, handles.data(), requiredSize);
+      }
+      return QDMI_SUCCESS;
+    }
+
+    if (property == QDMI_DEVICE_PROPERTY_NAME) {
+      std::string name = "parent";
+      if (fakeSession->child != nullptr) {
+        const auto* const child =
+            reinterpret_cast<const Child*>(fakeSession->child);
+        name = "child-" + std::to_string(child->id);
+      }
+      const auto requiredSize = name.size() + 1;
+      if (sizeRet != nullptr) {
+        *sizeRet = requiredSize;
+      }
+      if (value != nullptr) {
+        if (size < requiredSize) {
+          return QDMI_ERROR_INVALIDARGUMENT;
+        }
+        std::memcpy(value, name.c_str(), requiredSize);
+      }
+      return QDMI_SUCCESS;
+    }
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+
+public:
+  size_t allocatedSessions = 0;
+  size_t freedSessions = 0;
+  bool rejectChildSelection = false;
+  bool malformedChildList = false;
+  std::vector<QDMI_Child_Device> selectedChildren;
+
+  ChildDeviceLibrary() {
+    activeLibrary = this;
+    device_session_alloc = alloc;
+    device_session_free = free;
+    device_session_set_parameter = setParameter;
+    device_session_init = init;
+    device_session_query_device_property = queryDeviceProperty;
+  }
+
+  ~ChildDeviceLibrary() override { activeLibrary = nullptr; }
+
+  [[nodiscard]] auto childHandle(const size_t index) -> QDMI_Child_Device {
+    return reinterpret_cast<QDMI_Child_Device>(&children_.at(index));
+  }
+};
+
+[[nodiscard]] auto queryName(const QDMI_Device device) -> std::string {
+  size_t size = 0;
+  EXPECT_EQ(QDMI_device_query_device_property(device, QDMI_DEVICE_PROPERTY_NAME,
+                                              0, nullptr, &size),
+            QDMI_SUCCESS);
+  std::string name(size - 1, '\0');
+  EXPECT_EQ(QDMI_device_query_device_property(device, QDMI_DEVICE_PROPERTY_NAME,
+                                              size, name.data(), nullptr),
+            QDMI_SUCCESS);
+  return name;
+}
 
 class DriverTest : public testing::TestWithParam<const char*> {
 protected:
@@ -123,6 +286,70 @@ protected:
 };
 
 } // namespace
+
+TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  {
+    QDMI_Device_impl_d parent(library);
+    size_t size = 0;
+    ASSERT_EQ(
+        QDMI_device_query_device_property(
+            &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size),
+        QDMI_SUCCESS);
+    ASSERT_EQ(size, 2 * sizeof(QDMI_Device));
+
+    std::array<QDMI_Device, 2> children{};
+    ASSERT_EQ(QDMI_device_query_device_property(
+                  &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
+                  children.data(), nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(queryName(children[0]), "child-0");
+    EXPECT_EQ(queryName(children[1]), "child-1");
+
+    const auto fomacChildren =
+        fomac::Session::createSessionlessDevice(&parent).getChildDevices();
+    ASSERT_EQ(fomacChildren.size(), 2);
+    EXPECT_EQ(fomacChildren[0].getName(), "child-0");
+    EXPECT_EQ(fomacChildren[1].getName(), "child-1");
+
+    std::array<QDMI_Device, 2> repeatedQuery{};
+    ASSERT_EQ(QDMI_device_query_device_property(
+                  &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
+                  repeatedQuery.data(), nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(repeatedQuery, children);
+    EXPECT_EQ(library->selectedChildren,
+              (std::vector{library->childHandle(0), library->childHandle(1)}));
+    EXPECT_EQ(library->allocatedSessions, 3);
+    EXPECT_EQ(library->freedSessions, 0);
+
+    EXPECT_EQ(QDMI_device_query_device_property(
+                  &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES,
+                  sizeof(QDMI_Device), children.data(), nullptr),
+              QDMI_ERROR_INVALIDARGUMENT);
+    EXPECT_EQ(QDMI_device_query_device_property(
+                  children[0], QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
+                  nullptr),
+              QDMI_ERROR_NOTSUPPORTED);
+  }
+  EXPECT_EQ(library->freedSessions, 3);
+}
+
+TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  library->rejectChildSelection = true;
+  EXPECT_THROW(QDMI_Device_impl_d parent(library), std::runtime_error);
+  EXPECT_EQ(library->allocatedSessions, 2);
+  EXPECT_EQ(library->freedSessions, 2);
+}
+
+TEST(ChildDeviceTest, RejectsMalformedChildLists) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  library->malformedChildList = true;
+  EXPECT_THROW(QDMI_Device_impl_d parent(library), std::runtime_error);
+  EXPECT_EQ(library->allocatedSessions, 1);
+  EXPECT_EQ(library->freedSessions, 1);
+}
 
 TEST_P(DriverTest, SessionSetParameter) {
   const std::string authFile = "authfile.txt";
