@@ -227,5 +227,8 @@ const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
     {"rccx",
      std::make_shared<StandardGate>(StandardGate(
          {.nControls = 0, .nTargets = 3, .nParameters = 0, .type = qc::RCCX}))},
+    {"rc3x",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 3, .nParameters = 0, .type = qc::RCCX}))},
 };
 } // namespace qasm3

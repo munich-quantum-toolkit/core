@@ -183,6 +183,15 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
 })
 
 
+def _has_default_ctrl_state(instr: ControlledGate) -> bool:
+    """Return whether all control lines use the default positive polarity."""
+    num_ctrl = instr.num_ctrl_qubits
+    if num_ctrl == 0:
+        return True
+    ctrl_state = int(instr.ctrl_state, 2) if isinstance(instr.ctrl_state, str) else int(instr.ctrl_state)
+    return ctrl_state == (1 << num_ctrl) - 1
+
+
 def _native_dispatch_name(instr: Instruction) -> str:
     """Map a Qiskit instruction to the native gate name used for import dispatch.
 
@@ -194,7 +203,7 @@ def _native_dispatch_name(instr: Instruction) -> str:
         return name
     if isinstance(instr, ControlledGate):
         base_gate = instr.base_gate
-        if base_gate is not None and base_gate.name in _NATIVELY_SUPPORTED_GATES:
+        if base_gate is not None and base_gate.name in _NATIVELY_SUPPORTED_GATES and _has_default_ctrl_state(instr):
             return base_gate.name
     return name
 

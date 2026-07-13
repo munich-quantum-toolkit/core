@@ -301,8 +301,10 @@ void StandardOperation::dumpOpenQASM2(
                  "work with this library.\n";
   }
 
-  // safe the numbers of controls as a prefix to the operation name
-  op << std::string(controls.size(), 'c');
+  // save the numbers of controls as a prefix to the operation name
+  const auto controlPrefix =
+      (type == RCCX && controls.size() == 1) ? 0U : controls.size();
+  op << std::string(controlPrefix, 'c');
 
   const bool isSpecialGate = type == Peres || type == Peresdg;
 
@@ -449,7 +451,10 @@ void StandardOperation::dumpGateType(
     op << "xx_plus_yy(" << parameter[0] << "," << parameter[1] << ")";
     break;
   case RCCX:
-    op << "rccx";
+    // qelib1.inc uses rc3x for the 4-qubit gate; OpenQASM 3 uses ctrl @ rccx.
+    op << (controls.size() == 1 && op.str().find("ctrl") == std::string::npos
+               ? "rc3x"
+               : "rccx");
     break;
   case SWAP:
     op << "swap";
