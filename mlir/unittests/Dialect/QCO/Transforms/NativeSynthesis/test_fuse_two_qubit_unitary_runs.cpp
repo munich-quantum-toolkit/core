@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
