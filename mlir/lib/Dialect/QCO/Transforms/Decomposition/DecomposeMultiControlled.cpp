@@ -37,8 +37,9 @@ struct ControlledGateSpec {
   decomposition::ControlledTarget gate;
   std::optional<double> theta;
 };
+} // namespace
 
-std::optional<ControlledGateSpec>
+static std::optional<ControlledGateSpec>
 matchControlledGate(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
     return ControlledGateSpec{.gate = decomposition::ControlledTarget::X,
@@ -57,6 +58,7 @@ matchControlledGate(UnitaryOpInterface inner) {
   return std::nullopt;
 }
 
+namespace {
 struct DecomposeTwoControlledPattern final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
