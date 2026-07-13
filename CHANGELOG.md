@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
+  ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
@@ -647,6 +649,7 @@ changelogs._
 [#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
+[#1815]: https://github.com/munich-quantum-toolkit/core/pull/1815
 [#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
