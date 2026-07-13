@@ -25,20 +25,6 @@ const std::string STDGATES =
     "gate cu(theta, phi, lambda, gamma) c, t { p(gamma) c; ctrl @ U(theta, "
     "phi, lambda) c, t; }\n";
 
-// Non-natively supported gates from
-// https://github.com/Qiskit/qiskit/blob/main/qiskit/qasm/libs/qelib1.inc
-const std::string QE1LIB = "gate rc3x a,b,c,d {\n"
-                           "  u2(0,pi) d; u1(pi/4) d; \n"
-                           "  cx c,d; u1(-pi/4) d; u2(0,pi) d; \n"
-                           "  cx a,d; u1(pi/4) d; \n"
-                           "  cx b,d; u1(-pi/4) d; \n"
-                           "  cx a,d; u1(pi/4) d; \n"
-                           "  cx b,d; u1(-pi/4) d; \n"
-                           "  u2(0,pi) d; u1(pi/4) d; \n"
-                           "  cx c,d; u1(-pi/4) d; \n"
-                           "  u2(0,pi) d; \n"
-                           "}\n";
-
 const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
     // gates from which all other gates can be constructed.
     {"gphase",

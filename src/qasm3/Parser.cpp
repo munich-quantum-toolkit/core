@@ -278,15 +278,11 @@ void Parser::parseInclude() {
   auto in = std::make_unique<std::ifstream>(filename, std::ifstream::in);
   std::unique_ptr<std::istream> is{nullptr};
   if (in->fail()) {
-    if (filename == "stdgates.inc") {
-      // stdgates.inc has already been included implicitly, so we just return
+    if (filename == "stdgates.inc" || filename == "qelib1.inc") {
+      // stdgates.inc is included implicitly; qelib1 gates are native builtins.
       return;
     }
-    if (filename == "qelib1.inc") {
-      is = std::make_unique<std::istringstream>(QE1LIB);
-    } else {
-      error(current(), "Failed to open file " + filename + ".");
-    }
+    error(current(), "Failed to open file " + filename + ".");
   } else {
     is = std::move(in);
   }
