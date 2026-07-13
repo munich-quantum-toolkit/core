@@ -234,11 +234,11 @@ static Value expressionMathFunctions(qc::QCProgramBuilder& b) {
   b.rx(std::atan(0.5), q[0]);
   b.rx(std::cos(0.5), q[0]);
   b.rx(std::exp(0.5), q[0]);
-  b.rx(std::log(2.0), q[0]);
+  b.rx(std::numbers::ln2, q[0]);
   b.rx(std::fmod(5.5, 2.0), q[0]);
   b.rx(std::pow(2.0, 3.0), q[0]);
   b.rx(std::sin(0.5), q[0]);
-  b.rx(std::sqrt(2.0), q[0]);
+  b.rx(std::numbers::sqrt2, q[0]);
   b.rx(std::tan(0.5), q[0]);
   return b.measure(q[0]);
 }
