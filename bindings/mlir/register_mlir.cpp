@@ -9,6 +9,7 @@
  */
 
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Compiler/Programs.h"
 
 #include <nanobind/nanobind.h>

@@ -362,14 +362,15 @@ h q;
 )";
 
   auto qc = mlir::QCProgram::fromQASMString(qasm);
+  EXPECT_TRUE(qc.isValid());
   auto qco = std::move(qc).intoQCO();
-  EXPECT_FALSE(qc.isValid());
   EXPECT_TRUE(qco.isValid());
 
   qco.cleanup();
   qco.optimize();
+  EXPECT_TRUE(qco.isValid());
   auto roundTrip = std::move(qco).intoQC();
-  EXPECT_FALSE(qco.isValid());
+  EXPECT_TRUE(roundTrip.isValid());
   roundTrip.cleanup();
   auto reparsed = parseRecordedModule(roundTrip.str());
   ASSERT_TRUE(reparsed);
