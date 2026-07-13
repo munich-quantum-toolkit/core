@@ -168,6 +168,7 @@ TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
 }
 
 TEST(CustomPropertyTest, RejectsInvalidSelector) {
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalid = static_cast<CustomProperty>(0);
   EXPECT_THROW(std::ignore = detail::toDeviceProperty(invalid),
                std::invalid_argument);
