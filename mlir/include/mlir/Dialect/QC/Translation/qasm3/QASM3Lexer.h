@@ -22,6 +22,7 @@ namespace mlir::qc::detail {
 enum class TokenKind : uint8_t {
   Eof,
   Error,
+  UnterminatedComment,
 
   // Keywords
   OpenQASM,
@@ -135,10 +136,20 @@ public:
 
 private:
   [[nodiscard]] bool atEnd() const { return cur == end; }
-  void skipTrivia();
+
+  /// The character after the cursor, or `'\0'` at the end of the buffer.
+  [[nodiscard]] char peek() const { return (cur + 1) != end ? cur[1] : '\0'; }
+
+  /**
+   * @brief Skip whitespace and comments.
+   * @return The start of an unterminated block comment, or `nullptr` if the
+   * trivia is well-formed.
+   */
+  [[nodiscard]] const char* skipTrivia();
+
   [[nodiscard]] Token lexIdentifierOrKeyword(const char* start);
   [[nodiscard]] Token lexNumber(const char* start);
-  [[nodiscard]] Token lexString(const char* start);
+  [[nodiscard]] Token lexString(const char* start, char quote);
   [[nodiscard]] Token lexHardwareQubit(const char* start);
 
   const char* cur;

@@ -420,6 +420,8 @@ private:
       default:
         return parseGateCallStatement();
       }
+    case TokenKind::UnterminatedComment:
+      return sink.error(current().loc, "unterminated block comment");
     default:
       return sink.error(current().loc, "unexpected token");
     }
@@ -897,7 +899,8 @@ private:
     SmallVector<StringRef> parameters;
     if (current().kind == TokenKind::LParen) {
       advance();
-      if (failed(parseIdentifierList(parameters))) {
+      if (current().kind != TokenKind::RParen &&
+          failed(parseIdentifierList(parameters))) {
         return failure();
       }
       if (failed(expect(TokenKind::RParen))) {

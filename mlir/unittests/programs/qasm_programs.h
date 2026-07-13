@@ -391,10 +391,6 @@ extern const std::string nestedForLoopIfOp;
 /// operation.
 extern const std::string nestedForLoopWhileOp;
 
-/// Creates a circuit with a for operation that indexes a register with a
-/// non-trivial expression (`q[i + 1]`) in the loop variable.
-extern const std::string forLoopOffsetIndex;
-
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the
 /// register.

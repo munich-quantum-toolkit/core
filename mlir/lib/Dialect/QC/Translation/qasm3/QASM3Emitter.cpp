@@ -26,6 +26,7 @@
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/MathExtras.h>
 #include <llvm/Support/SMLoc.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/StringSaver.h>
@@ -46,6 +47,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -316,7 +318,8 @@ public:
         return error(info.loc, "output register '" + StringRef(info.reg.name) +
                                    "' is never measured");
       }
-      if (info.bits.size() < static_cast<size_t>(info.reg.size)) {
+      if (std::cmp_less(info.bits.size(), info.reg.size) ||
+          is_contained(info.bits, Value{})) {
         return error(info.loc, "not all bits of output register '" +
                                    StringRef(info.reg.name) + "' are measured");
       }
@@ -435,11 +438,15 @@ public:
     return success();
   }
 
-  LogicalResult qubitRegister(SMLoc /*loc*/, StringRef id, const Expr* size) {
+  LogicalResult qubitRegister(SMLoc loc, StringRef id, const Expr* size) {
     if (size != nullptr) {
       auto foldedSize = evaluateIntConstant(*size);
       if (failed(foldedSize)) {
         return failure();
+      }
+      if (*foldedSize <= 0) {
+        return error(loc, "qubit register '" + id + "' has non-positive size " +
+                              Twine(*foldedSize));
       }
       const auto [value, qubits] = builder.allocQubitRegister(*foldedSize);
       qubitRegisters[id] = {.memref = value, .qubits = qubits};
@@ -456,6 +463,10 @@ public:
       auto foldedSize = evaluateIntConstant(*size);
       if (failed(foldedSize)) {
         return failure();
+      }
+      if (*foldedSize <= 0) {
+        return error(loc, "classical register '" + id +
+                              "' has non-positive size " + Twine(*foldedSize));
       }
       classicalRegisters.push_back(
           {.loc = loc,
@@ -824,7 +835,8 @@ private:
                               split->invert, loc);
     }
     const auto& gate = std::get<GateInfo>(definition);
-    auto gateFn = resolveStandardGate(gate, id, parameters, loc);
+    auto gateFn =
+        resolveStandardGate(gate, id, parameters, split->targets, loc);
     if (failed(gateFn)) {
       return failure();
     }
@@ -938,13 +950,17 @@ private:
   FailureOr<const GateFn*> resolveStandardGate(const GateInfo& gate,
                                                StringRef id,
                                                ValueRange parameters,
-                                               SMLoc loc) {
+                                               ValueRange targets, SMLoc loc) {
     const auto it = GATE_DISPATCH.find(id);
     if (it == GATE_DISPATCH.end()) {
       return error(loc, "no MLIR definition found for gate '" + id + "'");
     }
     if (gate.nParameters != parameters.size()) {
       return error(loc, "invalid number of parameters for gate '" + id + "'");
+    }
+    if (gate.nControls + gate.nTargets != targets.size()) {
+      return error(loc,
+                   "invalid number of target qubits for gate '" + id + "'");
     }
     return &it->second;
   }
@@ -1013,19 +1029,19 @@ private:
       return error(bit.loc, "no classical bit of register '" + bit.identifier +
                                 "' has been measured yet");
     }
-    if (bit.index == nullptr) {
-      return registerBits[0];
+    size_t index = 0;
+    if (bit.index != nullptr) {
+      auto foldedIndex = evaluateIntConstant(*bit.index);
+      if (failed(foldedIndex)) {
+        return failure();
+      }
+      index = static_cast<size_t>(*foldedIndex);
     }
-    auto foldedIndex = evaluateIntConstant(*bit.index);
-    if (failed(foldedIndex)) {
-      return failure();
-    }
-    const auto i = static_cast<size_t>(*foldedIndex);
-    if (i >= registerBits.size() || !registerBits[i]) {
-      return error(bit.loc, "bit " + Twine(*foldedIndex) + " of register '" +
+    if (index >= registerBits.size() || !registerBits[index]) {
+      return error(bit.loc, "bit " + Twine(index) + " of register '" +
                                 bit.identifier + "' has not been measured yet");
     }
-    return registerBits[i];
+    return registerBits[index];
   }
 
   //===--- Operand resolution -------------------------------------------===//
@@ -1076,14 +1092,38 @@ private:
     return std::variant<Value, SmallVector<Value>>{*loaded};
   }
 
-  static std::string getIndexKey(const Expr& expr) {
+  /**
+   * @brief The cache key of the index expression @p expr.
+   *
+   * @details
+   * A name is keyed on what it is currently bound to rather than on its
+   * spelling, because a name can be rebound between two uses: the load cached
+   * for the earlier value must not be reused for the later one. The structure
+   * of the expression is still keyed on its spelling, so that two occurrences
+   * of the same index resolve to the same load.
+   */
+  [[nodiscard]] std::string getIndexKey(const Expr& expr) const {
     switch (expr.kind) {
     case Expr::Kind::Int:
       return std::to_string(expr.intValue);
     case Expr::Kind::Float:
       return std::to_string(expr.floatValue);
-    case Expr::Kind::Identifier:
-      return expr.identifier.str();
+    case Expr::Kind::Identifier: {
+      const auto binding = lookupBinding(expr.identifier);
+      if (!binding) {
+        return expr.identifier.str();
+      }
+      switch (binding->kind) {
+      case Binding::Kind::ConstInt:
+        return std::to_string(binding->constant);
+      case Binding::Kind::Int:
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return std::to_string(
+            reinterpret_cast<uintptr_t>(binding->value.getAsOpaquePointer()));
+      default:
+        return expr.identifier.str();
+      }
+    }
     case Expr::Kind::Neg:
       return "(-" + getIndexKey(*expr.lhs) + ")";
     case Expr::Kind::Add:
@@ -1415,30 +1455,53 @@ private:
       if (!*lhs || !*rhs) {
         return std::optional<int64_t>{};
       }
+      int64_t result = 0;
       switch (expr.kind) {
       case Expr::Kind::Add:
-        return std::optional{**lhs + **rhs};
+        if (llvm::AddOverflow(**lhs, **rhs, result)) {
+          return error(expr.loc, "overflow in constant expression");
+        }
+        return std::optional{result};
       case Expr::Kind::Sub:
-        return std::optional{**lhs - **rhs};
+        if (llvm::SubOverflow(**lhs, **rhs, result)) {
+          return error(expr.loc, "overflow in constant expression");
+        }
+        return std::optional{result};
       case Expr::Kind::Mul:
-        return std::optional{**lhs * **rhs};
+        if (llvm::MulOverflow(**lhs, **rhs, result)) {
+          return error(expr.loc, "overflow in constant expression");
+        }
+        return std::optional{result};
       case Expr::Kind::Div:
         if (**rhs == 0) {
           return error(expr.loc, "division by zero in constant expression");
+        }
+        if (**lhs == std::numeric_limits<int64_t>::min() && **rhs == -1) {
+          return error(expr.loc, "overflow in constant expression");
         }
         return std::optional{**lhs / **rhs};
       case Expr::Kind::Mod:
         if (**rhs == 0) {
           return error(expr.loc, "modulo by zero in constant expression");
         }
+        if (**lhs == std::numeric_limits<int64_t>::min() && **rhs == -1) {
+          return error(expr.loc, "overflow in constant expression");
+        }
         return std::optional{**lhs % **rhs};
       case Expr::Kind::Pow: {
         if (**rhs < 0) {
           return error(expr.loc, "negative exponent in constant expression");
         }
-        int64_t result = 1;
-        for (int64_t i = 0; i < **rhs; ++i) {
-          result *= **lhs;
+        // Exponentiation by squaring to check for overflows
+        result = 1;
+        int64_t base = **lhs;
+        for (int64_t exponent = **rhs; exponent > 0; exponent >>= 1) {
+          if ((exponent & 1) != 0 && llvm::MulOverflow(result, base, result)) {
+            return error(expr.loc, "overflow in constant expression");
+          }
+          if (exponent > 1 && llvm::MulOverflow(base, base, base)) {
+            return error(expr.loc, "overflow in constant expression");
+          }
         }
         return std::optional{result};
       }
@@ -1508,9 +1571,11 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
   Parser<QCEmitter> parser(lexer, emitter, allocator);
 
   emitter.initialize();
-  const auto status = parser.parseProgram();
+  if (failed(parser.parseProgram())) {
+    return nullptr;
+  }
   auto mod = emitter.finalize();
-  if (failed(status) || failed(mod)) {
+  if (failed(mod)) {
     return nullptr;
   }
   return std::move(*mod);

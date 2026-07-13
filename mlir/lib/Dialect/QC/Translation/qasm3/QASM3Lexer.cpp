@@ -72,6 +72,8 @@ StringRef describe(const TokenKind kind) {
     return "end of input";
   case TokenKind::Error:
     return "invalid token";
+  case TokenKind::UnterminatedComment:
+    return "unterminated block comment";
   case TokenKind::Identifier:
     return "identifier";
   case TokenKind::HardwareQubit:
@@ -111,14 +113,14 @@ StringRef describe(const TokenKind kind) {
   }
 }
 
-void Lexer::skipTrivia() {
+const char* Lexer::skipTrivia() {
   while (!atEnd()) {
     const char c = *cur;
     if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
       ++cur;
       continue;
     }
-    if (c == '/' && (cur + 1) != end && cur[1] == '/') {
+    if (c == '/' && peek() == '/') {
       // Line comment
       cur += 2;
       while (!atEnd() && *cur != '\n') {
@@ -126,18 +128,24 @@ void Lexer::skipTrivia() {
       }
       continue;
     }
-    if (c == '/' && (cur + 1) != end && cur[1] == '*') {
+    if (c == '/' && peek() == '*') {
+      // Block comment
+      const char* start = cur;
       cur += 2;
-      while (!atEnd() && (*cur != '*' || (cur + 1) == end || cur[1] != '/')) {
+      while (!atEnd() && (*cur != '*' || peek() != '/')) {
         ++cur;
       }
-      if (!atEnd()) {
-        cur += 2; // consume the closing */
+      if (atEnd()) {
+        // Report unterminated block comment
+        return start;
       }
+      // Consume the closing */
+      cur += 2;
       continue;
     }
     break;
   }
+  return nullptr;
 }
 
 Token Lexer::lexIdentifierOrKeyword(const char* start) {
@@ -193,10 +201,10 @@ Token Lexer::lexNumber(const char* start) {
   return token;
 }
 
-Token Lexer::lexString(const char* start) {
+Token Lexer::lexString(const char* start, const char quote) {
   ++cur; // consume opening quote
   const char* contentStart = cur;
-  while (!atEnd() && *cur != '"') {
+  while (!atEnd() && *cur != quote) {
     ++cur;
   }
   Token token;
@@ -230,9 +238,15 @@ Token Lexer::lexHardwareQubit(const char* start) {
 }
 
 Token Lexer::next() {
-  skipTrivia();
+  const char* unterminatedComment = skipTrivia();
 
   Token token;
+  if (unterminatedComment != nullptr) {
+    token.loc = SMLoc::getFromPointer(unterminatedComment);
+    token.kind = TokenKind::UnterminatedComment;
+    return token;
+  }
+
   token.loc = SMLoc::getFromPointer(cur);
   if (atEnd()) {
     token.kind = TokenKind::Eof;
@@ -245,20 +259,18 @@ Token Lexer::next() {
   if (canStartIdentifier(c)) {
     return lexIdentifierOrKeyword(start);
   }
-  if (isDigit(c)) {
+  // A float literal may lead with a dot
+  if (isDigit(c) || (c == '.' && isDigit(peek()))) {
     return lexNumber(start);
   }
-  if (c == '"') {
-    return lexString(start);
+  if (c == '"' || c == '\'') {
+    return lexString(start, c);
   }
   if (c == '$') {
     return lexHardwareQubit(start);
   }
 
   // Punctuation and operators
-  const auto peek = [&](const char expected) {
-    return (cur + 1) != end && cur[1] == expected;
-  };
   const auto single = [&](const TokenKind kind) {
     ++cur;
     token.kind = kind;
@@ -292,53 +304,54 @@ Token Lexer::next() {
   case '@':
     return single(TokenKind::At);
   case '~':
-    return peek('=') ? twoChar(TokenKind::CompoundAssign)
-                     : single(TokenKind::Tilde);
+    return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
+                         : single(TokenKind::Tilde);
   case '=':
-    return peek('=') ? twoChar(TokenKind::EqualsEquals)
-                     : single(TokenKind::Equals);
+    return peek() == '=' ? twoChar(TokenKind::EqualsEquals)
+                         : single(TokenKind::Equals);
   case '!':
-    return peek('=') ? twoChar(TokenKind::NotEquals)
-                     : single(TokenKind::ExclamationPoint);
+    return peek() == '=' ? twoChar(TokenKind::NotEquals)
+                         : single(TokenKind::ExclamationPoint);
   case '<':
-    return peek('=') ? twoChar(TokenKind::LessEquals) : single(TokenKind::Less);
+    return peek() == '=' ? twoChar(TokenKind::LessEquals)
+                         : single(TokenKind::Less);
   case '>':
-    return peek('=') ? twoChar(TokenKind::GreaterEquals)
-                     : single(TokenKind::Greater);
+    return peek() == '=' ? twoChar(TokenKind::GreaterEquals)
+                         : single(TokenKind::Greater);
   case '+':
-    return peek('=') ? twoChar(TokenKind::CompoundAssign)
-                     : single(TokenKind::Plus);
+    return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
+                         : single(TokenKind::Plus);
   case '-':
-    if (peek('>')) {
+    if (peek() == '>') {
       return twoChar(TokenKind::Arrow);
     }
-    return peek('=') ? twoChar(TokenKind::CompoundAssign)
-                     : single(TokenKind::Minus);
+    return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
+                         : single(TokenKind::Minus);
   case '*':
-    return peek('=') ? twoChar(TokenKind::CompoundAssign)
-                     : single(TokenKind::Asterisk);
+    return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
+                         : single(TokenKind::Asterisk);
   case '/':
-    return peek('=') ? twoChar(TokenKind::CompoundAssign)
-                     : single(TokenKind::Slash);
+    return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
+                         : single(TokenKind::Slash);
   case '&':
-    if (peek('&')) {
+    if (peek() == '&') {
       return twoChar(TokenKind::AmpAmp);
     }
-    if (peek('=')) {
+    if (peek() == '=') {
       return twoChar(TokenKind::CompoundAssign);
     }
     break;
   case '|':
-    if (peek('|')) {
+    if (peek() == '|') {
       return twoChar(TokenKind::PipePipe);
     }
-    if (peek('=')) {
+    if (peek() == '=') {
       return twoChar(TokenKind::CompoundAssign);
     }
     break;
   case '%':
   case '^':
-    if (peek('=')) {
+    if (peek() == '=') {
       return twoChar(TokenKind::CompoundAssign);
     }
     break;
