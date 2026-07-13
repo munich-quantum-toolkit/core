@@ -133,6 +133,13 @@ def test_device_operations(device: Device) -> None:
     assert all(isinstance(op, Device.Operation) for op in operations)
 
 
+def test_device_child_devices(device: Device) -> None:
+    """Test that devices without multicore support have no child devices."""
+    children = device.child_devices()
+    assert isinstance(children, list)
+    assert not children
+
+
 def test_device_coupling_map(device: Device) -> None:
     """Test that the device coupling map is a list of tuples of Device.Site objects."""
     cm = device.coupling_map()
