@@ -11,11 +11,11 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <cstddef>
+
 using namespace mlir::qco;
 
-namespace {
-
-[[nodiscard]] DynamicMatrix elementaryRCCXUnitary() {
+static DynamicMatrix elementaryRCCXUnitary() {
   constexpr Matrix4x4 cx =
       Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
                               0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
@@ -40,7 +40,5 @@ namespace {
   apply1(HOp::getUnitaryMatrix(), 2);
   return unitary;
 }
-
-} // namespace
 
 DynamicMatrix RCCXOp::getUnitaryMatrix() { return elementaryRCCXUnitary(); }

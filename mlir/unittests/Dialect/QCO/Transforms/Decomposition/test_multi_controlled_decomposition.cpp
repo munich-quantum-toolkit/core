@@ -15,6 +15,7 @@
 #include "ir/operations/Control.hpp"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/MultiControlled.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"

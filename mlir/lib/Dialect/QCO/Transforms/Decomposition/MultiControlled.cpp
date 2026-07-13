@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -23,6 +24,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <numbers>
 #include <numeric>
@@ -319,13 +321,15 @@ private:
   std::uint64_t minControls_;
 };
 
-[[nodiscard]] DynamicMatrix twoControlledXMatrix() {
+} // namespace
+
+static DynamicMatrix twoControlledXMatrix() {
   DynamicMatrix matrix = DynamicMatrix::identity(8);
   matrix.setBottomRightCorner(XOp::getUnitaryMatrix());
   return matrix;
 }
 
-[[nodiscard]] std::optional<double>
+static std::optional<double>
 extractTwoControlledPhaseAngle(const DynamicMatrix& unitary) {
   if (unitary.rows() != 8 || unitary.cols() != 8) {
     return std::nullopt;
@@ -348,8 +352,8 @@ extractTwoControlledPhaseAngle(const DynamicMatrix& unitary) {
   return std::arg(unitary(7, 7));
 }
 
-[[nodiscard]] SmallVector<Value> threeControlledWires(ValueRange controls,
-                                                      Value target) {
+static SmallVector<Value> threeControlledWires(ValueRange controls,
+                                               Value target) {
   if (controls.size() != 3) {
     llvm::reportFatalUsageError(
         "three-controlled synthesis requires exactly 3 control qubits");
@@ -359,7 +363,7 @@ extractTwoControlledPhaseAngle(const DynamicMatrix& unitary) {
   return wires;
 }
 
-void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
+static void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   if (numControls == 1) {
     builder.cx(0, 1);
   } else if (numControls == 2) {
@@ -384,19 +388,21 @@ void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   }
 }
 
-void ux(GateEmitter& builder, std::size_t q1, std::size_t q2, std::size_t q3) {
+static void ux(GateEmitter& builder, std::size_t q1, std::size_t q2,
+               std::size_t q3) {
   builder.cx(q1, q3);
   builder.cx(q1, q2);
   builder.emitCcx(q2, q3, q1);
 }
 
-void uz(GateEmitter& builder, std::size_t q1, std::size_t q2, std::size_t q3) {
+static void uz(GateEmitter& builder, std::size_t q1, std::size_t q2,
+               std::size_t q3) {
   builder.emitCcx(q2, q3, q1);
   builder.cx(q1, q2);
   builder.cx(q2, q3);
 }
 
-void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
+static void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
   const std::size_t lastQubit = n - 1;
 
   builder.x(n);
@@ -437,7 +443,7 @@ void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
   builder.x(n);
 }
 
-void incrementNDirtySmall(GateEmitter& builder, std::size_t n) {
+static void incrementNDirtySmall(GateEmitter& builder, std::size_t n) {
   SmallVector<std::size_t, 16> qubits;
   for (std::size_t k = n - 1; k >= 1; --k) {
     qubits.clear();
@@ -453,7 +459,7 @@ void incrementNDirtySmall(GateEmitter& builder, std::size_t n) {
   builder.x(0);
 }
 
-void incrementNDirty(GateEmitter& builder, std::size_t n) {
+static void incrementNDirty(GateEmitter& builder, std::size_t n) {
   if (n <= 10) {
     incrementNDirtySmall(builder, n);
   } else {
@@ -461,7 +467,7 @@ void incrementNDirty(GateEmitter& builder, std::size_t n) {
   }
 }
 
-void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
+static void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   const std::size_t target = numControls;
 
   if (numControls == 0) {
@@ -508,7 +514,8 @@ void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   builder.h(target);
 }
 
-void synthRelativeMcxNDirty(GateEmitter& builder, std::size_t numControls) {
+static void synthRelativeMcxNDirty(GateEmitter& builder,
+                                   std::size_t numControls) {
   if (numControls < 11) {
     synthRelativeMcx(builder, numControls);
   } else {
@@ -516,8 +523,8 @@ void synthRelativeMcxNDirty(GateEmitter& builder, std::size_t numControls) {
   }
 }
 
-void incrementDirty(GateEmitter& builder, std::size_t n,
-                    std::size_t numDirtyAncillae, bool flagAdd) {
+static void incrementDirty(GateEmitter& builder, std::size_t n,
+                           std::size_t numDirtyAncillae, bool flagAdd) {
   const std::size_t k = numDirtyAncillae == 1 ? (n + 1) / 2 : (n + 2) / 2;
   const std::size_t ancilla1 = n;
   const std::size_t ancilla2 = n + 1;
@@ -593,7 +600,7 @@ void incrementDirty(GateEmitter& builder, std::size_t n,
   }
 }
 
-void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
+static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   const std::size_t lastControl = n - 1;
   const std::size_t c0 = n - 2;
   const std::size_t c1 = n - 1;
@@ -646,8 +653,6 @@ void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   }
 }
 
-} // namespace
-
 SmallVector<Value> synthesizeRCCX(OpBuilder& builder, Location loc,
                                   Value control0, Value control1,
                                   Value target) {
@@ -697,7 +702,7 @@ SmallVector<Value> synthesizeTwoControlled(OpBuilder& builder, Location loc,
   }
   if (const auto phaseTheta = extractTwoControlledPhaseAngle(unitary)) {
     return synthesizeTwoControlled(builder, loc, control0, control1, target,
-                                   ControlledTarget::Phase, *phaseTheta);
+                                   ControlledTarget::Phase, phaseTheta);
   }
 
   llvm::reportFatalUsageError(

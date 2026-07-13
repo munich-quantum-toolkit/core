@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace mlir::qco {
 
@@ -31,29 +32,31 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_DECOMPOSETWOCONTROLLED
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-namespace {
-
 struct ControlledGateSpec {
   decomposition::ControlledTarget gate;
   std::optional<double> theta;
 };
 
-[[nodiscard]] std::optional<ControlledGateSpec>
+static std::optional<ControlledGateSpec>
 matchControlledGate(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
-    return ControlledGateSpec{decomposition::ControlledTarget::X, std::nullopt};
+    return ControlledGateSpec{.gate = decomposition::ControlledTarget::X,
+                              .theta = std::nullopt};
   }
   if (isa<ZOp>(inner.getOperation())) {
-    return ControlledGateSpec{decomposition::ControlledTarget::Z, std::nullopt};
+    return ControlledGateSpec{.gate = decomposition::ControlledTarget::Z,
+                              .theta = std::nullopt};
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
     if (const auto theta = utils::valueToDouble(pOp.getTheta())) {
-      return ControlledGateSpec{decomposition::ControlledTarget::Phase, *theta};
+      return ControlledGateSpec{.gate = decomposition::ControlledTarget::Phase,
+                                .theta = theta};
     }
   }
   return std::nullopt;
 }
 
+namespace {
 struct DecomposeTwoControlledPattern final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
