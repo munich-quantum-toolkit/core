@@ -190,6 +190,8 @@ def _native_dispatch_name(instr: Instruction) -> str:
         The gate name to use when dispatching to native import handlers.
     """
     name = instr.name
+    if name in _NATIVELY_SUPPORTED_GATES:
+        return name
     if isinstance(instr, ControlledGate):
         base_gate = instr.base_gate
         if base_gate is not None and base_gate.name in _NATIVELY_SUPPORTED_GATES:
