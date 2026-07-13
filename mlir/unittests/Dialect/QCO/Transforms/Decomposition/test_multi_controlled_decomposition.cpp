@@ -305,8 +305,7 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
 
   const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_TRUE(dd->multiply(decomposedDD, dd->conjugateTranspose(referenceDD))
-                  .isIdentity(/*upToGlobalPhase=*/false));
+  EXPECT_EQ(decomposedDD, referenceDD);
 }
 
 static void expectImplementsMcx(func::FuncOp funcOp, std::size_t numControls) {
@@ -331,8 +330,7 @@ static void expectImplementsRCCX(func::FuncOp funcOp) {
 
   const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_TRUE(dd->multiply(decomposedDD, dd->conjugateTranspose(referenceDD))
-                  .isIdentity(/*upToGlobalPhase=*/false));
+  EXPECT_EQ(decomposedDD, referenceDD);
 }
 
 static void expectImplementsTwoControlledX(func::FuncOp funcOp) {
@@ -355,8 +353,7 @@ static void expectImplementsTwoControlledPhase(func::FuncOp funcOp,
 
   const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_TRUE(dd->multiply(decomposedDD, dd->conjugateTranspose(referenceDD))
-                  .isIdentity(/*upToGlobalPhase=*/false));
+  EXPECT_EQ(decomposedDD, referenceDD);
 }
 
 [[nodiscard]] static std::size_t
