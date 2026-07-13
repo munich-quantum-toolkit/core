@@ -64,7 +64,7 @@ concept custom_property_value =
 namespace detail {
 template <custom_property_value T, typename Query>
 [[nodiscard]] std::optional<T>
-queryCustomValue(Query&& query, const std::string_view description) {
+queryCustomValue(Query query, const std::string_view description) {
   size_t size = 0;
   const auto sizeResult = query(0, nullptr, &size);
   if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {

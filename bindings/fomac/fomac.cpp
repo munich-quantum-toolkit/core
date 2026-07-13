@@ -36,7 +36,7 @@ using namespace nb::literals;
 
 namespace {
 template <typename Query>
-[[nodiscard]] nb::object queryCustomValue(Query&& query,
+[[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
   const auto returnValue =
       []<typename T>(std::optional<T> value) -> nb::object {
@@ -46,19 +46,20 @@ template <typename Query>
     return nb::cast(std::move(*value));
   };
 
-  if (valueType.ptr() == reinterpret_cast<PyObject*>(&PyUnicode_Type)) {
+  const auto builtins = nb::builtins();
+  if (valueType.is(builtins["str"])) {
     return returnValue(query.template operator()<std::string>());
   }
-  if (valueType.ptr() == reinterpret_cast<PyObject*>(&PyBool_Type)) {
+  if (valueType.is(builtins["bool"])) {
     return returnValue(query.template operator()<bool>());
   }
-  if (valueType.ptr() == reinterpret_cast<PyObject*>(&PyLong_Type)) {
+  if (valueType.is(builtins["int"])) {
     return returnValue(query.template operator()<int>());
   }
-  if (valueType.ptr() == reinterpret_cast<PyObject*>(&PyFloat_Type)) {
+  if (valueType.is(builtins["float"])) {
     return returnValue(query.template operator()<double>());
   }
-  if (valueType.ptr() == reinterpret_cast<PyObject*>(&PyBytes_Type)) {
+  if (valueType.is(builtins["bytes"])) {
     const auto value = query.template operator()<std::vector<std::byte>>();
     if (!value.has_value()) {
       return nb::none();

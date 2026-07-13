@@ -16,7 +16,10 @@
 #include <qdmi/client.h>
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <new>
@@ -131,16 +134,51 @@ cx q[0], q[1];
 } // namespace
 
 TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
-  EXPECT_EQ(detail::toDeviceProperty(CustomProperty::Custom1),
-            QDMI_DEVICE_PROPERTY_CUSTOM1);
-  EXPECT_EQ(detail::toSiteProperty(CustomProperty::Custom2),
-            QDMI_SITE_PROPERTY_CUSTOM2);
-  EXPECT_EQ(detail::toOperationProperty(CustomProperty::Custom3),
-            QDMI_OPERATION_PROPERTY_CUSTOM3);
-  EXPECT_EQ(detail::toJobProperty(CustomProperty::Custom4),
-            QDMI_JOB_PROPERTY_CUSTOM4);
-  EXPECT_EQ(detail::toJobResult(CustomProperty::Custom5),
-            QDMI_JOB_RESULT_CUSTOM5);
+  constexpr std::array properties{
+      CustomProperty::Custom1, CustomProperty::Custom2, CustomProperty::Custom3,
+      CustomProperty::Custom4, CustomProperty::Custom5};
+  constexpr std::array deviceProperties{
+      QDMI_DEVICE_PROPERTY_CUSTOM1, QDMI_DEVICE_PROPERTY_CUSTOM2,
+      QDMI_DEVICE_PROPERTY_CUSTOM3, QDMI_DEVICE_PROPERTY_CUSTOM4,
+      QDMI_DEVICE_PROPERTY_CUSTOM5};
+  constexpr std::array siteProperties{
+      QDMI_SITE_PROPERTY_CUSTOM1, QDMI_SITE_PROPERTY_CUSTOM2,
+      QDMI_SITE_PROPERTY_CUSTOM3, QDMI_SITE_PROPERTY_CUSTOM4,
+      QDMI_SITE_PROPERTY_CUSTOM5};
+  constexpr std::array operationProperties{
+      QDMI_OPERATION_PROPERTY_CUSTOM1, QDMI_OPERATION_PROPERTY_CUSTOM2,
+      QDMI_OPERATION_PROPERTY_CUSTOM3, QDMI_OPERATION_PROPERTY_CUSTOM4,
+      QDMI_OPERATION_PROPERTY_CUSTOM5};
+  constexpr std::array jobProperties{
+      QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
+      QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
+      QDMI_JOB_PROPERTY_CUSTOM5};
+  constexpr std::array jobResults{
+      QDMI_JOB_RESULT_CUSTOM1, QDMI_JOB_RESULT_CUSTOM2, QDMI_JOB_RESULT_CUSTOM3,
+      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5};
+
+  for (size_t i = 0; i < properties.size(); ++i) {
+    EXPECT_EQ(detail::toDeviceProperty(properties[i]), deviceProperties[i]);
+    EXPECT_EQ(detail::toSiteProperty(properties[i]), siteProperties[i]);
+    EXPECT_EQ(detail::toOperationProperty(properties[i]),
+              operationProperties[i]);
+    EXPECT_EQ(detail::toJobProperty(properties[i]), jobProperties[i]);
+    EXPECT_EQ(detail::toJobResult(properties[i]), jobResults[i]);
+  }
+}
+
+TEST(CustomPropertyTest, RejectsInvalidSelector) {
+  constexpr auto invalid = static_cast<CustomProperty>(0);
+  EXPECT_THROW(std::ignore = detail::toDeviceProperty(invalid),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = detail::toSiteProperty(invalid),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = detail::toOperationProperty(invalid),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = detail::toJobProperty(invalid),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = detail::toJobResult(invalid),
+               std::invalid_argument);
 }
 
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
@@ -176,7 +214,40 @@ TEST(CustomPropertyTest, ReturnsNulloptWhenUnsupported) {
             std::nullopt);
 }
 
+TEST(CustomPropertyTest, PropagatesQueryErrors) {
+  const auto failingSizeQuery = [](size_t, void*, size_t*) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  };
+  EXPECT_THROW(std::ignore = detail::queryCustomValue<int>(failingSizeQuery,
+                                                           "test property"),
+               std::invalid_argument);
+
+  const auto failingValueQuery = [](const size_t, void* value,
+                                    size_t* sizeRet) {
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(int);
+      return QDMI_SUCCESS;
+    }
+    EXPECT_NE(value, nullptr);
+    return QDMI_ERROR_INVALIDARGUMENT;
+  };
+  EXPECT_THROW(std::ignore = detail::queryCustomValue<int>(failingValueQuery,
+                                                           "test property"),
+               std::invalid_argument);
+}
+
+TEST(CustomPropertyTest, SupportsEmptyRawValues) {
+  const std::vector<std::byte> empty;
+  EXPECT_EQ(detail::queryCustomValue<std::vector<std::byte>>(queryBytes(empty),
+                                                             "test property"),
+            empty);
+}
+
 TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
+  const std::vector<std::byte> empty;
+  EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
+                   queryBytes(empty), "test property"),
+               std::invalid_argument);
   const std::vector<std::byte> malformedString{std::byte{'n'}, std::byte{'o'}};
   EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
                    queryBytes(malformedString), "test property"),
