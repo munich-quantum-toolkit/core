@@ -114,7 +114,7 @@ public:
 
   std::shared_ptr<BarrierStatement> parseBarrierStatement();
 
-  std::shared_ptr<Statement> parseDeclaration(bool isConst);
+  std::shared_ptr<Statement> parseDeclaration(bool isConst, bool isOutput);
 
   std::shared_ptr<GateDeclaration> parseGateDefinition();
 

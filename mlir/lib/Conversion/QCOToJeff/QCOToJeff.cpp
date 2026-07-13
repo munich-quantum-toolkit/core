@@ -1245,16 +1245,11 @@ struct ConvertSCFWhileOpToJeff final
  *
  * @par Example:
  * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
- *   %0 = arith.constant 0 : i64
- *   return %0
- * }
+ * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} { ... }
  * ```
  * is converted to
  * ```mlir
- * func.func @main() -> () {
- *   return
- * }
+ * func.func @main() -> i64 { ... }
  * ```
  */
 struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
@@ -1287,16 +1282,10 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 
     getState().entryPointName = op.getSymName();
 
-    // Update function signature and remove passthrough attribute
+    // Remove passthrough attribute from function signature
     rewriter.startOpModification(op);
-    op.setType(FunctionType::get(rewriter.getContext(), {}, {}));
     op->removeAttr("passthrough");
     rewriter.finalizeOpModification(op);
-
-    // Replace return operation
-    rewriter.setInsertionPointToEnd(block);
-    func::ReturnOp::create(rewriter, returnOp->getLoc());
-    rewriter.eraseOp(returnOp);
 
     return success();
   }

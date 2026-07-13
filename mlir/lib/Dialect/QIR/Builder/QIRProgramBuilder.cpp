@@ -51,12 +51,14 @@ QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
   getContext()->loadDialect<LLVM::LLVMDialect>();
 }
 
-void QIRProgramBuilder::initialize() {
+void QIRProgramBuilder::initialize() { initialize(getI64Type()); }
+
+void QIRProgramBuilder::initialize(Type returnType) {
   // Set insertion point to the module body
   setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function: () -> i64
-  auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
+  auto funcType = LLVM::LLVMFunctionType::get(returnType, {});
   auto mainFuncOp = LLVM::LLVMFuncOp::create(*this, "main", funcType);
   mainFunc = mainFuncOp.getOperation();
 
@@ -87,7 +89,6 @@ void QIRProgramBuilder::initialize() {
 
   // Create exit code constant in entry block
   setInsertionPointToStart(entryBlock);
-  exitCode = intConstant(0);
 
   // Add initialize call
   auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
@@ -99,12 +100,17 @@ void QIRProgramBuilder::initialize() {
   setInsertionPointToEnd(entryBlock);
   LLVM::BrOp::create(*this, bodyBlock);
 
-  // Return the exit code (success) in output block
-  setInsertionPointToEnd(outputBlock);
-  LLVM::ReturnOp::create(*this, exitCode);
-
   // Set insertion point to body block for user operations
   setInsertionPointToStart(bodyBlock);
+}
+
+void QIRProgramBuilder::retype(Type returnType) {
+  auto mainFn = dyn_cast<LLVM::LLVMFuncOp>(mainFunc);
+  if (!mainFn) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType = LLVM::LLVMFunctionType::get(returnType, {});
+  mainFn.setType(funcType);
 }
 
 Value QIRProgramBuilder::resolveIntVariant(
@@ -349,7 +355,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   return {.name = name, .size = size};
 }
 
-Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
+Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
+                                 bool record) {
   checkFinalized();
 
   if (resultIndex < 0) {
@@ -378,10 +385,14 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, mzSig);
   LLVM::CallOp::create(*this, mzDec, ValueRange{qubit, result});
 
+  if (record) {
+    recordedIndices.insert(resultIndex);
+  }
+
   return result;
 }
 
-Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QIRProgramBuilder::measure(Value qubit, const Bit& bit, bool record) {
   checkFinalized();
   const InsertionGuard guard(*this);
 
@@ -399,6 +410,21 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   auto fnDec =
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, fnSig);
   LLVM::CallOp::create(*this, fnDec, ValueRange{qubit, result});
+
+  if (record) {
+    if (profile == Profile::Adaptive) {
+      recordedArrays.insert(stringSaver.save(bit.registerName));
+    } else {
+      // In the base profile we don't have recorded arrays, so we need to
+      // find the index of the result and record that instead.
+      for (const auto& [index, ptr] : resultPtrs) {
+        if (ptr == result) {
+          recordedIndices.insert(index);
+          break;
+        }
+      }
+    }
+  }
 
   return result;
 }
@@ -951,6 +977,9 @@ void QIRProgramBuilder::generateOutputRecording() {
         getOrCreateFunctionDeclaration(*this, module, QIR_RECORD_OUTPUT, fnSig);
     // Create output recording for each result pointer
     for (const auto& [index, ptr] : resultPtrs) {
+      if (!recordedIndices.contains(index)) {
+        continue;
+      }
       auto label = createResultLabel(*this, module,
                                      "__unnamed__" + std::to_string(index))
                        .getResult();
@@ -965,6 +994,9 @@ void QIRProgramBuilder::generateOutputRecording() {
                                                 QIR_ARRAY_RECORD_OUTPUT, fnSig);
     // Create output recording for each register
     for (const auto& [name, results] : resultArrays) {
+      if (!recordedArrays.contains(name)) {
+        continue;
+      }
       auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
       auto label = createResultLabel(*this, module, name).getResult();
       LLVM::CallOp::create(*this, fnDec, ValueRange{size, results, label});
@@ -975,9 +1007,20 @@ void QIRProgramBuilder::generateOutputRecording() {
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   checkFinalized();
 
+  auto exitCode = intConstant(0);
+  return finalize(exitCode);
+}
+
+OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
+  checkFinalized();
+
   // Save current insertion point
   const InsertionGuard guard(*this);
   const bool isAdaptive = (profile == Profile::Adaptive);
+
+  // Add return statement with the given return values to the main function
+  setInsertionPointToEnd(outputBlock);
+  LLVM::ReturnOp::create(*this, returnValue);
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
@@ -1034,12 +1077,13 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QIRProgramBuilder&)>& buildFunc, Profile profile) {
+    const function_ref<Value(QIRProgramBuilder&)>& buildFunc, Profile profile) {
   QIRProgramBuilder builder(context);
   builder.profile = profile;
   builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qir

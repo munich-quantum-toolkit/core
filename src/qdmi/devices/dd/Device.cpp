@@ -483,14 +483,18 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
         },
         program_);
     auto jitSession = qir::JitSession(irBytes, "QDMI job");
+    runtime.outputProgramHeader();
     for (size_t i = 0; i < numShots_; ++i) {
       runtime.reset();
-      if (const auto rc = jitSession.run(); rc != 0) {
+      runtime.outputShotStart();
+      const auto rc = jitSession.run();
+      runtime.outputShotEnd();
+      if (rc != 0) {
         throw std::runtime_error(
             llvm::formatv("QIR program failed with error: {}", rc));
       }
       // Update the measurement counts.
-      ++counts_[runtime.getRecordedOutputs()];
+      ++counts_[runtime.getMeasurements()];
     }
   });
 }

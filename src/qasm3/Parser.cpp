@@ -168,7 +168,11 @@ std::shared_ptr<Statement> Parser::parseStatement() {
 
   if (current().kind == Token::Kind::Const) {
     scan();
-    return parseDeclaration(true);
+    return parseDeclaration(true, false);
+  }
+  if (current().kind == Token::Kind::Output) {
+    scan();
+    return parseDeclaration(false, true);
   }
 
   if (current().kind == Token::Kind::Int ||
@@ -181,7 +185,7 @@ std::shared_ptr<Statement> Parser::parseStatement() {
       current().kind == Token::Kind::Duration ||
       current().kind == Token::Kind::CReg ||
       current().kind == Token::Kind::Qreg) {
-    return parseDeclaration(false);
+    return parseDeclaration(false, false);
   }
 
   if (current().kind == Token::Kind::InitialLayout) {
@@ -558,7 +562,8 @@ std::shared_ptr<GateOperand> Parser::parseGateOperand() {
   return std::make_shared<GateOperand>(parseIndexedIdentifier());
 }
 
-std::shared_ptr<Statement> Parser::parseDeclaration(bool isConst) {
+std::shared_ptr<Statement> Parser::parseDeclaration(bool isConst,
+                                                    bool isOutput) {
   auto const tBegin = current();
   auto [type, isOldStyleDeclaration] = parseType();
   Token const identifier = expect(Token::Kind::Identifier);
@@ -588,7 +593,7 @@ std::shared_ptr<Statement> Parser::parseDeclaration(bool isConst) {
   auto const tEnd = expect(Token::Kind::Semicolon);
 
   auto statement = std::make_shared<DeclarationStatement>(DeclarationStatement{
-      makeDebugInfo(tBegin, tEnd), isConst, type, name, expression});
+      makeDebugInfo(tBegin, tEnd), isConst, isOutput, type, name, expression});
 
   return statement;
 }

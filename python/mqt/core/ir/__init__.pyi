@@ -1850,15 +1850,17 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             cbits: The classical bits to store the results
         """
 
-    def measure_all(self, *, add_bits: bool = True) -> None:
+    def measure_all(self, *, add_bits: bool = True, add_barrier: bool = True) -> None:
         """Measure all qubits and store the results in classical bits.
 
         Details:
             If `add_bits` is `True`, a new classical register (named "`meas`") with the same size as the number of qubits will be added to the circuit and the results will be stored in it.
             If `add_bits` is `False`, the classical register must already exist and have a sufficient number of bits to store the results.
+            If `add_barrier` is `True`, a barrier is added before the measurements.
 
         Args:
             add_bits: Whether to explicitly add a classical register
+            add_barrier: Whether to add a barrier before the measurements
         """
 
     @overload

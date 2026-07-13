@@ -220,10 +220,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       unitaryMatrixDynamicMethodBody>];
 
   let extraClassDeclaration = [{
-        template<typename MatrixType>
+        template<SupportedMatrix MatrixType>
         std::optional<MatrixType> getUnitaryMatrix() {
-          static_assert(is_supported_matrix_v<MatrixType>,
-                        "MatrixType must be Matrix1x1, Matrix2x2, Matrix4x4, or DynamicMatrix");
           MatrixType out;
           bool result = false;
 

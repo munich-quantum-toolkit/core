@@ -44,8 +44,8 @@ namespace {
 
 struct JeffRoundTripTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qco::QCOProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);
@@ -76,25 +76,39 @@ protected:
 
 } // namespace
 
-static void forLoopWithAngle(qco::QCOProgramBuilder& b) {
+Value ifWithAngle(qco::QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(1);
+  auto theta = b.floatConstant(0.123);
+  auto q0 = b.h(reg[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  q0 = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+    auto innerQubit = b.rx(theta, args[0]);
+    return SmallVector{innerQubit};
+  })[0];
+  return b.measure(q0).second;
+}
+
+Value forLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto theta = b.floatConstant(0.123);
-  b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+  auto res = b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.rx(theta, q0);
     auto insert = b.qtensorInsert(q1, t0, iv);
     return SmallVector{insert};
   });
-};
+  auto q = b.qtensorExtract(res[0], 0).second;
+  return b.measure(q).second;
+}
 
-static void nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
+Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();
   auto theta1 = b.floatConstant(0.123);
   auto theta2 = b.floatConstant(0.456);
   auto q1 = b.h(q0);
   auto [q2, cond] = b.measure(q1);
-  b.qcoIf(
+  auto res = b.qcoIf(
       cond, {reg.value, q2},
       [&](ValueRange args) {
         auto q3 = b.rx(theta1, args[1]);
@@ -110,13 +124,14 @@ static void nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
             });
         return SmallVector{scfFor[0], args[1]};
       });
+  return b.measure(res[1]).second;
 }
 
-static void whileWithAngle(qco::QCOProgramBuilder& b) {
+static Value whileWithAngle(qco::QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto theta = b.floatConstant(0.123);
   auto q1 = b.h(q0);
-  b.scfWhile(
+  auto res = b.scfWhile(
       ValueRange{q1},
       [&](ValueRange iterArgs) {
         auto [q2, measureResult] = b.measure(iterArgs[0]);
@@ -127,6 +142,7 @@ static void whileWithAngle(qco::QCOProgramBuilder& b) {
         auto q3 = b.rx(theta, iterArgs[0]);
         return SmallVector{q3};
       });
+  return b.measure(res[0]).second;
 }
 
 static LogicalResult convertQCOToJeff(ModuleOp module) {
@@ -146,8 +162,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   const auto name = " (" + nameStr + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program =
-      qco::QCOProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -181,8 +196,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      qco::QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -698,9 +712,8 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         JeffRoundTripTestCase{"SimpleIf", MQT_NAMED_BUILDER(qco::simpleIf),
                               MQT_NAMED_BUILDER(qco::simpleIf)},
-        JeffRoundTripTestCase{"IfWithAngle",
-                              MQT_NAMED_BUILDER(qco::ifWithAngle),
-                              MQT_NAMED_BUILDER(qco::ifWithAngle)},
+        JeffRoundTripTestCase{"IfWithAngle", MQT_NAMED_BUILDER(ifWithAngle),
+                              MQT_NAMED_BUILDER(ifWithAngle)},
         JeffRoundTripTestCase{"IfTwoQubits",
                               MQT_NAMED_BUILDER(qco::ifTwoQubits),
                               MQT_NAMED_BUILDER(qco::ifTwoQubits)},

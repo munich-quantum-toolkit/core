@@ -968,7 +968,11 @@ def CtrlOp
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
-      "const function_ref<void(ValueRange)>&":$body)>];
+                      "const function_ref<void(ValueRange)>&":$body)>,
+                  OpBuilder<(ins "ValueRange":$controls, "Value":$target,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>,
+                  OpBuilder<(ins "Value":$control, "Value":$target,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1021,7 +1025,9 @@ def InvOp : QCOp<"inv",
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits,
-      "const function_ref<void(ValueRange)>&":$body)>];
+                      "const function_ref<void(ValueRange)>&":$body)>,
+                  OpBuilder<(ins "Value":$qubit,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

@@ -92,13 +92,13 @@ To support this endeavor, please consider:
 `mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/).
 
 ```console
-(.venv) $ pip install mqt.core
+uv pip install mqt.core
 ```
 
 The following code gives an example on the usage:
 
 ```python3
-from mqt.core import QuantumComputation
+from mqt.core.ir import QuantumComputation
 
 qc = QuantumComputation(2, 2)
 qc.h(0)
