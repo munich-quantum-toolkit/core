@@ -240,6 +240,8 @@ def stubs(session: nox.Session) -> None:
         "mqt.core.dd",
         "--module",
         "mqt.core.fomac",
+        "--pattern-file",
+        "bindings/fomac/patterns.txt",
         "--module",
         "mqt.core.na",
     )
