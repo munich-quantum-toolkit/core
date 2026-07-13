@@ -179,9 +179,6 @@ extern const std::string multipleControlledSxdg;
 /// Creates a circuit with just an RX gate.
 extern const std::string rx;
 
-/// Creates a circuit with an RX gate with a declared theta.
-extern const std::string rxTheta;
-
 /// Creates a circuit with a single controlled RX gate.
 extern const std::string singleControlledRx;
 
@@ -363,9 +360,6 @@ extern const std::string ctrlTwoMixed;
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
 
-/// Creates a circuit with an if operation with a negated condition.
-extern const std::string ifNot;
-
 /// Creates a circuit with an if operation with two qubits.
 extern const std::string ifTwoQubits;
 
@@ -417,6 +411,65 @@ extern const std::string broadcastRegisterAndQubit;
 
 /// Broadcasts a compound gate over a register and a single qubit.
 extern const std::string broadcastCompoundGate;
+
+// --- Expressions ---------------------------------------------------------- //
+
+/// Uses an arithmetic expression with parentheses and precedence as an angle.
+extern const std::string expressionArithmetic;
+
+/// Uses negated expressions as angles.
+extern const std::string expressionUnaryMinus;
+
+/// Uses the built-in constants `pi`, `tau`, and `euler` as angles.
+extern const std::string expressionBuiltinConstants;
+
+/// Uses each built-in math function as an angle.
+extern const std::string expressionMathFunctions;
+
+/// Uses nested built-in math functions as an angle.
+extern const std::string expressionNestedMathFunctions;
+
+/// Uses a `const float` and an expression over it as angles.
+extern const std::string expressionConstFloat;
+
+/// Uses a mutable `float` that is reassigned between two gates.
+extern const std::string expressionMutableFloat;
+
+/// Uses `const int` expressions as a register size, as indices, and as an
+/// angle.
+extern const std::string expressionConstIntArithmetic;
+
+/// Uses a mutable `int` derived from a loop variable as a qubit index.
+extern const std::string expressionDynamicIntIndex;
+
+/// Uses `mod` of a loop variable as a qubit index.
+extern const std::string expressionModIndex;
+
+// --- Conditions ----------------------------------------------------------- //
+
+/// Branches on the literals `true` and `false`.
+extern const std::string conditionLiteral;
+
+/// Branches on a measurement.
+extern const std::string conditionMeasurement;
+
+/// Branches on a conjunction of two measured bits.
+extern const std::string conditionAnd;
+
+/// Branches on a disjunction of two measured bits, with an else branch.
+extern const std::string conditionOr;
+
+/// Branches on a negated conjunction combined with a disjunction.
+extern const std::string conditionNotAndOr;
+
+/// Branches on `bool` variables holding conditions.
+extern const std::string conditionBoolVariable;
+
+/// Branches on an indexed bit of a classical register.
+extern const std::string conditionIndexedBit;
+
+/// Loops while a conjunction of two measurements holds.
+extern const std::string conditionWhileAnd;
 
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

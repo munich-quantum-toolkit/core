@@ -29,7 +29,9 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <memory>
+#include <numbers>
 #include <ostream>
 #include <string>
 
@@ -136,7 +138,7 @@ static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
   return {c0, c1, c2, c3, c4, c5};
 }
 
-static Value ifNot(qc::QCProgramBuilder& b) {
+static Value ifEmptyThen(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
@@ -197,6 +199,215 @@ static SmallVector<Value> broadcastCompoundGate(qc::QCProgramBuilder& b) {
   auto c2 = b.measure(r[2]);
   auto c3 = b.measure(q);
   return {c0, c1, c2, c3};
+}
+
+static Value expressionArithmetic(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx((((1.0 + 2.0) * 3.0) / 2.0) - 0.5, q[0]);
+  return b.measure(q[0]);
+}
+
+static Value expressionUnaryMinus(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx(-0.5, q[0]);
+  b.ry(-(1.0 + 2.0), q[0]);
+  b.rz(-(-0.25), q[0]);
+  return b.measure(q[0]);
+}
+
+static Value expressionBuiltinConstants(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx(std::numbers::pi / 2, q[0]);
+  b.ry((2 * std::numbers::pi) / 4, q[0]);
+  b.rz(std::numbers::e, q[0]);
+  return b.measure(q[0]);
+}
+
+static Value expressionMathFunctions(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx(std::acos(0.5), q[0]);
+  b.rx(std::asin(0.5), q[0]);
+  b.rx(std::atan(0.5), q[0]);
+  b.rx(std::cos(0.5), q[0]);
+  b.rx(std::exp(0.5), q[0]);
+  b.rx(std::log(2.0), q[0]);
+  b.rx(std::fmod(5.5, 2.0), q[0]);
+  b.rx(std::pow(2.0, 3.0), q[0]);
+  b.rx(std::sin(0.5), q[0]);
+  b.rx(std::sqrt(2.0), q[0]);
+  b.rx(std::tan(0.5), q[0]);
+  return b.measure(q[0]);
+}
+
+static Value expressionNestedMathFunctions(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx(std::sqrt(std::pow(std::sin(0.5), 2.0) + std::pow(std::cos(0.5), 2.0)),
+       q[0]);
+  return b.measure(q[0]);
+}
+
+static Value expressionConstFloat(qc::QCProgramBuilder& b) {
+  const double theta = std::numbers::pi / 4;
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx(theta, q[0]);
+  b.ry(theta * 2.0, q[0]);
+  return b.measure(q[0]);
+}
+
+static Value expressionMutableFloat(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.rx(0.5, q[0]);
+  b.ry(0.5 + 0.25, q[0]);
+  return b.measure(q[0]);
+}
+
+static SmallVector<Value>
+expressionConstIntArithmetic(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(8);
+  b.h(q[3]);
+  b.h(q[5]);
+  b.rx(3.0 + 5.0, q[3]);
+  auto c0 = b.measure(q[3]);
+  auto c1 = b.measure(q[5]);
+  return {c0, c1};
+}
+
+static SmallVector<Value> expressionDynamicIntIndex(qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  b.scfFor(0, 3, 1, [&](Value iv) {
+    auto one = b.indexConstant(1);
+    auto index = arith::AddIOp::create(b, iv, one).getResult();
+    auto q = b.memrefLoad(reg.value, index);
+    b.h(q);
+  });
+  auto c0 = b.measure(reg[0]);
+  auto c1 = b.measure(reg[1]);
+  auto c2 = b.measure(reg[2]);
+  auto c3 = b.measure(reg[3]);
+  return {c0, c1, c2, c3};
+}
+
+static SmallVector<Value> expressionModIndex(qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 4, 1, [&](Value iv) {
+    auto two = b.indexConstant(2);
+    auto index = arith::RemSIOp::create(b, iv, two).getResult();
+    auto q = b.memrefLoad(reg.value, index);
+    b.h(q);
+  });
+  auto c0 = b.measure(reg[0]);
+  auto c1 = b.measure(reg[1]);
+  return {c0, c1};
+}
+
+static SmallVector<Value> conditionLiteral(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  b.scfIf(true, [&] { b.x(q[0]); });
+  b.scfIf(false, [&] { b.x(q[1]); });
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {c0, c1};
+}
+
+static Value conditionMeasurement(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] { b.x(q[1]); });
+  return b.measure(q[1]);
+}
+
+static SmallVector<Value> conditionAnd(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.h(q[0]);
+  b.h(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto cond = arith::AndIOp::create(b, c0, c1).getResult();
+  b.scfIf(cond, [&] { b.x(q[2]); });
+  auto out = b.measure(q[2]);
+  return {c0, c1, out};
+}
+
+static SmallVector<Value> conditionOr(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.h(q[0]);
+  b.h(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto cond = arith::OrIOp::create(b, c0, c1).getResult();
+  b.scfIf(cond, [&] { b.x(q[2]); }, [&] { b.h(q[2]); });
+  auto out = b.measure(q[2]);
+  return {c0, c1, out};
+}
+
+static SmallVector<Value> conditionNotAndOr(qc::QCProgramBuilder& b) {
+  auto trueValue = b.boolConstant(true);
+  auto q = b.allocQubitRegister(4);
+  b.h(q[0]);
+  b.h(q[1]);
+  b.h(q[2]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto c2 = b.measure(q[2]);
+  auto both = arith::AndIOp::create(b, c0, c1).getResult();
+  auto notBoth = arith::XOrIOp::create(b, both, trueValue).getResult();
+  auto cond = arith::OrIOp::create(b, notBoth, c2).getResult();
+  b.scfIf(cond, [&] { b.x(q[3]); });
+  auto out = b.measure(q[3]);
+  return {c0, c1, c2, out};
+}
+
+static SmallVector<Value> conditionBoolVariable(qc::QCProgramBuilder& b) {
+  auto trueValue = b.boolConstant(true);
+  auto q = b.allocQubitRegister(3);
+  b.h(q[0]);
+  b.h(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto both = arith::AndIOp::create(b, c0, c1).getResult();
+  auto neither = arith::XOrIOp::create(b, both, trueValue).getResult();
+  b.scfIf(neither, [&] { b.x(q[2]); });
+  auto out = b.measure(q[2]);
+  return {c0, c1, out};
+}
+
+static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.h(q[0]);
+  b.h(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  b.scfIf(c1, [&] { b.x(q[2]); });
+  auto out = b.measure(q[2]);
+  return {c0, c1, out};
+}
+
+static SmallVector<Value> conditionWhileAnd(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  b.scfWhile(
+      [&] {
+        auto m0 = b.measure(q[0]);
+        auto m1 = b.measure(q[1]);
+        auto cond = arith::AndIOp::create(b, m0, m1).getResult();
+        b.scfCondition(cond);
+      },
+      [&] {
+        b.h(q[0]);
+        b.h(q[1]);
+      });
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {c0, c1};
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -358,8 +569,6 @@ INSTANTIATE_TEST_SUITE_P(
                                  qasm::multipleControlledSxdg,
                                  MQT_NAMED_BUILDER(qc::multipleControlledSxdg)},
         QASM3TranslationTestCase{"RX", qasm::rx, MQT_NAMED_BUILDER(qc::rx)},
-        QASM3TranslationTestCase{"RXTheta", qasm::rxTheta,
-                                 MQT_NAMED_BUILDER(qc::rx)},
         QASM3TranslationTestCase{"SingleControlledRX", qasm::singleControlledRx,
                                  MQT_NAMED_BUILDER(qc::singleControlledRx)},
         QASM3TranslationTestCase{"MultipleControlledRX",
@@ -494,20 +703,21 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::ctrlTwo)},
         QASM3TranslationTestCase{"CtrlTwoMixed", qasm::ctrlTwoMixed,
                                  MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
+        // --- IfOp --- //
         QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
                                  MQT_NAMED_BUILDER(qc::simpleIf)},
-        QASM3TranslationTestCase{"IfNot", qasm::ifNot,
-                                 MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
                                  MQT_NAMED_BUILDER(qc::ifTwoQubits)},
         QASM3TranslationTestCase{"IfEmptyThen", qasm::ifEmptyThen,
-                                 MQT_NAMED_BUILDER(ifNot)},
+                                 MQT_NAMED_BUILDER(ifEmptyThen)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
                                  MQT_NAMED_BUILDER(qc::ifElse)},
         QASM3TranslationTestCase{"NestedIfOpForLoop", qasm::nestedIfOpForLoop,
                                  MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)},
+        // --- WhileOp --- //
         QASM3TranslationTestCase{"SimpleWhileReset", qasm::simpleWhileReset,
                                  MQT_NAMED_BUILDER(qc::simpleWhileReset)},
+        // --- ForOp --- //
         QASM3TranslationTestCase{"SimpleForLoop", qasm::simpleForLoop,
                                  MQT_NAMED_BUILDER(qc::simpleForLoop)},
         QASM3TranslationTestCase{"NestedForLoopIfOp", qasm::nestedForLoopIfOp,
@@ -523,9 +733,61 @@ INSTANTIATE_TEST_SUITE_P(
             "NestedForLoopCtrlOpWithExtractedQubit",
             qasm::nestedForLoopCtrlOpWithExtractedQubit,
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)},
+        // --- Broadcasting --- //
         QASM3TranslationTestCase{"BroadcastRegisterAndQubit",
                                  qasm::broadcastRegisterAndQubit,
                                  MQT_NAMED_BUILDER(broadcastRegisterAndQubit)},
         QASM3TranslationTestCase{"BroadcastCompoundGate",
                                  qasm::broadcastCompoundGate,
-                                 MQT_NAMED_BUILDER(broadcastCompoundGate)}));
+                                 MQT_NAMED_BUILDER(broadcastCompoundGate)},
+        // --- Expressions --- //
+        QASM3TranslationTestCase{"ExpressionArithmetic",
+                                 qasm::expressionArithmetic,
+                                 MQT_NAMED_BUILDER(expressionArithmetic)},
+        QASM3TranslationTestCase{"ExpressionUnaryMinus",
+                                 qasm::expressionUnaryMinus,
+                                 MQT_NAMED_BUILDER(expressionUnaryMinus)},
+        QASM3TranslationTestCase{"ExpressionBuiltinConstants",
+                                 qasm::expressionBuiltinConstants,
+                                 MQT_NAMED_BUILDER(expressionBuiltinConstants)},
+        QASM3TranslationTestCase{"ExpressionMathFunctions",
+                                 qasm::expressionMathFunctions,
+                                 MQT_NAMED_BUILDER(expressionMathFunctions)},
+        QASM3TranslationTestCase{
+            "ExpressionNestedMathFunctions",
+            qasm::expressionNestedMathFunctions,
+            MQT_NAMED_BUILDER(expressionNestedMathFunctions)},
+        QASM3TranslationTestCase{"ExpressionConstFloat",
+                                 qasm::expressionConstFloat,
+                                 MQT_NAMED_BUILDER(expressionConstFloat)},
+        QASM3TranslationTestCase{"ExpressionMutableFloat",
+                                 qasm::expressionMutableFloat,
+                                 MQT_NAMED_BUILDER(expressionMutableFloat)},
+        QASM3TranslationTestCase{
+            "ExpressionConstIntArithmetic", qasm::expressionConstIntArithmetic,
+            MQT_NAMED_BUILDER(expressionConstIntArithmetic)},
+        QASM3TranslationTestCase{"ExpressionDynamicIntIndex",
+                                 qasm::expressionDynamicIntIndex,
+                                 MQT_NAMED_BUILDER(expressionDynamicIntIndex)},
+        QASM3TranslationTestCase{"ExpressionModIndex", qasm::expressionModIndex,
+                                 MQT_NAMED_BUILDER(expressionModIndex)},
+        // --- Conditions --- //
+        QASM3TranslationTestCase{"ConditionLiteral", qasm::conditionLiteral,
+                                 MQT_NAMED_BUILDER(conditionLiteral)},
+        QASM3TranslationTestCase{"ConditionMeasurement",
+                                 qasm::conditionMeasurement,
+                                 MQT_NAMED_BUILDER(conditionMeasurement)},
+        QASM3TranslationTestCase{"ConditionAnd", qasm::conditionAnd,
+                                 MQT_NAMED_BUILDER(conditionAnd)},
+        QASM3TranslationTestCase{"ConditionOr", qasm::conditionOr,
+                                 MQT_NAMED_BUILDER(conditionOr)},
+        QASM3TranslationTestCase{"ConditionNotAndOr", qasm::conditionNotAndOr,
+                                 MQT_NAMED_BUILDER(conditionNotAndOr)},
+        QASM3TranslationTestCase{"ConditionBoolVariable",
+                                 qasm::conditionBoolVariable,
+                                 MQT_NAMED_BUILDER(conditionBoolVariable)},
+        QASM3TranslationTestCase{"ConditionIndexedBit",
+                                 qasm::conditionIndexedBit,
+                                 MQT_NAMED_BUILDER(conditionIndexedBit)},
+        QASM3TranslationTestCase{"ConditionWhileAnd", qasm::conditionWhileAnd,
+                                 MQT_NAMED_BUILDER(conditionWhileAnd)}));
