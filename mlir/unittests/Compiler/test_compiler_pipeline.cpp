@@ -44,10 +44,13 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iosfwd>
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace mqt::test::compiler {
 
@@ -375,6 +378,118 @@ h q;
   auto reparsed = parseRecordedModule(roundTrip.str());
   ASSERT_TRUE(reparsed);
   EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
+}
+
+/**
+ * @brief Test: typed programs import MLIR and OpenQASM from their public APIs
+ */
+TEST_F(CompilerPipelineTest, TypedProgramImportsAndCopies) {
+  const std::string mlir = R"(module {
+  %0 = qc.alloc : !qc.qubit
+  qc.dealloc %0 : !qc.qubit
+})";
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  const auto temporaryDirectory = std::filesystem::path(testing::TempDir());
+  const auto mlirPath = temporaryDirectory / "typed_program_input.mlir";
+  const auto qasmPath = temporaryDirectory / "typed_program_input.qasm";
+  std::ofstream(mlirPath) << mlir;
+  std::ofstream(qasmPath) << qasm;
+
+  auto qcFromMLIR = QCProgram::fromMLIRString(mlir);
+  auto qcFromMLIRFile = QCProgram::fromMLIRFile(mlirPath);
+  auto qcFromQASM = QCProgram::fromQASMString(qasm);
+  auto qcFromQASMFile = QCProgram::fromQASMFile(qasmPath);
+
+  EXPECT_EQ(qcFromMLIR.str(), qcFromMLIRFile.str());
+  EXPECT_EQ(qcFromQASM.str(), qcFromQASMFile.str());
+  EXPECT_EQ(qcFromMLIR.str(), qcFromMLIR.copy().str());
+  EXPECT_THROW(QCProgram::fromMLIRString("not valid MLIR"), std::runtime_error);
+  EXPECT_THROW(QCProgram::fromMLIRFile(temporaryDirectory / "missing.mlir"),
+               std::runtime_error);
+}
+
+/**
+ * @brief Test: Jeff programs round-trip through their binary APIs
+ */
+TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughBytesAndFiles) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+x q;
+)";
+  const auto path = std::filesystem::path(testing::TempDir()) /
+                    "typed_program_round_trip.jeff";
+
+  auto qco = std::move(QCProgram::fromQASMString(qasm)).intoQCO();
+  auto jeff = std::move(qco).intoJeff();
+  const auto bytes = jeff.toBytes();
+  ASSERT_FALSE(bytes.empty());
+  jeff.write(path);
+
+  auto fromBytes = JeffProgram::fromBytes(bytes);
+  auto fromFile = JeffProgram::fromFile(path);
+  EXPECT_EQ(fromBytes.str(), fromFile.str());
+  EXPECT_EQ(fromBytes.toBytes(), bytes);
+
+  auto roundTrip = std::move(fromFile).intoQCO();
+  auto reparsed = parseRecordedModule(roundTrip.str());
+  ASSERT_TRUE(reparsed);
+  EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
+  EXPECT_THROW(JeffProgram::fromBytes("invalid"), std::invalid_argument);
+}
+
+/**
+ * @brief Test: default compilation returns the requested typed program format
+ */
+TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  const auto compile = [&qasm](const ProgramFormat output) {
+    auto input = QCProgram::fromQASMString(qasm);
+    return runDefaultPipeline(CompilerProgram{std::move(input)}, output);
+  };
+
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(compile(ProgramFormat::QC)));
+  EXPECT_TRUE(std::holds_alternative<QCOProgram>(compile(ProgramFormat::QCO)));
+  EXPECT_TRUE(
+      std::holds_alternative<JeffProgram>(compile(ProgramFormat::Jeff)));
+
+  auto base = compile(ProgramFormat::QIRBase);
+  ASSERT_TRUE(std::holds_alternative<QIRProgram>(base));
+  EXPECT_EQ(std::get<QIRProgram>(base).profile(), QIRProfile::Base);
+  EXPECT_FALSE(std::get<QIRProgram>(base).llvmIR().empty());
+
+  auto adaptive = compile(ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(std::holds_alternative<QIRProgram>(adaptive));
+  EXPECT_EQ(std::get<QIRProgram>(adaptive).profile(), QIRProfile::Adaptive);
+
+  auto imported = QCProgram::fromQASMString(qasm);
+  auto importedResult = runDefaultPipeline(CompilerProgram{std::move(imported)},
+                                           ProgramFormat::QCImport);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(importedResult));
+
+  auto qco = std::move(QCProgram::fromQASMString(qasm)).intoQCO();
+  auto fromQCO =
+      runDefaultPipeline(CompilerProgram{std::move(qco)}, ProgramFormat::QC);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(fromQCO));
+
+  auto jeff = std::move(QCProgram::fromQASMString(qasm)).intoQCO().intoJeff();
+  auto fromJeff =
+      runDefaultPipeline(CompilerProgram{std::move(jeff)}, ProgramFormat::QC);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(fromJeff));
+
+  auto qir =
+      std::move(QCProgram::fromQASMString(qasm)).intoQIR(QIRProfile::Base);
+  EXPECT_THROW(
+      runDefaultPipeline(CompilerProgram{std::move(qir)}, ProgramFormat::QC),
+      std::invalid_argument);
 }
 
 INSTANTIATE_TEST_SUITE_P(
