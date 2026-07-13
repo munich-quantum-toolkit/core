@@ -308,6 +308,14 @@ public:
 
   //===--- Declarations and assignments ---------------------------------===//
 
+  LogicalResult boolDecl(SMLoc /*loc*/, StringRef id,
+                         const Condition* initializer) {
+    if (initializer != nullptr) {
+      return assignBool(id, *initializer);
+    }
+    return success();
+  }
+
   LogicalResult intDecl(SMLoc /*loc*/, StringRef id, const Expr* initializer,
                         bool isConst) {
     if (initializer != nullptr) {
@@ -324,12 +332,9 @@ public:
     return success();
   }
 
-  LogicalResult boolDecl(SMLoc /*loc*/, StringRef id,
-                         const Condition* initializer) {
-    if (initializer != nullptr) {
-      return assignBool(id, *initializer);
-    }
-    return success();
+  LogicalResult boolAssign(SMLoc /*loc*/, StringRef id,
+                           const Condition& value) {
+    return assignBool(id, value);
   }
 
   LogicalResult intAssign(SMLoc /*loc*/, StringRef id, const Expr& value) {
@@ -341,9 +346,14 @@ public:
     return assignFloat(id, value);
   }
 
-  LogicalResult boolAssign(SMLoc /*loc*/, StringRef id,
-                           const Condition& value) {
-    return assignBool(id, value);
+  /// Bind a boolean variable @p id to the value of @p value.
+  LogicalResult assignBool(StringRef id, const Condition& value) {
+    auto emitted = emitCondition(value);
+    if (failed(emitted)) {
+      return failure();
+    }
+    booleanValues.insert(id, *emitted);
+    return success();
   }
 
   /**
@@ -351,23 +361,23 @@ public:
    *
    * @details
    * If @p isConst, the value is evaluated at compile time and stored in
-   * `constantIntegers`. Otherwise, the value is emitted as a runtime value and
-   * stored in `dynamicIntegers`.
+   * `intConstants`. Otherwise, the value is emitted as a runtime value and
+   * stored in `intValues`.
    */
   LogicalResult assignInt(StringRef id, const Expr& value, bool isConst) {
     if (isConst) {
-      auto folded = evaluateConstant(value);
+      auto folded = evaluateIntConstant(value);
       if (failed(folded)) {
         return failure();
       }
-      constantIntegers.insert(id, *folded);
+      intConstants.insert(id, *folded);
       return success();
     }
     auto emitted = emitIndex(value);
     if (failed(emitted)) {
       return failure();
     }
-    dynamicIntegers.insert(id, *emitted);
+    intValues.insert(id, *emitted);
     return success();
   }
 
@@ -381,23 +391,13 @@ public:
     return success();
   }
 
-  /// Bind a boolean variable @p id to the value of @p value.
-  LogicalResult assignBool(StringRef id, const Condition& value) {
-    auto emitted = emitCondition(value);
-    if (failed(emitted)) {
-      return failure();
-    }
-    booleanValues.insert(id, *emitted);
-    return success();
-  }
-
   LogicalResult qubitRegister(SMLoc /*loc*/, StringRef id, const Expr* size) {
     if (size != nullptr) {
-      auto sizeConstant = evaluateConstant(*size);
-      if (failed(sizeConstant)) {
+      auto foldedSize = evaluateIntConstant(*size);
+      if (failed(foldedSize)) {
         return failure();
       }
-      const auto [value, qubits] = builder.allocQubitRegister(*sizeConstant);
+      const auto [value, qubits] = builder.allocQubitRegister(*foldedSize);
       qubitRegisters[id] = {.memref = value, .qubits = qubits};
     } else {
       qubitRegisters[id] = {.memref = nullptr,
@@ -409,13 +409,13 @@ public:
   LogicalResult classicalRegister(SMLoc loc, StringRef id, const Expr* size,
                                   bool isOutput) {
     if (size != nullptr) {
-      auto sizeConstant = evaluateConstant(*size);
-      if (failed(sizeConstant)) {
+      auto foldedSize = evaluateIntConstant(*size);
+      if (failed(foldedSize)) {
         return failure();
       }
       classicalRegisters.push_back(
           {.loc = loc,
-           .reg = builder.allocClassicalBitRegister(*sizeConstant, id.str()),
+           .reg = builder.allocClassicalBitRegister(*foldedSize, id.str()),
            .isOutput = isOutput});
     } else {
       classicalRegisters.push_back(
@@ -594,7 +594,7 @@ public:
       return failure();
     }
 
-    auto foldedStep = tryEvaluateConstant(step);
+    auto foldedStep = tryEvaluateIntConstant(step);
     if (failed(foldedStep)) {
       return failure();
     }
@@ -650,7 +650,7 @@ public:
               .getResult();
     }
 
-    ValueScope ivScope(dynamicIntegers);
+    ValueScope ivScope(intValues);
     ValueScope loadScope(dynamicallyLoadedQubits);
 
     auto status = success();
@@ -662,7 +662,7 @@ public:
         resolvedIv =
             arith::SubIOp::create(builder, *startValue, offset).getResult();
       }
-      dynamicIntegers.insert(variable, resolvedIv);
+      intValues.insert(variable, resolvedIv);
       status = body();
     });
     return status;
@@ -802,11 +802,11 @@ private:
     if (argument == nullptr) {
       return static_cast<size_t>(1);
     }
-    auto value = evaluateConstant(*argument);
-    if (failed(value)) {
+    auto folded = evaluateIntConstant(*argument);
+    if (failed(folded)) {
       return failure();
     }
-    return static_cast<size_t>(*value);
+    return static_cast<size_t>(*folded);
   }
 
   template <typename T>
@@ -974,13 +974,13 @@ private:
     if (bit.index == nullptr) {
       return registerBits[0];
     }
-    auto index = evaluateConstant(*bit.index);
-    if (failed(index)) {
+    auto foldedIndex = evaluateIntConstant(*bit.index);
+    if (failed(foldedIndex)) {
       return failure();
     }
-    const auto i = static_cast<size_t>(*index);
+    const auto i = static_cast<size_t>(*foldedIndex);
     if (i >= registerBits.size() || !registerBits[i]) {
-      return error(bit.loc, "bit " + Twine(*index) + " of register '" +
+      return error(bit.loc, "bit " + Twine(*foldedIndex) + " of register '" +
                                 bit.identifier + "' has not been measured yet");
     }
     return registerBits[i];
@@ -1011,7 +1011,7 @@ private:
 
     const auto& index = *operand.index;
 
-    auto foldedIndex = tryEvaluateConstant(index);
+    auto foldedIndex = tryEvaluateIntConstant(index);
     if (failed(foldedIndex)) {
       return failure();
     }
@@ -1071,6 +1071,8 @@ private:
     return loaded;
   }
 
+  //===--- Bit reference resolution -------------------------------------===//
+
   FailureOr<SmallVector<QCProgramBuilder::Bit>>
   resolveBitReference(const ClassicalRegisterInfo& info,
                       const BitReference& reference) {
@@ -1082,14 +1084,14 @@ private:
       }
       return bits;
     }
-    auto index = evaluateConstant(*reference.index);
-    if (failed(index)) {
+    auto foldedIndex = evaluateIntConstant(*reference.index);
+    if (failed(foldedIndex)) {
       return failure();
     }
-    if (*index < 0 || *index >= creg.size) {
+    if (*foldedIndex < 0 || *foldedIndex >= creg.size) {
       return error(reference.loc, "classical bit index out of bounds");
     }
-    bits.push_back(creg[*index]);
+    bits.push_back(creg[*foldedIndex]);
     return bits;
   }
 
@@ -1189,10 +1191,10 @@ private:
     if (auto value = floatValues.lookup(name)) {
       return value;
     }
-    if (auto value = constantIntegers.lookup(name)) {
+    if (auto value = intConstants.lookup(name)) {
       return builder.floatConstant(static_cast<double>(value));
     }
-    if (auto value = dynamicIntegers.lookup(name)) {
+    if (auto value = intValues.lookup(name)) {
       auto integer =
           arith::IndexCastOp::create(builder, builder.getI64Type(), value)
               .getResult();
@@ -1238,10 +1240,10 @@ private:
       }
     }
     case Expr::Kind::Identifier:
-      if (auto value = constantIntegers.lookup(expr.identifier)) {
+      if (auto value = intConstants.lookup(expr.identifier)) {
         return builder.indexConstant(value);
       }
-      if (auto value = dynamicIntegers.lookup(expr.identifier)) {
+      if (auto value = intValues.lookup(expr.identifier)) {
         return value;
       }
       return error(expr.loc, "expected an integer expression");
@@ -1260,19 +1262,19 @@ private:
    * to fall back to emitting the expression. A constant expression that is
    * malformed is diagnosed and returns failure.
    */
-  FailureOr<std::optional<int64_t>> tryEvaluateConstant(const Expr& expr) {
+  FailureOr<std::optional<int64_t>> tryEvaluateIntConstant(const Expr& expr) {
     switch (expr.kind) {
     case Expr::Kind::Int:
       return std::optional{expr.intValue};
     case Expr::Kind::Float:
       return std::optional<int64_t>{};
     case Expr::Kind::Identifier:
-      if (auto value = constantIntegers.lookup(expr.identifier)) {
+      if (auto value = intConstants.lookup(expr.identifier)) {
         return std::optional{value};
       }
       return std::optional<int64_t>{};
     case Expr::Kind::Neg: {
-      auto operand = tryEvaluateConstant(*expr.lhs);
+      auto operand = tryEvaluateIntConstant(*expr.lhs);
       if (failed(operand) || !*operand) {
         return operand;
       }
@@ -1282,8 +1284,8 @@ private:
     case Expr::Kind::Sub:
     case Expr::Kind::Mul:
     case Expr::Kind::Div: {
-      auto lhs = tryEvaluateConstant(*expr.lhs);
-      auto rhs = tryEvaluateConstant(*expr.rhs);
+      auto lhs = tryEvaluateIntConstant(*expr.lhs);
+      auto rhs = tryEvaluateIntConstant(*expr.rhs);
       if (failed(lhs) || failed(rhs)) {
         return failure();
       }
@@ -1309,8 +1311,8 @@ private:
   }
 
   /// Fold @p expr to a compile-time integer constant, requiring that it is one.
-  FailureOr<int64_t> evaluateConstant(const Expr& expr) {
-    auto folded = tryEvaluateConstant(expr);
+  FailureOr<int64_t> evaluateIntConstant(const Expr& expr) {
+    auto folded = tryEvaluateIntConstant(expr);
     if (failed(folded)) {
       return failure();
     }
@@ -1325,16 +1327,16 @@ private:
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
 
-  ValueTable floatValues;
-  ValueScope floatValuesScope{floatValues};
-
-  IntegerTable constantIntegers;
-  IntegerScope constantIntegersScope{constantIntegers};
-  ValueTable dynamicIntegers;
-  ValueScope dynamicIntegersScope{dynamicIntegers};
-
   ValueTable booleanValues;
   ValueScope booleanValuesScope{booleanValues};
+
+  IntegerTable intConstants;
+  IntegerScope intConstantsScope{intConstants};
+  ValueTable intValues;
+  ValueScope intValuesScope{intValues};
+
+  ValueTable floatValues;
+  ValueScope floatValuesScope{floatValues};
 
   ValueTable dynamicallyLoadedQubits;
   ValueScope dynamicallyLoadedQubitsScope{dynamicallyLoadedQubits};
