@@ -17,6 +17,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/SMLoc.h>
@@ -50,7 +51,28 @@ namespace mlir::qc::detail {
  * Bump-allocated; children are borrowed pointers.
  */
 struct Expr {
-  enum class Kind : uint8_t { Int, Float, Identifier, Neg, Add, Sub, Mul, Div };
+  enum class Kind : uint8_t {
+    Int,
+    Float,
+    Identifier,
+    Neg,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    // Built-in math functions
+    ArcCos,
+    ArcSin,
+    ArcTan,
+    Cos,
+    Exp,
+    Log,
+    Mod,
+    Pow,
+    Sin,
+    Sqrt,
+    Tan,
+  };
 
   SMLoc loc;
   Kind kind = Kind::Int;
@@ -60,6 +82,24 @@ struct Expr {
   const Expr* lhs = nullptr;
   const Expr* rhs = nullptr;
 };
+
+/// Get the kind of the built-in math function @p name.
+[[nodiscard]] inline std::optional<Expr::Kind>
+getMathFunctionKind(StringRef name) {
+  return llvm::StringSwitch<std::optional<Expr::Kind>>(name)
+      .Case("arccos", Expr::Kind::ArcCos)
+      .Case("arcsin", Expr::Kind::ArcSin)
+      .Case("arctan", Expr::Kind::ArcTan)
+      .Case("cos", Expr::Kind::Cos)
+      .Case("exp", Expr::Kind::Exp)
+      .Case("log", Expr::Kind::Log)
+      .Case("mod", Expr::Kind::Mod)
+      .Case("pow", Expr::Kind::Pow)
+      .Case("sin", Expr::Kind::Sin)
+      .Case("sqrt", Expr::Kind::Sqrt)
+      .Case("tan", Expr::Kind::Tan)
+      .Default(std::nullopt);
+}
 
 /**
  * @ingroup ParseVocabulary
@@ -1407,11 +1447,23 @@ private:
       expr->intValue = current().intValue;
       advance();
       return expr;
-    case TokenKind::Identifier:
+    case TokenKind::Identifier: {
+      if (peek().kind == TokenKind::LParen) {
+        const auto kind = getMathFunctionKind(current().identifier);
+        if (!kind) {
+          return sink.error(current().loc,
+                            "unknown function '" + current().identifier + "'");
+        }
+        return parseMathCall(*kind, expr);
+      }
       expr->kind = Expr::Kind::Identifier;
       expr->identifier = current().identifier;
       advance();
       return expr;
+    }
+    // `pow` is also a gate modifier, so it has a dedicated token
+    case TokenKind::Pow:
+      return parseMathCall(Expr::Kind::Pow, expr);
     case TokenKind::LParen: {
       advance();
       auto inner = parseExpression();
@@ -1426,6 +1478,39 @@ private:
     default:
       return sink.error(current().loc, "expected expression");
     }
+  }
+
+  /// Parse the argument list of a call to the built-in math function @p kind.
+  [[nodiscard]] FailureOr<const Expr*> parseMathCall(Expr::Kind kind,
+                                                     Expr* expr) {
+    expr->kind = kind;
+    advance(); // function name
+
+    if (failed(expect(TokenKind::LParen))) {
+      return failure();
+    }
+
+    auto lhs = parseExpression();
+    if (failed(lhs)) {
+      return failure();
+    }
+    expr->lhs = *lhs;
+
+    if (kind == Expr::Kind::Mod || kind == Expr::Kind::Pow) {
+      if (failed(expect(TokenKind::Comma))) {
+        return failure();
+      }
+      auto rhs = parseExpression();
+      if (failed(rhs)) {
+        return failure();
+      }
+      expr->rhs = *rhs;
+    }
+
+    if (failed(expect(TokenKind::RParen))) {
+      return failure();
+    }
+    return expr;
   }
 
   [[nodiscard]] Expr* makeBinary(const Expr::Kind kind, const Expr* lhs,

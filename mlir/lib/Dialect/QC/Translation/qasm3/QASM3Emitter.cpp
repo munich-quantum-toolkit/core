@@ -30,6 +30,7 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -1034,7 +1035,7 @@ private:
     return std::variant<Value, SmallVector<Value>>{*loaded};
   }
 
-  static std::string indexKey(const Expr& expr) {
+  static std::string getIndexKey(const Expr& expr) {
     switch (expr.kind) {
     case Expr::Kind::Int:
       return std::to_string(expr.intValue);
@@ -1043,22 +1044,27 @@ private:
     case Expr::Kind::Identifier:
       return expr.identifier.str();
     case Expr::Kind::Neg:
-      return "(-" + indexKey(*expr.lhs) + ")";
+      return "(-" + getIndexKey(*expr.lhs) + ")";
     case Expr::Kind::Add:
-      return "(" + indexKey(*expr.lhs) + "+" + indexKey(*expr.rhs) + ")";
+      return "(" + getIndexKey(*expr.lhs) + "+" + getIndexKey(*expr.rhs) + ")";
     case Expr::Kind::Sub:
-      return "(" + indexKey(*expr.lhs) + "-" + indexKey(*expr.rhs) + ")";
+      return "(" + getIndexKey(*expr.lhs) + "-" + getIndexKey(*expr.rhs) + ")";
     case Expr::Kind::Mul:
-      return "(" + indexKey(*expr.lhs) + "*" + indexKey(*expr.rhs) + ")";
+      return "(" + getIndexKey(*expr.lhs) + "*" + getIndexKey(*expr.rhs) + ")";
     case Expr::Kind::Div:
-      return "(" + indexKey(*expr.lhs) + "/" + indexKey(*expr.rhs) + ")";
+      return "(" + getIndexKey(*expr.lhs) + "/" + getIndexKey(*expr.rhs) + ")";
+    case Expr::Kind::Mod:
+      return "(" + getIndexKey(*expr.lhs) + "%" + getIndexKey(*expr.rhs) + ")";
+    case Expr::Kind::Pow:
+      return "(" + getIndexKey(*expr.lhs) + "**" + getIndexKey(*expr.rhs) + ")";
+    default:
+      llvm_unreachable("unknown expression kind");
     }
-    llvm_unreachable("unknown expression kind");
   }
 
   FailureOr<Value> loadDynamicElement(StringRef name, Value memref,
                                       const Expr& expr) {
-    const std::string key = name.str() + "[" + indexKey(expr) + "]";
+    const std::string key = name.str() + "[" + getIndexKey(expr) + "]";
     if (Value cached = dynamicallyLoadedQubits.lookup(key)) {
       return cached;
     }
@@ -1166,7 +1172,9 @@ private:
     case Expr::Kind::Add:
     case Expr::Kind::Sub:
     case Expr::Kind::Mul:
-    case Expr::Kind::Div: {
+    case Expr::Kind::Div:
+    case Expr::Kind::Mod:
+    case Expr::Kind::Pow: {
       auto lhs = emitFloat(*expr.lhs);
       auto rhs = emitFloat(*expr.rhs);
       if (failed(lhs) || failed(rhs)) {
@@ -1179,12 +1187,55 @@ private:
         return arith::SubFOp::create(builder, *lhs, *rhs).getResult();
       case Expr::Kind::Mul:
         return arith::MulFOp::create(builder, *lhs, *rhs).getResult();
-      default:
+      case Expr::Kind::Div:
         return arith::DivFOp::create(builder, *lhs, *rhs).getResult();
+      case Expr::Kind::Mod:
+        return arith::RemFOp::create(builder, *lhs, *rhs).getResult();
+      case Expr::Kind::Pow:
+        return math::PowFOp::create(builder, *lhs, *rhs).getResult();
+      default:
+        llvm_unreachable("unknown binary operator");
       }
     }
+    case Expr::Kind::ArcCos:
+    case Expr::Kind::ArcSin:
+    case Expr::Kind::ArcTan:
+    case Expr::Kind::Cos:
+    case Expr::Kind::Exp:
+    case Expr::Kind::Log:
+    case Expr::Kind::Sin:
+    case Expr::Kind::Sqrt:
+    case Expr::Kind::Tan: {
+      auto operand = emitFloat(*expr.lhs);
+      if (failed(operand)) {
+        return failure();
+      }
+      switch (expr.kind) {
+      case Expr::Kind::ArcCos:
+        return math::AcosOp::create(builder, *operand).getResult();
+      case Expr::Kind::ArcSin:
+        return math::AsinOp::create(builder, *operand).getResult();
+      case Expr::Kind::ArcTan:
+        return math::AtanOp::create(builder, *operand).getResult();
+      case Expr::Kind::Cos:
+        return math::CosOp::create(builder, *operand).getResult();
+      case Expr::Kind::Exp:
+        return math::ExpOp::create(builder, *operand).getResult();
+      case Expr::Kind::Log:
+        return math::LogOp::create(builder, *operand).getResult();
+      case Expr::Kind::Sin:
+        return math::SinOp::create(builder, *operand).getResult();
+      case Expr::Kind::Sqrt:
+        return math::SqrtOp::create(builder, *operand).getResult();
+      case Expr::Kind::Tan:
+        return math::TanOp::create(builder, *operand).getResult();
+      default:
+        llvm_unreachable("unknown unary operator");
+      }
     }
-    llvm_unreachable("unknown expression kind");
+    default:
+      llvm_unreachable("unknown expression kind");
+    }
   }
 
   FailureOr<Value> resolveParameter(StringRef name, SMLoc loc) {
@@ -1211,6 +1262,8 @@ private:
     switch (expr.kind) {
     case Expr::Kind::Int:
       return builder.indexConstant(expr.intValue);
+    case Expr::Kind::Float:
+      return error(expr.loc, "expected an integer expression");
     case Expr::Kind::Neg: {
       auto operand = emitIndex(*expr.lhs);
       if (failed(operand)) {
@@ -1222,7 +1275,9 @@ private:
     case Expr::Kind::Add:
     case Expr::Kind::Sub:
     case Expr::Kind::Mul:
-    case Expr::Kind::Div: {
+    case Expr::Kind::Div:
+    case Expr::Kind::Mod:
+    case Expr::Kind::Pow: {
       auto lhs = emitIndex(*expr.lhs);
       auto rhs = emitIndex(*expr.rhs);
       if (failed(lhs) || failed(rhs)) {
@@ -1235,8 +1290,14 @@ private:
         return arith::SubIOp::create(builder, *lhs, *rhs).getResult();
       case Expr::Kind::Mul:
         return arith::MulIOp::create(builder, *lhs, *rhs).getResult();
-      default:
+      case Expr::Kind::Div:
         return arith::DivSIOp::create(builder, *lhs, *rhs).getResult();
+      case Expr::Kind::Mod:
+        return arith::RemSIOp::create(builder, *lhs, *rhs).getResult();
+      case Expr::Kind::Pow:
+        return math::IPowIOp::create(builder, *lhs, *rhs).getResult();
+      default:
+        llvm_unreachable("unknown binary operator");
       }
     }
     case Expr::Kind::Identifier:
@@ -1247,10 +1308,19 @@ private:
         return value;
       }
       return error(expr.loc, "expected an integer expression");
-    case Expr::Kind::Float:
+    case Expr::Kind::ArcCos:
+    case Expr::Kind::ArcSin:
+    case Expr::Kind::ArcTan:
+    case Expr::Kind::Cos:
+    case Expr::Kind::Exp:
+    case Expr::Kind::Log:
+    case Expr::Kind::Sin:
+    case Expr::Kind::Sqrt:
+    case Expr::Kind::Tan:
       return error(expr.loc, "expected an integer expression");
+    default:
+      llvm_unreachable("unknown expression kind");
     }
-    llvm_unreachable("unknown expression kind");
   }
 
   /**
@@ -1267,7 +1337,7 @@ private:
     case Expr::Kind::Int:
       return std::optional{expr.intValue};
     case Expr::Kind::Float:
-      return std::optional<int64_t>{};
+      return error(expr.loc, "expected an integer expression");
     case Expr::Kind::Identifier:
       if (auto value = intConstants.lookup(expr.identifier)) {
         return std::optional{value};
@@ -1283,7 +1353,9 @@ private:
     case Expr::Kind::Add:
     case Expr::Kind::Sub:
     case Expr::Kind::Mul:
-    case Expr::Kind::Div: {
+    case Expr::Kind::Div:
+    case Expr::Kind::Mod:
+    case Expr::Kind::Pow: {
       auto lhs = tryEvaluateIntConstant(*expr.lhs);
       auto rhs = tryEvaluateIntConstant(*expr.rhs);
       if (failed(lhs) || failed(rhs)) {
@@ -1299,15 +1371,43 @@ private:
         return std::optional{**lhs - **rhs};
       case Expr::Kind::Mul:
         return std::optional{**lhs * **rhs};
-      default:
+      case Expr::Kind::Div:
         if (**rhs == 0) {
           return error(expr.loc, "division by zero in constant expression");
         }
         return std::optional{**lhs / **rhs};
+      case Expr::Kind::Mod:
+        if (**rhs == 0) {
+          return error(expr.loc, "modulo by zero in constant expression");
+        }
+        return std::optional{**lhs % **rhs};
+      case Expr::Kind::Pow: {
+        if (**rhs < 0) {
+          return error(expr.loc, "negative exponent in constant expression");
+        }
+        int64_t result = 1;
+        for (int64_t i = 0; i < **rhs; ++i) {
+          result *= **lhs;
+        }
+        return std::optional{result};
+      }
+      default:
+        llvm_unreachable("unknown binary operator");
       }
     }
+    case Expr::Kind::ArcCos:
+    case Expr::Kind::ArcSin:
+    case Expr::Kind::ArcTan:
+    case Expr::Kind::Cos:
+    case Expr::Kind::Exp:
+    case Expr::Kind::Log:
+    case Expr::Kind::Sin:
+    case Expr::Kind::Sqrt:
+    case Expr::Kind::Tan:
+      return error(expr.loc, "expected an integer expression");
+    default:
+      llvm_unreachable("unknown expression kind");
     }
-    llvm_unreachable("unknown expression kind");
   }
 
   /// Fold @p expr to a compile-time integer constant, requiring that it is one.
