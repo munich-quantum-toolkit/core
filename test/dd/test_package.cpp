@@ -2285,7 +2285,7 @@ TEST(DDPackageTest, RCCXGateDDConstruction) {
   const auto rccxGateDD =
       getDD(qc::StandardOperation(qc::Targets{0, 1, 2}, qc::RCCX), *dd);
 
-  auto gateDD = dd->makeIdent();
+  auto gateDD = Package::makeIdent();
   const auto applySingle = [&](const qc::OpType type, const qc::Qubit target) {
     gateDD =
         dd->multiply(getDD(qc::StandardOperation(target, type), *dd), gateDD);
