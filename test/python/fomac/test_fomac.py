@@ -16,7 +16,9 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, Job, ProgramFormat, Session, add_dynamic_device_library
+from mqt.core.fomac import CustomProperty, Device, Job, ProgramFormat, Session, add_dynamic_device_library
+
+CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
 
 def _get_devices() -> list[Device]:
@@ -185,6 +187,28 @@ def test_device_min_atom_distance(device: Device) -> None:
     if mad is not None:
         assert isinstance(mad, int)
         assert mad > 0.0
+
+
+@pytest.mark.parametrize("value_type", [str, bool, int, float, bytes])
+def test_device_custom_property_unsupported(device: Device, value_type: CustomValueType) -> None:
+    """Test typed custom device queries for unsupported slots."""
+    assert device.query_custom_property(CustomProperty.CUSTOM1, value_type) is None
+
+
+def test_device_custom_property_type_overloads(device: Device) -> None:
+    """Test that each explicit value type produces a correspondingly typed result."""
+    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM1, str)
+    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM1, bool)
+    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM1, int)
+    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM1, float)
+    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM1, bytes)
+    assert all(value is None for value in (string_value, bool_value, int_value, float_value, bytes_value))
+
+
+def test_device_custom_property_rejects_invalid_type(device: Device) -> None:
+    """Test that custom queries accept only the documented built-in types."""
+    with pytest.raises(TypeError, match="value_type must be exactly"):
+        device.query_custom_property(CustomProperty.CUSTOM1, cast("type[bytes]", list))
 
 
 def test_site_index(device_and_site: tuple[Device, Device.Site]) -> None:
@@ -397,6 +421,19 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
         assert mss > 0
 
 
+def test_site_and_operation_custom_properties_unsupported(
+    device_and_site: tuple[Device, Device.Site],
+    device_and_operation: tuple[Device, Device.Operation],
+) -> None:
+    """Test custom queries on site and operation objects."""
+    _device, site = device_and_site
+    site_value: bytes | None = site.query_custom_property(CustomProperty.CUSTOM1, bytes)
+    assert site_value is None
+    _device, operation = device_and_operation
+    operation_value: bytes | None = operation.query_custom_property(CustomProperty.CUSTOM1, bytes)
+    assert operation_value is None
+
+
 def test_device_submit_job_returns_valid_job(ddsim_device: Device) -> None:
     """Test that submit_job creates a Job object with valid properties."""
     qasm3_program = """
@@ -483,6 +520,15 @@ c[0] = measure q[0];
     job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
 
     assert job1.id != job2.id
+
+
+def test_job_custom_property_and_result_unsupported(submitted_job: Job) -> None:
+    """Test custom job-property and result queries for unsupported slots."""
+    property_value: bytes | None = submitted_job.query_custom_property(CustomProperty.CUSTOM1, bytes)
+    assert property_value is None
+    assert submitted_job.wait()
+    result_value: bytes | None = submitted_job.get_custom_result(CustomProperty.CUSTOM1, bytes)
+    assert result_value is None
 
 
 def test_job_status_progresses(submitted_job: Job) -> None:

@@ -35,6 +35,7 @@
     "uv\\.lock",
     "py\\.typed",
     ".*build.*",
-    "(^|/)LICENSE$"
+    "(^|/)LICENSE$",
+    "patterns.txt"
   ]
 }
