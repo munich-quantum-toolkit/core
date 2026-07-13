@@ -33,6 +33,27 @@ namespace fomac {
 
 namespace {
 
+auto queryBytes(const std::vector<std::byte>& bytes) {
+  return [&bytes](const size_t size, void* value, size_t* sizeRet) {
+    if (sizeRet != nullptr) {
+      *sizeRet = bytes.size();
+    }
+    if (value != nullptr) {
+      if (size < bytes.size()) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, bytes.data(), bytes.size());
+    }
+    return QDMI_SUCCESS;
+  };
+}
+
+template <typename T> auto bytesOf(const T& value) {
+  std::vector<std::byte> bytes(sizeof(T));
+  std::memcpy(bytes.data(), &value, sizeof(T));
+  return bytes;
+}
+
 class DeviceTest : public testing::TestWithParam<Device> {
 protected:
   Device device;
@@ -108,6 +129,62 @@ cx q[0], q[1];
 };
 
 } // namespace
+
+TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
+  EXPECT_EQ(detail::toDeviceProperty(CustomProperty::Custom1),
+            QDMI_DEVICE_PROPERTY_CUSTOM1);
+  EXPECT_EQ(detail::toSiteProperty(CustomProperty::Custom2),
+            QDMI_SITE_PROPERTY_CUSTOM2);
+  EXPECT_EQ(detail::toOperationProperty(CustomProperty::Custom3),
+            QDMI_OPERATION_PROPERTY_CUSTOM3);
+  EXPECT_EQ(detail::toJobProperty(CustomProperty::Custom4),
+            QDMI_JOB_PROPERTY_CUSTOM4);
+  EXPECT_EQ(detail::toJobResult(CustomProperty::Custom5),
+            QDMI_JOB_RESULT_CUSTOM5);
+}
+
+TEST(CustomPropertyTest, DecodesSupportedTypes) {
+  const std::vector<std::byte> stringBytes{std::byte{'v'}, std::byte{'a'},
+                                           std::byte{'l'}, std::byte{'u'},
+                                           std::byte{'e'}, std::byte{0}};
+  EXPECT_EQ(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
+                                                  "test property"),
+            "value");
+
+  constexpr bool boolValue = true;
+  EXPECT_EQ(detail::queryCustomValue<bool>(queryBytes(bytesOf(boolValue)),
+                                           "test property"),
+            boolValue);
+  constexpr int intValue = 42;
+  EXPECT_EQ(detail::queryCustomValue<int>(queryBytes(bytesOf(intValue)),
+                                          "test property"),
+            intValue);
+  constexpr double doubleValue = 1.25;
+  EXPECT_EQ(detail::queryCustomValue<double>(queryBytes(bytesOf(doubleValue)),
+                                             "test property"),
+            doubleValue);
+  EXPECT_EQ(detail::queryCustomValue<std::vector<std::byte>>(
+                queryBytes(stringBytes), "test property"),
+            stringBytes);
+}
+
+TEST(CustomPropertyTest, ReturnsNulloptWhenUnsupported) {
+  const auto query = [](size_t, void*, size_t*) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  };
+  EXPECT_EQ(detail::queryCustomValue<int>(query, "test property"),
+            std::nullopt);
+}
+
+TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
+  const std::vector<std::byte> malformedString{std::byte{'n'}, std::byte{'o'}};
+  EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
+                   queryBytes(malformedString), "test property"),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = detail::queryCustomValue<double>(
+                   queryBytes(bytesOf(true)), "test property"),
+               std::invalid_argument);
+}
 
 TEST(FoMaCTest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
@@ -291,6 +368,12 @@ TEST_P(DeviceTest, SupportedProgramFormats) {
   EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
 }
 
+TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
+  EXPECT_EQ(device.queryCustomProperty<std::vector<std::byte>>(
+                CustomProperty::Custom1),
+            std::nullopt);
+}
+
 TEST_P(SiteTest, Index) {
   for (const auto& site : sites) {
     EXPECT_NO_THROW(std::ignore = site.getIndex());
@@ -366,6 +449,14 @@ TEST_P(SiteTest, ModuleIndex) {
 TEST_P(SiteTest, SubmoduleIndex) {
   for (const auto& site : sites) {
     EXPECT_NO_THROW(std::ignore = site.getSubmoduleIndex());
+  }
+}
+
+TEST_P(SiteTest, UnsupportedCustomPropertyReturnsNullopt) {
+  for (const auto& site : sites) {
+    EXPECT_EQ(site.queryCustomProperty<std::vector<std::byte>>(
+                  CustomProperty::Custom1),
+              std::nullopt);
   }
 }
 
@@ -519,6 +610,14 @@ TEST_P(OperationTest, MeanShuttlingSpeed) {
   }
 }
 
+TEST_P(OperationTest, UnsupportedCustomPropertyReturnsNullopt) {
+  for (const auto& operation : operations) {
+    EXPECT_EQ(operation.queryCustomProperty<std::vector<std::byte>>(
+                  CustomProperty::Custom1),
+              std::nullopt);
+  }
+}
+
 TEST_P(DeviceTest, RegularSitesAndZones) {
   const auto allSites = device.getSites();
   const auto regularSites = device.getRegularSites();
@@ -632,6 +731,16 @@ c[0] = measure q[0];
       device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
+}
+
+TEST_F(JobTest, UnsupportedCustomPropertyAndResultReturnNullopt) {
+  EXPECT_EQ(
+      job.queryCustomProperty<std::vector<std::byte>>(CustomProperty::Custom1),
+      std::nullopt);
+  EXPECT_TRUE(job.wait());
+  EXPECT_EQ(
+      job.getCustomResult<std::vector<std::byte>>(CustomProperty::Custom1),
+      std::nullopt);
 }
 
 TEST_F(JobTest, StatusProgresses) {

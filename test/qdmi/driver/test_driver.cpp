@@ -218,6 +218,15 @@ TEST_P(DriverJobTest, JobQueryProperty) {
               QDMI_SUCCESS);
     EXPECT_EQ(numShots, 1);
   }
+
+  constexpr std::array customProperties{
+      QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
+      QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
+      QDMI_JOB_PROPERTY_CUSTOM5};
+  for (const auto property : customProperties) {
+    EXPECT_EQ(QDMI_job_query_property(job, property, 0, nullptr, nullptr),
+              QDMI_ERROR_NOTSUPPORTED);
+  }
 }
 
 TEST_P(DriverTest, JobSubmit) {
