@@ -85,10 +85,4 @@ mqt.core.mlir.compile_program:
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
-        """Run the coordinated default MQT compiler pipeline.
-
-        Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,
-        and typed compiler programs can be combined with any supported output format.
-        Typed program inputs are copied by default; set `inplace=True` to consume them.
-        Use the typed programs directly to construct a custom pipeline stage by stage.
-        """
+        \doc
