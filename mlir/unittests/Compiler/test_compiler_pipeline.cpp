@@ -48,6 +48,7 @@
 #include <fstream>
 #include <iosfwd>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
