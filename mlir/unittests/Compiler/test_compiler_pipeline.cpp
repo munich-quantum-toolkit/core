@@ -404,10 +404,15 @@ h q;
   auto qcFromMLIRFile = QCProgram::fromMLIRFile(mlirPath);
   auto qcFromQASM = QCProgram::fromQASMString(qasm);
   auto qcFromQASMFile = QCProgram::fromQASMFile(qasmPath);
+  ::qc::QuantumComputation computation;
+  computation.addQubitRegister(1);
+  computation.h(0);
+  auto qcFromComputation = QCProgram::fromQuantumComputation(computation);
 
   EXPECT_EQ(qcFromMLIR.str(), qcFromMLIRFile.str());
   EXPECT_EQ(qcFromQASM.str(), qcFromQASMFile.str());
   EXPECT_EQ(qcFromMLIR.str(), qcFromMLIR.copy().str());
+  EXPECT_FALSE(qcFromComputation.str().empty());
   EXPECT_THROW(QCProgram::fromMLIRString("not valid MLIR"), std::runtime_error);
   EXPECT_THROW(QCProgram::fromMLIRFile(temporaryDirectory / "missing.mlir"),
                std::runtime_error);
@@ -435,12 +440,49 @@ x q;
   auto fromFile = JeffProgram::fromFile(path);
   EXPECT_EQ(fromBytes.str(), fromFile.str());
   EXPECT_EQ(fromBytes.toBytes(), bytes);
+  EXPECT_EQ(jeff.copy().toBytes(), bytes);
+  fromBytes.cleanup();
+  EXPECT_FALSE(fromBytes.str().empty());
 
   auto roundTrip = std::move(fromFile).intoQCO();
   auto reparsed = parseRecordedModule(roundTrip.str());
   ASSERT_TRUE(reparsed);
   EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
   EXPECT_THROW(JeffProgram::fromBytes("invalid"), std::invalid_argument);
+  EXPECT_THROW(jeff.write(path.parent_path() / "missing" / "output.jeff"),
+               std::runtime_error);
+}
+
+/**
+ * @brief Test: QCO and QIR typed programs retain their respective semantics
+ */
+TEST_F(CompilerPipelineTest, QCOAndQIRProgramsImportCopyAndOptimize) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  const auto qcoPath = std::filesystem::path(testing::TempDir()) /
+                       "typed_program_input.qco.mlir";
+
+  auto qco = std::move(QCProgram::fromQASMString(qasm)).intoQCO();
+  const auto qcoIR = qco.str();
+  std::ofstream(qcoPath) << qcoIR;
+  auto qcoFromString = QCOProgram::fromMLIRString(qcoIR);
+  auto qcoFromFile = QCOProgram::fromMLIRFile(qcoPath);
+  EXPECT_EQ(qcoFromString.str(), qcoFromFile.str());
+  EXPECT_EQ(qcoFromString.str(), qcoFromString.copy().str());
+  qcoFromString.optimize(false, true);
+  EXPECT_FALSE(qcoFromString.str().empty());
+
+  auto base =
+      std::move(QCProgram::fromQASMString(qasm)).intoQIR(QIRProfile::Base);
+  auto adaptive =
+      std::move(QCProgram::fromQASMString(qasm)).intoQIR(QIRProfile::Adaptive);
+  EXPECT_EQ(base.copy().profile(), QIRProfile::Base);
+  EXPECT_EQ(adaptive.copy().profile(), QIRProfile::Adaptive);
+  EXPECT_FALSE(base.llvmIR().empty());
+  EXPECT_FALSE(adaptive.llvmIR().empty());
 }
 
 /**
