@@ -64,44 +64,44 @@ struct DeviceLibrary {
   // we keep the naming scheme of QDMI, i.e., snail_case for function names,
   // here to ease the `LOAD_SYMBOL` macro later on.
   // NOLINTBEGIN(readability-identifier-naming)
-  /// Function pointer to @ref QDMI_device_initialize.
+  /// Function pointer to @c QDMI_device_initialize.
   decltype(QDMI_device_initialize)* device_initialize{};
-  /// Function pointer to @ref QDMI_device_finalize.
+  /// Function pointer to @c QDMI_device_finalize.
   decltype(QDMI_device_finalize)* device_finalize{};
-  /// Function pointer to @ref QDMI_device_session_alloc.
+  /// Function pointer to @c QDMI_device_session_alloc.
   decltype(QDMI_device_session_alloc)* device_session_alloc{};
-  /// Function pointer to @ref QDMI_device_session_init.
+  /// Function pointer to @c QDMI_device_session_init.
   decltype(QDMI_device_session_init)* device_session_init{};
-  /// Function pointer to @ref QDMI_device_session_free.
+  /// Function pointer to @c QDMI_device_session_free.
   decltype(QDMI_device_session_free)* device_session_free{};
-  /// Function pointer to @ref QDMI_device_session_set_parameter.
+  /// Function pointer to @c QDMI_device_session_set_parameter.
   decltype(QDMI_device_session_set_parameter)* device_session_set_parameter{};
-  /// Function pointer to @ref QDMI_device_session_create_device_job.
+  /// Function pointer to @c QDMI_device_session_create_device_job.
   decltype(QDMI_device_session_create_device_job)*
       device_session_create_device_job{};
-  /// Function pointer to @ref QDMI_device_job_free.
+  /// Function pointer to @c QDMI_device_job_free.
   decltype(QDMI_device_job_free)* device_job_free{};
-  /// Function pointer to @ref QDMI_device_job_set_parameter.
+  /// Function pointer to @c QDMI_device_job_set_parameter.
   decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
-  /// Function pointer to @ref QDMI_device_job_query_property.
+  /// Function pointer to @c QDMI_device_job_query_property.
   decltype(QDMI_device_job_query_property)* device_job_query_property{};
-  /// Function pointer to @ref QDMI_device_job_submit.
+  /// Function pointer to @c QDMI_device_job_submit.
   decltype(QDMI_device_job_submit)* device_job_submit{};
-  /// Function pointer to @ref QDMI_device_job_cancel.
+  /// Function pointer to @c QDMI_device_job_cancel.
   decltype(QDMI_device_job_cancel)* device_job_cancel{};
-  /// Function pointer to @ref QDMI_device_job_check.
+  /// Function pointer to @c QDMI_device_job_check.
   decltype(QDMI_device_job_check)* device_job_check{};
-  /// Function pointer to @ref QDMI_device_job_wait.
+  /// Function pointer to @c QDMI_device_job_wait.
   decltype(QDMI_device_job_wait)* device_job_wait{};
-  /// Function pointer to @ref QDMI_device_job_get_results.
+  /// Function pointer to @c QDMI_device_job_get_results.
   decltype(QDMI_device_job_get_results)* device_job_get_results{};
-  /// Function pointer to @ref QDMI_device_session_query_device_property.
+  /// Function pointer to @c QDMI_device_session_query_device_property.
   decltype(QDMI_device_session_query_device_property)*
       device_session_query_device_property{};
-  /// Function pointer to @ref QDMI_device_session_query_site_property.
+  /// Function pointer to @c QDMI_device_session_query_site_property.
   decltype(QDMI_device_session_query_site_property)*
       device_session_query_site_property{};
-  /// Function pointer to @ref QDMI_device_session_query_operation_property.
+  /// Function pointer to @c QDMI_device_session_query_operation_property.
   decltype(QDMI_device_session_query_operation_property)*
       device_session_query_operation_property{};
   // NOLINTEND(readability-identifier-naming)
@@ -140,7 +140,7 @@ public:
 
   /**
    * @brief Destructor for the DynamicDeviceLibrary.
-   * @details This destructor calls the @ref QDMI_device_finalize function if it
+   * @details This destructor calls the @c QDMI_device_finalize function if it
    * is not null and closes the dynamic library.
    */
   ~DynamicDeviceLibrary() override;
@@ -280,7 +280,7 @@ public:
   /**
    * @brief Destructor for the QDMI job.
    * @details This destructor frees the device job handle using the
-   * @ref QDMI_device_job_free function from the device library.
+   * @c QDMI_device_job_free function from the device library.
    */
   ~QDMI_Job_impl_d();
 
@@ -332,9 +332,9 @@ public:
 
   /**
    * @brief Frees the job.
-   * @note This function just forwards to the device's @ref Device::freeJob
+   * @note This function just forwards to the device's @c freeJob
    * function. This function is needed because the interface only provides the
-   * job handle to the @ref QDMI_job_free function and the job's device handle
+   * job handle to the @c QDMI_job_free function and the job's device handle
    * is private.
    */
   auto free() -> void;
