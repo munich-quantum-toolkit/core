@@ -359,6 +359,9 @@ when the custom slot is unsupported.)pb");
              &fomac::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
+  device.def("child_devices", &fomac::Device::getChildDevices,
+             "Returns the direct child devices managed by this device.");
+
   device.def(
       "query_custom_property",
       [](const fomac::Device& self, const fomac::CustomProperty customProperty,

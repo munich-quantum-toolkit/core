@@ -473,6 +473,14 @@ public:
   getSupportedProgramFormats() const;
 
   /**
+   * @brief Returns the direct child devices managed by this device.
+   * @return The child devices, or an empty vector if child devices are not
+   * supported.
+   * @see QDMI_DEVICE_PROPERTY_CHILDDEVICES
+   */
+  [[nodiscard]] std::vector<Device> getChildDevices() const;
+
+  /**
    * @brief Queries an implementation-defined custom device property.
    * @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve the
    * raw value without interpretation.

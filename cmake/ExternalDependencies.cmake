@@ -75,7 +75,7 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_MINIMUM_VERSION 1.3.0
+set(QDMI_MINIMUM_VERSION 1.3.2
         CACHE STRING "Minimum QDMI version")
 set(QDMI_VERSION 1.3.2
         CACHE STRING "QDMI version")
