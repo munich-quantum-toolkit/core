@@ -1665,6 +1665,21 @@ SmallVector<Value> trivialControlledRccx(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+SmallVector<Value> inverseRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]},
+        [&](ValueRange qubits) { b.rccx(qubits[0], qubits[1], qubits[2]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> inverseMultipleControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.inv({q[0], q[1], q[2], q[3], q[4]}, [&](ValueRange qubits) {
+    b.mcrccx({qubits[0], qubits[1]}, qubits[2], qubits[3], qubits[4]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
 Value barrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.barrier(q[0]);

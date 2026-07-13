@@ -261,7 +261,12 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(multipleControlledRccx)},
                     QCTestCase{"TrivialControlledRCCX",
                                MQT_NAMED_BUILDER(trivialControlledRccx),
-                               MQT_NAMED_BUILDER(rccx)}));
+                               MQT_NAMED_BUILDER(rccx)},
+                    QCTestCase{"InverseRCCX", MQT_NAMED_BUILDER(inverseRccx),
+                               MQT_NAMED_BUILDER(rccx)},
+                    QCTestCase{"InverseMultipleControlledRCCX",
+                               MQT_NAMED_BUILDER(inverseMultipleControlledRccx),
+                               MQT_NAMED_BUILDER(multipleControlledRccx)}));
 /// @}
 
 /// \name QC/Operations/StandardGates/EcrOp.cpp

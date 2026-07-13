@@ -109,7 +109,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, RCCXOp, SWAPOp, BarrierOp>(
             inner.getOperation())) {
       return failure();
     }
