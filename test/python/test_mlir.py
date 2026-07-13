@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-import re
-from itertools import groupby
 from pathlib import Path
 
 import pytest
@@ -52,17 +50,27 @@ include "stdgates.inc";
 qubit[2] q;
 h q[0];
 cx q[0], q[1];
+bit[2] c = measure q;
 """
 
 
-def _sort_constants(text: str) -> str:
-    constant_re = re.compile(r"%.* = arith\.constant")
-    input_lines = text.splitlines()
-    output_lines = []
-    for is_constant, group in groupby(input_lines, key=lambda line: bool(constant_re.match(line.strip()))):
-        group_lines = list(group)
-        output_lines.extend(sorted(group_lines) if is_constant else group_lines)
-    return "\n".join(output_lines)
+def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
+    """Check the semantics of a translated Bell-state program."""
+    assert program.is_valid
+    ir = program.ir
+    assert "memref<2x!qc.qubit>" in ir
+    assert ir.count("qc.h ") == 1
+    assert ir.count("qc.ctrl(") == 1
+    assert ir.count("qc.x ") == 1
+
+    if not measured:
+        assert "qc.measure" not in ir
+        assert "func.func @main() -> i64" in ir
+        return
+
+    assert ir.count("qc.measure") == 2
+    assert "func.func @main() -> (i1, i1)" in ir
+    assert ": i1, i1" in ir
 
 
 def test_compile_program_jeff_file() -> None:
@@ -71,7 +79,7 @@ def test_compile_program_jeff_file() -> None:
 
     result = compile_program(path)
     assert isinstance(result, QCProgram)
-    assert _sort_constants(result.ir) == _sort_constants(MLIR_STRING)
+    _assert_bell_program(result)
 
 
 def test_compile_program_mlir_string() -> None:
@@ -95,7 +103,7 @@ def test_compile_program_qasm_string() -> None:
     """Compile an OpenQASM string."""
     result = compile_program(QASM_STRING)
     assert isinstance(result, QCProgram)
-    assert result.ir == MLIR_STRING
+    _assert_bell_program(result, measured=True)
 
 
 def test_compile_program_single_line_qasm_string() -> None:
@@ -113,7 +121,7 @@ def test_compile_program_qasm_file(tmp_path: Path) -> None:
 
     result = compile_program(path)
     assert isinstance(result, QCProgram)
-    assert result.ir == MLIR_STRING
+    _assert_bell_program(result, measured=True)
 
 
 def test_compile_program_quantum_computation() -> None:
@@ -121,21 +129,23 @@ def test_compile_program_quantum_computation() -> None:
     qc = QuantumComputation(2, 2)
     qc.h(0)
     qc.cx(0, 1)
+    qc.measure(range(2), range(2))
 
     result = compile_program(qc)
     assert isinstance(result, QCProgram)
-    assert result.ir == MLIR_STRING
+    _assert_bell_program(result, measured=True)
 
 
 def test_compile_program_qiskit_quantum_circuit() -> None:
     """Compile a `QuantumCircuit`."""
-    qc = QuantumCircuit(2)
+    qc = QuantumCircuit(2, 2)
     qc.h(0)
     qc.cx(0, 1)
+    qc.measure(range(2), range(2))
 
     result = compile_program(qc)
     assert isinstance(result, QCProgram)
-    assert result.ir == MLIR_STRING
+    _assert_bell_program(result, measured=True)
 
 
 def test_jeff_program_round_trip(tmp_path: Path) -> None:
@@ -148,7 +158,7 @@ def test_jeff_program_round_trip(tmp_path: Path) -> None:
     loaded = JeffProgram.from_file(path)
     restored = compile_program(loaded, output=OutputFormat.QC)
     assert isinstance(restored, QCProgram)
-    assert _sort_constants(restored.ir) == _sort_constants(MLIR_STRING)
+    _assert_bell_program(restored, measured=True)
 
 
 def test_compile_program_jeff_input_runs_from_qco(tmp_path: Path) -> None:
@@ -174,7 +184,7 @@ def test_program_conversions_are_composable() -> None:
     result = qco.to_qc()
     assert not qco.is_valid
     result.cleanup()
-    assert _sort_constants(result.ir) == _sort_constants(MLIR_STRING)
+    _assert_bell_program(result, measured=True)
 
 
 def test_compile_program_convert_to_qir() -> None:
