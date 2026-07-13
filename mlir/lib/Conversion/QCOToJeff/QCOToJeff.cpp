@@ -1193,7 +1193,27 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
  * @brief Converts scf.while to jeff.while
  *
  * @par Example:
- * TODO
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1 = qco.measure %arg0 : !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
+ * } do {
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q2 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = jeff.while : (!jeff.qubit) -> (!jeff.qubit) args(%arg0 = %q) {
+ *   %q1, %cond = jeff.qubit_measure_nd %arg0 : !jeff.qubit, i1
+ *   jeff.yield %cond, %q1 : i1, !jeff.qubit
+ * } args(%arg0) {
+ *   %q2 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %arg0
+ : !jeff.qubit
+ *   jeff.yield %q2 : !jeff.qubit
+  }
+ * ```
  */
 struct ConvertSCFWhileOpToJeff final
     : StatefulOpConversionPattern<scf::WhileOp> {
