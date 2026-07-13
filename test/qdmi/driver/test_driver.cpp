@@ -26,6 +26,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -80,7 +81,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     auto fakeSession =
         std::make_unique<Session>(Session{.library = activeLibrary});
     auto* const sessionPtr = fakeSession.get();
-    const auto sessionHandle =
+    auto* const sessionHandle =
         reinterpret_cast<QDMI_Device_Session>(sessionPtr);
     activeLibrary->sessions_.emplace(sessionHandle, std::move(fakeSession));
     ++activeLibrary->allocatedSessions;
@@ -198,7 +199,7 @@ public:
   bool malformedChildList = false;
   bool childDevicesNotSupported = false;
   bool childDeviceQueryFails = false;
-  std::vector<QDMI_Child_Device> selectedChildren{};
+  std::vector<QDMI_Child_Device> selectedChildren;
 
   ChildDeviceLibrary() {
     activeLibrary = this;
@@ -317,7 +318,7 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
     std::array<QDMI_Device, 2> children{};
     ASSERT_EQ(QDMI_device_query_device_property(
                   &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
-                  children.data(), nullptr),
+                  static_cast<void*>(children.data()), nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(queryName(children[0]), "child-0");
     EXPECT_EQ(queryName(children[1]), "child-1");
@@ -331,7 +332,7 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
     std::array<QDMI_Device, 2> repeatedQuery{};
     ASSERT_EQ(QDMI_device_query_device_property(
                   &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
-                  repeatedQuery.data(), nullptr),
+                  static_cast<void*>(repeatedQuery.data()), nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(repeatedQuery, children);
     EXPECT_EQ(library->selectedChildren,
@@ -341,7 +342,8 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
 
     EXPECT_EQ(QDMI_device_query_device_property(
                   &parent, QDMI_DEVICE_PROPERTY_CHILDDEVICES,
-                  sizeof(QDMI_Device), children.data(), nullptr),
+                  sizeof(QDMI_Device), static_cast<void*>(children.data()),
+                  nullptr),
               QDMI_ERROR_INVALIDARGUMENT);
     EXPECT_EQ(QDMI_device_query_device_property(
                   children[0], QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
@@ -354,7 +356,7 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
 TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
   const auto library = std::make_shared<ChildDeviceLibrary>();
   library->rejectChildSelection = true;
-  EXPECT_THROW(QDMI_Device_impl_d parent(library), std::runtime_error);
+  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 2);
   EXPECT_EQ(library->freedSessions, 2);
 }
@@ -362,7 +364,7 @@ TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
 TEST(ChildDeviceTest, RejectsMalformedChildLists) {
   const auto library = std::make_shared<ChildDeviceLibrary>();
   library->malformedChildList = true;
-  EXPECT_THROW(QDMI_Device_impl_d parent(library), std::runtime_error);
+  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
 }
@@ -385,7 +387,7 @@ TEST(ChildDeviceTest, SupportsDevicesWithoutChildDevices) {
 TEST(ChildDeviceTest, CleansUpWhenQueryingChildDevicesFails) {
   const auto library = std::make_shared<ChildDeviceLibrary>();
   library->childDeviceQueryFails = true;
-  EXPECT_THROW(QDMI_Device_impl_d parent(library), std::runtime_error);
+  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
 }
