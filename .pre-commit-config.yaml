@@ -147,11 +147,11 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.20
     hooks:
-      - id: ruff-format
-        types_or: [python, pyi, jupyter, markdown]
-        priority: 6
       - id: ruff-check
         require_serial: true
+        priority: 6
+      - id: ruff-format
+        types_or: [python, pyi, jupyter, markdown]
         priority: 7
 
   ## Check Python types with ty

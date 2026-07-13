@@ -1072,9 +1072,6 @@ SmallVector<Value> invCtrlTwo(QCOProgramBuilder& b);
 /// Creates a circuit with a simple if operation with one qubit.
 SmallVector<Value> simpleIf(QCOProgramBuilder& b);
 
-/// Creates a circuit with an if operation with a parameterized gate.
-Value ifWithAngle(QCOProgramBuilder& b);
-
 /// Creates a circuit with an if operation with two qubits.
 SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b);
 
@@ -1104,10 +1101,6 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b);
 /// a register.
 Value nestedIfOpForLoop(QCOProgramBuilder& b);
 
-/// Creates a circuit with an if operation with a nested for operation and
-/// parameterized gates.
-Value nestedIfOpForLoopWithAngle(QCOProgramBuilder& b);
-
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
@@ -1120,9 +1113,6 @@ Value simpleDoWhileReset(QCOProgramBuilder& b);
 
 /// Creates a circuit with a simple for operation with a register.
 SmallVector<Value> simpleForLoop(QCOProgramBuilder& b);
-
-/// Creates a circuit with a for operation with a parameterized gate.
-Value forLoopWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
