@@ -796,9 +796,14 @@ static WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
   // Check if gate is executable
   const auto satisfiable = ut->areThereSatisfiableCombinations(
       inCtrlValues, posClassicalCtrls, negClassicalCtrls);
+  if (!satisfiable) {
+    std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+    removeCtrlOperation(op, rewriter);
+    return WalkResult::advance();
+  }
   const auto superfluousCtrls = ut->getSuperfluousControls(
       inCtrlValues, posClassicalCtrls, negClassicalCtrls);
-  if (superfluousCtrls.completelySuperfluous || !satisfiable) {
+  if (superfluousCtrls.completelySuperfluous) {
     std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
     removeCtrlOperation(op, rewriter);
     return WalkResult::advance();
