@@ -218,7 +218,7 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   // const auto qRange01 =
   programBuilder.qcoIf(
       b0, {q01, q1},
-      // [&](const ValueRange args) { return SmallVector{args[0], args[1]}; },
+      [&](const ValueRange args) { return SmallVector{args[0], args[1]}; },
       [&](const ValueRange args) {
         const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
         return SmallVector{qi0, qi1};

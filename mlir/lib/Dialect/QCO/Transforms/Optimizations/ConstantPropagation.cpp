@@ -499,7 +499,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       newWorklist.push_back(innerOp);
       std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
     });
-    std::span wl = {newWorklist.begin(), newWorklist.end()};
+    std::span wl(newWorklist.data(), newWorklist.size());
     std::vector<Value> newPosClassicalCtrls = {posClassicalCtrls.begin(),
                                                posClassicalCtrls.end()};
     newPosClassicalCtrls.push_back(condition);
@@ -528,7 +528,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       newWorklist.push_back(innerOp);
       std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
     });
-    std::span wl = {newWorklist.begin(), newWorklist.end()};
+    std::span wl(newWorklist.data(), newWorklist.size());
     std::vector<Value> newNegClassicalCtrls = {negClassicalCtrls.begin(),
                                                negClassicalCtrls.end()};
     newNegClassicalCtrls.push_back(condition);
