@@ -203,8 +203,7 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 
 def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
-                           "::mlir::arith::ArithDialect",
-  ];
+                           "::mlir::arith::ArithDialect"];
   let summary = "This pass attempts to move measurements as far up as "
                 "possible, shifting them above gates that commute with them. "
                 "This is done to enable qubit reuse and other optimizations.";

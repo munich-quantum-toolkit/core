@@ -8,10 +8,6 @@
  * Licensed under the MIT License
  */
 
-//
-// Created by damian on 5/21/26.
-//
-
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
@@ -142,15 +138,15 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   SmallVector<Value> q12;
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
-      programBuilder.ctrl({q1, q2}, {q0}, [&](const ValueRange target) {
+      programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
-  std::tie(q12, q0Vec) = programBuilder.ctrl(
-      {q12[1], q12[0]}, q0Vec, [&](const ValueRange target) {
+  std::tie(q12, q0Vec) =
+      programBuilder.ctrl({q12[1], q12[0]}, q0Vec, [&](ValueRange target) {
         return SmallVector{programBuilder.h(target[0])};
       });
-  std::tie(q12, q0Vec) = programBuilder.ctrl(
-      {q12[1], q12[0]}, q0Vec, [&](const ValueRange target) {
+  std::tie(q12, q0Vec) =
+      programBuilder.ctrl({q12[1], q12[0]}, q0Vec, [&](ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
@@ -184,15 +180,15 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   SmallVector<Value> r12;
   SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
-      referenceBuilder.ctrl({r1, r2}, {r0}, [&](const ValueRange target) {
+      referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
-  std::tie(r12, r0Vec) = referenceBuilder.ctrl(
-      {r12[1], r12[0]}, r0Vec, [&](const ValueRange target) {
+  std::tie(r12, r0Vec) =
+      referenceBuilder.ctrl({r12[1], r12[0]}, r0Vec, [&](ValueRange target) {
         return SmallVector{referenceBuilder.h(target[0])};
       });
-  std::tie(r12, r0Vec) = referenceBuilder.ctrl(
-      {r12[1], r12[0]}, r0Vec, [&](const ValueRange target) {
+  std::tie(r12, r0Vec) =
+      referenceBuilder.ctrl({r12[1], r12[0]}, r0Vec, [&](ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
 
@@ -233,7 +229,7 @@ TEST_F(QCOMeasurementLiftingTest,
   SmallVector<Value> q12;
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
-      programBuilder.ctrl({q1, q2}, {q0}, [&](const ValueRange target) {
+      programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
@@ -261,7 +257,7 @@ TEST_F(QCOMeasurementLiftingTest,
   SmallVector<Value> r12;
   SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
-      referenceBuilder.ctrl({r1, r2}, {r0}, [&](const ValueRange target) {
+      referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
 
