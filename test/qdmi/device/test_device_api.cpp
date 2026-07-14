@@ -9,11 +9,15 @@
  */
 
 #include "DeviceApi.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
 
 #include <gtest/gtest.h>
+#include <qdmi/device.h>
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -24,6 +28,9 @@
 
 namespace qdmi::detail {
 namespace {
+// The fake implements a C ABI whose opaque handles intentionally require
+// ownership and pointer casts at this isolated test boundary.
+// NOLINTBEGIN(readability-named-parameter,cppcoreguidelines-owning-memory)
 class ScriptedDeviceApi final : public DeviceApi {
   struct Child {
     size_t id;
@@ -32,10 +39,9 @@ class ScriptedDeviceApi final : public DeviceApi {
     QDMI_Child_Device child = nullptr;
   };
 
-  std::array<Child, 2> children_{{{0}, {1}}};
+  mutable std::array<Child, 2> children_{{{0}, {1}}};
 
-  [[nodiscard]] static auto asSession(const QDMI_Device_Session session)
-      -> Session* {
+  [[nodiscard]] static auto asSession(QDMI_Device_Session session) -> Session* {
     return reinterpret_cast<Session*>(session);
   }
 
@@ -48,37 +54,35 @@ public:
     SelectionFailure,
   };
 
-  ChildBehavior behavior = ChildBehavior::Supported;
-  size_t opened = 0;
-  size_t closed = 0;
-  std::vector<std::string> closeOrder;
+  mutable ChildBehavior behavior = ChildBehavior::Supported;
+  mutable size_t opened = 0;
+  mutable size_t closed = 0;
+  mutable std::vector<std::string> closeOrder;
 
-  [[nodiscard]] auto openSession(const SessionParameters&,
-                                 const QDMI_Child_Device child) const
+  [[nodiscard]] auto openSession(const SessionParameters& parameters,
+                                 QDMI_Child_Device child) const
       -> QDMI_Device_Session override {
-    auto* mutableThis = const_cast<ScriptedDeviceApi*>(this);
-    ++mutableThis->opened;
+    static_cast<void>(parameters);
+    ++opened;
     if (child != nullptr && behavior == ChildBehavior::SelectionFailure) {
-      ++mutableThis->closed;
+      ++closed;
       throw std::runtime_error("child selection failed");
     }
     return reinterpret_cast<QDMI_Device_Session>(new Session{child});
   }
 
-  void closeSession(const QDMI_Device_Session session) const noexcept override {
+  void closeSession(QDMI_Device_Session session) const noexcept override {
     if (session == nullptr) {
       return;
     }
-    auto* mutableThis = const_cast<ScriptedDeviceApi*>(this);
-    const auto* typed = asSession(session);
+    auto* typed = asSession(session);
     if (typed->child == nullptr) {
-      mutableThis->closeOrder.emplace_back("parent");
+      closeOrder.emplace_back("parent");
     } else {
       const auto* child = reinterpret_cast<const Child*>(typed->child);
-      mutableThis->closeOrder.emplace_back("child-" +
-                                           std::to_string(child->id));
+      closeOrder.emplace_back("child-" + std::to_string(child->id));
     }
-    ++mutableThis->closed;
+    ++closed;
     delete typed;
   }
 
@@ -115,8 +119,8 @@ public:
     return QDMI_ERROR_NOTSUPPORTED;
   }
 
-  [[nodiscard]] auto queryDevice(const QDMI_Device_Session session,
-                                 const QDMI_Device_Property property,
+  [[nodiscard]] auto queryDevice(QDMI_Device_Session session,
+                                 QDMI_Device_Property property,
                                  const size_t size, void* value,
                                  size_t* sizeRet) const -> int override {
     const auto* typed = asSession(session);
@@ -138,11 +142,9 @@ public:
           return QDMI_ERROR_INVALIDARGUMENT;
         }
         std::array<QDMI_Child_Device, 2> handles{
-            reinterpret_cast<QDMI_Child_Device>(
-                const_cast<Child*>(&children_[0])),
-            reinterpret_cast<QDMI_Child_Device>(
-                const_cast<Child*>(&children_[1]))};
-        std::memcpy(value, handles.data(), required);
+            reinterpret_cast<QDMI_Child_Device>(&children_[0]),
+            reinterpret_cast<QDMI_Child_Device>(&children_[1])};
+        std::memcpy(value, static_cast<const void*>(handles.data()), required);
       }
       return QDMI_SUCCESS;
     }
@@ -178,6 +180,7 @@ public:
     return QDMI_ERROR_NOTSUPPORTED;
   }
 };
+// NOLINTEND(readability-named-parameter,cppcoreguidelines-owning-memory)
 
 TEST(DeviceApiTest, ChildRetainsParentSessionAndLibrary) {
   const auto api = std::make_shared<ScriptedDeviceApi>();
@@ -230,6 +233,7 @@ TEST(DeviceApiTest, RejectsInvalidCustomPropertySelector) {
   const auto api = std::make_shared<ScriptedDeviceApi>();
   api->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
   const auto device = DeviceFactory::create(api);
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalid = static_cast<CustomProperty>(0);
   EXPECT_THROW(static_cast<void>(device.queryCustomProperty<int>(invalid)),
                std::invalid_argument);

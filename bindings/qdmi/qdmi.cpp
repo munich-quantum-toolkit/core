@@ -21,8 +21,10 @@
 #include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
+#include <nlohmann/json.hpp>
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -71,7 +73,8 @@ template <typename Query>
 }
 } // namespace
 
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+NB_MODULE(MQT_CORE_MODULE_NAME,
+          m) { // NOLINT(performance-unnecessary-value-param)
   auto sessionParameters = nb::class_<qdmi::SessionParameters>(
       m, "SessionParameters", "Parameters for one QDMI device session.");
   sessionParameters.def(nb::init<>())

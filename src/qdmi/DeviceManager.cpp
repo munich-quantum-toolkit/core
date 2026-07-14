@@ -11,6 +11,7 @@
 #include "qdmi/DeviceManager.hpp"
 
 #include "DeviceApi.hpp"
+#include "qdmi/Device.hpp"
 
 #include <nlohmann/json.hpp>
 #include <toml.hpp>
@@ -19,7 +20,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -368,11 +369,11 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 [[nodiscard]] auto nearestProjectConfiguration(std::filesystem::path directory)
     -> std::optional<std::filesystem::path> {
   while (!directory.empty()) {
-    const auto dedicated = directory / "mqt-core.json";
+    auto dedicated = directory / "mqt-core.json";
     if (std::filesystem::is_regular_file(dedicated)) {
       return dedicated;
     }
-    const auto pyproject = directory / "pyproject.toml";
+    auto pyproject = directory / "pyproject.toml";
     if (std::filesystem::is_regular_file(pyproject)) {
       if (readPyproject(pyproject)) {
         return pyproject;

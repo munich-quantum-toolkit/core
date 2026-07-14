@@ -97,7 +97,7 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnknownKeys) {
 }
 
 TEST(DeviceRegistry, DisabledOverrideMasksInheritedDefinition) {
-  qdmi::DeviceDefinition definition{
+  const qdmi::DeviceDefinition definition{
       .id = "masked", .library = "unused", .prefix = "UNUSED"};
   qdmi::ConfigOptions options;
   options.isolated = true;
@@ -298,7 +298,7 @@ TEST(DeviceManager, LazilyOpensAndKeepsDeviceAlive) {
   options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
       .id = "mqt.sc.test", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"});
 
-  auto device = qdmi::DeviceManager(options).open("mqt.sc.test");
+  const auto device = qdmi::DeviceManager(options).open("mqt.sc.test");
   EXPECT_EQ(device.getName(), "MQT SC Default QDMI Device");
   EXPECT_FALSE(device.getSites().empty());
 }
@@ -336,7 +336,7 @@ TEST(DeviceManager, OpenDevicesOutliveRegistrationsAndManager) {
   options.isolated = true;
   options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
       .id = "persistent", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"});
-  qdmi::Device device = [&options] {
+  const qdmi::Device device = [&options] {
     qdmi::DeviceManager manager(options);
     auto opened = manager.open("persistent");
     EXPECT_TRUE(manager.unregisterDevice("persistent"));

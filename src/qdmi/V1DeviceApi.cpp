@@ -9,18 +9,20 @@
  */
 
 #include "DeviceApi.hpp"
+#include "qdmi/DeviceManager.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/device.h>
 #include <spdlog/spdlog.h>
 
-#include <array>
+#include <cstddef>
 #include <filesystem>
 #include <memory>
-#include <sstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -134,7 +136,7 @@ public:
   }
 
   [[nodiscard]] auto openSession(const SessionParameters& parameters,
-                                 const QDMI_Child_Device child) const
+                                 QDMI_Child_Device child) const
       -> QDMI_Device_Session override {
     QDMI_Device_Session session = nullptr;
     throwIfError(sessionAlloc_(&session), "Allocating QDMI device session");
@@ -172,7 +174,8 @@ public:
       if (child != nullptr) {
         throwIfError(sessionSetParameter_(
                          session, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
-                         sizeof(child), &child),
+                         sizeof(QDMI_Child_Device),
+                         static_cast<const void*>(&child)),
                      "Selecting QDMI child device");
       }
       throwIfError(sessionInit_(session), "Initializing QDMI device session");
@@ -183,49 +186,49 @@ public:
     }
   }
 
-  void closeSession(const QDMI_Device_Session session) const noexcept override {
+  void closeSession(QDMI_Device_Session session) const noexcept override {
     if (session != nullptr) {
       sessionFree_(session);
     }
   }
 
-  [[nodiscard]] auto createJob(const QDMI_Device_Session session) const
+  [[nodiscard]] auto createJob(QDMI_Device_Session session) const
       -> QDMI_Device_Job override {
     QDMI_Device_Job job = nullptr;
     throwIfError(createJob_(session, &job), "Creating QDMI device job");
     return job;
   }
-  void freeJob(const QDMI_Device_Job job) const noexcept override {
+  void freeJob(QDMI_Device_Job job) const noexcept override {
     if (job != nullptr) {
       jobFree_(job);
     }
   }
-  [[nodiscard]] auto setJobParameter(const QDMI_Device_Job job,
-                                     const QDMI_Device_Job_Parameter parameter,
+  [[nodiscard]] auto setJobParameter(QDMI_Device_Job job,
+                                     QDMI_Device_Job_Parameter parameter,
                                      const size_t size, const void* value) const
       -> int override {
     return jobSetParameter_(job, parameter, size, value);
   }
-  [[nodiscard]] auto queryJobProperty(const QDMI_Device_Job job,
-                                      const QDMI_Device_Job_Property property,
+  [[nodiscard]] auto queryJobProperty(QDMI_Device_Job job,
+                                      QDMI_Device_Job_Property property,
                                       const size_t size, void* value,
                                       size_t* sizeRet) const -> int override {
     return jobQueryProperty_(job, property, size, value, sizeRet);
   }
-  void submitJob(const QDMI_Device_Job job) const override {
+  void submitJob(QDMI_Device_Job job) const override {
     throwIfError(jobSubmit_(job), "Submitting QDMI job");
   }
-  void cancelJob(const QDMI_Device_Job job) const override {
+  void cancelJob(QDMI_Device_Job job) const override {
     throwIfError(jobCancel_(job), "Canceling QDMI job");
   }
-  [[nodiscard]] auto checkJob(const QDMI_Device_Job job) const
+  [[nodiscard]] auto checkJob(QDMI_Device_Job job) const
       -> QDMI_Job_Status override {
     QDMI_Job_Status status{};
     throwIfError(jobCheck_(job, &status), "Checking QDMI job");
     return status;
   }
-  [[nodiscard]] auto waitJob(const QDMI_Device_Job job,
-                             const size_t timeout) const -> bool override {
+  [[nodiscard]] auto waitJob(QDMI_Device_Job job, const size_t timeout) const
+      -> bool override {
     const auto result = jobWait_(job, timeout);
     if (result == QDMI_ERROR_TIMEOUT) {
       return false;
@@ -233,30 +236,29 @@ public:
     throwIfError(result, "Waiting for QDMI job");
     return true;
   }
-  [[nodiscard]] auto getJobResult(const QDMI_Device_Job job,
-                                  const QDMI_Job_Result result,
+  [[nodiscard]] auto getJobResult(QDMI_Device_Job job, QDMI_Job_Result result,
                                   const size_t size, void* data,
                                   size_t* sizeRet) const -> int override {
     return jobGetResults_(job, result, size, data, sizeRet);
   }
-  [[nodiscard]] auto queryDevice(const QDMI_Device_Session session,
-                                 const QDMI_Device_Property property,
+  [[nodiscard]] auto queryDevice(QDMI_Device_Session session,
+                                 QDMI_Device_Property property,
                                  const size_t size, void* value,
                                  size_t* sizeRet) const -> int override {
     return queryDevice_(session, property, size, value, sizeRet);
   }
-  [[nodiscard]] auto querySite(const QDMI_Device_Session session,
-                               const QDMI_Site site,
-                               const QDMI_Site_Property property,
-                               const size_t size, void* value,
-                               size_t* sizeRet) const -> int override {
+  [[nodiscard]] auto querySite(QDMI_Device_Session session, QDMI_Site site,
+                               QDMI_Site_Property property, const size_t size,
+                               void* value, size_t* sizeRet) const
+      -> int override {
     return querySite_(session, site, property, size, value, sizeRet);
   }
-  [[nodiscard]] auto queryOperation(
-      const QDMI_Device_Session session, const QDMI_Operation operation,
-      const size_t numSites, const QDMI_Site* sites, const size_t numParams,
-      const double* params, const QDMI_Operation_Property property,
-      const size_t size, void* value, size_t* sizeRet) const -> int override {
+  [[nodiscard]] auto
+  queryOperation(QDMI_Device_Session session, QDMI_Operation operation,
+                 const size_t numSites, const QDMI_Site* sites,
+                 const size_t numParams, const double* params,
+                 QDMI_Operation_Property property, const size_t size,
+                 void* value, size_t* sizeRet) const -> int override {
     return queryOperation_(session, operation, numSites, sites, numParams,
                            params, property, size, value, sizeRet);
   }
@@ -288,17 +290,17 @@ private:
 
 SessionState::SessionState(std::shared_ptr<DeviceApi> deviceApi,
                            const SessionParameters& sessionParameters,
-                           const QDMI_Child_Device child,
+                           QDMI_Child_Device child,
                            std::shared_ptr<SessionState> parentSession)
-    : api(std::move(deviceApi)), parent(std::move(parentSession)) {
-  session = api->openSession(sessionParameters, child);
-}
+    : api(std::move(deviceApi)),
+      session(api->openSession(sessionParameters, child)),
+      parent(std::move(parentSession)) {}
 
 SessionState::~SessionState() { api->closeSession(session); }
 
 DeviceState::DeviceState(std::shared_ptr<DeviceApi> deviceApi,
                          const SessionParameters& sessionParameters,
-                         const QDMI_Child_Device child,
+                         QDMI_Child_Device child,
                          std::shared_ptr<SessionState> parentSession)
     : lifetime(std::make_shared<SessionState>(deviceApi, sessionParameters,
                                               child, std::move(parentSession))),
@@ -318,7 +320,8 @@ DeviceState::DeviceState(std::shared_ptr<DeviceApi> deviceApi,
     std::vector<QDMI_Child_Device> handles(size / sizeof(QDMI_Child_Device));
     if (size != 0) {
       throwIfError(api->queryDevice(session, QDMI_DEVICE_PROPERTY_CHILDDEVICES,
-                                    size, handles.data(), nullptr),
+                                    size, static_cast<void*>(handles.data()),
+                                    nullptr),
                    "Querying QDMI child devices");
     }
     children.reserve(handles.size());

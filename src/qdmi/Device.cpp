@@ -14,14 +14,18 @@
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/constants.h>
+#include <qdmi/device.h>
 
 #include <algorithm>
 #include <array>
 #include <complex>
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -29,12 +33,13 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace qdmi {
 namespace {
 template <class Query>
-[[nodiscard]] auto queryBytes(Query&& query, const std::string& description)
+[[nodiscard]] auto queryBytes(Query query, const std::string& description)
     -> std::optional<std::vector<std::byte>> {
   size_t size = 0;
   const auto sizeResult = query(0, nullptr, &size);
@@ -50,19 +55,20 @@ template <class Query>
 }
 
 template <class T, class Query>
-[[nodiscard]] auto queryValue(Query&& query, const std::string& description)
+[[nodiscard]] auto queryValue(Query query, const std::string& description)
     -> T {
   T value{};
-  throwIfError(query(sizeof(T), &value, nullptr), "Querying " + description);
+  throwIfError(query(sizeof(T), static_cast<void*>(&value), nullptr),
+               "Querying " + description);
   return value;
 }
 
 template <class T, class Query>
-[[nodiscard]] auto queryOptionalValue(Query&& query,
+[[nodiscard]] auto queryOptionalValue(Query query,
                                       const std::string& description)
     -> std::optional<T> {
   T value{};
-  const auto result = query(sizeof(T), &value, nullptr);
+  const auto result = query(sizeof(T), static_cast<void*>(&value), nullptr);
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return std::nullopt;
   }
@@ -71,44 +77,50 @@ template <class T, class Query>
 }
 
 template <class T, class Query>
-[[nodiscard]] auto queryVector(Query&& query, const std::string& description)
+[[nodiscard]] auto queryVector(Query query, const std::string& description)
     -> std::vector<T> {
-  const auto bytes = queryBytes(std::forward<Query>(query), description);
-  if (!bytes) {
+  size_t size = 0;
+  const auto sizeResult = query(0, nullptr, &size);
+  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
     throw std::runtime_error("Querying " + description + ": Not supported.");
   }
-  if (bytes->size() % sizeof(T) != 0) {
+  throwIfError(sizeResult, "Querying " + description + " size");
+  if (size % sizeof(T) != 0) {
     throw std::runtime_error("Invalid byte size while querying " + description);
   }
-  std::vector<T> values(bytes->size() / sizeof(T));
-  if (!bytes->empty()) {
-    std::memcpy(values.data(), bytes->data(), bytes->size());
+  std::vector<T> values(size / sizeof(T));
+  if (size != 0) {
+    throwIfError(query(size, static_cast<void*>(values.data()), nullptr),
+                 "Querying " + description);
   }
   return values;
 }
 
 template <class T, class Query>
-[[nodiscard]] auto queryOptionalVector(Query&& query,
+[[nodiscard]] auto queryOptionalVector(Query query,
                                        const std::string& description)
     -> std::optional<std::vector<T>> {
-  const auto bytes = queryBytes(std::forward<Query>(query), description);
-  if (!bytes) {
+  size_t size = 0;
+  const auto sizeResult = query(0, nullptr, &size);
+  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
     return std::nullopt;
   }
-  if (bytes->size() % sizeof(T) != 0) {
+  throwIfError(sizeResult, "Querying " + description + " size");
+  if (size % sizeof(T) != 0) {
     throw std::runtime_error("Invalid byte size while querying " + description);
   }
-  std::vector<T> values(bytes->size() / sizeof(T));
-  if (!bytes->empty()) {
-    std::memcpy(values.data(), bytes->data(), bytes->size());
+  std::vector<T> values(size / sizeof(T));
+  if (size != 0) {
+    throwIfError(query(size, static_cast<void*>(values.data()), nullptr),
+                 "Querying " + description);
   }
   return values;
 }
 
 template <class Query>
-[[nodiscard]] auto queryString(Query&& query, const std::string& description)
+[[nodiscard]] auto queryString(Query query, const std::string& description)
     -> std::string {
-  const auto bytes = queryBytes(std::forward<Query>(query), description);
+  const auto bytes = queryBytes(std::move(query), description);
   if (!bytes || bytes->empty() || bytes->back() != std::byte{0}) {
     throw std::runtime_error("Invalid string while querying " + description);
   }
@@ -116,10 +128,10 @@ template <class Query>
 }
 
 template <class Query>
-[[nodiscard]] auto queryOptionalString(Query&& query,
+[[nodiscard]] auto queryOptionalString(Query query,
                                        const std::string& description)
     -> std::optional<std::string> {
-  const auto bytes = queryBytes(std::forward<Query>(query), description);
+  const auto bytes = queryBytes(std::move(query), description);
   if (!bytes) {
     return std::nullopt;
   }
@@ -281,7 +293,10 @@ auto Device::getOperations() const -> std::vector<Operation> {
 }
 auto Device::getCouplingMap() const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
-  using Pair = std::pair<QDMI_Site, QDMI_Site>;
+  struct Pair {
+    QDMI_Site first;
+    QDMI_Site second;
+  };
   const auto pairs = queryOptionalVector<Pair>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return state_->api->queryDevice(state_->session,
