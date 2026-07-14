@@ -176,6 +176,7 @@ def docs(session: nox.Session) -> None:
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
         "-E",  # Doxygen inventories are regenerated for every docs build
+        "-W",  # fail the session if documentation diagnostics are emitted
         f"-b={args.builder}",
         "docs",
         f"docs/_build/{args.builder}",

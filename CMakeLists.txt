@@ -162,7 +162,10 @@ if(BUILD_MQT_CORE_MLIR)
     VERBATIM)
 
   if(BUILD_MQT_CORE_DOCUMENTATION)
-    add_custom_target(mqt-core-docs ALL DEPENDS mlir-doc)
+    add_custom_target(mqt-core-docs DEPENDS mlir-doc)
+    foreach(binding ir dd fomac na)
+      add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
+    endforeach()
   endif()
 endif()
 

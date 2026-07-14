@@ -38,7 +38,7 @@ build:
     build:
       html:
         - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs
-        - cp -R docs/_build/html/. $READTHEDOCS_OUTPUT/html
+        - mkdir -p $READTHEDOCS_OUTPUT/html && cp -R docs/_build/html/. $READTHEDOCS_OUTPUT/html
       htmlzip:
         - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs -- -b dirhtml
         - mkdir -p $READTHEDOCS_OUTPUT/htmlzip
