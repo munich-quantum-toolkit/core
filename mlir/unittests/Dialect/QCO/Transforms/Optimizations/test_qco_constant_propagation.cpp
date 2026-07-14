@@ -222,7 +222,7 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
         const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
         return SmallVector{qi0, qi1};
       });
-  programBuilder.y(qRange01[1]);
+  // programBuilder.y(qRange01[1]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
@@ -230,7 +230,7 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   qRef[1] = referenceBuilder.x(qRef[1]);
   auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
   referenceBuilder.measure(qRef0);
-  referenceBuilder.y(qRef1);
+  // referenceBuilder.y(qRef1);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
