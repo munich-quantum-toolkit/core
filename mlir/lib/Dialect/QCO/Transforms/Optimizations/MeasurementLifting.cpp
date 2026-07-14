@@ -45,10 +45,16 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  */
 static bool isDiagonal(Operation* op) {
   if (auto c = dyn_cast<CtrlOp>(op)) {
-    return isDiagonal(c.getBodyUnitary());
+    if (c.getNumBodyUnitaries() != 1) {
+      return false;
+    }
+    return isDiagonal(c.getBodyUnitary(0));
   }
   if (auto i = dyn_cast<InvOp>(op)) {
-    return isDiagonal(i.getBodyUnitary());
+    if (i.getNumBodyUnitaries() != 1) {
+      return false;
+    }
+    return isDiagonal(i.getBodyUnitary(0));
   }
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
