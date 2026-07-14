@@ -35,10 +35,13 @@
     $treeview $search $mathjax $darkmode
     <link href="$relpath^$stylesheet" rel="stylesheet" type="text/css" />
     $extrastylesheet
+    <script defer src="$relpath^cpp-api-navigation.js"></script>
   </head>
   <body>
     <div class="mqt-docs-backlink">
-      <a href="$relpath^../index.html">← MQT Core documentation</a>
+      <a id="mqt-docs-backlink" href="$relpath^../index.html"
+        >← Back to MQT Core documentation</a
+      >
     </div>
     <!--BEGIN FULL_SIDEBAR-->
     <div id="side-nav" class="ui-resizable side-nav-resizable">

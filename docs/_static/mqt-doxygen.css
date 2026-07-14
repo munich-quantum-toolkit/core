@@ -90,3 +90,100 @@ pre.fragment {
   font-weight: 600;
   text-decoration: none;
 }
+
+#top,
+#titlearea,
+#main-nav,
+#nav-path ul,
+#nav-tree,
+#nav-tree-contents,
+#side-nav {
+  background: var(--mqt-background-secondary);
+  border-color: var(--mqt-border);
+}
+
+#titlearea {
+  box-shadow: none;
+  padding: 0.5rem 1rem;
+}
+
+#projectlogo img {
+  height: 2.25rem;
+  max-width: 9rem;
+  object-fit: contain;
+}
+
+#projectname {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+#main-nav {
+  border-bottom: 1px solid var(--mqt-border);
+}
+
+#main-nav a,
+#nav-path a,
+#nav-tree a {
+  color: var(--mqt-foreground);
+}
+
+#nav-tree .selected,
+#nav-tree .selected a,
+#nav-tree .selected .label {
+  background: var(--mqt-accent);
+  color: var(--mqt-background);
+}
+
+#nav-tree .selected a:hover {
+  color: var(--mqt-background);
+}
+
+div.contents {
+  line-height: 1.65;
+  max-width: 76rem;
+}
+
+div.contents h1,
+div.contents h2,
+div.contents h3 {
+  font-weight: 700;
+  letter-spacing: normal;
+}
+
+div.fragment,
+pre.fragment,
+div.line {
+  border-radius: 0.35rem;
+}
+
+.memitem,
+.memproto,
+.memdoc,
+table.memberdecls,
+table.fieldtable {
+  border-color: var(--mqt-border);
+}
+
+.memproto,
+.memdoc,
+table.memberdecls tr:nth-child(even),
+table.fieldtable tr:nth-child(even) {
+  background: var(--mqt-background-secondary);
+}
+
+.memdoc {
+  border-radius: 0.35rem;
+  box-shadow: none;
+}
+
+div.header {
+  background: var(--mqt-background);
+  border-bottom-color: var(--mqt-border);
+}
+
+div.summary,
+div.textblock,
+div.contents {
+  color: var(--mqt-foreground);
+}
