@@ -286,17 +286,19 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.x(q0);
   auto [q2, c] = programBuilder.measure(q1);
-  programBuilder.sink(q2);
+  auto q3 = programBuilder.h(q2);
+  programBuilder.sink(q3);
   module = programBuilder.finalize(c);
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
   auto [r1, cr] = referenceBuilder.measure(r0);
+  auto r2 = referenceBuilder.h(r1);
 
   auto xorOp = arith::XOrIOp::create(
       referenceBuilder, referenceBuilder.getLoc(), cr, trueConstant);
-  referenceBuilder.sink(r1);
+  referenceBuilder.sink(r2);
   reference = referenceBuilder.finalize(xorOp.getResult());
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -418,27 +420,74 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 }
 
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto q0S0 = programBuilder.allocQubit();
   auto q1S0 = programBuilder.allocQubit();
 
   auto [q0S1, q1S1] = programBuilder.cz(q0S0, q1S0);
 
   auto [q0S2, c0] = programBuilder.measure(q0S1);
+  auto [q1S2, c1] = programBuilder.measure(q1S1);
 
   programBuilder.sink(q0S2);
-  programBuilder.sink(q1S1);
-  module = programBuilder.finalize({c0});
+  programBuilder.sink(q1S2);
+  module = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
+
+  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+
+  referenceBuilder.sink(r0S1);
+  referenceBuilder.sink(r1S1);
+  reference = referenceBuilder.finalize({cr0, cr1});
+
+  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
+
+  auto [q0S1, q1S1] = programBuilder.ctrl({q0S0}, q1S0, [&](Value target) {
+    auto t = programBuilder.z(target);
+    return programBuilder.x(t);
+  });
+
+  auto [q0S2, c0] = programBuilder.measure(q0S1);
+  auto [q1S2, c1] = programBuilder.measure(q1S1);
+
+  programBuilder.sink(q0S2);
+  programBuilder.sink(q1S2);
+  module = programBuilder.finalize({c0, c1});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
 
   auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
 
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S0);
-  reference = referenceBuilder.finalize({cr0});
+  auto [r0S2, r1S1] = referenceBuilder.ctrl({r0S1}, r1S0, [&](Value target) {
+    auto t = referenceBuilder.z(target);
+    return referenceBuilder.x(t);
+  });
+
+  auto [r1S2, cr1] = referenceBuilder.measure(r1S1);
+
+  referenceBuilder.sink(r0S2);
+  referenceBuilder.sink(r1S2);
+  reference = referenceBuilder.finalize({cr0, cr1});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());

@@ -134,17 +134,6 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
       mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
-  /**
-   * @brief Checks if the given qubit is not used anymore.
-   * @param outQubit The output qubit to check.
-   * @return True if all users are resets/deallocs, false otherwise.
-   */
-  static bool outputQubitRemainsUnused(mlir::Value outQubit) {
-    return llvm::all_of(outQubit.getUsers(), [](mlir::Operation* user) {
-      return mlir::isa<ResetOp>(user) || mlir::isa<SinkOp>(user);
-    });
-  }
-
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
