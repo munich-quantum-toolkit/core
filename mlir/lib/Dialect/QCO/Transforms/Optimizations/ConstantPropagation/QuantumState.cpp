@@ -21,6 +21,7 @@
 #include <complex>
 #include <cstddef>
 #include <format>
+#include <iomanip>
 #include <iterator>
 #include <map>
 #include <ostream>
@@ -53,29 +54,27 @@ std::string QuantumState::toString() const {
   if (nQubits == 0) {
     return "";
   }
-  std::string str;
+
+  std::ostringstream oss;
   bool first = true;
   for (auto ordered =
            std::map(this->amplitudeMap.begin(), this->amplitudeMap.end());
        auto const& [key, val] : ordered) {
     if (!first) {
-      str += ", ";
+      oss << ", ";
     }
     first = false;
 
-    str.push_back('|');
-    str.append(qubitStringToBinary(key));
-    str.append("> -> ");
-
-    str.append(std::format("{:.2f}", val.real()));
+    oss << "|" << qubitStringToBinary(key) << "> -> " << std::fixed
+        << std::setprecision(2) << val.real();
 
     if (std::abs(val.imag()) > 1e-4) {
-      str.append(val.imag() > 0 ? " + i" : " - i");
-      str.append(std::format("{:.2f}", std::abs(val.imag())));
+      oss << (val.imag() > 0 ? " + i" : " - i");
+      oss << std::fixed << std::setprecision(2) << std::abs(val.imag());
     }
   }
 
-  return str;
+  return oss.str();
 }
 
 bool QuantumState::operator==(const QuantumState& that) const {

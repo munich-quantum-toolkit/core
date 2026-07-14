@@ -35,6 +35,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
@@ -52,6 +53,17 @@
 #include <span>
 #include <stdexcept>
 #include <vector>
+
+namespace {
+/**
+ * @brief Result of checking how do modify a controlled gate.
+ */
+struct ControlsToModify {
+  llvm::DenseSet<mlir::Value> quantumCtrlsToRemove;
+  llvm::DenseSet<mlir::Value> classicalPosCtrlsToAdd;
+  llvm::DenseSet<mlir::Value> classicalNegCtrlsToAdd;
+};
+} // namespace
 
 namespace mlir::qco {
 
@@ -103,15 +115,6 @@ namespace mlir::qco {
     return opType::create(rewriter, gate.getLoc(), qubitsIn[0],                \
                           gate.getTheta(), gate.getPhi(), gate.getLambda());   \
   })
-
-/**
- * @brief Result of checking how do modify a controlled gate.
- */
-struct ControlsToModify {
-  llvm::DenseSet<Value> quantumCtrlsToRemove;
-  llvm::DenseSet<Value> classicalPosCtrlsToAdd;
-  llvm::DenseSet<Value> classicalNegCtrlsToAdd;
-};
 
 static LogicalResult iterateThroughWorklist(PatternRewriter& rewriter,
                                             UnionTable* ut,
@@ -928,10 +931,6 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (curr == nullptr) {
       continue; // Skip erased ops.
     }
-    // auto n = curr->getName().stripDialect().str();
-    // std::string oName =
-    //     "Op: " + curr->getName().getStringRef().str() +
-    //     " dialect: " + curr->getName().getDialectNamespace().str();
 
     rewriter.setInsertionPoint(curr);
 
@@ -1076,7 +1075,6 @@ static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
         [&](Operation* op) { worklist.push_back(op); });
   }
 
-  // TODO: Take maximum from params
   auto ut = UnionTable(maxNonzeroAmplitudes, maxHybridStates);
 
   std::span wl = {worklist.begin(), worklist.end()};
@@ -1084,6 +1082,9 @@ static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
   return iterateThroughWorklist(rewriter, &ut, wl, {}, {});
 }
 
+} // namespace mlir::qco
+
+namespace {
 /**
  * This pass applies constant propagation to a circuit. It assumes that all
  * states start in |0> and removes quantum instructions that are superfluous
@@ -1091,16 +1092,16 @@ static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
  * classical resources.
  */
 struct ConstantPropagation final
-    : impl::ConstantPropagationBase<ConstantPropagation> {
+    : mlir::qco::impl::ConstantPropagationBase<ConstantPropagation> {
   using ConstantPropagationBase::ConstantPropagationBase;
 
 protected:
   void runOnOperation() override {
-    if (failed(applyCP(getOperation(), &getContext(), maximumNonzeroAmplitudes,
-                       maximumHybridStates))) {
+    if (mlir::failed(mlir::qco::applyCP(getOperation(), &getContext(),
+                                        maximumNonzeroAmplitudes,
+                                        maximumHybridStates))) {
       signalPassFailure();
     }
   }
 };
-
-} // namespace mlir::qco
+} // namespace

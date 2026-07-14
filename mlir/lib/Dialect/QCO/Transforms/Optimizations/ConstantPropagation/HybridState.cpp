@@ -25,10 +25,12 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <format>
+#include <iomanip>
+#include <ios>
 #include <memory>
 #include <ostream>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -54,34 +56,37 @@ std::string HybridState::toString() const {
   if (top) {
     return "TOP";
   }
+  std::ostringstream oss;
 
-  std::string str = "{" + this->qState->toString() + "}: ";
+  oss << "{" << this->qState->toString() << "}: ";
   unsigned int i = 0;
   bool first = true;
   for (const auto& key : integerValues.keys()) {
     if (!first) {
-      str += ", ";
+      oss << ", ";
     }
     first = false;
-    str += "integerValue" + std::to_string(i) + " = " +
-           std::to_string(integerValues.at(key));
+    oss << "integerValue" << i << " = " << integerValues.at(key);
     ++i;
   }
   unsigned int j = 0;
   for (const auto& key : doubleValues.keys()) {
     if (!first) {
-      str += ", ";
+      oss << ", ";
     }
     first = false;
-    str += "doubleValue" + std::to_string(j) + " = " +
-           std::format("{:.2f}", doubleValues.at(key));
+
+    oss << "doubleValue" << j << " = " << std::fixed << std::setprecision(2)
+        << doubleValues.at(key);
+
     ++j;
   }
   if (i > 0 || j > 0) {
-    str += "; ";
+    oss << "; ";
   }
-  str += "p = " + std::format("{:.2f}", this->probability) + ";";
-  return str;
+  oss << "p = " << std::fixed << std::setprecision(2) << this->probability
+      << ";";
+  return oss.str();
 }
 
 bool HybridState::operator==(const HybridState& that) const {
@@ -142,7 +147,7 @@ void HybridState::propagateGate(Operation* gate,
     paramValues.reserve(params.size());
     for (Value p : params) {
       if (integerValues.contains(p)) {
-        paramValues.push_back(integerValues.at(p));
+        paramValues.push_back(static_cast<double>(integerValues.at(p)));
       } else if (doubleValues.contains(p)) {
         paramValues.push_back(static_cast<double>(doubleValues.at(p)));
       } else {
