@@ -61,6 +61,8 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJ
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
+option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
+       OFF)
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(BUILD_MQT_CORE_MLIR
@@ -159,9 +161,9 @@ if(BUILD_MQT_CORE_MLIR)
     COMMENT "Copying and cleaning up generated MLIR documentation"
     VERBATIM)
 
-  # Keep documentation consumers independent of the implementation target used to generate MLIR
-  # reference pages.
-  add_custom_target(mqt-core-docs DEPENDS mlir-doc)
+  if(BUILD_MQT_CORE_DOCUMENTATION)
+    add_custom_target(mqt-core-docs ALL DEPENDS mlir-doc)
+  endif()
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

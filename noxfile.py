@@ -153,7 +153,13 @@ def docs(session: nox.Session) -> None:
     if serve:
         session.install("sphinx-autobuild")
 
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Let scikit-build-core generate the MLIR reference pages while it
+        # builds the extension used to execute the documentation examples.
+        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_MLIR=ON;-DBUILD_MQT_CORE_DOCUMENTATION=ON;"
+        "-DBUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR=OFF",
+    }
     # install build and docs dependencies on top of the existing environment
     session.run(
         "uv",
@@ -165,10 +171,6 @@ def docs(session: nox.Session) -> None:
         "docs",
         env=env,
     )
-
-    # Build CMake-managed documentation prerequisites.
-    session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
-    session.run("uvx", "cmake", "--build", "build", "--target", "mqt-core-docs")
 
     shared_args = [
         "-n",  # nitpicky mode
