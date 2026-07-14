@@ -565,7 +565,7 @@ TEST_F(HybridStateTest, doubleOpTwoValueOperation) {
   hState.addDoubleValue(val2, 1.3);
 
   const auto mulFOp = mlir::arith::MulFOp::create(
-      programBuilder, programBuilder.getLoc(), val2.getType(), val1);
+      programBuilder, programBuilder.getLoc(), val1, val2);
 
   hState.propagateClassicalOperation(mulFOp, val2, val1, val2);
 
