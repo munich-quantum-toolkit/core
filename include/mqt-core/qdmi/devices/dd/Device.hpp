@@ -282,11 +282,10 @@ public:
       : session_(session), id_(qdmi::dd::Device::get().generateUniqueID()) {}
   /**
    * @brief Frees the device job.
-   * @note This function just forwards to the session's @c freeDeviceJob
-   * function. This function is needed because the interface only provides the
-   * job handle to the @c QDMI_job_free function and the job's session handle
-   * is private.
-   * @see QDMI_job_free
+   * @note This function just forwards to the session's @ref
+   * MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob function. This function
+   * is needed because the interface only provides the job handle to the @ref
+   * QDMI_job_free function and the job's session handle is private.
    */
   auto free() -> void;
 

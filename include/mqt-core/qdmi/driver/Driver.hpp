@@ -336,10 +336,10 @@ public:
 
   /**
    * @brief Frees the job.
-   * @note This function just forwards to the device's @c freeJob
-   * function. This function is needed because the interface only provides the
-   * job handle to the @c QDMI_job_free function and the job's device handle
-   * is private.
+   * @note This function just forwards to the device's @ref
+   * QDMI_Device_impl_d::freeJob function. This function is needed because the
+   * interface only provides the job handle to the @ref QDMI_job_free function
+   * and the job's device handle is private.
    */
   auto free() -> void;
 };
