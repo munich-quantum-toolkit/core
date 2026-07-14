@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Permutation.hpp
+ * @brief Qubit permutation mappings for quantum computations.
+ */
+
 #pragma once
 
 #include "Definitions.hpp"

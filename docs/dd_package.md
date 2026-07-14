@@ -88,6 +88,7 @@ counts = sample(qc, 1024)
 ---
 tags: [remove-cell]
 ---
+from pathlib import Path
 from matplotlib import pyplot as plt
 
 def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
@@ -120,8 +121,9 @@ def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
     plt.xlabel("Measurement Outcome")
     plt.ylabel("Counts")
 
-    # export to SVG
-    filename = "fig-" + name + ("-light" if light else "-dark") + ".svg"
+    # export to SVG (ensure the directory exists)
+    Path("_build/html/_images").mkdir(parents=True, exist_ok=True)
+    filename = "_build/html/_images/fig-" + name + ("-light" if light else "-dark") + ".svg"
     plt.savefig(filename, format="svg")
 
 name = 'qpe'
@@ -129,16 +131,9 @@ generate_plot(counts, name, light=True)
 generate_plot(counts, name, light=False)
 ```
 
-```{image} fig-qpe-light.svg
-:align: center
-:width: 75%
-:class: only-light
-```
-
-```{image} fig-qpe-dark.svg
-:align: center
-:width: 75%
-:class: only-dark
+```{raw} html
+<img src="_images/fig-qpe-light.svg" class="only-light" style="display: block; margin: auto; width: 75%;" alt="QPE measurement counts">
+<img src="_images/fig-qpe-dark.svg" class="only-dark" style="display: block; margin: auto; width: 75%;" alt="QPE measurement counts">
 ```
 
 The {py:func}`~mqt.core.dd.sample` function is a high-level interface to the

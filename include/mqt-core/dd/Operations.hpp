@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Operations.hpp
+ * @brief Arithmetic, tensor, and measurement operations on decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

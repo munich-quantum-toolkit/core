@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Operation.hpp
+ * @brief Base interface for quantum operations.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"
