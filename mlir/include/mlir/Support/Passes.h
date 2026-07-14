@@ -14,35 +14,47 @@
 
 namespace mlir {
 class ModuleOp;
+class OpPassManager;
 class PassManager;
 } // namespace mlir
 
 /**
  * @brief Populate the pass manager and run it on the module.
  */
-mlir::LogicalResult
-runWithPassManager(mlir::ModuleOp module,
-                   mlir::function_ref<void(mlir::PassManager&)> populatePasses,
-                   mlir::StringRef errorMessage);
+mlir::LogicalResult runWithPassManager(
+    mlir::ModuleOp module,
+    mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
+    mlir::StringRef errorMessage);
+
+/** @brief Register the QCO passes and named compiler pipelines. */
+void registerMQTCompilerPasses();
+
+/** @brief Populate the default QCO optimization pipeline. */
+void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
+
+/** @brief Parse and run a module-level MLIR textual pass pipeline. */
+[[nodiscard]] mlir::LogicalResult
+runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
+                bool enableTiming = false, bool enableStatistics = false);
 
 /**
  * @brief Populate a QC-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and QC qubit-register shrinking.
  */
-void populateQCCleanupPipeline(mlir::PassManager& pm);
+void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
 /**
  * @brief Populate a QCO-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and qtensor shrink-to-fit.
  */
-void populateQCOCleanupPipeline(mlir::PassManager& pm);
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
 
 /**
  * @brief Populate a QIR-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and QIR-specific simplifications. Updates the
  * meta data accordingly.
  */
-void populateQIRCleanupPipeline(mlir::PassManager& pm, bool useAdaptive);
+void populateQIRCleanupPipeline(mlir::OpPassManager& pm, bool useAdaptive);
 
 /**
  * @brief Populate a `jeff`-oriented cleanup pipeline on the given pass manager.
@@ -50,7 +62,7 @@ void populateQIRCleanupPipeline(mlir::PassManager& pm, bool useAdaptive);
  * cleanup minus the QTensor-specific shrink pass, as QTensor operations no
  * longer exist once lowered into the `jeff` dialect.
  */
-void populateJeffCleanupPipeline(mlir::PassManager& pm);
+void populateJeffCleanupPipeline(mlir::OpPassManager& pm);
 
 /**
  * @brief Run the QC-oriented cleanup pipeline on a module.

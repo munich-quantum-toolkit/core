@@ -10,9 +10,8 @@ mystnb:
 
 The {py:mod}`mqt.core.mlir` module provides Python access to the MQT Compiler
 Collection. It accepts OpenQASM, MQT {py:class}`~mqt.core.ir.QuantumComputation`
-objects, Qiskit circuits, and compiler programs. Depending on the selected
-output format, it returns an optimized circuit representation, an
-optimization-oriented representation, a serializable program, or QIR.
+objects, Qiskit circuits, and typed compiler programs. The requested output
+format determines where compilation stops and which program type is returned.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -42,19 +41,14 @@ print(compiled.ir)
 ```
 
 By default, `compile_program()` runs the standard optimization pipeline and
-returns a {py:class}`~mqt.core.mlir.QCProgram`: the QC representation after an
-optimized QCO round trip. Its `ir` property exposes the textual MLIR
-representation for inspection and debugging. Writing MLIR is not required to use
-the compiler.
+returns a {py:class}`~mqt.core.mlir.QCProgram`. Its `ir` property exposes the
+textual MLIR representation for inspection and debugging. Programs do not need
+to be written in MLIR to use the compiler.
 
 :::{important}
-
-### Preserve observable results
-
-The compiler removes dead code. A circuit that only prepares a state, including
-a Bell state without measurements and returned results, has no observable effect
-and can be removed by optimization. Programs intended for execution should
-measure the relevant qubits and return the measurement results.
+The compiler removes dead code. A circuit that only prepares a state has no
+observable effect and can be removed by optimization. Programs intended for
+execution should measure the relevant qubits and return the measurement results.
 
 In OpenQASM 3, assigning measurements to a classical register, as in the example
 above, makes those results return values of the imported program. When
@@ -71,33 +65,36 @@ to stop the pipeline at a particular representation:
 | Purpose | Output format | Result type |
 | --- | --- | --- |
 | Inspect frontend translation | `OutputFormat.QC_IMPORT` | `QCProgram` |
-| Obtain an optimized circuit representation | `OutputFormat.QC` (default) | `QCProgram` |
-| Inspect or transform the optimization IR | `OutputFormat.QCO` | `QCOProgram` |
+| Inspect QCO immediately after conversion | `OutputFormat.QCO` | `QCOProgram` |
+| Inspect QCO after optimization | `OutputFormat.QCO_OPTIMIZED` | `QCOProgram` |
+| Obtain the optimized circuit | `OutputFormat.QC` (default) | `QCProgram` |
 | Serialize a compiler program | `OutputFormat.JEFF` | `JeffProgram` |
 | Generate QIR | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram` |
 
-For example, select QCO to inspect the representation used for optimization:
+For example, select optimized QCO to inspect the representation after the
+default QCO pass pipeline:
 
 ```{code-cell} ipython3
-optimized = compile_program(bell_qasm, output=OutputFormat.QCO)
+optimized = compile_program(bell_qasm, output=OutputFormat.QCO_OPTIMIZED)
 print(optimized.ir)
 ```
 
-## Construct a pipeline
+## Run passes explicitly
 
 `QCProgram`, `QCOProgram`, `JeffProgram`, and `QIRProgram` own their MLIR
 modules. A conversion consumes its source program by default, avoiding an
 implicit copy of a potentially large module. Pass `copy=True` when the source
 must remain available.
 
-The following pipeline retains the imported QC program, explicitly runs cleanup
-and optimization on QCO, and converts the result back to QC:
+The following example keeps the imported QC program, applies transformations to
+QCO, and converts the result back to QC:
 
 ```{code-cell} ipython3
 qc = QCProgram.from_qasm_str(bell_qasm)
 qco = qc.to_qco(copy=True)
 qco.cleanup()
-qco.optimize(enable_hadamard_lifting=True)
+qco.merge_single_qubit_rotation_gates()
+qco.lift_hadamards()
 final_qc = qco.to_qc()
 
 assert qc.is_valid
@@ -105,15 +102,21 @@ assert not qco.is_valid
 print(final_qc.ir)
 ```
 
-The dialect reference documents the representations used in this pipeline:
+Architecture-independent QCO transformations can also be composed with MLIR's
+textual pass-pipeline syntax. The same pass names and options are accepted by
+`mqt-cc`:
 
-- {doc}`QC <QC>` uses reference semantics and provides interoperability with
-  OpenQASM, Qiskit, QIR, and related tools.
-- {doc}`QCO <QCO>` uses value semantics and linear typing for optimization.
+```{code-cell} ipython3
+custom = compile_program(
+    bell_qasm,
+    output=OutputFormat.QCO_OPTIMIZED,
+    qco_pipeline="hadamard-lifting,merge-single-qubit-rotation-gates",
+)
+```
 
-The {doc}`QTensor <QTensor>` dialect extends QCO with linear, one-dimensional
-qubit registers. See the {doc}`conversion reference <Conversions>` for the
-transformations between these representations.
+The `qco_pipeline` argument replaces the default QCO optimization pipeline. It
+is applied when compilation proceeds beyond the raw `OutputFormat.QCO`
+checkpoint.
 
 ## Serialize programs and generate QIR
 
@@ -133,8 +136,8 @@ with TemporaryDirectory() as directory:
 assert restored.is_valid
 ```
 
-To generate QIR, select a QIR target profile. `QIRProgram` provides its lowered
-MLIR through `ir` and the generated LLVM IR through `llvm_ir`.
+To generate QIR, select a target profile. `QIRProgram` provides the QIR MLIR
+through `ir` and the translated LLVM IR through `llvm_ir`.
 
 ```{code-cell} ipython3
 qir = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)
@@ -142,5 +145,9 @@ assert qir.profile is QIRProfile.BASE
 print(qir.llvm_ir)
 ```
 
-The dialect and conversion references provide the operation-level details for
-applications that need to control individual compiler stages.
+Use `qir.to_bitcode()` to obtain LLVM bitcode as `bytes`, or
+`qir.write_bitcode(path)` to write a `.bc` file directly.
+
+The {doc}`QC <QC>`, {doc}`QCO <QCO>`, and {doc}`QTensor <QTensor>` references
+describe the underlying operations. See {doc}`Conversions` for the lowering
+steps between dialects.

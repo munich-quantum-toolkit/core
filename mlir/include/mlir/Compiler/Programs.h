@@ -10,18 +10,21 @@
 
 #pragma once
 
-#include "mlir/Compiler/CompilerPipeline.h"
-
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace qc {
 class QuantumComputation;
@@ -50,10 +53,12 @@ enum class QIRProfile : uint8_t {
 enum class ProgramFormat : uint8_t {
   /// QC directly after frontend import, without any compiler pass.
   QCImport,
-  /// QC after the QCO optimization round trip.
-  QC,
-  /// Optimized QCO.
+  /// QCO immediately after conversion, before cleanup and optimization.
   QCO,
+  /// QCO after the default or user-supplied optimization pipeline.
+  QCOOptimized,
+  /// QC after the optimized QCO round trip.
+  QC,
   /// Serializable Jeff MLIR.
   Jeff,
   /// QIR for the Base Profile.
@@ -91,7 +96,7 @@ protected:
 
   explicit Program(Storage storage);
 
-  /** @brief Return the owned module, throwing when the program was consumed. */
+  /** @brief Return the owned module. Requires a valid program. */
   [[nodiscard]] ModuleOp module() const;
 
   /** @brief Clone the owned module while sharing its immutable dialect context.
@@ -102,11 +107,6 @@ protected:
   [[nodiscard]] Storage releaseStorage() &&;
 
 private:
-  friend std::variant<QCProgram, QCOProgram, JeffProgram, QIRProgram>
-  runDefaultPipeline(
-      std::variant<QCProgram, QCOProgram, JeffProgram, QIRProgram>&& program,
-      ProgramFormat output, const QuantumCompilerConfig& config);
-
   Storage storage_;
 };
 
@@ -118,34 +118,36 @@ public:
   explicit QCProgram(Storage storage) : Program(std::move(storage)) {}
 
   /** @brief Parse QC MLIR assembly. */
-  [[nodiscard]] static QCProgram fromMLIRString(const std::string& source);
+  [[nodiscard]] static std::optional<QCProgram>
+  fromMLIRString(std::string_view source);
 
   /** @brief Parse QC MLIR assembly from a file. */
-  [[nodiscard]] static QCProgram
+  [[nodiscard]] static std::optional<QCProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
   /** @brief Translate OpenQASM 3 source to QC. */
-  [[nodiscard]] static QCProgram fromQASMString(const std::string& source);
+  [[nodiscard]] static std::optional<QCProgram>
+  fromQASMString(std::string_view source);
 
   /** @brief Translate an OpenQASM 3 file to QC. */
-  [[nodiscard]] static QCProgram
+  [[nodiscard]] static std::optional<QCProgram>
   fromQASMFile(const std::filesystem::path& path);
 
   /** @brief Translate an MQT quantum computation to QC. */
-  [[nodiscard]] static QCProgram
+  [[nodiscard]] static std::optional<QCProgram>
   fromQuantumComputation(const ::qc::QuantumComputation& computation);
 
   /** @brief Create an independent QC program copy. */
   [[nodiscard]] QCProgram copy() const;
 
   /** @brief Run the standard QC cleanup passes in place. */
-  void cleanup();
+  [[nodiscard]] bool cleanup();
 
   /** @brief Consume this program and convert it to QCO. */
-  [[nodiscard]] QCOProgram intoQCO() &&;
+  [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
 
   /** @brief Consume this program and lower it to QIR. */
-  [[nodiscard]] QIRProgram intoQIR(QIRProfile profile) &&;
+  [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
 };
 
 /**
@@ -156,27 +158,48 @@ public:
   explicit QCOProgram(Storage storage) : Program(std::move(storage)) {}
 
   /** @brief Parse QCO MLIR assembly. */
-  [[nodiscard]] static QCOProgram fromMLIRString(const std::string& source);
+  [[nodiscard]] static std::optional<QCOProgram>
+  fromMLIRString(std::string_view source);
 
   /** @brief Parse QCO MLIR assembly from a file. */
-  [[nodiscard]] static QCOProgram
+  [[nodiscard]] static std::optional<QCOProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
   /** @brief Create an independent QCO program copy. */
   [[nodiscard]] QCOProgram copy() const;
 
   /** @brief Run the standard QCO cleanup passes in place. */
-  void cleanup();
+  [[nodiscard]] bool cleanup();
 
-  /** @brief Run the standard QCO optimization passes in place. */
-  void optimize(bool mergeSingleQubitRotations = true,
-                bool enableHadamardLifting = false);
+  /** @brief Run an MLIR textual QCO pass pipeline in place. */
+  [[nodiscard]] bool runPassPipeline(std::string_view pipeline,
+                                     bool enableTiming = false,
+                                     bool enableStatistics = false);
+
+  /** @brief Merge consecutive single-qubit rotation gates. */
+  [[nodiscard]] bool mergeSingleQubitRotationGates();
+
+  /** @brief Fuse single-qubit unitary runs into the selected Euler basis. */
+  [[nodiscard]] bool fuseSingleQubitUnitaryRuns(std::string_view basis = "zyz");
+
+  /** @brief Unroll loops containing quantum operations. */
+  [[nodiscard]] bool unrollQuantumLoops(int64_t factor = -1);
+
+  /** @brief Lift Hadamard gates away from measurements. */
+  [[nodiscard]] bool liftHadamards();
+
+  /** @brief Place and route the program on a coupling graph. */
+  [[nodiscard]] bool
+  placeAndRoute(std::span<const std::pair<std::size_t, std::size_t>> coupling,
+                std::size_t nlookahead = 1, float alpha = 1.F,
+                float lambda = 0.5F, std::size_t niterations = 1,
+                std::size_t ntrials = 4, std::size_t seed = 42);
 
   /** @brief Consume this program and convert it to QC. */
-  [[nodiscard]] QCProgram intoQC() &&;
+  [[nodiscard]] std::optional<QCProgram> intoQC() &&;
 
   /** @brief Consume this program and convert it to Jeff MLIR. */
-  [[nodiscard]] JeffProgram intoJeff() &&;
+  [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
 };
 
 /**
@@ -187,25 +210,27 @@ public:
   explicit JeffProgram(Storage storage) : Program(std::move(storage)) {}
 
   /** @brief Deserialize a Jeff binary file. */
-  [[nodiscard]] static JeffProgram fromFile(const std::filesystem::path& path);
+  [[nodiscard]] static std::optional<JeffProgram>
+  fromFile(const std::filesystem::path& path);
 
   /** @brief Deserialize a Jeff binary buffer. */
-  [[nodiscard]] static JeffProgram fromBytes(const std::string& bytes);
+  [[nodiscard]] static std::optional<JeffProgram>
+  fromBytes(std::span<const std::byte> bytes);
 
   /** @brief Create an independent Jeff program copy. */
   [[nodiscard]] JeffProgram copy() const;
 
   /** @brief Run the standard Jeff cleanup passes in place. */
-  void cleanup();
+  [[nodiscard]] bool cleanup();
 
   /** @brief Serialize this program to a binary Jeff buffer. */
-  [[nodiscard]] std::string toBytes() const;
+  [[nodiscard]] std::vector<std::byte> toBytes() const;
 
   /** @brief Serialize this program to a binary Jeff file. */
-  void write(const std::filesystem::path& path) const;
+  [[nodiscard]] bool write(const std::filesystem::path& path) const;
 
   /** @brief Consume this program and convert it to QCO. */
-  [[nodiscard]] QCOProgram intoQCO() &&;
+  [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
 };
 
 /**
@@ -219,17 +244,26 @@ public:
   [[nodiscard]] QIRProgram copy() const;
 
   /** @brief Run QIR cleanup passes in place. */
-  void cleanup();
+  [[nodiscard]] bool cleanup();
 
   /** @brief Return the selected QIR profile. */
   [[nodiscard]] QIRProfile profile() const noexcept;
 
   /** @brief Translate this QIR MLIR program to LLVM IR text. */
-  [[nodiscard]] std::string llvmIR() const;
+  [[nodiscard]] std::optional<std::string> llvmIR() const;
+
+  /** @brief Translate this QIR program to LLVM bitcode in memory. */
+  [[nodiscard]] std::optional<std::vector<std::byte>> toBitcode() const;
+
+  /** @brief Translate and write this QIR program as LLVM bitcode. */
+  [[nodiscard]] bool writeBitcode(const std::filesystem::path& path) const;
 
 private:
   QIRProfile profile_;
 };
+
+/** @brief Valid input variants for the default compiler pipeline. */
+using CompilerInput = std::variant<QCProgram, QCOProgram, JeffProgram>;
 
 /** @brief The program variants returned by the default compiler pipeline. */
 using CompilerProgram =
@@ -241,8 +275,9 @@ using CompilerProgram =
  * @details The supplied program is consumed. Call `copy()` before this function
  * when the source program must remain available for another pipeline branch.
  */
-[[nodiscard]] CompilerProgram
-runDefaultPipeline(CompilerProgram&& program, ProgramFormat output,
-                   const QuantumCompilerConfig& config = {});
+[[nodiscard]] std::optional<CompilerProgram>
+runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
+                   std::string_view qcoPipeline = "mqt-qco-default",
+                   bool enableTiming = false, bool enableStatistics = false);
 
 } // namespace mlir

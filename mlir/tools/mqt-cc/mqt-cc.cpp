@@ -8,12 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
+#include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
+#include "mlir/Conversion/QCOToQC/QCOToQC.h"
+#include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Support/Passes.h"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
@@ -39,6 +44,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Pass/PassRegistry.h>
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
@@ -73,56 +79,18 @@ static llvm::cl::opt<std::string>
 static llvm::cl::opt<std::string> outputFormat(
     "emit",
     llvm::cl::desc(
-        "Output format: qc-import, mlir, qco, qir-base, qir-adaptive, or "
-        "jeff"),
+        "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
+        "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
-
-static llvm::cl::opt<bool>
-    convertToQIRBase("emit-qir-base",
-                     llvm::cl::desc("Convert to QIR Base Profile at the end"),
-                     llvm::cl::init(false));
-
-static llvm::cl::opt<bool> convertToQIRAdaptive(
-    "emit-qir-adaptive",
-    llvm::cl::desc("Convert to QIR Adaptive Profile at the end"),
-    llvm::cl::init(false));
-
-static llvm::cl::opt<bool> recordIntermediates(
-    "record-intermediates",
-    llvm::cl::desc("Record intermediate IR after each compiler stage"),
-    llvm::cl::init(false));
-
-static llvm::cl::opt<bool>
-    enableTiming("mlir-timing", llvm::cl::desc("Enable pass timing statistics"),
-                 llvm::cl::init(false));
-
-static llvm::cl::opt<bool>
-    enableStatistics("mlir-statistics",
-                     llvm::cl::desc("Enable pass statistics"),
-                     llvm::cl::init(false));
-
-static llvm::cl::opt<bool>
-    printIRAfterAllStages("mlir-print-ir-after-all-stages",
-                          llvm::cl::desc("Print IR after each compiler stage"),
-                          llvm::cl::init(false));
-
-static llvm::cl::opt<bool> disableMergeSingleQubitRotationGates(
-    "disable-merge-single-qubit-rotation-gates",
-    llvm::cl::desc(
-        "Disable quaternion-based single-qubit rotation gate merging"),
-    llvm::cl::init(false));
-
-static llvm::cl::opt<bool> enableHadamardLifting(
-    "hadamard-lifting",
-    llvm::cl::desc("Apply Hadamard lifting during optimization"),
-    llvm::cl::init(false));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QCO, QASM, Jeff };
+enum class InputDialect : std::uint8_t { QC, QCO };
 enum class OutputFormat : std::uint8_t {
   QCImport,
   QC,
   QCO,
+  QCOOptimized,
   QIRBase,
   QIRAdaptive,
   Jeff
@@ -130,7 +98,7 @@ enum class OutputFormat : std::uint8_t {
 
 struct ParsedProgram {
   OwningOpRef<ModuleOp> module;
-  PipelineDialect dialect = PipelineDialect::QC;
+  InputDialect dialect = InputDialect::QC;
 };
 } // namespace
 
@@ -164,6 +132,9 @@ parseOutputFormat(const StringRef format) {
   }
   if (format == "qco") {
     return OutputFormat::QCO;
+  }
+  if (format == "qco-optimized") {
+    return OutputFormat::QCOOptimized;
   }
   if (format == "qir-base") {
     return OutputFormat::QIRBase;
@@ -242,7 +213,7 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
-  return {.module = std::move(module), .dialect = PipelineDialect::QCO};
+  return {.module = std::move(module), .dialect = InputDialect::QCO};
 }
 
 /**
@@ -269,15 +240,6 @@ static LogicalResult writeJeffOutput(const ModuleOp module,
 
   output->keep();
   return success();
-}
-
-/**
- * @brief Print all compiler checkpoints that were recorded for this run.
- */
-static void printRecordedStage(const StringRef title, const std::string& ir) {
-  if (!ir.empty()) {
-    llvm::outs() << "After " << title << ":\n" << ir << "\n";
-  }
 }
 
 /**
@@ -321,6 +283,11 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
 int main(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
+  registerMQTCompilerPasses();
+  registerPassManagerCLOptions();
+  PassPipelineCLParser passPipeline(
+      "passes", "QCO optimization passes to run instead of the default");
+
   // Parse command-line options; exit on error and print to stderr
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
@@ -336,23 +303,6 @@ int main(int argc, char** argv) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
   }
-  if (convertToQIRBase && convertToQIRAdaptive) {
-    llvm::errs() << "--emit-qir-base and --emit-qir-adaptive are mutually "
-                    "exclusive.\n";
-    return 1;
-  }
-  if ((convertToQIRBase || convertToQIRAdaptive) &&
-      outputFormat.getNumOccurrences() != 0U) {
-    llvm::errs() << "--emit cannot be combined with --emit-qir-base or "
-                    "--emit-qir-adaptive.\n";
-    return 1;
-  }
-  if (convertToQIRBase) {
-    parsedOutputFormat = OutputFormat::QIRBase;
-  } else if (convertToQIRAdaptive) {
-    parsedOutputFormat = OutputFormat::QIRAdaptive;
-  }
-
   // Set up MLIR context with all required dialects.
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
@@ -372,7 +322,7 @@ int main(int argc, char** argv) {
     break;
   case InputFormat::QCO:
     program.module = loadMLIRFile(inputFilename, &context);
-    program.dialect = PipelineDialect::QCO;
+    program.dialect = InputDialect::QCO;
     break;
   case InputFormat::QASM:
     program.module = loadQASMFile(inputFilename, &context);
@@ -385,71 +335,89 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Configure the compiler pipeline
-  QuantumCompilerConfig config;
-  config.convertToQIRBase = *parsedOutputFormat == OutputFormat::QIRBase;
-  config.convertToQIRAdaptive =
-      *parsedOutputFormat == OutputFormat::QIRAdaptive;
-  config.recordIntermediates = recordIntermediates;
-  config.enableTiming = enableTiming;
-  config.enableStatistics = enableStatistics;
-  config.printIRAfterAllStages = printIRAfterAllStages;
-  config.disableMergeSingleQubitRotationGates =
-      disableMergeSingleQubitRotationGates;
-  config.enableHadamardLifting = enableHadamardLifting;
-
   if (*parsedOutputFormat == OutputFormat::QCImport &&
-      program.dialect != PipelineDialect::QC) {
+      program.dialect != InputDialect::QC) {
     llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
     return 1;
   }
-
-  auto target = PipelineDialect::QC;
-  switch (*parsedOutputFormat) {
-  case OutputFormat::QCO:
-    target = PipelineDialect::QCO;
-    break;
-  case OutputFormat::Jeff:
-    target = PipelineDialect::Jeff;
-    break;
-  case OutputFormat::QIRBase:
-  case OutputFormat::QIRAdaptive:
-    target = PipelineDialect::QIR;
-    break;
-  case OutputFormat::QCImport:
-  case OutputFormat::QC:
-    break;
+  if (passPipeline.hasAnyOccurrences() &&
+      (*parsedOutputFormat == OutputFormat::QCImport ||
+       *parsedOutputFormat == OutputFormat::QCO)) {
+    llvm::errs() << "--pass-pipeline requires an output that passes through "
+                    "QCO optimization.\n";
+    return 1;
   }
 
-  // Run the compilation pipeline unless the requested QC import checkpoint is
-  // already represented by the frontend result.
-  CompilationRecord record;
-  if (*parsedOutputFormat != OutputFormat::QCImport) {
-    if (const QuantumCompilerPipeline pipeline(config);
-        pipeline
-            .run(program.module.get(), program.dialect, target,
-                 recordIntermediates ? &record : nullptr)
-            .failed()) {
-      llvm::errs() << "Compilation pipeline failed\n";
+  const auto runPasses =
+      [&](const function_ref<void(OpPassManager&)> populate) {
+        PassManager pm(&context);
+        if (failed(applyPassManagerCLOptions(pm))) {
+          return failure();
+        }
+        populate(pm);
+        return pm.run(*program.module);
+      };
+
+  if (*parsedOutputFormat != OutputFormat::QCImport &&
+      program.dialect == InputDialect::QC &&
+      failed(
+          runPasses([](OpPassManager& pm) { pm.addPass(createQCToQCO()); }))) {
+    return 1;
+  }
+
+  if (*parsedOutputFormat != OutputFormat::QCImport &&
+      *parsedOutputFormat != OutputFormat::QCO) {
+    if (auto pipelineParseFailed = false;
+        failed(runPasses([&](OpPassManager& pm) {
+          populateQCOCleanupPipeline(pm);
+          if (passPipeline.hasAnyOccurrences()) {
+            if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
+                  llvm::errs() << message << "\n";
+                  return failure();
+                }))) {
+              pipelineParseFailed = true;
+              return;
+            }
+          } else {
+            populateDefaultQCOOptimizationPipeline(pm);
+          }
+          populateQCOCleanupPipeline(pm);
+        })) ||
+        pipelineParseFailed) {
       return 1;
     }
   }
 
-  if (recordIntermediates) {
-    llvm::outs() << "=== Compilation Record ===\n";
-    printRecordedStage("QC Import", record.afterQCImport);
-    printRecordedStage("Initial QC Canonicalization", record.afterInitialCanon);
-    printRecordedStage("QC-to-QCO Conversion", record.afterQCOConversion);
-    printRecordedStage("Initial QCO Canonicalization", record.afterQCOCanon);
-    printRecordedStage("Optimization", record.afterOptimization);
-    printRecordedStage("Final QCO Canonicalization",
-                       record.afterOptimizationCanon);
-    printRecordedStage("QCO-to-QC Conversion", record.afterQCConversion);
-    printRecordedStage("Final QC Canonicalization", record.afterQCCanon);
-    printRecordedStage("QC-to-QIR Conversion", record.afterQIRConversion);
-    printRecordedStage("QIR Canonicalization", record.afterQIRCanon);
-    printRecordedStage("QCO-to-Jeff Conversion", record.afterJeffConversion);
-    printRecordedStage("Jeff Cleanup", record.afterJeffCanon);
+  if (*parsedOutputFormat == OutputFormat::Jeff) {
+    if (failed(runPasses([](OpPassManager& pm) {
+          pm.addPass(createQCOToJeff());
+          populateJeffCleanupPipeline(pm);
+        }))) {
+      return 1;
+    }
+  } else if (*parsedOutputFormat != OutputFormat::QCImport &&
+             *parsedOutputFormat != OutputFormat::QCO &&
+             *parsedOutputFormat != OutputFormat::QCOOptimized) {
+    if (failed(runPasses([](OpPassManager& pm) {
+          pm.addPass(createQCOToQC());
+          populateQCCleanupPipeline(pm);
+        }))) {
+      return 1;
+    }
+    if (*parsedOutputFormat == OutputFormat::QIRBase &&
+        failed(runPasses([](OpPassManager& pm) {
+          pm.addPass(createQCToQIRBase());
+          populateQIRCleanupPipeline(pm, false);
+        }))) {
+      return 1;
+    }
+    if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
+        failed(runPasses([](OpPassManager& pm) {
+          pm.addPass(createQCToQIRAdaptive());
+          populateQIRCleanupPipeline(pm, true);
+        }))) {
+      return 1;
+    }
   }
 
   // Write the output.
@@ -457,7 +425,8 @@ int main(int argc, char** argv) {
     if (writeJeffOutput(*program.module, outputFilename).failed()) {
       return 1;
     }
-  } else if (config.convertToQIRBase || config.convertToQIRAdaptive) {
+  } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
+             *parsedOutputFormat == OutputFormat::QIRAdaptive) {
     llvm::LLVMContext llvmContext;
     std::unique_ptr<llvm::Module> llvmMod =
         translateModuleToLLVMIR(*program.module, llvmContext);

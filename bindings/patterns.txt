@@ -100,8 +100,7 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QC] = ...,
         inplace: bool = False,
-        disable_merge_single_qubit_rotation_gates: bool = False,
-        enable_hadamard_lifting: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> QCProgram: ...
@@ -115,10 +114,9 @@ mqt.core.mlir.compile_program:
         | QCOProgram
         | JeffProgram,
         *,
-        output: Literal[OutputFormat.QCO],
+        output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
         inplace: bool = False,
-        disable_merge_single_qubit_rotation_gates: bool = False,
-        enable_hadamard_lifting: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> QCOProgram: ...
@@ -134,8 +132,7 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.JEFF],
         inplace: bool = False,
-        disable_merge_single_qubit_rotation_gates: bool = False,
-        enable_hadamard_lifting: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> JeffProgram: ...
@@ -151,8 +148,7 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
         inplace: bool = False,
-        disable_merge_single_qubit_rotation_gates: bool = False,
-        enable_hadamard_lifting: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> QIRProgram: ...
@@ -168,8 +164,7 @@ mqt.core.mlir.compile_program:
         *,
         output: OutputFormat,
         inplace: bool = False,
-        disable_merge_single_qubit_rotation_gates: bool = False,
-        enable_hadamard_lifting: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:

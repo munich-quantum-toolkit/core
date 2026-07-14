@@ -180,7 +180,7 @@ def test_program_conversions_are_composable() -> None:
     assert isinstance(qco, QCOProgram)
 
     qco.cleanup()
-    qco.optimize()
+    qco.merge_single_qubit_rotation_gates()
     result = qco.to_qc()
     assert not qco.is_valid
     result.cleanup()
@@ -194,6 +194,18 @@ def test_compile_program_convert_to_qir() -> None:
     assert isinstance(result, QIRProgram)
     assert "; ModuleID" in result.llvm_ir
     assert "@__quantum__qis__h__body" in result.llvm_ir
+    bitcode = result.to_bitcode()
+    assert bitcode.startswith(b"BC\xc0\xde")
+
+
+def test_qir_program_writes_bitcode(tmp_path: Path) -> None:
+    """Write generated LLVM bitcode to a file."""
+    result = compile_program(QASM_STRING, output=OutputFormat.QIR_BASE)
+    path = tmp_path / "program.bc"
+
+    result.write_bitcode(path)
+
+    assert path.read_bytes() == result.to_bitcode()
 
 
 def test_compile_program_output_format_convert_to_qir() -> None:
@@ -211,6 +223,30 @@ def test_compile_program_qc_import_output() -> None:
 
     assert isinstance(result, QCProgram)
     assert "qc.h" in result.ir
+
+
+def test_compile_program_exposes_raw_and_optimized_qco() -> None:
+    """Expose QCO before and after the configured optimization pipeline."""
+    qasm = QASM_STRING.replace("h q[0];", "rz(1.0) q[0];\nrx(1.0) q[0];")
+
+    raw = compile_program(qasm, output=OutputFormat.QCO)
+    optimized = compile_program(qasm, output=OutputFormat.QCO_OPTIMIZED)
+
+    assert isinstance(raw, QCOProgram)
+    assert isinstance(optimized, QCOProgram)
+    assert raw.ir != optimized.ir
+
+
+def test_qco_program_runs_textual_pipeline() -> None:
+    """Run registered QCO passes through MLIR textual pipeline syntax."""
+    qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+
+    qco.run_pass_pipeline("mqt-qco-default")
+    qco.lift_hadamards()
+
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        qco.run_pass_pipeline("not-a-pass")
 
 
 def test_compile_program_fails_for_missing_file() -> None:
