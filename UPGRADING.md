@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
+
 ### MLIR enabled by default for C++ builds
 
 The MLIR-based functionality within MQT Core has long been experimental and

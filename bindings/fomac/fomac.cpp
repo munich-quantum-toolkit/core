@@ -19,9 +19,11 @@
 #include <nanobind/stl/optional.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>   // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
@@ -31,6 +33,44 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+namespace {
+template <typename Query>
+[[nodiscard]] nb::object queryCustomValue(Query query,
+                                          const nb::handle valueType) {
+  const auto returnValue =
+      []<typename T>(std::optional<T> value) -> nb::object {
+    if (!value.has_value()) {
+      return nb::none();
+    }
+    return nb::cast(std::move(*value));
+  };
+
+  const auto builtins = nb::builtins();
+  if (valueType.is(builtins["str"])) {
+    return returnValue(query.template operator()<std::string>());
+  }
+  if (valueType.is(builtins["bool"])) {
+    return returnValue(query.template operator()<bool>());
+  }
+  if (valueType.is(builtins["int"])) {
+    return returnValue(query.template operator()<int>());
+  }
+  if (valueType.is(builtins["float"])) {
+    return returnValue(query.template operator()<double>());
+  }
+  if (valueType.is(builtins["bytes"])) {
+    const auto value = query.template operator()<std::vector<std::byte>>();
+    if (!value.has_value()) {
+      return nb::none();
+    }
+    return nb::bytes(reinterpret_cast<const char*>(value->data()),
+                     value->size());
+  }
+  throw nb::type_error(
+      "value_type must be exactly str, bool, int, float, or bytes");
+}
+} // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   // Session class
@@ -156,6 +196,47 @@ Returns:
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
+  job.def(
+      "query_custom_property",
+      [](const fomac::Job& self, const fomac::CustomProperty customProperty,
+         const nb::handle valueType) {
+        return queryCustomValue(
+            [&self, customProperty]<fomac::custom_property_value T>() {
+              return self.queryCustomProperty<T>(customProperty);
+            },
+            valueType);
+      },
+      "custom_property"_a, "value_type"_a,
+      nb::sig("def query_custom_property(self, custom_property: "
+              "CustomProperty, "
+              "value_type: type[str] | type[bool] | type[int] | type[float] | "
+              "type[bytes]) -> str | bool | int | float | bytes | None"),
+      R"pb(Query an implementation-defined custom job property.
+
+The caller must provide the type documented by the device implementation.
+Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
+when the custom slot is unsupported.)pb");
+
+  job.def(
+      "get_custom_result",
+      [](const fomac::Job& self, const fomac::CustomProperty customProperty,
+         const nb::handle valueType) {
+        return queryCustomValue(
+            [&self, customProperty]<fomac::custom_property_value T>() {
+              return self.getCustomResult<T>(customProperty);
+            },
+            valueType);
+      },
+      "custom_property"_a, "value_type"_a,
+      nb::sig("def get_custom_result(self, custom_property: CustomProperty, "
+              "value_type: type[str] | type[bool] | type[int] | type[float] | "
+              "type[bytes]) -> str | bool | int | float | bytes | None"),
+      R"pb(Return an implementation-defined custom job result.
+
+The caller must provide the type documented by the device implementation.
+Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
+when the custom slot is unsupported.)pb");
+
   job.def_prop_ro("id", &fomac::Job::getId, "The job ID.");
 
   job.def_prop_ro("program_format", &fomac::Job::getProgramFormat,
@@ -198,6 +279,15 @@ Returns:
       .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
+
+  nb::enum_<fomac::CustomProperty>(
+      m, "CustomProperty",
+      "An implementation-defined custom property or result slot.")
+      .value("CUSTOM1", fomac::CustomProperty::Custom1)
+      .value("CUSTOM2", fomac::CustomProperty::Custom2)
+      .value("CUSTOM3", fomac::CustomProperty::Custom3)
+      .value("CUSTOM4", fomac::CustomProperty::Custom4)
+      .value("CUSTOM5", fomac::CustomProperty::Custom5);
 
   // Device class
   auto device = nb::class_<fomac::Device>(
@@ -269,9 +359,36 @@ Returns:
              &fomac::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
+  device.def("child_devices", &fomac::Device::getChildDevices,
+             "Returns the direct child devices managed by this device.");
+
+  device.def(
+      "query_custom_property",
+      [](const fomac::Device& self, const fomac::CustomProperty customProperty,
+         const nb::handle valueType) {
+        return queryCustomValue(
+            [&self, customProperty]<fomac::custom_property_value T>() {
+              return self.queryCustomProperty<T>(customProperty);
+            },
+            valueType);
+      },
+      "custom_property"_a, "value_type"_a,
+      nb::sig("def query_custom_property(self, custom_property: "
+              "CustomProperty, "
+              "value_type: type[str] | type[bool] | type[int] | type[float] | "
+              "type[bytes]) -> str | bool | int | float | bytes | None"),
+      R"pb(Query an implementation-defined custom device property.
+
+The caller must provide the type documented by the device implementation.
+Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
+when the custom slot is unsupported.)pb");
+
   device.def("submit_job", &fomac::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a,
-             nb::rv_policy::reference_internal, "Submits a job to the device.");
+             "program_format"_a, "num_shots"_a, nb::kw_only(),
+             "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+             "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+             "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+             "Submits a job to the device.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
@@ -323,6 +440,27 @@ Returns:
 
   site.def("submodule_index", &fomac::Site::getSubmoduleIndex,
            "Returns the index of the submodule the site belongs to.");
+
+  site.def(
+      "query_custom_property",
+      [](const fomac::Site& self, const fomac::CustomProperty customProperty,
+         const nb::handle valueType) {
+        return queryCustomValue(
+            [&self, customProperty]<fomac::custom_property_value T>() {
+              return self.queryCustomProperty<T>(customProperty);
+            },
+            valueType);
+      },
+      "custom_property"_a, "value_type"_a,
+      nb::sig("def query_custom_property(self, custom_property: "
+              "CustomProperty, "
+              "value_type: type[str] | type[bool] | type[int] | type[float] | "
+              "type[bytes]) -> str | bool | int | float | bytes | None"),
+      R"pb(Query an implementation-defined custom site property.
+
+The caller must provide the type documented by the device implementation.
+Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
+when the custom slot is unsupported.)pb");
 
   site.def("__repr__", [](const fomac::Site& s) {
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
@@ -394,6 +532,34 @@ Returns:
                 "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the mean shuttling speed of the operation.");
+
+  operation.def(
+      "query_custom_property",
+      [](const fomac::Operation& self,
+         const fomac::CustomProperty customProperty, const nb::handle valueType,
+         const std::vector<fomac::Site>& sites,
+         const std::vector<double>& params) {
+        return queryCustomValue(
+            [&self, customProperty, &sites,
+             &params]<fomac::custom_property_value T>() {
+              return self.queryCustomProperty<T>(customProperty, sites, params);
+            },
+            valueType);
+      },
+      "custom_property"_a, "value_type"_a,
+      "sites"_a.sig("...") = std::vector<fomac::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      nb::sig("def query_custom_property(self, custom_property: "
+              "CustomProperty, "
+              "value_type: type[str] | type[bool] | type[int] | type[float] | "
+              "type[bytes], sites: Sequence[mqt.core.fomac.Device.Site] = "
+              "..., params: Sequence[float] = ...) -> str | bool | int | "
+              "float | bytes | None"),
+      R"pb(Query an implementation-defined custom operation property.
+
+The caller must provide the type documented by the device implementation.
+Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
+when the custom slot is unsupported.)pb");
 
   operation.def("__repr__", [](const fomac::Operation& op) {
     return "<Operation name=\"" + op.getName() + "\">";

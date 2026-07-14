@@ -29,6 +29,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -729,7 +730,7 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
  * @brief Translates an operation from QuantumComputation to QC dialect
  *
  * @param builder The QCProgramBuilder used to create operations
- * @param quantumComputation The quantum computation to translate
+ * @param operation The operation to translate
  * @param state The translation state
  * @return Success if all supported operations were translated
  */
@@ -849,7 +850,13 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
   QCProgramBuilder builder(context);
-  builder.initialize();
+  SmallVector<Type> resultTypes(quantumComputation.getNcbits(),
+                                builder.getI1Type());
+  if (quantumComputation.getNcbits() == 0) {
+    // Without classical bits, we instead return an exit code 0.
+    resultTypes.push_back(builder.getI64Type());
+  }
+  builder.initialize(resultTypes);
 
   // Allocate quantum registers using the builder
   const auto qregs = allocateQregs(builder, quantumComputation);
@@ -876,6 +883,13 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
 
   // Finalize and return the module (adds return statement and transfers
   // ownership)
+  if (quantumComputation.getNcbits() > 0) {
+    if (llvm::any_of(state.results, [](Value v) { return !v; })) {
+      llvm::errs() << "Not all classical bits were measured.\n";
+      return nullptr;
+    }
+    return builder.finalize(state.results);
+  }
   return builder.finalize();
 }
 

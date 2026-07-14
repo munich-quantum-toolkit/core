@@ -22,6 +22,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 #include <iosfwd>
 #include <memory>
@@ -35,8 +36,8 @@ namespace {
 
 struct QCTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QCProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QCProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
@@ -73,7 +74,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = QCProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -82,7 +83,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -212,7 +213,7 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(barrierMultipleQubits)},
                     QCTestCase{"SingleControlledBarrier",
                                MQT_NAMED_BUILDER(singleControlledBarrier),
-                               MQT_NAMED_BUILDER(barrier)},
+                               MQT_NAMED_BUILDER(twoQubitsOneBarrier)},
                     QCTestCase{"InverseBarrier",
                                MQT_NAMED_BUILDER(inverseBarrier),
                                MQT_NAMED_BUILDER(barrier)}));
@@ -286,7 +287,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(singleControlledP)},
         QCTestCase{"TrivialControlledGlobalPhase",
                    MQT_NAMED_BUILDER(trivialControlledGlobalPhase),
-                   MQT_NAMED_BUILDER(globalPhase)},
+                   MQT_NAMED_BUILDER(globalPhaseAndMeasure)},
         QCTestCase{"InverseGlobalPhase", MQT_NAMED_BUILDER(inverseGlobalPhase),
                    MQT_NAMED_BUILDER(globalPhase)},
         QCTestCase{"InverseMultipleControlledGlobalPhase",
@@ -325,13 +326,13 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(identity)},
         QCTestCase{"SingleControlledIdentity",
                    MQT_NAMED_BUILDER(singleControlledIdentity),
-                   MQT_NAMED_BUILDER(identity)},
+                   MQT_NAMED_BUILDER(twoQubitsOneIdentity)},
         QCTestCase{"MultipleControlledIdentity",
                    MQT_NAMED_BUILDER(multipleControlledIdentity),
-                   MQT_NAMED_BUILDER(identity)},
+                   MQT_NAMED_BUILDER(threeQubitsOneIdentity)},
         QCTestCase{"NestedControlledIdentity",
                    MQT_NAMED_BUILDER(nestedControlledIdentity),
-                   MQT_NAMED_BUILDER(identity)},
+                   MQT_NAMED_BUILDER(threeQubitsOneIdentity)},
         QCTestCase{"TrivialControlledIdentity",
                    MQT_NAMED_BUILDER(trivialControlledIdentity),
                    MQT_NAMED_BUILDER(identity)},
@@ -339,7 +340,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(identity)},
         QCTestCase{"InverseMultipleControlledIdentity",
                    MQT_NAMED_BUILDER(inverseMultipleControlledIdentity),
-                   MQT_NAMED_BUILDER(identity)}));
+                   MQT_NAMED_BUILDER(threeQubitsOneIdentity)}));
 /// @}
 
 /// \name QC/Operations/StandardGates/IswapOp.cpp
@@ -915,16 +916,11 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCQubitManagementTest, QCTest,
     testing::Values(
-        QCTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
-                   MQT_NAMED_BUILDER(emptyQC)},
-        QCTestCase{"AllocQubitRegister", MQT_NAMED_BUILDER(allocQubitRegister),
-                   MQT_NAMED_BUILDER(emptyQC)},
-        QCTestCase{"AllocMultipleQubitRegisters",
-                   MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
+        QCTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubitNoMeasure),
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
-                   MQT_NAMED_BUILDER(emptyQC)},
-        QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
+                   MQT_NAMED_BUILDER(allocQubitRegister)},
+        QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubitsNoMeasure),
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"StaticQubitsWithOps",
                    MQT_NAMED_BUILDER(staticQubitsWithOps),
