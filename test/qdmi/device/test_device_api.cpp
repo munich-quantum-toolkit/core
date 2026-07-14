@@ -140,9 +140,13 @@ public:
         if (size < required || behavior == ChildBehavior::Malformed) {
           return QDMI_ERROR_INVALIDARGUMENT;
         }
+        auto* firstChild = children_.data();
+        // The fixed-size fake owns two contiguous child records.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        auto* secondChild = children_.data() + 1;
         std::array<QDMI_Child_Device, 2> handles{
-            reinterpret_cast<QDMI_Child_Device>(children_.data()),
-            reinterpret_cast<QDMI_Child_Device>(children_.data() + 1)};
+            reinterpret_cast<QDMI_Child_Device>(firstChild),
+            reinterpret_cast<QDMI_Child_Device>(secondChild)};
         std::memcpy(value, static_cast<const void*>(handles.data()), required);
       }
       return QDMI_SUCCESS;
