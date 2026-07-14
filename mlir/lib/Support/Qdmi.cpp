@@ -60,7 +60,7 @@ mlir::qdmi::impl::Config mlir::qdmi::impl::Config::read(StringRef path) {
 
   Config config;
 
-  if (j.contains("session")) {
+  if (j.is_object() && j.contains("session")) {
     getJsonStringIfExists(j["session"], "token", config.session.token);
     getJsonStringIfExists(j["session"], "authFile", config.session.authFile);
     getJsonStringIfExists(j["session"], "authUrl", config.session.authUrl);
