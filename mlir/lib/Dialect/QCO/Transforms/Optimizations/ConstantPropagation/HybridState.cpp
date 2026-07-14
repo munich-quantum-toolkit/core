@@ -317,8 +317,8 @@ HybridState::getValueThatIsEquivalentToQubit(const unsigned int qubit) const {
     }
   }
   for (const auto& [v, d] : doubleValues) {
-    if ((qubitZero && std::norm(d) < 1e-4) ||
-        (qubitOne && std::norm(d) >= 1e-4)) {
+    if ((qubitZero && std::fabs(d) < 1e-4) ||
+        (qubitOne && std::fabs(d) >= 1e-4)) {
       result[v] = true;
     } else {
       result[v] = false;
