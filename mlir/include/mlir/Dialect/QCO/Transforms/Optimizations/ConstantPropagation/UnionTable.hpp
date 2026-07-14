@@ -249,7 +249,7 @@ class UnionTable {
    * @brief This method returns classical values which are always either true or
    * false.
    *
-   * @return A map of values as keys. The values of th emap say wether the
+   * @return A map of values as keys. The values of th emap say whether the
    * classical values are always true or always false.
    */
   llvm::DenseMap<Value, bool>
