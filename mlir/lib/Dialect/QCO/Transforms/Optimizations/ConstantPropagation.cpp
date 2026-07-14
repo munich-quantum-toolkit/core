@@ -589,17 +589,22 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     //   "
     //                            "swapping of qubits in branching.");
     // }
-    // // remove if Op and replace the values in the module and union table
-    // std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+    // remove if Op and replace the values in the module and union table
+    std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
     // for (unsigned int inputQubitIndex = 0;
     //      inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
     //   rewriter.replaceAllUsesWith(op->getResults()[order.at(inputQubitIndex)],
     //                               op->getQubits()[inputQubitIndex]);
     // }
-    // std::vector<Value> inputQubitVec = {op->getQubits().begin(),
-    //                                     op->getQubits().end()};
-    // ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs,
-    //                           inputQubitVec);
+    for (unsigned int inputQubitIndex = 0;
+         inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
+      rewriter.replaceAllUsesWith(op->getResults()[inputQubitIndex],
+                                  op->getQubits()[inputQubitIndex]);
+    }
+    std::vector<Value> inputQubitVec = {op->getQubits().begin(),
+                                        op->getQubits().end()};
+    ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs,
+                              inputQubitVec);
     rewriter.eraseOp(*op);
   } else {
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs, results);
