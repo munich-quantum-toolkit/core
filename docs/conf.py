@@ -184,6 +184,7 @@ qdmi_api_tagfile = (
 
 html_theme = "furo"
 html_static_path = ["_static"]
+html_js_files = ["cpp-api-navigation.js"]
 html_css_files = [
     "custom.css",
     "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/fontawesome.min.css",
