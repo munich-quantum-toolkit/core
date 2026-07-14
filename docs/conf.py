@@ -160,11 +160,20 @@ autoapi_options = [
     "undoc-members",
 ]
 autoapi_keep_files = True
+autoapi_template_dir = "_templates/autoapi"
 add_module_names = False
 toc_object_entries_show_parents = "hide"
 python_use_unqualified_type_names = True
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
+
+# AutoAPI renders these annotations as Python cross-references although they
+# are typing expressions or private Qiskit aliases, not documented objects.
+nitpick_ignore_regex = [
+    ("py:class", r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)\}\]"),
+    ("py:class", r"ParametersType"),
+    ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
+]
 
 
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")

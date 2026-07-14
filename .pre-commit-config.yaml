@@ -82,6 +82,9 @@ repos:
     hooks:
       - id: license-tools
         priority: 4
+        # AutoAPI templates are Jinja files with an .rst extension, which the
+        # license tool cannot classify. Their headers are maintained manually.
+        exclude: ^docs/_templates/autoapi/.*\.rst$
 
   ## Format BibTeX files with bibtex-tidy
   - repo: https://github.com/FlamingTempura/bibtex-tidy
