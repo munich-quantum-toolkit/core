@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file StatePreparation.hpp
+ * @brief State-preparation circuit construction.
+ */
+
 #pragma once
 
 #include <complex>

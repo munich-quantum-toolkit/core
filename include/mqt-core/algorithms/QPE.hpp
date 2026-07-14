@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file QPE.hpp
+ * @brief Quantum phase-estimation circuit construction.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

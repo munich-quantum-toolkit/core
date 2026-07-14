@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file NestedEnvironment.hpp
+ * @brief Nested symbol environments for OpenQASM 3 compilation.
+ */
+
 #pragma once
 
 #include <map>

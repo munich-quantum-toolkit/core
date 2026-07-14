@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file DDDefinitions.hpp
+ * @brief Fundamental decision-diagram types, constants, and helper functions.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

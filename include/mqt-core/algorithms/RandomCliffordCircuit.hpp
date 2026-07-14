@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file RandomCliffordCircuit.hpp
+ * @brief Random Clifford-circuit construction.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

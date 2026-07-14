@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Exception.hpp
+ * @brief OpenQASM 3 compiler exception types.
+ */
+
 #pragma once
 
 #include "DebugInfo.hpp"

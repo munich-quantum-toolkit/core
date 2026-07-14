@@ -13,17 +13,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from qiskit.primitives.base import BaseSamplerV2
+from qiskit.primitives import BaseSamplerV2, PrimitiveResult, SamplerPubResult
 from qiskit.primitives.containers import (
     BitArray,
     DataBin,
-    PrimitiveResult,
     make_data_bin,
 )
 
 try:
     # For Qiskit versions >= 1.1
-    from qiskit.primitives.containers import SamplerPubResult
+    from qiskit.primitives import SamplerPubResult
 except ImportError:
     # For Qiskit versions < 1.1
     from qiskit.primitives.containers import (

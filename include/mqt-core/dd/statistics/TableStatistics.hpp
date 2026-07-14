@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file TableStatistics.hpp
+ * @brief Statistics for decision-diagram lookup tables.
+ */
+
 #pragma once
 
 #include "dd/statistics/Statistics.hpp"
