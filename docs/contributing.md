@@ -390,11 +390,9 @@ refactor.
 For some tips on how to write good Doxygen comments, see the
 [Doxygen Manual](https://www.doxygen.nl/manual/docblocks.html).
 
-The C++ API documentation is rendered directly by Doxygen and published as part
-of the ReadTheDocs site. Doxygen tag files and XML output provide
-inventory-backed cross-references from MyST, for example
-`{cpp-api:class}\`dd::Package\`` for Core and
-`{qdmi:func}\`QDMI_device_initialize\`` for the pinned QDMI API. See
+The C++ API documentation is integrated into the overall documentation that we
+host on ReadTheDocs using the
+[breathe](https://breathe.readthedocs.io/en/latest/) extension for Sphinx. See
 {ref}`working-on-documentation` for more information on how to build the
 documentation.
 
