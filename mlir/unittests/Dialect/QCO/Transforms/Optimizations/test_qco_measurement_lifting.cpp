@@ -30,6 +30,7 @@
 #include <mlir/Transforms/Passes.h>
 
 #include <numbers>
+#include <tuple>
 
 namespace {
 
@@ -85,34 +86,36 @@ protected:
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q1S1, q0S1] = programBuilder.cx(q1S0, q0S0);
-  auto [q0S2, q1S2] = programBuilder.ch(q0S1, q1S1);
-  auto [q0S3, q1S3] = programBuilder.cx(q0S2, q1S2);
+  std::tie(q1, q0) = programBuilder.cx(q1, q0);
+  std::tie(q0, q1) = programBuilder.ch(q0, q1);
+  std::tie(q0, q1) = programBuilder.cx(q0, q1);
 
-  auto [q0S4, c0] = programBuilder.measure(q0S3);
-  auto [q1S4, c1] = programBuilder.measure(q1S3);
+  Value c0, c1;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  programBuilder.sink(q0S4);
-  programBuilder.sink(q1S4);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r1S1, r0S1] = referenceBuilder.cx(r1S0, r0S0);
-  auto [r0S2, cr0] = referenceBuilder.measure(r0S1);
-  auto [r0S3, r1S2] = referenceBuilder.ch(r0S2, r1S1);
-  auto [r0S4, r1S3] = referenceBuilder.cx(r0S3, r1S2);
+  std::tie(r1, r0) = referenceBuilder.cx(r1, r0);
+  Value cr0, cr1;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  std::tie(r0, r1) = referenceBuilder.ch(r0, r1);
+  std::tie(r0, r1) = referenceBuilder.cx(r0, r1);
 
-  auto [r1S4, cr1] = referenceBuilder.measure(r1S3);
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  referenceBuilder.sink(r0S4);
-  referenceBuilder.sink(r1S4);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0, cr1});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -130,68 +133,74 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
 
-  auto [q12_0, q0S1] =
-      programBuilder.ctrl({q1S0, q2S0}, {q0S0}, [&](const ValueRange target) {
+  SmallVector<Value> q12, q0Vec;
+  std::tie(q12, q0Vec) =
+      programBuilder.ctrl({q1, q2}, {q0}, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
-  auto [q12_1, q0S2] = programBuilder.ctrl(
-      {q12_0[1], q12_0[0]}, q0S1, [&](const ValueRange target) {
+  std::tie(q12, q0Vec) = programBuilder.ctrl(
+      {q12[1], q12[0]}, q0Vec, [&](const ValueRange target) {
         return SmallVector{programBuilder.h(target[0])};
       });
-  auto [q12_2, q0S3] = programBuilder.ctrl(
-      {q12_1[1], q12_1[0]}, q0S2, [&](const ValueRange target) {
+  std::tie(q12, q0Vec) = programBuilder.ctrl(
+      {q12[1], q12[0]}, q0Vec, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
-  auto [q1S4, c1] = programBuilder.measure(q12_2[0]);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q12[0]);
 
-  auto q0S4 = programBuilder.h(q0S3[0]);
-  auto q2S4 = programBuilder.h(q12_2[1]);
+  q0 = programBuilder.h(q0Vec[0]);
+  q2 = programBuilder.h(q12[1]);
 
-  auto [q0S5, c0] = programBuilder.measure(q0S4);
-  auto [q2S5, c2] = programBuilder.measure(q2S4);
+  Value c0, c2;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q2, c2) = programBuilder.measure(q2);
 
-  programBuilder.sink(q0S5);
-  programBuilder.sink(q1S4);
-  programBuilder.sink(q2S5);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
+  programBuilder.sink(q2);
 
   module = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
 
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  auto [r12_0, r0S1] =
-      referenceBuilder.ctrl({r1S1, r2S0}, {r0S0}, [&](const ValueRange target) {
+  SmallVector<Value> r12, r0Vec;
+  std::tie(r12, r0Vec) =
+      referenceBuilder.ctrl({r1, r2}, {r0}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
-  auto [r12_1, r0S2] = referenceBuilder.ctrl(
-      {r12_0[1], r12_0[0]}, r0S1, [&](const ValueRange target) {
+  std::tie(r12, r0Vec) = referenceBuilder.ctrl(
+      {r12[1], r12[0]}, r0Vec, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.h(target[0])};
       });
-  auto [r12_2, r0S3] = referenceBuilder.ctrl(
-      {r12_1[1], r12_1[0]}, r0S2, [&](const ValueRange target) {
+  std::tie(r12, r0Vec) = referenceBuilder.ctrl(
+      {r12[1], r12[0]}, r0Vec, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
 
-  auto r0S4 = referenceBuilder.h(r0S3[0]);
-  auto r2S4 = referenceBuilder.h(r12_2[1]);
+  r0 = referenceBuilder.h(r0Vec[0]);
+  r2 = referenceBuilder.h(r12[1]);
 
-  auto [r0S5, cr0] = referenceBuilder.measure(r0S4);
-  auto [r2S5, cr2] = referenceBuilder.measure(r2S4);
+  Value cr0, cr2;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
-  referenceBuilder.sink(r0S5);
-  referenceBuilder.sink(r12_2[0]);
-  referenceBuilder.sink(r2S5);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r12[0]);
+  referenceBuilder.sink(r2);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
@@ -211,40 +220,44 @@ TEST_F(QCOMeasurementLiftingTest,
 
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
 
-  auto [q12_0, q0S1] =
-      programBuilder.ctrl({q1S0, q2S0}, {q0S0}, [&](const ValueRange target) {
+  SmallVector<Value> q12, q0Vec;
+  std::tie(q12, q0Vec) =
+      programBuilder.ctrl({q1, q2}, {q0}, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
-  auto [q1S1, c1] = programBuilder.measure(q12_0[0]);
-  auto [q2S1, c2] = programBuilder.measure(q12_0[1]);
+  Value c1, c2;
+  std::tie(q1, c1) = programBuilder.measure(q12[0]);
+  std::tie(q2, c2) = programBuilder.measure(q12[1]);
 
-  programBuilder.sink(q0S1[0]);
-  programBuilder.sink(q1S1);
-  programBuilder.sink(q2S1);
+  programBuilder.sink(q0Vec[0]);
+  programBuilder.sink(q1);
+  programBuilder.sink(q2);
   module = programBuilder.finalize({c1, c2});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
 
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
-  auto [r2S1, cr2] = referenceBuilder.measure(r2S0);
+  Value cr1, cr2;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
+  std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
-  auto [r12_0, r0S1] =
-      referenceBuilder.ctrl({r1S1, r2S1}, {r0S0}, [&](const ValueRange target) {
+  SmallVector<Value> r12, r0Vec;
+  std::tie(r12, r0Vec) =
+      referenceBuilder.ctrl({r1, r2}, {r0}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
 
-  referenceBuilder.sink(r0S1[0]);
-  referenceBuilder.sink(r12_0[0]);
-  referenceBuilder.sink(r12_0[1]);
+  referenceBuilder.sink(r0Vec[0]);
+  referenceBuilder.sink(r12[0]);
+  referenceBuilder.sink(r12[1]);
   reference = referenceBuilder.finalize({cr1, cr2});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -262,31 +275,33 @@ TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q0S1, q1S1] = programBuilder.crx(std::numbers::pi / 2, q0S0, q1S0);
+  std::tie(q0, q1) = programBuilder.crx(std::numbers::pi / 2, q0, q1);
 
-  auto [q0S2, c0] = programBuilder.measure(q0S1);
-  auto [q1S2, c1] = programBuilder.measure(q1S1);
+  Value c0, c1;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  programBuilder.sink(q0S2);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  Value cr0, cr1;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  auto [r0S2, r1S1] = referenceBuilder.crx(std::numbers::pi / 2, r0S1, r1S0);
+  std::tie(r0, r1) = referenceBuilder.crx(std::numbers::pi / 2, r0, r1);
 
-  auto [r1S2, cr1] = referenceBuilder.measure(r1S1);
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  referenceBuilder.sink(r0S2);
-  referenceBuilder.sink(r1S2);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0, cr1});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -303,22 +318,24 @@ TEST_F(QCOMeasurementLiftingTest,
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.x(q0);
-  auto [q2, c] = programBuilder.measure(q1);
-  auto q3 = programBuilder.h(q2);
-  programBuilder.sink(q3);
+  auto q = programBuilder.allocQubit();
+  q = programBuilder.x(q);
+  Value c;
+  std::tie(q, c) = programBuilder.measure(q);
+  q = programBuilder.h(q);
+  programBuilder.sink(q);
   module = programBuilder.finalize(c);
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r0 = referenceBuilder.allocQubit();
+  auto r = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
-  auto [r1, cr] = referenceBuilder.measure(r0);
-  auto r2 = referenceBuilder.h(r1);
+  Value cr;
+  std::tie(r, cr) = referenceBuilder.measure(r);
+  r = referenceBuilder.h(r);
 
   auto xorOp = arith::XOrIOp::create(
       referenceBuilder, referenceBuilder.getLoc(), cr, trueConstant);
-  referenceBuilder.sink(r2);
+  referenceBuilder.sink(r);
   reference = referenceBuilder.finalize(xorOp.getResult());
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -334,19 +351,21 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.y(q0);
-  auto [q2, c] = programBuilder.measure(q1);
-  programBuilder.sink(q2);
+  auto q = programBuilder.allocQubit();
+  q = programBuilder.y(q);
+  Value c;
+  std::tie(q, c) = programBuilder.measure(q);
+  programBuilder.sink(q);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r0 = referenceBuilder.allocQubit();
+  auto r = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
-  auto [r1, cr] = referenceBuilder.measure(r0);
+  Value cr;
+  std::tie(r, cr) = referenceBuilder.measure(r);
   auto xorOp = arith::XOrIOp::create(
       referenceBuilder, referenceBuilder.getLoc(), cr, trueConstant);
-  referenceBuilder.sink(r1);
+  referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({xorOp.getResult()});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -361,23 +380,25 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.id(q0);
-  auto q2 = programBuilder.z(q1);
-  auto q3 = programBuilder.s(q2);
-  auto q4 = programBuilder.sdg(q3);
-  auto q5 = programBuilder.t(q4);
-  auto q6 = programBuilder.tdg(q5);
-  auto q7 = programBuilder.p(std::numbers::pi / 2, q6);
-  auto q8 = programBuilder.rz(std::numbers::pi / 2, q7);
-  auto [q9, c] = programBuilder.measure(q8);
-  programBuilder.sink(q9);
+  auto q = programBuilder.allocQubit();
+  q = programBuilder.id(q);
+  q = programBuilder.z(q);
+  q = programBuilder.s(q);
+  q = programBuilder.sdg(q);
+  q = programBuilder.t(q);
+  q = programBuilder.tdg(q);
+  q = programBuilder.p(std::numbers::pi / 2, q);
+  q = programBuilder.rz(std::numbers::pi / 2, q);
+  Value c;
+  std::tie(q, c) = programBuilder.measure(q);
+  programBuilder.sink(q);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r0 = referenceBuilder.allocQubit();
-  auto [r1, cr] = referenceBuilder.measure(r0);
-  referenceBuilder.sink(r1);
+  auto r = referenceBuilder.allocQubit();
+  Value cr;
+  std::tie(r, cr) = referenceBuilder.measure(r);
+  referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -392,17 +413,19 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.x(q0);
-  auto q2 = programBuilder.y(q1);
-  auto [q3, c] = programBuilder.measure(q2);
-  programBuilder.sink(q3);
+  auto q = programBuilder.allocQubit();
+  q = programBuilder.x(q);
+  q = programBuilder.y(q);
+  Value c;
+  std::tie(q, c) = programBuilder.measure(q);
+  programBuilder.sink(q);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r0 = referenceBuilder.allocQubit();
-  auto [r1, cr] = referenceBuilder.measure(r0);
-  referenceBuilder.sink(r1);
+  auto r = referenceBuilder.allocQubit();
+  Value cr;
+  std::tie(r, cr) = referenceBuilder.measure(r);
+  referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -418,32 +441,34 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q0S1, q1S1] = programBuilder.cy(q0S0, q1S0);
-  auto q0S2 = programBuilder.x(q0S1);
-  auto [q0S3, q1S2] = programBuilder.cy(q0S2, q1S1);
-  auto q0S4 = programBuilder.x(q0S3);
+  std::tie(q0, q1) = programBuilder.cy(q0, q1);
+  q0 = programBuilder.x(q0);
+  std::tie(q0, q1) = programBuilder.cy(q0, q1);
+  q0 = programBuilder.x(q0);
 
-  auto [q0S5, c0] = programBuilder.measure(q0S4);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
 
-  programBuilder.sink(q0S5);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  auto [r0S2, r1S1] = referenceBuilder.cx(r0S1, r1S0);
-  auto r0S3 = referenceBuilder.x(r0S2);
-  auto [r0S4, r1S2] = referenceBuilder.cx(r0S3, r1S1);
+  std::tie(r0, r1) = referenceBuilder.cx(r0, r1);
+  r0 = referenceBuilder.x(r0);
+  std::tie(r0, r1) = referenceBuilder.cx(r0, r1);
 
-  referenceBuilder.sink(r0S4);
-  referenceBuilder.sink(r1S2);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -459,28 +484,30 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q0S1, q1S1] = programBuilder.cz(q0S0, q1S0);
+  std::tie(q0, q1) = programBuilder.cz(q0, q1);
 
-  auto [q0S2, c0] = programBuilder.measure(q0S1);
-  auto [q1S2, c1] = programBuilder.measure(q1S1);
+  Value c0, c1;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  programBuilder.sink(q0S2);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  Value cr0, cr1;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S1);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0, cr1});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -547,14 +574,16 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   q = programBuilder.inv(
       q, [&](Value target) { return programBuilder.s(target); });
 
-  auto [qm, c] = programBuilder.measure(q);
-  programBuilder.sink(qm);
+  Value c;
+  std::tie(q, c) = programBuilder.measure(q);
+  programBuilder.sink(q);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r0 = referenceBuilder.allocQubit();
-  auto [r1, cr] = referenceBuilder.measure(r0);
-  referenceBuilder.sink(r1);
+  auto r = referenceBuilder.allocQubit();
+  Value cr;
+  std::tie(r, cr) = referenceBuilder.measure(r);
+  referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
