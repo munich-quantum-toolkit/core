@@ -14,6 +14,10 @@ releases may include breaking changes.
 
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
+  ([#1897]) ([**@burgholzer**])
+- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
+  libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
@@ -60,6 +64,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
+  ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
   [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
@@ -631,6 +637,8 @@ changelogs._
 
 <!-- PR links -->
 
+[#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
+[#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
 [#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873

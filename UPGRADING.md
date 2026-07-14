@@ -65,6 +65,14 @@ and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
 
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
+
 ## [3.7.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.6` to `3.7`.
