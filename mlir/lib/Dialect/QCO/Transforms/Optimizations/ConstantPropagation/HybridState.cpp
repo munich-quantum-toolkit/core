@@ -20,6 +20,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -103,14 +104,10 @@ bool HybridState::operator==(const HybridState& that) const {
     }
   }
 
-  for (const auto& [d, v] : doubleValues) {
-    if (!that.doubleValues.contains(d) ||
-        std::fabs(that.doubleValues.at(d)) > 1e-4) {
-      return false;
-    }
-  }
-
-  return true;
+  return std::ranges::all_of(doubleValues, [&](const auto& p) {
+    auto it = that.doubleValues.find(p.first);
+    return it != that.doubleValues.end() && std::fabs(it->second) <= 1e-4;
+  });
 }
 
 void HybridState::addIntegerValue(const Value value, const int64_t number) {
@@ -147,7 +144,7 @@ void HybridState::propagateGate(Operation* gate,
       if (integerValues.contains(p)) {
         paramValues.push_back(integerValues.at(p));
       } else if (doubleValues.contains(p)) {
-        paramValues.push_back(doubleValues.at(p));
+        paramValues.push_back(static_cast<double>(doubleValues.at(p)));
       } else {
         throw std::domain_error(
             "HybridState needs a classical value for gate parameters that is "

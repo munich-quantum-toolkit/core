@@ -16,8 +16,6 @@
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/HybridState.hpp"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -27,6 +25,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <ostream>
 #include <set>
@@ -54,7 +53,7 @@ std::string UnionTable::toString() const {
     for (const auto& q : entry->participatingQubits) {
       qubitIndices.push_back(qubitsToGlobalIndices.at(q));
     }
-    std::ranges::sort(qubitIndices, std::greater<int>());
+    std::ranges::sort(qubitIndices, std::greater{});
     result += "Qubits: ";
     for (const auto qit : qubitIndices) {
       result += std::to_string(qit);
@@ -343,43 +342,29 @@ void UnionTable::propagateDoubleAlloc(const Value doubleValue,
 bool UnionTable::isQubitAlwaysOne(const Value q) const {
   const unsigned int qubitIndex = qubitsToGlobalIndices.at(q);
   const auto ute = valuesToEntries.at(q);
-  for (auto const& hs : ute->states) {
-    if (!hs.isQubitAlwaysOne(qubitIndex)) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(ute->states, [&](const auto& hs) {
+    return hs.isQubitAlwaysOne(qubitIndex);
+  });
 }
 
 bool UnionTable::isQubitAlwaysZero(const Value q) const {
   const unsigned int qubitIndex = qubitsToGlobalIndices.at(q);
   const auto ute = valuesToEntries.at(q);
-  for (auto const& hs : ute->states) {
-    if (!hs.isQubitAlwaysZero(qubitIndex)) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(ute->states, [&](const auto& hs) {
+    return hs.isQubitAlwaysZero(qubitIndex);
+  });
 }
 
 bool UnionTable::isClassicalValueAlwaysTrue(const Value c) const {
   const auto ute = valuesToEntries.at(c);
-  for (auto const& hs : ute->states) {
-    if (!hs.isValueTrue(c)) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(ute->states,
+                             [&](const auto& hs) { return hs.isValueTrue(c); });
 }
 
 bool UnionTable::isClassicalValueAlwaysFalse(const Value c) const {
   const auto ute = valuesToEntries.at(c);
-  for (auto const& hs : ute->states) {
-    if (hs.isValueTrue(c)) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(
+      ute->states, [&](const auto& hs) { return !hs.isValueTrue(c); });
 }
 
 bool UnionTable::hasAlwaysZeroProbability(

@@ -16,10 +16,15 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Value.h>
 
 #include <numbers>
 #include <vector>
+
+namespace {
 
 using namespace mlir::qco;
 
@@ -1188,3 +1193,4 @@ TEST_F(UnionTableSuperfluousTest, completelySuperfluousDueToPosClassicalCtrl) {
                                                  negClassicalCtrl);
   ASSERT_TRUE(results.completelySuperfluous);
 }
+} // namespace

@@ -30,18 +30,18 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir-c/BuiltinAttributes.h>
-#include <mlir-c/Support.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Dialect.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -57,8 +57,6 @@ namespace mlir::qco {
 
 #define GEN_PASS_DEF_CONSTANTPROPAGATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
-
-namespace {
 
 #define CREATE_OP_CASE_NO_PARAMS(opType)                                       \
   .Case<opType>([&](opType gate) {                                             \
@@ -1104,7 +1102,5 @@ protected:
     }
   }
 };
-
-} // namespace
 
 } // namespace mlir::qco
