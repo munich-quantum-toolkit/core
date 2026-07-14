@@ -12,7 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Integrate QDMI into the MLIR Compiler Collection ([#1687]) ([**@MatthiasReumann**])
+- ✨ Integrate QDMI into the MLIR Compiler Collection ([#1687])
+  ([**@MatthiasReumann**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
   ([#1897]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
