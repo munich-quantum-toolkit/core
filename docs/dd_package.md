@@ -121,7 +121,7 @@ def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
     plt.ylabel("Counts")
 
     # export to SVG
-    filename = "fig-" + name + ("-light" if light else "-dark") + ".svg"
+    filename = "_build/html/_images/fig-" + name + ("-light" if light else "-dark") + ".svg"
     plt.savefig(filename, format="svg")
 
 name = 'qpe'
