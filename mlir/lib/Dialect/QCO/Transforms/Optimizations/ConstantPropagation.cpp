@@ -1077,7 +1077,7 @@ static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
 
   auto ut = UnionTable(maxNonzeroAmplitudes, maxHybridStates);
 
-  std::span wl = {worklist.begin(), worklist.end()};
+  std::span wl(worklist.data(), worklist.size());
 
   return iterateThroughWorklist(rewriter, &ut, wl, {}, {});
 }
