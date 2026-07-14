@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/Graph.h"
 #include "mlir/Support/SuperconductingDevice.h"
 
