@@ -10,14 +10,18 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import urljoin, urlparse
+from urllib.request import urlopen
 from xml.etree import ElementTree as ET  # noqa: S405
 
 from docutils import nodes
 from sphinx.domains import Domain
+from sphinx.errors import ExtensionError
 from sphinx.roles import XRefRole
 from sphinx.util.osutil import relative_uri
 from typing_extensions import override
@@ -266,6 +270,46 @@ class QdmiApiDomain(TagfileDomain):
     config_name = "qdmi_api_tagfile"
 
 
+def _path_from_config(app: Sphinx, path: str) -> Path:
+    """Resolve a documentation-relative path from an extension setting.
+
+    Returns:
+        The absolute path represented by ``path``.
+    """
+    configured_path = Path(path)
+    return configured_path if configured_path.is_absolute() else Path(app.srcdir) / configured_path
+
+
+def build_doxygen(app: Sphinx) -> None:
+    """Download the QDMI inventory and generate the native C++ API.
+
+    Raises:
+        ExtensionError: If the QDMI inventory cannot be downloaded or Doxygen
+            cannot generate the API documentation.
+    """
+    tagfile = _path_from_config(app, app.config.qdmi_api_tagfile[0])
+    tagfile.parent.mkdir(parents=True, exist_ok=True)
+    doxygen = shutil.which("doxygen")
+    if doxygen is None:
+        msg = "Doxygen is required to build the native C++ API documentation"
+        raise ExtensionError(msg)
+    try:
+        with urlopen(app.config.qdmi_api_tagfile_url, timeout=30) as response:  # noqa: S310
+            tagfile.write_bytes(response.read())
+        subprocess.run([doxygen, "Doxyfile"], cwd=app.srcdir, check=True)  # noqa: S603
+    except (OSError, subprocess.CalledProcessError) as error:
+        msg = "Unable to generate the native C++ API documentation"
+        raise ExtensionError(msg) from error
+
+
+def publish_doxygen_html(app: Sphinx, exception: Exception | None) -> None:
+    """Publish native Doxygen HTML alongside an HTML Sphinx build."""
+    if exception is not None or app.builder.format != "html":
+        return
+    source = _path_from_config(app, app.config.cpp_api_tagfile[0]).parent / "html"
+    shutil.copytree(source, Path(app.outdir) / "cpp", dirs_exist_ok=True)
+
+
 def setup(app: Sphinx) -> ExtensionMetadata:
     """Register Doxygen tag-file-backed cross-reference domains.
 
@@ -274,6 +318,13 @@ def setup(app: Sphinx) -> ExtensionMetadata:
     """
     app.add_config_value("cpp_api_tagfile", ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml"), "env")
     app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi-1.3.2.tag", ""), "env")
+    app.add_config_value(
+        "qdmi_api_tagfile_url",
+        "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/qdmi.tag",
+        "env",
+    )
     app.add_domain(CppApiDomain)
     app.add_domain(QdmiApiDomain)
-    return {"parallel_read_safe": True, "parallel_write_safe": True}
+    app.connect("builder-inited", build_doxygen)
+    app.connect("build-finished", publish_doxygen_html)
+    return {"parallel_read_safe": False, "parallel_write_safe": True}

@@ -166,24 +166,6 @@ def docs(session: nox.Session) -> None:
         env=env,
     )
 
-    # build the C++ API docs using doxygen
-    with session.chdir("docs"):
-        if shutil.which("doxygen") is None:
-            session.error("doxygen is required to build the C++ API docs")
-
-        # Use the tag file published with the matching QDMI release. This keeps
-        # external QDMI links in sync with the version bundled by MQT Core.
-        session.run(
-            "curl",
-            "--fail",
-            "--location",
-            "--output",
-            "_build/qdmi.tag",
-            "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/qdmi.tag",
-            external=True,
-        )
-        session.run("doxygen", "Doxyfile", external=True)
-
     # build the MLIR API docs via building mlir-doc
     session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
     session.run("uvx", "cmake", "--build", "build", "--target", "mlir-doc")
@@ -198,11 +180,6 @@ def docs(session: nox.Session) -> None:
         *posargs,
     ]
 
-    doxygen_html = Path("docs/_build/doxygen/html")
-    sphinx_html = Path(f"docs/_build/{args.builder}")
-    if serve:
-        shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
-
     session.run(
         "uv",
         "run",
@@ -213,8 +190,6 @@ def docs(session: nox.Session) -> None:
         *shared_args,
         env=env,
     )
-    if not serve and args.builder in {"html", "dirhtml"}:
-        shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")
