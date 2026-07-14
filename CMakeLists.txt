@@ -158,6 +158,10 @@ if(BUILD_MQT_CORE_MLIR)
             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
     COMMENT "Copying and cleaning up generated MLIR documentation"
     VERBATIM)
+
+  # Keep documentation consumers independent of the implementation target used to generate MLIR
+  # reference pages.
+  add_custom_target(mqt-core-docs DEPENDS mlir-doc)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

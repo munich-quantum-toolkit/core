@@ -166,9 +166,9 @@ def docs(session: nox.Session) -> None:
         env=env,
     )
 
-    # build the MLIR API docs via building mlir-doc
+    # Build CMake-managed documentation prerequisites.
     session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
-    session.run("uvx", "cmake", "--build", "build", "--target", "mlir-doc")
+    session.run("uvx", "cmake", "--build", "build", "--target", "mqt-core-docs")
 
     shared_args = [
         "-n",  # nitpicky mode
