@@ -9,16 +9,21 @@
  */
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 
 #include <stdexcept>
 #include <utility>
 #include <vector>
+
+namespace {
 
 using namespace mlir::qco;
 
@@ -339,3 +344,4 @@ TEST_F(QuantumStateTest, unifyTooLargeQuantumStates) {
 
   EXPECT_THROW(auto qs = qState1.unify(qState2), std::domain_error);
 }
+} // namespace
