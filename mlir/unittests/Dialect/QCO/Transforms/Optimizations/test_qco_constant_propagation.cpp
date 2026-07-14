@@ -25,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <iostream>
 #include <numbers>
 
 namespace {
@@ -209,35 +210,36 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableQuantumCombination) {
  * @brief Test: This test checks that gates whose quantum and classical controls
  * cannot be satisfied are removed.
  */
-// TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
-//   auto q = programBuilder.allocQubitRegister(3);
-//   q[0] = programBuilder.h(q[0]);
-//   q[1] = programBuilder.x(q[1]);
-//   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
-//   auto [q01, b0] = programBuilder.measure(q0);
-//   auto qRange01 = programBuilder.qcoIf(
-//       b0, {q01, q1},
-//       [&](const ValueRange args) { return SmallVector{args[0], args[1]}; },
-//       [&](const ValueRange args) {
-//         const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
-//         return SmallVector{qi0, qi1};
-//       });
-//   programBuilder.y(qRange01[1]);
-//   module = programBuilder.finalize();
-//
-//   auto qRef = referenceBuilder.allocQubitRegister(3);
-//   qRef[0] = referenceBuilder.h(qRef[0]);
-//   qRef[1] = referenceBuilder.x(qRef[1]);
-//   auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
-//   referenceBuilder.measure(qRef0);
-//   referenceBuilder.y(qRef1);
-//   reference = referenceBuilder.finalize();
-//
-//   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-//
-//   EXPECT_TRUE(
-//       areModulesEquivalentWithPermutations(module.get(), reference.get()));
-// }
+TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
+  std::cout << "Test starting...";
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.x(q[1]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  auto [q01, b0] = programBuilder.measure(q0);
+  auto qRange01 = programBuilder.qcoIf(
+      b0, {q01, q1},
+      [&](const ValueRange args) { return SmallVector{args[0], args[1]}; },
+      [&](const ValueRange args) {
+        const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
+        return SmallVector{qi0, qi1};
+      });
+  programBuilder.y(qRange01[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.x(qRef[1]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  referenceBuilder.measure(qRef0);
+  referenceBuilder.y(qRef1);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
 
 /**
  * @brief Test: This test checks that gates are unconditionally applied if the
