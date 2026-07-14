@@ -9,7 +9,7 @@
  */
 
 /** @file Package.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Main decision-diagram package and its construction operations.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file DDpackageConfig.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Configuration of decision-diagram packages.
  */
 
 #pragma once

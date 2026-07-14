@@ -9,7 +9,7 @@
  */
 
 /** @file PackageStatistics.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Aggregate statistics for decision-diagram packages.
  */
 
 #pragma once

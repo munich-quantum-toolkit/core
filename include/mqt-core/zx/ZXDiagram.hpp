@@ -9,7 +9,7 @@
  */
 
 /** @file ZXDiagram.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief ZX-diagram representation and graph operations.
  */
 
 #pragma once

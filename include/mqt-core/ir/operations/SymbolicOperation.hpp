@@ -9,7 +9,7 @@
  */
 
 /** @file SymbolicOperation.hpp
- * @brief Quantum-operation representation.
+ * @brief Symbolic-parameter quantum operations.
  */
 
 #pragma once

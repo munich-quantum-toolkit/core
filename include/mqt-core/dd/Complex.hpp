@@ -9,7 +9,7 @@
  */
 
 /** @file Complex.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Canonical complex-number handles used by decision diagrams.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file Scanner.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Lexical scanner for OpenQASM 3 source programs.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file StateGeneration.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Construct common quantum states as decision diagrams.
  */
 
 #pragma once

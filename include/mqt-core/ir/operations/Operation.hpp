@@ -9,7 +9,7 @@
  */
 
 /** @file Operation.hpp
- * @brief Quantum-operation representation.
+ * @brief Base interface for quantum operations.
  */
 
 #pragma once

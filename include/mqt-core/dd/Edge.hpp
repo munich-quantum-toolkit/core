@@ -9,7 +9,7 @@
  */
 
 /** @file Edge.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Decision-diagram edges and edge traversal helpers.
  */
 
 #pragma once

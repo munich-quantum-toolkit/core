@@ -9,7 +9,7 @@
  */
 
 /** @file FunctionalityConstruction.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief Construct ZX diagrams from quantum computations.
  */
 
 #pragma once

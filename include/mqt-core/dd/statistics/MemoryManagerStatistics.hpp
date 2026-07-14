@@ -9,7 +9,7 @@
  */
 
 /** @file MemoryManagerStatistics.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Memory-manager statistics for decision-diagram packages.
  */
 
 #pragma once

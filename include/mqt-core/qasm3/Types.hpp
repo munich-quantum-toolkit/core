@@ -9,7 +9,7 @@
  */
 
 /** @file Types.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief OpenQASM 3 type-system definitions.
  */
 
 #pragma once

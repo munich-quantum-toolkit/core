@@ -9,7 +9,7 @@
  */
 
 /** @file Rational.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief Exact rational and pi-rational number types for ZX diagrams.
  */
 
 #pragma once

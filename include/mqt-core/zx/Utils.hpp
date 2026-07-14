@@ -9,7 +9,7 @@
  */
 
 /** @file Utils.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief ZX-diagram graph utilities and iterators.
  */
 
 #pragma once

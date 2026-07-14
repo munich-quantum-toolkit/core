@@ -9,7 +9,7 @@
  */
 
 /** @file Token.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Tokens produced by the OpenQASM 3 scanner.
  */
 
 #pragma once

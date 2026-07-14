@@ -9,7 +9,7 @@
  */
 
 /** @file UniqueTableStatistics.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Statistics for decision-diagram unique tables.
  */
 
 #pragma once

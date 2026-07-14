@@ -9,7 +9,7 @@
  */
 
 /** @file Device.hpp
- * @brief Neutral-atom FoMaC integration.
+ * @brief Neutral-atom FoMaC device session implementation.
  */
 
 #pragma once

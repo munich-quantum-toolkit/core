@@ -9,7 +9,8 @@
  */
 
 /** @file Approximation.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Approximation metadata and configuration for decision-diagram
+ * operations.
  */
 
 #pragma once

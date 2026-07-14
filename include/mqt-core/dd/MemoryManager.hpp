@@ -9,7 +9,7 @@
  */
 
 /** @file MemoryManager.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Memory allocation and reuse for decision-diagram nodes.
  */
 
 #pragma once

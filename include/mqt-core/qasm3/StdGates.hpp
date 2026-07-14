@@ -9,7 +9,7 @@
  */
 
 /** @file StdGates.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Definitions of OpenQASM 3 standard gates.
  */
 
 #pragma once

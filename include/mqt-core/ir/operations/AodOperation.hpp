@@ -9,7 +9,7 @@
  */
 
 /** @file AodOperation.hpp
- * @brief Quantum-operation representation.
+ * @brief Atom-array operation representation.
  */
 
 #pragma once

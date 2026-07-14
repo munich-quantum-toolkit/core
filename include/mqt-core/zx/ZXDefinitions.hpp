@@ -9,7 +9,7 @@
  */
 
 /** @file ZXDefinitions.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief Fundamental ZX-diagram types and constants.
  */
 
 #pragma once

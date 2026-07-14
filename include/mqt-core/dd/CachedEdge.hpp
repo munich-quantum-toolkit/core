@@ -9,7 +9,7 @@
  */
 
 /** @file CachedEdge.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Cached decision-diagram edge representation.
  */
 
 #pragma once

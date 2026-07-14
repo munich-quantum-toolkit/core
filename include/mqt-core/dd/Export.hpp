@@ -9,7 +9,7 @@
  */
 
 /** @file Export.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Export decision diagrams to vector and matrix representations.
  */
 
 #pragma once

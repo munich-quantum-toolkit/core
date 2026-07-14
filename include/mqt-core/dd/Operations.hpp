@@ -9,7 +9,7 @@
  */
 
 /** @file Operations.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Arithmetic, tensor, and measurement operations on decision diagrams.
  */
 
 #pragma once

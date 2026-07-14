@@ -9,7 +9,7 @@
  */
 
 /** @file Importer.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Import OpenQASM 3 programs into MQT Core circuits.
  */
 
 #pragma once

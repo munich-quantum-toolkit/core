@@ -9,7 +9,7 @@
  */
 
 /** @file Statement.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief OpenQASM 3 abstract-syntax-tree statements and expressions.
  */
 
 #pragma once

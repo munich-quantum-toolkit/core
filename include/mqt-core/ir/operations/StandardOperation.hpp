@@ -9,7 +9,7 @@
  */
 
 /** @file StandardOperation.hpp
- * @brief Quantum-operation representation.
+ * @brief Standard unitary quantum operations.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file QuantumComputation.hpp
- * @brief Quantum-circuit intermediate representation.
+ * @brief Quantum-computation intermediate representation.
  */
 
 #pragma once

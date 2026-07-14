@@ -9,7 +9,7 @@
  */
 
 /** @file CompoundOperation.hpp
- * @brief Quantum-operation representation.
+ * @brief Composite quantum operations.
  */
 
 #pragma once

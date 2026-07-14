@@ -9,7 +9,7 @@
  */
 
 /** @file Register.hpp
- * @brief Quantum-circuit intermediate representation.
+ * @brief Quantum and classical register representations.
  */
 
 #pragma once

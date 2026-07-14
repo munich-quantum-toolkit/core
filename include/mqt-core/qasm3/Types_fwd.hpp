@@ -9,7 +9,7 @@
  */
 
 /** @file Types_fwd.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Forward declarations for OpenQASM 3 type-system classes.
  */
 
 #pragma once

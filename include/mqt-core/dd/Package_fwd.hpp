@@ -9,7 +9,7 @@
  */
 
 /** @file Package_fwd.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Forward declarations and aliases for decision-diagram types.
  */
 
 #pragma once

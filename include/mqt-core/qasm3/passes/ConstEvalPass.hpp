@@ -9,7 +9,7 @@
  */
 
 /** @file ConstEvalPass.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Compile-time evaluation pass for OpenQASM 3 expressions.
  */
 
 #pragma once

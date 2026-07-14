@@ -9,7 +9,7 @@
  */
 
 /** @file OpType.hpp
- * @brief Quantum-operation representation.
+ * @brief Quantum operation type enumeration and helper functions.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file RealNumberUniqueTable.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Unique table for canonical decision-diagram real numbers.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file Expression.hpp
- * @brief Quantum-operation representation.
+ * @brief Symbolic expressions, variables, and terms for quantum operations.
  */
 
 #pragma once

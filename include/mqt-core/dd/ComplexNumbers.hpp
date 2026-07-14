@@ -9,7 +9,7 @@
  */
 
 /** @file ComplexNumbers.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Complex-number table and arithmetic manager for decision diagrams.
  */
 
 #pragma once

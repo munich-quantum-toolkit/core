@@ -9,7 +9,7 @@
  */
 
 /** @file TableStatistics.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Statistics for decision-diagram lookup tables.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file DDDefinitions.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Fundamental decision-diagram types, constants, and helper functions.
  */
 
 #pragma once

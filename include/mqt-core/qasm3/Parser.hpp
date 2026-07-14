@@ -9,7 +9,7 @@
  */
 
 /** @file Parser.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Parser for OpenQASM 3 source programs.
  */
 
 /*

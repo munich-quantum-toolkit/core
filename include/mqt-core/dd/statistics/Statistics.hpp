@@ -9,7 +9,7 @@
  */
 
 /** @file Statistics.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Base interface for decision-diagram statistics.
  */
 
 #pragma once

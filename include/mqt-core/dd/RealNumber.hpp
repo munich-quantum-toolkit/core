@@ -9,7 +9,7 @@
  */
 
 /** @file RealNumber.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Canonical real-number handles used by decision diagrams.
  */
 
 #pragma once

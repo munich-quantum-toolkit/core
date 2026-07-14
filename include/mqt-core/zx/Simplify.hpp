@@ -9,7 +9,7 @@
  */
 
 /** @file Simplify.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief ZX-diagram simplification routines.
  */
 
 #pragma once

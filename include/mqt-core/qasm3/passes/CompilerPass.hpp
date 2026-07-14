@@ -9,7 +9,7 @@
  */
 
 /** @file CompilerPass.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Base interface for OpenQASM 3 compiler passes.
  */
 
 #pragma once

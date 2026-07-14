@@ -9,7 +9,7 @@
  */
 
 /** @file FunctionalityConstruction.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Construct decision-diagram functionality from quantum circuits.
  */
 
 #pragma once

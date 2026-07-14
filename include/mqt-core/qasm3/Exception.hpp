@@ -9,7 +9,7 @@
  */
 
 /** @file Exception.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief OpenQASM 3 compiler exception types.
  */
 
 #pragma once

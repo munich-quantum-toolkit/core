@@ -9,7 +9,7 @@
  */
 
 /** @file NestedEnvironment.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Nested symbol environments for OpenQASM 3 compilation.
  */
 
 #pragma once

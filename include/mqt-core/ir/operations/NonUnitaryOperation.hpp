@@ -9,7 +9,7 @@
  */
 
 /** @file NonUnitaryOperation.hpp
- * @brief Quantum-operation representation.
+ * @brief Measurement, reset, and other non-unitary quantum operations.
  */
 
 #pragma once

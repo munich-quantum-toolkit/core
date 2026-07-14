@@ -9,7 +9,7 @@
  */
 
 /** @file IfElseOperation.hpp
- * @brief Quantum-operation representation.
+ * @brief Classically controlled if-else quantum operations.
  */
 
 #pragma once

@@ -9,7 +9,7 @@
  */
 
 /** @file TypeCheckPass.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Type-checking pass for OpenQASM 3 programs.
  */
 
 #pragma once

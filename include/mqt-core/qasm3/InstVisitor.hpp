@@ -9,7 +9,7 @@
  */
 
 /** @file InstVisitor.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Visitors for OpenQASM 3 instructions and expressions.
  */
 
 #pragma once

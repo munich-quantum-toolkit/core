@@ -9,7 +9,7 @@
  */
 
 /** @file Gate.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief OpenQASM 3 gate declarations and definitions.
  */
 
 #pragma once

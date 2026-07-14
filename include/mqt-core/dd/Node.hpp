@@ -9,7 +9,7 @@
  */
 
 /** @file Node.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Decision-diagram node types and node-edge aliases.
  */
 
 #pragma once

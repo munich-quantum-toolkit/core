@@ -9,7 +9,7 @@
  */
 
 /** @file Rules.hpp
- * @brief ZX-calculus data structures and transformations.
+ * @brief ZX-calculus rewrite rules.
  */
 
 #pragma once

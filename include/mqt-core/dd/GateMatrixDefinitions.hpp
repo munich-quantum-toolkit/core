@@ -9,7 +9,7 @@
  */
 
 /** @file GateMatrixDefinitions.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Gate-matrix definitions used to construct decision diagrams.
  */
 
 #pragma once

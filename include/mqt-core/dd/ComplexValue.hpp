@@ -9,7 +9,7 @@
  */
 
 /** @file ComplexValue.hpp
- * @brief Decision-diagram data structures and algorithms.
+ * @brief Complex scalar values used by decision diagrams.
  */
 
 #pragma once

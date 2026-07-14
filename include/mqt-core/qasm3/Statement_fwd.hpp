@@ -9,7 +9,7 @@
  */
 
 /** @file Statement_fwd.hpp
- * @brief OpenQASM 3 parsing and semantic analysis.
+ * @brief Forward declarations for OpenQASM 3 syntax-tree nodes.
  */
 
 #pragma once

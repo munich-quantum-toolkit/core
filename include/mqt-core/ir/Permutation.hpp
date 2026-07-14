@@ -9,7 +9,7 @@
  */
 
 /** @file Permutation.hpp
- * @brief Quantum-circuit intermediate representation.
+ * @brief Qubit permutation mappings for quantum computations.
  */
 
 #pragma once
