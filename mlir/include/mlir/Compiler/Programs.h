@@ -16,6 +16,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -36,7 +37,7 @@ class QIRProgram;
 /**
  * @brief The QIR profile represented by a QIR program.
  */
-enum class QIRProfile {
+enum class QIRProfile : uint8_t {
   /// The QIR Base Profile.
   Base,
   /// The QIR Adaptive Profile.
@@ -46,7 +47,7 @@ enum class QIRProfile {
 /**
  * @brief Formats accepted and produced by the default compiler pipeline.
  */
-enum class ProgramFormat {
+enum class ProgramFormat : uint8_t {
   /// QC directly after frontend import, without any compiler pass.
   QCImport,
   /// QC after the QCO optimization round trip.
