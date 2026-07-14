@@ -816,7 +816,8 @@ static WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
     std::erase(inCtrlValues, superfluousQ);
   }
 
-  for (const auto qCtrl : inCtrlValues) {
+  const auto ctrlCandidates = inCtrlValues;
+  for (const auto qCtrl : ctrlCandidates) {
     auto qCtrlValuesWithoutCurrent = inCtrlValues;
     std::erase(qCtrlValuesWithoutCurrent, qCtrl);
     if (ut->isQubitImplied(qCtrl, qCtrlValuesWithoutCurrent, posClassicalCtrls,
