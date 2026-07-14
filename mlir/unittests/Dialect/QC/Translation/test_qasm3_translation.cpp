@@ -139,12 +139,10 @@ static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
 }
 
 static Value ifEmptyThen(qc::QCProgramBuilder& b) {
-  auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   auto c = b.measure(q[0]);
-  auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
-  b.scfIf(cond, [&] { b.x(q[0]); });
+  b.scfIf(c, [&] {}, [&] { b.x(q[0]); });
   auto out = b.measure(q[0]);
   return out;
 }
@@ -367,15 +365,13 @@ static SmallVector<Value> conditionNotAndOr(qc::QCProgramBuilder& b) {
 }
 
 static SmallVector<Value> conditionBoolVariable(qc::QCProgramBuilder& b) {
-  auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
   auto c0 = b.measure(q[0]);
   auto c1 = b.measure(q[1]);
   auto both = arith::AndIOp::create(b, c0, c1).getResult();
-  auto neither = arith::XOrIOp::create(b, both, trueValue).getResult();
-  b.scfIf(neither, [&] { b.x(q[2]); });
+  b.scfIf(both, [&] {}, [&] { b.x(q[2]); });
   auto out = b.measure(q[2]);
   return {c0, c1, out};
 }

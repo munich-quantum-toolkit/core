@@ -205,13 +205,9 @@ concept QASMSink =
       s.barrier(loc, operands);
       s.gateCall(call);
       s.gateDefinition(loc, str, names, names, body);
-      s.ifConditionOnly(loc, condition);
-      s.ifBegin(loc, condition, flag);
+      s.ifStmt(loc, condition, cont, cont);
       s.forStmt(loc, str, expr, expr, expr, cont);
       s.whileStmt(loc, condition, cont);
-      // The sink must additionally provide `ifElse(scope)` and `ifEnd(scope,
-      // bool)` taking the opaque scope returned by `ifBegin`; those are not
-      // expressible here without naming the scope type.
     };
 
 //===----------------------------------------------------------------------===//
@@ -1169,52 +1165,21 @@ private:
       return failure();
     }
 
-    const bool thenEmpty =
-        current().kind == TokenKind::LBrace && peek().kind == TokenKind::RBrace;
-    if (thenEmpty) {
-      advance(); // {
-      advance(); // }
-      if (current().kind != TokenKind::Else) {
-        return sink.ifConditionOnly(loc, condition);
-      }
-      advance(); // else
-      auto scope = sink.ifBegin(loc, condition, /*invert=*/true);
-      if (failed(scope)) {
-        return failure();
-      }
-      if (failed(parseBlock())) {
-        return failure();
-      }
-      return sink.ifEnd(*scope, /*hadElse=*/false);
-    }
+    // Whether an `else` follows cannot be known until the `then` branch has
+    // been parsed, and that only happens once the sink calls back. So the
+    // `else` branch is recognized from within the continuation that emits it.
+    return sink.ifStmt(
+        loc, condition, [this] { return parseBlock(); },
+        [this] { return parseElse(); });
+  }
 
-    auto scope = sink.ifBegin(loc, condition, /*invert=*/false);
-    if (failed(scope)) {
-      return failure();
+  /// Parse `else { ... }`, if there is one.
+  [[nodiscard]] LogicalResult parseElse() {
+    if (current().kind != TokenKind::Else) {
+      return success();
     }
-    if (failed(parseBlock())) {
-      return failure();
-    }
-
-    if (current().kind == TokenKind::Else) {
-      advance(); // else
-      const bool elseEmpty = current().kind == TokenKind::LBrace &&
-                             peek().kind == TokenKind::RBrace;
-      if (elseEmpty) {
-        advance(); // {
-        advance(); // }
-        return sink.ifEnd(*scope, /*hadElse=*/false);
-      }
-      if (failed(sink.ifElse(*scope))) {
-        return failure();
-      }
-      if (failed(parseBlock())) {
-        return failure();
-      }
-      return sink.ifEnd(*scope, /*hadElse=*/true);
-    }
-
-    return sink.ifEnd(*scope, /*hadElse=*/false);
+    advance(); // else
+    return parseBlock();
   }
 
   [[nodiscard]] LogicalResult parseFor() {

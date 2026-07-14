@@ -60,33 +60,6 @@ namespace qc {
 class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
-   * @brief Enters @p region for the builder's region bookkeeping.
-   *
-   * @details
-   * `scfFor`, `scfWhile`, and `scfIf` do this for the regions they build
-   * themselves. A caller that builds a region op directly must enter its
-   * regions through this scope, or qubit loads inside them are attributed to
-   * the enclosing region and rejected as loads in the main function region.
-   *
-   * The insertion point is not changed; that remains the caller's job.
-   */
-  class RegionScope {
-  public:
-    RegionScope(QCProgramBuilder& builder, Region* region) : builder(builder) {
-      builder.regionStack.emplace_back(region);
-    }
-    ~RegionScope() { builder.regionStack.pop_back(); }
-
-    RegionScope(const RegionScope&) = delete;
-    RegionScope& operator=(const RegionScope&) = delete;
-    RegionScope(RegionScope&&) = delete;
-    RegionScope& operator=(RegionScope&&) = delete;
-
-  private:
-    QCProgramBuilder& builder;
-  };
-
-  /**
    * @brief Construct a new QCProgramBuilder
    * @param context The MLIR context to use for building operations
    */

@@ -599,66 +599,39 @@ public:
 
   //===--- Control flow -------------------------------------------------===//
 
-  LogicalResult ifConditionOnly(SMLoc /*loc*/, const Condition& condition) {
-    return LogicalResult{emitCondition(condition)};
-  }
-
   /**
-   * @brief The state of an `if` statement being emitted.
+   * @brief Emit an `if` statement.
    *
    * @details
-   * The `then` and `else` branches are separate scopes, so `scope` is replaced
-   * when the `else` branch opens and released when the `if` ends. It is held
-   * indirectly because a `DeclarationScope` cannot be moved, whereas this
-   * handle is returned by value.
+   * Both branches are always given a region, and `elseBody` is called even when
+   * the program has no `else`. That is what lets the parser recognize the
+   * branch from inside the continuation, which is the only place it can: it
+   * does not know whether one follows until the `then` branch has been parsed.
+   * Canonicalization folds away whichever regions turn out to be empty.
    */
-  struct IfScope {
-    scf::IfOp op;
-    OpBuilder::InsertPoint savedInsertionPoint;
-    std::unique_ptr<QCProgramBuilder::RegionScope> region;
-    std::unique_ptr<DeclarationScope> scope;
-  };
-
-  FailureOr<IfScope> ifBegin(SMLoc /*loc*/, const Condition& condition,
-                             bool invert) {
-    auto condOrFailure = emitCondition(condition);
-    if (failed(condOrFailure)) {
+  LogicalResult ifStmt(SMLoc /*loc*/, const Condition& condition,
+                       function_ref<LogicalResult()> thenBody,
+                       function_ref<LogicalResult()> elseBody) {
+    auto cond = emitCondition(condition);
+    if (failed(cond)) {
       return failure();
     }
-    auto cond = *condOrFailure;
-    if (invert) {
-      auto trueValue = builder.boolConstant(true);
-      cond = arith::XOrIOp::create(builder, cond, trueValue).getResult();
-    }
-    auto ifOp = scf::IfOp::create(builder, cond, /*withElseRegion=*/false);
-    IfScope scope{.op = ifOp,
-                  .savedInsertionPoint = builder.saveInsertionPoint()};
-    builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-    scope.region = std::make_unique<QCProgramBuilder::RegionScope>(
-        builder, &ifOp.getThenRegion());
-    scope.scope = std::make_unique<DeclarationScope>(*this);
-    return scope;
-  }
 
-  LogicalResult ifElse(IfScope& scope) {
-    scope.region.reset();
-    scope.scope.reset();
-    auto* elseBlock = builder.createBlock(&scope.op.getElseRegion());
-    builder.setInsertionPointToStart(elseBlock);
-    scope.region = std::make_unique<QCProgramBuilder::RegionScope>(
-        builder, &scope.op.getElseRegion());
-    scope.scope = std::make_unique<DeclarationScope>(*this);
-    return success();
-  }
-
-  LogicalResult ifEnd(IfScope& scope, bool hadElse) {
-    if (hadElse) {
-      scf::YieldOp::create(builder);
-    }
-    scope.region.reset();
-    scope.scope.reset();
-    builder.restoreInsertionPoint(scope.savedInsertionPoint);
-    return success();
+    auto status = success();
+    builder.scfIf(
+        *cond,
+        [&] {
+          // The two branches are separate scopes.
+          const DeclarationScope scope(*this);
+          status = thenBody();
+        },
+        [&] {
+          const DeclarationScope scope(*this);
+          if (succeeded(status)) {
+            status = elseBody();
+          }
+        });
+    return status;
   }
 
   LogicalResult forStmt(SMLoc loc, StringRef variable, const Expr& start,
