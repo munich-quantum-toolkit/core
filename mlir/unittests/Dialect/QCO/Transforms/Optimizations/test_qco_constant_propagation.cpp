@@ -22,6 +22,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <numbers>
@@ -223,6 +224,8 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
       });
   programBuilder.y(qRange01[1]);
   module = programBuilder.finalize();
+
+  std::cout << "after build\n";
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
   qRef[0] = referenceBuilder.h(qRef[0]);

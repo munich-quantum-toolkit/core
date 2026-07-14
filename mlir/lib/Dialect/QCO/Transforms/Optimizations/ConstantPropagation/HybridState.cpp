@@ -22,7 +22,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
@@ -289,7 +288,7 @@ bool HybridState::hasAlwaysZeroProbability(
         return true;
       }
     } else if (doubleValues.contains(v)) {
-      const bool zeroDouble = std::norm(doubleValues.at(v)) < 1e-4;
+      const bool zeroDouble = std::fabs(doubleValues.at(v)) < 1e-4;
       if ((zeroDouble && i) || (!zeroDouble && !i)) {
         return true;
       }
