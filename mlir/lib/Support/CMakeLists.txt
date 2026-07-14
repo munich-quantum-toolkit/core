@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-file(GLOB_RECURSE SUPPORT_CPP "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+file(GLOB_RECURSE SUPPORT_CPP CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 add_mlir_library(
   MLIRSupportMQT
