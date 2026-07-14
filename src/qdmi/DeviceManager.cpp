@@ -10,10 +10,10 @@
 
 #include "qdmi/DeviceManager.hpp"
 
-#include "qdmi/driver/Driver.hpp"
+#include "DeviceApi.hpp"
 
 #include <nlohmann/json.hpp>
-#include <toml++/toml.hpp>
+#include <toml.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -50,7 +50,6 @@ struct SessionPatch {
   std::optional<std::string> authUrl;
   std::optional<std::string> username;
   std::optional<std::string> password;
-  std::optional<std::string> projectId;
   std::optional<std::string> custom1;
   std::optional<std::string> custom2;
   std::optional<std::string> custom3;
@@ -126,8 +125,8 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
   requireObject(value, source, path);
   rejectUnknownKeys(value,
                     {"base-url", "token", "auth-file", "auth-url", "username",
-                     "password", "project-id", "custom1", "custom2", "custom3",
-                     "custom4", "custom5"},
+                     "password", "custom1", "custom2", "custom3", "custom4",
+                     "custom5"},
                     source, path);
   SessionPatch patch;
   patch.baseUrl = optionalString(value, "base-url", source, path);
@@ -135,7 +134,6 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
   patch.authUrl = optionalString(value, "auth-url", source, path);
   patch.username = optionalString(value, "username", source, path);
   patch.password = optionalString(value, "password", source, path);
-  patch.projectId = optionalString(value, "project-id", source, path);
   patch.custom1 = optionalString(value, "custom1", source, path);
   patch.custom2 = optionalString(value, "custom2", source, path);
   patch.custom3 = optionalString(value, "custom3", source, path);
@@ -273,7 +271,6 @@ void mergeSession(SessionPatch& target, const SessionPatch& source) {
   mergeOptional(target.authUrl, source.authUrl);
   mergeOptional(target.username, source.username);
   mergeOptional(target.password, source.password);
-  mergeOptional(target.projectId, source.projectId);
   mergeOptional(target.custom1, source.custom1);
   mergeOptional(target.custom2, source.custom2);
   mergeOptional(target.custom3, source.custom3);
@@ -323,11 +320,24 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
 }
 
 [[nodiscard]] auto environment(const char* name) -> std::optional<std::string> {
+#ifdef _WIN32
+  char* raw = nullptr;
+  size_t size = 0;
+  if (_dupenv_s(&raw, &size, name) != 0 || raw == nullptr) {
+    return std::nullopt;
+  }
+  const std::unique_ptr<char, decltype(&std::free)> value(raw, &std::free);
+  if (*value == '\0') {
+    return std::nullopt;
+  }
+  return std::string(value.get());
+#else
   if (const auto* value = std::getenv(name);
       value != nullptr && *value != '\0') {
     return std::string(value);
   }
   return std::nullopt;
+#endif
 }
 
 void appendIfFile(std::vector<std::filesystem::path>& files,
@@ -454,7 +464,6 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   patch.session.authUrl = definition.session.authUrl;
   patch.session.username = definition.session.username;
   patch.session.password = definition.session.password;
-  patch.session.projectId = definition.session.projectId;
   patch.session.custom1 = definition.session.custom1;
   patch.session.custom2 = definition.session.custom2;
   patch.session.custom3 = definition.session.custom3;
@@ -495,7 +504,6 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   definition.session.authUrl = patch.session.authUrl;
   definition.session.username = patch.session.username;
   definition.session.password = patch.session.password;
-  definition.session.projectId = patch.session.projectId;
   definition.session.custom1 = patch.session.custom1;
   definition.session.custom2 = patch.session.custom2;
   definition.session.custom3 = patch.session.custom3;
@@ -511,7 +519,6 @@ void overlay(SessionParameters& target, const SessionParameters& source) {
   mergeOptional(target.authUrl, source.authUrl);
   mergeOptional(target.username, source.username);
   mergeOptional(target.password, source.password);
-  mergeOptional(target.projectId, source.projectId);
   mergeOptional(target.custom1, source.custom1);
   mergeOptional(target.custom2, source.custom2);
   mergeOptional(target.custom3, source.custom3);
@@ -519,24 +526,6 @@ void overlay(SessionParameters& target, const SessionParameters& source) {
   mergeOptional(target.custom5, source.custom5);
 }
 
-[[nodiscard]] auto toV1Config(const SessionParameters& parameters)
-    -> DeviceSessionConfig {
-  DeviceSessionConfig config;
-  config.baseUrl = parameters.baseUrl;
-  config.token = parameters.token;
-  if (parameters.authFile) {
-    config.authFile = parameters.authFile->string();
-  }
-  config.authUrl = parameters.authUrl;
-  config.username = parameters.username;
-  config.password = parameters.password;
-  config.custom1 = parameters.custom1;
-  config.custom2 = parameters.custom2;
-  config.custom3 = parameters.custom3;
-  config.custom4 = parameters.custom4;
-  config.custom5 = parameters.custom5;
-  return config;
-}
 } // namespace
 
 DeviceRegistry::DeviceRegistry(const ConfigOptions& options) {
@@ -628,7 +617,7 @@ struct DeviceManager::Impl {
 
   DeviceRegistry registry;
   std::mutex mutex;
-  std::map<std::string, std::weak_ptr<DeviceLibrary>> libraries;
+  std::map<std::string, std::weak_ptr<detail::DeviceApi>> libraries;
 };
 
 DeviceManager::DeviceManager(const ConfigOptions& options)
@@ -664,35 +653,18 @@ Device DeviceManager::open(const std::string_view id,
                             std::string(id) + "'");
   }
   const auto key = definition->library.string() + "\n" + definition->prefix;
-  std::shared_ptr<DeviceLibrary> library;
+  std::shared_ptr<detail::DeviceApi> library;
   {
     const std::scoped_lock lock(impl_->mutex);
     library = impl_->libraries[key].lock();
     if (!library) {
-      library = std::make_shared<DynamicDeviceLibrary>(
-          definition->library.string(), definition->prefix);
+      library =
+          detail::makeV1DeviceApi(definition->library, definition->prefix);
       impl_->libraries[key] = library;
     }
   }
   auto parameters = definition->session;
   overlay(parameters, sessionOverrides);
-  auto state =
-      std::make_shared<QDMI_Device_impl_d>(library, toV1Config(parameters));
-  auto* const handle = state.get();
-  return Device(handle, std::move(state));
-}
-
-OpenAllResult
-DeviceManager::openAll(const SessionParameters& sessionOverrides) {
-  OpenAllResult result;
-  for (const auto& definition : definitions()) {
-    try {
-      result.devices.emplace(definition.id,
-                             open(definition.id, sessionOverrides));
-    } catch (const std::exception& error) {
-      result.errors.emplace(definition.id, error.what());
-    }
-  }
-  return result;
+  return Device(std::make_shared<detail::DeviceState>(library, parameters));
 }
 } // namespace qdmi

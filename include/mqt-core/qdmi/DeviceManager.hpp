@@ -19,7 +19,6 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,7 +35,6 @@ struct SessionParameters {
   std::optional<std::string> authUrl;
   std::optional<std::string> username;
   std::optional<std::string> password;
-  std::optional<std::string> projectId;
   std::optional<std::string> custom1;
   std::optional<std::string> custom2;
   std::optional<std::string> custom3;
@@ -85,12 +83,6 @@ private:
   std::vector<DeviceDefinition> definitions_;
 };
 
-/** Result of independently opening every enabled definition. */
-struct OpenAllResult {
-  std::map<std::string, Device> devices;
-  std::map<std::string, std::string> errors;
-};
-
 /** Lazily opens configured QDMI devices and shares loaded v1 libraries. */
 class DeviceManager {
 public:
@@ -109,8 +101,6 @@ public:
   [[nodiscard]] Device
   open(std::string_view id,
        const SessionParameters& sessionOverrides = SessionParameters{});
-  [[nodiscard]] OpenAllResult
-  openAll(const SessionParameters& sessionOverrides = SessionParameters{});
 
 private:
   struct Impl;

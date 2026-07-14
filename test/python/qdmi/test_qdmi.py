@@ -20,13 +20,13 @@ CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
 
 def _get_devices() -> list[Device]:
-    """Open all available QDMI devices.
+    """Open each available QDMI device.
 
     Returns:
         List of all available QDMI devices.
     """
-    devices, _errors = DeviceManager().open_all()
-    return list(devices.values())
+    manager = DeviceManager()
+    return [manager.open(definition.id) for definition in manager.definitions]
 
 
 @pytest.fixture(params=_get_devices())

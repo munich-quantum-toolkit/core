@@ -11,7 +11,12 @@ the underlying library/session lifetime.
 
 qdmi::DeviceManager manager;
 for (const auto& definition : manager.definitions()) {
-  auto device = manager.open(definition.id);
+  try {
+    auto device = manager.open(definition.id);
+    // Use this device independently of the manager.
+  } catch (const std::exception& error) {
+    // An unavailable provider does not affect other definitions.
+  }
 }
 ```
 
@@ -22,13 +27,17 @@ from mqt.core.qdmi import DeviceManager
 
 manager = DeviceManager()
 for definition in manager.definitions:
-    device = manager.open(definition.id)
+    try:
+        device = manager.open(definition.id)
+    except RuntimeError as error:
+        print(f"{definition.id}: {error}")
+        continue
     print(device.name())
 ```
 
-Opening one device does not open any other definition. `open_all()` returns a
-pair of successful devices and per-ID error messages so one unavailable provider
-does not hide the remaining devices.
+Discovery is side-effect free. Each `open` call loads and initializes only the
+selected definition, and separate definitions can share one loaded provider
+library while retaining independent sessions.
 
 See [QDMI configuration](configuration.md) for discovery, precedence, and
 registration examples.

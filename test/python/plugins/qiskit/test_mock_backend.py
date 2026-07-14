@@ -15,6 +15,7 @@ import re
 import secrets
 import string
 import warnings
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
@@ -321,10 +322,15 @@ def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
 def _patch_manager_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
     """Patch QDMI device discovery to return the supplied mock devices."""
 
-    def _mock_open_all(_self: object, **_kwargs: object) -> tuple[dict[str, MockQDMIDevice], dict[str, str]]:
-        return {f"mock-{index}": device for index, device in enumerate(devices)}, {}
+    class MockManager:
+        def __init__(self) -> None:
+            self.definitions = [SimpleNamespace(id=f"mock-{index}") for index in range(len(devices))]
+            self.devices = devices
 
-    monkeypatch.setattr(qdmi.DeviceManager, "open_all", _mock_open_all)
+        def open(self, device_id: str, **_kwargs: object) -> MockQDMIDevice:
+            return self.devices[int(device_id.removeprefix("mock-"))]
+
+    monkeypatch.setattr(qdmi, "DeviceManager", MockManager)
 
 
 def test_backend_warns_on_unmappable_operation(

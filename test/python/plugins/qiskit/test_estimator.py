@@ -24,8 +24,9 @@ from mqt.core.plugins.qiskit import QDMIBackend, QDMIEstimator
 @pytest.fixture
 def estimator() -> QDMIEstimator:
     """Returns a QDMIEstimator based on the DDSIM backend."""
-    devices, _errors = qdmi.DeviceManager().open_all()
-    for device in devices.values():
+    manager = qdmi.DeviceManager()
+    for definition in manager.definitions:
+        device = manager.open(definition.id)
         if "DDSIM" in device.name():
             backend = QDMIBackend(device=device, provider=None)
             return QDMIEstimator(backend)

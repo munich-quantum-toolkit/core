@@ -9,7 +9,9 @@
 set(TARGET_NAME mqt-core-qdmi-object-model-test)
 
 if(TARGET MQT::CoreQDMI)
-  package_add_test(${TARGET_NAME} MQT::CoreQDMI test_device.cpp)
+  package_add_test(${TARGET_NAME} MQT::CoreQDMI test_device.cpp test_device_api.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon qdmi::qdmi)
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE DDSIM_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>"

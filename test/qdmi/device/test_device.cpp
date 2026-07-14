@@ -14,7 +14,7 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <qdmi/client.h>
+#include <qdmi/constants.h>
 
 #include <algorithm>
 #include <array>
@@ -36,21 +36,6 @@
 namespace qdmi {
 
 namespace {
-
-auto queryBytes(const std::vector<std::byte>& bytes) {
-  return [&bytes](const size_t size, void* value, size_t* sizeRet) {
-    if (sizeRet != nullptr) {
-      *sizeRet = bytes.size();
-    }
-    if (value != nullptr) {
-      if (size < bytes.size()) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      std::memcpy(value, bytes.data(), bytes.size());
-    }
-    return QDMI_SUCCESS;
-  };
-}
 
 template <typename T> auto bytesOf(const T& value) {
   std::vector<std::byte> bytes(sizeof(T));
@@ -76,11 +61,12 @@ auto configuredManager() -> DeviceManager {
 }
 
 auto getDevices() -> std::vector<Device> {
-  auto opened = configuredManager().openAll();
+  auto manager = configuredManager();
   std::vector<Device> devices;
-  devices.reserve(opened.devices.size());
-  std::ranges::move(opened.devices | std::views::values,
-                    std::back_inserter(devices));
+  devices.reserve(manager.definitions().size());
+  for (const auto& definition : manager.definitions()) {
+    devices.emplace_back(manager.open(definition.id));
+  }
   return devices;
 }
 
@@ -131,7 +117,7 @@ bit[1] c;
 h q[0];
 c[0] = measure q[0];
 )";
-    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+    return device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
   }
 };
 
@@ -148,134 +134,59 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 )";
-    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
+    return device.submitJob(qasm3Program, ProgramFormat::Qasm3, 0);
   }
 };
 
 } // namespace
 
-TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
-  constexpr std::array properties{
-      CustomProperty::Custom1, CustomProperty::Custom2, CustomProperty::Custom3,
-      CustomProperty::Custom4, CustomProperty::Custom5};
-  constexpr std::array deviceProperties{
-      QDMI_DEVICE_PROPERTY_CUSTOM1, QDMI_DEVICE_PROPERTY_CUSTOM2,
-      QDMI_DEVICE_PROPERTY_CUSTOM3, QDMI_DEVICE_PROPERTY_CUSTOM4,
-      QDMI_DEVICE_PROPERTY_CUSTOM5};
-  constexpr std::array siteProperties{
-      QDMI_SITE_PROPERTY_CUSTOM1, QDMI_SITE_PROPERTY_CUSTOM2,
-      QDMI_SITE_PROPERTY_CUSTOM3, QDMI_SITE_PROPERTY_CUSTOM4,
-      QDMI_SITE_PROPERTY_CUSTOM5};
-  constexpr std::array operationProperties{
-      QDMI_OPERATION_PROPERTY_CUSTOM1, QDMI_OPERATION_PROPERTY_CUSTOM2,
-      QDMI_OPERATION_PROPERTY_CUSTOM3, QDMI_OPERATION_PROPERTY_CUSTOM4,
-      QDMI_OPERATION_PROPERTY_CUSTOM5};
-  constexpr std::array jobProperties{
-      QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
-      QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
-      QDMI_JOB_PROPERTY_CUSTOM5};
-  constexpr std::array jobResults{
-      QDMI_JOB_RESULT_CUSTOM1, QDMI_JOB_RESULT_CUSTOM2, QDMI_JOB_RESULT_CUSTOM3,
-      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5};
-
-  for (size_t i = 0; i < properties.size(); ++i) {
-    EXPECT_EQ(detail::toDeviceProperty(properties[i]), deviceProperties[i]);
-    EXPECT_EQ(detail::toSiteProperty(properties[i]), siteProperties[i]);
-    EXPECT_EQ(detail::toOperationProperty(properties[i]),
-              operationProperties[i]);
-    EXPECT_EQ(detail::toJobProperty(properties[i]), jobProperties[i]);
-    EXPECT_EQ(detail::toJobResult(properties[i]), jobResults[i]);
-  }
-}
-
-TEST(CustomPropertyTest, RejectsInvalidSelector) {
-  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  constexpr auto invalid = static_cast<CustomProperty>(0);
-  EXPECT_THROW(std::ignore = detail::toDeviceProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toSiteProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toOperationProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toJobProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toJobResult(invalid),
-               std::invalid_argument);
-}
-
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
   const std::vector<std::byte> stringBytes{std::byte{'v'}, std::byte{'a'},
                                            std::byte{'l'}, std::byte{'u'},
                                            std::byte{'e'}, std::byte{0}};
-  EXPECT_EQ(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
-                                                  "test property"),
-            "value");
+  EXPECT_EQ(
+      detail::decodeCustomValue<std::string>(stringBytes, "test property"),
+      "value");
 
   constexpr bool boolValue = true;
-  EXPECT_EQ(detail::queryCustomValue<bool>(queryBytes(bytesOf(boolValue)),
-                                           "test property"),
-            boolValue);
+  EXPECT_EQ(
+      detail::decodeCustomValue<bool>(bytesOf(boolValue), "test property"),
+      boolValue);
   constexpr int intValue = 42;
-  EXPECT_EQ(detail::queryCustomValue<int>(queryBytes(bytesOf(intValue)),
-                                          "test property"),
+  EXPECT_EQ(detail::decodeCustomValue<int>(bytesOf(intValue), "test property"),
             intValue);
   constexpr double doubleValue = 1.25;
-  EXPECT_EQ(detail::queryCustomValue<double>(queryBytes(bytesOf(doubleValue)),
-                                             "test property"),
-            doubleValue);
-  EXPECT_EQ(detail::queryCustomValue<std::vector<std::byte>>(
-                queryBytes(stringBytes), "test property"),
+  EXPECT_EQ(
+      detail::decodeCustomValue<double>(bytesOf(doubleValue), "test property"),
+      doubleValue);
+  EXPECT_EQ(detail::decodeCustomValue<std::vector<std::byte>>(stringBytes,
+                                                              "test property"),
             stringBytes);
 }
 
 TEST(CustomPropertyTest, ReturnsNulloptWhenUnsupported) {
-  const auto query = [](size_t, void*, size_t*) {
-    return QDMI_ERROR_NOTSUPPORTED;
-  };
-  EXPECT_EQ(detail::queryCustomValue<int>(query, "test property"),
+  EXPECT_EQ(detail::decodeCustomValue<int>(std::nullopt, "test property"),
             std::nullopt);
-}
-
-TEST(CustomPropertyTest, PropagatesQueryErrors) {
-  const auto failingSizeQuery = [](size_t, void*, size_t*) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  };
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<int>(failingSizeQuery,
-                                                           "test property"),
-               std::invalid_argument);
-
-  const auto failingValueQuery = [](const size_t, void* value,
-                                    size_t* sizeRet) {
-    if (sizeRet != nullptr) {
-      *sizeRet = sizeof(int);
-      return QDMI_SUCCESS;
-    }
-    EXPECT_NE(value, nullptr);
-    return QDMI_ERROR_INVALIDARGUMENT;
-  };
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<int>(failingValueQuery,
-                                                           "test property"),
-               std::invalid_argument);
 }
 
 TEST(CustomPropertyTest, SupportsEmptyRawValues) {
   const std::vector<std::byte> empty;
-  EXPECT_EQ(detail::queryCustomValue<std::vector<std::byte>>(queryBytes(empty),
-                                                             "test property"),
-            empty);
+  EXPECT_EQ(
+      detail::decodeCustomValue<std::vector<std::byte>>(empty, "test property"),
+      empty);
 }
 
 TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
   const std::vector<std::byte> empty;
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
-                   queryBytes(empty), "test property"),
+  EXPECT_THROW(std::ignore = detail::decodeCustomValue<std::string>(
+                   empty, "test property"),
                std::invalid_argument);
   const std::vector<std::byte> malformedString{std::byte{'n'}, std::byte{'o'}};
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
-                   queryBytes(malformedString), "test property"),
+  EXPECT_THROW(std::ignore = detail::decodeCustomValue<std::string>(
+                   malformedString, "test property"),
                std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<double>(
-                   queryBytes(bytesOf(true)), "test property"),
+  EXPECT_THROW(std::ignore = detail::decodeCustomValue<double>(bytesOf(true),
+                                                               "test property"),
                std::invalid_argument);
 }
 
@@ -373,10 +284,6 @@ TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM3), "CUSTOM3");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM4), "CUSTOM4");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM5), "CUSTOM5");
-}
-
-TEST(QDMITest, SessionPropertyToString) {
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PROPERTY_DEVICES), "DEVICES");
 }
 
 TEST(QDMITest, ThrowIfError) {
@@ -742,15 +649,14 @@ h q[0];
 cx q[0], q[1];
 c = measure q;)";
 
-  const auto job =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  const auto job = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 100);
 
   EXPECT_FALSE(job.getId().empty());
-  EXPECT_EQ(job.getProgramFormat(), QDMI_PROGRAM_FORMAT_QASM3);
+  EXPECT_EQ(job.getProgramFormat(), ProgramFormat::Qasm3);
   EXPECT_STREQ(job.getProgram().c_str(), qasm3Program.c_str());
   EXPECT_EQ(job.getNumShots(), 100);
   EXPECT_TRUE(job.wait());
-  EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.check(), JobStatus::Done);
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
@@ -760,24 +666,23 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     try {
       switch (which) {
       case 1:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, custom);
         break;
       case 2:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, custom);
+        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+                         custom);
         break;
       case 3:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+                         std::nullopt, custom);
         break;
       case 4:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+                         std::nullopt, std::nullopt, custom);
         break;
       case 5:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                         custom);
+        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
         break;
       default:
         throw std::invalid_argument("Invalid 'which' value");
@@ -804,16 +709,13 @@ bit[1] c;
 c[0] = measure q[0];
 )";
 
-  const auto job1 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto job1 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
   EXPECT_EQ(job1.getNumShots(), 10);
 
-  const auto job2 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  const auto job2 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 100);
   EXPECT_EQ(job2.getNumShots(), 100);
 
-  const auto job3 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
+  const auto job3 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 1000);
   EXPECT_EQ(job3.getNumShots(), 1000);
 }
 
@@ -824,8 +726,7 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto job2 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto job2 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
 }
@@ -844,8 +745,7 @@ TEST_F(JobTest, StatusProgresses) {
   EXPECT_TRUE(job.wait());
 
   const auto finalStatus = job.check();
-  EXPECT_THAT(finalStatus,
-              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
+  EXPECT_THAT(finalStatus, testing::AnyOf(JobStatus::Done, JobStatus::Failed));
 }
 
 TEST_F(JobTest, GetCountsReturnsValidHistogram) {
@@ -897,7 +797,8 @@ TEST_F(JobTest, GetShotsReturnsValidShots) {
     // If the device doesn't support shots, the error message should indicate so
     const std::string errorMsg(e.what());
     EXPECT_TRUE(errorMsg.find("Not supported") != std::string::npos ||
-                errorMsg.find("not supported") != std::string::npos);
+                errorMsg.find("not supported") != std::string::npos)
+        << errorMsg;
   }
 }
 
@@ -909,7 +810,7 @@ bit[1] c;
 c[0] = measure q[0];
 )";
   const auto jobToCancel =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+      device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
 
   // Fast-executing jobs (like the DD simulator) may complete before
   // cancel is called, which should throw an exception.
@@ -918,12 +819,11 @@ c[0] = measure q[0];
     jobToCancel.cancel();
     // If cancel succeeded, the job should be in CANCELED state
     const auto status = jobToCancel.check();
-    EXPECT_EQ(status, QDMI_JOB_STATUS_CANCELED);
+    EXPECT_EQ(status, JobStatus::Canceled);
   } catch (const std::invalid_argument&) {
     // If cancel threw an exception, the job should already be done
     const auto status = jobToCancel.check();
-    EXPECT_THAT(status,
-                testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
+    EXPECT_THAT(status, testing::AnyOf(JobStatus::Done, JobStatus::Failed));
   }
 }
 
@@ -931,8 +831,7 @@ TEST_F(JobTest, CancelCompletedJobThrows) {
   EXPECT_TRUE(job.wait());
 
   const auto statusBefore = job.check();
-  EXPECT_THAT(statusBefore,
-              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
+  EXPECT_THAT(statusBefore, testing::AnyOf(JobStatus::Done, JobStatus::Failed));
 
   EXPECT_THROW(job.cancel(), std::invalid_argument);
 }
@@ -998,22 +897,7 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
 
-TEST(AuthenticationTest, SessionParameterToString) {
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_TOKEN), "TOKEN");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_AUTHFILE), "AUTH FILE");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_AUTHURL), "AUTH URL");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_USERNAME), "USERNAME");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_PASSWORD), "PASSWORD");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_PROJECTID), "PROJECT ID");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_MAX), "MAX");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM1), "CUSTOM1");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM2), "CUSTOM2");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM3), "CUSTOM3");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM4), "CUSTOM4");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
-}
-
-TEST(DeviceManagerTest, OpenAllReturnsDevices) {
+TEST(DeviceManagerTest, DiscoversAndOpensDevices) {
   auto devices = getDevices();
 
   EXPECT_FALSE(devices.empty());

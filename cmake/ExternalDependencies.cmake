@@ -47,20 +47,6 @@ set(JSON_Install
 FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
 
-set(TOMLPLUSPLUS_VERSION
-    3.4.0
-    CACHE STRING "toml++ version")
-set(TOMLPLUSPLUS_URL
-    https://github.com/marzer/tomlplusplus/archive/refs/tags/v${TOMLPLUSPLUS_VERSION}.tar.gz)
-set(TOMLPLUSPLUS_BUILD_TESTS
-    OFF
-    CACHE BOOL "Disable toml++ tests" FORCE)
-set(TOMLPLUSPLUS_BUILD_EXAMPLES
-    OFF
-    CACHE BOOL "Disable toml++ examples" FORCE)
-FetchContent_Declare(tomlplusplus URL ${TOMLPLUSPLUS_URL} FIND_PACKAGE_ARGS ${TOMLPLUSPLUS_VERSION})
-list(APPEND FETCH_PACKAGES tomlplusplus)
-
 option(USE_SYSTEM_BOOST "Whether to try to use the system Boost installation" OFF)
 set(BOOST_MIN_VERSION
     1.80.0

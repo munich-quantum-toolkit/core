@@ -79,11 +79,11 @@ def test_provider_get_backend_nonexistent() -> None:
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provider raises ValueError when no devices available."""
 
-    # Monkeypatch to return empty device list
-    def mock_open_all(_self: object, **_kwargs: object) -> tuple[dict[str, object], dict[str, str]]:
-        return {}, {}
+    class EmptyManager:
+        def __init__(self) -> None:
+            self.definitions: list[object] = []
 
-    monkeypatch.setattr(qdmi.DeviceManager, "open_all", mock_open_all)
+    monkeypatch.setattr(qdmi, "DeviceManager", EmptyManager)
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
@@ -164,18 +164,6 @@ def test_provider_with_username_password_parameters() -> None:
         pass
 
 
-def test_provider_with_project_id_parameter() -> None:
-    """Provider accepts project_id parameter."""
-    # Should not raise an error when creating provider with project_id
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(project_id="test_project")
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
 def test_provider_with_multiple_auth_parameters() -> None:
     """Provider accepts multiple authentication parameters."""
     # Should not raise an error when creating provider with multiple auth parameters
@@ -185,7 +173,6 @@ def test_provider_with_multiple_auth_parameters() -> None:
             token="test_token",  # noqa: S106
             username="test_user",
             password="test_pass",  # noqa: S106
-            project_id="test_project",
         )
         assert provider is not None
     except RuntimeError:
@@ -239,7 +226,6 @@ def test_provider_with_custom_parameters() -> None:
         provider = QDMIProvider(
             token="test_token",  # noqa: S106
             custom1="custom_value",
-            project_id="project_id",
         )
         assert provider is not None
     except (RuntimeError, ValueError):

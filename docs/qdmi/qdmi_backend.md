@@ -176,13 +176,13 @@ Connect to a custom authentication server:
 provider = QDMIProvider(auth_url="https://auth.quantum-service.com/api/v1/auth")
 ```
 
-### Project-Based Authentication
+### Provider-Specific Session Parameters
 
-Associate your session with a specific project or organization:
+QDMI v1 reserves five custom session slots for provider-specific settings.
+Consult the provider documentation to determine their meaning:
 
 ```python
-# Specify a project ID
-provider = QDMIProvider(token="your_api_token", project_id="quantum-research-project-2024")
+provider = QDMIProvider(token="your_api_token", custom1="provider-project")
 ```
 
 ### Combining Authentication Parameters
@@ -196,7 +196,7 @@ provider = QDMIProvider(
     token="your_api_token",
     username="your_username",
     password="your_password",
-    project_id="your_project_id",
+    custom1="provider-specific-value",
     auth_url="https://custom-auth.example.com",
 )
 ```
@@ -216,9 +216,8 @@ except RuntimeError as e:
 
 ## Device Capabilities and Target
 
-The backend automatically introspects the QDMI (QDMI) device and constructs a
-Qiskit {py:class}`~qiskit.transpiler.Target` object describing device
-capabilities.
+The backend automatically introspects the QDMI device and constructs a Qiskit
+{py:class}`~qiskit.transpiler.Target` object describing device capabilities.
 
 ```{code-cell} ipython3
 # Access device properties via the Target
@@ -306,7 +305,7 @@ job = backend.run(circuits, parameter_values=param_values, shots=100)
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a QDMI (QDMI) job and
+The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a QDMI job and
 provides status tracking:
 
 ```python

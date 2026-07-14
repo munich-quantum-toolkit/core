@@ -15,6 +15,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <stdexcept>
 #include <string>
 
@@ -22,8 +23,9 @@ namespace {
 class TemporaryDirectory {
 public:
   TemporaryDirectory() {
-    path_ =
-        std::filesystem::temp_directory_path() / "mqt-core-qdmi-manager-test";
+    path_ = std::filesystem::temp_directory_path() /
+            ("mqt-core-qdmi-manager-test-" +
+             std::to_string(std::random_device{}()));
     std::filesystem::remove_all(path_);
     std::filesystem::create_directories(path_);
   }
@@ -34,6 +36,7 @@ public:
 
   void write(const std::filesystem::path& relative,
              const std::string& contents) const {
+    std::filesystem::create_directories((path_ / relative).parent_path());
     std::ofstream output(path_ / relative);
     output << contents;
   }
@@ -158,6 +161,137 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
   EXPECT_EQ(definitions.front().library, directory.path() / "device.so");
 }
 
+TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
+  const TemporaryDirectory directory;
+  directory.write("pyproject.toml", R"(
+    [tool.mqt-core.qdmi]
+    devices = [{ id = "toml", library = "toml.so", prefix = "TOML" }]
+  )");
+  directory.write("mqt-core.json", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [
+      {"id": "json", "library": "json.so", "prefix": "JSON"}
+    ]}
+  })");
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.baseDirectory = directory.path();
+
+  const qdmi::DeviceRegistry registry(options);
+  ASSERT_EQ(registry.definitions().size(), 1);
+  EXPECT_EQ(registry.definitions().front().id, "json");
+}
+
+TEST(DeviceRegistry, ReportsInvalidDocumentsAndSchemaPaths) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.inlineOverrides = nlohmann::json::object();
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 2,
+    "qdmi": {}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 1,
+    "qdmi": {"devices": {}}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+}
+
+TEST(DeviceRegistry, ValidatesDefinitionAndSessionTypes) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{"id": 4}]}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "invalid", "library": "device", "prefix": "P",
+      "enabled": "yes"
+    }]}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "invalid", "library": "device", "prefix": "P",
+      "session": {"token": 42}
+    }]}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+}
+
+TEST(DeviceRegistry, RejectsIncompleteAndUnsupportedEnabledDefinitions) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{"id": "missing", "prefix": "P"}]}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+
+  options.inlineOverrides = nlohmann::json::parse(R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "future", "library": "device", "prefix": "P", "abi": "qdmi-v2"
+    }]}
+  })");
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+}
+
+TEST(DeviceRegistry, ReportsInvalidExplicitJsonAndToml) {
+  const TemporaryDirectory directory;
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.explicitFile = directory.path() / "missing.json";
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::runtime_error);
+
+  directory.write("invalid.json", "{");
+  options.explicitFile = directory.path() / "invalid.json";
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+
+  directory.write("pyproject.toml", "[tool.mqt-core.qdmi\n");
+  options.explicitFile.reset();
+  options.baseDirectory = directory.path();
+  EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
+               std::invalid_argument);
+}
+
+TEST(DeviceRegistry, RegistersReplacesAndUnregistersDefinitions) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.baseDirectory = std::filesystem::temp_directory_path();
+  qdmi::DeviceRegistry registry(options);
+  registry.registerDevice({.id = "example", .library = "one", .prefix = "ONE"});
+  EXPECT_THROW(registry.registerDevice(
+                   {.id = "example", .library = "two", .prefix = "TWO"}),
+               std::invalid_argument);
+  registry.registerDevice({.id = "example", .library = "two", .prefix = "TWO"},
+                          true);
+  EXPECT_EQ(registry.definitions().front().prefix, "TWO");
+  EXPECT_TRUE(registry.unregisterDevice("example"));
+  EXPECT_FALSE(registry.unregisterDevice("example"));
+  EXPECT_THROW(registry.registerDevice({}), std::invalid_argument);
+}
+
 TEST(DeviceManager, LazilyOpensAndKeepsDeviceAlive) {
   qdmi::ConfigOptions options;
   options.isolated = true;
@@ -169,7 +303,7 @@ TEST(DeviceManager, LazilyOpensAndKeepsDeviceAlive) {
   EXPECT_FALSE(device.getSites().empty());
 }
 
-TEST(DeviceManager, OpenAllIsolatesFailures) {
+TEST(DeviceManager, OpensDefinitionsIndividually) {
   qdmi::ConfigOptions options;
   options.isolated = true;
   options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
@@ -178,8 +312,46 @@ TEST(DeviceManager, OpenAllIsolatesFailures) {
       .id = "bad", .library = "does-not-exist", .prefix = "MISSING"});
 
   qdmi::DeviceManager manager(options);
-  auto result = manager.openAll();
-  EXPECT_TRUE(result.devices.contains("good"));
-  EXPECT_TRUE(result.errors.contains("bad"));
+  EXPECT_EQ(manager.open("good").getName(), "MQT SC Default QDMI Device");
+  EXPECT_THROW(static_cast<void>(manager.open("bad")), std::runtime_error);
+  EXPECT_THROW(static_cast<void>(manager.open("missing")), std::out_of_range);
+}
+
+TEST(DeviceManager, SharesLibrariesButKeepsSessionsIndependent) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides = {
+      {.id = "first", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"},
+      {.id = "second", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"},
+  };
+  qdmi::DeviceManager manager(options);
+  const auto first = manager.open("first");
+  const auto second = manager.open("second");
+  EXPECT_EQ(first.getName(), second.getName());
+  EXPECT_EQ(first.getSites().size(), second.getSites().size());
+}
+
+TEST(DeviceManager, OpenDevicesOutliveRegistrationsAndManager) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
+      .id = "persistent", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"});
+  qdmi::Device device = [&options] {
+    qdmi::DeviceManager manager(options);
+    auto opened = manager.open("persistent");
+    EXPECT_TRUE(manager.unregisterDevice("persistent"));
+    return opened;
+  }();
+  EXPECT_EQ(device.getName(), "MQT SC Default QDMI Device");
+}
+
+TEST(DeviceManager, RejectsMalformedV1FunctionTable) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
+      .id = "wrong-prefix", .library = SC_DEVICE_LIBRARY, .prefix = "MISSING"});
+  qdmi::DeviceManager manager(options);
+  EXPECT_THROW(static_cast<void>(manager.open("wrong-prefix")),
+               std::runtime_error);
 }
 } // namespace

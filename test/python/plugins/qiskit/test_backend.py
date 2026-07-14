@@ -52,8 +52,9 @@ def ddsim_backend() -> QDMIBackend:
     Returns:
         A QDMIBackend instance wrapping the DDSIM device.
     """
-    devices, _errors = qdmi.DeviceManager().open_all()
-    for device in devices.values():
+    manager = qdmi.DeviceManager()
+    for definition in manager.definitions:
+        device = manager.open(definition.id)
         if "DDSIM" in device.name():
             return QDMIBackend(device=device, provider=None)
     pytest.skip("DDSIM device not available")
@@ -599,8 +600,9 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
 
 def test_zoned_operation_rejected_at_backend_init() -> None:
     """Backend rejects devices exposing zoned operations."""
-    devices, _errors = qdmi.DeviceManager().open_all()
-    for device in devices.values():
+    manager = qdmi.DeviceManager()
+    for definition in manager.definitions:
+        device = manager.open(definition.id)
         if device.name().startswith("MQT NA"):
             with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
                 QDMIBackend(device)

@@ -21,7 +21,6 @@
 #include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
-#include <qdmi/client.h>
 
 #include <cstddef>
 #include <optional>
@@ -82,7 +81,6 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .def_rw("auth_url", &qdmi::SessionParameters::authUrl)
       .def_rw("username", &qdmi::SessionParameters::username)
       .def_rw("password", &qdmi::SessionParameters::password)
-      .def_rw("project_id", &qdmi::SessionParameters::projectId)
       .def_rw("custom1", &qdmi::SessionParameters::custom1)
       .def_rw("custom2", &qdmi::SessionParameters::custom2)
       .def_rw("custom3", &qdmi::SessionParameters::custom3)
@@ -235,32 +233,33 @@ when the custom slot is unsupported.)pb");
           nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // JobStatus enum
-  nb::enum_<QDMI_Job_Status>(job, "Status", "Enumeration of job status.")
-      .value("CREATED", QDMI_JOB_STATUS_CREATED)
-      .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)
-      .value("QUEUED", QDMI_JOB_STATUS_QUEUED)
-      .value("RUNNING", QDMI_JOB_STATUS_RUNNING)
-      .value("DONE", QDMI_JOB_STATUS_DONE)
-      .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
-      .value("FAILED", QDMI_JOB_STATUS_FAILED);
+  nb::enum_<qdmi::JobStatus>(job, "Status", "Enumeration of job status.")
+      .value("CREATED", qdmi::JobStatus::Created)
+      .value("SUBMITTED", qdmi::JobStatus::Submitted)
+      .value("QUEUED", qdmi::JobStatus::Queued)
+      .value("RUNNING", qdmi::JobStatus::Running)
+      .value("DONE", qdmi::JobStatus::Done)
+      .value("CANCELED", qdmi::JobStatus::Canceled)
+      .value("FAILED", qdmi::JobStatus::Failed);
 
   // ProgramFormat enum
-  nb::enum_<QDMI_Program_Format>(m, "ProgramFormat",
+  nb::enum_<qdmi::ProgramFormat>(m, "ProgramFormat",
                                  "Enumeration of program formats.")
-      .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
-      .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
-      .value("QIR_BASE_STRING", QDMI_PROGRAM_FORMAT_QIRBASESTRING)
-      .value("QIR_BASE_MODULE", QDMI_PROGRAM_FORMAT_QIRBASEMODULE)
-      .value("QIR_ADAPTIVE_STRING", QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
-      .value("QIR_ADAPTIVE_MODULE", QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
-      .value("CALIBRATION", QDMI_PROGRAM_FORMAT_CALIBRATION)
-      .value("QPY", QDMI_PROGRAM_FORMAT_QPY)
-      .value("IQM_JSON", QDMI_PROGRAM_FORMAT_IQMJSON)
-      .value("CUSTOM1", QDMI_PROGRAM_FORMAT_CUSTOM1)
-      .value("CUSTOM2", QDMI_PROGRAM_FORMAT_CUSTOM2)
-      .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
-      .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
-      .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
+      .value("QASM2", qdmi::ProgramFormat::Qasm2)
+      .value("QASM3", qdmi::ProgramFormat::Qasm3)
+      .value("QIR_BASE_STRING", qdmi::ProgramFormat::QirBaseString)
+      .value("QIR_BASE_MODULE", qdmi::ProgramFormat::QirBaseModule)
+      .value("QIR_ADAPTIVE_STRING", qdmi::ProgramFormat::QirAdaptiveString)
+      .value("QIR_ADAPTIVE_MODULE", qdmi::ProgramFormat::QirAdaptiveModule)
+      .value("CALIBRATION", qdmi::ProgramFormat::Calibration)
+      .value("QPY", qdmi::ProgramFormat::Qpy)
+      .value("IQM_JSON", qdmi::ProgramFormat::IqmJson)
+      .value("BATCH_JOB", qdmi::ProgramFormat::BatchJob)
+      .value("CUSTOM1", qdmi::ProgramFormat::Custom1)
+      .value("CUSTOM2", qdmi::ProgramFormat::Custom2)
+      .value("CUSTOM3", qdmi::ProgramFormat::Custom3)
+      .value("CUSTOM4", qdmi::ProgramFormat::Custom4)
+      .value("CUSTOM5", qdmi::ProgramFormat::Custom5);
 
   nb::enum_<qdmi::CustomProperty>(
       m, "CustomProperty",
@@ -277,14 +276,14 @@ when the custom slot is unsupported.)pb");
       "A device represents a quantum device with its properties and "
       "capabilities.");
 
-  nb::enum_<QDMI_Device_Status>(device, "Status",
+  nb::enum_<qdmi::DeviceStatus>(device, "Status",
                                 "Enumeration of device status.")
-      .value("OFFLINE", QDMI_DEVICE_STATUS_OFFLINE)
-      .value("IDLE", QDMI_DEVICE_STATUS_IDLE)
-      .value("BUSY", QDMI_DEVICE_STATUS_BUSY)
-      .value("ERROR", QDMI_DEVICE_STATUS_ERROR)
-      .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
-      .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
+      .value("OFFLINE", qdmi::DeviceStatus::Offline)
+      .value("IDLE", qdmi::DeviceStatus::Idle)
+      .value("BUSY", qdmi::DeviceStatus::Busy)
+      .value("ERROR", qdmi::DeviceStatus::Error)
+      .value("MAINTENANCE", qdmi::DeviceStatus::Maintenance)
+      .value("CALIBRATION", qdmi::DeviceStatus::Calibration);
 
   device.def("name", &qdmi::Device::getName, "Returns the name of the device.");
 
@@ -572,17 +571,7 @@ when the custom slot is unsupported.)pb");
             return self.open(id, sessionOverrides);
           },
           "id"_a, nb::kw_only(),
-          "session_overrides"_a = qdmi::SessionParameters{})
-      .def(
-          "open_all",
-          [](qdmi::DeviceManager& self,
-             const qdmi::SessionParameters& sessionOverrides) {
-            auto result = self.openAll(sessionOverrides);
-            return nb::make_tuple(std::move(result.devices),
-                                  std::move(result.errors));
-          },
-          nb::kw_only(), "session_overrides"_a = qdmi::SessionParameters{},
-          "Open all definitions independently and return (devices, errors).");
+          "session_overrides"_a = qdmi::SessionParameters{});
 }
 
 } // namespace mqt

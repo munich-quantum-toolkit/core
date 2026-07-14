@@ -24,6 +24,20 @@ def __dir__() -> list[str]:
     return __all__
 
 
+def _open_device(
+    manager: qdmi.DeviceManager, definition: qdmi.DeviceDefinition, parameters: qdmi.SessionParameters
+) -> qdmi.Device | None:
+    """Open one configured device, ignoring an unavailable provider.
+
+    Returns:
+        The opened device, or ``None`` if its provider is unavailable.
+    """
+    try:
+        return manager.open(definition.id, session_overrides=parameters)
+    except RuntimeError:
+        return None
+
+
 class QDMIProvider:
     """Provider for devices discovered by the QDMI device manager.
 
@@ -58,7 +72,6 @@ class QDMIProvider:
         auth_url: str | None = None,
         username: str | None = None,
         password: str | None = None,
-        project_id: str | None = None,
         **session_kwargs: str,
     ) -> None:
         """Initialize the QDMI provider.
@@ -69,7 +82,6 @@ class QDMIProvider:
             auth_url: URL to authentication server.
             username: Username for authentication.
             password: Password for authentication.
-            project_id: Project ID for the session.
             session_kwargs: Optional provider-specific session parameters.
 
         Raises:
@@ -81,7 +93,6 @@ class QDMIProvider:
         parameters.auth_url = auth_url
         parameters.username = username
         parameters.password = password
-        parameters.project_id = project_id
         for key, value in session_kwargs.items():
             if not hasattr(parameters, key):
                 msg = f"Unknown QDMI session parameter: {key}"
@@ -89,8 +100,11 @@ class QDMIProvider:
             setattr(parameters, key, value)
 
         self._manager = qdmi.DeviceManager()
-        devices_by_id, _errors = self._manager.open_all(session_overrides=parameters)
-        devices = devices_by_id.values()
+        devices = [
+            device
+            for definition in self._manager.definitions
+            if (device := _open_device(self._manager, definition, parameters)) is not None
+        ]
         self._backends = [QDMIBackend(device=d, provider=self) for d in devices if QDMIBackend.is_convertible(d)]
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:

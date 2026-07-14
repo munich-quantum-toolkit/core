@@ -17,7 +17,7 @@ releases may include breaking changes.
 - ✨ Add versioned JSON/TOML QDMI configuration discovery, relocatable built-in
   manifests, and lazy `qdmi::DeviceManager`/`mqt.core.qdmi` APIs with per-device
   sessions and failure isolation.
-- ✨ Add support for QDMI child devices to the driver and QDMI libraries
+- ✨ Add support for QDMI child devices to the QDMI object model and libraries
   ([#1897]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python QDMI
   libraries ([#1895]) ([**@burgholzer**])
@@ -70,8 +70,13 @@ releases may include breaking changes.
 - ♻️ Replace the legacy device-management layering with the
   `qdmi::DeviceRegistry` → `qdmi::DeviceManager` → `qdmi::Device` object model.
   Device libraries now load lazily, sessions are configured per device, child
-  objects retain their required runtime state, and `openAll` isolates failures
-  by stable device ID.
+  objects retain their required runtime state, and definitions can be inspected
+  without executing provider code.
+- ♻️ Adapt QDMI v1.3 provider libraries through a private function table. The
+  public C++ and Python object model no longer exposes QDMI v1 client handles or
+  depends on process-global client state.
+- 📦 Vendor the current toml++ single-header distribution used to parse project
+  configuration, including its embedded upstream license and pinned provenance.
 - ♻️ Migrate the Qiskit provider and neutral-atom adapter to lazily opened
   configured QDMI devices and the unified `mqt.core.qdmi` API.
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
@@ -85,6 +90,10 @@ releases may include breaking changes.
 
 - 🔥 Remove the legacy device-management namespace, Python module, global
   session API, source/include/test trees, and compatibility CMake targets.
+- 🔥 Remove the QDMI client-interface implementation, the `Driver` singleton,
+  `addDynamicDeviceLibrary`, and the public `openAll`/`open_all` convenience.
+  Devices are opened explicitly by stable ID and failures are handled at each
+  call site.
 - 🔥 Remove central built-in device enumeration and compiled-in library names;
   generated relocatable manifest fragments now register built-in devices.
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
