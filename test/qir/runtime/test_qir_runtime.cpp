@@ -17,8 +17,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <ios>
 #include <sstream>
 
 #ifdef _WIN32
@@ -35,10 +37,88 @@ class QIRRuntimeTest : public testing::Test {
 protected:
   std::ostringstream sink;
   void SetUp() override { Runtime::getInstance().setOstream(sink); }
-  void TearDown() override { Runtime::getInstance().resetOstream(); }
+  void TearDown() override {
+    Runtime::getInstance().resetOstream();
+    Runtime::getInstance().setOutputSchema(Runtime::OutputSchema::Labeled);
+  }
 };
 
 } // namespace
+
+// Any test that emits output relies on the runtime producing the spec-mandated
+// HEADER/START/METADATA/END records around the per-shot OUTPUT block.
+// The runtime picks @c Labeled as default output schema, which is why the
+// the framing emits `labeled` in both HEADER and METADATA here.
+TEST_F(QIRRuntimeTest, OutputFraming) {
+  auto& runtime = Runtime::getInstance();
+  runtime.outputProgramHeader();
+  runtime.outputShotStart();
+  runtime.outputShotEnd();
+  std::ostringstream expected;
+  expected << "HEADER\tschema_id\tlabeled\n"
+           << "HEADER\tschema_version\t2.1\n"
+           << "START\n"
+           << "METADATA\toutput_labeling_schema\tlabeled\n"
+           << "END\t0\n";
+  EXPECT_EQ(sink.str(), expected.str());
+}
+
+// In Labeled mode:
+// - the HEADER announces `labeled`,
+// - the per-shot METADATA line matches the output schema, and
+// - OUTPUT records carry the label column.
+TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
+  auto& runtime = Runtime::getInstance();
+  runtime.outputProgramHeader();
+  runtime.outputShotStart();
+  runtime.outputBool(true, "bool_label");
+  runtime.outputInt(42, "int_label");
+  runtime.outputFloat(3.14, "double_label");
+  runtime.outputTuple(2, "tuple_label");
+  runtime.outputArray(3, "array_label");
+  runtime.outputShotEnd();
+  std::ostringstream expected;
+  expected << "HEADER\tschema_id\tlabeled\n"
+           << "HEADER\tschema_version\t2.1\n"
+           << "START\n"
+           << "METADATA\toutput_labeling_schema\tlabeled\n"
+           << "OUTPUT\tBOOL\ttrue\tbool_label\n"
+           << "OUTPUT\tINT\t42\tint_label\n"
+           << "OUTPUT\tDOUBLE\t3.14\tdouble_label\n"
+           << "OUTPUT\tTUPLE\t2\ttuple_label\n"
+           << "OUTPUT\tARRAY\t3\tarray_label\n"
+           << "END\t0\n";
+  EXPECT_EQ(sink.str(), expected.str());
+}
+
+// In Ordered mode:
+// - the HEADER announces `ordered`,
+// - the per-shot METADATA line matches the output schema, and
+// - OUTPUT records drop the label column.
+TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
+  auto& runtime = Runtime::getInstance();
+  runtime.setOutputSchema(Runtime::OutputSchema::Ordered);
+  runtime.outputProgramHeader();
+  runtime.outputShotStart();
+  runtime.outputBool(true, "bool_label");
+  runtime.outputInt(42, "int_label");
+  runtime.outputFloat(3.14, "double_label");
+  runtime.outputTuple(2, "tuple_label");
+  runtime.outputArray(3, "array_label");
+  runtime.outputShotEnd();
+  std::ostringstream expected;
+  expected << "HEADER\tschema_id\tordered\n"
+           << "HEADER\tschema_version\t2.1\n"
+           << "START\n"
+           << "METADATA\toutput_labeling_schema\tordered\n"
+           << "OUTPUT\tBOOL\ttrue\n"
+           << "OUTPUT\tINT\t42\n"
+           << "OUTPUT\tDOUBLE\t3.14\n"
+           << "OUTPUT\tTUPLE\t2\n"
+           << "OUTPUT\tARRAY\t3\n"
+           << "END\t0\n";
+  EXPECT_EQ(sink.str(), expected.str());
+}
 
 TEST_F(QIRRuntimeTest, XGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
@@ -255,13 +335,19 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
+  Runtime::getInstance().outputProgramHeader();
+  Runtime::getInstance().outputShotStart();
   __quantum__qis__x__body(q0);
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
   __quantum__qis__mz__body(q1, r1);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_EQ(sink.str(), "r0: 0\nr1: 1\n");
+  Runtime::getInstance().outputShotEnd();
+  std::ostringstream expected;
+  expected << "OUTPUT\tRESULT\t0\tr0\n"
+           << "OUTPUT\tRESULT\t1\tr1\n";
+  EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
 }
 
 TEST_F(QIRRuntimeTest, CSwapGate) {
@@ -355,6 +441,8 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
+  Runtime::getInstance().outputProgramHeader();
+  Runtime::getInstance().outputShotStart();
   __quantum__qis__h__body(q0);
   __quantum__qis__cx__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
@@ -364,11 +452,17 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  Runtime::getInstance().outputShotEnd();
+  std::ostringstream expected;
+  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
 }
 
 TEST_F(QIRRuntimeTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
+  Runtime::getInstance().outputProgramHeader();
+  Runtime::getInstance().outputShotStart();
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
   __quantum__qis__h__body(q0);
@@ -382,7 +476,11 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  Runtime::getInstance().outputShotEnd();
+  std::ostringstream expected;
+  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
   __quantum__rt__result_update_reference_count(r0, -1);
   __quantum__rt__result_update_reference_count(r1, -1);
 }
@@ -393,6 +491,8 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   auto* r0 = reinterpret_cast<Result*>(0UL);
   auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__rt__initialize(nullptr);
+  Runtime::getInstance().outputProgramHeader();
+  Runtime::getInstance().outputShotStart();
   __quantum__qis__h__body(q1);
   __quantum__qis__cx__body(q1, q0);
   __quantum__qis__mz__body(q0, r0);
@@ -402,11 +502,17 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  Runtime::getInstance().outputShotEnd();
+  std::ostringstream expected;
+  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
 }
 
 TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   __quantum__rt__initialize(nullptr);
+  Runtime::getInstance().outputProgramHeader();
+  Runtime::getInstance().outputShotStart();
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
   __quantum__qis__h__body(q1);
@@ -420,7 +526,11 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  Runtime::getInstance().outputShotEnd();
+  std::ostringstream expected;
+  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
   __quantum__rt__result_update_reference_count(r0, -1);
   __quantum__rt__result_update_reference_count(r1, -1);
 }
@@ -525,6 +635,57 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
   // After takeState the runtime is reset and usable again.
   EXPECT_NO_THROW(__quantum__rt__initialize(nullptr));
   EXPECT_NO_THROW(__quantum__qis__h__body(q0));
+}
+
+TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
+  __quantum__rt__initialize(nullptr);
+  Runtime::getInstance().outputProgramHeader();
+  Runtime::getInstance().outputShotStart();
+  auto* q0 = __quantum__rt__qubit_allocate();
+  auto* q1 = __quantum__rt__qubit_allocate();
+  auto* q2 = __quantum__rt__qubit_allocate();
+  __quantum__qis__h__body(q0);
+  __quantum__qis__h__body(q1);
+  __quantum__qis__h__body(q2);
+  auto* r0 = __quantum__qis__m__body(q0);
+  auto* r1 = __quantum__qis__m__body(q1);
+  auto* r2 = __quantum__qis__m__body(q2);
+  const auto b0 = __quantum__rt__read_result(r0);
+  const auto b1 = __quantum__rt__read_result(r1);
+  const auto b2 = __quantum__rt__read_result(r2);
+  __quantum__rt__qubit_release(q0);
+  __quantum__rt__qubit_release(q1);
+  __quantum__rt__qubit_release(q2);
+
+  // Classical compute: Hamming weight and its mean.
+  const int64_t weight =
+      static_cast<int>(b0) + static_cast<int>(b1) + static_cast<int>(b2);
+  const double mean = static_cast<double>(weight) / 3.0;
+
+  // Output: tuple of 3 elements (array of 3 bools, int weight, float mean).
+  __quantum__rt__tuple_record_output(3, "outputs");
+  __quantum__rt__array_record_output(3, "measurements");
+  __quantum__rt__bool_record_output(b0, "m0");
+  __quantum__rt__bool_record_output(b1, "m1");
+  __quantum__rt__bool_record_output(b2, "m2");
+  __quantum__rt__int_record_output(weight, "hamming_weight");
+  __quantum__rt__float_record_output(mean, "mean");
+  Runtime::getInstance().outputShotEnd();
+
+  std::ostringstream expected;
+  expected.setf(std::ios::boolalpha);
+  expected << "OUTPUT\tTUPLE\t3\toutputs\n"
+           << "OUTPUT\tARRAY\t3\tmeasurements\n"
+           << "OUTPUT\tBOOL\t" << b0 << "\tm0\n"
+           << "OUTPUT\tBOOL\t" << b1 << "\tm1\n"
+           << "OUTPUT\tBOOL\t" << b2 << "\tm2\n"
+           << "OUTPUT\tINT\t" << weight << "\thamming_weight\n"
+           << "OUTPUT\tDOUBLE\t" << mean << "\tmean\n";
+  EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
+
+  __quantum__rt__result_update_reference_count(r0, -1);
+  __quantum__rt__result_update_reference_count(r1, -1);
+  __quantum__rt__result_update_reference_count(r2, -1);
 }
 
 namespace {

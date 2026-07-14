@@ -12,6 +12,7 @@
 
 #include "qir/jit/IRRewriter.hpp"
 #include "qir/runtime/QIR.h"
+#include "qir/runtime/Runtime.hpp"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
@@ -44,6 +45,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Triple.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -56,6 +58,28 @@
 #define DEBUG_TYPE "mqt-core-qir-jit"
 
 namespace qir {
+
+/// Returns the function marked with the `entry_point` attribute,
+/// or @c nullptr if no such function is defined.
+static const llvm::Function* getEntryPointFunction(const llvm::Module& m) {
+  const auto it = std::ranges::find_if(m, [](const llvm::Function& fn) {
+    return fn.hasFnAttribute("entry_point");
+  });
+  return it != m.end() ? &*it : nullptr;
+}
+
+/// Read the `output_labeling_schema` attribute from the program's entry point.
+/// Returns @c Labeled when the attribute is absent or its value is not
+/// exactly `ordered` (spec default).
+static Runtime::OutputSchema readOutputSchema(const llvm::Module& m) {
+  if (const auto* fn = getEntryPointFunction(m); fn != nullptr) {
+    if (const auto attr = fn->getFnAttribute("output_labeling_schema");
+        attr.isValid() && attr.getValueAsString() == "ordered") {
+      return Runtime::OutputSchema::Ordered;
+    }
+  }
+  return Runtime::OutputSchema::Labeled;
+}
 
 static void exitOnLazyCallThroughFailure() { exit(1); }
 
@@ -208,6 +232,11 @@ void JitSession::registerRuntimeSymbols() {
     REGISTER_SYMBOL(__quantum__rt__initialize);
     REGISTER_SYMBOL(__quantum__rt__read_result);
     REGISTER_SYMBOL(__quantum__rt__result_record_output);
+    REGISTER_SYMBOL(__quantum__rt__bool_record_output);
+    REGISTER_SYMBOL(__quantum__rt__int_record_output);
+    REGISTER_SYMBOL(__quantum__rt__float_record_output);
+    REGISTER_SYMBOL(__quantum__rt__tuple_record_output);
+    REGISTER_SYMBOL(__quantum__rt__array_record_output);
   });
 }
 
@@ -233,6 +262,11 @@ void JitSession::initialize(
     throw std::runtime_error(llvm::toString(llvmModule.takeError()));
   }
   module_ = std::move(*llvmModule);
+
+  // Configure the runtime's labeling schema from the program's entry point.
+  module_.withModuleDo([](const llvm::Module& m) {
+    Runtime::getInstance().setOutputSchema(readOutputSchema(m));
+  });
 
   // In StateExtraction mode, strip QIR measurement and result-management calls
   // so the runtime's quantum state remains intact after main returns.

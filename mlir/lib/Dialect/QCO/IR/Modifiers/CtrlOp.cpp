@@ -195,6 +195,21 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
+static void
+buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  emitBody(odsBuilder, block);
+}
+
 size_t CtrlOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -224,17 +239,29 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    function_ref<SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
+  buildModifierBody(odsBuilder, odsState, targets.size(),
+                    [&](OpBuilder& builder, Block& block) {
+                      YieldOp::create(builder, odsState.location,
+                                      bodyBuilder(block.getArguments()));
+                    });
+}
 
-  auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < targets.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   ValueRange controls, Value target,
+                   function_ref<Value(Value)> bodyBuilder) {
+  build(odsBuilder, odsState, controls.getTypes(), target.getType(), controls,
+        target);
+  buildModifierBody(odsBuilder, odsState, 1,
+                    [&](OpBuilder& builder, Block& block) {
+                      YieldOp::create(builder, odsState.location,
+                                      bodyBuilder(block.getArgument(0)));
+                    });
+}
 
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  YieldOp::create(odsBuilder, odsState.location,
-                  bodyBuilder(block.getArguments()));
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   Value control, Value target,
+                   function_ref<Value(Value)> bodyBuilder) {
+  build(odsBuilder, odsState, ValueRange{control}, target, bodyBuilder);
 }
 
 LogicalResult CtrlOp::verify() {
@@ -313,10 +340,10 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   // Build `I_{2^controls} ⊗ U` by placing the target block in the bottom-right
   // corner of a `2^controls * targetDim` identity.
   const auto controlledMatrix =
-      [numControls](const std::int64_t targetDim,
+      [numControls](const int64_t targetDim,
                     const auto& targetBlock) -> DynamicMatrix {
     auto matrix = DynamicMatrix::identity(static_cast<int64_t>(
-        (1ULL << numControls) * static_cast<std::size_t>(targetDim)));
+        (1ULL << numControls) * static_cast<size_t>(targetDim)));
     matrix.setBottomRightCorner(targetBlock);
     return matrix;
   };
@@ -332,11 +359,9 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  // Composed single-qubit body (e.g. `ctrl { h; x }`); embed the 2x2 directly.
-  if (getNumTargets() == 1) {
-    if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
-      return controlledMatrix(2, *composed);
-    }
+  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
+  if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
+    return controlledMatrix(composed->rows(), *composed);
   }
 
   return std::nullopt;

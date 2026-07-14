@@ -343,7 +343,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 }
 
 /**
- * @brief Move a region from QCO/SCF operation to a jeff operation
+ * @brief Moves a region from a QCO/SCF operation to a jeff operation
  */
 static LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
@@ -1190,20 +1190,86 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
 };
 
 /**
- * @brief Converts the QCO-style main function to a jeff-style main function
+ * @brief Converts scf.while to jeff.while
  *
  * @par Example:
  * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
- *   %0 = arith.constant 0 : i64
- *   return %0
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1 = qco.measure %arg0 : !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
+ * } do {
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q2 : !qco.qubit
  * }
  * ```
  * is converted to
  * ```mlir
- * func.func @main() -> () {
- *   return
- * }
+ * %targets_out = jeff.while : (!jeff.qubit) -> (!jeff.qubit) args(%arg0 = %q) {
+ *   %q1, %cond = jeff.qubit_measure_nd %arg0 : !jeff.qubit, i1
+ *   jeff.yield %cond, %q1 : i1, !jeff.qubit
+ * } args(%arg0) {
+ *   %q2 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %arg0
+ : !jeff.qubit
+ *   jeff.yield %q2 : !jeff.qubit
+  }
+ * ```
+ */
+struct ConvertSCFWhileOpToJeff final
+    : StatefulOpConversionPattern<scf::WhileOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    SetVector<Value> aboveValues;
+    getUsedValuesDefinedAbove(op.getBefore(), aboveValues);
+    getUsedValuesDefinedAbove(op.getAfter(), aboveValues);
+
+    SmallVector<Value> inits;
+    llvm::append_range(inits, adaptor.getInits());
+
+    SmallVector<Type> outTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
+      return failure();
+    }
+
+    for (auto value : aboveValues) {
+      auto remappedValue = rewriter.getRemappedValue(value);
+      inits.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
+    }
+
+    auto jeffWhile =
+        jeff::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
+
+    if (failed(moveRegion(op.getBefore(), jeffWhile.getBefore(), rewriter,
+                          getTypeConverter(), aboveValues))) {
+      return failure();
+    }
+    if (failed(moveRegion(op.getAfter(), jeffWhile.getAfter(), rewriter,
+                          getTypeConverter(), aboveValues))) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op,
+                       jeffWhile.getResults().take_front(op.getNumResults()));
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts the QCO-style main function to a jeff-style main function
+ *
+ * @par Example:
+ * ```mlir
+ * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} { ... }
+ * ```
+ * is converted to
+ * ```mlir
+ * func.func @main() -> i64 { ... }
  * ```
  */
 struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
@@ -1236,16 +1302,10 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 
     getState().entryPointName = op.getSymName();
 
-    // Update function signature and remove passthrough attribute
+    // Remove passthrough attribute from function signature
     rewriter.startOpModification(op);
-    op.setType(FunctionType::get(rewriter.getContext(), {}, {}));
     op->removeAttr("passthrough");
     rewriter.finalizeOpModification(op);
-
-    // Replace return operation
-    rewriter.setInsertionPointToEnd(block);
-    func::ReturnOp::create(rewriter, returnOp->getLoc());
-    rewriter.eraseOp(returnOp);
 
     return success();
   }
@@ -1467,11 +1527,11 @@ protected:
     addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_minus_yy");
 
-    patterns
-        .add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-             ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-             ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff, ConvertQCOMainToJeff>(
-            typeConverter, context, &state);
+    patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
+                 ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+                 ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
+                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff>(
+        typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {

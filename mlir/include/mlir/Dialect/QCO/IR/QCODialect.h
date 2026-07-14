@@ -13,9 +13,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Support/LLVM.h>
@@ -141,36 +138,5 @@ public:
     }
   };
 };
-
-/**
- * @brief Find the entry point function with entry_point attribute
- *
- * @details
- * Searches for the function marked with the "entry_point" attribute in
- * the passthrough attributes. If multiple functions are marked, returns the
- * first one encountered.
- *
- * @param op The module operation to search in.
- * @returns the entry point function, or nullptr if not found.
- */
-inline func::FuncOp getEntryPoint(ModuleOp op) {
-  static constexpr StringRef PASSTHROUGH_LABEL = "passthrough";
-  static constexpr StringRef ENTRY_POINT_LABEL = "entry_point";
-
-  const auto isEntry = [](Attribute attr) {
-    const auto strAttr = dyn_cast<StringAttr>(attr);
-    return strAttr && strAttr.getValue() == ENTRY_POINT_LABEL;
-  };
-
-  for (auto func : op.getOps<func::FuncOp>()) {
-    if (const auto passthrough =
-            func->getAttrOfType<ArrayAttr>(PASSTHROUGH_LABEL);
-        passthrough && llvm::any_of(passthrough, isEntry)) {
-      return func;
-    }
-  }
-
-  return nullptr;
-}
 
 } // namespace mlir::qco

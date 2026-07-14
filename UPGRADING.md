@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
+
 ### MLIR enabled by default for C++ builds
 
 The MLIR-based functionality within MQT Core has long been experimental and
@@ -54,6 +62,33 @@ Its functionality has only ever been used in [MQT QMAP] since its inception. As
 a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
 Core version that includes this change.
 
+### Dev container
+
+A [dev container](https://containers.dev/) configuration is available to provide
+a consistent local development environment. Common IDEs like
+[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
+and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
+open the repository directly inside the container. If you are on Windows, we
+recommend using Docker Desktop with the WSL 2 backend.
+
+## [3.7.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.6` to `3.7`.
+Thus, consuming libraries need to update their wheel repair configuration for
+`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
+wheel repair step.
+
+### `nanobind` updated to version 2.13.0
+
+This release updates the `nanobind` dependency to version 2.13.0, which includes
+an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
+need to be recompiled with the new `nanobind` version.
+
+### QDMI updated to version 1.3.2
+
+While not a breaking change, this release updates the QDMI dependency to version
+1.3.2
+
 ### CMake presets
 
 [CMake presets] have been added to provide a standardized and reproducible way
@@ -74,15 +109,6 @@ Additionally, the `lint` preset can be used to configure and build MQT Core in
 preparation for a `clang-tidy` run.
 
 If you are on Windows, use the `debug-windows` and `release-windows` presets.
-
-### Dev container
-
-A [dev container](https://containers.dev/) configuration is available to provide
-a consistent local development environment. Common IDEs like
-[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
-and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
-open the repository directly inside the container. If you are on Windows, we
-recommend using Docker Desktop with the WSL 2 backend.
 
 ## [3.6.0]
 
@@ -378,7 +404,9 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+
+[3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...v3.5.0

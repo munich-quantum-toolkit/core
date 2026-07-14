@@ -10,468 +10,567 @@
 
 #pragma once
 
+#include <mlir/IR/Value.h>
+
 namespace mlir::qir {
 class QIRProgramBuilder;
 
 /// Creates an empty QIR program.
-void emptyQIR(QIRProgramBuilder& builder);
+template <bool IntoRegister = false> Value emptyQIR(QIRProgramBuilder& builder);
 
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.
-void allocQubit(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value allocQubit(QIRProgramBuilder& b);
+
+/// Allocates a qubit register of size `1`.
+template <bool IntoRegister = false>
+Value alloc1QubitRegister(QIRProgramBuilder& b);
 
 /// Allocates a qubit register of size `2`.
-void allocQubitRegister(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value allocQubitRegister(QIRProgramBuilder& b);
+
+/// Allocates a qubit register of size `3`.
+template <bool IntoRegister = false>
+Value alloc3QubitRegister(QIRProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3`.
-void allocMultipleQubitRegisters(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value allocMultipleQubitRegisters(QIRProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3` and applies operations.
-void allocMultipleQubitRegistersWithOps(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value allocMultipleQubitRegistersWithOps(QIRProgramBuilder& b);
 
 /// Allocates a large qubit register.
-void allocLargeRegister(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value allocLargeRegister(QIRProgramBuilder& b);
 
 /// Allocates two inline qubits.
-void staticQubits(QIRProgramBuilder& b);
+Value staticQubits(QIRProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
-void staticQubitsWithOps(QIRProgramBuilder& b);
+Value staticQubitsWithOps(QIRProgramBuilder& b);
 
 /// Allocates two static qubits and applies parametric gates.
-void staticQubitsWithParametricOps(QIRProgramBuilder& b);
+Value staticQubitsWithParametricOps(QIRProgramBuilder& b);
 
 /// Allocates two static qubits and applies a two-target gate.
-void staticQubitsWithTwoTargetOps(QIRProgramBuilder& b);
+Value staticQubitsWithTwoTargetOps(QIRProgramBuilder& b);
 
 /// Allocates two static qubits and applies a controlled gate.
-void staticQubitsWithCtrl(QIRProgramBuilder& b);
+Value staticQubitsWithCtrl(QIRProgramBuilder& b);
 
 /// Allocates a static qubit and applies the inverse of a T gate (Tdg).
-void staticQubitsWithInv(QIRProgramBuilder& b);
+Value staticQubitsWithInv(QIRProgramBuilder& b);
 
 /// Allocates duplicate static qubits and applies operations on both.
-void staticQubitsWithDuplicates(QIRProgramBuilder& b);
+Value staticQubitsWithDuplicates(QIRProgramBuilder& b);
 
 /// Same as `staticQubitsWithDuplicates`, but with canonical static qubit
 /// retrievals.
-void staticQubitsCanonical(QIRProgramBuilder& b);
+Value staticQubitsCanonical(QIRProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
-void mixedStaticThenDynamicQubit(QIRProgramBuilder& b);
+Value mixedStaticThenDynamicQubit(QIRProgramBuilder& b);
 
 /// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
 /// static.
-void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);
+Value mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
-void singleMeasurementToSingleBit(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleMeasurementToSingleBit(QIRProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into the same classical bit.
-void repeatedMeasurementToSameBit(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value repeatedMeasurementToSameBit(QIRProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into different classical bits.
-void repeatedMeasurementToDifferentBits(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
-void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
 
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
-void measurementWithoutRegisters(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value measurementWithoutRegisters(QIRProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.
-void resetQubitWithoutOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value resetQubitWithoutOp(QIRProgramBuilder& b);
 
 /// Resets multiple qubits without any operations being applied.
-void resetMultipleQubitsWithoutOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value resetMultipleQubitsWithoutOp(QIRProgramBuilder& b);
 
 /// Repeatedly resets a single qubit without any operations being applied.
-void repeatedResetWithoutOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value repeatedResetWithoutOp(QIRProgramBuilder& b);
 
 /// Resets a single qubit after a single operation.
-void resetQubitAfterSingleOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value resetQubitAfterSingleOp(QIRProgramBuilder& b);
 
 /// Resets multiple qubits after a single operation.
-void resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
-void repeatedResetAfterSingleOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value repeatedResetAfterSingleOp(QIRProgramBuilder& b);
 
 // --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
-void globalPhase(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value globalPhase(QIRProgramBuilder& b);
 
 // --- IdOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an identity gate.
-void identity(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value identity(QIRProgramBuilder& b);
 
 /// Creates a controlled identity gate with a single control qubit.
-void singleControlledIdentity(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledIdentity(QIRProgramBuilder& b);
+
+/// Creates an identity gate on a single qubit in a two-qubit register.
+template <bool IntoRegister = false>
+Value twoQubitsOneIdentity(QIRProgramBuilder& b);
+
+/// Creates an identity gate on a single qubit in a three-qubit register.
+template <bool IntoRegister = false>
+Value threeQubitsOneIdentity(QIRProgramBuilder& b);
 
 /// Creates a multi-controlled identity gate with multiple control qubits.
-void multipleControlledIdentity(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledIdentity(QIRProgramBuilder& b);
 
 // --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
-void x(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value x(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled X gate.
-void singleControlledX(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledX(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled X gate.
-void multipleControlledX(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledX(QIRProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.
-void y(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value y(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Y gate.
-void singleControlledY(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledY(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Y gate.
-void multipleControlledY(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledY(QIRProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
-void z(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value z(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Z gate.
-void singleControlledZ(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledZ(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Z gate.
-void multipleControlledZ(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledZ(QIRProgramBuilder& b);
 
 // --- HOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an H gate.
-void h(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value h(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled H gate.
-void singleControlledH(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledH(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled H gate.
-void multipleControlledH(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledH(QIRProgramBuilder& b);
 
 /// Creates a circuit with just an H gate and no qubit register.
-void hWithoutRegister(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value hWithoutRegister(QIRProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
-void s(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value s(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled S gate.
-void singleControlledS(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledS(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled S gate.
-void multipleControlledS(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledS(QIRProgramBuilder& b);
 
 // --- SdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an Sdg gate.
-void sdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value sdg(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Sdg gate.
-void singleControlledSdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledSdg(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Sdg gate.
-void multipleControlledSdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledSdg(QIRProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a T gate.
-void t_(QIRProgramBuilder& b); // NOLINT(*-identifier-naming)
+template <bool IntoRegister = false>
+Value t_(QIRProgramBuilder& b); // NOLINT(*-identifier-naming)
 
 /// Creates a circuit with a single controlled T gate.
-void singleControlledT(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledT(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled T gate.
-void multipleControlledT(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledT(QIRProgramBuilder& b);
 
 // --- TdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a Tdg gate.
-void tdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value tdg(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Tdg gate.
-void singleControlledTdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledTdg(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Tdg gate.
-void multipleControlledTdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledTdg(QIRProgramBuilder& b);
 
 // --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
-void sx(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value sx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SX gate.
-void singleControlledSx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledSx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SX gate.
-void multipleControlledSx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledSx(QIRProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an SXdg gate.
-void sxdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value sxdg(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SXdg gate.
-void singleControlledSxdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledSxdg(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SXdg gate.
-void multipleControlledSxdg(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledSxdg(QIRProgramBuilder& b);
 
 // --- RXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RX gate.
-void rx(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value rx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RX gate.
-void singleControlledRx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RX gate.
-void multipleControlledRx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRx(QIRProgramBuilder& b);
 
 // --- RYOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RY gate.
-void ry(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value ry(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RY gate.
-void singleControlledRy(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRy(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RY gate.
-void multipleControlledRy(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRy(QIRProgramBuilder& b);
 
 // --- RZOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZ gate.
-void rz(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value rz(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZ gate.
-void singleControlledRz(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRz(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZ gate.
-void multipleControlledRz(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRz(QIRProgramBuilder& b);
 
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
-void p(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value p(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled P gate.
-void singleControlledP(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledP(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled P gate.
-void multipleControlledP(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledP(QIRProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an R gate.
-void r(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value r(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled R gate.
-void singleControlledR(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledR(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled R gate.
-void multipleControlledR(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledR(QIRProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
-void u2(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value u2(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U2 gate.
-void singleControlledU2(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledU2(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U2 gate.
-void multipleControlledU2(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledU2(QIRProgramBuilder& b);
 
 // --- UOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a U gate.
-void u(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value u(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U gate.
-void singleControlledU(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledU(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U gate.
-void multipleControlledU(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledU(QIRProgramBuilder& b);
 
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
-void swap(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value swap(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SWAP gate.
-void singleControlledSwap(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledSwap(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SWAP gate.
-void multipleControlledSwap(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledSwap(QIRProgramBuilder& b);
 
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
-void iswap(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value iswap(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled iSWAP gate.
-void singleControlledIswap(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledIswap(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled iSWAP gate.
-void multipleControlledIswap(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledIswap(QIRProgramBuilder& b);
 
 // --- DCXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a DCX gate.
-void dcx(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value dcx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled DCX gate.
-void singleControlledDcx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledDcx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled DCX gate.
-void multipleControlledDcx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledDcx(QIRProgramBuilder& b);
 
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
-void ecr(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value ecr(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled ECR gate.
-void singleControlledEcr(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledEcr(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled ECR gate.
-void multipleControlledEcr(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledEcr(QIRProgramBuilder& b);
 
 // --- RXXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RXX gate.
-void rxx(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value rxx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RXX gate.
-void singleControlledRxx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRxx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RXX gate.
-void multipleControlledRxx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRxx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a triple-controlled RXX gate.
-void tripleControlledRxx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value tripleControlledRxx(QIRProgramBuilder& b);
 
 // --- RYYOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RYY gate.
-void ryy(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value ryy(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RYY gate.
-void singleControlledRyy(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRyy(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RYY gate.
-void multipleControlledRyy(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRyy(QIRProgramBuilder& b);
 
 // --- RZXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZX gate.
-void rzx(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value rzx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZX gate.
-void singleControlledRzx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRzx(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZX gate.
-void multipleControlledRzx(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRzx(QIRProgramBuilder& b);
 
 // --- RZZOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZZ gate.
-void rzz(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value rzz(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZZ gate.
-void singleControlledRzz(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledRzz(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZZ gate.
-void multipleControlledRzz(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledRzz(QIRProgramBuilder& b);
 
 // --- XXPlusYYOp ----------------------------------------------------------- //
 
 /// Creates a circuit with just an XXPlusYY gate.
-void xxPlusYY(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value xxPlusYY(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXPlusYY gate.
-void singleControlledXxPlusYY(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledXxPlusYY(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXPlusYY gate.
-void multipleControlledXxPlusYY(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledXxPlusYY(QIRProgramBuilder& b);
 
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
-void xxMinusYY(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value xxMinusYY(QIRProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXMinusYY gate.
-void singleControlledXxMinusYY(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value singleControlledXxMinusYY(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
-void multipleControlledXxMinusYY(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value multipleControlledXxMinusYY(QIRProgramBuilder& b);
 
 // --- IfOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
-void simpleIf(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value simpleIf(QIRProgramBuilder& b);
 
 /// Creates a circuit with an if operation with an else branch.
-void ifElse(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value ifElse(QIRProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
-void ifTwoQubits(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value ifTwoQubits(QIRProgramBuilder& b);
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
-void nestedIfOpForLoop(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value nestedIfOpForLoop(QIRProgramBuilder& b);
 
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
-void simpleWhileReset(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value simpleWhileReset(QIRProgramBuilder& b);
 
 /// Creates a circuit with a while operation using a do-while loop.
-void simpleDoWhileReset(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value simpleDoWhileReset(QIRProgramBuilder& b);
 
 // --- ForOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple for operation with a register.
-void simpleForLoop(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value simpleForLoop(QIRProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
-void nestedForLoopIfOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value nestedForLoopIfOp(QIRProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a nested while
 /// operation.
-void nestedForLoopWhileOp(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value nestedForLoopWhileOp(QIRProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the
 /// register.
-void nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
-void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b);
+template <bool IntoRegister = false>
+Value nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b);
 // --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a control modifier applied to two gates.
-void ctrlTwo(QIRProgramBuilder& b);
+template <bool IntoRegister = false> Value ctrlTwo(QIRProgramBuilder& b);
 
 } // namespace mlir::qir
