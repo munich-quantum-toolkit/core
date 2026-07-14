@@ -52,7 +52,7 @@ public:
   /**
    * @brief Build a session by loading IR from a file on disk.
    * @param inputFile Path to a textual IR or bitcode file.
-   * @param mode Execution mode; see @ref qir::Execution.
+   * @param mode Execution mode; see @c Execution.
    * @throws std::runtime_error if the file cannot be parsed or the JIT fails
    * to initialize.
    */
@@ -65,7 +65,7 @@ public:
    * to be null-terminated.
    * @param irBytes Byte view of the IR.
    * @param bufferName Identifier used in diagnostics.
-   * @param mode Execution mode; see @ref qir::Execution.
+   * @param mode Execution mode; see @c Execution.
    * @throws std::runtime_error if the IR cannot be parsed or the JIT fails
    * to initialize.
    */
@@ -111,7 +111,7 @@ private:
   /// Prepares the session to run the program:
   /// - Validates the loaded module.
   /// - Optionally strips measurement and result management calls
-  ///   (for @ref qir::Execution::StateExtraction).
+  ///   (for @c Execution::StateExtraction).
   /// - Builds the @c LLJIT instance
   /// - Registers QIR runtime symbols
   /// - Resolves @c main.

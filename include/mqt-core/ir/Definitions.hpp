@@ -85,7 +85,6 @@ combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
  * @brief Extend a 64bit hash with a 64bit integer
  * @param hash The hash to extend
  * @param with The integer to extend the hash with
- * @return The combined hash
  */
 constexpr void hashCombine(std::size_t& hash, const std::size_t with) noexcept {
   hash = combineHash(hash, with);
