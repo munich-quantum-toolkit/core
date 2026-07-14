@@ -11,7 +11,7 @@
 #include "qdmi/DeviceManager.hpp"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
 #include <filesystem>
 #include <fstream>
@@ -20,6 +20,8 @@
 #include <string>
 
 namespace {
+using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
+
 class TemporaryDirectory {
 public:
   TemporaryDirectory() {
@@ -49,7 +51,7 @@ TEST(DeviceRegistry, ParsesInlineConfigurationWithoutLoadingLibraries) {
   qdmi::ConfigOptions options;
   options.isolated = true;
   options.baseDirectory = "/configuration";
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {
       "devices": [{
@@ -76,7 +78,7 @@ TEST(DeviceRegistry, ParsesInlineConfigurationWithoutLoadingLibraries) {
 TEST(DeviceRegistry, RejectsDuplicateIdsAndUnknownKeys) {
   qdmi::ConfigOptions options;
   options.isolated = true;
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [
       {"id": "duplicate", "library": "one", "prefix": "ONE"},
@@ -86,7 +88,7 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnknownKeys) {
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
                std::invalid_argument);
 
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [
       {"id": "invalid", "library": "one", "prefix": "ONE", "typo": true}
@@ -102,7 +104,7 @@ TEST(DeviceRegistry, DisabledOverrideMasksInheritedDefinition) {
   qdmi::ConfigOptions options;
   options.isolated = true;
   options.runtimeOverrides.emplace_back(definition);
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{"id": "masked", "enabled": false}]}
   })");
@@ -185,18 +187,18 @@ TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
 TEST(DeviceRegistry, ReportsInvalidDocumentsAndSchemaPaths) {
   qdmi::ConfigOptions options;
   options.isolated = true;
-  options.inlineOverrides = nlohmann::json::object();
+  options.inlineOverrides = Json::object();
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
                std::invalid_argument);
 
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 2,
     "qdmi": {}
   })");
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
                std::invalid_argument);
 
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": {}}
   })");
@@ -207,14 +209,14 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndSchemaPaths) {
 TEST(DeviceRegistry, ValidatesDefinitionAndSessionTypes) {
   qdmi::ConfigOptions options;
   options.isolated = true;
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{"id": 4}]}
   })");
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
                std::invalid_argument);
 
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "invalid", "library": "device", "prefix": "P",
@@ -224,7 +226,7 @@ TEST(DeviceRegistry, ValidatesDefinitionAndSessionTypes) {
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
                std::invalid_argument);
 
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "invalid", "library": "device", "prefix": "P",
@@ -238,14 +240,14 @@ TEST(DeviceRegistry, ValidatesDefinitionAndSessionTypes) {
 TEST(DeviceRegistry, RejectsIncompleteAndUnsupportedEnabledDefinitions) {
   qdmi::ConfigOptions options;
   options.isolated = true;
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{"id": "missing", "prefix": "P"}]}
   })");
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
                std::invalid_argument);
 
-  options.inlineOverrides = nlohmann::json::parse(R"({
+  options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "future", "library": "device", "prefix": "P", "abi": "qdmi-v2"

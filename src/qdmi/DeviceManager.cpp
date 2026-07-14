@@ -13,7 +13,7 @@
 #include "DeviceApi.hpp"
 #include "qdmi/Device.hpp"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 #include <toml.hpp>
 
 #include <algorithm>
@@ -42,7 +42,7 @@
 
 namespace qdmi {
 namespace {
-using Json = nlohmann::json;
+using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
 struct SessionPatch {
   std::optional<std::string> baseUrl;

@@ -23,7 +23,6 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace qdmi::detail {
@@ -142,8 +141,8 @@ public:
           return QDMI_ERROR_INVALIDARGUMENT;
         }
         std::array<QDMI_Child_Device, 2> handles{
-            reinterpret_cast<QDMI_Child_Device>(&children_[0]),
-            reinterpret_cast<QDMI_Child_Device>(&children_[1])};
+            reinterpret_cast<QDMI_Child_Device>(children_.data()),
+            reinterpret_cast<QDMI_Child_Device>(children_.data() + 1)};
         std::memcpy(value, static_cast<const void*>(handles.data()), required);
       }
       return QDMI_SUCCESS;

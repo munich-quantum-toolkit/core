@@ -21,7 +21,7 @@
 #include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp>         // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
 #include <filesystem>
@@ -34,6 +34,7 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
 namespace {
 template <typename Query>
@@ -132,7 +133,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME,
                                     .runtimeOverrides =
                                         std::move(runtimeOverrides)};
         if (inlineJson) {
-          options.inlineOverrides = nlohmann::json::parse(*inlineJson);
+          options.inlineOverrides = Json::parse(*inlineJson);
         }
         new (self) qdmi::ConfigOptions(std::move(options));
       },

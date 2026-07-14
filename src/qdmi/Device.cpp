@@ -27,7 +27,7 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <ranges>
+#include <ranges> // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <stdexcept>
 #include <string>
