@@ -273,7 +273,7 @@ bool HybridState::isValueTrue(const Value v) const {
     return integerValues.at(v) != 0;
   }
   if (doubleValues.contains(v)) {
-    return std::norm(doubleValues.at(v)) > 1e-4;
+    return std::fabs(doubleValues.at(v)) > 1e-4;
   }
   throw std::domain_error("Value of a classical value is asked which does not "
                           "exist in the HybridState.");
