@@ -107,10 +107,19 @@ pre.fragment {
   padding: 0.5rem 1rem;
 }
 
-#projectlogo img {
+.mqt-doxygen-logo {
+  padding-right: 0.75rem;
+}
+
+.mqt-doxygen-logo img {
   height: 2.25rem;
   max-width: 9rem;
   object-fit: contain;
+}
+
+html:not(.dark-mode) .mqt-logo-dark,
+html.dark-mode .mqt-logo-light {
+  display: none;
 }
 
 #projectname {

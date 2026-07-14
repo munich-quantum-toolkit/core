@@ -58,8 +58,6 @@ PROJECT_NAME           = "MQT Core"
 
 PROJECT_BRIEF          = "The Backbone of the Munich Quantum Toolkit (MQT)"
 
-PROJECT_LOGO           = _static/mqt_light.png
-
 # The OUTPUT_DIRECTORY tag is used to specify the (relative or absolute) path
 # into which the generated documentation will be written. If a relative path is
 # entered, it will be relative to the location where Doxygen was started. If
@@ -413,7 +411,7 @@ TIMESTAMP              = NO
 # normally produced when WARNINGS is set to YES.
 # The default value is: NO.
 
-EXTRACT_ALL            = NO
+EXTRACT_ALL            = YES
 
 # If the EXTRACT_PRIVATE tag is set to YES, all private members of a class will
 # be included in the documentation.
@@ -854,7 +852,7 @@ WARN_LOGFILE           =
 # spaces. See also FILE_PATTERNS and EXTENSION_MAPPING
 # Note: If this tag is empty the current directory is searched.
 
-INPUT                  = ../include/mqt-core ../doxygen/mainpage.md
+INPUT                  = ../include/mqt-core ../doxygen/mainpage.md ../doxygen/namespaces.md
 
 # This tag can be used to specify the character encoding of the source files
 # that Doxygen parses. Internally Doxygen uses the UTF-8 encoding. Doxygen uses
@@ -1280,7 +1278,9 @@ HTML_EXTRA_STYLESHEET  = _static/mqt-doxygen.css
 # files will be copied as-is; there are no commands or markers available.
 # This tag requires that the tag GENERATE_HTML is set to YES.
 
-HTML_EXTRA_FILES       = _static/cpp-api-navigation.js
+HTML_EXTRA_FILES       = _static/cpp-api-navigation.js \
+                         _static/mqt_light.png \
+                         _static/mqt_dark.png
 
 # The HTML_COLORSTYLE tag can be used to specify if the generated HTML output
 # should be rendered with a dark or light theme.

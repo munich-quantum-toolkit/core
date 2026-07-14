@@ -218,6 +218,9 @@ def docs(session: nox.Session) -> None:
     )
     if not serve and args.builder in {"html", "dirhtml"}:
         shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
+        # Sphinx leaves output for removed source documents behind. The native
+        # Doxygen landing page replaces the former intermediate C++ page.
+        (sphinx_html / "cpp_api.html").unlink(missing_ok=True)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")
