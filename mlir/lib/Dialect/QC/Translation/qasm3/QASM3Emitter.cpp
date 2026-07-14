@@ -32,7 +32,6 @@
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
@@ -48,7 +47,6 @@
 #include <functional>
 #include <iterator>
 #include <limits>
-#include <memory>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -1394,17 +1392,17 @@ private:
       int64_t result = 0;
       switch (expr.kind) {
       case Expr::Kind::Add:
-        if (llvm::AddOverflow(**lhs, **rhs, result)) {
+        if (llvm::AddOverflow(**lhs, **rhs, result) != 0) {
           return error(expr.loc, "overflow in constant expression");
         }
         return std::optional{result};
       case Expr::Kind::Sub:
-        if (llvm::SubOverflow(**lhs, **rhs, result)) {
+        if (llvm::SubOverflow(**lhs, **rhs, result) != 0) {
           return error(expr.loc, "overflow in constant expression");
         }
         return std::optional{result};
       case Expr::Kind::Mul:
-        if (llvm::MulOverflow(**lhs, **rhs, result)) {
+        if (llvm::MulOverflow(**lhs, **rhs, result) != 0) {
           return error(expr.loc, "overflow in constant expression");
         }
         return std::optional{result};
@@ -1432,10 +1430,11 @@ private:
         result = 1;
         int64_t base = **lhs;
         for (int64_t exponent = **rhs; exponent > 0; exponent >>= 1) {
-          if ((exponent & 1) != 0 && llvm::MulOverflow(result, base, result)) {
+          if ((exponent & 1) != 0 &&
+              llvm::MulOverflow(result, base, result) != 0) {
             return error(expr.loc, "overflow in constant expression");
           }
-          if (exponent > 1 && llvm::MulOverflow(base, base, base)) {
+          if (exponent > 1 && llvm::MulOverflow(base, base, base) != 0) {
             return error(expr.loc, "overflow in constant expression");
           }
         }
