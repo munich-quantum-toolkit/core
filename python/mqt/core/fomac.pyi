@@ -307,6 +307,9 @@ class Device:
     def supported_program_formats(self) -> list[ProgramFormat]:
         """Returns the list of program formats supported by the device."""
 
+    def child_devices(self) -> list[Device]:
+        """Returns the direct child devices managed by this device."""
+
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
     @overload

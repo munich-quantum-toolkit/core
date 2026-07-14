@@ -440,6 +440,10 @@ TEST_P(DeviceTest, SupportedProgramFormats) {
   EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
 }
 
+TEST_P(DeviceTest, ChildDevices) {
+  EXPECT_TRUE(device.getChildDevices().empty());
+}
+
 TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
   EXPECT_EQ(device.queryCustomProperty<std::vector<std::byte>>(
                 CustomProperty::Custom1),

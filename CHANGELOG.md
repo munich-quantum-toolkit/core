@@ -12,10 +12,17 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
+  ([#1897]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
   libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
+
+### Changed
+
+- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
+  ([**@burgholzer**])
 
 ## [3.7.0] - 2026-07-09
 
@@ -572,6 +579,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
