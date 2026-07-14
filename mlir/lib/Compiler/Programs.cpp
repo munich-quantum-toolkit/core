@@ -332,7 +332,7 @@ bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   return succeeded(runPasses(
       module(),
       [&options](OpPassManager& pm) {
-        pm.addPass(qco::createQuantumLoopUnroll(options));
+        pm.addNestedPass<func::FuncOp>(qco::createQuantumLoopUnroll(options));
       },
       "failed to unroll quantum loops"));
 }

@@ -14,12 +14,14 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
+#include "qco_programs.h"
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
@@ -406,6 +408,44 @@ h q;
 }
 
 /**
+ * @brief Test: QCO program APIs configure and execute their associated passes.
+ */
+TEST_F(CompilerPipelineTest, QCOProgramOptimizationAPIs) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+x q[0];
+cx q[0], q[2];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  const auto beforeFusion = qco.str();
+
+  EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
+  EXPECT_NE(qco.str(), beforeFusion);
+  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
+      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+  EXPECT_TRUE(qco.placeAndRoute(coupling));
+  EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
+
+  auto loopModule = mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
+  ASSERT_TRUE(loopModule);
+  std::string loopIR;
+  llvm::raw_string_ostream stream(loopIR);
+  loopModule->print(stream);
+  auto loopProgram = QCOProgram::fromMLIRString(loopIR);
+  ASSERT_TRUE(loopProgram);
+  EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
+  EXPECT_TRUE(loopProgram->unrollQuantumLoops());
+  EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+/**
  * @brief Test: default compilation returns the requested typed program format
  */
 TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
@@ -432,6 +472,14 @@ h q;
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*qcoOutput));
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*optimizedQCOOutput));
   EXPECT_TRUE(std::holds_alternative<JeffProgram>(*jeffOutput));
+
+  auto profiledInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(profiledInput);
+  auto profiled = runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
+                                     ProgramFormat::QCOOptimized,
+                                     "mqt-qco-default", true, true);
+  ASSERT_TRUE(profiled);
+  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
 
   auto customPipelineInput = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(customPipelineInput);
