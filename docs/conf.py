@@ -154,13 +154,11 @@ autoapi_ignore = [
 ]
 autoapi_options = [
     "members",
-    "imported-members",
     "show-inheritance",
     "special-members",
     "undoc-members",
 ]
 autoapi_keep_files = True
-autoapi_template_dir = "_templates/autoapi"
 add_module_names = False
 toc_object_entries_show_parents = "hide"
 python_use_unqualified_type_names = True

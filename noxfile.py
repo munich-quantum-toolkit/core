@@ -142,7 +142,7 @@ def qiskit(session: nox.Session) -> None:
         session.run("uv", "pip", "show", "qiskit", env=env)
 
 
-@nox.session(reuse_venv=True)
+@nox.session(python="3.14", reuse_venv=False)
 def docs(session: nox.Session) -> None:
     """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
     parser = argparse.ArgumentParser()
