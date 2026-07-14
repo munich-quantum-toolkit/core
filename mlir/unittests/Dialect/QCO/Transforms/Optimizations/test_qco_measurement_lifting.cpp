@@ -93,7 +93,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   std::tie(q0, q1) = programBuilder.ch(q0, q1);
   std::tie(q0, q1) = programBuilder.cx(q0, q1);
 
-  Value c0, c1;
+  Value c0;
+  Value c1;
   std::tie(q0, c0) = programBuilder.measure(q0);
   std::tie(q1, c1) = programBuilder.measure(q1);
 
@@ -107,7 +108,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   auto r1 = referenceBuilder.allocQubit();
 
   std::tie(r1, r0) = referenceBuilder.cx(r1, r0);
-  Value cr0, cr1;
+  Value cr0;
+  Value cr1;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
   std::tie(r0, r1) = referenceBuilder.ch(r0, r1);
   std::tie(r0, r1) = referenceBuilder.cx(r0, r1);
@@ -137,7 +139,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12, q0Vec;
+  SmallVector<Value> q12;
+  SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q1, q2}, {q0}, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
@@ -157,7 +160,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   q0 = programBuilder.h(q0Vec[0]);
   q2 = programBuilder.h(q12[1]);
 
-  Value c0, c2;
+  Value c0;
+  Value c2;
   std::tie(q0, c0) = programBuilder.measure(q0);
   std::tie(q2, c2) = programBuilder.measure(q2);
 
@@ -177,7 +181,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  SmallVector<Value> r12, r0Vec;
+  SmallVector<Value> r12;
+  SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
@@ -194,7 +199,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   r0 = referenceBuilder.h(r0Vec[0]);
   r2 = referenceBuilder.h(r12[1]);
 
-  Value cr0, cr2;
+  Value cr0;
+  Value cr2;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
@@ -224,13 +230,15 @@ TEST_F(QCOMeasurementLiftingTest,
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12, q0Vec;
+  SmallVector<Value> q12;
+  SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q1, q2}, {q0}, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
-  Value c1, c2;
+  Value c1;
+  Value c2;
   std::tie(q1, c1) = programBuilder.measure(q12[0]);
   std::tie(q2, c2) = programBuilder.measure(q12[1]);
 
@@ -245,11 +253,13 @@ TEST_F(QCOMeasurementLiftingTest,
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
 
-  Value cr1, cr2;
+  Value cr1;
+  Value cr2;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
-  SmallVector<Value> r12, r0Vec;
+  SmallVector<Value> r12;
+  SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
@@ -280,7 +290,8 @@ TEST_F(QCOMeasurementLiftingTest,
 
   std::tie(q0, q1) = programBuilder.crx(std::numbers::pi / 2, q0, q1);
 
-  Value c0, c1;
+  Value c0;
+  Value c1;
   std::tie(q0, c0) = programBuilder.measure(q0);
   std::tie(q1, c1) = programBuilder.measure(q1);
 
@@ -293,7 +304,8 @@ TEST_F(QCOMeasurementLiftingTest,
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
-  Value cr0, cr1;
+  Value cr0;
+  Value cr1;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
   std::tie(r0, r1) = referenceBuilder.crx(std::numbers::pi / 2, r0, r1);
@@ -489,7 +501,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
 
   std::tie(q0, q1) = programBuilder.cz(q0, q1);
 
-  Value c0, c1;
+  Value c0;
+  Value c1;
   std::tie(q0, c0) = programBuilder.measure(q0);
   std::tie(q1, c1) = programBuilder.measure(q1);
 
@@ -502,7 +515,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
-  Value cr0, cr1;
+  Value cr0;
+  Value cr1;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
