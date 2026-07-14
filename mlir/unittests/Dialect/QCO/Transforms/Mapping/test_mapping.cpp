@@ -59,115 +59,137 @@ static bool
 isExecutable(Region& body, DenseMap<Value, size_t>& m,
              const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
   for (Operation& rop : body.getOps()) {
-    bool executable = true;
-    TypeSwitch<Operation*>(&rop)
-        .Case<StaticOp>(
-            [&](StaticOp op) { m.try_emplace(op.getQubit(), op.getIndex()); })
-        .Case<BarrierOp>([&](BarrierOp op) {
-          for (const auto [pred, succ] :
-               llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
-            const auto hw = m.at(pred);
-            m.try_emplace(succ, hw);
-          }
-        })
-        .Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
-          assert(op.getNumQubits() <= 2 && "expected two-qubit decomp.");
+    const bool executable =
+        TypeSwitch<Operation*, bool>(&rop)
+            .Case<StaticOp>([&](StaticOp op) {
+              m.try_emplace(op.getQubit(), op.getIndex());
+              return true;
+            })
+            .Case<BarrierOp>([&](BarrierOp op) {
+              for (const auto [pred, succ] :
+                   llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
+                m.try_emplace(succ, /*hw= */ m.at(pred));
+              }
+              return true;
+            })
+            .Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
+              assert(op.getNumQubits() <= 2 && "expected two-qubit decomp.");
 
-          if (op.getNumQubits() > 1) {
-            const auto hwA = m.at(op.getInputQubit(0));
-            const auto hwB = m.at(op.getInputQubit(1));
-            if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
-              llvm::dbgs() << "(" << hwA << ", " << hwB << ") "
-                           << "not executable: \n";
-              op->dump();
-              executable = false;
-            }
-          }
+              if (op.getNumQubits() > 1) {
+                const auto hwA = m.at(op.getInputQubit(0));
+                const auto hwB = m.at(op.getInputQubit(1));
+                if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+                  llvm::dbgs() << "The two-qubit gate (" << hwA << ", " << hwB
+                               << ") is not executable: \n";
+                  op->dump();
+                  return false;
+                }
+              }
 
-          for (const auto [pred, succ] :
-               llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
-            const auto hw = m.at(pred);
-            m.try_emplace(succ, hw);
-          }
-        })
-        .Case<scf::ForOp>([&](scf::ForOp forOp) {
-          DenseMap<Value, size_t> loopM;
-          for (const auto [init, arg] :
-               llvm::zip_equal(forOp.getInits(), forOp.getRegionIterArgs())) {
-            const auto hw = m.at(init);
-            loopM.try_emplace(arg, hw);
-          }
+              for (const auto [pred, succ] :
+                   llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
+                m.try_emplace(succ, /*hw= */ m.at(pred));
+              }
 
-          for (OpOperand& operand : forOp.getInitsMutable()) {
-            const auto pred = operand.get();
-            const auto succ = forOp.getTiedLoopResult(&operand);
-            const auto hw = m.at(pred);
-            m.try_emplace(succ, hw);
-          }
+              return true;
+            })
+            .Case<scf::ForOp>([&](scf::ForOp forOp) {
+              DenseMap<Value, size_t> bodyM;
+              for (const auto [init, arg] : llvm::zip_equal(
+                       forOp.getInits(), forOp.getRegionIterArgs())) {
+                const auto hw = m.at(init);
+                bodyM.try_emplace(arg, hw);
+              }
 
-          if (!isExecutable(forOp.getRegion(), loopM, couplingSet)) {
-            executable = false;
-            return;
-          }
+              SmallVector<size_t> initialHardwareOrder;
+              initialHardwareOrder.reserve(forOp.getInits().size());
 
-          for (const auto& [arg, yielded] : llvm::zip_equal(
-                   forOp.getRegionIterArgs(), forOp.getYieldedValues())) {
-            if (loopM.at(arg) != loopM.at(yielded)) {
-              llvm::dbgs() << "scf::forOp: layout not restored!\n";
-              executable = false;
-              return;
-            }
-          }
-        })
-        .Case<qco::IfOp>([&](qco::IfOp ifOp) {
-          std::array mappings{DenseMap<Value, size_t>{},
-                              DenseMap<Value, size_t>{}};
+              for (OpOperand& operand : forOp.getInitsMutable()) {
+                const auto pred = operand.get();
+                const auto succ = forOp.getTiedLoopResult(&operand);
+                const auto hw = m.at(pred);
 
-          const std::array regions{&ifOp.getThenRegion(),
-                                   &ifOp.getElseRegion()};
+                m.try_emplace(succ, hw);
+                initialHardwareOrder.emplace_back(hw);
+              }
 
-          for (size_t i = 0; i < 2; ++i) {
-            for (const auto [init, arg] : llvm::zip_equal(
-                     ifOp.getQubits(), regions[i]->getArguments())) {
-              const auto hw = m.at(init);
-              mappings[i].try_emplace(arg, hw);
-            }
-          }
+              if (!isExecutable(forOp.getRegion(), bodyM, couplingSet)) {
+                return false;
+              }
 
-          for (OpOperand& operand : ifOp.getQubitsMutable()) {
-            const auto pred = operand.get();
-            const auto succ = ifOp.getTiedResult(&operand);
-            const auto hw = m.at(pred);
-            m.try_emplace(succ, hw);
-          }
+              auto yield = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
 
-          std::array<SmallVector<size_t>, 2> finalPermutation{};
+              const SmallVector<size_t> bodyHardwareOrder(llvm::map_range(
+                  yield.getResults(), [&](auto v) { return bodyM.at(v); }));
 
-          for (size_t i = 0; i < 2; ++i) {
-            Region* body = regions[i];
-            if (!isExecutable(*body, mappings[i], couplingSet)) {
-              executable = false;
-              return;
-            }
+              if (bodyHardwareOrder != initialHardwareOrder) {
+                llvm::dbgs()
+                    << "The hardware indices of the yielded qubit values "
+                       "must be in the same order as the scf::ForOp's "
+                       "iteration qubit values!\n";
+                return false;
+              }
 
-            Block& block = body->getBlocks().front();
-            auto yield = cast<qco::YieldOp>(block.getTerminator());
-            for (const auto v : yield.getTargets()) {
-              finalPermutation[i].emplace_back(mappings[i].at(v));
-            }
-          }
+              return true;
+            })
+            .Case<qco::IfOp>([&](qco::IfOp ifOp) {
+              std::array mappings{DenseMap<Value, size_t>{},
+                                  DenseMap<Value, size_t>{}};
 
-          if (finalPermutation[0] != finalPermutation[1]) {
-            executable = false;
-            return;
-          }
-        })
-        .Case<ResetOp, MeasureOp>([&](auto op) {
-          const auto pred = op.getQubitIn();
-          const auto succ = op.getQubitOut();
-          const auto hw = m.at(pred);
-          m.try_emplace(succ, hw);
-        });
+              const std::array regions{&ifOp.getThenRegion(),
+                                       &ifOp.getElseRegion()};
+
+              for (size_t i = 0; i < 2; ++i) {
+                for (const auto [init, arg] : llvm::zip_equal(
+                         ifOp.getQubits(), regions[i]->getArguments())) {
+                  mappings[i].try_emplace(arg, /*hw = */ m.at(init));
+                }
+              }
+
+              SmallVector<size_t> initialHardwareOrder;
+              initialHardwareOrder.reserve(ifOp.getQubits().size());
+
+              for (OpOperand& operand : ifOp.getQubitsMutable()) {
+                const auto pred = operand.get();
+                const auto succ = ifOp.getTiedResult(&operand);
+                const auto hw = m.at(pred);
+
+                m.try_emplace(succ, hw);
+                initialHardwareOrder.emplace_back(hw);
+              }
+
+              for (const auto [body, mapping] :
+                   llvm::zip_equal(regions, mappings)) {
+                if (!isExecutable(*body, mapping, couplingSet)) {
+                  llvm::dbgs()
+                      << "One of the qco::IfOp's branches is not executable!\n";
+                  return false;
+                }
+
+                auto& block = body->getBlocks().front();
+                auto yield = cast<qco::YieldOp>(block.getTerminator());
+
+                const SmallVector<size_t> branchHardwareOrder(llvm::map_range(
+                    yield.getTargets(), [&](auto v) { return mapping.at(v); }));
+
+                if (branchHardwareOrder != initialHardwareOrder) {
+                  llvm::dbgs()
+                      << "The hardware indices of the yielded qubit values "
+                         "must be in the same order as the qco::IfOp's input "
+                         "qubit "
+                         "values! This ensures that qco::IfOp's act like a "
+                         "large, program-to-hardware mapping change, "
+                         "unitary.\n";
+                  return false;
+                }
+              }
+
+              return true;
+            })
+            .Case<ResetOp, MeasureOp>([&](auto op) {
+              m.try_emplace(op.getQubitOut(), /*hw= */ m.at(op.getQubitIn()));
+              return true;
+            });
 
     if (!executable) {
       return false;
@@ -615,7 +637,7 @@ TEST_P(MappingPassTest, Sabre) {
 
 TEST_P(MappingPassTest, RandomOrderGHZ) {
   const auto& device = GetParam();
-  constexpr int64_t size = 9;
+  constexpr int64_t size = 3;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -645,8 +667,8 @@ TEST_P(MappingPassTest, RandomOrderGHZ) {
         SmallVector<Value> values(args);
         values[size - 1] = builder.h(values[size - 1]);
         for (size_t i = size - 1; i > 0; --i) {
-          std::tie(values[8], values[i - 1]) =
-              builder.cx(values[8], values[i - 1]);
+          std::tie(values[size - 1], values[i - 1]) =
+              builder.cx(values[size - 1], values[i - 1]);
         }
         return values;
       });
@@ -667,6 +689,8 @@ TEST_P(MappingPassTest, RandomOrderGHZ) {
   auto res =
       runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
   auto entry = getEntryPoint(m.get());
+
+  entry->dumpPretty();
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));

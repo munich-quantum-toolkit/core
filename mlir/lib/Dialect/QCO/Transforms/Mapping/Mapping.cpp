@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -1044,6 +1045,30 @@ private:
     return stack;
   }
 
+  /// Re-eorder the targets of a yield operation to match the given permutation
+  /// of hardware indices.
+  static void realignYield(qco::YieldOp yieldOp, ArrayRef<size_t> perm,
+                           const RoutingBundle& child, IRRewriter& rewriter) {
+
+    assert(all_of(child.wires, [&](auto& it) {
+      return isa<qco::YieldOp>(std::next(it).operation());
+    }));
+
+    DenseMap<size_t, Value> curr(child.wires.size());
+    for (size_t i = 0; i < child.wires.size(); ++i) {
+      const auto prog = child.infos.lookupProgram(i);
+      const auto hw = child.layout.getHardwareIndex(prog);
+      curr.try_emplace(hw, child.wires[i].qubit());
+    }
+
+    const SmallVector<Value> targets(
+        map_range(perm, [&](size_t hw) { return curr.at(hw); }));
+
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(yieldOp);
+    rewriter.replaceOpWithNewOp<qco::YieldOp>(yieldOp, targets);
+  }
+
   /// Processes the recursive stack item by routing the nested operation and
   /// inserting epilogue SWAPs.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
@@ -1110,13 +1135,20 @@ private:
           return success();
         })
         .template Case<IfOp>([&](IfOp ifOp) {
-          std::array children{RoutingBundle{.layout = parent.layout},
-                              RoutingBundle{.layout = parent.layout}};
-
           // Map parent (results) to child values (qubits). Going
           // forwards, the recursive routing starts at block
           // arguments, while the backwards go starts at the yielded
           // values.
+
+          const std::array bodies{
+              &ifOp.getThenRegion().getBlocks().front(),
+              &ifOp.getElseRegion().getBlocks().front(),
+          };
+
+          std::array children{RoutingBundle{.layout = parent.layout},
+                              RoutingBundle{.layout = parent.layout}};
+
+          SmallVector<size_t> perm(indices.size());
 
           for (size_t i : indices) {
             const auto prog = parent.infos.lookupProgram(i);
@@ -1141,24 +1173,32 @@ private:
                 children[j].infos.map(index, prog);
               }
             }
+
+            // Because the indices may be arbitrarily ordered (not in the order
+            // of the if-op qubit arguments) we have to find the correct
+            // position here. TODO: Use results.
+
+            const auto qubits = ifOp.getQubits();
+            const auto it = llvm::find(qubits, qubit->get());
+            assert(it != qubits.end());
+            const auto pos = std::distance(qubits.begin(), it);
+            perm[pos] = parent.layout.getHardwareIndex(prog);
           }
 
           for (auto& child : children) {
             if (failed(route<Direction, Mode>(child, stats, rewriter))) {
               return failure();
             }
-          }
 
-          if constexpr (Mode == RoutingMode::Hot) {
+            if constexpr (Mode == RoutingMode::Hot) {
 
-            // After routing the branch body, all iterators point to
-            // std::default_sentinel. To move the iterators to the
-            // correct qubit SSA values for the epilogue SWAPs,
-            // decrement each twice: (sentinel → yield →
-            // unitary/block arg).
+              // After routing the branch body, all iterators point to
+              // std::default_sentinel. To move the iterators to the correct
+              // qubit SSA values for the epilogue SWAPs, decrement each twice:
+              // (sentinel → yield → unitary/block arg).
 
-            for_each(children[0].wires, [](auto& it) { std::advance(it, -2); });
-            for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
+              for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+            }
           }
 
           const auto [fst, snd] =
@@ -1168,13 +1208,11 @@ private:
           insertSWAPs<Mode>(snd, children[1], stats, rewriter);
 
           if constexpr (Mode == RoutingMode::Hot) {
-
-            // The IfOp implements the SingleBlockImplicitTerminator trait.
-            assert(ifOp.getThenRegion().hasOneBlock());
-            assert(ifOp.getElseRegion().hasOneBlock());
-
-            sortTopologically(&ifOp.getThenRegion().getBlocks().front());
-            sortTopologically(&ifOp.getElseRegion().getBlocks().front());
+            for (size_t i = 0; i < 2; ++i) {
+              realignYield(cast<YieldOp>(bodies[i]->getTerminator()), perm,
+                           children[i], *rewriter);
+              sortTopologically(bodies[i]);
+            }
           }
 
           // Finally, move past the operation with nested regions by
