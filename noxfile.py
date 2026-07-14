@@ -184,8 +184,7 @@ def docs(session: nox.Session) -> None:
             external=True,
         )
         session.run("doxygen", "Doxyfile", external=True)
-        # Remove output from the former Breathe-based API generator. Otherwise,
-        # stale ignored files would still be picked up by Sphinx locally.
+        # Remove stale generated API sources before running Sphinx.
         shutil.rmtree("api/cpp", ignore_errors=True)
 
     # build the MLIR API docs via building mlir-doc
@@ -195,6 +194,7 @@ def docs(session: nox.Session) -> None:
     shared_args = [
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
+        "-E",  # Doxygen inventories are regenerated for every docs build
         f"-b={args.builder}",
         "docs",
         f"docs/_build/{args.builder}",
@@ -218,8 +218,7 @@ def docs(session: nox.Session) -> None:
     )
     if not serve and args.builder in {"html", "dirhtml"}:
         shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
-        # Sphinx leaves output for removed source documents behind. The native
-        # Doxygen landing page replaces the former intermediate C++ page.
+        # Sphinx leaves output for removed source documents behind.
         (sphinx_html / "cpp_api.html").unlink(missing_ok=True)
 
 

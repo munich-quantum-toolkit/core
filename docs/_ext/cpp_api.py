@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Cross-reference native Doxygen HTML from Sphinx without Breathe."""
+"""Cross-reference native Doxygen HTML from Sphinx."""
 
 from __future__ import annotations
 
@@ -217,7 +217,9 @@ class TagfileDomain(Domain):
             refuri = api_target.uri
             internal = False
         else:
-            refuri = relative_uri(builder.get_target_uri(fromdocname), api_target.uri)
+            refuri = relative_uri(builder.get_target_uri(fromdocname), parsed.path)
+            if parsed.fragment:
+                refuri = f"{refuri}#{parsed.fragment}"
             internal = True
         return nodes.reference("", "", contnode, internal=internal, refuri=refuri)
 
