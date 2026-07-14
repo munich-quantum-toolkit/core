@@ -125,7 +125,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
 
 /**
  * @brief This pattern is responsible for lifting measurements above any
- * non-phase gates.
+ * anti-diagonal gates.
  */
 struct LiftMeasurementsAboveInvertingGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
@@ -201,8 +201,7 @@ struct LiftMeasurementsAboveControlsPattern final
 };
 
 /**
- * @brief Pass raises Measurements above controlled and uncontrolled gates
- * gates.
+ * @brief Pass raises Measurements above controlled and uncontrolled gates.
  */
 struct MeasurementLifting final
     : impl::MeasurementLiftingBase<MeasurementLifting> {

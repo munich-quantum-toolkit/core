@@ -230,7 +230,7 @@ def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
             ┌───┐┌──────┐    ┌───────┐┌───┐
             ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
             └───┘└──────┘    └───────┘└───┘
-            (Where Meas* is a measurement after which the outcome is classically negated)
+            (Where Meas* is a measurement after which the outcome is classically negated and X can be replaced by Y, which is also anti-diagonal)
 
   }];
 }

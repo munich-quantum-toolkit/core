@@ -475,9 +475,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  std::tie(r0, r1) = referenceBuilder.cx(r0, r1);
+  std::tie(r0, r1) = referenceBuilder.cy(r0, r1);
   r0 = referenceBuilder.x(r0);
-  std::tie(r0, r1) = referenceBuilder.cx(r0, r1);
+  std::tie(r0, r1) = referenceBuilder.cy(r0, r1);
 
   referenceBuilder.sink(r0);
   referenceBuilder.sink(r1);
