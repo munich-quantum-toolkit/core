@@ -357,7 +357,7 @@ def test_backend_warns_on_unmappable_operation(
 
 
 def test_backend_exposes_move_operation(
-        monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
     """Backend target should expose MOVE when the device reports it."""
     mock_device = mock_qdmi_device_factory(
@@ -403,7 +403,7 @@ def test_backend_warns_on_missing_measurement_operation(
 
 
 def test_backend_exposes_move_gate(
-        monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
     """Backend exposes a device's 'move' operation as an opaque MoveGate in the Target."""
     mock_device = mock_qdmi_device_factory(

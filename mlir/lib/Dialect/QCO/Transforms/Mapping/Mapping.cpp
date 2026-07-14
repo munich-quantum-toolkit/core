@@ -569,7 +569,7 @@ private:
 
     while (!stack.empty()) {
       for (auto [region, qubits] = stack.pop_back_val();
-           Operation & op : make_early_inc_range(region.getOps())) {
+           Operation& op : make_early_inc_range(region.getOps())) {
         TypeSwitch<Operation*>(&op)
             .Case<StaticOp>(
                 [&](StaticOp staticOp) { qubits.insert(staticOp.getQubit()); })

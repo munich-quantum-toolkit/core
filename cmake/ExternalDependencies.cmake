@@ -27,7 +27,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-          GIT_TAG v0.3.0)
+    GIT_TAG v0.3.0)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
@@ -98,7 +98,7 @@ FetchContent_Declare(
   qdmi
   GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
   GIT_TAG ${QDMI_REV}
-        FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
+  FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
 set(SPDLOG_VERSION

@@ -118,22 +118,17 @@ class Job:
 
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
-
     @overload
     def query_custom_property(
-            self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
     ) -> str | bool | int | float | bytes | None:
         """Query an implementation-defined custom job property.
 
@@ -144,22 +139,17 @@ class Job:
 
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
-
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
-
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
-
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
-
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
-
     @overload
     def get_custom_result(
-            self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
     ) -> str | bool | int | float | bytes | None:
         """Return an implementation-defined custom job result.
 
@@ -234,7 +224,6 @@ class ProgramFormat(enum.Enum):
     CUSTOM4 = 999999998
 
     CUSTOM5 = 999999999
-
 
 class CustomProperty(enum.Enum):
     """An implementation-defined custom property or result slot."""
@@ -323,22 +312,17 @@ class Device:
 
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
-
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
-
     @overload
     def query_custom_property(
-            self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
     ) -> str | bool | int | float | bytes | None:
         """Query an implementation-defined custom device property.
 
@@ -348,16 +332,16 @@ class Device:
         """
 
     def submit_job(
-            self,
-            program: str,
-            program_format: ProgramFormat,
-            num_shots: int,
-            *,
-            custom1: str | bool | float | None = None,
-            custom2: str | bool | float | None = None,
-            custom3: str | bool | float | None = None,
-            custom4: str | bool | float | None = None,
-            custom5: str | bool | float | None = None,
+        self,
+        program: str,
+        program_format: ProgramFormat,
+        num_shots: int,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
     ) -> Job:
         """Submits a job to the device."""
 
@@ -408,22 +392,17 @@ class Device:
 
         @overload
         def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
-
         @overload
         def query_custom_property(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
-
         @overload
         def query_custom_property(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
-
         @overload
         def query_custom_property(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
-
         @overload
         def query_custom_property(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
-
         @overload
         def query_custom_property(
-                self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+            self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
         ) -> str | bool | int | float | bytes | None:
             """Query an implementation-defined custom site property.
 
@@ -476,56 +455,51 @@ class Device:
 
         @overload
         def query_custom_property(
-                self,
-                custom_property: CustomProperty,
-                value_type: type[str],
-                sites: Sequence[Device.Site] = ...,
-                params: Sequence[float] = ...,
+            self,
+            custom_property: CustomProperty,
+            value_type: type[str],
+            sites: Sequence[Device.Site] = ...,
+            params: Sequence[float] = ...,
         ) -> str | None: ...
-
         @overload
         def query_custom_property(
-                self,
-                custom_property: CustomProperty,
-                value_type: type[bool],
-                sites: Sequence[Device.Site] = ...,
-                params: Sequence[float] = ...,
+            self,
+            custom_property: CustomProperty,
+            value_type: type[bool],
+            sites: Sequence[Device.Site] = ...,
+            params: Sequence[float] = ...,
         ) -> bool | None: ...
-
         @overload
         def query_custom_property(
-                self,
-                custom_property: CustomProperty,
-                value_type: type[int],
-                sites: Sequence[Device.Site] = ...,
-                params: Sequence[float] = ...,
+            self,
+            custom_property: CustomProperty,
+            value_type: type[int],
+            sites: Sequence[Device.Site] = ...,
+            params: Sequence[float] = ...,
         ) -> int | None: ...
-
         @overload
         def query_custom_property(
-                self,
-                custom_property: CustomProperty,
-                value_type: type[float],
-                sites: Sequence[Device.Site] = ...,
-                params: Sequence[float] = ...,
+            self,
+            custom_property: CustomProperty,
+            value_type: type[float],
+            sites: Sequence[Device.Site] = ...,
+            params: Sequence[float] = ...,
         ) -> float | None: ...
-
         @overload
         def query_custom_property(
-                self,
-                custom_property: CustomProperty,
-                value_type: type[bytes],
-                sites: Sequence[Device.Site] = ...,
-                params: Sequence[float] = ...,
+            self,
+            custom_property: CustomProperty,
+            value_type: type[bytes],
+            sites: Sequence[Device.Site] = ...,
+            params: Sequence[float] = ...,
         ) -> bytes | None: ...
-
         @overload
         def query_custom_property(
-                self,
-                custom_property: CustomProperty,
-                value_type: type[str | bool | int | float | bytes],
-                sites: Sequence[Device.Site] = ...,
-                params: Sequence[float] = ...,
+            self,
+            custom_property: CustomProperty,
+            value_type: type[str | bool | int | float | bytes],
+            sites: Sequence[Device.Site] = ...,
+            params: Sequence[float] = ...,
         ) -> str | bool | int | float | bytes | None:
             """Query an implementation-defined custom operation property.
 

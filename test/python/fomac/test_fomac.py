@@ -429,8 +429,8 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
 
 
 def test_site_and_operation_custom_properties_unsupported(
-        device_and_site: tuple[Device, Device.Site],
-        device_and_operation: tuple[Device, Device.Operation],
+    device_and_site: tuple[Device, Device.Site],
+    device_and_operation: tuple[Device, Device.Operation],
 ) -> None:
     """Test custom queries on site and operation objects."""
     _device, site = device_and_site

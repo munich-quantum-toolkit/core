@@ -151,7 +151,7 @@ repos:
         require_serial: true
         priority: 6
       - id: ruff-format
-        types_or: [ python, pyi, jupyter, markdown ]
+        types_or: [python, pyi, jupyter, markdown]
         priority: 7
 
   ## Check Python types with ty

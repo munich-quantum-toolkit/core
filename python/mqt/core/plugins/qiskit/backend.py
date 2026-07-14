@@ -257,7 +257,7 @@ class QDMIBackend(BackendV2):
         return target
 
     def _add_operation_to_target(
-            self, target: Target, op: fomac.Device.Operation, seen_gate_names: MutableSet[str]
+        self, target: Target, op: fomac.Device.Operation, seen_gate_names: MutableSet[str]
     ) -> None:
         """Add a single device operation to the Target, if it maps to a Qiskit gate.
 
