@@ -88,6 +88,7 @@ counts = sample(qc, 1024)
 ---
 tags: [remove-cell]
 ---
+from pathlib import Path
 from matplotlib import pyplot as plt
 
 def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
@@ -120,7 +121,8 @@ def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
     plt.xlabel("Measurement Outcome")
     plt.ylabel("Counts")
 
-    # export to SVG
+    # export to SVG (ensure the directory exists)
+    Path("_build/html/_images").mkdir(parents=True, exist_ok=True)
     filename = "_build/html/_images/fig-" + name + ("-light" if light else "-dark") + ".svg"
     plt.savefig(filename, format="svg")
 
