@@ -171,7 +171,6 @@ def docs(session: nox.Session) -> None:
         if shutil.which("doxygen") is None:
             session.error("doxygen is required to build the C++ API docs")
 
-        Path("_build/doxygen").mkdir(parents=True, exist_ok=True)
         # Use the tag file published with the matching QDMI release. This keeps
         # external QDMI links in sync with the version bundled by MQT Core.
         session.run(
@@ -184,8 +183,6 @@ def docs(session: nox.Session) -> None:
             external=True,
         )
         session.run("doxygen", "Doxyfile", external=True)
-        # Remove stale generated API sources before running Sphinx.
-        shutil.rmtree("api/cpp", ignore_errors=True)
 
     # build the MLIR API docs via building mlir-doc
     session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
@@ -218,8 +215,6 @@ def docs(session: nox.Session) -> None:
     )
     if not serve and args.builder in {"html", "dirhtml"}:
         shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
-        # Sphinx leaves output for removed source documents behind.
-        (sphinx_html / "cpp_api.html").unlink(missing_ok=True)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")

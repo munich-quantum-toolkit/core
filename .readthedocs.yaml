@@ -11,6 +11,7 @@ build:
   tools:
     python: "3.14"
   apt_packages:
+    - doxygen
     - graphviz
     - inkscape
     - zstd
@@ -33,15 +34,11 @@ build:
       - asdf global uv latest
       # Install MLIR
       - curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 22.1.0 -p $HOME/mlir
-      # Build the MLIR documentation
-      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=$HOME/mlir/lib/cmake/mlir
-      - uvx cmake --build build --target mlir-doc
-      # Build the native C++ API documentation and symbol inventory
-      - cd docs && mkdir -p _build/doxygen && doxygen Doxyfile
     build:
       html:
-        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uv run --frozen --no-dev --group docs -m sphinx -T -b html -d docs/_build/doctrees -D language=en docs $READTHEDOCS_OUTPUT/html && cp -R docs/_build/doxygen/html $READTHEDOCS_OUTPUT/html/cpp
+        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs
+        - cp -R docs/_build/html/. $READTHEDOCS_OUTPUT/html
       htmlzip:
-        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uv run --frozen --no-dev --group docs -m sphinx -T -b dirhtml -d docs/_build/doctrees -D language=en docs docs/_build/dirhtml && cp -R docs/_build/doxygen/html docs/_build/dirhtml/cpp
+        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs -- -b dirhtml
         - mkdir -p $READTHEDOCS_OUTPUT/htmlzip
         - zip -r $READTHEDOCS_OUTPUT/htmlzip/html.zip docs/_build/dirhtml/*
