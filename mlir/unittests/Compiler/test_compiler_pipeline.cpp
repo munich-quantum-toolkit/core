@@ -11,7 +11,6 @@
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/Programs.h"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
@@ -26,6 +25,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -36,21 +36,21 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iosfwd>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace mqt::test::compiler {
 
@@ -300,6 +300,11 @@ h q;
   EXPECT_FALSE(qcFromComputation->str().empty());
   EXPECT_FALSE(QCProgram::fromMLIRString("not valid MLIR"));
   EXPECT_FALSE(QCProgram::fromMLIRFile(temporaryDirectory / "missing.mlir"));
+  EXPECT_FALSE(QCProgram::fromQASMString("not valid OpenQASM"));
+  EXPECT_FALSE(QCProgram::fromQASMFile(temporaryDirectory / "missing.qasm"));
+  EXPECT_FALSE(QCOProgram::fromMLIRString("not valid MLIR"));
+  EXPECT_FALSE(
+      QCOProgram::fromMLIRFile(temporaryDirectory / "missing.qco.mlir"));
 }
 
 /**
@@ -393,6 +398,11 @@ h q;
   ASSERT_GE(bitcode->size(), 4U);
   EXPECT_EQ((*bitcode)[0], std::byte{'B'});
   EXPECT_EQ((*bitcode)[1], std::byte{'C'});
+  const auto bitcodePath =
+      std::filesystem::path(testing::TempDir()) / "typed_program_output.bc";
+  EXPECT_TRUE(base->writeBitcode(bitcodePath));
+  EXPECT_FALSE(
+      base->writeBitcode(bitcodePath.parent_path() / "missing" / "output.bc"));
 }
 
 /**
@@ -451,6 +461,11 @@ h q;
   ASSERT_TRUE(qcoInput);
   auto qco = std::move(*qcoInput).intoQCO();
   ASSERT_TRUE(qco);
+  EXPECT_FALSE(
+      runDefaultPipeline(CompilerInput{qco->copy()}, ProgramFormat::QCImport));
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{qco->copy()},
+                                  ProgramFormat::QCImport,
+                                  "merge-single-qubit-rotation-gates"));
   auto fromQCO =
       runDefaultPipeline(CompilerInput{std::move(*qco)}, ProgramFormat::QC);
   ASSERT_TRUE(fromQCO);

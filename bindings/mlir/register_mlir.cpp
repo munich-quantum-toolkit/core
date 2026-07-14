@@ -28,7 +28,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include <variant>
+#include <vector>
 
 namespace mqt {
 
@@ -42,7 +42,7 @@ template <class T> [[nodiscard]] T takeResult(std::optional<T>&& result) {
     throw std::runtime_error(
         "MLIR operation failed; see diagnostics for details.");
   }
-  return std::move(*result);
+  return *std::move(result);
 }
 
 void requireSuccess(const bool succeeded) {
