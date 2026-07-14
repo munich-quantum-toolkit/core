@@ -654,8 +654,9 @@ public:
                         const Expr& step, const Expr& stop,
                         function_ref<LogicalResult()> body) {
     auto startValue = emitIndex(start);
+    auto stepValue = emitIndex(step);
     auto stopValue = emitIndex(stop);
-    if (failed(startValue) || failed(stopValue)) {
+    if (failed(startValue) || failed(stepValue) || failed(stopValue)) {
       return failure();
     }
 
@@ -663,75 +664,43 @@ public:
     if (failed(foldedStep)) {
       return failure();
     }
-
-    // The magnitude of a statically negative step, or 0 if the step counts up
-    // or is only known dynamically.
-    int64_t stride = 0;
-    if (const std::optional<int64_t> stepConstant = *foldedStep) {
-      if (*stepConstant == 0) {
-        return error(loc, "for loops with a zero step are not supported");
-      }
-      if (*stepConstant < 0) {
-        stride = -*stepConstant;
-      }
+    if (*foldedStep && **foldedStep == 0) {
+      return error(loc, "for loops with a zero step are not supported");
     }
 
-    Value resolvedStart;
-    Value resolvedStep;
-    Value resolvedStop;
-    Value strideValue;
-    if (stride != 0) {
-      // A negative step counts down, which `scf.for` cannot express. Count the
-      // iterations up instead and recompute the loop variable from the
-      // induction variable below, which preserves both the values the loop
-      // visits and the order in which it visits them. The loop runs
-      // `max(0, (start - stop) / stride + 1)` times.
-      auto zero = builder.indexConstant(0);
-      auto one = builder.indexConstant(1);
-      strideValue = builder.indexConstant(stride);
-      auto span =
-          arith::SubIOp::create(builder, *startValue, *stopValue).getResult();
-      auto steps =
-          arith::DivSIOp::create(builder, span, strideValue).getResult();
-      auto count = arith::AddIOp::create(builder, steps, one).getResult();
-      auto isPositive =
-          arith::CmpIOp::create(builder, arith::CmpIPredicate::sgt, count, zero)
-              .getResult();
-      resolvedStart = zero;
-      resolvedStop =
-          arith::SelectOp::create(builder, isPositive, count, zero).getResult();
-      resolvedStep = one;
-    } else {
-      auto stepValue = emitIndex(step);
-      if (failed(stepValue)) {
-        return failure();
-      }
-      resolvedStart = *startValue;
-      resolvedStep = *stepValue;
-      // Add 1 to make the stop value inclusive, as OpenQASM 3's for loops are
-      // inclusive.
-      resolvedStop =
-          arith::AddIOp::create(builder, *stopValue, builder.indexConstant(1))
-              .getResult();
-    }
-
-    // The loop variable lives in the body's scope, as if it were declared as
-    // its first statement.
-    const DeclarationScope scope(*this);
+    const auto zero = builder.indexConstant(0);
+    const auto one = builder.indexConstant(1);
 
     auto status = success();
-    builder.scfFor(resolvedStart, resolvedStop, resolvedStep, [&](Value iv) {
-      Value resolvedIv = iv;
-      if (stride != 0) {
-        auto offset =
-            arith::MulIOp::create(builder, iv, strideValue).getResult();
-        resolvedIv =
-            arith::SubIOp::create(builder, *startValue, offset).getResult();
-      }
-      bindings.insert(variable,
-                      {.kind = Binding::Kind::Int, .value = resolvedIv});
+
+    // If the step is statically positive, `scf.for` can be emitted directly.
+    // Because OpenQASM 3's stop is inclusive, add 1 to make it exclusive.
+    if (*foldedStep && **foldedStep > 0) {
+      auto exclusiveStop =
+          arith::AddIOp::create(builder, *stopValue, one).getResult();
+      builder.scfFor(*startValue, exclusiveStop, *stepValue, [&](Value iv) {
+        const DeclarationScope scope(*this);
+        bindings.insert(variable, {.kind = Binding::Kind::Int, .value = iv});
+        status = body();
+      });
+      return status;
+    }
+
+    // Otherwise, rescale the loop to count up from 0 with a step of 1
+    auto span =
+        arith::SubIOp::create(builder, *stopValue, *startValue).getResult();
+    auto steps = arith::DivSIOp::create(builder, span, *stepValue).getResult();
+    auto count = arith::AddIOp::create(builder, steps, one).getResult();
+
+    builder.scfFor(zero, count, one, [&](Value iv) {
+      const DeclarationScope scope(*this);
+      auto offset = arith::MulIOp::create(builder, iv, *stepValue).getResult();
+      auto index =
+          arith::AddIOp::create(builder, *startValue, offset).getResult();
+      bindings.insert(variable, {.kind = Binding::Kind::Int, .value = index});
       status = body();
     });
+
     return status;
   }
 
@@ -740,8 +709,6 @@ public:
     auto status = success();
     builder.scfWhile(
         [&] {
-          // A value loaded in the before region does not dominate the after
-          // region, so each gets a scope of its own.
           const DeclarationScope scope(*this);
           auto cond = emitCondition(condition);
           if (failed(cond)) {
