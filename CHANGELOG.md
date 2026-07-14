@@ -14,11 +14,14 @@ releases may include breaking changes.
 
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
-- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
+- ✨ Add versioned JSON/TOML QDMI configuration discovery, relocatable built-in
+  manifests, and lazy `qdmi::DeviceManager`/`mqt.core.qdmi` APIs with per-device
+  sessions and failure isolation.
+- ✨ Add support for QDMI child devices to the driver and QDMI libraries
   ([#1897]) ([**@burgholzer**])
-- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
+- ✨ Add typed custom property and result queries to the C++ and Python QDMI
   libraries ([#1895]) ([**@burgholzer**])
-- ✨ Add support for custom job parameters to C++ and Python FoMaC library
+- ✨ Add support for custom job parameters to C++ and Python QDMI library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
@@ -64,6 +67,13 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Replace the legacy device-management layering with the
+  `qdmi::DeviceRegistry` → `qdmi::DeviceManager` → `qdmi::Device` object model.
+  Device libraries now load lazily, sessions are configured per device, child
+  objects retain their required runtime state, and `openAll` isolates failures
+  by stable device ID.
+- ♻️ Migrate the Qiskit provider and neutral-atom adapter to lazily opened
+  configured QDMI devices and the unified `mqt.core.qdmi` API.
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -73,6 +83,10 @@ releases may include breaking changes.
 
 ### Removed
 
+- 🔥 Remove the legacy device-management namespace, Python module, global
+  session API, source/include/test trees, and compatibility CMake targets.
+- 🔥 Remove central built-in device enumeration and compiled-in library names;
+  generated relocatable manifest fragments now register built-in devices.
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -98,7 +112,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
 ### Changed
 
 - ⬆️ Update QDMI to version 1.3.2 ([#1873]) ([**@denialhaag**])
-- ♻️ Improve implementation and usability of FoMaC classes ([#1849])
+- ♻️ Improve implementation and usability of QDMI classes ([#1849])
   ([**@MatthiasReumann**])
 - ⬆️ Update `nanobind` to version 2.13.0 ([#1817])
 - ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
@@ -230,7 +244,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#340)._
   value ([#1310]) ([**@MatthiasReumann**])
 - ✨ Add `OptionalDependencyTester` to lazily handle optional Python
   dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
-- ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**],
+- ✨ Expose the QDMI job interface through QDMI ([#1243]) ([**@marcelwa**],
   [**@burgholzer**])
 - ✨ Add Qiskit backend wrapper with job submission support for QDMI devices
   through a provider interface ([#1243], [#1385]) ([**@marcelwa**],
@@ -268,8 +282,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#340)._
   session configurations ([#1355]) ([**@burgholzer**])
 - ♻️ Enable thread-safe reference counting for QDMI devices singletons ([#1355])
   ([**@burgholzer**])
-- ♻️ Refactor `FoMaC` singleton to instantiable `Session` class with
-  configurable authentication parameters ([#1355]) ([**@marcelwa**])
+- ♻️ Refactor `QDMI` singleton to instantiable `Session` class with configurable
+  authentication parameters ([#1355]) ([**@marcelwa**])
 - 👷 Stop testing on `ubuntu-22.04` and `ubuntu-22.04-arm` runners ([#1359])
   ([**@denialhaag**], [**@burgholzer**])
 - 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359])
@@ -360,7 +374,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 - 👷 Enable testing on Python 3.14 ([#1246]) ([**@denialhaag**])
 - ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232])
   ([**@MatthiasReumann**])
-- ✨ Add an NA-specific FoMaC implementation ([#1223], [#1236]) ([**@ystade**],
+- ✨ Add an NA-specific QDMI implementation ([#1223], [#1236]) ([**@ystade**],
   [**@burgholzer**])
 - ✨ Enable import of BarrierOp into MQTRef ([#1224]) ([**@denialhaag**])
 - ✨ Add naive quantum program routing MLIR pass ([#1148])
@@ -376,7 +390,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
   ([**@denialhaag**])
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect
   ([#1164]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150],
+- ✨ Add MQT's implementation of a generic QDMI with Python bindings ([#1150],
   [#1186], [#1223]) ([**@ystade**])
 - ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151])
   ([**@taminob**])

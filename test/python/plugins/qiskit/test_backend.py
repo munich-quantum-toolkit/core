@@ -19,7 +19,7 @@ from qiskit.circuit import Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -29,7 +29,7 @@ from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 
 if TYPE_CHECKING:
 
-    class _FomacDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
+    class _QDMIDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
         def name(self) -> str: ...
 
         def version(self) -> str: ...
@@ -40,9 +40,9 @@ if TYPE_CHECKING:
 
         def coupling_map(self) -> object: ...
 
-    SiteSpecificDevice = _FomacDeviceLike
-    MisconfiguredDevice = _FomacDeviceLike
-    ZonedDevice = _FomacDeviceLike
+    SiteSpecificDevice = _QDMIDeviceLike
+    MisconfiguredDevice = _QDMIDeviceLike
+    ZonedDevice = _QDMIDeviceLike
 
 
 @pytest.fixture
@@ -52,9 +52,8 @@ def ddsim_backend() -> QDMIBackend:
     Returns:
         A QDMIBackend instance wrapping the DDSIM device.
     """
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
+    devices, _errors = qdmi.DeviceManager().open_all()
+    for device in devices.values():
         if "DDSIM" in device.name():
             return QDMIBackend(device=device, provider=None)
     pytest.skip("DDSIM device not available")
@@ -600,9 +599,8 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
 
 def test_zoned_operation_rejected_at_backend_init() -> None:
     """Backend rejects devices exposing zoned operations."""
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
+    devices, _errors = qdmi.DeviceManager().open_all()
+    for device in devices.values():
         if device.name().startswith("MQT NA"):
             with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
                 QDMIBackend(device)

@@ -17,16 +17,15 @@ from qiskit.circuit import Parameter
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.quantum_info import SparsePauliOp
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIBackend, QDMIEstimator
 
 
 @pytest.fixture
 def estimator() -> QDMIEstimator:
     """Returns a QDMIEstimator based on the DDSIM backend."""
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
+    devices, _errors = qdmi.DeviceManager().open_all()
+    for device in devices.values():
         if "DDSIM" in device.name():
             backend = QDMIBackend(device=device, provider=None)
             return QDMIEstimator(backend)

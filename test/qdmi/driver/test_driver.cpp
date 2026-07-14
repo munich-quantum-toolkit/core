@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Device.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -322,12 +322,6 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
               QDMI_SUCCESS);
     EXPECT_EQ(queryName(children[0]), "child-0");
     EXPECT_EQ(queryName(children[1]), "child-1");
-
-    const auto fomacChildren =
-        fomac::Session::createSessionlessDevice(&parent).getChildDevices();
-    ASSERT_EQ(fomacChildren.size(), 2);
-    EXPECT_EQ(fomacChildren[0].getName(), "child-0");
-    EXPECT_EQ(fomacChildren[1].getName(), "child-1");
 
     std::array<QDMI_Device, 2> repeatedQuery{};
     ASSERT_EQ(QDMI_device_query_device_property(

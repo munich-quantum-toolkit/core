@@ -6,6 +6,172 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI device management has been redesigned
+
+The legacy device-management namespace, Python module, global session object,
+and compatibility CMake target have been removed. The public API is now
+consistently named `qdmi`:
+
+| Concern | C++ | Python |
+| --- | --- | --- |
+| Discover registrations | `qdmi::DeviceRegistry` | `qdmi.DeviceManager.definitions` |
+| Open one device | `qdmi::DeviceManager::open` | `DeviceManager.open` |
+| Open every device independently | `qdmi::DeviceManager::openAll` | `DeviceManager.open_all` |
+| Device capabilities | `qdmi::Device` | `qdmi.Device` |
+| Sites, operations, and jobs | `qdmi::Site`, `Operation`, `Job` | `Device.Site`, `Device.Operation`, `Job` |
+| Neutral-atom view | `na::qdmi::Device` | `mqt.core.na.qdmi.Device` |
+| CMake target | `MQT::CoreQDMI` | not applicable |
+
+There is intentionally no compatibility module in v4. Replace imports from the
+removed device-management module with `mqt.core.qdmi`, includes with
+`qdmi/Device.hpp` or `qdmi/DeviceManager.hpp`, and the removed CMake target with
+`MQT::CoreQDMI`.
+
+#### Opening devices
+
+Code that previously created a global session and enumerated its devices should
+create a manager and open stable device IDs. Discovery parses configuration but
+does not load native libraries; loading and session initialization happen only
+when `open` or `open_all` is called.
+
+Python:
+
+```python
+from mqt.core import qdmi
+
+manager = qdmi.DeviceManager()
+print([definition.id for definition in manager.definitions])
+
+device = manager.open("mqt.ddsim.default")
+print(device.name())
+
+devices, errors = manager.open_all()
+for device_id, error in errors.items():
+    print(f"{device_id} could not be opened: {error}")
+```
+
+C++:
+
+```cpp
+#include "qdmi/DeviceManager.hpp"
+
+qdmi::DeviceManager manager;
+const auto device = manager.open("mqt.ddsim.default");
+
+const auto opened = manager.openAll();
+for (const auto& [id, error] : opened.errors) {
+  // Handle one failed provider without losing successfully opened devices.
+}
+```
+
+`openAll` isolates failures by device ID. This differs from the removed global
+session, where one library or initialization failure could affect discovery as a
+whole.
+
+#### Per-device session parameters
+
+Authentication and provider settings no longer belong to a process-wide session.
+Put defaults on each device definition and override them for one `open` call:
+
+```python
+from mqt.core import qdmi
+
+parameters = qdmi.SessionParameters()
+parameters.token = obtain_token()
+parameters.project_id = "research-project"
+
+device = qdmi.DeviceManager().open(
+    "vendor.qpu.production",
+    session_overrides=parameters,
+)
+```
+
+```cpp
+qdmi::SessionParameters parameters;
+parameters.token = obtainToken();
+parameters.projectId = "research-project";
+
+auto device = manager.open("vendor.qpu.production", parameters);
+```
+
+Multiple definitions may refer to the same shared library while using
+independent session parameters. Open devices, child devices, sites, operations,
+and jobs share the required internal state, so these objects remain valid after
+the manager that opened them is destroyed. Unregistering a definition likewise
+does not invalidate already opened devices.
+
+#### Registering devices with configuration
+
+Device registration is versioned and keyed by a stable, unique `id`:
+
+```json
+{
+  "schema-version": 1,
+  "qdmi": {
+    "devices": [
+      {
+        "id": "vendor.qpu.production",
+        "library": "./libvendor-qdmi-device.so",
+        "abi": "qdmi-v1",
+        "prefix": "VENDOR",
+        "enabled": true,
+        "session": {
+          "base-url": "https://qpu.example",
+          "auth-file": "./credentials.json"
+        }
+      }
+    ]
+  }
+}
+```
+
+Relative paths are resolved against the file containing them. Configuration
+layers are merged field by field by `id`, and `enabled = false` masks a
+lower-precedence definition. Duplicate IDs within one source, unknown keys,
+invalid types, and incomplete enabled definitions are errors with source and
+configuration-path diagnostics.
+
+The precedence order, from lowest to highest, is:
+
+1. packaged manifest fragments;
+2. system `mqt-core.json`;
+3. user or XDG `mqt-core.json`;
+4. the nearest project `mqt-core.json` or `[tool.mqt-core.qdmi]` table in
+   `pyproject.toml`;
+5. `MQT_CORE_QDMI_CONFIG_JSON`;
+6. C++ or Python runtime overrides.
+
+A dedicated `mqt-core.json` wins over `pyproject.toml` in the same directory.
+`MQT_CORE_QDMI_CONFIG_FILE` or `ConfigOptions.explicitFile` replaces the system,
+user, and project layers while retaining packaged devices. Set `isolated` to
+exclude packaged manifests as well. See the
+[configuration reference](docs/qdmi/configuration.md) for complete schemas and
+administrator, project, environment, and runtime examples.
+
+Static C++ executables must set `ConfigOptions.configRoot`: unlike a shared
+library or Python extension, a fully static executable has no portable module
+location from which built-in manifests can be discovered.
+
+#### QDMI child devices
+
+`qdmi::Device::getChildDevices()` and `Device.child_devices()` return direct
+child devices as ordinary device objects. Each child owns the provider session
+and library state required by its QDMI v1 handle; retaining a child is therefore
+safe even after discarding its parent or manager. Providers without child-device
+support return an empty list.
+
+#### Qiskit integration
+
+`QDMIProvider` now uses `DeviceManager` internally and creates a backend for
+every successfully opened, convertible device. Existing code that only creates
+`QDMIProvider()` does not need to manage device objects itself. Authentication
+keyword arguments are converted to per-open `SessionParameters`.
+
+Code that directly constructs a `QDMIBackend` should pass a
+`mqt.core.qdmi.Device` returned by `DeviceManager.open`. Tests and downstream
+integrations that mocked global device enumeration should instead inject runtime
+definitions or mock `DeviceManager.open_all`.
+
 ### MLIR enabled by default for C++ and Python package builds
 
 The MLIR-based functionality within MQT Core has long been experimental and
@@ -64,14 +230,6 @@ a consistent local development environment. Common IDEs like
 and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
-
-### QDMI child devices
-
-The QDMI driver now translates device-library-specific `QDMI_Child_Device`
-handles into client-facing `QDMI_Device` handles backed by dedicated child
-sessions. Direct child devices can be queried through
-`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
-Python. Devices without child-device support continue to behave unchanged.
 
 ## [3.7.0]
 
@@ -216,9 +374,9 @@ result = job.result()
 ```
 
 The backend automatically converts circuits to QASM, introspects device
-capabilities, validates circuits, and formats results. The existing FoMaC
-interface (`mqt.core.fomac`) remains fully supported for direct, low-level
-access to QDMI devices.
+capabilities, validates circuits, and formats results. The existing QDMI
+interface (`mqt.core.qdmi`) remains fully supported for direct, low-level access
+to QDMI devices.
 
 Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 

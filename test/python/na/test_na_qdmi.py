@@ -16,20 +16,23 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from mqt.core.na.fomac import devices
+from mqt.core.na.qdmi import Device
+from mqt.core.qdmi import DeviceManager
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from mqt.core.na.fomac import Device
-
 
 @pytest.fixture
 def device_tuple() -> tuple[Device, Mapping[str, Any]]:
-    """Return a neutral atom FoMaC device instance."""
+    """Return a neutral atom QDMI device instance."""
     with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
         device_dict = load(f)
-    return next(iter(devices())), device_dict
+    devices, errors = DeviceManager().open_all()
+    assert not errors
+    converted = (Device.try_create_from_device(candidate) for candidate in devices.values())
+    device = next(candidate for candidate in converted if candidate is not None)
+    return device, device_dict
 
 
 def test_name(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:

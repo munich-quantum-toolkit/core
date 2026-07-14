@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
-#include "na/fomac/Device.hpp"
+#include "na/qdmi/Device.hpp"
+#include "qdmi/Device.hpp"
 #include "qdmi/devices/na/Generator.hpp"
 
 #include <nanobind/nanobind.h>
@@ -36,12 +36,12 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerFomac(nb::module_& m) {
+void registerQDMI(nb::module_& m) {
   m.doc() = R"pb(Reconstruction of NADevice from QDMI's Device class.)pb";
 
-  nb::module_::import_("mqt.core.fomac");
+  nb::module_::import_("mqt.core.qdmi");
 
-  auto device = nb::class_<na::Session::Device, fomac::Device>(
+  auto device = nb::class_<na::qdmi::Device, qdmi::Device>(
       m, "Device", "Represents a device with a lattice of traps.");
 
   auto lattice = nb::class_<na::Device::Lattice>(
@@ -107,40 +107,33 @@ void registerFomac(nb::module_& m) {
   lattice.def(nb::self != nb::self,
               nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  device.def_prop_ro("traps", &na::Session::Device::getTraps,
+  device.def_prop_ro("traps", &na::qdmi::Device::getTraps,
                      nb::rv_policy::reference_internal,
                      "The list of trap positions in the device.");
   device.def_prop_ro(
       "t1",
-      [](const na::Session::Device& dev) {
-        return dev.getDecoherenceTimes().t1;
-      },
+      [](const na::qdmi::Device& dev) { return dev.getDecoherenceTimes().t1; },
       "The T1 time of the device.");
   device.def_prop_ro(
       "t2",
-      [](const na::Session::Device& dev) {
-        return dev.getDecoherenceTimes().t2;
-      },
+      [](const na::qdmi::Device& dev) { return dev.getDecoherenceTimes().t2; },
       "The T2 time of the device.");
-  device.def("__repr__", [](const fomac::Device& dev) {
+  device.def("__repr__", [](const qdmi::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
   device.def_static("try_create_from_device",
-                    &na::Session::Device::tryCreateFromDevice, "device"_a,
-                    R"pb(Create NA FoMaC Device from generic FoMaC Device.
+                    &na::qdmi::Device::tryCreateFromDevice, "device"_a,
+                    R"pb(Create NA QDMI Device from generic QDMI Device.
 
 Args:
-    device: The generic FoMaC Device to convert.
+    device: The generic QDMI Device to convert.
 
 Returns:
-    The converted NA FoMaC Device or None if the conversion is not possible.)pb");
+    The converted NA QDMI Device or None if the conversion is not possible.)pb");
   device.def(nb::self == nb::self,
              nb::sig("def __eq__(self, arg: object, /) -> bool"));
   device.def(nb::self != nb::self,
              nb::sig("def __ne__(self, arg: object, /) -> bool"));
-
-  m.def("devices", &na::Session::getDevices, nb::rv_policy::reference_internal,
-        "Returns a list of available devices.");
 }
 
 } // namespace mqt

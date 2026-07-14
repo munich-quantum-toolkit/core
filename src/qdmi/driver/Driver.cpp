@@ -496,16 +496,7 @@ auto QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
 }
 
 namespace qdmi {
-Driver::Driver() {
-  for (const auto& [lib, prefix] : std::array{DYN_DEV_LIBS}) {
-    try {
-      addDynamicDeviceLibrary(lib, prefix);
-    } catch (const std::exception& ex) {
-      SPDLOG_WARN("Skipping builtin QDMI device library '{}': {}", lib,
-                  ex.what());
-    }
-  }
-}
+Driver::Driver() = default;
 
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const std::string& prefix,

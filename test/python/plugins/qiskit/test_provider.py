@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIProvider
 
 
@@ -80,10 +80,10 @@ def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> Non
     """Provider raises ValueError when no devices available."""
 
     # Monkeypatch to return empty device list
-    def mock_get_devices(_self: object) -> list[object]:
-        return []
+    def mock_open_all(_self: object, **_kwargs: object) -> tuple[dict[str, object], dict[str, str]]:
+        return {}, {}
 
-    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
+    monkeypatch.setattr(qdmi.DeviceManager, "open_all", mock_open_all)
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):

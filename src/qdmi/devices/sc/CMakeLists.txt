@@ -95,6 +95,10 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add library
   add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMIScDevice)
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   add_dependencies(${TARGET_NAME} generate_qdmi_sc_device_header)
 
   # Generate prefixed QDMI headers
@@ -126,6 +130,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
+
+  mqt_register_qdmi_device(${TARGET_NAME} ID mqt.sc.default PREFIX ${QDMI_PREFIX})
 endif()
 
 set(MQT_CORE_TARGETS

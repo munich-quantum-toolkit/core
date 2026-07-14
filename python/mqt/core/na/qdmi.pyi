@@ -8,9 +8,9 @@
 
 """Reconstruction of NADevice from QDMI's Device class."""
 
-import mqt.core.fomac
+import mqt.core.qdmi
 
-class Device(mqt.core.fomac.Device):
+class Device(mqt.core.qdmi.Device):
     """Represents a device with a lattice of traps."""
 
     class Lattice:
@@ -94,18 +94,15 @@ class Device(mqt.core.fomac.Device):
         """The T2 time of the device."""
 
     @staticmethod
-    def try_create_from_device(device: mqt.core.fomac.Device) -> Device | None:
-        """Create NA FoMaC Device from generic FoMaC Device.
+    def try_create_from_device(device: mqt.core.qdmi.Device) -> Device | None:
+        """Create NA QDMI Device from generic QDMI Device.
 
         Args:
-            device: The generic FoMaC Device to convert.
+            device: The generic QDMI Device to convert.
 
         Returns:
-            The converted NA FoMaC Device or None if the conversion is not possible.
+            The converted NA QDMI Device or None if the conversion is not possible.
         """
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
-
-def devices() -> list[Device]:
-    """Returns a list of available devices."""

@@ -7,4 +7,5 @@
 # Licensed under the MIT License
 
 add_subdirectory(devices)
-add_subdirectory(driver)
+add_subdirectory(device)
+add_subdirectory(manager)

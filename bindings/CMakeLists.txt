@@ -8,7 +8,7 @@
 
 add_subdirectory(ir)
 add_subdirectory(dd)
-add_subdirectory(fomac)
+add_subdirectory(qdmi)
 add_subdirectory(na)
 
 if(BUILD_MQT_CORE_MLIR)

@@ -17,16 +17,15 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIBackend, QDMISampler
 
 
 @pytest.fixture
 def sampler() -> QDMISampler:
     """Returns a QDMISampler based on the DDSIM backend."""
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
+    devices, _errors = qdmi.DeviceManager().open_all()
+    for device in devices.values():
         if "DDSIM" in device.name():
             backend = QDMIBackend(device=device, provider=None)
             return QDMISampler(backend)

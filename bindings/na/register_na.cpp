@@ -15,15 +15,15 @@ namespace mqt {
 namespace nb = nanobind;
 
 // forward declarations
-void registerFomac(nb::module_& m);
+void registerQDMI(nb::module_& m);
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = R"pb(MQT Core NA - The MQT Core Neutral Atom module.
 
 This module contains all neutral atom related functionality of MQT Core.)pb";
 
-  nb::module_ fomac = m.def_submodule("fomac");
-  registerFomac(fomac);
+  nb::module_ qdmi = m.def_submodule("qdmi");
+  registerQDMI(qdmi);
 }
 
 } // namespace mqt

@@ -234,7 +234,7 @@ class QDMIEstimator(BaseEstimatorV2):
                     pauli_terms = cast("Mapping[str, int | float | complex]", observable)
                     observable = SparsePauliOp.from_list(pauli_terms.items())
                 else:
-                    observable = SparsePauliOp(observable)
+                    observable = SparsePauliOp(cast("Any", observable))
 
             paulis = observable.paulis
             coeffs = observable.coeffs

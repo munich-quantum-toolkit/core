@@ -8,23 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Device.hpp"
 
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/client.h>
-#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -33,7 +30,7 @@
 #include <variant>
 #include <vector>
 
-namespace fomac {
+namespace qdmi {
 size_t Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
@@ -134,10 +131,11 @@ std::optional<std::vector<Site>> Operation::getSites() const {
   }
   std::vector<Site> returnedSites;
   returnedSites.reserve(qdmiSites->size());
-  std::ranges::transform(*qdmiSites, std::back_inserter(returnedSites),
-                         [device = device_](const QDMI_Site& site) -> Site {
-                           return {device, site};
-                         });
+  std::ranges::transform(
+      *qdmiSites, std::back_inserter(returnedSites),
+      [device = device_, lifetime = lifetime_](const QDMI_Site& site) -> Site {
+        return {device, site, lifetime};
+      });
   return returnedSites;
 }
 std::optional<std::vector<std::pair<Site, Site>>>
@@ -197,9 +195,10 @@ std::vector<Site> Device::getSites() const {
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
   std::vector<Site> sites;
   sites.reserve(qdmiSites.size());
-  std::ranges::transform(
-      qdmiSites, std::back_inserter(sites),
-      [this](const QDMI_Site& site) -> Site { return {this, site}; });
+  std::ranges::transform(qdmiSites, std::back_inserter(sites),
+                         [this](const QDMI_Site& site) -> Site {
+                           return {device_, site, lifetime_};
+                         });
   return sites;
 }
 
@@ -225,9 +224,10 @@ std::vector<Operation> Device::getOperations() const {
       QDMI_DEVICE_PROPERTY_OPERATIONS);
   std::vector<Operation> operations;
   operations.reserve(qdmiOperations.size());
-  std::ranges::transform(
-      qdmiOperations, std::back_inserter(operations),
-      [this](const QDMI_Operation& op) -> Operation { return {this, op}; });
+  std::ranges::transform(qdmiOperations, std::back_inserter(operations),
+                         [this](const QDMI_Operation& op) -> Operation {
+                           return {device_, op, lifetime_};
+                         });
   return operations;
 }
 
@@ -245,8 +245,8 @@ Device::getCouplingMap() const {
   std::ranges::transform(*qdmiCouplingMap, std::back_inserter(couplingMap),
                          [this](const std::pair<QDMI_Site, QDMI_Site>& pair)
                              -> std::pair<Site, Site> {
-                           return {Site{this, pair.first},
-                                   Site{this, pair.second}};
+                           return {Site{device_, pair.first, lifetime_},
+                                   Site{device_, pair.second, lifetime_}};
                          });
   return couplingMap;
 }
@@ -310,7 +310,9 @@ std::vector<Device> Device::getChildDevices() const {
   devices.reserve(handles.size());
   std::ranges::transform(
       handles, std::back_inserter(devices),
-      [](QDMI_Device_impl_d* const handle) { return Device(handle); });
+      [lifetime = lifetime_](QDMI_Device_impl_d* const handle) {
+        return Device(handle, lifetime);
+      });
   return devices;
 }
 
@@ -323,7 +325,7 @@ Job Device::submitJob(const std::string& program,
                       const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
-  Job jobWrapper{job};
+  Job jobWrapper{job, lifetime_};
 
   qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
@@ -681,105 +683,4 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
   return probabilities;
 }
 
-Device Session::createSessionlessDevice(QDMI_Device device) {
-  return Device(device);
-}
-
-Session::Session(const SessionConfig& config) {
-  session_ = [] {
-    QDMI_Session session = nullptr;
-    const auto result = QDMI_session_alloc(&session);
-    qdmi::throwIfError(result, "Allocating QDMI session");
-    return std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)>(
-        session, QDMI_session_free);
-  }();
-
-  // Helper to set session parameters
-  const auto setParameter = [this](const std::optional<std::string>& value,
-                                   QDMI_Session_Parameter param) -> void {
-    if (value) {
-      const auto status = static_cast<QDMI_STATUS>(QDMI_session_set_parameter(
-          session_.get(), param, value->size() + 1, value->c_str()));
-      if (status == QDMI_ERROR_NOTSUPPORTED) {
-        // Optional parameter not supported by session - skip it
-        SPDLOG_INFO("Session parameter {} not supported (skipped)",
-                    qdmi::toString(param));
-        return;
-      }
-      if (status == QDMI_SUCCESS) {
-        return;
-      }
-      std::ostringstream ss;
-      ss << "Setting session parameter " << qdmi::toString(param) << ": "
-         << qdmi::toString(status) << " (status = " << status << ")";
-      qdmi::throwIfError(status, ss.str());
-    }
-  };
-
-  // Validate file existence for authFile
-  if (config.authFile) {
-    if (!std::filesystem::exists(*config.authFile)) {
-      throw std::runtime_error("Authentication file does not exist: " +
-                               *config.authFile);
-    }
-  }
-  // Validate URL format for authUrl
-  if (config.authUrl) {
-    // Breakdown of the regex pattern:
-    // 1. ^https?://              -> Start with http:// or https://
-    // 2. (?:                     -> Start Host Group
-    //      \[[a-fA-F0-9:]+\]     -> Branch A: IPv6 (Must be in brackets like
-    //      [::1])
-    //                            -> Note: No \b used here because ']' is a
-    //                            non-word char
-    //      |                     -> OR
-    //      (?:                   -> Branch B: Alphanumeric Hosts (Group for
-    //      \b check)
-    //        (?:\d{1,3}\.){3}\d{1,3} -> IPv4 (e.g., 127.0.0.1)
-    //        |                   -> OR
-    //        localhost           -> Localhost
-    //        |                   -> OR
-    //        (?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6} ->
-    //        Domain
-    //      )\b                   -> End Branch B + Word Boundary (Prevents
-    //      "localhostX")
-    //    )                       -> End Host Group
-    // 3. (?::\d+)?               -> Optional Port (e.g., :8080)
-    // 4. (?:...)*$               -> Optional Path/Query params + End of
-    // string
-    static const std::regex URL_PATTERN(
-        R"(^https?://(?:\[[a-fA-F0-9:]+\]|(?:(?:\d{1,3}\.){3}\d{1,3}|localhost|(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6})\b)(?::\d+)?(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)",
-        std::regex::optimize);
-    if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
-      throw std::runtime_error("Invalid URL format: " + *config.authUrl);
-    }
-  }
-
-  // Set session parameters
-  setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
-  setParameter(config.authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
-  setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
-  setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
-  setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);
-  setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID);
-  setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1);
-  setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2);
-  setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3);
-  setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
-  setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
-
-  // Initialize the session
-  qdmi::throwIfError(QDMI_session_init(session_.get()), "Initializing session");
-}
-
-std::vector<Device> Session::getDevices() {
-  const auto& qdmiDevices =
-      queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);
-  std::vector<Device> devices;
-  devices.reserve(qdmiDevices.size());
-  std::ranges::transform(
-      qdmiDevices, std::back_inserter(devices),
-      [](QDMI_Device_impl_d* const& dev) -> Device { return Device(dev); });
-  return devices;
-}
-} // namespace fomac
+} // namespace qdmi

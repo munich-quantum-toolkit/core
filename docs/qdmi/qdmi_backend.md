@@ -10,7 +10,7 @@ mystnb:
 
 The {py:mod}`mqt.core.plugins.qiskit` module provides a Qiskit
 {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via
-FoMaC. This integration allows you to execute Qiskit circuits on QDMI-compliant
+QDMI. This integration allows you to execute Qiskit circuits on QDMI-compliant
 quantum devices using a familiar Qiskit workflow.
 
 ## Installation
@@ -69,7 +69,7 @@ print(f"Results: {counts}")
 ### Using the Provider
 
 The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` discovers QDMI
-devices available through the FoMaC layer. Backends should always be obtained
+devices available through the QDMI layer. Backends should always be obtained
 through the provider rather than instantiated directly.
 
 ```{code-cell} ipython3
@@ -216,7 +216,7 @@ except RuntimeError as e:
 
 ## Device Capabilities and Target
 
-The backend automatically introspects the FoMaC (QDMI) device and constructs a
+The backend automatically introspects the QDMI (QDMI) device and constructs a
 Qiskit {py:class}`~qiskit.transpiler.Target` object describing device
 capabilities.
 
@@ -306,8 +306,8 @@ job = backend.run(circuits, parameter_values=param_values, shots=100)
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a FoMaC (QDMI) job
-and provides status tracking:
+The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a QDMI (QDMI) job and
+provides status tracking:
 
 ```python
 from qiskit.providers import JobStatus
@@ -535,7 +535,7 @@ When you run a circuit, the backend:
 
 The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
-1. Querying the FoMaC (QDMI) device for available operations
+1. Querying the QDMI (QDMI) device for available operations
 2. Mapping each operation to the corresponding Qiskit gate
 3. Determining qubit connectivity from the device's coupling map
 4. Including operation properties (duration, fidelity) if available

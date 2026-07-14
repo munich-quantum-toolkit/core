@@ -7,25 +7,25 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-fomac)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-qdmi)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NAFoMaC)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NAQDMI)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
 
   # add headers using file sets
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/na/fomac/Device.hpp)
+                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/na/qdmi/Device.hpp)
 
   # Link nlohmann_json, spdlog
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC MQT::CoreFoMaC nlohmann_json::nlohmann_json
+    PUBLIC MQT::CoreQDMI nlohmann_json::nlohmann_json
     PRIVATE spdlog::spdlog MQT::CoreQDMINaDeviceGen)
 
   # add to list of MQT core targets

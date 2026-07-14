@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-fomac-bindings")
+set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-qdmi-bindings")
 
 if(NOT TARGET ${TARGET_NAME})
   # collect source files
@@ -18,16 +18,16 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     ${SOURCES}
     MODULE_NAME
-    fomac
+    qdmi
     INSTALL_DIR
     .
     LINK_LIBS
-    MQT::CoreFoMaC)
+    MQT::CoreQDMI)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
     install(
-      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/fomac.pyi
+      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/qdmi.pyi
       DESTINATION .
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()

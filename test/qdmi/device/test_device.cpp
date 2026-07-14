@@ -8,7 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -32,7 +33,7 @@
 #include <tuple>
 #include <vector>
 
-namespace fomac {
+namespace qdmi {
 
 namespace {
 
@@ -55,6 +56,32 @@ template <typename T> auto bytesOf(const T& value) {
   std::vector<std::byte> bytes(sizeof(T));
   std::memcpy(bytes.data(), &value, sizeof(T));
   return bytes;
+}
+
+auto configuredManager() -> DeviceManager {
+  ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides = {
+      {.id = "mqt.ddsim.default",
+       .library = DDSIM_DEVICE_LIBRARY,
+       .prefix = "MQT_DDSIM"},
+      {.id = "mqt.na.default",
+       .library = NA_DEVICE_LIBRARY,
+       .prefix = "MQT_NA"},
+      {.id = "mqt.sc.default",
+       .library = SC_DEVICE_LIBRARY,
+       .prefix = "MQT_SC"},
+  };
+  return DeviceManager(options);
+}
+
+auto getDevices() -> std::vector<Device> {
+  auto opened = configuredManager().openAll();
+  std::vector<Device> devices;
+  devices.reserve(opened.devices.size());
+  std::ranges::move(opened.devices | std::views::values,
+                    std::back_inserter(devices));
+  return devices;
 }
 
 class DeviceTest : public testing::TestWithParam<Device> {
@@ -86,13 +113,7 @@ protected:
 
 private:
   static auto getDDSimulatorDevice() -> Device {
-    Session session;
-    for (const auto& dev : session.getDevices()) {
-      if (dev.getName() == "MQT Core DDSIM QDMI Device") {
-        return dev;
-      }
-    }
-    throw std::runtime_error("DD simulator device not found");
+    return configuredManager().open("mqt.ddsim.default");
   }
 };
 
@@ -258,7 +279,7 @@ TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
                std::invalid_argument);
 }
 
-TEST(FoMaCTest, StatusToString) {
+TEST(QDMITest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
   EXPECT_STREQ(qdmi::toString(QDMI_SUCCESS), "Success");
   EXPECT_STREQ(qdmi::toString(QDMI_ERROR_FATAL), "A fatal error");
@@ -275,7 +296,7 @@ TEST(FoMaCTest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_ERROR_TIMEOUT), "Timeout");
 }
 
-TEST(FoMaCTest, SitePropertyToString) {
+TEST(QDMITest, SitePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_INDEX), "INDEX");
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_T1), "T1");
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_T2), "T2");
@@ -298,7 +319,7 @@ TEST(FoMaCTest, SitePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_CUSTOM5), "CUSTOM5");
 }
 
-TEST(FoMaCTest, OperationPropertyToString) {
+TEST(QDMITest, OperationPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_QUBITSNUM), "QUBITS NUM");
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_PARAMETERSNUM),
@@ -322,7 +343,7 @@ TEST(FoMaCTest, OperationPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_CUSTOM5), "CUSTOM5");
 }
 
-TEST(FoMaCTest, DevicePropertyToString) {
+TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_VERSION), "VERSION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_STATUS), "STATUS");
@@ -354,11 +375,11 @@ TEST(FoMaCTest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM5), "CUSTOM5");
 }
 
-TEST(FoMaCTest, SessionPropertyToString) {
+TEST(QDMITest, SessionPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PROPERTY_DEVICES), "DEVICES");
 }
 
-TEST(FoMaCTest, ThrowIfError) {
+TEST(QDMITest, ThrowIfError) {
   EXPECT_NO_THROW(qdmi::throwIfError(QDMI_SUCCESS, "Test"));
   EXPECT_NO_THROW(qdmi::throwIfError(QDMI_WARN_GENERAL, "Test"));
   EXPECT_THROW(qdmi::throwIfError(QDMI_ERROR_FATAL, "Test"),
@@ -992,209 +1013,8 @@ TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
 }
 
-TEST(AuthenticationTest, SessionConstructionWithToken) {
-  // Empty token should be accepted
-  SessionConfig config1;
-  config1.token = "";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Non-empty token should be accepted
-  SessionConfig config2;
-  config2.token = "test_token_123";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Token with special characters should be accepted
-  SessionConfig config3;
-  config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
-  EXPECT_NO_THROW({ const Session session(config3); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
-  // Valid HTTPS URL
-  SessionConfig config1;
-  config1.authUrl = "https://example.com";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Valid HTTP URL with port and path
-  SessionConfig config2;
-  config2.authUrl = "http://auth.server.com:8080/api";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Valid HTTPS URL with query parameters
-  SessionConfig config3;
-  config3.authUrl = "https://auth.example.com/token?param=value";
-  EXPECT_NO_THROW({ const Session session(config3); });
-
-  // Valid localhost URL
-  SessionConfig configLocalhost;
-  configLocalhost.authUrl = "http://localhost";
-  EXPECT_NO_THROW({ const Session session(configLocalhost); });
-
-  // Valid localhost URL with port
-  SessionConfig configLocalhostPort;
-  configLocalhostPort.authUrl = "http://localhost:8080";
-  EXPECT_NO_THROW({ const Session session(configLocalhostPort); });
-
-  // Valid localhost URL with port and path
-  SessionConfig configLocalhostPath;
-  configLocalhostPath.authUrl = "https://localhost:3000/auth/api";
-  EXPECT_NO_THROW({ const Session session(configLocalhostPath); });
-
-  // Valid IPv4 address URL
-  SessionConfig configIPv4;
-  configIPv4.authUrl = "http://127.0.0.1:5000/auth";
-  EXPECT_NO_THROW({ const Session session(configIPv4); });
-
-  // Valid IPv6 address URL
-  SessionConfig configIPv6;
-  configIPv6.authUrl = "https://[::1]:8080/auth";
-  EXPECT_NO_THROW({ const Session session(configIPv6); });
-
-  // Invalid URL - not a URL at all (validation fails before setting parameter)
-  SessionConfig config4;
-  config4.authUrl = "not-a-url";
-  EXPECT_THROW({ const Session session(config4); }, std::runtime_error);
-
-  // Invalid URL - unsupported protocol
-  SessionConfig config5;
-  config5.authUrl = "ftp://invalid.com";
-  EXPECT_THROW({ const Session session(config5); }, std::runtime_error);
-
-  // Invalid URL - missing protocol
-  SessionConfig config6;
-  config6.authUrl = "example.com";
-  EXPECT_THROW({ const Session session(config6); }, std::runtime_error);
-
-  // Invalid URL - empty
-  SessionConfig config7;
-  config7.authUrl = "";
-  EXPECT_THROW({ const Session session(config7); }, std::runtime_error);
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
-  // Non-existent file (validation fails before setting parameter)
-  SessionConfig config1;
-  config1.authFile = "/nonexistent/path/to/file.txt";
-  EXPECT_THROW({ const Session session(config1); }, std::runtime_error);
-
-  // Existing file (should succeed even if parameter is unsupported)
-  const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / ("fomac_test_auth_" +
-                            std::to_string(std::hash<std::thread::id>{}(
-                                std::this_thread::get_id())) +
-                            ".txt");
-  {
-    std::ofstream tmpFile(tmpPath);
-    ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
-    tmpFile << "test_token_content";
-  }
-
-  SessionConfig config2;
-  config2.authFile = tmpPath.string();
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Clean up
-  std::filesystem::remove(tmpPath);
-}
-
-TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
-  // Username only
-  SessionConfig config1;
-  config1.username = "user123";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Password only
-  SessionConfig config2;
-  config2.password = "secure_password";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Both username and password
-  SessionConfig config3;
-  config3.username = "user123";
-  config3.password = "secure_password";
-  EXPECT_NO_THROW({ const Session session(config3); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithProjectId) {
-  SessionConfig config;
-  config.projectId = "project-123-abc";
-  EXPECT_NO_THROW({ const Session session(config); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
-  SessionConfig config;
-  config.token = "test_token";
-  config.username = "test_user";
-  config.password = "test_pass";
-  config.projectId = "test_project";
-  EXPECT_NO_THROW({ const Session session(config); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
-  // Custom parameters may not be supported by all devices, or may have specific
-  // validation requirements. This test verifies they can be passed to the
-  // Session constructor. Currently a smoke test.
-
-  // Test custom1 - may succeed or fail with validation/unsupported errors
-  SessionConfig config1;
-  config1.custom1 = "custom_value_1";
-  try {
-    Session session(config1);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    // Validation error - parameter recognized but value invalid
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    // Not supported or other error
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-
-  // Test custom2
-  SessionConfig config2;
-  config2.custom2 = "custom_value_2";
-  try {
-    Session session(config2);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-
-  // Test all custom parameters together
-  SessionConfig config3;
-  config3.custom1 = "value1";
-  config3.custom2 = "value2";
-  config3.custom3 = "value3";
-  config3.custom4 = "value4";
-  config3.custom5 = "value5";
-  try {
-    Session session(config3);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-
-  // Test mixing custom parameters with standard authentication
-  SessionConfig config4;
-  config4.token = "test_token";
-  config4.custom1 = "custom_value";
-  config4.projectId = "project_id";
-  try {
-    Session session(config4);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-}
-
-TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
-  Session session;
-  auto devices = session.getDevices();
+TEST(DeviceManagerTest, OpenAllReturnsDevices) {
+  auto devices = getDevices();
 
   EXPECT_FALSE(devices.empty());
 
@@ -1205,12 +1025,9 @@ TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
   }
 }
 
-TEST(AuthenticationTest, SessionMultipleInstances) {
-  Session session1;
-  Session session2;
-
-  auto devices1 = session1.getDevices();
-  auto devices2 = session2.getDevices();
+TEST(DeviceManagerTest, MultipleInstancesOpenIndependently) {
+  auto devices1 = getDevices();
+  auto devices2 = getDevices();
 
   // Both should return devices
   EXPECT_FALSE(devices1.empty());
@@ -1220,14 +1037,6 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
   EXPECT_EQ(devices1.size(), devices2.size());
 }
 
-namespace {
-// Helper function to get all devices for parameterized tests
-auto getDevices() -> std::vector<Device> {
-  Session session;
-  return session.getDevices();
-}
-} // namespace
-
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
@@ -1270,4 +1079,4 @@ INSTANTIATE_TEST_SUITE_P(
       return name;
     });
 
-} // namespace fomac
+} // namespace qdmi

@@ -6,14 +6,17 @@
 #
 # Licensed under the MIT License
 
-if(TARGET MQT::CoreNAFoMaC)
-  # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-fomac-test)
-  # Add the test executable
-  package_add_test(${TARGET_NAME} MQT::CoreNAFoMaC test_fomac.cpp)
-  # Set the device json path
-  target_compile_definitions(${TARGET_NAME}
-                             PRIVATE NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/device.json")
+set(TARGET_NAME mqt-core-qdmi-object-model-test)
+
+if(TARGET MQT::CoreQDMI)
+  package_add_test(${TARGET_NAME} MQT::CoreQDMI test_device.cpp)
+  target_compile_definitions(
+    ${TARGET_NAME}
+    PRIVATE DDSIM_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>"
+            NA_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMINaDevice>"
+            SC_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMIScDevice>")
+  add_dependencies(${TARGET_NAME} MQT::CoreQDMI_DDSIM_Device MQT::CoreQDMINaDevice
+                   MQT::CoreQDMIScDevice)
 
   if(WIN32)
     # On Windows, we need to copy the device DLLs to the test directory

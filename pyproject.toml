@@ -93,7 +93,7 @@ build.targets = [
   "mqt-core-na",
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
-  "mqt-core-fomac-bindings",
+  "mqt-core-qdmi-bindings",
   "mqt-core-na-bindings",
   "mqt-core-mlir-bindings",
   "mqt-core-qdmi-ddsim-device",
@@ -251,7 +251,6 @@ convention = "google"
 default.extend-ignore-re = [
   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",  # ignore line
   "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on", # ignore block
-  "FoMaC"
 ]
 
 [tool.typos.default.extend-words]

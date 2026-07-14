@@ -8,7 +8,7 @@
 
 """QDMI Qiskit Backend.
 
-Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
+Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from qiskit.circuit.library import (
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
-from ... import fomac
+from ... import qdmi
 from .converters import qiskit_to_iqm_json
 from .exceptions import (
     CircuitValidationError,
@@ -104,7 +104,7 @@ def _build_gate_mappings_for_backend(
 
 
 class QDMIBackend(BackendV2):
-    """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
+    """A Qiskit BackendV2 adapter for QDMI devices via QDMI.
 
     This backend provides program submission to QDMI devices.
     It automatically introspects device capabilities and constructs a
@@ -115,7 +115,7 @@ class QDMIBackend(BackendV2):
     rather than instantiated directly.
 
     Args:
-        device: FoMaC device to wrap.
+        device: QDMI device to wrap.
         provider: The provider instance that created this backend.
 
     Examples:
@@ -127,7 +127,7 @@ class QDMIBackend(BackendV2):
     """
 
     @staticmethod
-    def is_convertible(device: fomac.Device) -> bool:
+    def is_convertible(device: qdmi.Device) -> bool:
         """Returns whether a device can be represented in Qiskit's Target model."""
         # Zoned operations cannot easily be represented in Qiskit's Target model
         return not any(op.is_zoned() for op in device.operations())
@@ -167,11 +167,11 @@ class QDMIBackend(BackendV2):
     # Initialize derived mappings at class definition time
     _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
 
-    def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
-        """Initialize the backend with a FoMaC device.
+    def __init__(self, device: qdmi.Device, provider: QDMIProvider | None = None) -> None:
+        """Initialize the backend with a QDMI device.
 
         Args:
-            device: FoMaC device instance.
+            device: QDMI device instance.
             provider: Provider instance that created this backend.
 
         Raises:
@@ -258,7 +258,7 @@ class QDMIBackend(BackendV2):
         return target
 
     def _add_operation_to_target(
-        self, target: Target, op: fomac.Device.Operation, seen_gate_names: MutableSet[str]
+        self, target: Target, op: qdmi.Device.Operation, seen_gate_names: MutableSet[str]
     ) -> None:
         """Add a single device operation to the Target, if it maps to a Qiskit gate.
 
@@ -384,7 +384,7 @@ class QDMIBackend(BackendV2):
         """
         return QDMIBackend._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
-    def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
+    def _get_operation_qargs(self, op: qdmi.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
 
         This method determines which qubit indices an operation can act on by:
@@ -396,7 +396,7 @@ class QDMIBackend(BackendV2):
            - Multi-qubit (3+): Assumed to be globally available
 
         Args:
-            op: Device operation from FoMaC.
+            op: Device operation from QDMI.
 
         Returns:
             Sequence of qubit index tuples this operation can act on.
@@ -461,8 +461,8 @@ class QDMIBackend(BackendV2):
         return circuit
 
     def _convert_circuit(
-        self, circuit: QuantumCircuit, supported_program_formats: Iterable[fomac.ProgramFormat]
-    ) -> tuple[str, fomac.ProgramFormat]:
+        self, circuit: QuantumCircuit, supported_program_formats: Iterable[qdmi.ProgramFormat]
+    ) -> tuple[str, qdmi.ProgramFormat]:
         """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
 
         The conversion priority order is:
@@ -487,9 +487,9 @@ class QDMIBackend(BackendV2):
             raise UnsupportedFormatError(msg)
 
         # Try IQM JSON format first (device-specific)
-        if fomac.ProgramFormat.IQM_JSON in supported_program_formats:
+        if qdmi.ProgramFormat.IQM_JSON in supported_program_formats:
             try:
-                return qiskit_to_iqm_json(circuit, self._device), fomac.ProgramFormat.IQM_JSON
+                return qiskit_to_iqm_json(circuit, self._device), qdmi.ProgramFormat.IQM_JSON
             except UnsupportedOperationError:
                 # Let this propagate so caller can handle fallback
                 raise
@@ -498,7 +498,7 @@ class QDMIBackend(BackendV2):
                 raise TranslationError(msg) from exc
 
         # Try OpenQASM3
-        if fomac.ProgramFormat.QASM3 in supported_program_formats:
+        if qdmi.ProgramFormat.QASM3 in supported_program_formats:
             # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
             # So it needs some help from us.
             exclusion_list = set()
@@ -549,15 +549,15 @@ class QDMIBackend(BackendV2):
             basis_gates = [gate for gate in self.target.operation_names if gate not in exclusion_list] + ["U"]
 
             try:
-                return qasm3.dumps(circuit, basis_gates=basis_gates), fomac.ProgramFormat.QASM3
+                return qasm3.dumps(circuit, basis_gates=basis_gates), qdmi.ProgramFormat.QASM3
             except Exception as exc:
                 msg = f"Failed to convert circuit to QASM3: {exc}"
                 raise TranslationError(msg) from exc
 
         # Try OpenQASM2 (legacy)
-        if fomac.ProgramFormat.QASM2 in supported_program_formats:
+        if qdmi.ProgramFormat.QASM2 in supported_program_formats:
             try:
-                return qasm2.dumps(circuit), fomac.ProgramFormat.QASM2
+                return qasm2.dumps(circuit), qdmi.ProgramFormat.QASM2
             except Exception as exc:
                 msg = f"Failed to convert circuit to QASM2: {exc}"
                 raise TranslationError(msg) from exc
@@ -640,10 +640,10 @@ class QDMIBackend(BackendV2):
         device_ops = {op.name().lower() for op in self._device.operations()}
 
         # Process each circuit
-        qdmi_jobs: list[fomac.Job] = []
+        qdmi_jobs: list[qdmi.Job] = []
         circuit_names: list[str] = []
         # First pass: validate and convert all circuits
-        converted_circuits: list[tuple[str, fomac.ProgramFormat, str]] = []
+        converted_circuits: list[tuple[str, qdmi.ProgramFormat, str]] = []
 
         for idx, circuit in enumerate(circuits):
             # Bind parameters if provided
