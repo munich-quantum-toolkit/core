@@ -536,3 +536,30 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
+
+/**
+ * @brief Test: Tests lifting a measurement over an inverted phase gate.
+ */
+TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
+  programBuilder.initialize({programBuilder.getI1Type()});
+  auto q = programBuilder.allocQubit();
+
+  q = programBuilder.inv(
+      q, [&](Value target) { return programBuilder.s(target); });
+
+  auto [qm, c] = programBuilder.measure(q);
+  programBuilder.sink(qm);
+  module = programBuilder.finalize({c});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  auto r0 = referenceBuilder.allocQubit();
+  auto [r1, cr] = referenceBuilder.measure(r0);
+  referenceBuilder.sink(r1);
+  reference = referenceBuilder.finalize({cr});
+
+  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
