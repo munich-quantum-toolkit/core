@@ -10,8 +10,7 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
+import sys
 import warnings
 from importlib import metadata
 from pathlib import Path
@@ -26,6 +25,7 @@ if TYPE_CHECKING:
     from pybtex.richtext import HRef
 
 ROOT = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(Path(__file__).parent / "_ext"))
 
 
 try:
@@ -58,7 +58,7 @@ templates_path = ["_templates"]
 
 extensions = [
     "autoapi.extension",
-    "breathe",
+    "cpp_api",
     "myst_nb",
     "sphinx_copybutton",
     "sphinx_design",
@@ -162,16 +162,11 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 
-breathe_projects = {"mqt.core": "_build/doxygen/xml"}
-breathe_default_project = "mqt.core"
-
-read_the_docs_build = os.environ.get("READTHEDOCS", None) == "True"
-if read_the_docs_build:
-    subprocess.call("mkdir -p _build/doxygen && doxygen", shell=True)  # noqa: S602, S607
-    subprocess.call(  # noqa: S602
-        "mkdir -p api/cpp && breathe-apidoc -o api/cpp -m -f -g namespace _build/doxygen/xml/",  # noqa: S607
-        shell=True,
-    )
+cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
+qdmi_api_tagfile = (
+    "_tagfiles/qdmi-1.3.2.tag",
+    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/",
+)
 
 # -- Options for HTML output -------------------------------------------------
 

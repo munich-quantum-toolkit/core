@@ -79,7 +79,7 @@ api/mqt/core/index
 :maxdepth: 1
 :hidden:
 
-api/cpp/namespacelist
+cpp_api
 ```
 
 ## Contributors and Supporters

@@ -1,0 +1,92 @@
+/* Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+html {
+  --mqt-background: #ffffff;
+  --mqt-background-secondary: #f8f9fb;
+  --mqt-border: #d8dee8;
+  --mqt-foreground: #1f2328;
+  --mqt-foreground-secondary: #5c6370;
+  --mqt-accent: #2962a3;
+  --mqt-code-background: #f1f3f5;
+}
+
+html.dark-mode {
+  --mqt-background: #131416;
+  --mqt-background-secondary: #1a1c1e;
+  --mqt-border: #30343a;
+  --mqt-foreground: #f0f0f0;
+  --mqt-foreground-secondary: #b8bec8;
+  --mqt-accent: #8ab4e8;
+  --mqt-code-background: #202328;
+}
+
+body,
+table,
+div,
+p,
+dl {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+body {
+  background: var(--mqt-background);
+  color: var(--mqt-foreground);
+}
+
+a,
+a:visited,
+.contents a:visited {
+  color: var(--mqt-accent);
+}
+
+#titlearea,
+#nav-tree,
+.header,
+.mqt-docs-backlink {
+  background: var(--mqt-background-secondary);
+  border-color: var(--mqt-border);
+}
+
+#projectname,
+.title,
+.contents,
+.contents h1,
+.contents h2,
+.contents h3 {
+  color: var(--mqt-foreground);
+}
+
+#projectbrief,
+.footer,
+.directory .levels {
+  color: var(--mqt-foreground-secondary);
+}
+
+code,
+.tt,
+div.fragment,
+pre.fragment {
+  background: var(--mqt-code-background);
+  border-color: var(--mqt-border);
+}
+
+.mqt-docs-backlink {
+  border-bottom: 1px solid var(--mqt-border);
+  font-size: 0.9rem;
+  padding: 0.55rem 1rem;
+}
+
+.mqt-docs-backlink a {
+  font-weight: 600;
+  text-decoration: none;
+}

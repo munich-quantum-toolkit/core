@@ -173,18 +173,9 @@ def docs(session: nox.Session) -> None:
 
         Path("_build/doxygen").mkdir(parents=True, exist_ok=True)
         session.run("doxygen", "Doxyfile", external=True)
-        Path("api/cpp").mkdir(parents=True, exist_ok=True)
-        session.run(
-            "breathe-apidoc",
-            "-o",
-            "api/cpp",
-            "-m",
-            "-f",
-            "-g",
-            "namespace",
-            "_build/doxygen/xml/",
-            external=True,
-        )
+        # Remove output from the former Breathe-based API generator. Otherwise,
+        # stale ignored files would still be picked up by Sphinx locally.
+        shutil.rmtree("api/cpp", ignore_errors=True)
 
     # build the MLIR API docs via building mlir-doc
     session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
@@ -199,6 +190,11 @@ def docs(session: nox.Session) -> None:
         *posargs,
     ]
 
+    doxygen_html = Path("docs/_build/doxygen/html")
+    sphinx_html = Path(f"docs/_build/{args.builder}")
+    if serve:
+        shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
+
     session.run(
         "uv",
         "run",
@@ -209,6 +205,8 @@ def docs(session: nox.Session) -> None:
         *shared_args,
         env=env,
     )
+    if not serve and args.builder in {"html", "dirhtml"}:
+        shutil.copytree(doxygen_html, sphinx_html / "cpp", dirs_exist_ok=True)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")

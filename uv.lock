@@ -118,20 +118,6 @@ wheels = [
 ]
 
 [[package]]
-name = "breathe"
-version = "4.36.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/01/56/99bf7d0799d95ad485d95596dc01c2a5b3dda58ebf50a94f6f73b33bacdf/breathe-4.36.0.tar.gz", hash = "sha256:14860b73118ac140b7a3f55446890c777d1b67149cb024279fe3710dad7f535c", size = 154842, upload-time = "2025-02-22T18:36:03.36Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/bc/d67ef1e11ed6e6343c135bf605aa9d5734ff0cc77eb42a2a41f182abc9d9/breathe-4.36.0-py3-none-any.whl", hash = "sha256:af85436f1f09e842bd1fd95617281211c635f8768d245ff830c59b979888d1d5", size = 97231, upload-time = "2025-02-22T18:36:01.087Z" },
-]
-
-[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -1720,7 +1706,6 @@ dev = [
     { name = "setuptools-scm" },
 ]
 docs = [
-    { name = "breathe" },
     { name = "furo" },
     { name = "graphviz" },
     { name = "mlir-pygments" },
@@ -1775,7 +1760,6 @@ dev = [
     { name = "setuptools-scm", specifier = ">=9.2.2" },
 ]
 docs = [
-    { name = "breathe", specifier = ">=4.36.0" },
     { name = "furo", specifier = ">=2025.9.25" },
     { name = "graphviz", specifier = ">=0.21.0" },
     { name = "mlir-pygments", specifier = ">=1.0.0" },
