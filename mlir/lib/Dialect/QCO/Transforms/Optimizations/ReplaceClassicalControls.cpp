@@ -57,7 +57,10 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
  */
 static bool isPhaseGate(Operation* op) {
   if (auto i = dyn_cast<InvOp>(op)) {
-    return isPhaseGate(i.getBodyUnitary());
+    if (i.getNumBodyUnitaries() != 1) {
+      return false;
+    }
+    return isPhaseGate(i.getBodyUnitary(0));
   }
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
@@ -70,7 +73,7 @@ static bool isPhaseGate(Operation* op) {
  */
 static void trySwapControlsOfDiagonalGate(CtrlOp op,
                                           mlir::PatternRewriter& rewriter) {
-  assert(op.getBodyUnitary().getNumQubits() == 1 &&
+  assert(op.getNumTargets() == 1 &&
          "Only single-qubit gates can be swapped around controls");
   auto target = op.getTargetsIn()[0];
   auto predecessorOutcome = getPredecessorMeasurementOutcome(target);
@@ -109,7 +112,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
   mlir::LogicalResult
   matchAndRewrite(CtrlOp op, mlir::PatternRewriter& rewriter) const override {
-    if (isPhaseGate(op.getBodyUnitary())) {
+    if (op.getNumBodyUnitaries() == 1 && isPhaseGate(op.getBodyUnitary(0))) {
       trySwapControlsOfDiagonalGate(op, rewriter);
     }
 
