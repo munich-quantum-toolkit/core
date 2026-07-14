@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Utils.hpp
+ * @brief ZX-diagram graph utilities and iterators.
+ */
+
 #pragma once
 
 #include "ZXDefinitions.hpp"

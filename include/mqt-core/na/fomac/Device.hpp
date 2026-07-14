@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Device.hpp
+ * @brief Neutral-atom FoMaC device session implementation.
+ */
+
 #pragma once
 
 #include "fomac/FoMaC.hpp"

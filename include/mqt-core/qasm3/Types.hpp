@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Types.hpp
+ * @brief OpenQASM 3 type-system definitions.
+ */
+
 #pragma once
 
 #include "InstVisitor.hpp"

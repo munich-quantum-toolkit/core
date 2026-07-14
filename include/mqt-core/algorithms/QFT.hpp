@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file QFT.hpp
+ * @brief Quantum Fourier transform circuit construction.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

@@ -11,6 +11,8 @@ build:
   tools:
     python: "3.14"
   apt_packages:
+    - cmake
+    - doxygen
     - graphviz
     - inkscape
     - zstd
@@ -32,14 +34,12 @@ build:
       - asdf install uv latest
       - asdf global uv latest
       # Install MLIR
-      - curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.1/setup-mlir.sh | bash -s -- -v 22.1.7 -p $HOME/mlir
-      # Build the MLIR documentation
-      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=$HOME/mlir/lib/cmake/mlir
-      - uvx cmake --build build --target mlir-doc
+      - curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 22.1.7 -p $HOME/mlir
     build:
       html:
-        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uv run --frozen --no-dev --group docs -m sphinx -T -b html -d docs/_build/doctrees -D language=en docs $READTHEDOCS_OUTPUT/html
+        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs
+        - mkdir -p $READTHEDOCS_OUTPUT/html && cp -R docs/_build/html/. $READTHEDOCS_OUTPUT/html
       htmlzip:
-        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uv run --frozen --no-dev --group docs -m sphinx -T -b dirhtml -d docs/_build/doctrees -D language=en docs docs/_build/dirhtml
+        - MLIR_DIR=$HOME/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs -- -b dirhtml
         - mkdir -p $READTHEDOCS_OUTPUT/htmlzip
         - zip -r $READTHEDOCS_OUTPUT/htmlzip/html.zip docs/_build/dirhtml/*
