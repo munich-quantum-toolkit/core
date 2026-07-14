@@ -111,6 +111,9 @@ struct ClassicalRegisterInfo {
   SmallVector<Value> bits;
   /// Whether the register was declared with the `output` directive.
   bool isOutput = false;
+  /// Whether the register was declared inside a control-flow region. Its bits
+  /// do not dominate the return, so it can never be returned.
+  bool isLocal = false;
 };
 
 /// Signature: (builder, gate operands, gate parameters). Owns the callable, as
@@ -283,7 +286,7 @@ public:
 
     SmallVector<Value> returnValues;
     for (const auto& info : classicalRegisters) {
-      if (hasOutputs && !info.isOutput) {
+      if (info.isLocal || (hasOutputs && !info.isOutput)) {
         continue;
       }
       if (info.bits.empty()) {
@@ -296,6 +299,10 @@ public:
                                    StringRef(info.reg.name) + "' are measured");
       }
       append_range(returnValues, info.bits);
+    }
+
+    if (returnValues.empty()) {
+      return builder.finalize();
     }
 
     builder.retype(ValueRange(returnValues).getTypes());
@@ -442,12 +449,14 @@ public:
       classicalRegisters.push_back(
           {.loc = loc,
            .reg = builder.allocClassicalBitRegister(*foldedSize, id.str()),
-           .isOutput = isOutput});
+           .isOutput = isOutput,
+           .isLocal = depth > 0});
     } else {
       classicalRegisters.push_back(
           {.loc = loc,
            .reg = builder.allocClassicalBitRegister(1, id.str()),
-           .isOutput = isOutput});
+           .isOutput = isOutput,
+           .isLocal = depth > 0});
     }
     return success();
   }
@@ -571,13 +580,23 @@ public:
   //===--- Control flow -------------------------------------------------===//
 
   /// A guarded scope for declared scalar symbols and dynamically loaded qubits.
+  /// Entering one means entering a control-flow region.
   struct DeclarationScope {
     explicit DeclarationScope(QCEmitter& emitter)
         : bindings(emitter.bindings),
-          loadedQubits(emitter.dynamicallyLoadedQubits) {}
+          loadedQubits(emitter.dynamicallyLoadedQubits), depth(emitter.depth) {
+      ++depth;
+    }
+    ~DeclarationScope() { --depth; }
+
+    DeclarationScope(const DeclarationScope&) = delete;
+    DeclarationScope& operator=(const DeclarationScope&) = delete;
+    DeclarationScope(DeclarationScope&&) = delete;
+    DeclarationScope& operator=(DeclarationScope&&) = delete;
 
     BindingScope bindings;
     ValueScope loadedQubits;
+    unsigned& depth;
   };
 
   LogicalResult ifStmt(SMLoc /*loc*/, const Condition& condition,
@@ -947,17 +966,23 @@ private:
 
   //===--- Bit reference resolution -------------------------------------===//
 
-  /// Look up the classical register named @p name.
+  /**
+   * @brief Look up the classical register named @p name.
+   *
+   * @details
+   * Searched back to front, so an inner declaration shadows an outer one of the
+   * same name.
+   */
   FailureOr<ClassicalRegisterInfo*> findClassicalRegister(SMLoc loc,
                                                           StringRef name) {
-    auto* it =
-        find_if(classicalRegisters, [&](const ClassicalRegisterInfo& info) {
-          return StringRef(info.reg.name) == name;
-        });
-    if (it == classicalRegisters.end()) {
+    auto it = find_if(reverse(classicalRegisters),
+                      [&](const ClassicalRegisterInfo& info) {
+                        return StringRef(info.reg.name) == name;
+                      });
+    if (it == classicalRegisters.rend()) {
       return error(loc, "unknown classical register '" + name + "'");
     }
-    return it;
+    return &*it;
   }
 
   FailureOr<Value> lookupBitValue(const BitReference& bit) {
@@ -1475,6 +1500,9 @@ private:
 
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
+
+  /// The number of control-flow regions currently open.
+  unsigned depth = 0;
 
   BindingTable bindings;
   BindingScope bindingsScope{bindings};

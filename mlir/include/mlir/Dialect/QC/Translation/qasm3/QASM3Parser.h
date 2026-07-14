@@ -588,6 +588,9 @@ private:
   [[nodiscard]] LogicalResult parseQuantumDecl() {
     const auto loc = current().loc;
     advance(); // qubit
+    if (scopes.size() != 1) {
+      return sink.error(loc, "qubits must be declared at the global scope");
+    }
     const Expr* size = nullptr;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
@@ -614,6 +617,9 @@ private:
   [[nodiscard]] LogicalResult parseQregDecl() {
     const auto loc = current().loc;
     advance(); // qreg
+    if (scopes.size() != 1) {
+      return sink.error(loc, "qubits must be declared at the global scope");
+    }
     if (current().kind != TokenKind::Identifier) {
       return sink.error(current().loc, "expected identifier");
     }
@@ -638,7 +644,11 @@ private:
 
   /// Parse `output bit[<n>] <id> (= <measurement>);`.
   [[nodiscard]] LogicalResult parseOutputDecl() {
+    const auto loc = current().loc;
     advance(); // output
+    if (scopes.size() != 1) {
+      return sink.error(loc, "outputs must be declared at the global scope");
+    }
     if (current().kind != TokenKind::Bit) {
       return sink.error(current().loc,
                         "only 'bit' registers can be declared as outputs");
