@@ -253,9 +253,6 @@ default.extend-ignore-re = [
   "FoMaC"
 ]
 
-[tool.typos.files]
-extend-exclude = ["docs/_tagfiles/*.tag"]
-
 [tool.typos.default.extend-words]
 wille = "wille"
 anc = "anc"

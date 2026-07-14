@@ -164,7 +164,7 @@ napoleon_numpy_docstring = False
 
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
 qdmi_api_tagfile = (
-    "_tagfiles/qdmi-1.3.2.tag",
+    "_build/qdmi.tag",
     "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/",
 )
 
