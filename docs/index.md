@@ -71,6 +71,7 @@ support
 :hidden:
 
 api/mqt/core/index
+api/mqt/core/mlir/index
 ```
 
 ```{toctree}

@@ -129,16 +129,9 @@ generate_plot(counts, name, light=True)
 generate_plot(counts, name, light=False)
 ```
 
-```{image} fig-qpe-light.svg
-:align: center
-:width: 75%
-:class: only-light
-```
-
-```{image} fig-qpe-dark.svg
-:align: center
-:width: 75%
-:class: only-dark
+```{raw} html
+<img src="_images/fig-qpe-light.svg" class="only-light" style="display: block; margin: auto; width: 75%;" alt="QPE measurement counts">
+<img src="_images/fig-qpe-dark.svg" class="only-dark" style="display: block; margin: auto; width: 75%;" alt="QPE measurement counts">
 ```
 
 The {py:func}`~mqt.core.dd.sample` function is a high-level interface to the
