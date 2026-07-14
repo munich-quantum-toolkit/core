@@ -17,18 +17,20 @@
 
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <memory>
 #include <ostream>
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <utility>
+#include <unordered_map>
 #include <vector>
 
 namespace mlir::qco {

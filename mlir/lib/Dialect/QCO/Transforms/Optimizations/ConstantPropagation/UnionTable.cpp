@@ -12,18 +12,29 @@
 #define MQT_CORE_UNIONTABLE
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/UnionTable.hpp"
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/HybridState.hpp"
 
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
-#include <complex>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
+#include <ostream>
 #include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <utility>
+#include <unordered_map>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -375,10 +386,10 @@ bool UnionTable::hasAlwaysZeroProbability(
     const llvm::DenseMap<Value, bool>& qubitValues,
     const llvm::DenseMap<Value, bool>& classicalValues) const {
   std::set<UnionTableEntry> participatingEntries;
-  for (auto& [qV, _] : qubitValues) {
+  for (const auto& [qV, _] : qubitValues) {
     participatingEntries.insert(*valuesToEntries.at(qV));
   }
-  for (auto& [cV, _] : classicalValues) {
+  for (const auto& [cV, _] : classicalValues) {
     participatingEntries.insert(*valuesToEntries.at(cV));
   }
   for (const auto& ute : participatingEntries) {
@@ -459,11 +470,11 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
                                    const std::span<Value> negCtrlsClassical) {
   // Diagonal gates w/o parameters: IdOp, ZOp, SOp, SdgOp, TOp, TdgOp
   if (isa<IdOp>(op)) {
-    return std::optional(0.0);
+    return {0.0};
   }
   if (!(isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) || isa<TOp>(op) ||
         isa<TdgOp>(op))) {
-    return std::optional<double>();
+    return {};
   }
   const auto targetIndex = qubitsToGlobalIndices.at(target);
   const auto targetUte = valuesToEntries.at(target);
@@ -479,11 +490,11 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
   }
 
   if (alwaysZero) {
-    return std::optional(0.0);
+    return {0.0};
   }
   if (!alwaysOne && ctrlsQuantum.empty() && posCtrlsClassical.empty() &&
       negCtrlsClassical.empty()) {
-    return std::optional<double>();
+    return {};
   }
 
   const auto participatingEntries = collectParticipatingEntries(
@@ -496,17 +507,17 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
     std::unordered_map<unsigned int, bool> qubitCtrlThisEntry;
     llvm::DenseMap<Value, bool> classicalCtrlThisEntry;
     for (const auto q : ctrlsQuantum) {
-      if (ute.participatingQubits.contains((q))) {
+      if (ute.participatingQubits.contains(q)) {
         qubitCtrlThisEntry[qubitsToGlobalIndices.at(q)] = true;
       }
     }
     for (const auto c : posCtrlsClassical) {
-      if (ute.participatingClassicalValues.contains((c))) {
+      if (ute.participatingClassicalValues.contains(c)) {
         classicalCtrlThisEntry[c] = true;
       }
     }
     for (const auto c : negCtrlsClassical) {
-      if (ute.participatingClassicalValues.contains((c))) {
+      if (ute.participatingClassicalValues.contains(c)) {
         classicalCtrlThisEntry[c] = false;
       }
     }
@@ -517,31 +528,31 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
       highestStateAlwaysReached &= !ctrlsZeroProbability;
     }
     if (highestStateReachable && !highestStateAlwaysReached) {
-      return std::optional<double>();
+      return {};
     }
   }
   if (!highestStateReachable) {
-    return std::optional(0.0);
+    return {0.0};
   }
   if (!highestStateAlwaysReached) {
-    return std::optional<double>();
+    return {};
   }
 
   // Only highest state reachable, return respective phase
   if (isa<ZOp>(op)) {
-    return std::optional(std::numbers::pi);
+    return {std::numbers::pi};
   }
   if (isa<SOp>(op)) {
-    return std::optional(std::numbers::pi / 2);
+    return {std::numbers::pi / 2};
   }
   if (isa<SdgOp>(op)) {
-    return std::optional(3.0 * std::numbers::pi / 2);
+    return {3.0 * std::numbers::pi / 2};
   }
   if (isa<TOp>(op)) {
-    return std::optional(std::numbers::pi / 4);
+    return {std::numbers::pi / 4};
   }
   // Tdg Op
-  return std::optional(-std::numbers::pi / 2);
+  return {-std::numbers::pi / 2};
 }
 
 SuperfluousResult

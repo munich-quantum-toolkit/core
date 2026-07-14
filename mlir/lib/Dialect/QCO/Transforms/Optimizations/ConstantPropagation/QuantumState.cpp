@@ -16,13 +16,18 @@
 
 #include <mlir/IR/Operation.h>
 
+#include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <format>
 #include <iterator>
+#include <map>
+#include <ostream>
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
