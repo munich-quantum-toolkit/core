@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Expression.hpp
+ * @brief Quantum-operation representation.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

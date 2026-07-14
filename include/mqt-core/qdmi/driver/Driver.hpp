@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Driver.hpp
+ * @brief QDMI driver implementation interfaces.
+ */
+
 #pragma once
 
 #include "qdmi/common/Common.hpp"

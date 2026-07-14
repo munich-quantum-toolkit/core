@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file IRRewriter.hpp
+ * @brief QIR JIT IR-rewriting utilities.
+ */
+
 #pragma once
 
 #include <llvm/ADT/StringRef.h>

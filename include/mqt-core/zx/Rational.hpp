@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Rational.hpp
+ * @brief ZX-calculus data structures and transformations.
+ */
+
 #pragma once
 
 #if defined(GMP)

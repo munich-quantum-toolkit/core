@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Permutation.hpp
+ * @brief Quantum-circuit intermediate representation.
+ */
+
 #pragma once
 
 #include "Definitions.hpp"

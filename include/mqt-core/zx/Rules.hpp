@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Rules.hpp
+ * @brief ZX-calculus data structures and transformations.
+ */
+
 #pragma once
 
 #include "ZXDefinitions.hpp"

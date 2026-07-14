@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file CachedEdge.hpp
+ * @brief Decision-diagram data structures and algorithms.
+ */
+
 #pragma once
 
 #include "dd/Complex.hpp"

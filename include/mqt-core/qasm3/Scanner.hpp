@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Scanner.hpp
+ * @brief OpenQASM 3 parsing and semantic analysis.
+ */
+
 #pragma once
 
 #include "Token.hpp"

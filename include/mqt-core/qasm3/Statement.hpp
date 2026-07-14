@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Statement.hpp
+ * @brief OpenQASM 3 parsing and semantic analysis.
+ */
+
 #pragma once
 
 #include "Statement_fwd.hpp" // IWYU pragma: export

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file CircuitOptimizer.hpp
+ * @brief Circuit-optimizer interface.
+ */
+
 #pragma once
 
 #include "ir/operations/OpType.hpp"

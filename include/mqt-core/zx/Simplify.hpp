@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Simplify.hpp
+ * @brief ZX-calculus data structures and transformations.
+ */
+
 #pragma once
 
 #include "Rules.hpp"

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Session.hpp
+ * @brief QIR JIT session interface.
+ */
+
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>

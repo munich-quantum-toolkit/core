@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file IfElseOperation.hpp
+ * @brief Quantum-operation representation.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

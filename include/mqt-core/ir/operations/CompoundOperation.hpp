@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file CompoundOperation.hpp
+ * @brief Quantum-operation representation.
+ */
+
 #pragma once
 
 #include "Control.hpp"

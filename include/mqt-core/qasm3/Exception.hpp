@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Exception.hpp
+ * @brief OpenQASM 3 parsing and semantic analysis.
+ */
+
 #pragma once
 
 #include "Statement.hpp"
