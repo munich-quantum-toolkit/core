@@ -18,7 +18,6 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Value.h>
 
-#include <memory>
 #include <vector>
 
 using namespace mlir::qco;
@@ -210,7 +209,7 @@ TEST_F(HybridStateTest, doMeasurementWithOneResult) {
   const auto resStates = hState.propagateMeasurement(0, v1);
 
   EXPECT_TRUE(resStates.size() == 1);
-  const auto resHybridState = resStates.at(0);
+  const auto& resHybridState = resStates.at(0);
   EXPECT_THAT(
       resHybridState.toString(),
       testing::HasSubstr("{|0001> -> 1.00}: integerValue0 = 1; p = 0.60"));
@@ -241,7 +240,7 @@ TEST_F(HybridStateTest, doMeasurementWithNegClassicalCtrl) {
   const auto resStates = hState.propagateMeasurement(0, v1, ctrl);
 
   EXPECT_TRUE(resStates.size() == 1);
-  const auto resHybridState = resStates.at(0);
+  const auto& resHybridState = resStates.at(0);
   EXPECT_THAT(
       resHybridState.toString(),
       testing::HasSubstr(
@@ -257,7 +256,7 @@ TEST_F(HybridStateTest, doMeasurementWithPosNegClassicalCtrl) {
   const auto resStates = hState.propagateMeasurement(0, v1, {}, ctrl);
 
   EXPECT_TRUE(resStates.size() == 1);
-  const auto resHybridState = resStates.at(0);
+  const auto& resHybridState = resStates.at(0);
   EXPECT_THAT(
       resHybridState.toString(),
       testing::HasSubstr(
@@ -273,7 +272,7 @@ TEST_F(HybridStateTest, doResetWithOneResult) {
   const auto resStates = hState.propagateReset(0, ctrl);
 
   EXPECT_TRUE(resStates.size() == 1);
-  const auto resHybridState = resStates.at(0);
+  const auto& resHybridState = resStates.at(0);
   EXPECT_THAT(resHybridState.toString(),
               testing::HasSubstr("{|0> -> 1.00}: integerValue0 = 3; p = 1.00"));
 }
@@ -305,7 +304,7 @@ TEST_F(HybridStateTest, doResetWithNegClassicalCtrl) {
   const auto resStates = hState.propagateReset(0, ctrl);
 
   EXPECT_TRUE(resStates.size() == 1);
-  const auto resHybridState = resStates.at(0);
+  const auto& resHybridState = resStates.at(0);
   EXPECT_THAT(
       resHybridState.toString(),
       testing::HasSubstr(
@@ -321,7 +320,7 @@ TEST_F(HybridStateTest, doResetWithPosNegClassicalCtrl) {
   const auto resStates = hState.propagateReset(0, {}, ctrl);
 
   EXPECT_TRUE(resStates.size() == 1);
-  const auto resHybridState = resStates.at(0);
+  const auto& resHybridState = resStates.at(0);
   EXPECT_THAT(
       resHybridState.toString(),
       testing::HasSubstr(

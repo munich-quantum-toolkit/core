@@ -16,7 +16,6 @@
 #include <gtest/gtest.h>
 #include <mlir/IR/DialectRegistry.h>
 
-#include <memory>
 #include <stdexcept>
 #include <utility>
 #include <vector>

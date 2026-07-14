@@ -15,7 +15,11 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseMap.h>
 #include <mlir/IR/Value.h>
+
+#include <numbers>
+#include <vector>
 
 using namespace mlir::qco;
 

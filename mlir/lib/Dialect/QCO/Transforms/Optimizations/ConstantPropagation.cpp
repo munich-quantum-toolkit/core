@@ -1,26 +1,47 @@
 /*
  * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
- * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
- * All rights reserved.
+ * Copyright (c) 2025 - 2026 Munich Qua#include
+ * "mlir/Dialect/QCO/IR/QCOInterfaces.h"ntum Software Company GmbH All rights
+ * reserved.
  *
  * SPDX-License-Identifier: MIT
  *
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/UnionTable.hpp"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir-c/BuiltinAttributes.h>
+#include <mlir-c/Support.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Dialect.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
-#include <iostream>
+#include <algorithm>
+#include <complex>
+#include <cstddef>
+#include <iterator>
+#include <span>
+#include <stdexcept>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -78,16 +99,17 @@ namespace {
 /**
  * @brief Result of checking how do modify a controlled gate.
  */
-struct controlsToModify {
+struct ControlsToModify {
   llvm::DenseSet<Value> quantumCtrlsToRemove;
   llvm::DenseSet<Value> classicalPosCtrlsToAdd;
   llvm::DenseSet<Value> classicalNegCtrlsToAdd;
 };
 
-LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
-                                     std::span<Operation*>& worklist,
-                                     const std::span<Value> posClassicalCtrls,
-                                     const std::span<Value> negClassicalCtrls);
+static LogicalResult iterateThroughWorklist(PatternRewriter& rewriter,
+                                            UnionTable* ut,
+                                            std::span<Operation*>& worklist,
+                                            std::span<Value> posClassicalCtrls,
+                                            std::span<Value> negClassicalCtrls);
 
 /**
  * This method checks whether the func::FuncOp is an entry point to the program.
@@ -95,7 +117,7 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  * @param op The func::FuncOp to be checked.
  * @return Whether the operation is an entry point to the program.
  */
-bool isEntryPoint(const func::FuncOp op) {
+static bool isEntryPoint(const func::FuncOp op) {
   const auto passthroughAttr = op->getAttrOfType<ArrayAttr>("passthrough");
   if (!passthroughAttr) {
     return false;
@@ -114,7 +136,7 @@ bool isEntryPoint(const func::FuncOp op) {
  * @param module The module which contains the operations
  * @param ctx The MLIR context
  */
-void moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
+static void moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
   bool changed = false;
   do {
     changed = false;
@@ -140,7 +162,7 @@ void moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
  * @param op The qco::UnitaryOpInterface to be removed.
  * @param rewriter The used rewriter.
  */
-void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
+static void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
   for (const auto outQubit : op->getOutputQubits()) {
     rewriter.replaceAllUsesWith(outQubit, op->getInputForOutput(outQubit));
   }
@@ -153,7 +175,7 @@ void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
  * @param op The qco::CtrlOp to be removed.
  * @param rewriter The used rewriter.
  */
-void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter) {
+static void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter) {
   for (const auto outQubit : op->getOutputQubits()) {
     rewriter.replaceAllUsesWith(outQubit, op->getInputForOutput(outQubit));
   }
@@ -170,10 +192,10 @@ void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter) {
  * through.
  * @param rewriter The used rewriter.
  */
-void inlineBranchBlock(IfOp* ifOperation, Block* block,
-                       std::span<Operation*>& worklist,
-                       PatternRewriter& rewriter) {
-  const auto operation = ifOperation->getOperation();
+static void inlineBranchBlock(IfOp* ifOperation, Block* block,
+                              std::span<Operation*>& worklist,
+                              PatternRewriter& rewriter) {
+  auto* const operation = ifOperation->getOperation();
   Operation* terminator = block->getTerminator();
   const auto results = terminator->getOperands();
   rewriter.inlineBlockBefore(block, operation, ifOperation->getQubits());
@@ -194,9 +216,9 @@ void inlineBranchBlock(IfOp* ifOperation, Block* block,
  * operation.
  * @return Whether the handling was successfully or interrupted.
  */
-WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
-                          const std::span<Value> posClassicalCtrls,
-                          const std::span<Value> negClassicalCtrls) {
+static WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
+                                 const std::span<Value> posClassicalCtrls,
+                                 const std::span<Value> negClassicalCtrls) {
   if (!posClassicalCtrls.empty() || !negClassicalCtrls.empty()) {
     throw std::logic_error("Cannot handle constant operation in conditional "
                            "branches during constant propagation.");
@@ -236,12 +258,12 @@ WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
  * a quantum control (qco::CtrlOp).
  * @return Whether there is only a global phase added.
  */
-bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
-                         const std::span<Value> ctrlsQuantum,
-                         const std::span<Value> posClassicalCtrls,
-                         const std::span<Value> negClassicalCtrls,
-                         PatternRewriter& rewriter,
-                         const std::span<Value> targetValues) {
+static bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
+                                const std::span<Value> ctrlsQuantum,
+                                const std::span<Value> posClassicalCtrls,
+                                const std::span<Value> negClassicalCtrls,
+                                PatternRewriter& rewriter,
+                                const std::span<Value> targetValues) {
   bool addsGlobalPhase = false;
   if (isa<IdOp>(op) || isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) ||
       isa<TOp>(op) || isa<TdgOp>(op)) {
@@ -269,10 +291,10 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
  * @param qubitsIn A span of target inputs.
  * @return The newly created gate.
  */
-Operation*
+static Operation*
 createOperationFromUnitaryOperation(Operation* op, PatternRewriter& rewriter,
                                     const std::span<Value> qubitsIn) {
-  const auto newOp =
+  auto* const newOp =
       mlir::TypeSwitch<Operation*, Operation*>(op)
           .Case<U2Op>([&](U2Op gate) {
             return U2Op::create(rewriter, gate.getLoc(), qubitsIn[0],
@@ -323,8 +345,9 @@ createOperationFromUnitaryOperation(Operation* op, PatternRewriter& rewriter,
  * through.
  * @return The operation without the controls.
  */
-UnitaryOpInterface removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
-                                        std::span<Operation*>& worklist) {
+static UnitaryOpInterface
+removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
+                     std::span<Operation*>& worklist) {
   for (const auto& qubitCtrl : op->getInputQubits()) {
     rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
   }
@@ -334,7 +357,7 @@ UnitaryOpInterface removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
 
   const auto targetInput = op->getInputTargets();
   std::vector<Value> qubitsIn = {targetInput.begin(), targetInput.end()};
-  const auto newOp =
+  auto* const newOp =
       createOperationFromUnitaryOperation(innerUnitary, rewriter, qubitsIn);
   auto newUnitary = static_cast<UnitaryOpInterface>(newOp);
   for (const auto inTarget : newUnitary.getInputQubits()) {
@@ -358,9 +381,10 @@ UnitaryOpInterface removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
  * through.
  * @return The operation without given controls.
  */
-CtrlOp removeCtrlsOfGate(CtrlOp* op, const llvm::DenseSet<Value>& ctrlsToRemove,
-                         PatternRewriter& rewriter,
-                         std::span<Operation*>& worklist) {
+static CtrlOp removeCtrlsOfGate(CtrlOp* op,
+                                const llvm::DenseSet<Value>& ctrlsToRemove,
+                                PatternRewriter& rewriter,
+                                std::span<Operation*>& worklist) {
   for (const auto& qubitCtrl : ctrlsToRemove) {
     rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
   }
@@ -379,7 +403,7 @@ CtrlOp removeCtrlsOfGate(CtrlOp* op, const llvm::DenseSet<Value>& ctrlsToRemove,
       rewriter, op->getLoc(), newControlIn, op->getTargetsIn(),
       [&](const ValueRange target) {
         std::vector<Value> qubitsIn = {target.begin(), target.end()};
-        const auto newOp = createOperationFromUnitaryOperation(
+        auto* const newOp = createOperationFromUnitaryOperation(
             innerUnitary, rewriter, qubitsIn);
         return SmallVector<Value>{newOp->getResults()};
       });
@@ -412,11 +436,11 @@ CtrlOp removeCtrlsOfGate(CtrlOp* op, const llvm::DenseSet<Value>& ctrlsToRemove,
  * through.
  * @return Whether the handling was successfully or interrupted.
  */
-WalkResult handleIfOp(UnionTable* ut, IfOp* op,
-                      const std::span<Value> posClassicalCtrls,
-                      const std::span<Value> negClassicalCtrls,
-                      PatternRewriter& rewriter,
-                      std::span<Operation*>& worklist) {
+static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
+                             const std::span<Value> posClassicalCtrls,
+                             const std::span<Value> negClassicalCtrls,
+                             PatternRewriter& rewriter,
+                             std::span<Operation*>& worklist) {
   const Value condition = op->getCondition();
 
   // Remove branching if value is always or never true
@@ -589,12 +613,12 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
  * through.
  * @return Whether the propagation of the new operations in a branch succeeded.
  */
-WalkResult putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
-                                  const std::span<Value> posClassicalCtrls,
-                                  const std::span<Value> negClassicalCtrls,
-                                  controlsToModify ctrlsToMod,
-                                  PatternRewriter& rewriter,
-                                  std::span<Operation*>& worklist) {
+static WalkResult
+putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
+                       const std::span<Value> posClassicalCtrls,
+                       const std::span<Value> negClassicalCtrls,
+                       ControlsToModify ctrlsToMod, PatternRewriter& rewriter,
+                       std::span<Operation*>& worklist) {
   const bool createThenBranch = !ctrlsToMod.classicalPosCtrlsToAdd.empty();
   const Value condition = createThenBranch
                               ? *ctrlsToMod.classicalPosCtrlsToAdd.begin()
@@ -614,7 +638,7 @@ WalkResult putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
          llvm::zip(insertedQubits, thenBlock->getArguments())) {
       map.map(originalInput, ifArgs);
     }
-    auto thenClone = rewriter.clone(*op.getOperation(), map);
+    auto* thenClone = rewriter.clone(*op.getOperation(), map);
     YieldOp::create(rewriter, op->getLoc(), thenClone->getResults());
 
     auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
@@ -628,7 +652,7 @@ WalkResult putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
          llvm::zip(insertedQubits, elseBlock->getArguments())) {
       map.map(originalInput, ifArgs);
     }
-    auto elseClone = rewriter.clone(*op.getOperation(), map);
+    auto* elseClone = rewriter.clone(*op.getOperation(), map);
     YieldOp::create(rewriter, op->getLoc(), elseClone->getResults());
 
     auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
@@ -660,13 +684,13 @@ WalkResult putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
  * @param resultValues The values the target values become after the operation.
  * @return Whether the handling was successfully or interrupted.
  */
-WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
-                         const std::span<Value> ctrlsQuantum,
-                         const std::span<Value> newCtrlsQuantum,
-                         const std::span<Value> posClassicalCtrls,
-                         const std::span<Value> negClassicalCtrls,
-                         const std::span<Value> targetValues = {},
-                         const std::span<Value> resultValues = {}) {
+static WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
+                                const std::span<Value> ctrlsQuantum,
+                                const std::span<Value> newCtrlsQuantum,
+                                const std::span<Value> posClassicalCtrls,
+                                const std::span<Value> negClassicalCtrls,
+                                const std::span<Value> targetValues = {},
+                                const std::span<Value> resultValues = {}) {
 
   const auto params = op->getParameters();
   std::vector<Value> paramValues = {params.begin(), params.end()};
@@ -707,11 +731,12 @@ WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
  * through.
  * @return Whether the handling was successfully or interrupted.
  */
-WalkResult handleUncontrolledUnitary(UnionTable* ut, UnitaryOpInterface* op,
-                                     const std::span<Value> posClassicalCtrls,
-                                     const std::span<Value> negClassicalCtrls,
-                                     PatternRewriter& rewriter,
-                                     std::span<Operation*>& worklist) {
+static WalkResult
+handleUncontrolledUnitary(UnionTable* ut, UnitaryOpInterface* op,
+                          const std::span<Value> posClassicalCtrls,
+                          const std::span<Value> negClassicalCtrls,
+                          PatternRewriter& rewriter,
+                          std::span<Operation*>& worklist) {
   const auto targets = op->getInputTargets();
   std::vector<Value> targetVecs = {targets.begin(), targets.end()};
 
@@ -744,11 +769,11 @@ WalkResult handleUncontrolledUnitary(UnionTable* ut, UnitaryOpInterface* op,
  * through.
  * @return Whether the handling was successfully or interrupted.
  */
-WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
-                        const std::span<Value> posClassicalCtrls,
-                        const std::span<Value> negClassicalCtrls,
-                        PatternRewriter& rewriter,
-                        std::span<Operation*>& worklist) {
+static WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
+                               const std::span<Value> posClassicalCtrls,
+                               const std::span<Value> negClassicalCtrls,
+                               PatternRewriter& rewriter,
+                               std::span<Operation*>& worklist) {
   // Avoid to address body twice
   op->walk<WalkOrder::PreOrder>([&](Operation* bodyOp) {
     std::ranges::replace(worklist, bodyOp, static_cast<Operation*>(nullptr));
@@ -769,7 +794,7 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
   }
 
   // Collect quantum values to remove and classical values to add
-  controlsToModify ctrlsToMod;
+  ControlsToModify ctrlsToMod;
   ctrlsToMod.quantumCtrlsToRemove = superfluousCtrls.superfluousQubits;
   for (const auto superfluousQ : ctrlsToMod.quantumCtrlsToRemove) {
     std::erase(inCtrlValues, superfluousQ);
@@ -881,10 +906,11 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
  * operation.
  * @return Whether the iteration was successfully or interrupted.
  */
-LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
-                                     std::span<Operation*>& worklist,
-                                     const std::span<Value> posClassicalCtrls,
-                                     const std::span<Value> negClassicalCtrls) {
+static LogicalResult
+iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
+                       std::span<Operation*>& worklist,
+                       const std::span<Value> posClassicalCtrls,
+                       const std::span<Value> negClassicalCtrls) {
   /// Iterate work-list.
   bool addedAtLeastOneQubit = false;
   for (Operation* curr : worklist) {
@@ -1023,9 +1049,9 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  * non-zero probability.
  * @return Success if constant propagation has been applied successfully
  */
-LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
-                      const size_t maxNonzeroAmplitudes,
-                      const size_t maxHybridStates) {
+static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
+                             const size_t maxNonzeroAmplitudes,
+                             const size_t maxHybridStates) {
   moveMeasurementsToFront(module, ctx);
 
   PatternRewriter rewriter(ctx);
@@ -1060,6 +1086,7 @@ struct ConstantPropagation final
     : impl::ConstantPropagationBase<ConstantPropagation> {
   using ConstantPropagationBase::ConstantPropagationBase;
 
+protected:
   void runOnOperation() override {
     if (failed(applyCP(getOperation(), &getContext(), maximumNonzeroAmplitudes,
                        maximumHybridStates))) {
