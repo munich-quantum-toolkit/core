@@ -154,11 +154,12 @@ struct GateCall {
  * `c == 5`) are not supported yet.
  */
 struct Condition {
-  enum class Kind : uint8_t { Measurement, Bit, Literal, Not, And, Or };
+  enum class Kind : uint8_t { Measurement, Bool, Bit, Literal, Not, And, Or };
 
   SMLoc loc;
   Kind kind = Kind::Bit;
   Operand operand;                ///< For `Measurement`.
+  StringRef identifier;           ///< For `Bool`.
   BitReference bit;               ///< For `Bit`.
   bool literalValue = false;      ///< For `Literal`.
   const Condition* lhs = nullptr; ///< For `Not`, `And`, and `Or`.
@@ -245,15 +246,7 @@ public:
   }
 
 private:
-  /**
-   * @brief A declared name.
-   *
-   * @details
-   * The parser owns the names a program declares: it rejects redeclarations,
-   * chooses the grammar of an assignment from what its target names, and
-   * rejects an assignment to a `const`. Each declaration and assignment tells
-   * the sink the type it needs, so the sink keeps no symbol table of its own.
-   */
+  /// @brief A declared symbol.
   struct Symbol {
     enum class Kind : uint8_t {
       Bool,
@@ -263,15 +256,15 @@ private:
       ClassicalRegister
     };
 
-    Kind kind = Kind::Int;
-    bool isConst = false; ///< Relevant if a scalar.
+    Kind kind = Kind::Bool;
+    bool isConst = false; ///< For `Bool`, `Int`, and `Float`.
   };
 
   /**
    * @brief A lexical scope.
    *
    * @details
-   * Names declared while it is alive go out of scope when it is destroyed.
+   * Symbols declared while it is alive go out of scope when it is destroyed.
    */
   class SymbolScope {
   public:
@@ -290,7 +283,7 @@ private:
   };
 
   /// Lookup the symbol @p id refers to.
-  [[nodiscard]] const Symbol* lookup(StringRef id) const {
+  [[nodiscard]] const Symbol* lookupSymbol(StringRef id) const {
     for (const auto& scope : reverse(scopes)) {
       const auto it = scope.find(id);
       if (it != scope.end()) {
@@ -304,10 +297,11 @@ private:
    * @brief Declare @p id in the innermost scope.
    *
    * @details
-   * A name may be redeclared in an inner scope, where it shadows the outer one
-   * until that scope ends, but not twice in the same scope.
+   * A symbol may be redeclared in an inner scope, where it shadows the outer
+   * one until that scope ends.
    */
-  [[nodiscard]] LogicalResult declare(SMLoc loc, StringRef id, Symbol symbol) {
+  [[nodiscard]] LogicalResult declareSymbol(SMLoc loc, StringRef id,
+                                            Symbol symbol) {
     if (!scopes.back().insert({id, symbol}).second) {
       return sink.error(loc, "identifier '" + id + "' already declared");
     }
@@ -423,15 +417,23 @@ private:
     }
   }
 
-  /// Parse a `{ ... }` block or a single statement, emitting into whatever
-  /// region the sink has made current.
+  /**
+   * @brief Parse a `{ ... }` block or a single statement.
+   *
+   * @details
+   * The block is parsed in a new scope.
+   */
   [[nodiscard]] LogicalResult parseBlock() {
     const SymbolScope scope(*this);
     return parseBlockInScope();
   }
 
-  /// Parse a `{ ... }` block or a single statement into the current scope,
-  /// which the caller has already opened.
+  /**
+   * @brief Parse a `{ ... }` block or a single statement.
+   *
+   * @details
+   * The block is parsed into the current scope.
+   */
   [[nodiscard]] LogicalResult parseBlockInScope() {
     if (current().kind == TokenKind::LBrace) {
       advance();
@@ -546,7 +548,7 @@ private:
                                  "' requires an initializer");
     }
 
-    if (failed(declare(loc, id, {.kind = kind, .isConst = isConst}))) {
+    if (failed(declareSymbol(loc, id, {.kind = kind, .isConst = isConst}))) {
       return failure();
     }
 
@@ -602,7 +604,7 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    if (failed(declare(loc, id, {.kind = Symbol::Kind::QubitRegister}))) {
+    if (failed(declareSymbol(loc, id, {.kind = Symbol::Kind::QubitRegister}))) {
       return failure();
     }
     return sink.qubitRegister(loc, id, size);
@@ -628,7 +630,7 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    if (failed(declare(loc, id, {.kind = Symbol::Kind::QubitRegister}))) {
+    if (failed(declareSymbol(loc, id, {.kind = Symbol::Kind::QubitRegister}))) {
       return failure();
     }
     return sink.qubitRegister(loc, id, size);
@@ -678,7 +680,8 @@ private:
       return failure();
     }
 
-    if (failed(declare(loc, id, {.kind = Symbol::Kind::ClassicalRegister}))) {
+    if (failed(declareSymbol(loc, id,
+                             {.kind = Symbol::Kind::ClassicalRegister}))) {
       return failure();
     }
     if (failed(sink.classicalRegister(loc, id, size, isOutput))) {
@@ -711,7 +714,8 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    if (failed(declare(loc, id, {.kind = Symbol::Kind::ClassicalRegister}))) {
+    if (failed(declareSymbol(loc, id,
+                             {.kind = Symbol::Kind::ClassicalRegister}))) {
       return failure();
     }
     return sink.classicalRegister(loc, id, size, /*isOutput=*/false);
@@ -723,7 +727,7 @@ private:
   [[nodiscard]] LogicalResult parseAssignment() {
     const auto loc = current().loc;
     const auto id = current().identifier;
-    const auto* symbol = lookup(id);
+    const auto* symbol = lookupSymbol(id);
     if (symbol == nullptr) {
       return sink.error(loc, "unknown identifier '" + id + "'");
     }
@@ -1160,20 +1164,14 @@ private:
     if (failed(conditionOrFailure)) {
       return failure();
     }
-    const auto& condition = **conditionOrFailure;
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
-
-    // Whether an `else` follows cannot be known until the `then` branch has
-    // been parsed, and that only happens once the sink calls back. So the
-    // `else` branch is recognized from within the continuation that emits it.
     return sink.ifStmt(
-        loc, condition, [this] { return parseBlock(); },
+        loc, **conditionOrFailure, [this] { return parseBlock(); },
         [this] { return parseElse(); });
   }
 
-  /// Parse `else { ... }`, if there is one.
   [[nodiscard]] LogicalResult parseElse() {
     if (current().kind != TokenKind::Else) {
       return success();
@@ -1234,16 +1232,14 @@ private:
       return failure();
     }
 
-    // The loop variable lives in the body's scope, as if it were declared as
-    // its first statement. It is therefore not visible to the range expressions
-    // above, and it cannot be redeclared directly in the body.
-    const SymbolScope scope(*this);
-    if (failed(declare(iv.loc, iv.identifier, {.kind = Symbol::Kind::Int}))) {
-      return failure();
-    }
-
-    return sink.forStmt(loc, iv.identifier, **start, *step, *stop,
-                        [this] { return parseBlockInScope(); });
+    return sink.forStmt(loc, iv.identifier, **start, *step, *stop, [&, this] {
+      const SymbolScope scope(*this);
+      if (failed(declareSymbol(iv.loc, iv.identifier,
+                               {.kind = Symbol::Kind::Int}))) {
+        return failure();
+      }
+      return parseBlockInScope();
+    });
   }
 
   [[nodiscard]] LogicalResult parseWhile() {
@@ -1256,11 +1252,11 @@ private:
     if (failed(conditionOrFailure)) {
       return failure();
     }
-    const auto& condition = **conditionOrFailure;
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
-    return sink.whileStmt(loc, condition, [this] { return parseBlock(); });
+    return sink.whileStmt(loc, **conditionOrFailure,
+                          [this] { return parseBlock(); });
   }
 
   //===--- Conditions --------------------------------------------------===//
@@ -1359,6 +1355,16 @@ private:
       return finishPrimaryCondition(*inner);
     }
     case TokenKind::Identifier: {
+      const auto* symbol = lookupSymbol(current().identifier);
+      if (symbol != nullptr && symbol->kind == Symbol::Kind::Bool) {
+        auto* condition = makeCondition();
+        condition->loc = loc;
+        condition->kind = Condition::Kind::Bool;
+        condition->identifier = current().identifier;
+        advance();
+        return finishPrimaryCondition(condition);
+      }
+
       auto bit = parseBitReference();
       if (failed(bit)) {
         return failure();

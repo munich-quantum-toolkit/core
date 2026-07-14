@@ -252,21 +252,13 @@ const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
  */
 class QCEmitter {
 public:
-  /**
-   * @brief What a declared classical name is bound to.
-   *
-   * @details
-   * Every classical name shares one scoped table, so that lookup follows the
-   * lexical scopes rather than the declared type. That is what lets an inner
-   * declaration shadow an outer one of a *different* type, as the language
-   * requires.
-   */
+  /// What a declared scalar symbol is bound to.
   struct Binding {
-    enum class Kind : uint8_t { ConstInt, Int, Float, Bool };
+    enum class Kind : uint8_t { Bool, Int, Float, ConstInt };
 
-    Kind kind = Kind::ConstInt;
-    int64_t constant = 0; ///< If `ConstInt`.
-    Value value;          ///< If `Int` (`index`), `Float` (`f64`), or `Bool`.
+    Kind kind = Kind::Bool;
+    Value value;          ///< For `Int`, `Float`, and `Bool`.
+    int64_t constant = 0; ///< For `ConstInt`.
   };
 
 private:
@@ -276,24 +268,6 @@ private:
   using BindingScope = llvm::ScopedHashTableScope<StringRef, Binding>;
 
 public:
-  /**
-   * @brief The bindings of one lexical scope.
-   *
-   * @details
-   * Everything bound while it is alive goes out of scope when it is destroyed,
-   * so a block can shadow a name from an enclosing scope. Loaded qubits are
-   * scoped too: a value loaded inside a region does not dominate its uses
-   * outside it.
-   */
-  struct DeclarationScope {
-    explicit DeclarationScope(QCEmitter& emitter)
-        : bindings(emitter.bindings),
-          loadedQubits(emitter.dynamicallyLoadedQubits) {}
-
-    BindingScope bindings;
-    ValueScope loadedQubits;
-  };
-
   QCEmitter(MLIRContext* ctx, llvm::SourceMgr& sourceMgr)
       : builder(ctx), sourceMgr(sourceMgr), gates(buildGateTable()) {}
 
@@ -385,7 +359,7 @@ public:
   }
 
   LogicalResult intAssign(SMLoc /*loc*/, StringRef id, const Expr& value) {
-    // The parser rejects assignments to a `const`
+    // The parser already rejects assignments to a `const`
     return assignInt(id, value, /*isConst=*/false);
   }
 
@@ -407,8 +381,7 @@ public:
    * @brief Bind an integer variable @p id to the value of @p value.
    *
    * @details
-   * A `const` integer is folded at compile time, which is what lets it size a
-   * qubit register. Any other integer becomes a runtime value.
+   * A `const` integer is evaluated at compile time.
    */
   LogicalResult assignInt(StringRef id, const Expr& value, bool isConst) {
     if (isConst) {
@@ -599,16 +572,16 @@ public:
 
   //===--- Control flow -------------------------------------------------===//
 
-  /**
-   * @brief Emit an `if` statement.
-   *
-   * @details
-   * Both branches are always given a region, and `elseBody` is called even when
-   * the program has no `else`. That is what lets the parser recognize the
-   * branch from inside the continuation, which is the only place it can: it
-   * does not know whether one follows until the `then` branch has been parsed.
-   * Canonicalization folds away whichever regions turn out to be empty.
-   */
+  /// A guarded scope for declared scalar symbols and dynamically loaded qubits.
+  struct DeclarationScope {
+    explicit DeclarationScope(QCEmitter& emitter)
+        : bindings(emitter.bindings),
+          loadedQubits(emitter.dynamicallyLoadedQubits) {}
+
+    BindingScope bindings;
+    ValueScope loadedQubits;
+  };
+
   LogicalResult ifStmt(SMLoc /*loc*/, const Condition& condition,
                        function_ref<LogicalResult()> thenBody,
                        function_ref<LogicalResult()> elseBody) {
@@ -712,10 +685,7 @@ public:
   }
 
 private:
-  //===--- Bindings -----------------------------------------------------===//
-
-  /// The binding of the classical name @p name, or `std::nullopt` if no such
-  /// name is in scope.
+  /// The binding of @p name, or `std::nullopt` if no such symbol is in scope.
   [[nodiscard]] std::optional<Binding> lookupBinding(StringRef name) const {
     if (bindings.count(name) == 0) {
       return std::nullopt;
@@ -1065,16 +1035,7 @@ private:
     return std::variant<Value, SmallVector<Value>>{*loaded};
   }
 
-  /**
-   * @brief The cache key of the index expression @p expr.
-   *
-   * @details
-   * A name is keyed on what it is currently bound to rather than on its
-   * spelling, because a name can be rebound between two uses: the load cached
-   * for the earlier value must not be reused for the later one. The structure
-   * of the expression is still keyed on its spelling, so that two occurrences
-   * of the same index resolve to the same load.
-   */
+  /// @brief The cache key of the index expression @p expr.
   [[nodiscard]] std::string getIndexKey(const Expr& expr) const {
     switch (expr.kind) {
     case Expr::Kind::Int:
@@ -1087,12 +1048,12 @@ private:
         return expr.identifier.str();
       }
       switch (binding->kind) {
-      case Binding::Kind::ConstInt:
-        return std::to_string(binding->constant);
       case Binding::Kind::Int:
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        // Use the pointer value of the runtime integer as a unique key
         return std::to_string(
             reinterpret_cast<uintptr_t>(binding->value.getAsOpaquePointer()));
+      case Binding::Kind::ConstInt:
+        return std::to_string(binding->constant);
       default:
         return expr.identifier.str();
       }
@@ -1118,8 +1079,8 @@ private:
 
   FailureOr<Value> loadDynamicElement(StringRef name, Value memref,
                                       const Expr& expr) {
-    const std::string key = name.str() + "[" + getIndexKey(expr) + "]";
-    if (Value cached = dynamicallyLoadedQubits.lookup(key)) {
+    const auto key = name.str() + "[" + getIndexKey(expr) + "]";
+    if (auto cached = dynamicallyLoadedQubits.lookup(key)) {
       return cached;
     }
     auto index = emitIndex(expr);
@@ -1171,15 +1132,15 @@ private:
       }
       return builder.measure(*qubit);
     }
-    case Condition::Kind::Bit:
-      // A bare identifier may name a declared `bool`; otherwise it is a
-      // classical bit reference.
-      if (condition.bit.index == nullptr) {
-        const auto binding = lookupBinding(condition.bit.identifier);
-        if (binding && binding->kind == Binding::Kind::Bool) {
-          return binding->value;
-        }
+    case Condition::Kind::Bool: {
+      const auto binding = lookupBinding(condition.identifier);
+      if (!binding) {
+        return error(condition.loc,
+                     "unknown identifier '" + condition.identifier + "'");
       }
+      return binding->value;
+    }
+    case Condition::Kind::Bit:
       return lookupBitValue(condition.bit);
     case Condition::Kind::Literal:
       return builder.boolConstant(condition.literalValue);
@@ -1296,20 +1257,22 @@ private:
   FailureOr<Value> resolveParameter(StringRef name, SMLoc loc) {
     if (const auto binding = lookupBinding(name)) {
       switch (binding->kind) {
-      case Binding::Kind::Float:
-        return binding->value;
-      case Binding::Kind::ConstInt:
-        return builder.floatConstant(static_cast<double>(binding->constant));
+      case Binding::Kind::Bool:
+        return error(loc, "expected a numeric expression");
       case Binding::Kind::Int: {
-        // A runtime integer used as an angle is converted to an `f64`.
+        // Convert from `index` to `f64`
         auto integer = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   binding->value)
                            .getResult();
         return arith::SIToFPOp::create(builder, builder.getF64Type(), integer)
             .getResult();
       }
-      case Binding::Kind::Bool:
-        return error(loc, "expected a numeric expression");
+      case Binding::Kind::Float:
+        return binding->value;
+      case Binding::Kind::ConstInt:
+        return builder.floatConstant(static_cast<double>(binding->constant));
+      default:
+        llvm_unreachable("unknown binding kind");
       }
     }
     if (auto value = lookupBuiltinConstant(name, builder)) {
@@ -1514,7 +1477,6 @@ private:
   QCProgramBuilder builder;
   llvm::SourceMgr& sourceMgr;
 
-  /// Every classical name, in one table so that shadowing is purely lexical.
   BindingTable bindings;
   BindingScope bindingsScope{bindings};
 
