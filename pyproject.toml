@@ -95,6 +95,7 @@ build.targets = [
   "mqt-core-dd-bindings",
   "mqt-core-fomac-bindings",
   "mqt-core-na-bindings",
+  "mqt-core-mlir-bindings",
   "mqt-core-qdmi-ddsim-device",
   "mqt-core-qdmi-na-device",
   "mqt-core-qdmi-sc-device",
@@ -133,7 +134,7 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
-BUILD_MQT_CORE_MLIR = "OFF"
+BUILD_MQT_CORE_MLIR = "ON"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
@@ -232,7 +233,7 @@ known-first-party = ["mqt.core"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
 "mlir/unittests/**/*.py" = ["INP001", "T201"]
-"*.pyi" = ["D418", "E501", "PYI021"]
+"*.pyi" = ["D418", "E501", "PYI021", "PYI011"]
 "*.ipynb" = [
     "D",    # pydocstyle
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
@@ -285,9 +286,12 @@ test-skip = [
 ]
 
 [tool.cibuildwheel.linux]
-before-all = "uv tool install sccache>=0.10.0"
+before-all = """
+uv tool install sccache>=0.10.0
+curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.1/setup-mlir.sh | bash -s -- -v 22.1.7 -p /opt/llvm-22.1.7
+"""
 before-test = "uvx sccache --show-stats"
-environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin" }
+environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-22.1.7/lib/cmake/mlir" }
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }

@@ -10,7 +10,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add QIRRuntime library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QIRRuntime)
+  add_mqt_core_library(${TARGET_NAME} FORCE_STATIC ALIAS_NAME QIRRuntime)
 
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE QIR.cpp Runtime.cpp
