@@ -213,6 +213,40 @@ private:
       const Value one = arith::ConstantIntOp::create(opBuilder, loc, 1, 1);
       return arith::XOrIOp::create(opBuilder, loc, operand, one);
     }
+    case frontend::ExpressionKind::Sin:
+    case frontend::ExpressionKind::Cos:
+    case frontend::ExpressionKind::Tan:
+    case frontend::ExpressionKind::Exp:
+    case frontend::ExpressionKind::Ln:
+    case frontend::ExpressionKind::Sqrt: {
+      Value operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (isa<IntegerType>(operand.getType())) {
+        const auto sourceType = program.expressions.at(expression.lhs).type;
+        if (sourceType == frontend::ScalarType::Uint) {
+          operand = arith::UIToFPOp::create(opBuilder, loc,
+                                            opBuilder.getF64Type(), operand);
+        } else {
+          operand = arith::SIToFPOp::create(opBuilder, loc,
+                                            opBuilder.getF64Type(), operand);
+        }
+      }
+      switch (expression.kind) {
+      case frontend::ExpressionKind::Sin:
+        return math::SinOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Cos:
+        return math::CosOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Tan:
+        return math::TanOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Exp:
+        return math::ExpOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Ln:
+        return math::LogOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Sqrt:
+        return math::SqrtOp::create(opBuilder, loc, operand);
+      default:
+        llvm_unreachable("unknown scalar math function");
+      }
+    }
     case frontend::ExpressionKind::Add:
     case frontend::ExpressionKind::Subtract:
     case frontend::ExpressionKind::Multiply:

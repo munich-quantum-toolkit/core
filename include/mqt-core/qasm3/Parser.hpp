@@ -97,6 +97,10 @@ class Parser final {
   Token expect(const Token::Kind& expected,
                const std::optional<std::string>& context = std::nullopt);
 
+  std::shared_ptr<Expression> parseUnaryExpression();
+
+  std::shared_ptr<Expression> parseBinaryExpression(uint8_t minPrecedence);
+
 public:
   explicit Parser(std::istream& is, bool implicitlyIncludeStdgates = true,
                   std::optional<std::string> debugFilename = std::nullopt);

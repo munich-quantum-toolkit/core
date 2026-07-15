@@ -19,6 +19,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
@@ -185,6 +186,65 @@ shifted(0.5) q;
     numericCasts += isa<arith::SIToFPOp, arith::UIToFPOp>(operation);
   });
   EXPECT_EQ(numericCasts, 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+gate shaped(theta) q {
+  rx(sin(theta) + cos(theta) + tan(theta) + exp(theta) + ln(theta) +
+     sqrt(theta)) q;
+}
+qubit q;
+shaped(0.5) q;
+)qasm";
+
+  MLIRContext context;
+  auto module = oq3::translateOpenQASMToOQ3(SOURCE, context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t functions = 0;
+  module->walk([&](Operation* operation) {
+    functions += isa<math::SinOp, math::CosOp, math::TanOp, math::ExpOp,
+                     math::LogOp, math::SqrtOp>(operation);
+  });
+  EXPECT_EQ(functions, 6);
+}
+
+TEST(OpenQASMTargetTest, NestsAlternatingControlsAndFlipsPolarityOutside) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[5] q;
+ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
+)qasm";
+
+  MLIRContext context;
+  auto module = oq3::translateOpenQASMToOQ3(SOURCE, context);
+  ASSERT_TRUE(module);
+
+  PassManager manager(&context);
+  manager.addPass(oq3::createLowerOQ3ToQCPass());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t controls = 0;
+  std::size_t outerPolarityFlips = 0;
+  module->walk([&](Operation* operation) {
+    if (auto control = dyn_cast<qc::CtrlOp>(operation)) {
+      ++controls;
+      EXPECT_EQ(control.getNumControls(), 1);
+    }
+    if (isa<qc::XOp>(operation) &&
+        operation->getParentOfType<qc::CtrlOp>() == nullptr &&
+        operation->getParentOfType<qc::InvOp>() == nullptr) {
+      ++outerPolarityFlips;
+    }
+  });
+  EXPECT_EQ(controls, 4);
+  EXPECT_EQ(outerPolarityFlips, 2);
 }
 
 TEST(OpenQASMTargetTest, PreservesPowerUntilTargetLowering) {

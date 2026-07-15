@@ -98,7 +98,10 @@ changes and other worktrees remain outside scope.
 - [ ] Establish a checked upstream grammar and conformance snapshot as test
   ground truth, without making generated code or ANTLR a build dependency.
 - [ ] Refactor the existing scanner and parser to return a source-spanned syntax
-  program with recovery and multiple diagnostics.
+  program with recovery and multiple diagnostics (completed: one
+  precedence-climbing table now parses the complete scalar binary-operator
+  hierarchy, including right-associative `**`; remaining: byte spans, arena
+  ownership, recovery, and unsupported syntax families).
 - [ ] Replace the separate legacy constant/type passes with one semantic
   analyzer that produces an arena-owned typed program consumed by both the
   circuit importer and OQ3 emitter.
@@ -119,6 +122,18 @@ changes and other worktrees remain outside scope.
       and covered inverse native aliases. Passed 4 OQ3 tests, 10 staged-frontend
       tests, 224 translation tests, and 116 downstream compiler tests from a
       clean rebuild.
+- [x] (2026-07-15 17:11Z) Simplified alternating `ctrl` and `negctrl` lowering
+      to recursive single-control regions. Negative-control polarity flips are
+      emitted once around the outermost modifier tree, and existing QC
+      canonicalization still combines adjacent controls for compact target IR.
+      Added a focused alternating-modifier test and retained all 224 QC
+      translation parity results.
+- [x] (2026-07-15 17:30Z) Added typed OQ3 emission for `sin`, `cos`, `tan`,
+      `exp`, `ln`, and `sqrt`, and replaced the parser's incomplete expression
+      ladder with the OpenQASM precedence hierarchy. Power now uses `**` and is
+      right associative; `^` now means bitwise XOR; modulo, shifts, bitwise,
+      logical, equality, and comparison operators all parse at their specified
+      precedence. All 98 QASM parser tests and 12 staged-frontend tests pass.
 
 ## Surprises & Discoveries
 
@@ -179,10 +194,18 @@ changes and other worktrees remain outside scope.
   case-insensitive filesystems. Narrow exceptions are required for the new
   source and test targets while retaining the build-artifact ignore.
 
-- Observation: adjacent positive and negative OpenQASM control modifiers must
-  lower as one multi-control region. Nesting one `qc.ctrl` per modifier is
-  unitary-equivalent for simple gates but loses the canonical control grouping
-  used by QC consumers and parity tests.
+- Observation: `qc.ctrl` already has a `MergeNestedCtrl` canonicalization that
+  combines adjacent nested controls. The OQ3 lowerer can therefore construct the
+  direct recursive semantics without duplicating grouping logic, while the
+  standard QC cleanup pipeline still produces the compact multi-control form
+  used by existing consumers and parity tests.
+
+- Observation: the handwritten expression parser recognized tokens for all
+  scalar operators but parsed only arithmetic and comparison subsets. It also
+  interpreted `^` as power and gave comparisons higher precedence than addition.
+  The maintained OpenQASM hierarchy uses right-associative `**` for power and
+  `^` for bitwise XOR, followed by unary, multiplicative, additive, shift,
+  comparison, equality, bitwise, and logical levels.
 
 ## Decision Log
 
@@ -267,6 +290,22 @@ changes and other worktrees remain outside scope.
   filename was unreliable after scanner-stack unwinding. Date/Author: 2026-07-15
   / Codex.
 
+- Decision: Lower every expanded control as one recursive `qc.ctrl`, regardless
+  of whether the source modifier is positive or negative, and emit X gates for
+  every negative-control qubit before and after the entire modifier tree.
+  Rationale: polarity changes must not execute conditionally inside an earlier
+  positive control. This representation handles alternating controls and
+  inverses uniformly, and QC's existing canonicalization combines adjacent
+  controls when a compact form is desired. Date/Author: 2026-07-15 / Codex,
+  following maintainer feedback.
+
+- Decision: Replace the partial expression ladder now with a table-driven
+  precedence-climbing parser while retaining the existing public parser entry
+  points. Rationale: this fixes observable specification mismatches immediately
+  and establishes the core of the planned Pratt-style expression parser without
+  coupling syntax parsing to MLIR or forcing a simultaneous ownership rewrite.
+  Date/Author: 2026-07-15 / Codex.
+
 ## Outcomes & Retrospective
 
 The first architecture demonstrator established that a small typed OQ3 dialect
@@ -285,6 +324,13 @@ parsing. The MLIR-owned typed program now isolates those implementation details,
 OQ3 emission is a separate walk, and the production MLIR entry point uses the
 staged implementation exclusively. The legacy importer retains its current
 constant and type passes and serves as the 117-fixture behavioral oracle.
+
+The latest iteration removed special-case control grouping from OQ3 lowering.
+Alternating positive and negative controls now use one recursive rule, and the
+existing QC cleanup still recovers multi-control operations. It also completed
+the parser's scalar binary-operator precedence and added dynamic scalar math
+function emission. Source spans, recovery, arena ownership, mutable classical
+state, and the remaining statement families are still future milestones.
 
 ## Context and Orientation
 
