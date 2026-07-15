@@ -1,4 +1,4 @@
-# Establish a typed OpenQASM 3 frontend
+# Build a typed OpenQASM 3 frontend from MQT Core's handwritten parser
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -9,321 +9,349 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core needs an OpenQASM frontend that can represent valid OpenQASM 3 even
-when the QC or JEFF target cannot lower every construct yet. After this work, a
-caller can parse OpenQASM 3 or supported OpenQASM 2 compatibility syntax into a
-verified, typed MLIR module using an experimental `oq3` dialect. A separate pass
-lowers the supported part of that module to MQT's QC dialect. This split makes
-source-language validity independent of target capability and prevents the
-parser from becoming a second, target-specific type checker.
+MQT Core needs one maintainable OpenQASM frontend that accepts OpenQASM 3 and
+the supported OpenQASM 2 compatibility syntax, reports precise source
+diagnostics, and can preserve valid source constructs even when QC or JEFF
+cannot lower them yet. A caller should be able to parse a source file, perform
+source-language semantic analysis, inspect a verified typed representation, and
+then request target lowering. Source errors and target-capability errors must be
+different failures.
 
-The current implementation is an architectural demonstrator. It proves the
-parser, typed intermediate representation, diagnostics, and initial lowering
-boundary, while deliberately leaving the established OpenQASM importer as the
-production path. The demonstrator can be observed by running the focused test
-binary described below: the tests parse representative OpenQASM 3 and 2
-programs, verify the generated module, lower supported programs to QC, and
-distinguish source errors from target-capability errors.
+The implementation will extend MQT Core's existing handwritten `qasm3` lexer,
+recursive-descent parser, abstract syntax model, constant evaluator, and type
+checker. It will not use ANTLR. The parser will produce syntax only; a separate
+semantic analyzer will resolve names, scopes, types, constants, overloads, gate
+signatures, and include policy into an arena-owned typed program. A small
+experimental OQ3 MLIR dialect will preserve source concepts for which builtin
+MLIR has no faithful equivalent. A dedicated emitter will map the already typed
+program to OQ3 plus builtin, `arith`, `math`, `func`, `scf`, and `memref`
+operations. The emitter must not repeat source typing.
 
-The repository-relative scope is the OpenQASM target under
-`mlir/include/mlir/Target/OpenQASM` and `mlir/lib/Target/OpenQASM`, the OQ3
-dialect under `mlir/include/mlir/Dialect/OQ3` and `mlir/lib/Dialect/OQ3`, its
-focused tests under `mlir/unittests/Target/OpenQASM`, and the directly related
-build and documentation files. Existing QC translation code remains a comparison
-oracle and must not be replaced until parity is demonstrated. Unrelated changes
-and other independently coordinated tasks are outside this plan and must be
-preserved.
+A human can observe the intended separation through three focused test layers.
+Parser tests accept or reject syntax without constructing MLIR. Semantic tests
+produce typed programs or source-spanned diagnostics without an MLIR context.
+Emitter and lowering tests accept typed programs or programmatically built OQ3
+IR, verify the module, and distinguish malformed IR from unsupported target
+features.
+
+The repository-relative scope is `include/mqt-core/qasm3`, `src/qasm3`, their
+existing tests, the experimental dialect under `mlir/include/mlir/Dialect/OQ3`
+and `mlir/lib/Dialect/OQ3`, the future adapter under
+`mlir/include/mlir/Target/OpenQASM` and `mlir/lib/Target/OpenQASM`, focused
+tests, and directly related build and documentation files. The existing importer
+stays available as a behavioral oracle until both consumers use the same typed
+semantic program. Unrelated changes and other worktrees remain outside scope.
 
 ## Progress
 
-- [x] (2026-07-15 10:10Z) Started the implementation from a fresh `origin/main`
-      while keeping the legacy importer available.
-- [x] (2026-07-15 10:35Z) Pinned the OpenQASM 3.1 grammar, generated the C++
-      ANTLR parser, isolated the generated code in its own target, and recorded
-      its provenance and regeneration command.
-- [x] (2026-07-15 10:50Z) Added the experimental typed `oq3` dialect, its
-  source-specific types and operations, verifiers, and OQ3-to-QC pass.
-- [x] (2026-07-15 11:05Z) Added the staged frontend, OpenQASM 2 normalization,
-      include handling, initial semantic checks, control flow, measurements,
-      gates, modifiers, scalar state, ranges, tests, and conservative
-      documentation.
-- [x] (2026-07-15 11:10Z) Verified 24 focused tests, 224 existing QC translation
-      tests, and 110 compiler pipeline tests. All passed. Repository lint passed
-      except for the then-existing unrelated `ty` diagnostic in
-      `python/mqt/core/plugins/qiskit/estimator.py:235`.
-- [x] (2026-07-15 11:25Z) Fetched and analyzed merged PRs #1815 and #1907,
-      fast-forwarded canonical `main`, re-read `AGENTS.md`, `.agent/PLANS.md`,
-      and `docs/ai_usage.md`, and rebased the implementation onto commit
-      `a228a3dc2`.
-- [x] (2026-07-15 11:28Z) Resolved the #1815 `mqt-cc` overlap by preserving its
-      JEFF and QCO program pipeline and adding OQ3/Math dialect registration.
-      Removed the provisional changelog entry because it lacked the now-required
-      PR and author references.
-- [x] (2026-07-15 11:35Z) Rebuilt after the rebase and reran focused and
-      regression tests. The 24 OQ3 tests, 224 QC translation tests, and expanded
-      116-test compiler suite passed. An `mqt-cc --emit=qc-import` smoke test
-      parsed and printed textual OQ3 IR alongside the new JEFF-aware driver.
-- [x] (2026-07-15 11:40Z) Ran `uvx nox -s lint` on the rebased tree. Every
-      formatting, spelling, license, metadata, Python, and type-checking hook
-      passed.
-- [x] (2026-07-15 11:48Z) Re-read the checkout-independent ExecPlan rules from
-      PR #1908, regenerated this plan to use only repository-relative scope,
-      paths, commands, and coordination boundaries, and verified the result with
-      `uvx nox -s lint`.
-- [x] (2026-07-15 12:00Z) Updated the version policy so explicit 3.0 and 3.1
-      declarations select the same current OpenQASM 3 semantics, and made
-      general prose version-neutral within OpenQASM 3. The expanded 25-test
-      focused suite and `uvx nox -s lint` pass.
-- [ ] Complete faithful signed and unsigned integer semantics, the remaining
-      scalar cast and operator rules, and typed non-bit program inputs and
-      outputs.
-- [ ] Add checked grammar and semantic coverage for arrays, aliases,
-  subroutines, externs, switch, break, continue, timing, calibration,
-  annotations, and pragmas. Unsupported families must remain explicit
-  diagnostics until implemented.
-- [ ] Add broader upstream conformance, differential, dominance, overflow, and
-  performance tests. Record parser and emitter scaling evidence.
-- [ ] After PR #1603 is present on `main`, add an isolated lowering change for
-      the exponent forms supported by QC and diagnose unsupported downstream
-      forms.
-- [ ] Switch the convenience translation path only after differential tests
-  demonstrate parity for the supported surface and a human approves retiring
-  the legacy behavior.
+- [x] (2026-07-15 10:10Z) Started from current main and kept the established
+  importer available as a comparison oracle.
+- [x] (2026-07-15 10:50Z) Added the experimental OQ3 types, gate operations,
+      inclusive range operation, local verifiers, and initial OQ3-to-QC
+      lowering.
+- [x] (2026-07-15 11:40Z) Integrated the compiler architecture from pull request
+      1815 and adopted the ExecPlan process introduced and refined by pull
+      requests 1907 and 1908.
+- [x] (2026-07-15 12:00Z) Established the version policy: explicit 3.0, explicit
+      3.1, and versionless input select the same maintained OpenQASM 3
+      semantics; explicit 2.0 selects compatibility mode.
+- [x] (2026-07-15 13:20Z) Inspected Daniel's public and private feedback, MQT
+      Core's existing parser and semantic passes, the legacy native-gate
+      catalog, and Qiskit's `openqasm3_parser` source at commit
+      `3eac9970f37baf6d030a3a185b9421cca3cf0a59`.
+- [x] (2026-07-15 13:40Z) Removed the ANTLR runtime, generated parser, grammar
+      target, direct parse-tree-to-MLIR builder, frontend tests tied to that
+      builder, and generated-file lint exceptions. The historical implementation
+      remains in Git history for comparison.
+- [x] (2026-07-15 13:40Z) Added semantics-preserving QC lowering for `cu`,
+  `cu3`, and `cu1`. Four-parameter `cu` retains its control-qubit phase;
+  `cu3` lowers to controlled U and `cu1` to controlled P.
+- [x] (2026-07-15 13:50Z) Added parser-independent OQ3 verifier and lowering
+      tests, rebuilt OQ3 and `mqt-cc`, and passed 3 focused OQ3 tests, 224
+      existing QC translation tests, and 116 compiler tests.
+- [x] (2026-07-15 13:50Z) Passed repository lint, inspected and committed the
+      architecture pivot, rebased onto current `origin/main` at `559fde4b2`, and
+      repeated the focused OQ3, QC translation, and compiler tests.
+- [ ] Push the rebased branch and update the draft pull request to describe the
+      handwritten-parser architecture and current workbench status.
+- [ ] Establish a checked upstream grammar and conformance snapshot as test
+  ground truth, without making generated code or ANTLR a build dependency.
+- [ ] Refactor the existing scanner and parser to return a source-spanned syntax
+  program with recovery and multiple diagnostics.
+- [ ] Replace the separate legacy constant/type passes with one semantic
+  analyzer that produces an arena-owned typed program consumed by both the
+  circuit importer and OQ3 emitter.
+- [ ] Implement the thin parse/analyze/emit translation API and one defensive
+  whole-program OQ3 verifier for cross-operation invariants.
+- [ ] Complete OpenQASM 3 grammar and semantic coverage, OpenQASM 2
+  normalization, differential tests, and measured linear scaling.
+- [ ] Switch the production convenience path only after parity evidence and
+  human approval.
 
 ## Surprises & Discoveries
 
-- Observation: MLIR arithmetic operations generally require signless integer
-  types, so mapping both OpenQASM `int` and `uint` directly to builtin integer
-  types loses the source signedness needed to choose comparisons, extensions,
-  division, and casts. Evidence: the prototype currently documents complete
-  signed/unsigned semantics as planned rather than claiming conformance.
+- Observation: MQT Core's mainline OpenQASM implementation is not based on
+  generated ANTLR code. `src/qasm3/Scanner.cpp` and `src/qasm3/Parser.cpp` are a
+  handwritten scanner and recursive-descent parser; `ConstEvalPass.cpp` and
+  `TypeCheckPass.cpp` already separate two semantic concerns from parsing. This
+  makes extension and consolidation lower risk than introducing a second parser
+  stack.
 
-- Observation: OpenQASM permits a range step to be a runtime value while also
-  requiring it to be nonzero. The current QC and JEFF path has no faithful
-  runtime assertion or trap for this condition. Evidence: typed `oq3.for`
-  accepts a dynamic integer step, while QC lowering emits
-  `dynamic range step cannot be proven nonzero for the selected target`.
+- Observation: Qiskit's reported eighty-fold parsing speedup is a README claim
+  from a crude large-file comparison, not a reproducible benchmark in that
+  repository. The architectural evidence is still useful: its custom lexer feeds
+  an event-based recursive-descent and Pratt parser, a source-spanned syntax
+  tree, and a distinct typed abstract semantic graph. Its repository has no
+  Criterion benchmark or checked benchmark data supporting the exact factor.
 
-- Observation: comparison-driven loop lowering avoids both division by zero and
-  endpoint overflow. Evidence: the focused range tests cover positive, negative,
-  empty, singleton, non-divisible, and maximum-width endpoints, with a widened
-  internal induction value.
+- Observation: The removed ANTLR demonstrator combined parsing-tree traversal,
+  source semantic checks, symbol state, builtin MLIR construction, and OQ3
+  emission in one `SemanticBuilder`. The public function was staged in name but
+  not internally separated. This confirmed Daniel's concern that another
+  refactor would otherwise restart from the same coupled architecture.
 
-- Observation: the repository typo fixer interpreted MLIR's ordered-less-than
-  floating-point predicate as a spelling error and changed the identifier,
-  causing a compilation failure. Evidence: the predicate now carries a
-  line-scoped spelling suppression and the rebuilt focused suite passes.
+- Observation: Operation-level MLIR verifiers cannot prove every OpenQASM
+  invariant. Operand shape and type relationships are local, while recursive
+  gates, declaration order, symbol visibility, and some modifier relationships
+  need surrounding-program information. A single defensive whole-program
+  verifier is required for programmatically constructed IR, but it must not
+  become the source semantic analyzer.
 
-- Observation: PR #1815 completely reworked `mqt-cc`, added JEFF input/output,
-  and replaced the former compiler-pipeline interface with the `Programs`
-  abstraction and composable pass pipelines. Evidence: rebasing produced
-  conflicts only in `mlir/tools/mqt-cc/CMakeLists.txt` and
-  `mlir/tools/mqt-cc/mqt-cc.cpp`; resolution retained the new driver and added
-  only the required OQ3 registrations.
+- Observation: The legacy gate catalog intentionally accepts many names beyond
+  the strict OpenQASM standard-library set. This is user-facing convenience, not
+  accidental parser behavior. Strict conformance and compatibility require an
+  explicit gate-policy choice rather than silently dropping or globally
+  injecting those names.
 
-- Observation: PR #1907 introduced the ExecPlan process after the first
-  prototype commits had already been created. Evidence: this file records the
-  completed work retrospectively and becomes the authoritative living plan for
-  every subsequent iteration.
+- Observation: OpenQASM's four-parameter `cu(theta, phi, lambda, gamma)` is not
+  exactly `ctrl @ U(theta, phi, lambda)`: it also applies `p(gamma)` to the
+  control. Native lowering must retain that relative phase. The three-parameter
+  `cu3` and one-parameter `cu1` aliases map directly to controlled U and
+  controlled P.
 
-- Observation: PR #1908 clarified that a checked-in ExecPlan is shared project
-  documentation rather than a record of one machine's orchestration state.
-  Evidence: this revision removes the former machine-specific scope block, cache
-  setup, and worktree-administration instructions while retaining
-  repository-relative coordination boundaries.
+- Observation: Direct use of `arith` and `memref` is not itself a layering
+  problem. It becomes a problem only if those operations are built while source
+  typing is still being decided. Emitting them from an already typed semantic
+  program avoids duplicating an entire classical OQ3 operation set and keeps the
+  semantic boundary clear.
 
 ## Decision Log
 
-- Decision: Start from `origin/main`, not PR #1862. Rationale: `main` retains a
-  separated parser, semantic passes, and established OpenQASM 2 tests, whereas
-  #1862's direct parser-to-MLIR emission is the architectural element being
-  replaced. Date/Author: 2026-07-15 / Codex.
+- Decision: Remove ANTLR and the direct parse-tree-to-MLIR demonstrator now.
+  Rationale: the implementation is preserved in Git history, while keeping it on
+  the branch would impose a large dependency and generated-code review burden on
+  an architecture that is being replaced. Date/Author: 2026-07-15 / Codex,
+  following maintainer direction.
 
-- Decision: Use a small typed `oq3` dialect as a semantic high-level
-  intermediate representation, not as a syntax tree and not with Any-like
-  operands. Rationale: valid source constructs must remain representable before
-  every target supports them, while builtin MLIR dialects should continue to
-  represent ordinary classical computation. Date/Author: 2026-07-15 / Codex.
-
-- Decision: Implement one current OpenQASM 3 semantic mode based on 3.1, accept
-  explicit 3.0 and 3.1 declarations into that same mode, default versionless
-  input to it, and normalize supported OpenQASM 2 syntax into the same typed
-  representation. Rationale: callers should not be rejected solely for a 3.0
-  declaration when the frontend can interpret the program with the maintained
-  OpenQASM 3 semantics. Date/Author: 2026-07-15 / Codex.
-
-- Decision: Keep generated grammar sources committed and isolated, with an exact
-  upstream revision and a documented local spelling correction. Rationale:
-  builds must not require parser generation or expose ANTLR implementation
-  details through public headers. Date/Author: 2026-07-15 / Codex.
-
-- Decision: Preserve a dynamic range step in typed OQ3 but reject it during QC
-  lowering when nonzero cannot be proven. Rationale: it is valid typed source,
-  but silently treating zero as an empty range or generating unsafe arithmetic
-  would change program meaning. Date/Author: 2026-07-15 / Codex.
-
-- Decision: Preserve `pow` modifiers in OQ3 and do not eagerly expand them.
-  Rationale: QC power support belongs to PR #1603; the frontend must parse the
-  full modifier without guessing downstream semantics. Date/Author: 2026-07-15 /
-  Codex.
-
-- Decision: Keep `translateQASM3ToQC` and `.qasm` handling on the legacy path
-  until parity tests pass. Rationale: the demonstrator is not yet a complete
-  replacement and the legacy importer is a valuable differential oracle.
+- Decision: Extend MQT Core's handwritten frontend and take architectural
+  inspiration, but no copied implementation, from Qiskit's parser. Rationale:
+  the existing C++ scanner, parser, AST, source debug information, type checker,
+  constant evaluator, OpenQASM 2 support, and native gates provide a practical
+  base. A Rust dependency or a transliteration of rust-analyzer's red/green tree
+  would add cost without first proving a repository-specific benefit.
   Date/Author: 2026-07-15 / Codex.
 
-- Decision: Integrate with #1815 by registering OQ3 and Math in its new
-  JEFF-aware `mqt-cc` dialect registry rather than restoring any deleted
-  `CompilerPipeline` code. Rationale: the merged program abstraction is now the
-  repository architecture and the OQ3 change only needs textual IR support at
-  this stage. Date/Author: 2026-07-15 / Codex.
+- Decision: Define three explicit internal stages: `parseOpenQASM` returns a
+  syntax program, `analyzeOpenQASM` returns a typed semantic program, and
+  `emitOQ3` returns MLIR. `translateOpenQASMToOQ3` only composes them.
+  Rationale: source typing remains testable without MLIR, and emission cannot
+  silently add a second source type system. Date/Author: 2026-07-15 / Codex.
 
-- Decision: Do not add a changelog entry until a human-reviewed PR number and
-  complete author list are available. Rationale: current `AGENTS.md` requires
-  both for changelog entries. Date/Author: 2026-07-15 / Codex.
+- Decision: Perform source semantic analysis during typed-program construction
+  in one primary traversal. Rationale: this is the efficient place to maintain
+  lexical scopes, resolve symbols, fold required constants, and attach types and
+  diagnostics. Operation verifiers defend IR invariants; they do not replace
+  language analysis. Date/Author: 2026-07-15 / Codex.
 
-- Decision: Keep this ExecPlan independent of any checkout, developer account,
-  local filesystem layout, or ephemeral branch. Rationale: PR #1908 makes the
-  plan a portable repository artifact that must be usable from any clone.
+- Decision: Preserve original source spans in syntax and semantic nodes.
+  Rationale: semantic diagnostics should use the source manager directly, and
+  every emitted MLIR operation should receive a file/line/column range derived
+  from the same span. Downstream diagnostics then remain useful without trying
+  to reconstruct source positions from MLIR. Date/Author: 2026-07-15 / Codex.
+
+- Decision: Use builtin MLIR, `arith`, `math`, `func`, `scf`, and `memref` after
+  semantic analysis whenever their semantics match. Retain OQ3 operations only
+  for source distinctions such as bit versus bool, angles, source gate symbols
+  and ordered modifiers, inclusive ranges, timing, and calibration. In
+  particular, emit ordinary `scf.if` and `scf.while` directly; retain `oq3.for`
+  while its inclusive range and dynamic nonzero-step contract cannot be
+  represented faithfully by a standard SCF operation. Date/Author: 2026-07-15 /
+  Codex.
+
+- Decision: Keep a strict specification gate policy and an MQT compatibility
+  gate policy. The staged experimental API defaults to strict mode. Existing
+  convenience import APIs retain compatibility mode until an intentional public
+  migration. Both policies draw from one canonical gate catalog containing
+  availability, arity, native QC mapping, and aliases. Date/Author: 2026-07-15 /
+  Codex.
+
+- Decision: Implement `cu`, `cu3`, and `cu1` natively and never expand them to
+  source gate definitions merely to lower them. Rationale: QC already represents
+  their primitive operations and controls; direct lowering is linear, preserves
+  dynamic parameters, and retains the legacy convenience. Date/Author:
+  2026-07-15 / Codex.
+
+- Decision: Maintain one current OpenQASM 3 semantic profile based on 3.1.
+  Explicit 3.0 and 3.1 declarations and versionless input use that profile;
+  explicit 2.0 uses compatibility normalization. Rationale: MQT tracks one
+  maintained revision while avoiding unnecessary rejection of 3.0 headers.
   Date/Author: 2026-07-15 / Codex.
 
 ## Outcomes & Retrospective
 
-The first demonstrator milestone produced a verified typed boundary and proved
-that the proposed architecture can coexist with the current importer. It
-supports representative gates, ordered modifiers, broadcasting, measurements,
-mutable scalar and bit state, structured control flow, inclusive ranges,
-standard-library includes, and OpenQASM 2 compatibility. It also demonstrates
-the intended diagnostic split: syntax and semantic errors occur in the frontend,
-while dynamic range steps and power modifiers fail as explicit target capability
-limitations.
+The first architecture demonstrator established that a small typed OQ3 dialect
+can preserve gates, ordered modifiers, bit values, and inclusive ranges while
+lowering supported operations to QC. Review then exposed that its frontend
+boundary was only nominal: the ANTLR visitor still decided source semantics
+while emitting MLIR. The useful dialect and lowering work has been retained, and
+the parser stack has been removed before more features accumulated around the
+wrong boundary.
 
-The milestone does not yet meet the final goal of arbitrary OpenQASM 3 input.
-The most important semantic gap is faithful integer signedness; the largest
-feature gaps are aggregate classical types, callable constructs, advanced
-control flow, timing, and calibration. The test suite establishes a useful
-foundation but still needs imported conformance examples and measured scaling.
-Keeping the legacy importer active was the right risk-control decision. The
-rebase of PR #1815 confirms that the OQ3 layer can remain additive while the
-compiler driver evolves independently.
+The revised foundation reuses project knowledge instead of restarting. The
+handwritten parser remains incomplete and its shared-pointer AST is not the
+desired final ownership model, but it already contains tested OpenQASM 2
+compatibility, native gate behavior, source debug information, expression
+parsing, constant evaluation, and type checking. The next milestone must make
+those layers explicit and arena-owned before reconnecting OQ3 emission. Until
+then, the draft is an architecture workbench rather than a replacement frontend.
 
 ## Context and Orientation
 
-OpenQASM is a source language for quantum programs. The generated ANTLR parser
-under `mlir/lib/Target/OpenQASM/Generated` recognizes its grammar. ANTLR is a
-parser generator; its generated C++ code turns source text into a parse tree but
-does not establish source types or target behavior. The reviewed grammar files
-are under `mlir/lib/Target/OpenQASM/Grammar`, and their upstream revision is
-recorded in `mlir/lib/Target/OpenQASM/README.md`.
+`src/qasm3/Scanner.cpp` converts source characters to `qasm3::Token` values.
+`src/qasm3/Parser.cpp` is a handwritten recursive-descent parser that constructs
+the classes declared in `include/mqt-core/qasm3/Statement.hpp`. Expressions are
+currently heap allocated through `std::shared_ptr`; source information is a
+`DebugInfo` containing one line and column plus an include-parent chain.
 
-The staged frontend implementation is `mlir/lib/Target/OpenQASM/OpenQASM.cpp`,
-with its public interface in `mlir/include/mlir/Target/OpenQASM/OpenQASM.h`. Its
-`translateOpenQASMToOQ3` entry point accepts either an LLVM source manager or an
-in-memory string and returns a verified MLIR module. An LLVM source manager owns
-the main file and included buffers so diagnostics can retain filenames, line
-numbers, and include context.
+`src/qasm3/passes/ConstEvalPass.cpp` and `src/qasm3/passes/TypeCheckPass.cpp`
+traverse the syntax objects. The importer in `src/qasm3/Importer.cpp` currently
+invokes both passes statement by statement and then immediately emits a
+`qc::QuantumComputation`. This preserves some separation but does not expose a
+complete typed program and can report only one failure at a time.
 
-The `oq3` dialect is defined under `mlir/include/mlir/Dialect/OQ3` and
-implemented under `mlir/lib/Dialect/OQ3`. A dialect is an MLIR vocabulary of
-types and operations with verifiers. This dialect adds only source distinctions
-that builtin MLIR or existing MQT quantum dialects cannot faithfully retain,
-including fixed-width bit values, angles, source gate symbols and applications,
-ordered modifiers, and inclusive source ranges. Ordinary arithmetic, functions,
-structured control flow, and mutable storage use the builtin `arith`, `math`,
-`func`, `scf`, and `memref` dialects.
+The new source layer will introduce `SourceId`, `SourceSpan`, and `Diagnostic`
+under `include/mqt-core/qasm3`. A source ID identifies one main or included
+buffer. A source span is a half-open byte range within that buffer. A diagnostic
+contains severity, message, primary span, and optional related spans. Line and
+column text is computed only when displaying a diagnostic, so scanning and
+semantic analysis use compact offsets.
 
-The lowering pass is `mlir/lib/Dialect/OQ3/Transforms/LowerOQ3ToQC.cpp`. It
-rewrites supported OQ3 operations to the existing QC dialect and builtin
-operations. A target capability diagnostic means the source is typed and valid
-but the selected downstream representation cannot preserve it yet. This is
-intentionally different from a source semantic diagnostic.
+The syntax layer will own nodes in arenas and refer to them by small IDs instead
+of recursive shared ownership. `SyntaxProgram` records statements and
+expressions exactly as parsed, including unsupported families. The parser uses
+recursive descent for statements and a Pratt parser for expressions. A Pratt
+parser is a precedence-driven expression parser that handles prefix, infix, and
+postfix operators in one table. Error recovery synchronizes at semicolons,
+braces, and declaration or statement starters so one run can report multiple
+independent errors.
 
-Focused tests live in `mlir/unittests/Target/OpenQASM/test_openqasm.cpp`. The
-established importer and its regression fixtures remain under the QC translation
-tests. Documentation of the deliberately conservative feature boundary lives in
-`docs/mlir/OpenQASM.md`.
+The semantic layer will produce `TypedProgram`. Each expression has a resolved
+OpenQASM type and each identifier use has a `SymbolId`; mutable declarations,
+constants, gate definitions, inputs, outputs, ranges, and callable signatures
+carry their source spans. This program is the only source-language semantic
+truth consumed by both the circuit importer and the OQ3 emitter.
 
-PR #1815, now part of `main`, added Python bindings for compiler programs,
-replaced `CompilerPipeline` with `Programs`, and made `mqt-cc` understand QC,
-QCO, JEFF, and QIR flows through explicit passes. The OQ3 prototype does not
-replace that design. It only registers the OQ3 and Math dialects so textual OQ3
-modules can be read; the production QASM input path remains unchanged until
-parity is demonstrated.
+The OQ3 dialect lives under `mlir/include/mlir/Dialect/OQ3` and
+`mlir/lib/Dialect/OQ3`. OQ3 is a semantic high-level IR, not a syntax tree. Its
+operation verifiers check local shape and type invariants. One module-level
+verification pass checks cross-operation symbol resolution, declaration order,
+recursion, and modifier relationships for programmatically constructed IR. The
+pass runs once after emission; it should diagnose compiler bugs or malformed
+textual OQ3, not repeat source analysis.
 
 ## Plan of Work
 
-First, keep the grammar dependency reproducible. Preserve the pinned grammar,
-generated sources, provenance note, and isolated CMake target. When updating the
-grammar, review upstream changes, regenerate all outputs in one operation, and
-rerun parser-focused tests rather than hand-editing generated code.
+The first milestone leaves a clean non-ANTLR base. Keep the OQ3 dialect and
+lowering, remove every ANTLR dependency and generated source, and move tests
+that exercise the dialect or lowering into `mlir/unittests/Dialect/OQ3` using
+programmatically built IR. Test native `cu`, `cu3`, and `cu1` lowering,
+including the `gamma` phase of four-parameter `cu`. Acceptance is that the build
+contains no ANTLR target or generated parser and the OQ3 tests pass
+independently of any source parser.
 
-Second, stabilize the typed representation before expanding features. Add tests
-for every type and operation verifier, symbol lookup, modifier operand, scope,
-and invalid programmatically constructed form. Resolve integer signedness in a
-way that keeps arithmetic on MLIR-compatible signless integer values while
-carrying enough semantic information to select signed or unsigned operations. Do
-not introduce an untyped fallback operation.
+The second milestone makes upstream syntax measurable ground truth. Add a
+pinned, unmodified OpenQASM 3.1 grammar and conformance-example snapshot under
+`vendor/openqasm/` with upstream revision, license, hashes, and a regeneration
+script. These files are test data, not compiled parser input, and are excluded
+from typo fixing, license rewriting, and auto-formatting just like other
+vendored sources. Generate a checked coverage manifest that maps every grammar
+production to positive and negative parser tests. Add OpenQASM 2 fixtures
+already supported by main. Acceptance is that CI can identify missing
+productions and the normal build has no parser-generator dependency.
 
-Third, extend semantic construction family by family. For each grammar family,
-either construct verified typed IR or emit one precise feature-named diagnostic.
-Add tests for both success and failure. Preserve declared input and output
-order, source locations, lexical scopes, and dominance. Mutable classical values
-must remain in storage or explicit region-carried values; quantum SSA values
-must cross regions as arguments and results rather than through a global side
-table.
+The third milestone refactors scanning and parsing. Add source-buffer ownership,
+byte spans, structured diagnostics, arena-owned syntax nodes, recovery, and a
+Pratt expression table while preserving the existing parser API through a
+temporary adapter. Port statement families incrementally and run legacy and new
+syntax tests together. Acceptance is complete syntax coverage, multiple useful
+diagnostics from one invalid file, accurate include-stack spans, and linear
+token and parse growth.
 
-Fourth, extend lowering independently of parsing. A valid OQ3 operation may
-remain unlowered until QC and JEFF have matching semantics. Lower positive and
-negative inclusive ranges through widened comparison-driven control flow. Add
-power lowering only after #1603 exists on `main`, and keep unsupported exponent
-forms as target diagnostics.
+The fourth milestone builds one semantic analyzer. Consolidate symbol scopes,
+type checking, required constant evaluation, gate lookup, broadcasting,
+input/output ordering, version policy, and include policy into
+`analyzeOpenQASM`. It emits `TypedProgram` only if no source semantic errors
+remain. Unsupported target features are still representable. Acceptance is that
+semantic tests run without MLIR and cover unknown, recursive,
+use-before-defined, arity, type, width, index, scope, cast, range-step, and
+compatibility failures with original source spans.
 
-Fifth, grow objective evidence. Import reviewed upstream examples, add
-differential tests for programs supported by both importers, verify every
-produced module, and benchmark a flat gate stream, nested expressions,
-standard-library loading, and repeated custom gates. Require approximately
-linear parser and emitter growth and avoid eager gate expansion in frontend
-construction.
+The fifth milestone reconnects MLIR through a thin adapter. Implement
+`translateOpenQASMToOQ3` as parse, analyze, emit. `emitOQ3` maps typed values to
+builtin storage and arithmetic, uses SCF directly where faithful, emits only
+source-specific OQ3 operations where needed, attaches range locations, and does
+not perform source type inference. Add the module-level OQ3 verifier and keep
+the textual dialect experimental. Acceptance is that every successful module
+verifies and an injected malformed module fails the defensive verifier at the
+source-derived operation location.
 
-Finally, consider switching the convenience API only after the staged path has
-parity for its advertised surface, all regression tests pass, and a human has
-reviewed the generated changes. Keep the dialect explicitly experimental until
-its operation shapes and lowering boundary have proven stable.
+The sixth milestone preserves compatibility deliberately. Move the standard,
+qelib1, and MQT-native names into one gate catalog. Strict mode makes only `U`
+and `gphase` language builtins and loads standard libraries only when included.
+Compatibility mode preserves the legacy implicit native catalog, including
+additional MQT operations and aliases. Inventory every existing legacy name and
+classify it as specification, qelib1, alias, or MQT extension. Acceptance is
+that no gate silently changes availability and every native mapping has a QC
+lowering test.
+
+The final milestones complete source families and objective evidence. Add
+arrays, aliases, subroutines and externs, switch and loop control, timing,
+annotations, pragmas, calibration, and power lowering as downstream dialects
+permit. Differentially compare both importers over their overlap. Benchmark a
+flat gate stream, nested expressions, includes, and repeated custom gates at
+increasing sizes. Require approximately linear growth, bounded diagnostic
+recovery, no eager custom-gate expansion, and no expression-string cache keys or
+shared-pointer ownership in the new syntax and semantic programs.
 
 ## Concrete Steps
 
-Run every command in this section from the repository root. Configure the debug
-preset first when `build/debug` does not exist:
+Run every command from the repository root. Configure and build the OQ3
+foundation with:
 
     cmake --preset debug
+    cmake --build --preset debug --target mqt-core-mlir-unittest-oq3 mqt-cc -j4
 
-To rebuild the driver and focused test after a change, run:
+Run the dialect and lowering tests with:
 
-    cmake --build --preset debug \
-      --target mqt-cc mqt-core-mlir-unittest-openqasm-target -j4
+    ./build/debug/mlir/unittests/Dialect/OQ3/mqt-core-mlir-unittest-oq3
 
-The build should finish with no failed compilation or link steps. Then run:
+After parser work begins, build and run the existing QASM/QC regression suite as
+the oracle:
 
-    ./build/debug/mlir/unittests/Target/OpenQASM/\
-      mqt-core-mlir-unittest-openqasm-target
+    cmake --build --preset debug --target mqt-core-mlir-unittest-qc-translation -j4
+    ./build/debug/mlir/unittests/Dialect/QC/Translation/mqt-core-mlir-unittest-qc-translation
 
-The expected current result is 24 passing tests. Build and run the established
-translation regression binary with:
+Add a dedicated frontend test target under the existing `test` or
+`mlir/unittests` tree when `parseOpenQASM` and `analyzeOpenQASM` exist. Its
+tests must be separable into syntax-only, semantic-only, emission, and lowering
+filters.
 
-    cmake --build --preset debug \
-      --target mqt-core-mlir-unittest-qc-translation -j4
-    ./build/debug/mlir/unittests/Dialect/QC/Translation/\
-      mqt-core-mlir-unittest-qc-translation
-
-The expected baseline is 224 passing tests. The compiler regression binary is:
-
-    cmake --build --preset debug \
-      --target mqt-core-mlir-unittests-compiler -j4
-    ./build/debug/mlir/unittests/Compiler/\
-      mqt-core-mlir-unittests-compiler
-
-The expected baseline at the first milestone was 110 passing tests. PR #1815 may
-change the count; success means every discovered test passes.
+For performance evidence, generate sources with fixed seeds and gate counts of
+1,000, 10,000, and 100,000. Record bytes, tokens, syntax time, semantic time,
+emission time, and peak resident memory separately. Run each size enough times
+to report a median. Compare against main's existing parser and, if useful, the
+historical ANTLR commit in an isolated checkout; do not restore ANTLR to the
+task branch.
 
 After each completed batch, run:
 
@@ -331,135 +359,138 @@ After each completed batch, run:
     git diff --check origin/main...HEAD
     git status --short --branch
 
-If lint reports an apparently unrelated diagnostic, verify it against an
-unmodified `origin/main` before recording it here. PR #1815 changed the formerly
-known `SparsePauliOp` typing line, so that prior limitation must not be assumed
-for later revisions.
+If MLIR is not discoverable, point `MLIR_DIR` at an installed MLIR 22.1 CMake
+package without recording a machine-specific path in this plan. Keep generated
+build output inside the ignored `build` directory.
 
 ## Validation and Acceptance
 
-A source containing explicit `OPENQASM 3.0;`, explicit `OPENQASM 3.1;`, or no
-version declaration must produce a verified typed OQ3 module for the supported
-surface using the same current OpenQASM 3 semantics. Explicit 2.0 must activate
-the compatibility syntax, including `qelib1.inc` and legacy measurement arrows.
+Syntax acceptance requires exact recognition of the pinned OpenQASM 3 grammar,
+the supported OpenQASM 2 compatibility grammar, comments, version placement, and
+includes. Explicit `OPENQASM 3.0;`, explicit `OPENQASM 3.1;`, and no version
+declaration select the same current OpenQASM 3 semantics. Unsupported explicit
+versions receive a source-spanned diagnostic.
 
-Standard gates must be unavailable unless the correct standard library is
-included. Custom gates must reject unknown symbols, use before definition,
-recursion, incorrect arity, and incompatible broadcasting. Modifier order and
-dynamic modifier operands must be visible in typed OQ3 IR. Power must remain a
-target diagnostic until supported by QC.
+Semantic acceptance requires one typed result per successful source program and
+no MLIR dependency. Unknown symbols, use before definition, recursion, duplicate
+bindings, incompatible types, illegal casts, arity, indexing, broadcasting,
+input/output, and constant-zero range steps fail with primary and related source
+spans where applicable. A runtime range step remains valid typed source.
 
-A constant zero range step must fail semantic analysis. A runtime step must
-verify in OQ3 but fail initial QC lowering with the exact target diagnostic. A
-constant positive or negative range must lower without division and without
-forming `stop + 1`; boundary-width tests must demonstrate widened internal
-arithmetic.
+Emitter acceptance requires that ordinary classical computation uses builtin
+MLIR dialects after semantic analysis and that every operation has a location
+derived from its source span. `if` and `while` use SCF directly. Inclusive
+ranges remain OQ3 until their semantics can be lowered safely. No Any-like type
+or fallback operation is permitted.
 
-Supported measurement, assignment, `if`, `while`, and `for` programs must verify
-without dominance errors when mutable state crosses regions. Declared bit inputs
-and outputs must retain source order and width and lower to matching builtin
-integer function arguments and results.
+Lowering acceptance requires native `cu`, `cu3`, and `cu1`; ordered `inv`,
+`ctrl`, and `negctrl`; safe positive and negative inclusive ranges; and clear
+target diagnostics for dynamic zero risk and unsupported power forms. The
+four-parameter `cu` test must observe both the control phase and controlled U.
 
-The complete focused, QC translation, and compiler regression binaries must
-pass. `mqt-cc` must still build with #1815's JEFF support and parse textual OQ3
-IR because the OQ3 and Math dialects are registered. Existing OpenQASM input to
-`mqt-cc` must continue to use and pass the legacy path until the planned switch.
+Performance acceptance requires approximately linear time and memory for flat
+programs and no unexplained regression against the existing handwritten parser.
+The Qiskit README's factor of eighty is context, not an acceptance target. Every
+benchmark must identify the stage measured so parser time is not conflated with
+semantic analysis or MLIR construction.
 
-Final acceptance for replacing the legacy path additionally requires checked
-coverage of every OpenQASM 3 grammar family, faithful scalar semantics,
-representative QC-to-JEFF success, differential equivalence for overlapping
-programs, and recorded linear-growth benchmarks.
+Final replacement acceptance additionally requires all established OpenQASM 2
+regressions, representative OpenQASM 3 conformance programs, differential QC
+equivalence, full module verification, and human approval of the compatibility
+policy and public API switch.
 
 ## Idempotence and Recovery
 
-Builds, focused tests, regression tests, and lint are repeatable and write only
-inside the repository's ignored `build` directory. Grammar regeneration is
-repeatable only when using the exact pinned upstream revision and ANTLR version
-recorded in `mlir/lib/Target/OpenQASM/README.md`; review the complete generated
+Builds, tests, benchmarks, and lint are repeatable and write only ignored build
+or temporary output. The vendored grammar snapshot is updated only through its
+documented script and exact upstream revision; review its hashes and complete
 diff after regeneration.
 
-Before rebasing, require a clean task checkout, fetch the `origin` remote, and
-rebase onto `origin/main`, not onto a mutable local `main`. In a multi-worktree
-environment, only the coordinating process may mutate shared worktree metadata.
-Resolve overlapping files by preserving current mainline architecture and
-reapplying the smallest OQ3-specific change. If a rebase conflict cannot be
-resolved safely, abort the rebase rather than discarding either side. Never use
-`git reset --hard`, never modify another task's worktree, and never force-push
-without fresh user authorization.
+Parser migration is additive until parity. Keep adapters from old entry points
+to the new syntax and semantic stages, then remove old ownership and passes only
+after both consumers pass. If a milestone fails, retain the existing importer
+and remove only the incomplete adapter. Do not restore the removed ANTLR files;
+they remain recoverable from Git history for isolated comparison.
 
-The generated parser is additive. If the architecture is rejected, the three
-layers can be removed independently: the frontend target and tests, the OQ3
-dialect and lowering, then the grammar/runtime dependency. The unchanged legacy
-importer remains a safe fallback throughout development.
+Before rebasing, require a clean task checkout, fetch `origin`, and rebase onto
+`origin/main`. Preserve current mainline behavior in conflicts. Never reset or
+clean another worktree, and never force-push without authorization.
 
 ## Artifacts and Notes
 
-The initial pre-rebase validation evidence was:
+The inspected Qiskit snapshot divides its frontend into lexer, parser, syntax,
+source-file, and semantics crates. Its parser creates a flat event stream before
+building a source-spanned syntax tree; its semantic context owns an abstract
+semantic graph, scoped symbol table, constant map, and semantic-error list. This
+plan adopts the separation and measurable stage boundaries, not the Rust crate
+layout or implementation.
 
-    OpenQASMTargetTest: 24 tests passed
-    QASM/QC translation: 224 tests passed
-    Compiler pipeline: 110 tests passed
+Daniel's review questions are answered as follows. Source semantic analysis
+belongs in typed-program construction and uses original source spans. Local OQ3
+verifiers check operation invariants. One whole-program verifier checks the few
+cross-operation invariants that cannot be local. OQ3 emission is a separate
+linear walk and may use `arith`, `memref`, and SCF because source typing has
+already completed. There is no repeated source semantic walk.
 
-The post-rebase validation evidence is:
-
-    OpenQASMTargetTest: 24 tests passed
-    QASM/QC translation: 224 tests passed
-    Compiler pipeline: 116 tests passed
-    mqt-cc textual OQ3 smoke test: exit code 0
-
-The target-capability diagnostic exercised by tests is:
-
-    dynamic range step cannot be proven nonzero for the selected target
-
-The first three reviewable implementation commits before the #1815/#1907 rebase
-were organized as grammar provenance, typed dialect/lowering, and staged
-frontend/tests. Their hashes change when rebased; use commit subjects rather
-than old hashes when resuming this plan.
-
-No push, pull request, comment, review, or other remote mutation is authorized
-by this ExecPlan. The user must review the local changes and explicitly
-authorize any later external action. Any agent-authored public body must begin
-with `🤖 *AI text below* 🤖`.
+No public GitHub comment or review is authorized by this plan alone. The draft
+pull request may receive branch updates within the user's previously authorized
+progress-tracking scope. Any agent-authored public text body must begin with
+`🤖 *AI text below* 🤖`.
 
 ## Interfaces and Dependencies
 
-The public frontend interface must remain in namespace `mlir::oq3` and expose:
+The source frontend must provide value-oriented result types equivalent to:
 
-    struct OpenQASMTranslationOptions {
-      llvm::SmallVector<std::string> includeDirectories;
+    struct SourceSpan {
+      SourceId source;
+      std::uint32_t begin;
+      std::uint32_t end;
     };
 
-    OwningOpRef<ModuleOp>
-    translateOpenQASMToOQ3(llvm::SourceMgr&, MLIRContext&,
-                           const OpenQASMTranslationOptions& = {});
+    struct ParseResult {
+      std::optional<SyntaxProgram> program;
+      std::vector<Diagnostic> diagnostics;
+    };
+
+    struct AnalysisResult {
+      std::optional<TypedProgram> program;
+      std::vector<Diagnostic> diagnostics;
+    };
+
+    ParseResult parseOpenQASM(SourceManager&, const ParseOptions& = {});
+    AnalysisResult analyzeOpenQASM(const SyntaxProgram&,
+                                   const AnalysisOptions& = {});
+
+`SyntaxProgram` and `TypedProgram` own nodes in arenas and expose stable IDs;
+they do not use shared pointers for tree ownership. Diagnostics are collected as
+data and rendered by the caller. The parser and analyzer do not depend on MLIR.
+
+The MLIR adapter must provide:
+
+    OwningOpRef<ModuleOp> emitOQ3(const qasm3::TypedProgram&, MLIRContext&,
+                                  const OpenQASMEmissionOptions& = {});
 
     OwningOpRef<ModuleOp>
-    translateOpenQASMToOQ3(llvm::StringRef, MLIRContext&,
+    translateOpenQASMToOQ3(qasm3::SourceManager&, MLIRContext&,
                            const OpenQASMTranslationOptions& = {});
 
-The lowering interface must remain in namespace `mlir::oq3` and expose
-`createLowerOQ3ToQCPass(OpenQASMLoweringOptions)`. The initial options type may
-be empty, but it is the stable place for later target capability choices.
+The OQ3 lowering interface remains
+`createLowerOQ3ToQCPass(OpenQASMLoweringOptions)`. A module-level verifier pass
+is added for cross-operation invariants. The adapter depends on the source
+frontend, MLIR builtin IR, `arith`, `math`, `func`, `scf`, `memref`, OQ3, and
+QC. The source frontend has no ANTLR, Java, Rust, or MLIR dependency.
 
-The frontend depends on LLVM `SourceMgr`, ANTLR 4.13.2, MLIR builtin IR,
-`arith`, `math`, `func`, `scf`, `memref`, the experimental OQ3 dialect, and the
-existing QC dialect. Generated parser implementation details must remain private
-to `MQTOpenQASMParser`. The frontend library is `MLIROpenQASMTarget`; the
-dialect and lowering libraries are `MLIROQ3Dialect` and `MLIROQ3Transforms`.
+One canonical gate catalog must describe name, parameter count, qubit count,
+availability policy, primitive QC operation, implicit controls, and special
+lowering. `cu` records three U parameters plus one control phase; `cu3` records
+one control around U; `cu1` records one control around P. Parser declarations,
+semantic lookup, legacy compatibility, OQ3 declarations, and lowering dispatch
+must consume this catalog instead of maintaining parallel string tables.
 
-Source-specific OQ3 operations must remain typed and verified. The minimum
-vocabulary contains symbol-bearing gate definitions, typed gate applications,
-ordered modifier metadata plus dynamic modifier operands, bit packing and
-unpacking at function boundaries, and an inclusive integer `oq3.for` with an
-`oq3.yield` terminator. Ordinary classical arithmetic must not be duplicated in
-OQ3, and no Any-like fallback type or operation may be introduced.
-
-Revision note (2026-07-15): Created this ExecPlan after PR #1907 introduced the
-repository process. It records the completed prototype, incorporates the #1815
-rebase and its post-rebase validation, records the clean repository lint result,
-and defines the remaining stabilization and conformance work. Regenerated after
-PR #1908 to remove machine-specific orchestration details and express all scope,
-commands, coordination boundaries, and recovery instructions in portable
-repository-relative terms. Updated the version policy so explicit 3.0 and 3.1
-declarations use the same maintained OpenQASM 3 semantics and general prose does
-not overstate a 3.1 distinction where none matters.
+Revision note (2026-07-15): Replaced the ANTLR-based plan after maintainer
+feedback and source-level comparison with MQT Core and Qiskit's parsers. This
+revision removes the demonstrator, makes the existing handwritten frontend the
+foundation, defines strict parse/analyze/emit boundaries, preserves original
+source spans, limits MLIR verification to defensive IR checks, establishes an
+explicit gate-compatibility policy, and requires native `cu`, `cu3`, and `cu1`
+lowering plus reproducible stage-specific performance evidence.

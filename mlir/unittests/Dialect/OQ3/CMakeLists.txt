@@ -6,9 +6,18 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-openqasm-target)
-add_executable(${target_name} test_openqasm.cpp)
-target_link_libraries(${target_name} PRIVATE GTest::gtest_main MLIROpenQASMTarget MLIROQ3Transforms
-                                             MLIRPass MLIRParser)
+set(target_name mqt-core-mlir-unittest-oq3)
+add_executable(${target_name} test_oq3.cpp)
+target_link_libraries(
+  ${target_name}
+  PRIVATE MLIROQ3Dialect
+          MLIROQ3Transforms
+          MLIRQCDialect
+          MLIRArithDialect
+          MLIRFuncDialect
+          MLIRParser
+          MLIRSCFDialect
+          MLIRSupportMQT
+          GTest::gtest_main)
 mqt_mlir_configure_unittest_target(${target_name})
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
