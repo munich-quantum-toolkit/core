@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Runtime.hpp
+ * @brief C++ QIR runtime support.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

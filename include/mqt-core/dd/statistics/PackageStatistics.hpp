@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file PackageStatistics.hpp
+ * @brief Aggregate statistics for decision-diagram packages.
+ */
+
 #pragma once
 
 #include "dd/Package.hpp"

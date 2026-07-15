@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Token.hpp
+ * @brief Tokens produced by the OpenQASM 3 scanner.
+ */
+
 #pragma once
 
 #include <cstddef>

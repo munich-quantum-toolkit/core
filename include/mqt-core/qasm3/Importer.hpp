@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Importer.hpp
+ * @brief Import OpenQASM 3 programs into MQT Core circuits.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"
