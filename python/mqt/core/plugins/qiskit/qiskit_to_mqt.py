@@ -14,7 +14,7 @@ import re
 import warnings
 from typing import TYPE_CHECKING, cast
 
-from qiskit.circuit import AncillaRegister, Clbit, ControlledGate
+from qiskit.circuit import AncillaRegister, Clbit
 from qiskit.circuit import ClassicalRegister as QiskitClassicalRegister
 from qiskit.circuit.classical import expr
 
@@ -183,31 +183,6 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
 })
 
 
-def _has_default_ctrl_state(instr: ControlledGate) -> bool:
-    """Return whether all control lines use the default positive polarity."""
-    num_ctrl = instr.num_ctrl_qubits
-    if num_ctrl == 0:
-        return True
-    ctrl_state = int(instr.ctrl_state, 2) if isinstance(instr.ctrl_state, str) else int(instr.ctrl_state)
-    return ctrl_state == (1 << num_ctrl) - 1
-
-
-def _native_dispatch_name(instr: Instruction) -> str:
-    """Map a Qiskit instruction to the native gate name used for import dispatch.
-
-    Returns:
-        The gate name to use when dispatching to native import handlers.
-    """
-    name = instr.name
-    if name in _NATIVELY_SUPPORTED_GATES:
-        return name
-    if isinstance(instr, ControlledGate):
-        base_gate = instr.base_gate
-        if base_gate is not None and base_gate.name in _NATIVELY_SUPPORTED_GATES and _has_default_ctrl_state(instr):
-            return base_gate.name
-    return name
-
-
 def _emplace_operation(
     qc: QuantumComputation | CompoundOperation,
     instr: Instruction,
@@ -218,7 +193,7 @@ def _emplace_operation(
     clbit_map: Mapping[Clbit, int],
     cregs: Mapping[str, ClassicalRegister],
 ) -> list[float | ParameterExpression]:
-    name = _native_dispatch_name(instr)
+    name = instr.name
 
     if name not in _NATIVELY_SUPPORTED_GATES:
         try:
@@ -344,7 +319,8 @@ def _emplace_operation(
         return _add_two_target_operation(qc, OpType.xx_plus_yy, qargs, params, qubit_map)
 
     if name == "rccx":
-        return _add_three_target_operation(qc, OpType.rccx, qargs, params, qubit_map)
+        qc.append(StandardOperation([qubit_map[q] for q in qargs], OpType.rccx))
+        return []
 
     if name == "if_else":
         return _add_if_else_operation(qc, cast("IfElseOp", instr), qargs, cargs, qubit_map, clbit_map, cregs)
@@ -436,40 +412,6 @@ def _add_two_target_operation(
         qc.append(SymbolicOperation(controls, target1, target2, type_, parameters))
     else:
         qc.append(StandardOperation(controls, target1, target2, type_, cast("list[float]", parameters)))
-    return parameters
-
-
-def _add_three_target_operation(
-    qc: QuantumComputation | CompoundOperation,
-    type_: OpType,
-    qargs: Sequence[Qubit],
-    params: Sequence[float | ParameterExpression],
-    qubit_map: Mapping[Qubit, int],
-) -> list[float | ParameterExpression]:
-    """Append a three-target standard or symbolic operation to a quantum computation.
-
-    Args:
-        qc: The quantum computation or compound operation to append to.
-        type_: The MQT operation type to create.
-        qargs: Ordered Qiskit qubits for the gate; the final three entries are
-            targets and any preceding entries are controls.
-        params: Gate parameters from the Qiskit instruction.
-        qubit_map: Mapping from Qiskit qubits to MQT qubit indices.
-
-    Returns:
-        The parsed gate parameters (numeric values or symbolic expressions).
-    """
-    qubits = [qubit_map[qubit] for qubit in qargs]
-    target3 = qubits.pop()
-    target2 = qubits.pop()
-    target1 = qubits.pop()
-    controls = {Control(qubit) for qubit in qubits}
-    parameters = [_parse_symbolic_expression(param) for param in params]
-    targets = [target1, target2, target3]
-    if any(isinstance(parameter, Expression) for parameter in parameters):
-        qc.append(SymbolicOperation(controls, targets, type_, parameters))
-    else:
-        qc.append(StandardOperation(controls, targets, type_, cast("list[float]", parameters)))
     return parameters
 
 

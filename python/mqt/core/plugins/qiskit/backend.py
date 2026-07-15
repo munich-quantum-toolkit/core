@@ -23,7 +23,6 @@ from qiskit.circuit import QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
-    RCCXGate,
     get_standard_gate_name_mapping,
 )
 from qiskit.providers import BackendV2, Options
@@ -83,7 +82,6 @@ def _build_gate_mappings_for_backend(
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
-        "rccx": RCCXGate(),
         "move": MoveGate(),
     })
 

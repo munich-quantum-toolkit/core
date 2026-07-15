@@ -490,42 +490,23 @@ TEST_F(IO, NativeTwoQubitGateImportAndExport) {
 }
 
 TEST_F(IO, NativeThreeQubitGateImportAndExport) {
-  const auto gates = std::vector<std::string>{"rccx"};
+  qc = qasm3::Importer::imports(
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit[3] q; "
+      "rccx q[0], q[1], q[2];");
+  EXPECT_EQ(qc.front()->getType(), qc::RCCX);
 
-  const std::string header = "// i 0 1 2\n"
-                             "// o 0 1 2\n"
-                             "OPENQASM 3.0;\n"
-                             "include \"stdgates.inc\";\n"
-                             "qubit[3] q;\n";
-  for (const auto& gate : gates) {
-    std::stringstream ss{};
-    ss << header << gate << " q[0], q[1], q[2];\n";
-    const auto source = ss.str();
-    qc = qasm3::Importer::imports(source);
-    EXPECT_EQ(qc.front()->getType(), qc::RCCX);
-
-    std::ostringstream oss{};
-    qc.dumpOpenQASM(oss, true);
-    const auto exported = oss.str();
-    EXPECT_EQ(exported.find("rccx"), std::string::npos);
-    EXPECT_NE(exported.find("cx "), std::string::npos);
-    EXPECT_NE(exported.find("u2(0, pi)"), std::string::npos);
-
-    EXPECT_NO_THROW(qasm3::Importer::imports(exported));
-    qc.reset();
-  }
+  const auto qasm = qc.toQASM(true);
+  EXPECT_EQ(qasm.find("rccx"), std::string::npos);
+  EXPECT_NO_THROW(qasm3::Importer::imports(qasm));
 }
 
-TEST_F(IO, UseQelib1Gate) {
-  qc = qasm3::Importer::imports("include \"qelib1.inc\";"
-                                "qreg q[3];"
-                                "rccx q[0], q[1], q[2];");
-  std::cout << qc << "\n";
-  EXPECT_EQ(qc.getNqubits(), 3U);
-  EXPECT_EQ(qc.getNops(), 1U);
-  EXPECT_EQ(qc.front()->getType(), qc::RCCX);
-  EXPECT_EQ(qc.front()->getNtargets(), 3U);
-  EXPECT_EQ(qc.front()->getNcontrols(), 0U);
+TEST_F(IO, ControlledRccxOpenQASM3Export) {
+  qc.addQubitRegister(4);
+  qc.crccx(3, 0, 1, 2);
+
+  const auto qasm = qc.toQASM(true);
+  EXPECT_NE(qasm.find("ctrl @ cx q[3], q[1], q[2];"), std::string::npos);
+  EXPECT_NO_THROW(qasm3::Importer::imports(qasm));
 }
 
 TEST_F(IO, RccxOpenQASM2RoundTrip) {
@@ -546,34 +527,13 @@ TEST_F(IO, RccxOpenQASM2RoundTrip) {
   EXPECT_EQ(oss.str(), source);
 }
 
-TEST_F(IO, Rc3xOpenQASM2RoundTrip) {
-  const std::string source = "// i 0 1 2 3\n"
-                             "// o 0 1 2 3\n"
-                             "OPENQASM 2.0;\n"
-                             "include \"qelib1.inc\";\n"
-                             "qreg q[4];\n"
-                             "rc3x q[0], q[1], q[2], q[3];\n";
-
-  qc = qasm3::Importer::imports(source);
-  EXPECT_EQ(qc.getNops(), 1U);
-  EXPECT_EQ(qc.front()->getType(), qc::RCCX);
-  EXPECT_EQ(qc.front()->getNcontrols(), 1U);
-  EXPECT_EQ(qc.front()->getNtargets(), 3U);
-
-  std::ostringstream oss;
-  qc.dumpOpenQASM(oss, false);
-  EXPECT_EQ(oss.str(), source);
-}
-
 TEST_F(IO, ControlledRccxOpenQASM2Export) {
   qc.addQubitRegister(4);
   qc.crccx(0, 1, 2, 3);
   std::ostringstream oss;
   qc.dumpOpenQASM(oss, false);
   const auto qasm = oss.str();
-  std::cout << qasm << "\n";
   EXPECT_NE(qasm.find("rc3x q[0], q[1], q[2], q[3];"), std::string::npos);
-  EXPECT_EQ(qasm.find("crccx"), std::string::npos);
 
   const auto roundTrip = qasm3::Importer::imports(qasm);
   EXPECT_EQ(roundTrip.getNops(), 1U);

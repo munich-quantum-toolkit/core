@@ -25,10 +25,9 @@ from qiskit.circuit import (
     QuantumRegister,
 )
 from qiskit.circuit.classical import expr
-from qiskit.circuit.library import RCCXGate, U2Gate, XXMinusYYGate, XXPlusYYGate
+from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.qasm3 import dumps
-from qiskit.quantum_info import Operator
 
 from mqt.core.ir.operations import (
     ComparisonKind,
@@ -190,45 +189,6 @@ def test_ccx() -> None:
     assert qiskit_qc.num_qubits == 3
     assert len(qiskit_qc) == 1
     assert qiskit_qc[0].operation.name == "ccx"
-
-
-def test_controlled_rccx() -> None:
-    """Test roundtrip of controlled RCCX gate."""
-    qc = QuantumCircuit(4)
-    qc.append(RCCXGate().control(1, ctrl_state="1"), [3, 0, 1, 2])
-    print(qc)
-
-    mqt_qc = qiskit_to_mqt(qc)
-    print(mqt_qc)
-    assert mqt_qc.num_qubits == 4
-    assert mqt_qc.num_ops == 1
-    assert mqt_qc[0].name.strip() == "rccx"
-    assert mqt_qc[0].targets == [0, 1, 2]
-    assert {control.qubit for control in mqt_qc[0].controls} == {3}
-
-    qiskit_qc = mqt_to_qiskit(mqt_qc)
-    print(qiskit_qc)
-    assert qiskit_qc.num_qubits == 4
-    assert len(qiskit_qc) == 1
-    assert qiskit_qc[0].operation.name == "crccx"
-    assert [qiskit_qc.find_bit(qubit).index for qubit in qiskit_qc[0].qubits] == [3, 0, 1, 2]
-
-
-def test_controlled_rccx_open_control() -> None:
-    """Open-controlled RCCX falls back to Qiskit definition import."""
-    qc = QuantumCircuit(4)
-    qc.append(RCCXGate().control(1, ctrl_state="0"), [3, 0, 1, 2])
-    print(qc)
-
-    mqt_qc = qiskit_to_mqt(qc)
-    print(mqt_qc)
-    assert mqt_qc.num_qubits == 4
-    assert mqt_qc.num_ops == 1
-    assert isinstance(mqt_qc[0], CompoundOperation)
-
-    qiskit_qc = mqt_to_qiskit(mqt_qc)
-    print(qiskit_qc)
-    assert Operator(qc).equiv(Operator(qiskit_qc))
 
 
 skip_if_qiskit_version_ge_2_1 = pytest.mark.skipif(

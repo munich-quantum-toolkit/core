@@ -456,16 +456,21 @@ void StandardOperation::dumpGateType(std::ostream& of, std::ostringstream& op,
       const auto& b = qubitMap.at(targets[1]).second;
       const auto& c = qubitMap.at(targets[2]).second;
       const auto p = op.str();
+      std::ostringstream controlOperands;
+      for (const auto& control : controls) {
+        controlOperands << qubitMap.at(control.qubit).second << ", ";
+      }
+      const auto ctrl = controlOperands.str();
 
-      of << p << "u2(0, pi) " << c << ";\n";
-      of << p << "u1(pi/4) " << c << ";\n";
-      of << p << "cx " << b << ", " << c << ";\n";
-      of << p << "u1(-pi/4) " << c << ";\n";
-      of << p << "cx " << a << ", " << c << ";\n";
-      of << p << "u1(pi/4) " << c << ";\n";
-      of << p << "cx " << b << ", " << c << ";\n";
-      of << p << "u1(-pi/4) " << c << ";\n";
-      of << p << "u2(0, pi) " << c << ";\n";
+      of << p << "u2(0, pi) " << ctrl << c << ";\n";
+      of << p << "u1(pi/4) " << ctrl << c << ";\n";
+      of << p << "cx " << ctrl << b << ", " << c << ";\n";
+      of << p << "u1(-pi/4) " << ctrl << c << ";\n";
+      of << p << "cx " << ctrl << a << ", " << c << ";\n";
+      of << p << "u1(pi/4) " << ctrl << c << ";\n";
+      of << p << "cx " << ctrl << b << ", " << c << ";\n";
+      of << p << "u1(-pi/4) " << ctrl << c << ";\n";
+      of << p << "u2(0, pi) " << ctrl << c << ";\n";
       return;
     }
     // qelib1.inc uses rc3x for the 4-qubit gate.

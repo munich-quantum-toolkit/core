@@ -21,7 +21,6 @@ import numpy as np
 import pytest
 from qiskit import qasm2, qasm3
 from qiskit.circuit import Clbit, Parameter, QuantumCircuit
-from qiskit.circuit.library import RCCXGate
 
 from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
@@ -94,9 +93,6 @@ class MockQDMIDevice:
                 self._params = 1
             elif name in {"cz", "cx", "cnot", "cy", "ch", "swap", "iswap", "move"}:
                 self._qubits = 2
-                self._params = 0
-            elif name in {"ccx", "ccz", "cswap", "rccx"}:
-                self._qubits = 3
                 self._params = 0
             elif name in {"rxx", "ryy", "rzz", "rzx"}:
                 self._qubits = 2
@@ -427,28 +423,6 @@ def test_backend_exposes_move_gate(
     assert move_instruction.num_qubits == 2
 
 
-def test_backend_exposes_rccx_gate(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
-) -> None:
-    """Backend exposes a device's 'rccx' operation as RCCXGate in the Target."""
-    mock_device = mock_qdmi_device_factory(
-        name="Test Device with RCCX",
-        num_qubits=3,
-        operations=["rccx", "measure"],
-    )
-
-    _patch_session_devices(monkeypatch, [mock_device])
-
-    provider = QDMIProvider()
-    backend = provider.get_backend("Test Device with RCCX")
-
-    assert "rccx" in backend.target.operation_names
-    rccx_instruction = backend.target.operation_from_name("rccx")
-    assert isinstance(rccx_instruction, RCCXGate)
-    assert rccx_instruction.name == "rccx"
-    assert rccx_instruction.num_qubits == 3
-
-
 def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should raise UnsupportedFormatError when no supported program formats exist."""
     qc = QuantumCircuit(2)
@@ -635,15 +609,6 @@ def test_map_operation_to_move_gate() -> None:
     assert gate.num_qubits == 2
 
 
-def test_map_operation_to_rccx_gate() -> None:
-    """RCCX operations map to Qiskit's RCCXGate."""
-    gate = QDMIBackend._map_operation_to_gate("rccx")  # noqa: SLF001
-    assert gate is not None
-    assert isinstance(gate, RCCXGate)
-    assert gate.name == "rccx"
-    assert gate.num_qubits == 3
-
-
 def test_map_qiskit_gate_to_operation_names() -> None:
     """Test the inverse gate name mapping function comprehensively."""
     # Basic gates map to themselves
@@ -676,8 +641,6 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     # MOVE operation is represented as a real gate for IQM devices
     assert QDMIBackend._map_qiskit_gate_to_operation_names("move") == {"move"}  # noqa: SLF001
     assert QDMIBackend._map_qiskit_gate_to_operation_names("MOVE") == {"move"}  # noqa: SLF001
-
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("rccx") == {"rccx"}  # noqa: SLF001
 
     # Fallback for unknown gates (returns lowercase name)
     assert QDMIBackend._map_qiskit_gate_to_operation_names("unknown") == {"unknown"}  # noqa: SLF001
