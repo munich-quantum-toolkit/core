@@ -10,8 +10,7 @@
 
 /*
  * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
- * Copyright (c) 2025 - 2026 Munich Qua#include
- * "mlir/Dialect/QCO/IR/QCOInterfaces.h"ntum Software Company GmbH All rights
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH All rights
  * reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -49,11 +48,9 @@
 #include <algorithm>
 #include <complex>
 #include <cstddef>
-#include <iostream>
 #include <iterator>
 #include <span>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
 namespace {
@@ -538,7 +535,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     newNegClassicalCtrls.push_back(condition);
     const auto resElse = iterateThroughWorklist(
         rewriter, ut, wl, posClassicalCtrls, newNegClassicalCtrls);
-    std::cout << "Iterated through else branch..." << std::endl;
 
     if (resElse.failed()) {
       return WalkResult::interrupt();
@@ -552,7 +548,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
         std::ranges::replace(elseArgs, input[i], output[i]);
       }
     });
-    std::cout << "Walked through else branch..." << std::endl;
   }
   const auto resultQubits = op->getResults();
   std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
@@ -569,7 +564,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     std::vector<unsigned int> order;
     bool implicitSwap = false;
     if (!thenArgs.empty()) {
-      std::cout << "Then args not empty..." << std::endl;
       for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
         auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
         if (it != thenArgs.end()) {
@@ -579,7 +573,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     }
     if (!elseArgs.empty()) {
-      std::cout << "Else args not empty..." << std::endl;
       for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
         auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
         if (it != elseArgs.end()) {
@@ -609,11 +602,9 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs,
                               inputQubitVec);
     rewriter.eraseOp(*op);
-    std::cout << "Erased If Op..." << std::endl;
   } else {
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs, results);
   }
-  std::cout << "Returning to iteration..." << std::endl;
 
   return WalkResult::advance();
 }
@@ -942,25 +933,14 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
   /// Iterate work-list.
   bool addedAtLeastOneQubit = false;
   for (Operation* curr : worklist) {
-    std::cout << "Starting with curr operation..." << std::endl;
     if (addedAtLeastOneQubit && ut->areStatesAllTop()) {
       return success();
     }
-    std::cout << "Continuing" << std::endl;
     if (curr == nullptr) {
-      std::cout << "Op is null" << std::endl;
       continue; // Skip erased ops.
     }
-    std::cout << "Op is not null" << std::endl;
-    std::string oName =
-        "Op: " + curr->getName().getStringRef().str() +
-        " dialect: " + curr->getName().getDialectNamespace().str();
-
-    std::cout << oName << std::endl;
-    std::cout << "Setting insertion point" << std::endl;
 
     rewriter.setInsertionPoint(curr);
-    std::cout << "Insertion point set" << std::endl;
 
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
@@ -1053,9 +1033,7 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (res.wasInterrupted()) {
       return failure();
     }
-    std::cout << "Finished curr operation" << std::endl;
   }
-  std::cout << "Iterated" << std::endl;
   return success();
 }
 
@@ -1081,7 +1059,7 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  * @param module The module which contains the operations
  * @param ctx The MLIR context
  * @param maxNonzeroAmplitudes The maximum number of non-zero amplitudes in the
- * tracted quantum states before reaching top.
+ * tracked quantum states before reaching top.
  * @param maxHybridStates The maximum number of hybrid states which have a
  * non-zero probability.
  * @return Success if constant propagation has been applied successfully
