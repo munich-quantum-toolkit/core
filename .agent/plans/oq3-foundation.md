@@ -1,4 +1,4 @@
-# Establish a typed OpenQASM 3.1 frontend
+# Establish a typed OpenQASM 3 frontend
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -9,21 +9,21 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core needs an OpenQASM frontend that can represent valid OpenQASM 3.1 even
+MQT Core needs an OpenQASM frontend that can represent valid OpenQASM 3 even
 when the QC or JEFF target cannot lower every construct yet. After this work, a
-caller can parse OpenQASM 3.1 or supported OpenQASM 2 compatibility syntax into
-a verified, typed MLIR module using an experimental `oq3` dialect. A separate
-pass lowers the supported part of that module to MQT's QC dialect. This split
-makes source-language validity independent of target capability and prevents the
+caller can parse OpenQASM 3 or supported OpenQASM 2 compatibility syntax into a
+verified, typed MLIR module using an experimental `oq3` dialect. A separate pass
+lowers the supported part of that module to MQT's QC dialect. This split makes
+source-language validity independent of target capability and prevents the
 parser from becoming a second, target-specific type checker.
 
 The current implementation is an architectural demonstrator. It proves the
 parser, typed intermediate representation, diagnostics, and initial lowering
 boundary, while deliberately leaving the established OpenQASM importer as the
 production path. The demonstrator can be observed by running the focused test
-binary described below: the tests parse representative 3.1 and 2.0 programs,
-verify the generated module, lower supported programs to QC, and distinguish
-source errors from target-capability errors.
+binary described below: the tests parse representative OpenQASM 3 and 2
+programs, verify the generated module, lower supported programs to QC, and
+distinguish source errors from target-capability errors.
 
 The repository-relative scope is the OpenQASM target under
 `mlir/include/mlir/Target/OpenQASM` and `mlir/lib/Target/OpenQASM`, the OQ3
@@ -70,6 +70,10 @@ preserved.
       PR #1908, regenerated this plan to use only repository-relative scope,
       paths, commands, and coordination boundaries, and verified the result with
       `uvx nox -s lint`.
+- [x] (2026-07-15 12:00Z) Updated the version policy so explicit 3.0 and 3.1
+      declarations select the same current OpenQASM 3 semantics, and made
+      general prose version-neutral within OpenQASM 3. The expanded 25-test
+      focused suite and `uvx nox -s lint` pass.
 - [ ] Complete faithful signed and unsigned integer semantics, the remaining
       scalar cast and operator rules, and typed non-bit program inputs and
       outputs.
@@ -141,11 +145,12 @@ preserved.
   every target supports them, while builtin MLIR dialects should continue to
   represent ordinary classical computation. Date/Author: 2026-07-15 / Codex.
 
-- Decision: Track OpenQASM 3.1 as the sole current 3.x version, accept
-  versionless input as 3.1, reject explicit 3.0, and normalize supported
-  OpenQASM 2 syntax into the same typed representation. Rationale: this matches
-  the project's one-current-standard policy while preserving required legacy
-  input. Date/Author: 2026-07-15 / Codex.
+- Decision: Implement one current OpenQASM 3 semantic mode based on 3.1, accept
+  explicit 3.0 and 3.1 declarations into that same mode, default versionless
+  input to it, and normalize supported OpenQASM 2 syntax into the same typed
+  representation. Rationale: callers should not be rejected solely for a 3.0
+  declaration when the frontend can interpret the program with the maintained
+  OpenQASM 3 semantics. Date/Author: 2026-07-15 / Codex.
 
 - Decision: Keep generated grammar sources committed and isolated, with an exact
   upstream revision and a documented local spelling correction. Rationale:
@@ -193,7 +198,7 @@ the intended diagnostic split: syntax and semantic errors occur in the frontend,
 while dynamic range steps and power modifiers fail as explicit target capability
 limitations.
 
-The milestone does not yet meet the final goal of arbitrary OpenQASM 3.1 input.
+The milestone does not yet meet the final goal of arbitrary OpenQASM 3 input.
 The most important semantic gap is faithful integer signedness; the largest
 feature gaps are aggregate classical types, callable constructs, advanced
 control flow, timing, and calibration. The test suite establishes a useful
@@ -333,10 +338,10 @@ for later revisions.
 
 ## Validation and Acceptance
 
-A source containing explicit `OPENQASM 3.1;` or no version declaration must
-produce a verified typed OQ3 module for the supported surface. Explicit 3.0 must
-produce an unsupported-version diagnostic. Explicit 2.0 must activate the
-compatibility syntax, including `qelib1.inc` and legacy measurement arrows.
+A source containing explicit `OPENQASM 3.0;`, explicit `OPENQASM 3.1;`, or no
+version declaration must produce a verified typed OQ3 module for the supported
+surface using the same current OpenQASM 3 semantics. Explicit 2.0 must activate
+the compatibility syntax, including `qelib1.inc` and legacy measurement arrows.
 
 Standard gates must be unavailable unless the correct standard library is
 included. Custom gates must reject unknown symbols, use before definition,
@@ -361,7 +366,7 @@ IR because the OQ3 and Math dialects are registered. Existing OpenQASM input to
 `mqt-cc` must continue to use and pass the legacy path until the planned switch.
 
 Final acceptance for replacing the legacy path additionally requires checked
-coverage of every OpenQASM 3.1 grammar family, faithful scalar semantics,
+coverage of every OpenQASM 3 grammar family, faithful scalar semantics,
 representative QC-to-JEFF success, differential equivalence for overlapping
 programs, and recorded linear-growth benchmarks.
 
@@ -455,4 +460,6 @@ rebase and its post-rebase validation, records the clean repository lint result,
 and defines the remaining stabilization and conformance work. Regenerated after
 PR #1908 to remove machine-specific orchestration details and express all scope,
 commands, coordination boundaries, and recovery instructions in portable
-repository-relative terms.
+repository-relative terms. Updated the version policy so explicit 3.0 and 3.1
+declarations use the same maintained OpenQASM 3 semantics and general prose does
+not overstate a 3.1 distinction where none matters.
