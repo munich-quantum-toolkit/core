@@ -72,8 +72,9 @@ semantic program. Unrelated changes and other worktrees remain outside scope.
 - [x] (2026-07-15 13:50Z) Passed repository lint, inspected and committed the
       architecture pivot, rebased onto current `origin/main` at `559fde4b2`, and
       repeated the focused OQ3, QC translation, and compiler tests.
-- [ ] Push the rebased branch and update the draft pull request to describe the
-      handwritten-parser architecture and current workbench status.
+- [x] (2026-07-15 13:55Z) Force-pushed the rebased branch with lease protection
+      and updated draft pull request 1910 to describe the handwritten-parser
+      architecture and current workbench status.
 - [ ] Establish a checked upstream grammar and conformance snapshot as test
   ground truth, without making generated code or ANTLR a build dependency.
 - [ ] Refactor the existing scanner and parser to return a source-spanned syntax
