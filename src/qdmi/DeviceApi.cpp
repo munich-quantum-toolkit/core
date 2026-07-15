@@ -10,6 +10,7 @@
 
 #include "DeviceApi.hpp"
 
+#include "qdmi/DeviceRegistry.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/device.h>

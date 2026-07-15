@@ -11,6 +11,8 @@
 #include "qdmi/DeviceManager.hpp"
 
 #include "DeviceApi.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
 #include <algorithm>
 #include <map>
@@ -19,6 +21,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
