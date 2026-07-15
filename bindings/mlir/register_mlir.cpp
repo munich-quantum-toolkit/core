@@ -260,40 +260,56 @@ MQT Core MLIR compiler bindings.
       .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
              "QIR for the Adaptive Profile.");
 
-  auto program = nb::class_<mlir::Program>(m, "Program");
-  program.def_prop_ro("is_valid", &mlir::Program::isValid)
-      .def_prop_ro("ir",
-                   [](const mlir::Program& value) {
-                     requireValid(value);
-                     return value.str();
-                   })
-      .def("__str__", [](const mlir::Program& value) {
-        requireValid(value);
-        return value.str();
-      });
+  auto program = nb::class_<mlir::Program>(
+      m, "Program", R"pb(Base class for a typed MLIR compiler program.
 
-  auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(m, "QCProgram");
+Programs own their MLIR module. Conversions can consume a program; use
+``is_valid`` to check whether it can still be used.)pb");
+  program
+      .def_prop_ro("is_valid", &mlir::Program::isValid,
+                   "Whether this program still owns its module.")
+      .def_prop_ro(
+          "ir",
+          [](const mlir::Program& value) {
+            requireValid(value);
+            return value.str();
+          },
+          "The textual MLIR representation of this program.")
+      .def(
+          "__str__",
+          [](const mlir::Program& value) {
+            requireValid(value);
+            return value.str();
+          },
+          "Return the textual MLIR representation of this program.");
+
+  auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
+      m, "QCProgram", R"pb(A compiler program in the QC dialect.
+
+QC programs use reference semantics and represent frontend quantum programs
+before conversion to QCO.)pb");
   qcProgram
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRString>::call,
-          "source"_a)
+          "source"_a, "Parse a QC-dialect MLIR source string.")
       .def_static(
           "from_mlir_file",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRFile>::call,
-          "path"_a)
+          "path"_a, "Parse QC-dialect MLIR from a file.")
       .def_static(
           "from_qasm_str",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromQASMString>::call,
-          "source"_a)
+          "source"_a, "Translate an OpenQASM 3 source string to QC MLIR.")
       .def_static(
           "from_qasm_file",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromQASMFile>::call,
-          "path"_a)
+          "path"_a, "Translate an OpenQASM 3 file to QC MLIR.")
       .def_static("from_quantum_computation",
                   &OptionalFunctionAdapter<
                       &mlir::QCProgram::fromQuantumComputation>::call,
-                  "computation"_a)
+                  "computation"_a,
+                  "Translate an MQT QuantumComputation to QC MLIR.")
       .def_static(
           "from_qiskit",
           [](const nb::object& circuit) {
@@ -304,16 +320,20 @@ MQT Core MLIR compiler bindings.
           },
           "circuit"_a,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
-                  "-> QCProgram"))
-      .def("copy", &mlir::QCProgram::copy)
-      .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call)
+                  "-> QCProgram"),
+          "Translate a Qiskit QuantumCircuit to QC MLIR.")
+      .def("copy", &mlir::QCProgram::copy,
+           "Return an independent copy of this program.")
+      .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
+           "Run the standard QC cleanup pipeline in place.")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
             return takeResult(std::move(source).intoQCO());
           },
-          nb::kw_only(), "copy"_a = false)
+          nb::kw_only(), "copy"_a = false,
+          "Convert this program to QCO. Set ``copy=True`` to preserve it.")
       .def(
           "to_qir",
           [](mlir::QCProgram& value, const mlir::QIRProfile profile,
@@ -321,37 +341,49 @@ MQT Core MLIR compiler bindings.
             auto source = copiedOrConsumed(value, copy);
             return takeResult(std::move(source).intoQIR(profile));
           },
-          "profile"_a, nb::kw_only(), "copy"_a = false);
+          "profile"_a, nb::kw_only(), "copy"_a = false,
+          "Lower this program to QIR for the requested profile.");
 
-  auto qcoProgram =
-      nb::class_<mlir::QCOProgram, mlir::Program>(m, "QCOProgram");
+  auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
+      m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
+
+QCO programs use value semantics and expose optimization and transformation
+operations.)pb");
   qcoProgram
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,
-          "source"_a)
+          "source"_a, "Parse a QCO-dialect MLIR source string.")
       .def_static(
           "from_mlir_file",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
-          "path"_a)
-      .def("copy", &mlir::QCOProgram::copy)
-      .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call)
+          "path"_a, "Parse QCO-dialect MLIR from a file.")
+      .def("copy", &mlir::QCOProgram::copy,
+           "Return an independent copy of this program.")
+      .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
+           "Run the standard QCO cleanup pipeline in place.")
       .def("run_pass_pipeline",
            &BooleanMemberAdapter<&mlir::QCOProgram::runPassPipeline>::call,
            "pipeline"_a, nb::kw_only(), "enable_timing"_a = false,
-           "enable_statistics"_a = false)
+           "enable_statistics"_a = false,
+           "Run a textual MLIR pass pipeline in place.")
       .def("merge_single_qubit_rotation_gates",
            &BooleanMemberAdapter<
-               &mlir::QCOProgram::mergeSingleQubitRotationGates>::call)
-      .def("fuse_single_qubit_unitary_runs",
-           &BooleanMemberAdapter<
-               &mlir::QCOProgram::fuseSingleQubitUnitaryRuns>::call,
-           nb::kw_only(), "basis"_a = "zyz")
+               &mlir::QCOProgram::mergeSingleQubitRotationGates>::call,
+           "Merge compatible consecutive single-qubit rotation gates.")
+      .def(
+          "fuse_single_qubit_unitary_runs",
+          &BooleanMemberAdapter<
+              &mlir::QCOProgram::fuseSingleQubitUnitaryRuns>::call,
+          nb::kw_only(), "basis"_a = "zyz",
+          "Fuse single-qubit unitary runs into the chosen decomposition basis.")
       .def("unroll_quantum_loops",
            &BooleanMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
-           nb::kw_only(), "unroll_factor"_a = -1)
+           nb::kw_only(), "unroll_factor"_a = -1,
+           "Unroll quantum loops, optionally using a maximum unroll factor.")
       .def("lift_hadamards",
-           &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call)
+           &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
+           "Move Hadamard gates through compatible operations.")
       .def(
           "place_and_route",
           [](mlir::QCOProgram& value,
@@ -365,28 +397,33 @@ MQT Core MLIR compiler bindings.
           },
           "coupling"_a, nb::kw_only(), "nlookahead"_a = 1, "alpha"_a = 1.F,
           "lambda_"_a = 0.5F, "niterations"_a = 1, "ntrials"_a = 4,
-          "seed"_a = 42)
+          "seed"_a = 42, "Place and route the program for a coupling graph.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
             return takeResult(std::move(source).intoQC());
           },
-          nb::kw_only(), "copy"_a = false)
+          nb::kw_only(), "copy"_a = false,
+          "Convert this program to QC. Set ``copy=True`` to preserve it.")
       .def(
           "to_jeff",
           [](mlir::QCOProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
             return takeResult(std::move(source).intoJeff());
           },
-          nb::kw_only(), "copy"_a = false);
+          nb::kw_only(), "copy"_a = false,
+          "Serialize this program as Jeff. Set ``copy=True`` to preserve it.");
 
-  auto jeffProgram =
-      nb::class_<mlir::JeffProgram, mlir::Program>(m, "JeffProgram");
+  auto jeffProgram = nb::class_<mlir::JeffProgram, mlir::Program>(
+      m, "JeffProgram", R"pb(A serialized Jeff compiler program.
+
+Jeff programs can be stored as bytes or files and converted back to QCO for
+further compilation.)pb");
   jeffProgram
       .def_static("from_file",
                   &OptionalFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
-                  "path"_a)
+                  "path"_a, "Read a Jeff program from a file.")
       .def_static(
           "from_bytes",
           [](const nb::bytes& bytes) {
@@ -395,42 +432,57 @@ MQT Core MLIR compiler bindings.
                           bytes.size());
             return takeResult(mlir::JeffProgram::fromBytes(view));
           },
-          "data"_a)
-      .def("copy", &mlir::JeffProgram::copy)
-      .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call)
-      .def("to_bytes",
-           [](const mlir::JeffProgram& value) {
-             requireValid(value);
-             const auto bytes = value.toBytes();
-             return nb::bytes(bytes.data(), bytes.size());
-           })
+          "data"_a, "Deserialize a Jeff program from bytes.")
+      .def("copy", &mlir::JeffProgram::copy,
+           "Return an independent copy of this program.")
+      .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call,
+           "Run the standard Jeff cleanup pipeline in place.")
+      .def(
+          "to_bytes",
+          [](const mlir::JeffProgram& value) {
+            requireValid(value);
+            const auto bytes = value.toBytes();
+            return nb::bytes(bytes.data(), bytes.size());
+          },
+          "Serialize this program to its Jeff byte representation.")
       .def("write", &BooleanMemberAdapter<&mlir::JeffProgram::write>::call,
-           "path"_a)
+           "path"_a, "Write this program to a Jeff file.")
       .def(
           "to_qco",
           [](mlir::JeffProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
             return takeResult(std::move(source).intoQCO());
           },
-          nb::kw_only(), "copy"_a = false);
+          nb::kw_only(), "copy"_a = false,
+          "Deserialize this program to QCO. Set ``copy=True`` to preserve it.");
 
-  auto qirProgram =
-      nb::class_<mlir::QIRProgram, mlir::Program>(m, "QIRProgram");
-  qirProgram.def("copy", &mlir::QIRProgram::copy)
-      .def("cleanup", &BooleanMemberAdapter<&mlir::QIRProgram::cleanup>::call)
-      .def_prop_ro("profile", &mlir::QIRProgram::profile)
+  auto qirProgram = nb::class_<mlir::QIRProgram, mlir::Program>(
+      m, "QIRProgram", R"pb(A compiler program lowered to Quantum IR.
+
+QIR programs retain their target profile and can be emitted as LLVM IR or
+LLVM bitcode.)pb");
+  qirProgram
+      .def("copy", &mlir::QIRProgram::copy,
+           "Return an independent copy of this program.")
+      .def("cleanup", &BooleanMemberAdapter<&mlir::QIRProgram::cleanup>::call,
+           "Run the standard QIR cleanup pipeline in place.")
+      .def_prop_ro("profile", &mlir::QIRProgram::profile,
+                   "The QIR target profile used to produce this program.")
       .def_prop_ro("llvm_ir",
-                   &OptionalMemberAdapter<&mlir::QIRProgram::llvmIR>::call)
-      .def("to_bitcode",
-           [](const mlir::QIRProgram& value) {
-             requireValid(value);
-             const auto bytes = takeResult(value.toBitcode());
-             return nb::bytes(reinterpret_cast<const char*>(bytes.data()),
-                              bytes.size());
-           })
+                   &OptionalMemberAdapter<&mlir::QIRProgram::llvmIR>::call,
+                   "The program as textual LLVM IR.")
+      .def(
+          "to_bitcode",
+          [](const mlir::QIRProgram& value) {
+            requireValid(value);
+            const auto bytes = takeResult(value.toBitcode());
+            return nb::bytes(reinterpret_cast<const char*>(bytes.data()),
+                             bytes.size());
+          },
+          "Serialize this program as LLVM bitcode.")
       .def("write_bitcode",
            &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
-           "path"_a);
+           "path"_a, "Write this program as LLVM bitcode.");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
@@ -443,6 +495,17 @@ Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,
 and typed compiler programs can be combined with any supported output format.
 Typed program inputs are copied by default; set `inplace=True` to consume them.
 Use the typed programs directly to construct a custom pipeline stage by stage.
+
+Args:
+    program: Source text, a file path, a circuit, or a typed compiler program.
+    output: The requested output stage of the compiler pipeline.
+    inplace: Whether a typed input program may be consumed.
+    qco_pipeline: The QCO optimization pipeline to run.
+    enable_timing: Whether to collect pass timing information.
+    enable_statistics: Whether to collect pass statistics.
+
+Returns:
+    A typed compiler program for the requested output format.
 )pb");
 }
 
