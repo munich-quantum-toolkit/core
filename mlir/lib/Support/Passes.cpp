@@ -65,6 +65,7 @@ LogicalResult runPassPipeline(ModuleOp module, const StringRef pipeline,
                               const bool enableTiming,
                               const bool enableStatistics) {
   registerMQTCompilerPasses();
+  registerTransformsPasses();
   PassManager pm(module.getContext());
   if (enableTiming) {
     pm.enableTiming();

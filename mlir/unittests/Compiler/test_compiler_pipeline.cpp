@@ -307,6 +307,10 @@ h q;
   EXPECT_FALSE(QCOProgram::fromMLIRString("not valid MLIR"));
   EXPECT_FALSE(
       QCOProgram::fromMLIRFile(temporaryDirectory / "missing.qco.mlir"));
+  auto qcoFromQC = std::move(*qcFromMLIR).intoQCO();
+  ASSERT_TRUE(qcoFromQC);
+  EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
 }
 
 /**
@@ -379,6 +383,7 @@ h q;
   EXPECT_TRUE(qcoFromString->liftHadamards());
   EXPECT_TRUE(
       qcoFromString->runPassPipeline("merge-single-qubit-rotation-gates"));
+  EXPECT_TRUE(qcoFromString->runPassPipeline("canonicalize,cse"));
   EXPECT_FALSE(qcoFromString->runPassPipeline("not-a-pass"));
   EXPECT_FALSE(qcoFromString->str().empty());
 

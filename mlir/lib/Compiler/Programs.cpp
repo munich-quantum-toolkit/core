@@ -131,6 +131,30 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
   return std::move(module);
 }
 
+/**
+ * @brief Check whether a module contains an operation from a dialect.
+ */
+[[nodiscard]] static bool moduleUsesDialect(const ModuleOp module,
+                                            const StringRef dialect) {
+  auto found = false;
+  module->walk([&](Operation* operation) {
+    found |= operation->getDialect()->getNamespace() == dialect;
+  });
+  return found;
+}
+
+template <class ProgramType, class Parse>
+[[nodiscard]] static std::optional<ProgramType>
+parseTypedProgram(const StringRef dialect, Parse&& parse) {
+  auto context = createCompilerContext();
+  auto module = std::forward<Parse>(parse)(context.get());
+  if (failed(module) || !moduleUsesDialect(**module, dialect)) {
+    return std::nullopt;
+  }
+  return ProgramType(
+      {.context = std::move(context), .module = std::move(*module)});
+}
+
 template <class PopulatePasses>
 [[nodiscard]] static LogicalResult runPasses(ModuleOp module,
                                              PopulatePasses&& populatePasses,
@@ -174,22 +198,16 @@ Program::Storage Program::releaseStorage() && {
 
 std::optional<QCProgram>
 QCProgram::fromMLIRString(const std::string_view source) {
-  auto context = createCompilerContext();
-  auto module = parseMLIRString(context.get(), source);
-  if (failed(module)) {
-    return std::nullopt;
-  }
-  return QCProgram({.context = context, .module = std::move(*module)});
+  return parseTypedProgram<QCProgram>("qc", [source](MLIRContext* context) {
+    return parseMLIRString(context, source);
+  });
 }
 
 std::optional<QCProgram>
 QCProgram::fromMLIRFile(const std::filesystem::path& path) {
-  auto context = createCompilerContext();
-  auto module = parseMLIRFile(context.get(), path);
-  if (failed(module)) {
-    return std::nullopt;
-  }
-  return QCProgram({.context = context, .module = std::move(*module)});
+  return parseTypedProgram<QCProgram>("qc", [&path](MLIRContext* context) {
+    return parseMLIRFile(context, path);
+  });
 }
 
 std::optional<QCProgram>
@@ -274,22 +292,16 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
 
 std::optional<QCOProgram>
 QCOProgram::fromMLIRString(const std::string_view source) {
-  auto context = createCompilerContext();
-  auto module = parseMLIRString(context.get(), source);
-  if (failed(module)) {
-    return std::nullopt;
-  }
-  return QCOProgram({.context = context, .module = std::move(*module)});
+  return parseTypedProgram<QCOProgram>("qco", [source](MLIRContext* context) {
+    return parseMLIRString(context, source);
+  });
 }
 
 std::optional<QCOProgram>
 QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
-  auto context = createCompilerContext();
-  auto module = parseMLIRFile(context.get(), path);
-  if (failed(module)) {
-    return std::nullopt;
-  }
-  return QCOProgram({.context = context, .module = std::move(*module)});
+  return parseTypedProgram<QCOProgram>("qco", [&path](MLIRContext* context) {
+    return parseMLIRFile(context, path);
+  });
 }
 
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
