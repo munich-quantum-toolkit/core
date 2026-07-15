@@ -23,6 +23,16 @@
 
 namespace qdmi::detail {
 
+template <class Function> struct ContextFunction;
+
+/// Add the immutable adapter context to an existing QDMI function signature.
+template <class Result, class... Args> struct ContextFunction<Result(Args...)> {
+  using type = Result (*)(const void*, Args...);
+};
+
+template <class Function>
+using ContextFunctionT = typename ContextFunction<Function>::type;
+
 /// Private context/function table for the single supported QDMI ABI.
 struct DeviceApi {
   /// Operations consumed by the object model. Every function receives the
@@ -33,26 +43,22 @@ struct DeviceApi {
     void (*closeSession)(const void*, QDMI_Device_Session) noexcept = nullptr;
     QDMI_Device_Job (*createJob)(const void*, QDMI_Device_Session) = nullptr;
     void (*freeJob)(const void*, QDMI_Device_Job) noexcept = nullptr;
-    int (*setJobParameter)(const void*, QDMI_Device_Job,
-                           QDMI_Device_Job_Parameter, size_t,
-                           const void*) = nullptr;
-    int (*queryJobProperty)(const void*, QDMI_Device_Job,
-                            QDMI_Device_Job_Property, size_t, void*,
-                            size_t*) = nullptr;
+    ContextFunctionT<decltype(QDMI_device_job_set_parameter)> setJobParameter =
+        nullptr;
+    ContextFunctionT<decltype(QDMI_device_job_query_property)>
+        queryJobProperty = nullptr;
     void (*submitJob)(const void*, QDMI_Device_Job) = nullptr;
     void (*cancelJob)(const void*, QDMI_Device_Job) = nullptr;
     QDMI_Job_Status (*checkJob)(const void*, QDMI_Device_Job) = nullptr;
     bool (*waitJob)(const void*, QDMI_Device_Job, size_t) = nullptr;
-    int (*getJobResult)(const void*, QDMI_Device_Job, QDMI_Job_Result, size_t,
-                        void*, size_t*) = nullptr;
-    int (*queryDevice)(const void*, QDMI_Device_Session, QDMI_Device_Property,
-                       size_t, void*, size_t*) = nullptr;
-    int (*querySite)(const void*, QDMI_Device_Session, QDMI_Site,
-                     QDMI_Site_Property, size_t, void*, size_t*) = nullptr;
-    int (*queryOperation)(const void*, QDMI_Device_Session, QDMI_Operation,
-                          size_t, const QDMI_Site*, size_t, const double*,
-                          QDMI_Operation_Property, size_t, void*,
-                          size_t*) = nullptr;
+    ContextFunctionT<decltype(QDMI_device_job_get_results)> getJobResult =
+        nullptr;
+    ContextFunctionT<decltype(QDMI_device_session_query_device_property)>
+        queryDevice = nullptr;
+    ContextFunctionT<decltype(QDMI_device_session_query_site_property)>
+        querySite = nullptr;
+    ContextFunctionT<decltype(QDMI_device_session_query_operation_property)>
+        queryOperation = nullptr;
   };
 
   std::shared_ptr<const void> context;

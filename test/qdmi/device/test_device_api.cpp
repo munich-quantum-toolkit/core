@@ -23,10 +23,19 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace qdmi::detail {
 namespace {
+static_assert(
+    std::is_same_v<decltype(DeviceApi::Functions::setJobParameter),
+                   ContextFunctionT<decltype(QDMI_device_job_set_parameter)>>);
+static_assert(std::is_same_v<
+              decltype(DeviceApi::Functions::queryOperation),
+              ContextFunctionT<
+                  decltype(QDMI_device_session_query_operation_property)>>);
+
 // The fake implements a C ABI whose opaque handles intentionally require
 // ownership and pointer casts at this isolated test boundary.
 // NOLINTBEGIN(readability-named-parameter,cppcoreguidelines-owning-memory)
