@@ -585,6 +585,31 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
 TEST_F(CompilerPipelineTest,
        RejectsDecomposeMultiControlledMinControlsBelowTwo) {
   EXPECT_FALSE(isDecomposeMultiControlledConfigValid(1U));
+  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(2U));
+}
+
+TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
+  auto module =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+        builder.mcx({builder.staticQubit(0), builder.staticQubit(1),
+                     builder.staticQubit(2)},
+                    builder.staticQubit(3));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(module);
+
+  std::string before;
+  llvm::raw_string_ostream beforeStream(before);
+  module->print(beforeStream);
+
+  PassManager pm(module->getContext());
+  populateDecomposeMultiControlledPipeline(pm, 2);
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+
+  std::string after;
+  llvm::raw_string_ostream afterStream(after);
+  module->print(afterStream);
+  EXPECT_NE(after, before);
 }
 
 INSTANTIATE_TEST_SUITE_P(

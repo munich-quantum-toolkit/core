@@ -305,10 +305,6 @@ struct ControlledGateSpec {
 
 static SmallVector<Value> threeControlledWires(ValueRange controls,
                                                Value target) {
-  if (controls.size() != 3) {
-    llvm::reportFatalUsageError(
-        "three-controlled synthesis requires exactly 3 control qubits");
-  }
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
   return wires;
@@ -628,11 +624,7 @@ synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
     emitter.h(2);
     break;
   case ControlledTarget::Phase:
-    if (!theta) {
-      llvm::reportFatalUsageError(
-          "synthesizeTwoControlled: phase gate requires theta");
-    }
-    emitter.emitTwoControlledPhaseSequence(0, 1, 2, *theta);
+    emitter.emitTwoControlledPhaseSequence(0, 1, 2, theta.value());
     break;
   }
   return wires;
@@ -641,10 +633,6 @@ synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
 static SmallVector<Value>
 synthesizeThreeControlled(OpBuilder& builder, Location loc, ValueRange controls,
                           Value target, ControlledTarget gate) {
-  if (gate == ControlledTarget::Phase) {
-    llvm::reportFatalUsageError(
-        "synthesizeThreeControlled does not support phase gates");
-  }
   SmallVector<Value> wires = threeControlledWires(controls, target);
   GateEmitter emitter(builder, loc, wires);
   if (gate == ControlledTarget::X) {
@@ -660,15 +648,6 @@ synthesizeThreeControlled(OpBuilder& builder, Location loc, ValueRange controls,
 static SmallVector<Value>
 synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
                           Value target, ControlledTarget gate) {
-  if (controls.size() < 4) {
-    llvm::reportFatalUsageError(
-        "synthesizeMultiControlled requires at least 4 control qubits");
-  }
-  if (gate == ControlledTarget::Phase) {
-    llvm::reportFatalUsageError(
-        "synthesizeMultiControlled does not support phase gates");
-  }
-
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
 
@@ -750,18 +729,16 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
                                  op.getInputTarget(0), *gate));
       return success();
     }
-    if (numControls == 2) {
-      const auto spec = matchControlledXzOrPhase(inner);
-      if (!spec) {
-        return failure();
-      }
-      rewriter.replaceOp(op, synthesizeTwoControlled(
-                                 rewriter, op.getLoc(), op.getControlsIn()[0],
-                                 op.getControlsIn()[1], op.getInputTarget(0),
-                                 spec->gate, spec->theta));
-      return success();
+    // Exactly two controls (k < 2 is rejected by min-controls >= 2).
+    const auto spec = matchControlledXzOrPhase(inner);
+    if (!spec) {
+      return failure();
     }
-    return failure();
+    rewriter.replaceOp(op, synthesizeTwoControlled(
+                               rewriter, op.getLoc(), op.getControlsIn()[0],
+                               op.getControlsIn()[1], op.getInputTarget(0),
+                               spec->gate, spec->theta));
+    return success();
   }
 
 private:

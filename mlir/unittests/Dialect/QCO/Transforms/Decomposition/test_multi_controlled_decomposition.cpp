@@ -505,9 +505,8 @@ TEST_F(McxDecompositionTest, MinControlsRetainsTwoControlledBuildingBlocks) {
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
 
   EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
-  EXPECT_GT(countMultiControlledOps(moduleOp.get(), 2) +
-                countRCCXOps(moduleOp.get()),
-            0U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 5U);
+  EXPECT_EQ(countRCCXOps(moduleOp.get()), 4U);
 
   options.minControls = 2;
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
@@ -527,10 +526,19 @@ TEST_F(McxDecompositionTest, MinControlsRetainsThreeControlledBuildingBlocks) {
   options.minControls = 4;
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
 
-  EXPECT_GT(countMultiControlledOps(moduleOp.get(), 3), 0U);
-  EXPECT_GT(countMultiControlledOps(moduleOp.get(), 2) +
-                countRCCXOps(moduleOp.get()),
-            0U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 2U);
+  std::size_t threeControlledX = 0;
+  moduleOp->walk([&](CtrlOp op) {
+    if (op.getNumControls() != 3 || op.getNumBodyUnitaries() != 1) {
+      return;
+    }
+    if (isa<XOp>(op.getBodyUnitary(0).getOperation())) {
+      ++threeControlledX;
+    }
+  });
+  EXPECT_EQ(threeControlledX, 2U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 19U);
+  EXPECT_EQ(countRCCXOps(moduleOp.get()), 8U);
 
   options.minControls = 2;
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
@@ -539,6 +547,60 @@ TEST_F(McxDecompositionTest, MinControlsRetainsThreeControlledBuildingBlocks) {
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   expectImplementsMcx(funcOp, 7);
+}
+
+TEST_F(McxDecompositionTest, DecomposesWithInvertedGadgets) {
+  // HP24 uses inverted gadgets once dirty synthesis runs with >= 4 controls
+  // inside incrementNDirty (k >= 10).
+  auto moduleOp = buildMcxModule(context(), 10);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+  EXPECT_EQ(countRCCXOps(moduleOp.get()), 0U);
+
+  std::size_t invCount = 0;
+  moduleOp->walk([&](InvOp) { ++invCount; });
+  EXPECT_EQ(invCount, 12U);
+}
+
+TEST_F(McxDecompositionTest, LeavesRCCXWhenMinControlsIsThree) {
+  auto moduleOp = buildRCCXModule(context());
+  ASSERT_TRUE(moduleOp);
+  DecomposeMultiControlledOptions options;
+  options.minControls = 3;
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+  EXPECT_EQ(countRCCXOps(moduleOp.get()), 1U);
+}
+
+TEST_F(McxDecompositionTest, LeavesThreeAndFourControlledHUntouched) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        builder.mch({builder.staticQubit(0), builder.staticQubit(1),
+                     builder.staticQubit(2)},
+                    builder.staticQubit(3));
+        builder.mch({builder.staticQubit(4), builder.staticQubit(5),
+                     builder.staticQubit(6), builder.staticQubit(7)},
+                    builder.staticQubit(8));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+
+  std::size_t threeControlledH = 0;
+  std::size_t fourControlledH = 0;
+  moduleOp->walk([&](CtrlOp op) {
+    if (op.getNumBodyUnitaries() != 1 ||
+        !isa<HOp>(op.getBodyUnitary(0).getOperation())) {
+      return;
+    }
+    if (op.getNumControls() == 3) {
+      ++threeControlledH;
+    } else if (op.getNumControls() == 4) {
+      ++fourControlledH;
+    }
+  });
+  EXPECT_EQ(threeControlledH, 1U);
+  EXPECT_EQ(fourControlledH, 1U);
 }
 
 TEST_F(McxDecompositionTest, DecomposesMcxAndMcz) {
