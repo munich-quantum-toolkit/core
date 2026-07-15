@@ -100,6 +100,14 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
 - Inspect the final diff and working-tree status. Report every check run and
   clearly distinguish passes, failures, and checks that could not be run.
 
+## ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as
+described in [`.agent/PLANS.md`](.agent/PLANS.md)) from design to
+implementation. Keep one ExecPlan per independently implemented task and store
+it under `.agent/plans/<task-slug>.md`; the plan is a living record of that
+task's decisions and progress.
+
 ## Git and GitHub Actions
 
 - A coding agent may perform coding, Git, and GitHub workflow tasks that a human
