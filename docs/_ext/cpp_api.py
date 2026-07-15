@@ -49,12 +49,12 @@ class ApiXRefRole(XRefRole):
 
     @override
     def process_link(
-            self,
-            env: BuildEnvironment,
-            refnode: addnodes.pending_xref,
-            has_explicit_title: bool,
-            title: str,
-            target: str,
+        self,
+        env: BuildEnvironment,
+        refnode: addnodes.pending_xref,
+        has_explicit_title: bool,
+        title: str,
+        target: str,
     ) -> tuple[str, str]:
         """Strip a leading tilde and shorten the displayed qualified name.
 
@@ -197,14 +197,14 @@ class TagfileDomain(Domain):
 
     @override
     def resolve_xref(
-            self,
-            env: BuildEnvironment,
-            fromdocname: str,
-            builder: Builder,
-            typ: str,
-            target: str,
-            node: nodes.Element,
-            contnode: nodes.Element,
+        self,
+        env: BuildEnvironment,
+        fromdocname: str,
+        builder: Builder,
+        typ: str,
+        target: str,
+        node: nodes.Element,
+        contnode: nodes.Element,
     ) -> nodes.reference | None:
         """Resolve a symbol reference to native Doxygen HTML.
 
@@ -234,13 +234,13 @@ class TagfileDomain(Domain):
 
     @override
     def resolve_any_xref(
-            self,
-            env: BuildEnvironment,
-            fromdocname: str,
-            builder: Builder,
-            target: str,
-            node: nodes.Element,
-            contnode: nodes.Element,
+        self,
+        env: BuildEnvironment,
+        fromdocname: str,
+        builder: Builder,
+        target: str,
+        node: nodes.Element,
+        contnode: nodes.Element,
     ) -> list[tuple[str, nodes.reference]]:
         """Resolve an ``any`` reference through the tag-file inventory.
 

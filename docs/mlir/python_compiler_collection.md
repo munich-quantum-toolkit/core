@@ -63,7 +63,7 @@ and Qiskit circuit objects, and typed compiler programs. Select an output format
 to stop the pipeline at a particular representation:
 
 | Purpose                                  | Output format                                          | Result type   |
-|------------------------------------------|--------------------------------------------------------|---------------|
+| ---------------------------------------- | ------------------------------------------------------ | ------------- |
 | Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`   |
 | Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`  |
 | Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`  |

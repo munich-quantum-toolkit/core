@@ -62,7 +62,7 @@ option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
-        OFF)
+       OFF)
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(BUILD_MQT_CORE_MLIR
@@ -161,12 +161,12 @@ if(BUILD_MQT_CORE_MLIR)
     COMMENT "Copying and cleaning up generated MLIR documentation"
     VERBATIM)
 
-  if (BUILD_MQT_CORE_DOCUMENTATION)
-      add_custom_target(mqt-core-docs DEPENDS mlir-doc)
-      foreach (binding ir dd fomac na)
-          add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
-      endforeach ()
-  endif ()
+  if(BUILD_MQT_CORE_DOCUMENTATION)
+    add_custom_target(mqt-core-docs DEPENDS mlir-doc)
+    foreach(binding ir dd fomac na)
+      add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
+    endforeach()
+  endif()
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

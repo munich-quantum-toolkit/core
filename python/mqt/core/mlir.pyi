@@ -17,7 +17,6 @@ import qiskit
 
 import mqt.core.ir
 
-
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
 
@@ -26,7 +25,6 @@ class QIRProfile(enum.Enum):
 
     ADAPTIVE = 1
     """The QIR Adaptive Profile."""
-
 
 class OutputFormat(enum.Enum):
     """Default compiler output formats."""
@@ -52,7 +50,6 @@ class OutputFormat(enum.Enum):
     QIR_ADAPTIVE = 6
     """QIR for the Adaptive Profile."""
 
-
 class Program:
     """Base class for a typed MLIR compiler program.
 
@@ -67,7 +64,6 @@ class Program:
     @property
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
-
 
 class QCProgram(Program):
     """A compiler program in the QC dialect.
@@ -112,7 +108,6 @@ class QCProgram(Program):
     def to_qir(self, profile: QIRProfile, *, copy: bool = False) -> QIRProgram:
         """Lower this program to QIR for the requested profile."""
 
-
 class QCOProgram(Program):
     """A compiler program in the QCO dialect.
 
@@ -150,15 +145,15 @@ class QCOProgram(Program):
         """Move Hadamard gates through compatible operations."""
 
     def place_and_route(
-            self,
-            coupling: Sequence[tuple[int, int]],
-            *,
-            nlookahead: int = 1,
-            alpha: float = 1.0,
-            lambda_: float = 0.5,
-            niterations: int = 1,
-            ntrials: int = 4,
-            seed: int = 42,
+        self,
+        coupling: Sequence[tuple[int, int]],
+        *,
+        nlookahead: int = 1,
+        alpha: float = 1.0,
+        lambda_: float = 0.5,
+        niterations: int = 1,
+        ntrials: int = 4,
+        seed: int = 42,
     ) -> None:
         """Place and route the program for a coupling graph."""
 
@@ -167,7 +162,6 @@ class QCOProgram(Program):
 
     def to_jeff(self, *, copy: bool = False) -> JeffProgram:
         """Serialize this program as Jeff. Set ``copy=True`` to preserve it."""
-
 
 class JeffProgram(Program):
     """A serialized Jeff compiler program.
@@ -199,7 +193,6 @@ class JeffProgram(Program):
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Deserialize this program to QCO. Set ``copy=True`` to preserve it."""
 
-
 class QIRProgram(Program):
     """A compiler program lowered to Quantum IR.
 
@@ -227,94 +220,85 @@ class QIRProgram(Program):
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
 
-
 @overload
 def compile_program(
-        program: str
-                 | os.PathLike[str]
-                 | mqt.core.ir.QuantumComputation
-                 | qiskit.circuit.QuantumCircuit
-                 | QCProgram
-                 | QCOProgram
-                 | JeffProgram,
-        *,
-        output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
+    *,
+    output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
+    inplace: bool = False,
+    qco_pipeline: str = "mqt-qco-default",
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
 ) -> QCProgram: ...
-
-
 @overload
 def compile_program(
-        program: str
-                 | os.PathLike[str]
-                 | mqt.core.ir.QuantumComputation
-                 | qiskit.circuit.QuantumCircuit
-                 | QCProgram
-                 | QCOProgram
-                 | JeffProgram,
-        *,
-        output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
+    *,
+    output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
+    inplace: bool = False,
+    qco_pipeline: str = "mqt-qco-default",
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
 ) -> QCOProgram: ...
-
-
 @overload
 def compile_program(
-        program: str
-                 | os.PathLike[str]
-                 | mqt.core.ir.QuantumComputation
-                 | qiskit.circuit.QuantumCircuit
-                 | QCProgram
-                 | QCOProgram
-                 | JeffProgram,
-        *,
-        output: Literal[OutputFormat.JEFF],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
+    *,
+    output: Literal[OutputFormat.JEFF],
+    inplace: bool = False,
+    qco_pipeline: str = "mqt-qco-default",
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
 ) -> JeffProgram: ...
-
-
 @overload
 def compile_program(
-        program: str
-                 | os.PathLike[str]
-                 | mqt.core.ir.QuantumComputation
-                 | qiskit.circuit.QuantumCircuit
-                 | QCProgram
-                 | QCOProgram
-                 | JeffProgram,
-        *,
-        output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
+    *,
+    output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+    inplace: bool = False,
+    qco_pipeline: str = "mqt-qco-default",
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
 ) -> QIRProgram: ...
-
-
 @overload
 def compile_program(
-        program: str
-                 | os.PathLike[str]
-                 | mqt.core.ir.QuantumComputation
-                 | qiskit.circuit.QuantumCircuit
-                 | QCProgram
-                 | QCOProgram
-                 | JeffProgram,
-        *,
-        output: OutputFormat,
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram,
+    *,
+    output: OutputFormat,
+    inplace: bool = False,
+    qco_pipeline: str = "mqt-qco-default",
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
 ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 

@@ -6,23 +6,23 @@
  */
 
 html {
-    --mqt-background: #ffffff;
-    --mqt-background-secondary: #f8f9fb;
-    --mqt-border: #d8dee8;
-    --mqt-foreground: #1f2328;
-    --mqt-foreground-secondary: #5c6370;
-    --mqt-accent: #2962a3;
-    --mqt-code-background: #f1f3f5;
+  --mqt-background: #ffffff;
+  --mqt-background-secondary: #f8f9fb;
+  --mqt-border: #d8dee8;
+  --mqt-foreground: #1f2328;
+  --mqt-foreground-secondary: #5c6370;
+  --mqt-accent: #2962a3;
+  --mqt-code-background: #f1f3f5;
 }
 
 html.dark-mode {
-    --mqt-background: #131416;
-    --mqt-background-secondary: #1a1c1e;
-    --mqt-border: #30343a;
-    --mqt-foreground: #f0f0f0;
-    --mqt-foreground-secondary: #b8bec8;
-    --mqt-accent: #8ab4e8;
-    --mqt-code-background: #202328;
+  --mqt-background: #131416;
+  --mqt-background-secondary: #1a1c1e;
+  --mqt-border: #30343a;
+  --mqt-foreground: #f0f0f0;
+  --mqt-foreground-secondary: #b8bec8;
+  --mqt-accent: #8ab4e8;
+  --mqt-code-background: #202328;
 }
 
 body,
@@ -30,7 +30,8 @@ table,
 div,
 p,
 dl {
-    font-family: system-ui,
+  font-family:
+    system-ui,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
@@ -38,22 +39,22 @@ dl {
 }
 
 body {
-    background: var(--mqt-background);
-    color: var(--mqt-foreground);
+  background: var(--mqt-background);
+  color: var(--mqt-foreground);
 }
 
 a,
 a:visited,
 .contents a:visited {
-    color: var(--mqt-accent);
+  color: var(--mqt-accent);
 }
 
 #titlearea,
 #nav-tree,
 .header,
 .mqt-docs-backlink {
-    background: var(--mqt-background-secondary);
-    border-color: var(--mqt-border);
+  background: var(--mqt-background-secondary);
+  border-color: var(--mqt-border);
 }
 
 #projectname,
@@ -62,32 +63,32 @@ a:visited,
 .contents h1,
 .contents h2,
 .contents h3 {
-    color: var(--mqt-foreground);
+  color: var(--mqt-foreground);
 }
 
 #projectbrief,
 .footer,
 .directory .levels {
-    color: var(--mqt-foreground-secondary);
+  color: var(--mqt-foreground-secondary);
 }
 
 code,
 .tt,
 div.fragment,
 pre.fragment {
-    background: var(--mqt-code-background);
-    border-color: var(--mqt-border);
+  background: var(--mqt-code-background);
+  border-color: var(--mqt-border);
 }
 
 .mqt-docs-backlink {
-    border-bottom: 1px solid var(--mqt-border);
-    font-size: 0.9rem;
-    padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--mqt-border);
+  font-size: 0.9rem;
+  padding: 0.55rem 1rem;
 }
 
 .mqt-docs-backlink a {
-    font-weight: 600;
-    text-decoration: none;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 #top,
@@ -97,72 +98,72 @@ pre.fragment {
 #nav-tree,
 #nav-tree-contents,
 #side-nav {
-    background: var(--mqt-background-secondary);
-    border-color: var(--mqt-border);
+  background: var(--mqt-background-secondary);
+  border-color: var(--mqt-border);
 }
 
 #titlearea {
-    box-shadow: none;
-    padding: 0.5rem 1rem;
+  box-shadow: none;
+  padding: 0.5rem 1rem;
 }
 
 .mqt-doxygen-logo {
-    padding-right: 0.75rem;
+  padding-right: 0.75rem;
 }
 
 .mqt-doxygen-logo img {
-    height: 2.25rem;
-    max-width: 9rem;
-    object-fit: contain;
+  height: 2.25rem;
+  max-width: 9rem;
+  object-fit: contain;
 }
 
 html:not(.dark-mode) .mqt-logo-dark,
 html.dark-mode .mqt-logo-light {
-    display: none;
+  display: none;
 }
 
 #projectname {
-    font-size: 1.25rem;
-    font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 700;
 }
 
 #main-nav {
-    border-bottom: 1px solid var(--mqt-border);
+  border-bottom: 1px solid var(--mqt-border);
 }
 
 #main-nav a,
 #nav-path a,
 #nav-tree a {
-    color: var(--mqt-foreground);
+  color: var(--mqt-foreground);
 }
 
 #nav-tree .selected,
 #nav-tree .selected a,
 #nav-tree .selected .label {
-    background: var(--mqt-accent);
-    color: var(--mqt-background);
+  background: var(--mqt-accent);
+  color: var(--mqt-background);
 }
 
 #nav-tree .selected a:hover {
-    color: var(--mqt-background);
+  color: var(--mqt-background);
 }
 
 div.contents {
-    line-height: 1.65;
-    max-width: 76rem;
+  line-height: 1.65;
+  max-width: 76rem;
 }
 
 div.contents h1,
 div.contents h2,
 div.contents h3 {
-    font-weight: 700;
-    letter-spacing: normal;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 div.fragment,
 pre.fragment,
 div.line {
-    border-radius: 0.35rem;
+  border-radius: 0.35rem;
 }
 
 .memitem,
@@ -170,28 +171,28 @@ div.line {
 .memdoc,
 table.memberdecls,
 table.fieldtable {
-    border-color: var(--mqt-border);
+  border-color: var(--mqt-border);
 }
 
 .memproto,
 .memdoc,
 table.memberdecls tr:nth-child(even),
 table.fieldtable tr:nth-child(even) {
-    background: var(--mqt-background-secondary);
+  background: var(--mqt-background-secondary);
 }
 
 .memdoc {
-    border-radius: 0.35rem;
-    box-shadow: none;
+  border-radius: 0.35rem;
+  box-shadow: none;
 }
 
 div.header {
-    background: var(--mqt-background);
-    border-bottom-color: var(--mqt-border);
+  background: var(--mqt-background);
+  border-bottom-color: var(--mqt-border);
 }
 
 div.summary,
 div.textblock,
 div.contents {
-    color: var(--mqt-foreground);
+  color: var(--mqt-foreground);
 }

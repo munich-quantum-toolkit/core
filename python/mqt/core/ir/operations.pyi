@@ -833,7 +833,7 @@ class IfElseOperation(Operation):
         else_operation: Operation | None,
         control_register: mqt.core.ir.registers.ClassicalRegister,
         expected_value: int = 1,
-            comparison_kind: ComparisonKind = ComparisonKind.eq,
+        comparison_kind: ComparisonKind = ComparisonKind.eq,
     ) -> None: ...
     @overload
     def __init__(
@@ -842,7 +842,7 @@ class IfElseOperation(Operation):
         else_operation: Operation | None,
         control_bit: int,
         expected_value: bool = True,
-            comparison_kind: ComparisonKind = ComparisonKind.eq,
+        comparison_kind: ComparisonKind = ComparisonKind.eq,
     ) -> None: ...
     @property
     def then_operation(self) -> Operation:

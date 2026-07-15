@@ -84,16 +84,16 @@ function(add_mqt_python_binding_nanobind package_name target_name)
     target_compile_definitions(${target_name}
                                PRIVATE MQT_${package_name}_MODULE_NAME=${target_name})
     set(module_name ${target_name})
-  endif ()
+  endif()
 
   # A Python extension's only public native symbol is its module initializer. Keep symbols from
   # statically linked dependencies local to avoid collisions with other extension modules.
-  if (APPLE)
-      target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
-  elseif (UNIX)
-      target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
-  elseif (WIN32)
-      set_target_properties(${target_name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+  if(APPLE)
+    target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
+  elseif(UNIX)
+    target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
+  elseif(WIN32)
+    set_target_properties(${target_name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   endif()
 
   # Add project libraries to the link libraries
