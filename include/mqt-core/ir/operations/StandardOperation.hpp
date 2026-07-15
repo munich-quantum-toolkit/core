@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file StandardOperation.hpp
+ * @brief Standard unitary quantum operations.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

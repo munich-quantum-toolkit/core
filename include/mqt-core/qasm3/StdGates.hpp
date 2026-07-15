@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file StdGates.hpp
+ * @brief Definitions of OpenQASM 3 standard gates.
+ */
+
 #pragma once
 
 #include "Gate.hpp"

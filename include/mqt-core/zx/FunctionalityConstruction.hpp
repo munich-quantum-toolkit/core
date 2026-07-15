@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file FunctionalityConstruction.hpp
+ * @brief Construct ZX diagrams from quantum computations.
+ */
+
 #pragma once
 
 #include "ZXDefinitions.hpp"

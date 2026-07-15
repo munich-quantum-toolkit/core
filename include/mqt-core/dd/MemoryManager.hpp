@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file MemoryManager.hpp
+ * @brief Memory allocation and reuse for decision-diagram nodes.
+ */
+
 #pragma once
 
 #include "dd/statistics/MemoryManagerStatistics.hpp"

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file CachedEdge.hpp
+ * @brief Cached decision-diagram edge representation.
+ */
+
 #pragma once
 
 #include "dd/Complex.hpp"

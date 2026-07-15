@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Node.hpp
+ * @brief Decision-diagram node types and node-edge aliases.
+ */
+
 #pragma once
 
 #include "dd/CachedEdge.hpp"

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file UniqueTableStatistics.hpp
+ * @brief Statistics for decision-diagram unique tables.
+ */
+
 #pragma once
 
 #include "dd/statistics/TableStatistics.hpp"

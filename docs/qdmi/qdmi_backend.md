@@ -68,9 +68,9 @@ print(f"Results: {counts}")
 
 ### Using the Provider
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` discovers QDMI devices
-available through the FoMaC layer. Backends should always be obtained through
-the provider rather than instantiated directly.
+The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` discovers QDMI
+devices available through the FoMaC layer. Backends should always be obtained
+through the provider rather than instantiated directly.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMIProvider
@@ -106,9 +106,10 @@ exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 
 ## Authentication
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` supports authentication
-for accessing QDMI devices that require credentials. Authentication parameters
-are passed to the provider constructor and forwarded to the underlying session.
+The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` supports
+authentication for accessing QDMI devices that require credentials.
+Authentication parameters are passed to the provider constructor and forwarded
+to the underlying session.
 
 :::{note}
 The default local devices (MQT Core DDSIM QDMI Device, MQT NA Default QDMI
@@ -269,9 +270,9 @@ print(f"Total shots: {sum(counts.values())}")
 Circuits must meet the following requirements before execution:
 
 1. **All parameters must be bound**: Circuits with unbound parameters raise
-   {py:class}`~mqt.core.plugins.qiskit.CircuitValidationError`
+   {py:class}`~mqt.core.plugins.qiskit.exceptions.CircuitValidationError`
 2. **Only supported operations**: Operations not supported by the device raise
-   {py:class}`~mqt.core.plugins.qiskit.UnsupportedOperationError`
+   {py:class}`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`
 3. **Valid shots value**: Must be a non-negative integer
 
 ### Parameter Binding
@@ -305,8 +306,8 @@ job = backend.run(circuits, parameter_values=param_values, shots=100)
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIJob` wraps a FoMaC (QDMI) job and
-provides status tracking:
+The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a FoMaC (QDMI) job
+and provides status tracking:
 
 ```python
 from qiskit.providers import JobStatus
@@ -387,14 +388,14 @@ for qc in circuits:
 
 The backend provides implementations of Qiskit's
 [Primitives V2](https://docs.quantum.ibm.com/api/qiskit/primitives) interfaces:
-{py:class}`~mqt.core.plugins.qiskit.QDMISampler` and
-{py:class}`~mqt.core.plugins.qiskit.QDMIEstimator`. These primitives allow for a
-simplified execution workflow for sampling bitstrings and estimating expectation
-values.
+{py:class}`~mqt.core.plugins.qiskit.sampler.QDMISampler` and
+{py:class}`~mqt.core.plugins.qiskit.estimator.QDMIEstimator`. These primitives
+allow for a simplified execution workflow for sampling bitstrings and estimating
+expectation values.
 
 ### Sampler
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMISampler` implements the
+The {py:class}`~mqt.core.plugins.qiskit.sampler.QDMISampler` implements the
 `BaseSamplerV2` interface. It is used to sample quantum circuits and obtain
 measurement counts (bitstrings).
 
@@ -424,7 +425,7 @@ print(f"Sampler results: {counts}")
 
 ### Estimator
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` implements the
+The {py:class}`~mqt.core.plugins.qiskit.estimator.QDMIEstimator` implements the
 `BaseEstimatorV2` interface. It is used to calculate expectation values of
 observables.
 
@@ -525,10 +526,10 @@ When you run a circuit, the backend:
    valid options)
 2. Converts the circuit to one of the program formats supported by the target
    device (IQM JSON, OpenQASM 2, OpenQASM 3) using
-   {py:func}`~mqt.core.plugins.qiskit.qiskit_to_iqm_json` or Qiskit's built-in
-   QASM exporters
+   {py:func}`~mqt.core.plugins.qiskit.converters.qiskit_to_iqm_json` or Qiskit's
+   built-in QASM exporters
 3. Submits the program to the QDMI device via `device.submit_job()`
-4. Returns a {py:class}`~mqt.core.plugins.qiskit.QDMIJob`
+4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
 ### Device Introspection
 
@@ -556,11 +557,14 @@ execution:
 
 For complete API documentation, see:
 
-- {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` — Device provider interface
-- {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` — BackendV2 implementation
-- {py:class}`~mqt.core.plugins.qiskit.QDMIJob` — Job wrapper and result handling
-- {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` — EstimatorV2 primitive
+- {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` — Device provider
+  interface
+- {py:class}`~mqt.core.plugins.qiskit.backend.QDMIBackend` — BackendV2
   implementation
-- {py:class}`~mqt.core.plugins.qiskit.QDMISampler` — SamplerV2 primitive
+- {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` — Job wrapper and result
+  handling
+- {py:class}`~mqt.core.plugins.qiskit.estimator.QDMIEstimator` — EstimatorV2
+  primitive implementation
+- {py:class}`~mqt.core.plugins.qiskit.sampler.QDMISampler` — SamplerV2 primitive
   implementation
 - {py:mod}`~mqt.core.plugins.qiskit.exceptions` — Exception types

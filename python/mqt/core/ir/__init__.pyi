@@ -1941,7 +1941,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         else_operation: operations.Operation,
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
-        comparison_kind: operations.ComparisonKind = ...,
+        comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
     ) -> None:
         """Add an if-else operation to the circuit.
 
@@ -1960,7 +1960,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         else_operation: operations.Operation,
         control_bit: int,
         expected_value: int = 1,
-        comparison_kind: operations.ComparisonKind = ...,
+        comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
     ) -> None:
         """Add an if-else operation to the circuit.
 
@@ -1979,7 +1979,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target: int,
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
-        comparison_kind: operations.ComparisonKind = ...,
+        comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
@@ -2046,7 +2046,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target: int,
         control_bit: int,
         expected_value: bool = True,
-        comparison_kind: operations.ComparisonKind = ...,
+        comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.

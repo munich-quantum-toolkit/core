@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Statement_fwd.hpp
+ * @brief Forward declarations for OpenQASM 3 syntax-tree nodes.
+ */
+
 #pragma once
 
 namespace qasm3 {
