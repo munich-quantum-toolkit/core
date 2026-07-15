@@ -23,6 +23,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstdint>
+
 using namespace mlir;
 
 static void addSimplificationPasses(OpPassManager& pm) {
