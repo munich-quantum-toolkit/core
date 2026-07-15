@@ -53,6 +53,24 @@ def test_public_bindings_have_docstrings() -> None:
                 assert member.__doc__, f"{cls.__qualname__}.{name}"
 
 
+def test_custom_query_docstrings_describe_arguments_and_returns() -> None:
+    """Custom query overloads document their complete call contract."""
+    methods = (
+        Job.query_custom_property,
+        Job.get_custom_result,
+        Device.query_custom_property,
+        Device.Site.query_custom_property,
+        Device.Operation.query_custom_property,
+    )
+    for method in methods:
+        docstring = method.__doc__
+        assert docstring is not None
+        assert "Args:" in docstring
+        assert "custom_property:" in docstring
+        assert "value_type:" in docstring
+        assert "Returns:" in docstring
+
+
 def _get_devices() -> list[Device]:
     """Open each available QDMI device.
 
@@ -540,6 +558,8 @@ c = measure q;
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
+    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1=7)
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):

@@ -94,7 +94,6 @@ class DeviceDefinition:
         library: str | os.PathLike,
         prefix: str,
         *,
-        abi: str = "qdmi-v1",
         enabled: bool = True,
         session: SessionParameters = ...,
     ) -> None:
@@ -103,8 +102,7 @@ class DeviceDefinition:
         Args:
             device_id: Stable identifier used for discovery and opening.
             library: Path to the native QDMI device library.
-            prefix: Symbol prefix exported by the QDMI v1.3 implementation.
-            abi: Compatibility marker. Only ``"qdmi-v1"`` is supported.
+            prefix: Symbol prefix exported by the QDMI implementation.
             enabled: Whether the definition participates in discovery.
             session: Default parameters for sessions opened from this definition.
         """
@@ -121,12 +119,6 @@ class DeviceDefinition:
 
     @library.setter
     def library(self, arg: str | os.PathLike, /) -> None: ...
-    @property
-    def abi(self) -> str:
-        """QDMI ABI compatibility marker."""
-
-    @abi.setter
-    def abi(self, arg: str, /) -> None: ...
     @property
     def prefix(self) -> str:
         """Symbol prefix exported by the device library."""
@@ -239,8 +231,14 @@ class Job:
         """Query an implementation-defined custom job property.
 
         The caller must provide the type documented by the device implementation.
-        Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-        when the custom slot is unsupported.
+        Use ``bytes`` to retrieve the value without interpretation.
+
+        Args:
+            custom_property: Custom property slot to query.
+            value_type: Expected Python type of the property value.
+
+        Returns:
+            The typed property value, or ``None`` when the slot is unsupported.
         """
 
     @overload
@@ -260,8 +258,14 @@ class Job:
         """Return an implementation-defined custom job result.
 
         The caller must provide the type documented by the device implementation.
-        Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-        when the custom slot is unsupported.
+        Use ``bytes`` to retrieve the value without interpretation.
+
+        Args:
+            custom_property: Custom result slot to retrieve.
+            value_type: Expected Python type of the result value.
+
+        Returns:
+            The typed result value, or ``None`` when the slot is unsupported.
         """
 
     @property
@@ -442,8 +446,14 @@ class Device:
         """Query an implementation-defined custom device property.
 
         The caller must provide the type documented by the device implementation.
-        Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-        when the custom slot is unsupported.
+        Use ``bytes`` to retrieve the value without interpretation.
+
+        Args:
+            custom_property: Custom property slot to query.
+            value_type: Expected Python type of the property value.
+
+        Returns:
+            The typed property value, or ``None`` when the slot is unsupported.
         """
 
     def submit_job(
@@ -539,8 +549,14 @@ class Device:
             """Query an implementation-defined custom site property.
 
             The caller must provide the type documented by the device implementation.
-            Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-            when the custom slot is unsupported.
+            Use ``bytes`` to retrieve the value without interpretation.
+
+            Args:
+                custom_property: Custom property slot to query.
+                value_type: Expected Python type of the property value.
+
+            Returns:
+                The typed property value, or ``None`` when the slot is unsupported.
             """
 
         def __eq__(self, arg: object, /) -> bool:
@@ -639,8 +655,16 @@ class Device:
             """Query an implementation-defined custom operation property.
 
             The caller must provide the type documented by the device implementation.
-            Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-            when the custom slot is unsupported.
+            Use ``bytes`` to retrieve the value without interpretation.
+
+            Args:
+                custom_property: Custom property slot to query.
+                value_type: Expected Python type of the property value.
+                sites: Sites for the operation instance.
+                params: Parameters for the operation instance.
+
+            Returns:
+                The typed property value, or ``None`` when the slot is unsupported.
             """
 
         def __eq__(self, arg: object, /) -> bool:

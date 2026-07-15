@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "DeviceApi.hpp"
 #include "DeviceState.hpp"
 #include "qdmi/Device.hpp"
 #include "qdmi/DeviceManager.hpp"
@@ -19,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -30,21 +32,21 @@ namespace {
 // The fake implements a C ABI whose opaque handles intentionally require
 // ownership and pointer casts at this isolated test boundary.
 // NOLINTBEGIN(readability-named-parameter,cppcoreguidelines-owning-memory)
-class ScriptedV1DeviceApi final {
+class ScriptedDeviceApi final {
   struct Child {
     size_t id;
   };
   struct Session {
-    const ScriptedV1DeviceApi* owner = nullptr;
+    const ScriptedDeviceApi* owner = nullptr;
     QDMI_Child_Device child = nullptr;
   };
   struct ScriptedJob {
-    const ScriptedV1DeviceApi* owner = nullptr;
+    const ScriptedDeviceApi* owner = nullptr;
   };
 
   mutable std::array<Child, 2> children_{{{0}, {1}}};
   mutable ScriptedJob job_;
-  static thread_local const ScriptedV1DeviceApi* activeApi;
+  static thread_local const ScriptedDeviceApi* activeApi;
 
   [[nodiscard]] static auto asSession(QDMI_Device_Session session) -> Session* {
     return reinterpret_cast<Session*>(session);
@@ -70,9 +72,9 @@ public:
   mutable QDMI_Job_Status jobStatus = QDMI_JOB_STATUS_CREATED;
   mutable QDMI_Program_Format programFormat = QDMI_PROGRAM_FORMAT_QASM3;
 
-  [[nodiscard]] auto v1Api() const -> std::shared_ptr<const V1DeviceApi> {
+  [[nodiscard]] auto deviceApi() const -> std::shared_ptr<const DeviceApi> {
     activeApi = this;
-    auto api = std::make_shared<V1DeviceApi>();
+    auto api = std::make_shared<DeviceApi>();
     api->device_session_alloc = [](QDMI_Device_Session* session) -> int {
       ++activeApi->opened;
       *session = reinterpret_cast<QDMI_Device_Session>(
@@ -307,15 +309,14 @@ public:
     return QDMI_ERROR_NOTSUPPORTED;
   }
 };
-thread_local const ScriptedV1DeviceApi* ScriptedV1DeviceApi::activeApi =
-    nullptr;
+thread_local const ScriptedDeviceApi* ScriptedDeviceApi::activeApi = nullptr;
 // NOLINTEND(readability-named-parameter,cppcoreguidelines-owning-memory)
 
-TEST(V1DeviceApiTest, ChildRetainsParentSessionAndLibrary) {
-  const auto api = std::make_shared<ScriptedV1DeviceApi>();
+TEST(DeviceApiTest, ChildRetainsParentSessionAndLibrary) {
+  const auto api = std::make_shared<ScriptedDeviceApi>();
   std::optional<Device> retainedChild;
   {
-    const auto parent = DeviceFactory::create(api->v1Api());
+    const auto parent = DeviceFactory::create(api->deviceApi());
     EXPECT_EQ(parent.getName(), "parent");
     const auto children = parent.getChildDevices();
     ASSERT_EQ(children.size(), 2);
@@ -331,48 +332,57 @@ TEST(V1DeviceApiTest, ChildRetainsParentSessionAndLibrary) {
   EXPECT_EQ(api->opened, api->closed);
 }
 
-TEST(V1DeviceApiTest, HandlesUnsupportedAndInvalidChildLists) {
-  const auto unsupported = std::make_shared<ScriptedV1DeviceApi>();
-  unsupported->behavior = ScriptedV1DeviceApi::ChildBehavior::Unsupported;
-  EXPECT_TRUE(
-      DeviceFactory::create(unsupported->v1Api()).getChildDevices().empty());
+TEST(DeviceApiTest, ReusesCanonicalLibrariesProcessWide) {
+  const std::filesystem::path library = SC_DEVICE_LIBRARY;
+  const auto first = loadDeviceApi(library, "MQT_SC");
+  const auto alias = library.parent_path() / "." / library.filename();
+  const auto second = loadDeviceApi(alias, "MQT_SC");
+  EXPECT_EQ(first, second);
+}
+
+TEST(DeviceApiTest, HandlesUnsupportedAndInvalidChildLists) {
+  const auto unsupported = std::make_shared<ScriptedDeviceApi>();
+  unsupported->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
+  EXPECT_TRUE(DeviceFactory::create(unsupported->deviceApi())
+                  .getChildDevices()
+                  .empty());
   EXPECT_EQ(unsupported->opened, unsupported->closed);
 
-  const auto malformed = std::make_shared<ScriptedV1DeviceApi>();
-  malformed->behavior = ScriptedV1DeviceApi::ChildBehavior::Malformed;
-  EXPECT_THROW(static_cast<void>(DeviceFactory::create(malformed->v1Api())),
+  const auto malformed = std::make_shared<ScriptedDeviceApi>();
+  malformed->behavior = ScriptedDeviceApi::ChildBehavior::Malformed;
+  EXPECT_THROW(static_cast<void>(DeviceFactory::create(malformed->deviceApi())),
                std::runtime_error);
   EXPECT_EQ(malformed->opened, malformed->closed);
 
-  const auto failed = std::make_shared<ScriptedV1DeviceApi>();
-  failed->behavior = ScriptedV1DeviceApi::ChildBehavior::QueryFailure;
-  EXPECT_THROW(static_cast<void>(DeviceFactory::create(failed->v1Api())),
+  const auto failed = std::make_shared<ScriptedDeviceApi>();
+  failed->behavior = ScriptedDeviceApi::ChildBehavior::QueryFailure;
+  EXPECT_THROW(static_cast<void>(DeviceFactory::create(failed->deviceApi())),
                std::runtime_error);
   EXPECT_EQ(failed->opened, failed->closed);
 }
 
-TEST(V1DeviceApiTest, CleansUpWhenChildSelectionFails) {
-  const auto api = std::make_shared<ScriptedV1DeviceApi>();
-  api->behavior = ScriptedV1DeviceApi::ChildBehavior::SelectionFailure;
-  EXPECT_THROW(static_cast<void>(DeviceFactory::create(api->v1Api())),
+TEST(DeviceApiTest, CleansUpWhenChildSelectionFails) {
+  const auto api = std::make_shared<ScriptedDeviceApi>();
+  api->behavior = ScriptedDeviceApi::ChildBehavior::SelectionFailure;
+  EXPECT_THROW(static_cast<void>(DeviceFactory::create(api->deviceApi())),
                std::runtime_error);
   EXPECT_EQ(api->opened, api->closed);
 }
 
-TEST(V1DeviceApiTest, RejectsInvalidCustomPropertySelector) {
-  const auto api = std::make_shared<ScriptedV1DeviceApi>();
-  api->behavior = ScriptedV1DeviceApi::ChildBehavior::Unsupported;
-  const auto device = DeviceFactory::create(api->v1Api());
+TEST(DeviceApiTest, RejectsInvalidCustomPropertySelector) {
+  const auto api = std::make_shared<ScriptedDeviceApi>();
+  api->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
+  const auto device = DeviceFactory::create(api->deviceApi());
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalid = static_cast<CustomProperty>(0);
   EXPECT_THROW(static_cast<void>(device.queryCustomProperty<int>(invalid)),
                std::invalid_argument);
 }
 
-TEST(V1DeviceApiTest, ReturnsQdmiEnumValuesWithoutRedefiningThem) {
-  const auto api = std::make_shared<ScriptedV1DeviceApi>();
-  api->behavior = ScriptedV1DeviceApi::ChildBehavior::Unsupported;
-  const auto device = DeviceFactory::create(api->v1Api());
+TEST(DeviceApiTest, ReturnsQdmiEnumValuesWithoutRedefiningThem) {
+  const auto api = std::make_shared<ScriptedDeviceApi>();
+  api->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
+  const auto device = DeviceFactory::create(api->deviceApi());
   // QDMI owns these enum types and values; MQT forwards them unchanged.
   // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
   api->deviceStatus = static_cast<QDMI_Device_Status>(QDMI_DEVICE_STATUS_MAX);

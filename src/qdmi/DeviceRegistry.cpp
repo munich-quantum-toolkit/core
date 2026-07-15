@@ -56,7 +56,6 @@ struct SessionPatch {
 struct DefinitionPatch {
   std::string id;
   std::optional<std::filesystem::path> library;
-  std::optional<std::string> abi;
   std::optional<std::string> prefix;
   std::optional<bool> enabled;
   SessionPatch session;
@@ -146,8 +145,7 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
                  const std::string& path, const std::filesystem::path& base)
     -> DefinitionPatch {
   requireObject(value, source, path);
-  rejectUnknownKeys(value,
-                    {"id", "library", "abi", "prefix", "enabled", "session"},
+  rejectUnknownKeys(value, {"id", "library", "prefix", "enabled", "session"},
                     source, path);
   const auto id = optionalString(value, "id", source, path);
   if (!id || id->empty()) {
@@ -160,7 +158,6 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   if (auto library = optionalString(value, "library", source, path)) {
     patch.library = resolvePath(*library, base);
   }
-  patch.abi = optionalString(value, "abi", source, path);
   patch.prefix = optionalString(value, "prefix", source, path);
   if (const auto it = value.find("enabled"); it != value.end()) {
     if (!it->is_boolean()) {
@@ -276,7 +273,6 @@ void mergeSession(SessionPatch& target, const SessionPatch& source) {
 
 void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
   mergeOptional(target.library, source.library);
-  mergeOptional(target.abi, source.abi);
   mergeOptional(target.prefix, source.prefix);
   mergeOptional(target.enabled, source.enabled);
   mergeSession(target.session, source.session);
@@ -448,7 +444,6 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   if (!definition.library.empty()) {
     patch.library = resolvePath(definition.library, base);
   }
-  patch.abi = definition.abi;
   patch.prefix = definition.prefix;
   patch.enabled = definition.enabled;
   patch.source = definition.source.empty() ? std::filesystem::path("<runtime>")
@@ -474,12 +469,6 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   if (!patch.enabled.value_or(true)) {
     return std::nullopt;
   }
-  const auto abi = patch.abi.value_or("qdmi-v1");
-  if (abi != "qdmi-v1") {
-    throw std::invalid_argument(patch.source.string() + ": device '" +
-                                patch.id + "' uses unsupported ABI '" + abi +
-                                "'");
-  }
   if (!patch.library || patch.library->empty()) {
     throw std::invalid_argument(patch.source.string() + ": enabled device '" +
                                 patch.id + "' is missing library");
@@ -491,7 +480,6 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   DeviceDefinition definition;
   definition.id = patch.id;
   definition.library = *patch.library;
-  definition.abi = abi;
   definition.prefix = *patch.prefix;
   definition.enabled = true;
   definition.source = patch.source;
@@ -572,11 +560,6 @@ void DeviceRegistry::registerDevice(DeviceDefinition definition,
     throw std::invalid_argument(
         "A device definition requires a non-empty id, library, and prefix");
   }
-  if (definition.abi != "qdmi-v1") {
-    throw std::invalid_argument("Device '" + definition.id +
-                                "' uses unsupported ABI '" + definition.abi +
-                                "'");
-  }
   const auto it =
       std::ranges::find(definitions_, definition.id, &DeviceDefinition::id);
   if (it != definitions_.end()) {
@@ -584,7 +567,11 @@ void DeviceRegistry::registerDevice(DeviceDefinition definition,
       throw std::invalid_argument("Device '" + definition.id +
                                   "' is already registered");
     }
-    *it = std::move(definition);
+    if (definition.enabled) {
+      *it = std::move(definition);
+    } else {
+      definitions_.erase(it);
+    }
   } else if (definition.enabled) {
     definitions_.emplace_back(std::move(definition));
   }

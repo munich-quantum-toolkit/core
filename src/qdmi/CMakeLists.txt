@@ -21,8 +21,8 @@ if(NOT TARGET ${TARGET_NAME})
             DeviceRegistry.cpp
             DeviceState.cpp
             DeviceState.hpp
-            V1DeviceApi.cpp
-            V1DeviceApi.hpp)
+            DeviceApi.cpp
+            DeviceApi.hpp)
 
   target_sources(
     ${TARGET_NAME}

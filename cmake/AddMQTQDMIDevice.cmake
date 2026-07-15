@@ -46,7 +46,7 @@ function(mqt_configure_qdmi_device target)
     GENERATE
     OUTPUT "${fragment}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${ARG_ID}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"abi\": \"qdmi-v1\",\n        \"prefix\": \"${ARG_PREFIX}\",\n        \"enabled\": true,\n        \"session\": {${session_json}\n        }\n      }\n    ]\n  }\n}\n"
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${ARG_ID}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${ARG_PREFIX}\",\n        \"enabled\": true,\n        \"session\": {${session_json}\n        }\n      }\n    ]\n  }\n}\n"
   )
 
   add_custom_command(

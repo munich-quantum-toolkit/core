@@ -178,8 +178,8 @@ provider = QDMIProvider(auth_url="https://auth.quantum-service.com/api/v1/auth")
 
 ### Provider-Specific Session Parameters
 
-QDMI v1 reserves five custom session slots for provider-specific settings.
-Consult the provider documentation to determine their meaning:
+QDMI reserves five custom session slots for provider-specific settings. Consult
+the provider documentation to determine their meaning:
 
 ```python
 provider = QDMIProvider(token="your_api_token", custom1="provider-project")

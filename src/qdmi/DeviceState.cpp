@@ -26,7 +26,7 @@
 
 namespace qdmi::detail {
 namespace {
-[[nodiscard]] auto openSession(const V1DeviceApi& api,
+[[nodiscard]] auto openSession(const DeviceApi& api,
                                const SessionParameters& parameters,
                                const QDMI_Child_Device child)
     -> QDMI_Device_Session {
@@ -80,7 +80,7 @@ namespace {
 }
 } // namespace
 
-SessionState::SessionState(std::shared_ptr<const V1DeviceApi> deviceApi,
+SessionState::SessionState(std::shared_ptr<const DeviceApi> deviceApi,
                            const SessionParameters& sessionParameters,
                            QDMI_Child_Device child,
                            std::shared_ptr<SessionState> parentSession)
@@ -94,7 +94,7 @@ SessionState::~SessionState() {
   }
 }
 
-DeviceState::DeviceState(std::shared_ptr<const V1DeviceApi> deviceApi,
+DeviceState::DeviceState(std::shared_ptr<const DeviceApi> deviceApi,
                          const SessionParameters& sessionParameters,
                          QDMI_Child_Device child,
                          std::shared_ptr<SessionState> parentSession)

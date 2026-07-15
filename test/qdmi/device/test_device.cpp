@@ -926,6 +926,18 @@ TEST(DeviceManagerTest, MultipleInstancesOpenIndependently) {
   EXPECT_EQ(devices1.size(), devices2.size());
 }
 
+TEST(DeviceManagerTest, RejectsSitesFromAnotherDevice) {
+  auto manager = configuredManager();
+  const auto scDevice = manager.open("mqt.sc.default");
+  const auto naDevice = manager.open("mqt.na.default");
+  const auto operations = scDevice.getOperations();
+  const auto sites = naDevice.getSites();
+  ASSERT_FALSE(operations.empty());
+  ASSERT_FALSE(sites.empty());
+  EXPECT_THROW(static_cast<void>(operations.front().getName({sites.front()})),
+               std::invalid_argument);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,

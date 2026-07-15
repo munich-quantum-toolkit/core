@@ -8,13 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "V1DeviceApi.hpp"
+#include "DeviceApi.hpp"
 
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/device.h>
 
 #include <filesystem>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
@@ -26,6 +29,16 @@
 
 namespace qdmi::detail {
 namespace {
+struct DeviceApiCache {
+  std::mutex mutex;
+  std::map<std::string, std::weak_ptr<const DeviceApi>> libraries;
+};
+
+[[nodiscard]] auto deviceApiCache() -> DeviceApiCache& {
+  static DeviceApiCache cache;
+  return cache;
+}
+
 #ifdef _WIN32
 [[nodiscard]] auto openLibrary(const std::filesystem::path& path) -> void* {
   return LoadLibraryExW(path.wstring().c_str(), nullptr,
@@ -58,14 +71,14 @@ template <class Function>
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   auto* function = reinterpret_cast<Function*>(loadSymbol(library, name));
   if (function == nullptr) {
-    throw std::runtime_error("Failed to load QDMI v1 symbol '" + name + "'");
+    throw std::runtime_error("Failed to load QDMI symbol '" + name + "'");
   }
   return function;
 }
 } // namespace
 
-V1DeviceApi::V1DeviceApi(const std::filesystem::path& library,
-                         const std::string& prefix)
+DeviceApi::DeviceApi(const std::filesystem::path& library,
+                     const std::string& prefix)
     : library_(openLibrary(library)) {
   if (library_ == nullptr) {
     throw std::runtime_error("Could not open QDMI device library: " +
@@ -104,13 +117,27 @@ V1DeviceApi::V1DeviceApi(const std::filesystem::path& library,
   }
 }
 
-V1DeviceApi::~V1DeviceApi() {
+DeviceApi::~DeviceApi() {
   if (initialized_) {
     static_cast<void>(finalize_());
   }
   if (library_ != nullptr) {
     closeLibrary(library_);
   }
+}
+
+std::shared_ptr<const DeviceApi>
+loadDeviceApi(const std::filesystem::path& library, const std::string& prefix) {
+  const auto canonicalLibrary = std::filesystem::weakly_canonical(library);
+  const auto key = canonicalLibrary.string() + "\n" + prefix;
+  auto& cache = deviceApiCache();
+  const std::scoped_lock lock(cache.mutex);
+  auto loaded = cache.libraries[key].lock();
+  if (!loaded) {
+    loaded = std::make_shared<const DeviceApi>(canonicalLibrary, prefix);
+    cache.libraries[key] = loaded;
+  }
+  return loaded;
 }
 
 } // namespace qdmi::detail

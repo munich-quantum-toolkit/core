@@ -55,9 +55,7 @@ struct DeviceDefinition {
   std::string id;
   /// Path to the QDMI device library.
   std::filesystem::path library;
-  /// Supported ABI marker. Only `qdmi-v1` is accepted.
-  std::string abi = "qdmi-v1";
-  /// Symbol prefix used by the QDMI v1.3 device library.
+  /// Symbol prefix used by the QDMI device library.
   std::string prefix;
   /// Default session parameters.
   SessionParameters session;

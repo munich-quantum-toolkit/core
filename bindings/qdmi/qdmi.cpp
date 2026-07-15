@@ -110,33 +110,28 @@ NB_MODULE(MQT_CORE_MODULE_NAME,
       .def(
           "__init__",
           [](qdmi::DeviceDefinition* self, std::string deviceId,
-             std::filesystem::path library, std::string prefix, std::string abi,
-             bool enabled, qdmi::SessionParameters session) {
+             std::filesystem::path library, std::string prefix, bool enabled,
+             qdmi::SessionParameters session) {
             new (self) qdmi::DeviceDefinition{.id = std::move(deviceId),
                                               .library = std::move(library),
-                                              .abi = std::move(abi),
                                               .prefix = std::move(prefix),
                                               .session = std::move(session),
                                               .enabled = enabled};
           },
           "device_id"_a, "library"_a, "prefix"_a, nb::kw_only(),
-          "abi"_a = "qdmi-v1", "enabled"_a = true,
-          "session"_a = qdmi::SessionParameters{},
+          "enabled"_a = true, "session"_a = qdmi::SessionParameters{},
           R"pb(Create a device definition without loading its library.
 
 Args:
     device_id: Stable identifier used for discovery and opening.
     library: Path to the native QDMI device library.
-    prefix: Symbol prefix exported by the QDMI v1.3 implementation.
-    abi: Compatibility marker. Only ``"qdmi-v1"`` is supported.
+    prefix: Symbol prefix exported by the QDMI implementation.
     enabled: Whether the definition participates in discovery.
     session: Default parameters for sessions opened from this definition.)pb")
       .def_rw("device_id", &qdmi::DeviceDefinition::id,
               R"pb(Stable device identifier.)pb")
       .def_rw("library", &qdmi::DeviceDefinition::library,
               R"pb(Path to the native QDMI device library.)pb")
-      .def_rw("abi", &qdmi::DeviceDefinition::abi,
-              R"pb(QDMI ABI compatibility marker.)pb")
       .def_rw("prefix", &qdmi::DeviceDefinition::prefix,
               R"pb(Symbol prefix exported by the device library.)pb")
       .def_rw("enabled", &qdmi::DeviceDefinition::enabled,
@@ -245,8 +240,14 @@ This result is typically available only from simulator devices.)pb");
       R"pb(Query an implementation-defined custom job property.
 
 The caller must provide the type documented by the device implementation.
-Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-when the custom slot is unsupported.)pb");
+Use ``bytes`` to retrieve the value without interpretation.
+
+Args:
+    custom_property: Custom property slot to query.
+    value_type: Expected Python type of the property value.
+
+Returns:
+    The typed property value, or ``None`` when the slot is unsupported.)pb");
 
   job.def(
       "get_custom_result",
@@ -265,8 +266,14 @@ when the custom slot is unsupported.)pb");
       R"pb(Return an implementation-defined custom job result.
 
 The caller must provide the type documented by the device implementation.
-Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-when the custom slot is unsupported.)pb");
+Use ``bytes`` to retrieve the value without interpretation.
+
+Args:
+    custom_property: Custom result slot to retrieve.
+    value_type: Expected Python type of the result value.
+
+Returns:
+    The typed result value, or ``None`` when the slot is unsupported.)pb");
 
   job.def_prop_ro("id", &qdmi::Job::getId,
                   R"pb(The provider-assigned job identifier.)pb");
@@ -415,14 +422,28 @@ operations, child devices, and jobs.)pb");
       R"pb(Query an implementation-defined custom device property.
 
 The caller must provide the type documented by the device implementation.
-Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-when the custom slot is unsupported.)pb");
+Use ``bytes`` to retrieve the value without interpretation.
+
+Args:
+    custom_property: Custom property slot to query.
+    value_type: Expected Python type of the property value.
+
+Returns:
+    The typed property value, or ``None`` when the slot is unsupported.)pb");
 
   device.def("submit_job", &qdmi::Device::submitJob, "program"_a,
              "program_format"_a, "num_shots"_a, nb::kw_only(),
              "custom1"_a = nb::none(), "custom2"_a = nb::none(),
              "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-             "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+             "custom5"_a = nb::none(),
+             nb::sig("def submit_job(self, program: str, program_format: "
+                     "ProgramFormat, num_shots: int, *, custom1: str | bool | "
+                     "int | float | None = None, custom2: str | bool | int | "
+                     "float | None = None, custom3: str | bool | int | float | "
+                     "None = None, custom4: str | bool | int | float | None = "
+                     "None, custom5: str | bool | int | float | None = None) "
+                     "-> Job"),
+             nb::rv_policy::reference_internal,
              R"pb(Submit a quantum program to the device.
 
 Args:
@@ -513,8 +534,14 @@ Returns:
       R"pb(Query an implementation-defined custom site property.
 
 The caller must provide the type documented by the device implementation.
-Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-when the custom slot is unsupported.)pb");
+Use ``bytes`` to retrieve the value without interpretation.
+
+Args:
+    custom_property: Custom property slot to query.
+    value_type: Expected Python type of the property value.
+
+Returns:
+    The typed property value, or ``None`` when the slot is unsupported.)pb");
 
   site.def(
       "__repr__",
@@ -616,8 +643,16 @@ when the custom slot is unsupported.)pb");
       R"pb(Query an implementation-defined custom operation property.
 
 The caller must provide the type documented by the device implementation.
-Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
-when the custom slot is unsupported.)pb");
+Use ``bytes`` to retrieve the value without interpretation.
+
+Args:
+    custom_property: Custom property slot to query.
+    value_type: Expected Python type of the property value.
+    sites: Sites for the operation instance.
+    params: Parameters for the operation instance.
+
+Returns:
+    The typed property value, or ``None`` when the slot is unsupported.)pb");
 
   operation.def(
       "__repr__",

@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "V1DeviceApi.hpp"
+#include "DeviceApi.hpp"
 #include "qdmi/DeviceManager.hpp"
 
 #include <qdmi/device.h>
@@ -23,11 +23,11 @@
 namespace qdmi::detail {
 
 struct SessionState {
-  std::shared_ptr<const V1DeviceApi> api;
+  std::shared_ptr<const DeviceApi> api;
   QDMI_Device_Session session = nullptr;
   std::shared_ptr<SessionState> parent;
 
-  SessionState(std::shared_ptr<const V1DeviceApi> deviceApi,
+  SessionState(std::shared_ptr<const DeviceApi> deviceApi,
                const SessionParameters& sessionParameters,
                QDMI_Child_Device child,
                std::shared_ptr<SessionState> parentSession);
@@ -40,12 +40,12 @@ struct SessionState {
 
 struct DeviceState {
   std::shared_ptr<SessionState> lifetime;
-  std::shared_ptr<const V1DeviceApi> api;
+  std::shared_ptr<const DeviceApi> api;
   QDMI_Device_Session session = nullptr;
   SessionParameters parameters;
   std::vector<std::shared_ptr<DeviceState>> children;
 
-  DeviceState(std::shared_ptr<const V1DeviceApi> deviceApi,
+  DeviceState(std::shared_ptr<const DeviceApi> deviceApi,
               const SessionParameters& sessionParameters,
               QDMI_Child_Device child = nullptr,
               std::shared_ptr<SessionState> parentSession = nullptr);
@@ -70,7 +70,7 @@ struct JobState {
 
 /// Test-only construction access for scripted QDMI implementations.
 struct DeviceFactory {
-  [[nodiscard]] static auto create(std::shared_ptr<const V1DeviceApi> api,
+  [[nodiscard]] static auto create(std::shared_ptr<const DeviceApi> api,
                                    const SessionParameters& parameters = {})
       -> Device {
     return Device(std::make_shared<DeviceState>(std::move(api), parameters));

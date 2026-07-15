@@ -9,7 +9,7 @@
  */
 
 /// @file Device.hpp
-/// @brief C++ object model for QDMI v1.3 devices.
+/// @brief C++ object model for QDMI devices.
 
 #pragma once
 
@@ -295,8 +295,8 @@ public:
   }
 
 private:
-  [[nodiscard]] static std::vector<void*>
-  siteHandles(const std::vector<Site>& sites);
+  [[nodiscard]] std::vector<void*>
+  siteHandles(const std::vector<Site>& sites) const;
   Operation(std::shared_ptr<const detail::DeviceState> state, void* handle)
       : state_(std::move(state)), handle_(handle) {}
   [[nodiscard]] std::optional<std::vector<std::byte>>

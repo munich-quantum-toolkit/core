@@ -18,15 +18,11 @@ configuration -> DeviceRegistry -> DeviceManager -> Device
 ```
 
 Discovery is side-effect free. A provider library is loaded and a session is
-initialized only when its stable device ID is passed to `open`. The QDMI v1.3
+initialized only when its stable device ID is passed to `open`. The QDMI
 implementation is held by one private library/symbol object; public MQT objects
-do not expose client handles.
-
-MQT Core supports the QDMI v1.3 ABI exclusively in this release. The `abi`
-configuration field is a compatibility check, not an adapter selector, and must
-be `qdmi-v1`. Unsupported values and incomplete v1.3 symbol sets fail when the
-selected device is opened. A future QDMI v2 migration will replace this private
-implementation rather than adding a second public object model.
+do not expose client handles. The supported QDMI version is selected centrally
+in `cmake/ExternalDependencies.cmake`; incomplete provider implementations fail
+when the selected device is opened.
 
 | Concern | C++ | Python |
 | --- | --- | --- |
@@ -74,7 +70,7 @@ Python code that used the removed compatibility module:
 from mqt.core import fomac
 
 session = fomac.Session()
-device = session.devices()[0]
+device = session.get_devices()[0]
 ```
 
 should select a configured stable ID:
@@ -92,8 +88,8 @@ The equivalent C++ migration is:
 ```cpp
 // MQT Core 3.x
 #include "fomac/FoMaC.hpp"
-auto& driver = qdmi::Driver::get();
-const auto device = fomac::Device(driver.getDevices().front());
+fomac::Session session;
+const auto device = session.getDevices().front();
 ```
 
 ```cpp
@@ -165,10 +161,9 @@ parameters.custom1 = "provider-specific-value";
 auto device = manager.open("vendor.qpu.production", parameters);
 ```
 
-QDMI v1 has no standard project-ID session parameter. Provider-specific project
-or organization identifiers must use the custom slot documented by that
-provider. MQT Core no longer accepts a `project_id` value that it cannot
-forward.
+QDMI has no standard project-ID session parameter. Provider-specific project or
+organization identifiers must use the custom slot documented by that provider.
+MQT Core no longer accepts a `project_id` value that it cannot forward.
 
 Multiple definitions may refer to the same shared library while using
 independent session parameters. Open devices, child devices, sites, operations,
@@ -188,7 +183,6 @@ Device registration is versioned and keyed by a stable, unique `id`:
       {
         "id": "vendor.qpu.production",
         "library": "./libvendor-qdmi-device.so",
-        "abi": "qdmi-v1",
         "prefix": "VENDOR",
         "enabled": true,
         "session": {
@@ -232,7 +226,7 @@ location from which built-in manifests can be discovered.
 
 `qdmi::Device::getChildDevices()` and `Device.child_devices()` return direct
 child devices as ordinary device objects. Each child owns the provider session
-and library state required by its QDMI v1 handle; retaining a child is therefore
+and library state required by its QDMI handle; retaining a child is therefore
 safe even after discarding its parent or manager. Providers without child-device
 support return an empty list.
 
@@ -306,6 +300,14 @@ a consistent local development environment. Common IDEs like
 and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
+
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
 
 ## [3.7.0]
 
@@ -450,9 +452,9 @@ result = job.result()
 ```
 
 The backend automatically converts circuits to QASM, introspects device
-capabilities, validates circuits, and formats results. The existing QDMI
-interface (`mqt.core.qdmi`) remains fully supported for direct, low-level access
-to QDMI devices.
+capabilities, validates circuits, and formats results. The existing FoMaC
+interface (`mqt.core.fomac`) remains fully supported for direct, low-level
+access to QDMI devices.
 
 Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 

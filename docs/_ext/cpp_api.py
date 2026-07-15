@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -296,7 +297,11 @@ def build_doxygen(app: Sphinx) -> None:
     try:
         with urlopen(app.config.qdmi_api_tagfile_url, timeout=30) as response:  # noqa: S310
             tagfile.write_bytes(response.read())
-        subprocess.run([doxygen, "Doxyfile"], cwd=app.srcdir, check=True)  # noqa: S603
+        environment = os.environ.copy()
+        environment["QDMI_API_URL"] = app.config.qdmi_api_tagfile[1]
+        subprocess.run(  # noqa: S603
+            [doxygen, "Doxyfile"], cwd=app.srcdir, check=True, env=environment
+        )
     except (OSError, subprocess.CalledProcessError) as error:
         msg = "Unable to generate the native C++ API documentation"
         raise ExtensionError(msg) from error
@@ -317,10 +322,10 @@ def setup(app: Sphinx) -> ExtensionMetadata:
         Metadata declaring that the extension supports parallel builds.
     """
     app.add_config_value("cpp_api_tagfile", ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml"), "env")
-    app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi-1.3.2.tag", ""), "env")
+    app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi.tag", ""), "env")
     app.add_config_value(
         "qdmi_api_tagfile_url",
-        "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/qdmi.tag",
+        "https://munich-quantum-software-stack.github.io/QDMI/latest/qdmi.tag",
         "env",
     )
     app.add_domain(CppApiDomain)

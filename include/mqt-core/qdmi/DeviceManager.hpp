@@ -32,7 +32,7 @@ struct OpenAllResult {
   std::map<std::string, std::string> errors;
 };
 
-/// Lazily opens configured QDMI devices and shares loaded v1.3 libraries.
+/// Lazily opens configured QDMI devices and shares loaded libraries.
 class DeviceManager {
 public:
   explicit DeviceManager(const ConfigOptions& options = {});

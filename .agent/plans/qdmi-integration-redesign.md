@@ -58,8 +58,8 @@ the planning refinements from pull requests 1907 and 1908.
 - [x] (2026-07-15 11:27Z) Removed the legacy wrapper, driver singleton, public
       client interface, global session configuration, compatibility targets, and
       stale names from the final public surface.
-- [x] (2026-07-15 11:27Z) Simplified the private QDMI v1.3 implementation to one
-  `V1DeviceApi` that owns a loaded library and stores exact
+- [x] (2026-07-15 11:27Z) Simplified the private QDMI implementation to one
+  `DeviceApi` that owns a loaded library and stores exact
   `decltype(QDMI_...)` function pointers.
 - [x] (2026-07-15 11:27Z) Removed MQT status and program-format enum
       redefinitions, exposed QDMI's own enum types in C++, documented every
@@ -78,6 +78,17 @@ the planning refinements from pull requests 1907 and 1908.
 - [x] (2026-07-15 11:52Z) Diagnosed the initial service error as a real
   mergeability conflict after pull requests 1904 and 1909 advanced main,
   reviewed their scope, and rebased the complete series onto `559fde4b2`.
+- [x] (2026-07-15 13:18Z) Applied the final naming, estimator,
+      generated-docstring, and historical-documentation feedback, then obtained
+      a fresh-context critical review and addressed all five actionable
+      findings.
+- [x] (2026-07-15 13:24Z) Repeated focused native, QDMI specification, Python,
+      stub, warning-as-error documentation, and full lint validation after the
+      fresh review.
+- [x] (2026-07-15 13:25Z) Removed generated build, Nox, documentation,
+      test-discovery, and Python cache artifacts while preserving
+      developer-local environment and IDE state.
+- [ ] Publish the reviewed iteration and update the pull request description.
 - [ ] Inspect the final CI run triggered by the plan-status commit and address
   any integration regressions.
 
@@ -94,9 +105,9 @@ the planning refinements from pull requests 1907 and 1908.
   a rename/rename conflict. The resolved central file contains both QDMI query
   overloads and MLIR `compile_program` overloads.
 - Observation: Pull request 1815 changed both the Qiskit estimator and the QDMI
-  redesign's nearby typing workaround. Evidence: the resolved code keeps
-  `collections.abc.Mapping`, its typed cast for Pauli mappings, and the
-  `cast("Any", observable)` fallback.
+  redesign's nearby typing workaround. Evidence: the final resolution keeps
+  `collections.abc.Mapping` and its typed cast for Pauli mappings, while the
+  additional fallback cast from this pull request is unnecessary and removed.
 - Observation: Pull request 1907 replaces the prior template-generated agent
   guide with a repository-owned guide and requires a living plan for this
   refactor. Evidence: the repository adds `.agent/PLANS.md` and an `ExecPlans`
@@ -114,14 +125,31 @@ the planning refinements from pull requests 1907 and 1908.
   main advanced from `b5cb91888` to `559fde4b2` after publication; the only
   overlapping file was `CHANGELOG.md`, where both pull requests added link
   definitions.
+- Observation: A manager-local weak cache did not prevent two simultaneously
+  live managers from initializing the same provider library independently.
+  Evidence: the fresh-context review traced each manager to its own cache;
+  `loadDeviceApi` now canonicalizes paths and uses one process-wide weak cache,
+  with a regression test that opens the same library through equivalent paths.
+- Observation: An operation previously accepted `Site` objects from any device
+  state and passed their native handles to its provider. Evidence: the
+  fresh-context review found no ownership check in `Operation::siteHandles`; the
+  method now rejects sites whose shared state differs from the operation's
+  state, and the object-model suite exercises the failure.
+- Observation: Python stub formatting omits an explicit `int` union member when
+  `float` is present because Python's numeric typing accepts integers wherever
+  floats are accepted. Evidence: the binding signature includes `int`, the
+  generated stub simplifies it, and the Python regression test submits an
+  integer custom parameter successfully through binding conversion.
 
 ## Decision Log
 
-- Decision: Support only QDMI v1.3 in this implementation and do not retain a
-  parallel ABI adapter hierarchy. Rationale: MQT Core will replace this code
-  when QDMI v2 is adopted; one evolving selected ABI is simpler and easier to
-  review. Date/Author: 2026-07-15 / GPT-5 via Codex, following maintainer
-  direction.
+- Decision: Refer to the dependency simply as QDMI throughout the code and
+  public documentation, with its selected version recorded only in
+  `cmake/ExternalDependencies.cmake`. Remove the versioned private type name and
+  configuration ABI marker. Rationale: MQT Core supports one selected QDMI
+  revision at a time and will evolve the implementation when that dependency is
+  updated rather than dispatching among versions. Date/Author: 2026-07-15 /
+  GPT-5 via Codex, following maintainer direction.
 - Decision: Keep the name `DeviceManager`. Rationale: it discovers
   application-side definitions and creates sessions, while a QDMI v2
   orchestrator has broader provider traversal and job-routing responsibilities.
@@ -133,7 +161,7 @@ the planning refinements from pull requests 1907 and 1908.
   bindings of those QDMI enums. Date/Author: 2026-07-15 / GPT-5 via Codex,
   following maintainer direction.
 - Decision: Store exact `decltype(QDMI_...)` pointers on the concrete private
-  `V1DeviceApi` and keep session/job lifetime code in `DeviceState`. Rationale:
+  `DeviceApi` and keep session/job lifetime code in `DeviceState`. Rationale:
   this removes the redundant generic `DeviceApi` function table and
   virtual/pass-through layers without mixing dynamic-library ownership with
   recursive object lifetime management. Date/Author: 2026-07-15 / GPT-5 via
@@ -151,6 +179,15 @@ the planning refinements from pull requests 1907 and 1908.
   execution coverage, and estimator typing. Rationale: these are newly merged
   mainline capabilities and the QDMI redesign must integrate rather than regress
   them. Date/Author: 2026-07-15 / GPT-5 via Codex.
+- Decision: Cache loaded provider libraries process-wide using canonical paths
+  and weak ownership. Rationale: managers are independent discovery/session
+  factories, but a live native provider library must be initialized only once;
+  weak ownership still lets the final device or job unload it. Date/Author:
+  2026-07-15 / GPT-5 via Codex, following fresh-context review.
+- Decision: Treat a disabled replacement registration as removal. Rationale:
+  disabled definitions are masks during layered discovery and must not remain
+  openable when supplied as a runtime replacement. Date/Author: 2026-07-15 /
+  GPT-5 via Codex, following fresh-context review.
 
 ## Outcomes & Retrospective
 
@@ -158,31 +195,36 @@ The implementation and rebase milestones are complete. The implementation now
 includes the mainline work through pull request 1909. Its ten implementation
 commits and publication-status commit match their prior versions exactly under
 `git range-diff`; the plan commit differs only by the expected adjacent
-changelog link from pull request 1904. The rebased native suites pass 163
-object-model tests, 20 registry/manager tests, and 64 QDMI specification tests
-with two expected skips. Stub regeneration produces no tracked stub diff, 271
-focused Python tests pass, and the documentation builds with warnings as errors.
-Lint and the artifact audit pass. The rebased series and AI-disclosed pull
-request description are published; observation of the final CI run remains.
+changelog link from pull request 1904. The final feedback removed versioned QDMI
+naming and the configuration ABI marker, restored the unnecessary estimator
+change, completed binding-local custom-query documentation, and preserved FoMaC
+wording in historical release records. A fresh-context review then strengthened
+process-wide provider reuse, operation/site ownership, disabled runtime
+replacement semantics, migration examples, and integer custom-job coverage. The
+reviewed native suites pass 165 object-model tests and 20 registry/manager
+tests; all 64 QDMI specification tests pass with two expected skips; and 173
+focused Python QDMI and estimator tests pass. Stub regeneration, the
+warning-as-error documentation build, and the full lint suite succeed. The
+artifact audit is clean; publication and CI observation remain.
 
 ## Context and Orientation
 
 QDMI is the Quantum Device Management Interface used by native device provider
-libraries. QDMI v1.3 exposes prefixed C functions from a shared library. A
-prefix such as `MQT_DDSIM_QDMI` distinguishes one implementation's exported
-symbols. The private files `src/qdmi/V1DeviceApi.hpp` and
-`src/qdmi/V1DeviceApi.cpp` load such a library, resolve the complete v1.3 symbol
-set, initialize it once, and finalize it when the last owning object is gone. No
-QDMI session or job handle is part of the public MQT API.
+libraries. It exposes prefixed C functions from a shared library. A prefix such
+as `MQT_DDSIM_QDMI` distinguishes one implementation's exported symbols. The
+private files `src/qdmi/DeviceApi.hpp` and `src/qdmi/DeviceApi.cpp` load such a
+library, resolve the complete QDMI symbol set, initialize it once, and finalize
+it when the last owning object is gone. No QDMI session or job handle is part of
+the public MQT API.
 
 `include/mqt-core/qdmi/DeviceRegistry.hpp` and `src/qdmi/DeviceRegistry.cpp`
 parse registration sources without loading their libraries. A
-`qdmi::DeviceDefinition` contains a stable ID, native-library path, the accepted
-`qdmi-v1` compatibility marker, the v1 symbol prefix, an enabled flag, and
-default `SessionParameters`. `include/mqt-core/qdmi/DeviceManager.hpp` and
-`src/qdmi/DeviceManager.cpp` own a registry and a weak library cache. A weak
-cache reuses a live loaded library without keeping it loaded after every device
-object is gone. Each call to `open` creates an independent session.
+`qdmi::DeviceDefinition` contains a stable ID, native-library path, symbol
+prefix, enabled flag, and default `SessionParameters`.
+`include/mqt-core/qdmi/DeviceManager.hpp` and `src/qdmi/DeviceManager.cpp` own a
+registry. The private runtime uses a process-wide, canonical-path weak cache to
+reuse a live loaded library without keeping it loaded after every device object
+is gone. Each call to `open` creates an independent session.
 
 `include/mqt-core/qdmi/Device.hpp` and `src/qdmi/Device.cpp` provide the public
 objects. `src/qdmi/DeviceState.hpp` and `src/qdmi/DeviceState.cpp` retain the
@@ -223,7 +265,7 @@ definitions can be listed without executing a provider, relative libraries can
 be found after moving an install tree, and invalid sources report their source
 and configuration path.
 
-The third milestone replaces the runtime implementation. Store exact QDMI v1.3
+The third milestone replaces the runtime implementation. Store exact QDMI
 function signatures in one concrete private library owner, create independent
 sessions, retain recursive child and job lifetimes, and expose QDMI's existing
 status and format enums directly. Acceptance is that incomplete libraries fail
@@ -316,8 +358,10 @@ returns a usable device; one malformed or missing library produces an ID-keyed
 error in `openAll()` without discarding successful devices; child devices and
 jobs retain their native state after parent variables and the manager are
 destroyed; and the library finalizes after the final live object disappears. The
-scripted v1 test must assign callbacks through fields whose types are exact
-`decltype(QDMI_...)` pointers.
+scripted QDMI test must assign callbacks through fields whose types are exact
+`decltype(QDMI_...)` pointers. Simultaneously live managers must reuse the same
+canonical provider library, and operation queries must reject sites from another
+device session before calling provider code.
 
 Public API acceptance requires that C++ uses `QDMI_Device_Status`,
 `QDMI_Job_Status`, and `QDMI_Program_Format` directly, Python exposes documented
@@ -357,15 +401,17 @@ The mainline integration point and recovery evidence are:
     rebased series: ten implementation commits, one plan commit, and one status commit
     latest range-diff: eleven commits exact; plan commit differs only by the adjacent 1904 changelog link
 
-Focused validation after the rebase produced:
+Focused validation after the fresh-context review produced:
 
-    object model: 163 tests passed
+    object model: 165 tests passed
     registry and manager: 20 tests passed
     QDMI CTest selection: 64 tests passed, 2 expected skips
-    Python QDMI/NA/Qiskit: 271 tests passed
-    stub generation: successful, no tracked stub changes
+    Python QDMI and estimator: 173 tests passed
+    stub generation: successful, expected QDMI stub update generated
     documentation: successful with -W
     lint: successful, all hooks passed
+
+The final artifact audit is clean.
 
 The first rebase conflict involved `CHANGELOG.md`, `UPGRADING.md`, `noxfile.py`,
 `pyproject.toml`, `python/mqt/core/plugins/qiskit/estimator.py`, and the two
@@ -380,15 +426,16 @@ The final C++ public interfaces are `qdmi::DeviceDefinition`,
 `qdmi::ConfigOptions`, `qdmi::DeviceRegistry`, `qdmi::DeviceManager`,
 `qdmi::OpenAllResult`, `qdmi::Device`, `qdmi::Job`, `qdmi::Site`,
 `qdmi::Operation`, and `qdmi::SessionParameters`. Status and program format
-signatures use the QDMI v1.3 types directly. The Python equivalents live in
+signatures use the QDMI types directly. The Python equivalents live in
 `mqt.core.qdmi` and follow Python naming conventions such as `device_id`,
 `register_device`, `open_all`, and read-only `definitions`.
 
-The implementation depends on QDMI v1.3 for C declarations, `nlohmann_json` for
-JSON, the vendored single-header toml++ parser for TOML, nanobind for Python
-bindings, and the platform dynamic-library API. These dependencies do not
-authorize loading any library during discovery. Only `DeviceManager.open` and
-`openAll` may execute configured provider code.
+The implementation depends on QDMI for C declarations, `nlohmann_json` for JSON,
+the vendored single-header toml++ parser for TOML, nanobind for Python bindings,
+and the platform dynamic-library API. The selected QDMI revision is recorded in
+`cmake/ExternalDependencies.cmake`. These dependencies do not authorize loading
+any library during discovery. Only `DeviceManager.open` and `openAll` may
+execute configured provider code.
 
 Revision note (2026-07-15): Created this plan after 1907 introduced the
 repository ExecPlan process. It records the already implemented redesign, the
@@ -418,3 +465,19 @@ observation of the final CI run remains.
 Revision note (2026-07-15 11:52Z): Recorded the subsequent mainline advance, the
 pre-commit service's mergeability error, the pull requests 1904 and 1909 scope
 review, the second rebase, and its range-diff result.
+
+Revision note (2026-07-15): Added the final maintainer-feedback iteration:
+version-neutral QDMI naming, removal of the configuration ABI marker, estimator
+reversion, complete generated custom-query documentation, preservation of
+historical FoMaC wording, and a required fresh-context review.
+
+Revision note (2026-07-15 13:18Z): Recorded the fresh-context review and all
+five resulting corrections: process-wide canonical weak caching, operation-site
+ownership validation, disabled replacement removal, accurate historical
+migration examples, and verified integer custom-job binding support.
+
+Revision note (2026-07-15 13:24Z): Recorded the successful post-review native,
+Python, stub, warning-as-error documentation, and full lint validation.
+
+Revision note (2026-07-15 13:25Z): Recorded the final generated-artifact cleanup
+and audit.

@@ -13,23 +13,24 @@
 #include <qdmi/device.h>
 
 #include <filesystem>
+#include <memory>
 #include <string>
 
 namespace qdmi::detail {
 
-/// One loaded and initialized QDMI v1.3 device implementation.
-struct V1DeviceApi {
-  V1DeviceApi() = default;
-  V1DeviceApi(const std::filesystem::path& library, const std::string& prefix);
-  ~V1DeviceApi();
+/// One loaded and initialized QDMI device implementation.
+struct DeviceApi {
+  DeviceApi() = default;
+  DeviceApi(const std::filesystem::path& library, const std::string& prefix);
+  ~DeviceApi();
 
-  V1DeviceApi(const V1DeviceApi&) = delete;
-  V1DeviceApi& operator=(const V1DeviceApi&) = delete;
-  V1DeviceApi(V1DeviceApi&&) = delete;
-  V1DeviceApi& operator=(V1DeviceApi&&) = delete;
+  DeviceApi(const DeviceApi&) = delete;
+  DeviceApi& operator=(const DeviceApi&) = delete;
+  DeviceApi(DeviceApi&&) = delete;
+  DeviceApi& operator=(DeviceApi&&) = delete;
 
-  // Keep the QDMI names so every stored signature visibly corresponds to the
-  // selected ABI declaration.
+  // Keep the QDMI names so every stored signature visibly corresponds to its
+  // QDMI declaration.
   // NOLINTBEGIN(readability-identifier-naming)
   decltype(QDMI_device_session_alloc)* device_session_alloc = nullptr;
   decltype(QDMI_device_session_init)* device_session_init = nullptr;
@@ -59,5 +60,9 @@ private:
   decltype(QDMI_device_finalize)* finalize_ = nullptr;
   bool initialized_ = false;
 };
+
+/// Load or reuse one process-wide QDMI implementation instance.
+[[nodiscard]] std::shared_ptr<const DeviceApi>
+loadDeviceApi(const std::filesystem::path& library, const std::string& prefix);
 
 } // namespace qdmi::detail

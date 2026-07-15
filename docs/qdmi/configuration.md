@@ -11,7 +11,6 @@ definitions, while opening a configured library executes native code.
       {
         "id": "example.device",
         "library": "libexample-device.so",
-        "abi": "qdmi-v1",
         "prefix": "EXAMPLE",
         "enabled": true,
         "session": {
@@ -25,11 +24,11 @@ definitions, while opening a configured library executes native code.
 }
 ```
 
-Each enabled QDMI v1 definition requires a unique `id`, `library`, and `prefix`;
-`abi` defaults to `qdmi-v1`. Relative library and authentication-file paths are
-resolved against the file that declared them. Unknown keys, invalid types,
-duplicate IDs within one source, and incomplete enabled definitions are errors
-with source and property-path diagnostics.
+Each enabled QDMI definition requires a unique `id`, `library`, and `prefix`.
+Relative library and authentication-file paths are resolved against the file
+that declared them. Unknown keys, invalid types, duplicate IDs within one
+source, and incomplete enabled definitions are errors with source and
+property-path diagnostics.
 
 Sources are merged field-by-field by ID in this order:
 

@@ -261,7 +261,7 @@ TEST(DeviceRegistry, ValidatesDefinitionAndSessionTypes) {
                std::invalid_argument);
 }
 
-TEST(DeviceRegistry, RejectsIncompleteAndUnsupportedEnabledDefinitions) {
+TEST(DeviceRegistry, RejectsIncompleteDefinitionsAndUnknownKeys) {
   qdmi::ConfigOptions options;
   options.isolated = true;
   options.inlineOverrides = Json::parse(R"({
@@ -274,7 +274,7 @@ TEST(DeviceRegistry, RejectsIncompleteAndUnsupportedEnabledDefinitions) {
   options.inlineOverrides = Json::parse(R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
-      "id": "future", "library": "device", "prefix": "P", "abi": "qdmi-v2"
+      "id": "unknown", "library": "device", "prefix": "P", "unexpected": true
     }]}
   })");
   EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry(options)),
@@ -313,14 +313,14 @@ TEST(DeviceRegistry, RegistersReplacesAndUnregistersDefinitions) {
   registry.registerDevice({.id = "example", .library = "two", .prefix = "TWO"},
                           true);
   EXPECT_EQ(registry.definitions().front().prefix, "TWO");
+  registry.registerDevice(
+      {.id = "example", .library = "two", .prefix = "TWO", .enabled = false},
+      true);
+  EXPECT_TRUE(registry.definitions().empty());
+  registry.registerDevice({.id = "example", .library = "two", .prefix = "TWO"});
   EXPECT_TRUE(registry.unregisterDevice("example"));
   EXPECT_FALSE(registry.unregisterDevice("example"));
   EXPECT_THROW(registry.registerDevice({}), std::invalid_argument);
-  EXPECT_THROW(registry.registerDevice({.id = "future",
-                                        .library = "future-device",
-                                        .abi = "qdmi-v2",
-                                        .prefix = "FUTURE"}),
-               std::invalid_argument);
 }
 
 TEST(DeviceManager, LazilyOpensAndKeepsDeviceAlive) {
@@ -421,7 +421,7 @@ TEST(DeviceManager, OpenDevicesOutliveRegistrationsAndManager) {
   EXPECT_EQ(device.getName(), "MQT SC Default QDMI Device");
 }
 
-TEST(DeviceManager, RejectsIncompleteV1SymbolSet) {
+TEST(DeviceManager, RejectsIncompleteSymbolSet) {
   qdmi::ConfigOptions options;
   options.isolated = true;
   options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{

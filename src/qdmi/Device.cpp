@@ -665,12 +665,18 @@ Site::queryCustomPropertyBytes(const CustomProperty property) const {
       "custom site property");
 }
 
-std::vector<void*> Operation::siteHandles(const std::vector<Site>& sites) {
+std::vector<void*>
+Operation::siteHandles(const std::vector<Site>& sites) const {
   std::vector<void*> handles;
   handles.reserve(sites.size());
-  std::ranges::transform(
-      sites, std::back_inserter(handles),
-      [](const Site& site) { return static_cast<QDMI_Site>(site.handle_); });
+  std::ranges::transform(sites, std::back_inserter(handles),
+                         [this](const Site& site) {
+                           if (site.state_ != state_) {
+                             throw std::invalid_argument(
+                                 "Operation sites must belong to its device");
+                           }
+                           return static_cast<QDMI_Site>(site.handle_);
+                         });
   return handles;
 }
 
