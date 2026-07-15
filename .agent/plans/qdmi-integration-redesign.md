@@ -27,8 +27,8 @@ consumers, focused tests, and the related documentation and build metadata.
 Runtime-configurable superconducting and neutral-atom device models and the
 optional resource broker are separate tasks. Preserve unrelated work and never
 modify another task's worktree. The implementation is published as pull request
-1901 and incorporates the mainline changes from pull requests 1815, 1907, and
-1908.
+1901 and incorporates the mainline changes through pull request 1909, including
+the planning refinements from pull requests 1907 and 1908.
 
 ## Progress
 
@@ -72,9 +72,14 @@ modify another task's worktree. The implementation is published as pull request
 - [x] (2026-07-15 11:44Z) Completed the final diff, spelling, changelog,
   portability, and generated-artifact audits and removed build, Nox,
   documentation, test-discovery, and test-cache output.
-- [ ] Commit the ExecPlan and any integration corrections, force-push with
-      lease, update the AI-disclosed pull request description, and inspect the
-      new CI run.
+- [x] (2026-07-15 11:49Z) Committed the ExecPlan, force-pushed the rebased
+  series with lease protection, repaired upstream tracking, and updated the
+  pull request description with the required AI disclosure.
+- [x] (2026-07-15 11:52Z) Diagnosed the initial service error as a real
+  mergeability conflict after pull requests 1904 and 1909 advanced main,
+  reviewed their scope, and rebased the complete series onto `559fde4b2`.
+- [ ] Inspect the final CI run triggered by the plan-status commit and address
+  any integration regressions.
 
 ## Surprises & Discoveries
 
@@ -104,6 +109,11 @@ modify another task's worktree. The implementation is published as pull request
   build stopped with `ccache: error: failed to create temporary file`; rerunning
   with `CCACHE_DIR` set to a writable temporary directory built all requested
   targets.
+- Observation: The first post-publication pre-commit service error was caused by
+  GitHub marking the pull request conflicting, not by a failed hook. Evidence:
+  main advanced from `b5cb91888` to `559fde4b2` after publication; the only
+  overlapping file was `CHANGELOG.md`, where both pull requests added link
+  definitions.
 
 ## Decision Log
 
@@ -145,13 +155,15 @@ modify another task's worktree. The implementation is published as pull request
 ## Outcomes & Retrospective
 
 The implementation and rebase milestones are complete. The implementation now
-includes the mainline work from pull requests 1815, 1907, and 1908. Its ten
-implementation commits plus this plan commit match their prior versions under
-`git range-diff`. The rebased native suites pass 163 object-model tests, 20
-registry/manager tests, and 64 QDMI specification tests with two expected skips.
-Stub regeneration produces no tracked stub diff, 271 focused Python tests pass,
-and the documentation builds with warnings as errors. Lint and the artifact
-audit pass. Publication and CI observation remain.
+includes the mainline work through pull request 1909. Its ten implementation
+commits and publication-status commit match their prior versions exactly under
+`git range-diff`; the plan commit differs only by the expected adjacent
+changelog link from pull request 1904. The rebased native suites pass 163
+object-model tests, 20 registry/manager tests, and 64 QDMI specification tests
+with two expected skips. Stub regeneration produces no tracked stub diff, 271
+focused Python tests pass, and the documentation builds with warnings as errors.
+Lint and the artifact audit pass. The rebased series and AI-disclosed pull
+request description are published; observation of the final CI run remains.
 
 ## Context and Orientation
 
@@ -228,11 +240,11 @@ Python suites exercise success, error, child, cleanup, enum, and concurrent
 manager paths.
 
 The fifth milestone integrates current main. Rebase onto the commits containing
-pull requests 1815, 1907, and 1908; preserve MLIR/QIR behavior and centralized
-patterns; add and maintain a checkout-independent ExecPlan; rerun validation;
-and publish the rewritten pull request branch with lease protection. Acceptance
-is a clean range diff, a clean worktree, an AI-disclosed pull request
-description, and a new CI run without integration regressions.
+pull requests 1815, 1907, 1908, 1904, and 1909; preserve MLIR/QIR behavior and
+centralized patterns; add and maintain a checkout-independent ExecPlan; rerun
+validation; and publish the rewritten pull request branch with lease protection.
+Acceptance is a reviewed range diff, a clean worktree, an AI-disclosed pull
+request description, and a new CI run without integration regressions.
 
 ## Concrete Steps
 
@@ -340,9 +352,10 @@ The mainline integration point and recovery evidence are:
 
     old base: 7fc5a80ab
     intermediate base after pull requests 1815 and 1907: a228a3dc2
-    current base after pull request 1908: b5cb91888
+    current base after pull requests 1904 and 1909: 559fde4b2
     pre-rebase tip: d6ee912bc
-    rebased series: ten implementation commits and one plan commit, all matched by git range-diff
+    rebased series: ten implementation commits, one plan commit, and one status commit
+    latest range-diff: eleven commits exact; plan commit differs only by the adjacent 1904 changelog link
 
 Focused validation after the rebase produced:
 
@@ -397,3 +410,11 @@ after the checkout-independent regeneration.
 Revision note (2026-07-15 11:44Z): Recorded the final pull request 1908 rebase
 and exact range-diff, completed the portability and generated-artifact audits,
 and updated the outcome and base evidence.
+
+Revision note (2026-07-15 11:49Z): Recorded the lease-protected publication,
+repaired upstream tracking, and AI-disclosed pull request description. Only
+observation of the final CI run remains.
+
+Revision note (2026-07-15 11:52Z): Recorded the subsequent mainline advance, the
+pre-commit service's mergeability error, the pull requests 1904 and 1909 scope
+review, the second rebase, and its range-diff result.
