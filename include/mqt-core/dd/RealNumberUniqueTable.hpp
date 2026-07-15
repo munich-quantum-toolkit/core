@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file RealNumberUniqueTable.hpp
+ * @brief Unique table for canonical decision-diagram real numbers.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

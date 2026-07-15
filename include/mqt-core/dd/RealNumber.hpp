@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file RealNumber.hpp
+ * @brief Canonical real-number handles used by decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

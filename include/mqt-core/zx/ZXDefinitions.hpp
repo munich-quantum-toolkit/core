@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file ZXDefinitions.hpp
+ * @brief Fundamental ZX-diagram types and constants.
+ */
+
 #pragma once
 
 #include "Rational.hpp"

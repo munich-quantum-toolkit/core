@@ -66,6 +66,11 @@ public:
   /// Return the program to hardware mapping.
   [[nodiscard]] ArrayRef<size_t> getProgramToHardware() const;
 
+  /// Compare two layouts for equality.
+  [[nodiscard]] bool operator==(const Layout& other) const {
+    return programToHardware_ == other.programToHardware_;
+  }
+
 protected:
   /// Maps a program qubit index to its hardware index.
   SmallVector<size_t> programToHardware_;

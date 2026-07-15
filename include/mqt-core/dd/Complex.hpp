@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Complex.hpp
+ * @brief Canonical complex-number handles used by decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

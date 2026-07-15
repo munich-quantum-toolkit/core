@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Driver.hpp
+ * @brief QDMI driver implementation interfaces.
+ */
+
 #pragma once
 
 #include "qdmi/common/Common.hpp"
@@ -167,9 +171,11 @@ private:
    * @note This must be a pointer type as we need access to dynamic and static
    * libraries that are subclasses of qdmi::DeviceLibrary.
    */
-  std::unique_ptr<qdmi::DeviceLibrary> library_;
+  std::shared_ptr<qdmi::DeviceLibrary> library_;
   /// @brief The device session handle.
   QDMI_Device_Session deviceSession_ = nullptr;
+  /// Client-facing wrappers for direct child devices.
+  std::vector<std::unique_ptr<QDMI_Device_impl_d>> childDevices_;
   /**
    * @brief Map of jobs to their corresponding unique pointers of
    * QDMI_Job_impl_d objects.
@@ -178,15 +184,27 @@ private:
 
 public:
   /**
-   * @brief Constructor for the QDMI device.
-   * @details This constructor initializes the device session and allocates
-   * the device session handle.
-   * @param lib is a unique pointer to the device library that provides the
-   * device interface functions.
+   * @brief Constructs a top-level QDMI device from an exclusively owned
+   * library.
+   * @param lib is the device library to take ownership of.
    * @param config is the configuration for device session parameters.
    */
   explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
-                              const qdmi::DeviceSessionConfig& config = {});
+                              const qdmi::DeviceSessionConfig& config = {})
+      : QDMI_Device_impl_d(std::shared_ptr(std::move(lib)), config) {}
+
+  /**
+   * @brief Constructor for the QDMI device.
+   * @details This constructor initializes the device session and allocates
+   * the device session handle.
+   * @param lib is a shared pointer to the device library that provides the
+   * device interface functions.
+   * @param config is the configuration for device session parameters.
+   * @param childDevice optionally selects a child device for this wrapper.
+   */
+  explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
+                              const qdmi::DeviceSessionConfig& config = {},
+                              QDMI_Child_Device childDevice = nullptr);
 
   /**
    * @brief Destructor for the QDMI device.
@@ -194,6 +212,7 @@ public:
    */
   ~QDMI_Device_impl_d() {
     jobs_.clear();
+    childDevices_.clear();
     if (library_ && deviceSession_ != nullptr) {
       library_->device_session_free(deviceSession_);
     }
@@ -317,10 +336,10 @@ public:
 
   /**
    * @brief Frees the job.
-   * @note This function just forwards to the device's @ref Device::freeJob
-   * function. This function is needed because the interface only provides the
-   * job handle to the @ref QDMI_job_free function and the job's device handle
-   * is private.
+   * @note This function just forwards to the device's @ref
+   * QDMI_Device_impl_d::freeJob function. This function is needed because the
+   * interface only provides the job handle to the @ref QDMI_job_free function
+   * and the job's device handle is private.
    */
   auto free() -> void;
 };

@@ -22,6 +22,10 @@
 
 ## QIR Conversions
 
-```{include} Conversions/QCToQIR.md
+```{include} Conversions/QCToQIRBase.md
+
+```
+
+```{include} Conversions/QCToQIRAdaptive.md
 
 ```

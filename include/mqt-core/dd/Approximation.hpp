@@ -8,6 +8,11 @@
  * Licensed under the MIT License
  */
 
+/** @file Approximation.hpp
+ * @brief Approximation metadata and configuration for decision-diagram
+ * operations.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

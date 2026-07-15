@@ -13,7 +13,8 @@ including {doc}`installation instructions <installation>`, a
 {doc}`quickstart guide for the MQT Core IR <mqt_core_ir>`, its
 {doc}`decision diagram (DD) package <dd_package>`, and its
 {doc}`ZX-calculus package <zx_package>`, as well as detailed
-{doc}`API documentation <api/mqt/core/index>`. The source code of MQT Core is
+{doc}`API documentation <api/mqt/core/index>` and the
+<a href="cpp/index.html">C++ API reference</a>. The source code of MQT Core is
 publicly available on GitHub at
 [munich-quantum-toolkit/core](https://github.com/munich-quantum-toolkit/core),
 while pre-built binaries are available via
@@ -71,15 +72,6 @@ support
 :hidden:
 
 api/mqt/core/index
-```
-
-```{toctree}
-:glob:
-:caption: C++ API Reference
-:maxdepth: 1
-:hidden:
-
-api/cpp/namespacelist
 ```
 
 ## Contributors and Supporters

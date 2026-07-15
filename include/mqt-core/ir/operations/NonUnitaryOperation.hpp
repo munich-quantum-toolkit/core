@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file NonUnitaryOperation.hpp
+ * @brief Measurement, reset, and other non-unitary quantum operations.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

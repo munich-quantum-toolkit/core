@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Grover.hpp
+ * @brief Grover-search circuit construction.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"
