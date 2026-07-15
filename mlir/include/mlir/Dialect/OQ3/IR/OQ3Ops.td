@@ -28,7 +28,14 @@ def OQ3ScalarType
                     "::mlir::oq3::StretchType>($_self)">]>,
           "an OpenQASM scalar type">;
 
-def GateOp : OQ3Op<"gate", [IsolatedFromAbove, Symbol, SingleBlock]> {
+def YieldOp : OQ3Op<"yield", [Pure, Terminator]> {
+  let summary = "Terminate an OQ3 region";
+  let assemblyFormat = "attr-dict";
+}
+
+def GateOp
+    : OQ3Op<"gate", [IsolatedFromAbove, Symbol, SingleBlock,
+                     SingleBlockImplicitTerminator<"::mlir::oq3::YieldOp">]> {
   let summary = "Typed OpenQASM gate definition";
   let arguments = (ins StrAttr:$sym_name, TypeAttr:$function_type);
   let regions = (region SizedRegion<1>:$body);
@@ -77,8 +84,9 @@ def UnpackBitOp : OQ3Op<"unpack_bit", [Pure]> {
   let hasVerifier = 1;
 }
 
-def ForOp
-    : OQ3Op<"for", [SingleBlock, AllTypesMatch<["start", "stop", "step"]>]> {
+def ForOp : OQ3Op<"for", [SingleBlock,
+                          SingleBlockImplicitTerminator<"::mlir::oq3::YieldOp">,
+                          AllTypesMatch<["start", "stop", "step"]>]> {
   let summary = "Inclusive OpenQASM integer range loop";
   let arguments = (ins AnyInteger:$start, AnyInteger:$stop, AnyInteger:$step);
   let regions = (region SizedRegion<1>:$body);
@@ -86,11 +94,6 @@ def ForOp
     $start `to` $stop `step` $step $body attr-dict `:` type($start)
   }];
   let hasVerifier = 1;
-}
-
-def YieldOp : OQ3Op<"yield", [Pure, Terminator]> {
-  let summary = "Terminate an OQ3 region";
-  let assemblyFormat = "attr-dict";
 }
 
 #endif // MLIR_DIALECT_OQ3_IR_OQ3OPS_TD

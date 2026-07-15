@@ -168,6 +168,9 @@ private:
       return loop.emitError("dynamic range step cannot be proven nonzero for "
                             "the selected target");
     }
+    if (step.value() == 0) {
+      return loop.emitError("OpenQASM range step cannot be zero");
+    }
 
     OpBuilder builder(loop);
     const Location loc = loop.getLoc();

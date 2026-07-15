@@ -64,6 +64,57 @@ x q;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(V31));
 }
 
+TEST(OpenQASMFrontendTest, RejectsUnsupportedOpenQASM3MinorVersions) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.2;
+qubit q;
+x q;
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("Unsupported OpenQASM"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsUnsupportedIntegerDeclarations) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+int[32] counter;
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("Integer declarations"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsTooFewVariadicControlOperands) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+qubit q;
+mcx q;
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("qubit operands"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsDuplicateGateQubits) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+qubit q;
+cx q, q;
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("same qubit"),
+            std::string::npos);
+}
+
 TEST(OpenQASMFrontendTest, CompatibilityGatePolicyIsExplicit) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.0;
