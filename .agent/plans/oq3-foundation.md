@@ -17,15 +17,18 @@ source-language semantic analysis, inspect a verified typed representation, and
 then request target lowering. Source errors and target-capability errors must be
 different failures.
 
-The implementation will extend MQT Core's existing handwritten `qasm3` lexer,
-recursive-descent parser, abstract syntax model, constant evaluator, and type
-checker. It will not use ANTLR. The parser will produce syntax only; a separate
-semantic analyzer will resolve names, scopes, types, constants, overloads, gate
-signatures, and include policy into an arena-owned typed program. A small
-experimental OQ3 MLIR dialect will preserve source concepts for which builtin
-MLIR has no faithful equivalent. A dedicated emitter will map the already typed
-program to OQ3 plus builtin, `arith`, `math`, `func`, `scf`, and `memref`
-operations. The emitter must not repeat source typing.
+The implementation will reuse MQT Core's existing handwritten `qasm3` lexer and
+recursive-descent parser as its initial syntax source. It will not use ANTLR.
+The MLIR frontend will own a separate semantic model and analyzer rather than
+making the legacy `QuantumComputation` importer or its mutable environments the
+architectural center. Sharing scanner and parser infrastructure is acceptable;
+duplicating semantic utilities is preferable when that keeps the MLIR stages
+clean. A separate semantic analyzer will resolve names, scopes, types,
+constants, overloads, gate signatures, and include policy into an arena-owned
+typed program. A small experimental OQ3 MLIR dialect will preserve source
+concepts for which builtin MLIR has no faithful equivalent. A dedicated emitter
+will map the already typed program to OQ3 plus builtin, `arith`, `math`, `func`,
+`scf`, and `memref` operations. The emitter must not repeat source typing.
 
 A human can observe the intended separation through three focused test layers.
 Parser tests accept or reject syntax without constructing MLIR. Semantic tests
@@ -38,9 +41,12 @@ The repository-relative scope is `include/mqt-core/qasm3`, `src/qasm3`, their
 existing tests, the experimental dialect under `mlir/include/mlir/Dialect/OQ3`
 and `mlir/lib/Dialect/OQ3`, the future adapter under
 `mlir/include/mlir/Target/OpenQASM` and `mlir/lib/Target/OpenQASM`, focused
-tests, and directly related build and documentation files. The existing importer
-stays available as a behavioral oracle until both consumers use the same typed
-semantic program. Unrelated changes and other worktrees remain outside scope.
+tests, and directly related build and documentation files. The existing
+`QuantumComputation` importer stays available as a behavioral oracle, but it is
+not required to adopt the MLIR semantic program. The production MLIR
+`translateQASM3ToQC` entry point is replaced by the staged frontend in this
+milestone rather than retaining two MLIR translation implementations. Unrelated
+changes and other worktrees remain outside scope.
 
 ## Progress
 
@@ -75,6 +81,20 @@ semantic program. Unrelated changes and other worktrees remain outside scope.
 - [x] (2026-07-15 13:55Z) Force-pushed the rebased branch with lease protection
       and updated draft pull request 1910 to describe the handwritten-parser
       architecture and current workbench status.
+- [x] (2026-07-15 14:10Z) Expanded the delivery decision: replace the existing
+      MLIR OpenQASM-to-QC translator immediately with parse, analyze, emit OQ3,
+      and lower OQ3 stages; keep the legacy `QuantumComputation` importer
+      independent and duplicate semantic code where sharing would couple them.
+- [x] (2026-07-15 15:10Z) Introduced MLIR-owned opaque parsed-program and
+      value-oriented typed-program APIs. Parsing and semantic-analysis tests run
+      without constructing an MLIR context and retain source filenames and
+      line/column diagnostics.
+- [x] (2026-07-15 15:40Z) Added typed-program-to-OQ3 emission and made
+      `translateQASM3ToQC` a thin composition of parse, analyze, emit, verify,
+      and lower stages.
+- [x] (2026-07-15 15:55Z) Deleted the 1,114-line direct AST-to-QC visitor. All
+      117 existing OpenQASM translation fixtures now pass through the staged
+      replacement, including the established OpenQASM 2 compatibility cases.
 - [ ] Establish a checked upstream grammar and conformance snapshot as test
   ground truth, without making generated code or ANTLR a build dependency.
 - [ ] Refactor the existing scanner and parser to return a source-spanned syntax
@@ -86,8 +106,19 @@ semantic program. Unrelated changes and other worktrees remain outside scope.
   whole-program OQ3 verifier for cross-operation invariants.
 - [ ] Complete OpenQASM 3 grammar and semantic coverage, OpenQASM 2
   normalization, differential tests, and measured linear scaling.
-- [ ] Switch the production convenience path only after parity evidence and
-  human approval.
+- [x] (2026-07-15 16:05Z) Added dedicated stage-boundary tests proving semantic
+      analysis is MLIR-independent, OQ3 verifies before lowering, and the
+      production convenience wrapper leaves no OQ3 operations after lowering.
+- [x] (2026-07-15 16:25Z) Made standard-library availability explicit in the
+      typed program. Strict mode requires `include "stdgates.inc";`, while the
+      default compatibility mode preserves implicit native-gate convenience;
+      user definitions may use unavailable standard-library names in strict
+      mode.
+- [x] (2026-07-15 16:35Z) Added typed mixed-numeric gate expressions with
+      signed/unsigned MLIR casts, preserved valid `pow` modifiers through OQ3,
+      and covered inverse native aliases. Passed 4 OQ3 tests, 10 staged-frontend
+      tests, 224 translation tests, and 116 downstream compiler tests from a
+      clean rebuild.
 
 ## Surprises & Discoveries
 
@@ -136,6 +167,23 @@ semantic program. Unrelated changes and other worktrees remain outside scope.
   program avoids duplicating an entire classical OQ3 operation set and keeps the
   semantic boundary clear.
 
+- Observation: the shared parser injects a synthetic `cu` declaration, but its
+  current `DebugInfo` is created after the include scanner has unwound and can
+  therefore name the main source buffer. The new analyzer recognizes this
+  parser-owned declaration structurally for now. The parser refactor must mark
+  synthetic declarations explicitly instead of inferring provenance from a
+  filename.
+
+- Observation: the repository's broad `target/` ignore pattern also matches
+  MLIR's conventional capitalized `Target/` source directories on
+  case-insensitive filesystems. Narrow exceptions are required for the new
+  source and test targets while retaining the build-artifact ignore.
+
+- Observation: adjacent positive and negative OpenQASM control modifiers must
+  lower as one multi-control region. Nesting one `qc.ctrl` per modifier is
+  unitary-equivalent for simple gates but loses the canonical control grouping
+  used by QC consumers and parity tests.
+
 ## Decision Log
 
 - Decision: Remove ANTLR and the direct parse-tree-to-MLIR demonstrator now.
@@ -180,11 +228,11 @@ semantic program. Unrelated changes and other worktrees remain outside scope.
   Codex.
 
 - Decision: Keep a strict specification gate policy and an MQT compatibility
-  gate policy. The staged experimental API defaults to strict mode. Existing
-  convenience import APIs retain compatibility mode until an intentional public
-  migration. Both policies draw from one canonical gate catalog containing
-  availability, arity, native QC mapping, and aliases. Date/Author: 2026-07-15 /
-  Codex.
+  gate policy. The staged experimental API and existing convenience import API
+  default to compatibility mode so the architectural replacement does not
+  silently remove long-standing native gate names. Strict mode is explicit. Both
+  policies draw from one canonical gate catalog containing availability, arity,
+  native QC mapping, and aliases. Date/Author: 2026-07-15 / Codex.
 
 - Decision: Implement `cu`, `cu3`, and `cu1` natively and never expand them to
   source gate definitions merely to lower them. Rationale: QC already represents
@@ -197,6 +245,27 @@ semantic program. Unrelated changes and other worktrees remain outside scope.
   explicit 2.0 uses compatibility normalization. Rationale: MQT tracks one
   maintained revision while avoiding unnecessary rejection of 3.0 headers.
   Date/Author: 2026-07-15 / Codex.
+
+- Decision: Replace the production MLIR translation path in this branch instead
+  of keeping the direct AST-to-QC implementation as a fallback. Rationale: two
+  live MLIR importers would obscure which semantics are authoritative and would
+  postpone the most valuable architectural test. The existing QC translation
+  tests remain the oracle, and Git history provides rollback. Date/Author:
+  2026-07-15 / Codex, following maintainer direction.
+
+- Decision: Reuse the handwritten scanner and parser initially, but give the
+  MLIR frontend its own value-oriented typed program and semantic analyzer. Do
+  not require the legacy `QuantumComputation` importer to consume that model.
+  Rationale: syntax sharing avoids gratuitous parser duplication while semantic
+  independence permits clean source-to-MLIR design and incremental grammar
+  improvements. Date/Author: 2026-07-15 / Codex, following maintainer direction.
+
+- Decision: Expose explicit include names and the count of parser-injected
+  statements as parser metadata without changing the legacy importer's default
+  behavior. Rationale: semantic policy must distinguish a source include from
+  the legacy parser's synthetic `cu` definition; checking a synthetic node's
+  filename was unreliable after scanner-stack unwinding. Date/Author: 2026-07-15
+  / Codex.
 
 ## Outcomes & Retrospective
 
@@ -211,10 +280,11 @@ wrong boundary.
 The revised foundation reuses project knowledge instead of restarting. The
 handwritten parser remains incomplete and its shared-pointer AST is not the
 desired final ownership model, but it already contains tested OpenQASM 2
-compatibility, native gate behavior, source debug information, expression
-parsing, constant evaluation, and type checking. The next milestone must make
-those layers explicit and arena-owned before reconnecting OQ3 emission. Until
-then, the draft is an architecture workbench rather than a replacement frontend.
+compatibility, native gate behavior, source debug information, and expression
+parsing. The MLIR-owned typed program now isolates those implementation details,
+OQ3 emission is a separate walk, and the production MLIR entry point uses the
+staged implementation exclusively. The legacy importer retains its current
+constant and type passes and serves as the 117-fixture behavioral oracle.
 
 ## Context and Orientation
 
@@ -280,15 +350,27 @@ production to positive and negative parser tests. Add OpenQASM 2 fixtures
 already supported by main. Acceptance is that CI can identify missing
 productions and the normal build has no parser-generator dependency.
 
-The third milestone refactors scanning and parsing. Add source-buffer ownership,
-byte spans, structured diagnostics, arena-owned syntax nodes, recovery, and a
-Pratt expression table while preserving the existing parser API through a
-temporary adapter. Port statement families incrementally and run legacy and new
-syntax tests together. Acceptance is complete syntax coverage, multiple useful
-diagnostics from one invalid file, accurate include-stack spans, and linear
-token and parse growth.
+The third milestone replaces the production MLIR translation before the full
+parser refactor. Add an opaque parsed-program API around the existing parser and
+an MLIR-independent, value-oriented typed program. Analyze declarations, gate
+signatures and bodies, constants, operands, modifiers, broadcasting,
+measurements, resets, barriers, and conditionals into that program. Emit OQ3,
+builtin classical operations, SCF, and existing QC state operations from the
+typed program. Make `translateQASM3ToQC` compose parsing, analysis, OQ3
+emission, verification, and OQ3-to-QC lowering, then remove the direct AST-to-QC
+visitor. Acceptance is that no production MLIR path constructs QC while
+resolving source types and all existing QC translation regressions run through
+the staged path.
 
-The fourth milestone builds one semantic analyzer. Consolidate symbol scopes,
+The fourth milestone refactors scanning and parsing. Add source-buffer
+ownership, byte spans, structured diagnostics, arena-owned syntax nodes,
+recovery, and a Pratt expression table while preserving the existing parser API
+through a temporary adapter. Port statement families incrementally and run
+legacy and new syntax tests together. Acceptance is complete syntax coverage,
+multiple useful diagnostics from one invalid file, accurate include-stack spans,
+and linear token and parse growth.
+
+The fifth milestone completes the semantic analyzer. Consolidate symbol scopes,
 type checking, required constant evaluation, gate lookup, broadcasting,
 input/output ordering, version policy, and include policy into
 `analyzeOpenQASM`. It emits `TypedProgram` only if no source semantic errors
@@ -297,16 +379,16 @@ semantic tests run without MLIR and cover unknown, recursive,
 use-before-defined, arity, type, width, index, scope, cast, range-step, and
 compatibility failures with original source spans.
 
-The fifth milestone reconnects MLIR through a thin adapter. Implement
-`translateOpenQASMToOQ3` as parse, analyze, emit. `emitOQ3` maps typed values to
-builtin storage and arithmetic, uses SCF directly where faithful, emits only
-source-specific OQ3 operations where needed, attaches range locations, and does
-not perform source type inference. Add the module-level OQ3 verifier and keep
-the textual dialect experimental. Acceptance is that every successful module
-verifies and an injected malformed module fails the defensive verifier at the
-source-derived operation location.
+The sixth milestone completes MLIR emission beyond the initial production
+replacement. Implement `translateOpenQASMToOQ3` as parse, analyze, emit.
+`emitOQ3` maps typed values to builtin storage and arithmetic, uses SCF directly
+where faithful, emits only source-specific OQ3 operations where needed, attaches
+range locations, and does not perform source type inference. Add the
+module-level OQ3 verifier and keep the textual dialect experimental. Acceptance
+is that every successful module verifies and an injected malformed module fails
+the defensive verifier at the source-derived operation location.
 
-The sixth milestone preserves compatibility deliberately. Move the standard,
+The seventh milestone preserves compatibility deliberately. Move the standard,
 qelib1, and MQT-native names into one gate catalog. Strict mode makes only `U`
 and `gphase` language builtins and loads standard libraries only when included.
 Compatibility mode preserves the legacy implicit native catalog, including
@@ -397,8 +479,9 @@ semantic analysis or MLIR construction.
 
 Final replacement acceptance additionally requires all established OpenQASM 2
 regressions, representative OpenQASM 3 conformance programs, differential QC
-equivalence, full module verification, and human approval of the compatibility
-policy and public API switch.
+equivalence, and full module verification. The current replacement has parity
+over all 117 established translation fixtures; broader conformance remains a
+later milestone.
 
 ## Idempotence and Recovery
 
@@ -481,12 +564,13 @@ is added for cross-operation invariants. The adapter depends on the source
 frontend, MLIR builtin IR, `arith`, `math`, `func`, `scf`, `memref`, OQ3, and
 QC. The source frontend has no ANTLR, Java, Rust, or MLIR dependency.
 
-One canonical gate catalog must describe name, parameter count, qubit count,
-availability policy, primitive QC operation, implicit controls, and special
-lowering. `cu` records three U parameters plus one control phase; `cu3` records
-one control around U; `cu1` records one control around P. Parser declarations,
-semantic lookup, legacy compatibility, OQ3 declarations, and lowering dispatch
-must consume this catalog instead of maintaining parallel string tables.
+One canonical gate catalog for the new MLIR path must describe name, parameter
+count, qubit count, availability policy, primitive QC operation, implicit
+controls, and special lowering. `cu` records three U parameters plus one control
+phase; `cu3` records one control around U; `cu1` records one control around P.
+Semantic lookup, OQ3 declarations, and lowering dispatch consume this catalog.
+The legacy importer may retain its independent table; differential tests guard
+their intentional overlap without coupling the implementations.
 
 Revision note (2026-07-15): Replaced the ANTLR-based plan after maintainer
 feedback and source-level comparison with MQT Core and Qiskit's parsers. This
@@ -495,3 +579,17 @@ foundation, defines strict parse/analyze/emit boundaries, preserves original
 source spans, limits MLIR verification to defensive IR checks, establishes an
 explicit gate-compatibility policy, and requires native `cu`, `cu3`, and `cu1`
 lowering plus reproducible stage-specific performance evidence.
+
+Revision note (2026-07-15): Made the next iteration intentionally more
+ambitious. The staged frontend now replaces the existing production MLIR
+OpenQASM-to-QC visitor as soon as its current regression suite passes. Scanner
+and parser code may be shared with the legacy importer, but the MLIR typed model
+and semantic analysis are independently owned; duplication is allowed to avoid
+coupling the new architecture to legacy `QuantumComputation` constraints.
+
+Revision note (2026-07-15): Completed the immediate production replacement. The
+new MLIR frontend has explicit parse, analyze, emit, and lower boundaries; the
+direct AST-to-QC visitor is deleted; a canonical MLIR gate catalog drives
+semantic lookup and lowering; and the existing 117-program oracle passes through
+the staged implementation. Compatibility mode is the default so replacing the
+architecture does not also remove established native-gate convenience.

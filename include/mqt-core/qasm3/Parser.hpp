@@ -83,6 +83,8 @@ class Parser final {
 
   std::stack<ScannerState> scanner;
   std::shared_ptr<DebugInfo> includeDebugInfo{nullptr};
+  std::vector<std::string> includedFiles;
+  std::size_t implicitStatementCount = 0;
 
   [[noreturn]] void error(const Token& token, const std::string& msg);
 
@@ -96,13 +98,22 @@ class Parser final {
                const std::optional<std::string>& context = std::nullopt);
 
 public:
-  explicit Parser(std::istream& is, bool implicitlyIncludeStdgates = true);
+  explicit Parser(std::istream& is, bool implicitlyIncludeStdgates = true,
+                  std::optional<std::string> debugFilename = std::nullopt);
 
   ~Parser() = default;
 
   std::shared_ptr<VersionDeclaration> parseVersionDeclaration();
 
   std::vector<std::shared_ptr<Statement>> parseProgram();
+
+  [[nodiscard]] const std::vector<std::string>& getIncludedFiles() const {
+    return includedFiles;
+  }
+
+  [[nodiscard]] std::size_t getImplicitStatementCount() const {
+    return implicitStatementCount;
+  }
 
   std::shared_ptr<Statement> parseStatement();
 

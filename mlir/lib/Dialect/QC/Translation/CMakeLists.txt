@@ -13,6 +13,8 @@ add_mlir_library(
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
+  MLIROpenQASMTarget
+  MLIROQ3Transforms
   MLIRSCFDialect
   MLIRQCDialect
   MLIRQCProgramBuilder

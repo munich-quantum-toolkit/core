@@ -8,6 +8,7 @@
 
 add_mlir_dialect_library(
   MLIROQ3Dialect
+  GateCatalog.cpp
   OQ3Ops.cpp
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/OQ3

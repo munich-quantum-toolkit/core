@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/OQ3/IR/GateCatalog.h"
 #include "mlir/Dialect/OQ3/IR/OQ3Ops.h"
 #include "mlir/Dialect/OQ3/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -215,30 +216,6 @@ private:
     return success();
   }
 
-  static StringRef baseGateName(const StringRef name) {
-    return llvm::StringSwitch<StringRef>(name)
-        .Cases("cx", "ccx", "x")
-        .Case("cy", "y")
-        .Case("cz", "z")
-        .Case("ch", "h")
-        .Cases("cp", "cu1", "p")
-        .Case("crx", "rx")
-        .Case("cry", "ry")
-        .Case("crz", "rz")
-        .Cases("cu", "cu3", "U")
-        .Case("cswap", "swap")
-        .Default(name);
-  }
-
-  static size_t implicitControlCount(const StringRef name) {
-    return llvm::StringSwitch<size_t>(name)
-        .Case("ccx", 2)
-        .Cases({"cx", "cy", "cz", "ch", "cp", "cu", "cu1", "cu3", "crx", "cry",
-                "crz", "cswap"},
-               1)
-        .Default(0);
-  }
-
   static LogicalResult emitPrimitive(OpBuilder& builder, const Location loc,
                                      const StringRef name,
                                      const ValueRange parameters,
@@ -256,13 +233,24 @@ private:
             .Case("t", qc::TOp::getOperationName())
             .Case("tdg", qc::TdgOp::getOperationName())
             .Case("sx", qc::SXOp::getOperationName())
-            .Cases("p", "u1", qc::POp::getOperationName())
+            .Case("sxdg", qc::SXdgOp::getOperationName())
+            .Case("p", qc::POp::getOperationName())
             .Case("rx", qc::RXOp::getOperationName())
             .Case("ry", qc::RYOp::getOperationName())
             .Case("rz", qc::RZOp::getOperationName())
+            .Case("r", qc::ROp::getOperationName())
             .Case("u2", qc::U2Op::getOperationName())
-            .Cases("U", "u3", qc::UOp::getOperationName())
+            .Case("U", qc::UOp::getOperationName())
             .Case("swap", qc::SWAPOp::getOperationName())
+            .Case("iswap", qc::iSWAPOp::getOperationName())
+            .Case("dcx", qc::DCXOp::getOperationName())
+            .Case("ecr", qc::ECROp::getOperationName())
+            .Case("rxx", qc::RXXOp::getOperationName())
+            .Case("ryy", qc::RYYOp::getOperationName())
+            .Case("rzx", qc::RZXOp::getOperationName())
+            .Case("rzz", qc::RZZOp::getOperationName())
+            .Case("xx_plus_yy", qc::XXPlusYYOp::getOperationName())
+            .Case("xx_minus_yy", qc::XXMinusYYOp::getOperationName())
             .Default({});
     if (operationName.empty()) {
       return failure();
@@ -271,10 +259,8 @@ private:
     OperationState state(loc, operationName);
     if (name == "gphase") {
       state.addOperands(parameters);
-    } else if (name == "swap") {
-      state.addOperands(qubits);
     } else {
-      state.addOperands(qubits.front());
+      state.addOperands(qubits);
       state.addOperands(parameters);
     }
     builder.create(state);
@@ -301,15 +287,39 @@ private:
     }
 
     const StringRef resolvedName = application.getCallee();
-    const size_t controls = implicitControlCount(resolvedName);
-    if (qubits.size() < controls) {
+    const GateCatalogEntry* catalogEntry = lookupGate(resolvedName);
+    if (!catalogEntry) {
+      return application.emitError() << "gate '" << resolvedName
+                                     << "' has no canonical QC lowering entry";
+    }
+    if (qubits.size() < catalogEntry->targetCount) {
+      return application.emitError(
+          "gate has fewer qubit operands than its target count");
+    }
+    const size_t controls = catalogEntry->variadicControls
+                                ? qubits.size() - catalogEntry->targetCount
+                                : catalogEntry->controlCount;
+    if (qubits.size() < controls + catalogEntry->targetCount) {
       return application.emitError(
           "implicit-control count exceeds gate operands");
     }
-    const StringRef primitive = baseGateName(resolvedName);
+    const StringRef primitive = catalogEntry->primitive;
+    const auto emitCatalogPrimitive = [&](const ValueRange primitiveQubits) {
+      if (!catalogEntry->inverse) {
+        return emitPrimitive(builder, application.getLoc(), primitive,
+                             parameters, primitiveQubits);
+      }
+      LogicalResult result = success();
+      qc::InvOp::create(builder, application.getLoc(), primitiveQubits,
+                        [&](const ValueRange aliases) {
+                          result =
+                              emitPrimitive(builder, application.getLoc(),
+                                            primitive, parameters, aliases);
+                        });
+      return result;
+    };
     if (controls == 0) {
-      if (failed(emitPrimitive(builder, application.getLoc(), primitive,
-                               parameters, qubits))) {
+      if (failed(emitCatalogPrimitive(qubits))) {
         return application.emitError()
                << "gate '" << resolvedName
                << "' has no QC lowering for the selected target";
@@ -333,12 +343,21 @@ private:
                       parameters.back());
       primitiveParameters = parameters.drop_back();
     }
-    qc::CtrlOp::create(builder, application.getLoc(), controlValues, targets,
-                       [&](const ValueRange aliases) {
-                         (void)emitPrimitive(builder, application.getLoc(),
-                                             primitive, primitiveParameters,
-                                             aliases);
-                       });
+    qc::CtrlOp::create(
+        builder, application.getLoc(), controlValues, targets,
+        [&](const ValueRange aliases) {
+          if (catalogEntry->inverse) {
+            qc::InvOp::create(builder, application.getLoc(), aliases,
+                              [&](const ValueRange inverseAliases) {
+                                (void)emitPrimitive(
+                                    builder, application.getLoc(), primitive,
+                                    primitiveParameters, inverseAliases);
+                              });
+          } else {
+            (void)emitPrimitive(builder, application.getLoc(), primitive,
+                                primitiveParameters, aliases);
+          }
+        });
     return success();
   }
 
@@ -407,30 +426,59 @@ private:
       return result;
     }
 
-    const size_t controlCount = controlCounts[position];
-    if (qubits.size() < controlCount) {
+    size_t nextPosition = position;
+    size_t totalControlCount = 0;
+    while (nextPosition < application.getModifierKinds().size()) {
+      const auto nextKind = static_cast<GateModifierKind>(
+          application.getModifierKinds()[nextPosition]);
+      if (nextKind != GateModifierKind::ctrl &&
+          nextKind != GateModifierKind::negctrl) {
+        break;
+      }
+      totalControlCount += controlCounts[nextPosition];
+      ++nextPosition;
+    }
+    if (qubits.size() < totalControlCount) {
       return application.emitError(
           "modifier control count exceeds the available gate operands");
     }
-    const ValueRange controls = qubits.take_front(controlCount);
-    const ValueRange targets = qubits.drop_front(controlCount);
-    const bool negative = kind == GateModifierKind::negctrl;
-    if (negative) {
-      for (const Value control : controls) {
-        qc::XOp::create(builder, application.getLoc(), control);
+
+    const ValueRange controls = qubits.take_front(totalControlCount);
+    const ValueRange targets = qubits.drop_front(totalControlCount);
+    size_t controlOffset = 0;
+    for (size_t modifierPosition = position; modifierPosition < nextPosition;
+         ++modifierPosition) {
+      const size_t count = controlCounts[modifierPosition];
+      const auto modifierKind = static_cast<GateModifierKind>(
+          application.getModifierKinds()[modifierPosition]);
+      if (modifierKind == GateModifierKind::negctrl) {
+        for (const Value control : controls.slice(controlOffset, count)) {
+          qc::XOp::create(builder, application.getLoc(), control);
+        }
       }
+      controlOffset += count;
     }
+
     LogicalResult result = success();
     qc::CtrlOp::create(builder, application.getLoc(), controls, targets,
                        [&](const ValueRange aliases) {
                          result = emitModifiers(builder, application,
                                                 declaration, controlCounts,
-                                                position + 1, aliases);
+                                                nextPosition, aliases);
                        });
-    if (negative) {
-      for (const Value control : controls) {
-        qc::XOp::create(builder, application.getLoc(), control);
+
+    controlOffset = 0;
+    for (size_t modifierPosition = position; modifierPosition < nextPosition;
+         ++modifierPosition) {
+      const size_t count = controlCounts[modifierPosition];
+      const auto modifierKind = static_cast<GateModifierKind>(
+          application.getModifierKinds()[modifierPosition]);
+      if (modifierKind == GateModifierKind::negctrl) {
+        for (const Value control : controls.slice(controlOffset, count)) {
+          qc::XOp::create(builder, application.getLoc(), control);
+        }
       }
+      controlOffset += count;
     }
     return result;
   }

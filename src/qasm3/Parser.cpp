@@ -100,8 +100,9 @@ Token Parser::expect(const Token::Kind& expected,
   return token;
 }
 
-Parser::Parser(std::istream& is, const bool implicitlyIncludeStdgates) {
-  scanner.emplace(&is);
+Parser::Parser(std::istream& is, const bool implicitlyIncludeStdgates,
+               std::optional<std::string> debugFilename) {
+  scanner.emplace(&is, std::move(debugFilename));
   scan();
   if (implicitlyIncludeStdgates) {
     scanner.emplace(std::make_unique<std::istringstream>(STDGATES),
@@ -154,7 +155,9 @@ std::vector<std::shared_ptr<Statement>> Parser::parseProgram() {
       }
     }
 
+    const bool implicitStatement = scanner.top().isImplicitInclude;
     statements.push_back(parseStatement());
+    implicitStatementCount += implicitStatement;
   }
   return statements;
 }
@@ -269,6 +272,7 @@ void Parser::parseInclude() {
   auto const tBegin = expect(Token::Kind::Include);
   auto filename = expect(Token::Kind::StringLiteral).str;
   auto const tEnd = expect(Token::Kind::Semicolon);
+  includedFiles.push_back(filename);
 
   // we need to make sure to report errors across includes
   includeDebugInfo = makeDebugInfo(tBegin, tEnd);
