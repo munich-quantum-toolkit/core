@@ -19,6 +19,7 @@
 #include <nanobind/stl/variant.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>      // NOLINT(misc-include-cleaner)
 
+#include <cctype>
 #include <cstddef>
 #include <filesystem>
 #include <optional>
@@ -99,7 +100,51 @@ void requireValid(const mlir::Program& program) {
 [[nodiscard]] bool isSourceString(const std::string_view input) {
   return input.find('\n') != std::string_view::npos ||
          input.find("OPENQASM") != std::string_view::npos ||
-         input.starts_with("module");
+         (input.starts_with("module") && input.size() > 6U &&
+          std::isspace(static_cast<unsigned char>(input[6])));
+}
+
+/**
+ * @brief Construct a frontend program from a file path.
+ */
+[[nodiscard]] mlir::CompilerInput
+programFromPath(const std::filesystem::path& path) {
+  if (path.empty()) {
+    throw std::runtime_error("Input path must not be empty.");
+  }
+
+  std::error_code error;
+  const auto exists = std::filesystem::exists(path, error);
+  if (error) {
+    throw std::runtime_error("Failed to inspect path '" + path.string() +
+                             "': " + error.message());
+  }
+
+  const auto extension = path.extension().string();
+  if (!exists) {
+    if (extension == ".jeff" || extension == ".mlir" || extension == ".qasm") {
+      throw std::runtime_error("Input file '" + path.string() +
+                               "' does not exist.");
+    }
+    throw std::runtime_error("Input file '" + path.string() +
+                             "' does not exist.");
+  }
+  if (!std::filesystem::is_regular_file(path, error) || error) {
+    throw std::runtime_error("Input path '" + path.string() +
+                             "' is not a file.");
+  }
+
+  if (extension == ".jeff") {
+    return takeResult(mlir::JeffProgram::fromFile(path));
+  }
+  if (extension == ".mlir") {
+    return takeResult(mlir::QCProgram::fromMLIRFile(path));
+  }
+  if (extension == ".qasm") {
+    return takeResult(mlir::QCProgram::fromQASMFile(path));
+  }
+  throw std::runtime_error("Input file '" + path.string() +
+                           "' has unsupported extension '" + extension + "'.");
 }
 
 /**
@@ -112,41 +157,7 @@ void requireValid(const mlir::Program& program) {
     }
     return takeResult(mlir::QCProgram::fromMLIRString(input));
   }
-
-  const std::filesystem::path path(input);
-  if (path.empty()) {
-    return takeResult(mlir::QCProgram::fromMLIRString(input));
-  }
-
-  std::error_code error;
-  const auto exists = std::filesystem::exists(path, error);
-  if (error) {
-    throw std::runtime_error("Failed to inspect path '" + input +
-                             "': " + error.message());
-  }
-
-  const auto extension = path.extension().string();
-  if (!exists) {
-    if (extension == ".jeff" || extension == ".mlir" || extension == ".qasm") {
-      throw std::runtime_error("Input file '" + input + "' does not exist.");
-    }
-    return takeResult(mlir::QCProgram::fromMLIRString(input));
-  }
-  if (!std::filesystem::is_regular_file(path, error) || error) {
-    throw std::runtime_error("Input path '" + input + "' is not a file.");
-  }
-
-  if (extension == ".jeff") {
-    return takeResult(mlir::JeffProgram::fromFile(path));
-  }
-  if (extension == ".mlir") {
-    return takeResult(mlir::QCProgram::fromMLIRFile(path));
-  }
-  if (extension == ".qasm") {
-    return takeResult(mlir::QCProgram::fromQASMFile(path));
-  }
-  throw std::runtime_error("Input file '" + input +
-                           "' has unsupported extension '" + extension + "'.");
+  return programFromPath(std::filesystem::path(input));
 }
 
 /**
@@ -162,7 +173,7 @@ void requireValid(const mlir::Program& program) {
     return programFromString(nb::cast<std::string>(program));
   }
   if (nb::hasattr(program, "__fspath__")) {
-    return programFromString(nb::cast<std::filesystem::path>(program).string());
+    return programFromPath(nb::cast<std::filesystem::path>(program));
   }
   if (nb::isinstance<qc::QuantumComputation>(program)) {
     return takeResult(mlir::QCProgram::fromQuantumComputation(
@@ -184,18 +195,17 @@ void requireValid(const mlir::Program& program) {
     return inplace ? mlir::CompilerInput(std::move(value))
                    : mlir::CompilerInput(value.copy());
   }
-  const auto programType =
-      nb::cast<std::string>(program.type().attr("__name__"));
-  const auto programModule =
-      nb::cast<std::string>(program.type().attr("__module__"));
-  if (programType == "QuantumCircuit" && programModule.starts_with("qiskit.")) {
+  const auto qiskitCircuit =
+      nb::module_::import_("qiskit.circuit").attr("QuantumCircuit");
+  if (nb::isinstance(program, qiskitCircuit)) {
     const auto computation = nb::cast<qc::QuantumComputation>(
         nb::module_::import_("mqt.core.load").attr("load")(program));
     return takeResult(mlir::QCProgram::fromQuantumComputation(computation));
   }
 
-  throw std::runtime_error("Program type " + programType +
-                           " is not supported.");
+  throw std::runtime_error(
+      "Program type " + nb::cast<std::string>(program.type().attr("__name__")) +
+      " is not supported.");
 }
 
 /**

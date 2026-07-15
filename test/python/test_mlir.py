@@ -99,6 +99,26 @@ def test_compile_program_mlir_file(tmp_path: Path) -> None:
     assert result.ir == MLIR_STRING
 
 
+def test_compile_program_mlir_file_named_module(tmp_path: Path) -> None:
+    """Compile an MLIR file whose name begins with ``module``."""
+    path = tmp_path / "module.mlir"
+    path.write_text(MLIR_STRING, encoding="utf-8")
+
+    result = compile_program(path)
+
+    assert isinstance(result, QCProgram)
+    assert result.ir == MLIR_STRING
+
+
+def test_compile_program_rejects_unsupported_file(tmp_path: Path) -> None:
+    """Reject an existing file with an unsupported extension."""
+    path = tmp_path / "program.txt"
+    path.write_text(MLIR_STRING, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="unsupported extension"):
+        compile_program(path)
+
+
 def test_compile_program_qasm_string() -> None:
     """Compile an OpenQASM string."""
     result = compile_program(QASM_STRING)
