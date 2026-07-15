@@ -19,8 +19,8 @@ configuration -> DeviceRegistry -> DeviceManager -> Device
 
 Discovery is side-effect free. A provider library is loaded and a session is
 initialized only when its stable device ID is passed to `open`. The QDMI v1.3
-ABI is now an implementation detail behind a private function-table adapter;
-public MQT objects no longer expose QDMI handles.
+implementation is held by one private library/symbol object; public MQT objects
+do not expose client handles.
 
 MQT Core supports the QDMI v1.3 ABI exclusively in this release. The `abi`
 configuration field is a compatibility check, not an adapter selector, and must
@@ -49,6 +49,21 @@ entry points have been removed:
 
 Replace old includes with `qdmi/Device.hpp` or `qdmi/DeviceManager.hpp`, and
 link `MQT::CoreQDMI`.
+
+The C++ object model uses QDMI's own enum types rather than defining parallel
+MQT enums. Pass and compare the QDMI constants directly:
+
+```cpp
+device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, shots);
+if (job.check() == QDMI_JOB_STATUS_DONE) {
+  // ...
+}
+```
+
+`Device::getStatus()`, `Job::check()`, and the program-format methods therefore
+return `QDMI_Device_Status`, `QDMI_Job_Status`, and `QDMI_Program_Format`
+respectively. Python retains the convenient `Device.Status`, `Job.Status`, and
+`ProgramFormat` names, but those bindings represent the QDMI enums themselves.
 
 #### Before and after
 

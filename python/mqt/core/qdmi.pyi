@@ -15,49 +15,73 @@ from typing import overload
 class SessionParameters:
     """Parameters for one QDMI device session."""
 
-    def __init__(self) -> None: ...
+    def __init__(self) -> None:
+        """Create empty session parameters."""
+
     @property
-    def base_url(self) -> str | None: ...
+    def base_url(self) -> str | None:
+        """Base URL of the device service."""
+
     @base_url.setter
     def base_url(self, arg: str | None) -> None: ...
     @property
-    def token(self) -> str | None: ...
+    def token(self) -> str | None:
+        """Authentication token."""
+
     @token.setter
     def token(self, arg: str | None) -> None: ...
     @property
-    def auth_file(self) -> pathlib.Path | None: ...
+    def auth_file(self) -> pathlib.Path | None:
+        """Path to an authentication file."""
+
     @auth_file.setter
     def auth_file(self, arg: str | os.PathLike | None) -> None: ...
     @property
-    def auth_url(self) -> str | None: ...
+    def auth_url(self) -> str | None:
+        """URL of the authentication service."""
+
     @auth_url.setter
     def auth_url(self, arg: str | None) -> None: ...
     @property
-    def username(self) -> str | None: ...
+    def username(self) -> str | None:
+        """Authentication username."""
+
     @username.setter
     def username(self, arg: str | None) -> None: ...
     @property
-    def password(self) -> str | None: ...
+    def password(self) -> str | None:
+        """Authentication password."""
+
     @password.setter
     def password(self, arg: str | None) -> None: ...
     @property
-    def custom1(self) -> str | None: ...
+    def custom1(self) -> str | None:
+        """First implementation-defined session parameter."""
+
     @custom1.setter
     def custom1(self, arg: str | None) -> None: ...
     @property
-    def custom2(self) -> str | None: ...
+    def custom2(self) -> str | None:
+        """Second implementation-defined session parameter."""
+
     @custom2.setter
     def custom2(self, arg: str | None) -> None: ...
     @property
-    def custom3(self) -> str | None: ...
+    def custom3(self) -> str | None:
+        """Third implementation-defined session parameter."""
+
     @custom3.setter
     def custom3(self, arg: str | None) -> None: ...
     @property
-    def custom4(self) -> str | None: ...
+    def custom4(self) -> str | None:
+        """Fourth implementation-defined session parameter."""
+
     @custom4.setter
     def custom4(self, arg: str | None) -> None: ...
     @property
-    def custom5(self) -> str | None: ...
+    def custom5(self) -> str | None:
+        """Fifth implementation-defined session parameter."""
+
     @custom5.setter
     def custom5(self, arg: str | None) -> None: ...
 
@@ -73,33 +97,57 @@ class DeviceDefinition:
         abi: str = "qdmi-v1",
         enabled: bool = True,
         session: SessionParameters = ...,
-    ) -> None: ...
+    ) -> None:
+        """Create a device definition without loading its library.
+
+        Args:
+            device_id: Stable identifier used for discovery and opening.
+            library: Path to the native QDMI device library.
+            prefix: Symbol prefix exported by the QDMI v1.3 implementation.
+            abi: Compatibility marker. Only ``"qdmi-v1"`` is supported.
+            enabled: Whether the definition participates in discovery.
+            session: Default parameters for sessions opened from this definition.
+        """
+
     @property
-    def device_id(self) -> str: ...
+    def device_id(self) -> str:
+        """Stable device identifier."""
+
     @device_id.setter
     def device_id(self, arg: str, /) -> None: ...
     @property
-    def library(self) -> pathlib.Path: ...
+    def library(self) -> pathlib.Path:
+        """Path to the native QDMI device library."""
+
     @library.setter
     def library(self, arg: str | os.PathLike, /) -> None: ...
     @property
-    def abi(self) -> str: ...
+    def abi(self) -> str:
+        """QDMI ABI compatibility marker."""
+
     @abi.setter
     def abi(self, arg: str, /) -> None: ...
     @property
-    def prefix(self) -> str: ...
+    def prefix(self) -> str:
+        """Symbol prefix exported by the device library."""
+
     @prefix.setter
     def prefix(self, arg: str, /) -> None: ...
     @property
-    def enabled(self) -> bool: ...
+    def enabled(self) -> bool:
+        """Whether this definition is enabled."""
+
     @enabled.setter
     def enabled(self, arg: bool, /) -> None: ...
     @property
-    def session(self) -> SessionParameters: ...
+    def session(self) -> SessionParameters:
+        """Default parameters for newly opened sessions."""
+
     @session.setter
     def session(self, arg: SessionParameters, /) -> None: ...
     @property
-    def source(self) -> pathlib.Path: ...
+    def source(self) -> pathlib.Path:
+        """Configuration source that declared the definition."""
 
 class ConfigOptions:
     """Controls QDMI configuration discovery."""
@@ -113,13 +161,23 @@ class ConfigOptions:
         isolated: bool = False,
         inline_json: str | None = None,
         runtime_overrides: Sequence[DeviceDefinition] = [],
-    ) -> None: ...
+    ) -> None:
+        """Create configuration discovery options.
+
+        Args:
+            config_root: Root containing relocatable built-in manifest fragments.
+            explicit_file: Configuration file replacing system, user, and project discovery.
+            base_directory: Base for relative paths in inline configuration.
+            isolated: Exclude packaged built-in definitions when true.
+            inline_json: JSON configuration layered above discovered files.
+            runtime_overrides: Device definitions applied at highest precedence.
+        """
 
 class Job:
-    """A job represents a submitted quantum program execution."""
+    """A submitted quantum program execution retaining its device session."""
 
     def check(self) -> Status:
-        """Returns the current status of the job."""
+        """Return the current QDMI job status."""
 
     def wait(self, timeout: int = 0) -> bool:
         """Waits for the job to complete.
@@ -132,25 +190,37 @@ class Job:
         """
 
     def cancel(self) -> None:
-        """Cancels the job."""
+        """Request cancellation of the job."""
 
     def get_shots(self) -> list[str]:
-        """Returns the raw shot results from the job."""
+        """Return the raw shot results."""
 
     def get_counts(self) -> dict[str, int]:
-        """Returns the measurement counts from the job."""
+        """Return measurement counts keyed by bit string."""
 
     def get_dense_statevector(self) -> list[complex]:
-        """Returns the dense statevector from the job (typically only available from simulator devices)."""
+        """Return the dense state vector.
+
+        This result is typically available only from simulator devices.
+        """
 
     def get_dense_probabilities(self) -> list[float]:
-        """Returns the dense probabilities from the job (typically only available from simulator devices)."""
+        """Return the dense probability vector.
+
+        This result is typically available only from simulator devices.
+        """
 
     def get_sparse_statevector(self) -> dict[str, complex]:
-        """Returns the sparse statevector from the job (typically only available from simulator devices)."""
+        """Return the sparse state vector keyed by basis state.
+
+        This result is typically available only from simulator devices.
+        """
 
     def get_sparse_probabilities(self) -> dict[str, float]:
-        """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
+        """Return sparse probabilities keyed by basis state.
+
+        This result is typically available only from simulator devices.
+        """
 
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -196,11 +266,11 @@ class Job:
 
     @property
     def id(self) -> str:
-        """The job ID."""
+        """The provider-assigned job identifier."""
 
     @property
     def program_format(self) -> ProgramFormat:
-        """The format of the submitted program."""
+        """The QDMI format of the submitted program."""
 
     @property
     def program(self) -> str:
@@ -208,13 +278,16 @@ class Job:
 
     @property
     def num_shots(self) -> int:
-        """The number of shots."""
+        """The requested number of shots."""
 
-    def __eq__(self, arg: object, /) -> bool: ...
-    def __ne__(self, arg: object, /) -> bool: ...
+    def __eq__(self, arg: object, /) -> bool:
+        """Return whether two objects refer to the same job."""
+
+    def __ne__(self, arg: object, /) -> bool:
+        """Return whether two objects refer to different jobs."""
 
     class Status(enum.Enum):
-        """Enumeration of job status."""
+        """Status values defined by QDMI."""
 
         CREATED = 0
 
@@ -231,7 +304,7 @@ class Job:
         FAILED = 6
 
 class ProgramFormat(enum.Enum):
-    """Enumeration of program formats."""
+    """Program formats defined by QDMI."""
 
     QASM2 = 0
 
@@ -277,10 +350,14 @@ class CustomProperty(enum.Enum):
     CUSTOM5 = 5
 
 class Device:
-    """A device represents a quantum device with its properties and capabilities."""
+    """One initialized QDMI device session.
+
+    The object owns the native library and session state required by its sites,
+    operations, child devices, and jobs.
+    """
 
     class Status(enum.Enum):
-        """Enumeration of device status."""
+        """Status values defined by QDMI."""
 
         OFFLINE = 0
 
@@ -295,58 +372,58 @@ class Device:
         CALIBRATION = 5
 
     def name(self) -> str:
-        """Returns the name of the device."""
+        """Return the provider-reported device name."""
 
     def version(self) -> str:
-        """Returns the version of the device."""
+        """Return the provider-reported device version."""
 
     def status(self) -> Status:
-        """Returns the current status of the device."""
+        """Return the current QDMI device status."""
 
     def library_version(self) -> str:
-        """Returns the version of the library used to define the device."""
+        """Return the provider library version."""
 
     def qubits_num(self) -> int:
-        """Returns the number of qubits available on the device."""
+        """Return the number of qubits available on the device."""
 
     def sites(self) -> list[Site]:
-        """Returns the list of all sites (zone and regular sites) available on the device."""
+        """Return all regular sites and zones."""
 
     def regular_sites(self) -> list[Site]:
-        """Returns the list of regular sites (without zone sites) available on the device."""
+        """Return sites that are not zones."""
 
     def zones(self) -> list[Site]:
-        """Returns the list of zone sites (without regular sites) available on the device."""
+        """Return sites that represent zones."""
 
     def operations(self) -> list[Operation]:
-        """Returns the list of operations supported by the device."""
+        """Return operations supported by the device."""
 
     def coupling_map(self) -> list[tuple[Site, Site]] | None:
-        """Returns the coupling map of the device as a list of site pairs."""
+        """Return the optional coupling map as site pairs."""
 
     def needs_calibration(self) -> int | None:
-        """Returns whether the device needs calibration."""
+        """Return the optional calibration requirement."""
 
     def length_unit(self) -> str | None:
-        """Returns the unit of length used by the device."""
+        """Return the optional device length unit."""
 
     def length_scale_factor(self) -> float | None:
-        """Returns the scale factor for length used by the device."""
+        """Return the optional length scale factor."""
 
     def duration_unit(self) -> str | None:
-        """Returns the unit of duration used by the device."""
+        """Return the optional device duration unit."""
 
     def duration_scale_factor(self) -> float | None:
-        """Returns the scale factor for duration used by the device."""
+        """Return the optional duration scale factor."""
 
     def min_atom_distance(self) -> int | None:
-        """Returns the minimum atom distance on the device."""
+        """Return the optional minimum atom distance."""
 
     def supported_program_formats(self) -> list[ProgramFormat]:
-        """Returns the list of program formats supported by the device."""
+        """Return the QDMI program formats accepted by the device."""
 
     def child_devices(self) -> list[Device]:
-        """Returns the direct child devices managed by this device."""
+        """Return directly managed child devices."""
 
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -381,52 +458,69 @@ class Device:
         custom4: str | bool | float | None = None,
         custom5: str | bool | float | None = None,
     ) -> Job:
-        """Submits a job to the device."""
+        """Submit a quantum program to the device.
 
-    def __eq__(self, arg: object, /) -> bool: ...
-    def __ne__(self, arg: object, /) -> bool: ...
+        Args:
+            program: Serialized program data.
+            program_format: QDMI format of ``program``.
+            num_shots: Number of requested executions.
+            custom1: First implementation-defined job parameter.
+            custom2: Second implementation-defined job parameter.
+            custom3: Third implementation-defined job parameter.
+            custom4: Fourth implementation-defined job parameter.
+            custom5: Fifth implementation-defined job parameter.
+
+        Returns:
+            A job retaining the device session.
+        """
+
+    def __eq__(self, arg: object, /) -> bool:
+        """Return whether two objects refer to the same device."""
+
+    def __ne__(self, arg: object, /) -> bool:
+        """Return whether two objects refer to different devices."""
 
     class Site:
-        """A site represents a potential qubit location on a quantum device."""
+        """A physical site or zone belonging to a device."""
 
         def index(self) -> int:
-            """Returns the index of the site."""
+            """Return the provider-assigned site index."""
 
         def t1(self) -> int | None:
-            """Returns the T1 coherence time of the site."""
+            """Return the optional T1 coherence time."""
 
         def t2(self) -> int | None:
-            """Returns the T2 coherence time of the site."""
+            """Return the optional T2 coherence time."""
 
         def name(self) -> str | None:
-            """Returns the name of the site."""
+            """Return the optional site name."""
 
         def x_coordinate(self) -> int | None:
-            """Returns the x coordinate of the site."""
+            """Return the optional x coordinate."""
 
         def y_coordinate(self) -> int | None:
-            """Returns the y coordinate of the site."""
+            """Return the optional y coordinate."""
 
         def z_coordinate(self) -> int | None:
-            """Returns the z coordinate of the site."""
+            """Return the optional z coordinate."""
 
         def is_zone(self) -> bool:
-            """Returns whether the site is a zone."""
+            """Return whether this site represents a zone."""
 
         def x_extent(self) -> int | None:
-            """Returns the x extent of the site."""
+            """Return the optional x extent of the zone."""
 
         def y_extent(self) -> int | None:
-            """Returns the y extent of the site."""
+            """Return the optional y extent of the zone."""
 
         def z_extent(self) -> int | None:
-            """Returns the z extent of the site."""
+            """Return the optional z extent of the zone."""
 
         def module_index(self) -> int | None:
-            """Returns the index of the module the site belongs to."""
+            """Return the optional module index."""
 
         def submodule_index(self) -> int | None:
-            """Returns the index of the submodule the site belongs to."""
+            """Return the optional submodule index."""
 
         @overload
         def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -449,47 +543,50 @@ class Device:
             when the custom slot is unsupported.
             """
 
-        def __eq__(self, arg: object, /) -> bool: ...
-        def __ne__(self, arg: object, /) -> bool: ...
+        def __eq__(self, arg: object, /) -> bool:
+            """Return whether two objects refer to the same site."""
+
+        def __ne__(self, arg: object, /) -> bool:
+            """Return whether two objects refer to different sites."""
 
     class Operation:
-        """An operation represents a quantum operation that can be performed on a quantum device."""
+        """A quantum operation supported by a device."""
 
         def name(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> str:
-            """Returns the name of the operation."""
+            """Return the operation name for the given sites and parameters."""
 
         def qubits_num(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
-            """Returns the number of qubits the operation acts on."""
+            """Return the optional operation arity."""
 
         def parameters_num(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int:
-            """Returns the number of parameters the operation has."""
+            """Return the number of operation parameters."""
 
         def duration(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
-            """Returns the duration of the operation."""
+            """Return the optional duration for this operation instance."""
 
         def fidelity(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> float | None:
-            """Returns the fidelity of the operation."""
+            """Return the optional fidelity for this operation instance."""
 
         def interaction_radius(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
-            """Returns the interaction radius of the operation."""
+            """Return the optional interaction radius."""
 
         def blocking_radius(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
-            """Returns the blocking radius of the operation."""
+            """Return the optional blocking radius."""
 
         def idling_fidelity(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> float | None:
-            """Returns the idling fidelity of the operation."""
+            """Return the optional idling fidelity."""
 
         def is_zoned(self) -> bool:
-            """Returns whether the operation is zoned."""
+            """Return whether the operation is restricted to zones."""
 
         def sites(self) -> list[Device.Site] | None:
-            """Returns the list of sites the operation can be performed on."""
+            """Return sites on which the operation is available."""
 
         def site_pairs(self) -> list[tuple[Device.Site, Device.Site]] | None:
-            """Returns the list of site pairs the local 2-qubit operation can be performed on."""
+            """Return supported site pairs for a local two-site operation."""
 
         def mean_shuttling_speed(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
-            """Returns the mean shuttling speed of the operation."""
+            """Return the optional mean shuttling speed."""
 
         @overload
         def query_custom_property(
@@ -546,25 +643,63 @@ class Device:
             when the custom slot is unsupported.
             """
 
-        def __eq__(self, arg: object, /) -> bool: ...
-        def __ne__(self, arg: object, /) -> bool: ...
+        def __eq__(self, arg: object, /) -> bool:
+            """Return whether two objects refer to the same operation."""
+
+        def __ne__(self, arg: object, /) -> bool:
+            """Return whether two objects refer to different operations."""
 
 class OpenAllResult:
-    """Devices and per-ID errors from bulk opening."""
+    """Devices and per-ID errors produced by bulk opening."""
 
     @property
-    def devices(self) -> dict[str, Device]: ...
+    def devices(self) -> dict[str, Device]:
+        """Successfully opened devices keyed by stable ID."""
+
     @property
-    def errors(self) -> dict[str, str]: ...
+    def errors(self) -> dict[str, str]:
+        """Error messages for failed definitions keyed by stable ID."""
 
 class DeviceManager:
-    """Discovers and lazily opens QDMI devices."""
+    """Discover and lazily open QDMI devices.
 
-    def __init__(self, options: ConfigOptions = ...) -> None: ...
+    Definitions are discovered without loading native libraries. Opening a device
+    creates an independent session while compatible devices may share a loaded
+    library.
+    """
+
+    def __init__(self, options: ConfigOptions = ...) -> None:
+        """Create a manager using the supplied discovery options."""
+
     @property
-    def definitions(self) -> list[DeviceDefinition]: ...
-    def register_device(self, definition: DeviceDefinition, *, replace: bool = False) -> None: ...
-    def unregister_device(self, device_id: str) -> bool: ...
-    def open(self, device_id: str, *, session_overrides: SessionParameters = ...) -> Device: ...
+    def definitions(self) -> list[DeviceDefinition]:
+        """A snapshot of the currently registered device definitions."""
+
+    def register_device(self, definition: DeviceDefinition, *, replace: bool = False) -> None:
+        """Register a complete device definition.
+
+        Args:
+            definition: Definition to register.
+            replace: Replace an existing definition with the same ID.
+        """
+
+    def unregister_device(self, device_id: str) -> bool:
+        """Remove a definition without invalidating opened devices.
+
+        Returns:
+            Whether a definition with the requested ID existed.
+        """
+
+    def open(self, device_id: str, *, session_overrides: SessionParameters = ...) -> Device:
+        """Open one device by stable ID.
+
+        The supplied session values override the definition defaults field by field.
+        The native library is loaded only when this method is called.
+        """
+
     def open_all(self, *, session_overrides: SessionParameters = ...) -> OpenAllResult:
-        """Open all definitions independently and retain per-ID errors."""
+        """Open a snapshot of all definitions independently.
+
+        Failures are retained by device ID and do not prevent other definitions from
+        opening.
+        """

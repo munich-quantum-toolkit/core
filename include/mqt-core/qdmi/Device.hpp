@@ -9,9 +9,11 @@
  */
 
 /// @file Device.hpp
-/// @brief ABI-neutral C++ interface for QDMI devices.
+/// @brief C++ object model for QDMI v1.3 devices.
 
 #pragma once
+
+#include <qdmi/device.h>
 
 #include <compare>
 #include <complex>
@@ -36,46 +38,6 @@ struct DeviceFactory;
 } // namespace detail
 
 using CustomJobParameter = std::variant<std::string, bool, int, double>;
-
-/// Device availability state independent of the provider ABI.
-enum class DeviceStatus : std::uint8_t {
-  Offline,
-  Idle,
-  Busy,
-  Error,
-  Maintenance,
-  Calibration,
-};
-
-/// Lifecycle state of a submitted job.
-enum class JobStatus : std::uint8_t {
-  Created,
-  Submitted,
-  Queued,
-  Running,
-  Done,
-  Canceled,
-  Failed,
-};
-
-/// Program formats understood by the supported QDMI ABI.
-enum class ProgramFormat : std::uint32_t {
-  Qasm2 = 0,
-  Qasm3 = 1,
-  QirBaseString = 2,
-  QirBaseModule = 3,
-  QirAdaptiveString = 4,
-  QirAdaptiveModule = 5,
-  Calibration = 6,
-  Qpy = 7,
-  IqmJson = 8,
-  BatchJob = 9,
-  Custom1 = 999999995,
-  Custom2 = 999999996,
-  Custom3 = 999999997,
-  Custom4 = 999999998,
-  Custom5 = 999999999,
-};
 
 /// Identifies an implementation-defined custom property or result slot.
 enum class CustomProperty : std::uint8_t {
@@ -131,7 +93,7 @@ class Device {
 public:
   [[nodiscard]] std::string getName() const;
   [[nodiscard]] std::string getVersion() const;
-  [[nodiscard]] DeviceStatus getStatus() const;
+  [[nodiscard]] QDMI_Device_Status getStatus() const;
   [[nodiscard]] std::string getLibraryVersion() const;
   [[nodiscard]] size_t getQubitsNum() const;
   [[nodiscard]] std::vector<Site> getSites() const;
@@ -146,7 +108,8 @@ public:
   [[nodiscard]] std::optional<std::string> getDurationUnit() const;
   [[nodiscard]] std::optional<double> getDurationScaleFactor() const;
   [[nodiscard]] std::optional<uint64_t> getMinAtomDistance() const;
-  [[nodiscard]] std::vector<ProgramFormat> getSupportedProgramFormats() const;
+  [[nodiscard]] std::vector<QDMI_Program_Format>
+  getSupportedProgramFormats() const;
   [[nodiscard]] std::vector<Device> getChildDevices() const;
 
   template <custom_property_value T>
@@ -157,7 +120,7 @@ public:
   }
 
   [[nodiscard]] Job submitJob(
-      const std::string& program, ProgramFormat format, size_t numShots,
+      const std::string& program, QDMI_Program_Format format, size_t numShots,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,
@@ -184,11 +147,11 @@ private:
 /// A submitted job retaining its device session.
 class Job {
 public:
-  [[nodiscard]] JobStatus check() const;
+  [[nodiscard]] QDMI_Job_Status check() const;
   [[nodiscard]] bool wait(size_t timeout = 0) const;
   void cancel() const;
   [[nodiscard]] std::string getId() const;
-  [[nodiscard]] ProgramFormat getProgramFormat() const;
+  [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
   [[nodiscard]] std::string getProgram() const;
   [[nodiscard]] size_t getNumShots() const;
 

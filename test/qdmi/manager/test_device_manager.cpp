@@ -421,7 +421,7 @@ TEST(DeviceManager, OpenDevicesOutliveRegistrationsAndManager) {
   EXPECT_EQ(device.getName(), "MQT SC Default QDMI Device");
 }
 
-TEST(DeviceManager, RejectsMalformedV1FunctionTable) {
+TEST(DeviceManager, RejectsIncompleteV1SymbolSet) {
   qdmi::ConfigOptions options;
   options.isolated = true;
   options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{

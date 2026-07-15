@@ -10,7 +10,8 @@
 
 #include "qdmi/DeviceManager.hpp"
 
-#include "DeviceApi.hpp"
+#include "DeviceState.hpp"
+#include "V1DeviceApi.hpp"
 #include "qdmi/Device.hpp"
 #include "qdmi/DeviceRegistry.hpp"
 
@@ -57,19 +58,19 @@ struct DeviceManager::Impl {
   mutable std::mutex registryMutex;
   std::mutex libraryMutex;
   // Non-owning cache: opened device state owns the immutable API/context.
-  std::map<std::string, std::weak_ptr<const detail::DeviceApi>> libraries;
+  std::map<std::string, std::weak_ptr<const detail::V1DeviceApi>> libraries;
 
   [[nodiscard]] Device
   openDefinition(const DeviceDefinition& definition,
                  const SessionParameters& sessionOverrides) {
     const auto key = definition.library.string() + "\n" + definition.prefix;
-    std::shared_ptr<const detail::DeviceApi> library;
+    std::shared_ptr<const detail::V1DeviceApi> library;
     {
       const std::scoped_lock lock(libraryMutex);
       library = libraries[key].lock();
       if (!library) {
-        library =
-            detail::makeV1DeviceApi(definition.library, definition.prefix);
+        library = std::make_shared<const detail::V1DeviceApi>(
+            definition.library, definition.prefix);
         libraries[key] = library;
       }
     }

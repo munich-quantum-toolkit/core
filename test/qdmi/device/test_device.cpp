@@ -113,7 +113,7 @@ bit[1] c;
 h q[0];
 c[0] = measure q[0];
 )";
-    return device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
   }
 };
 
@@ -130,7 +130,7 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 )";
-    return device.submitJob(qasm3Program, ProgramFormat::Qasm3, 0);
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
   }
 };
 
@@ -645,14 +645,15 @@ h q[0];
 cx q[0], q[1];
 c = measure q;)";
 
-  const auto job = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 100);
+  const auto job =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
 
   EXPECT_FALSE(job.getId().empty());
-  EXPECT_EQ(job.getProgramFormat(), ProgramFormat::Qasm3);
+  EXPECT_EQ(job.getProgramFormat(), QDMI_PROGRAM_FORMAT_QASM3);
   EXPECT_STREQ(job.getProgram().c_str(), qasm3Program.c_str());
   EXPECT_EQ(job.getNumShots(), 100);
   EXPECT_TRUE(job.wait());
-  EXPECT_EQ(job.check(), JobStatus::Done);
+  EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
@@ -662,23 +663,24 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     try {
       switch (which) {
       case 1:
-        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
         break;
       case 2:
-        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
-                         custom);
-        break;
-      case 3:
-        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                          std::nullopt, custom);
         break;
-      case 4:
-        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+      case 3:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                          std::nullopt, std::nullopt, custom);
         break;
-      case 5:
-        device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10, std::nullopt,
+      case 4:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                          std::nullopt, std::nullopt, std::nullopt, custom);
+        break;
+      case 5:
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                         custom);
         break;
       default:
         throw std::invalid_argument("Invalid 'which' value");
@@ -705,13 +707,16 @@ bit[1] c;
 c[0] = measure q[0];
 )";
 
-  const auto job1 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
+  const auto job1 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
   EXPECT_EQ(job1.getNumShots(), 10);
 
-  const auto job2 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 100);
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
   EXPECT_EQ(job2.getNumShots(), 100);
 
-  const auto job3 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 1000);
+  const auto job3 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
   EXPECT_EQ(job3.getNumShots(), 1000);
 }
 
@@ -722,7 +727,8 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto job2 = device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
 }
@@ -741,7 +747,8 @@ TEST_F(JobTest, StatusProgresses) {
   EXPECT_TRUE(job.wait());
 
   const auto finalStatus = job.check();
-  EXPECT_THAT(finalStatus, testing::AnyOf(JobStatus::Done, JobStatus::Failed));
+  EXPECT_THAT(finalStatus,
+              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
 }
 
 TEST_F(JobTest, GetCountsReturnsValidHistogram) {
@@ -806,7 +813,7 @@ bit[1] c;
 c[0] = measure q[0];
 )";
   const auto jobToCancel =
-      device.submitJob(qasm3Program, ProgramFormat::Qasm3, 10);
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   // Fast-executing jobs (like the DD simulator) may complete before
   // cancel is called, which should throw an exception.
@@ -815,11 +822,12 @@ c[0] = measure q[0];
     jobToCancel.cancel();
     // If cancel succeeded, the job should be in CANCELED state
     const auto status = jobToCancel.check();
-    EXPECT_EQ(status, JobStatus::Canceled);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_CANCELED);
   } catch (const std::invalid_argument&) {
     // If cancel threw an exception, the job should already be done
     const auto status = jobToCancel.check();
-    EXPECT_THAT(status, testing::AnyOf(JobStatus::Done, JobStatus::Failed));
+    EXPECT_THAT(status,
+                testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
   }
 }
 
@@ -827,7 +835,8 @@ TEST_F(JobTest, CancelCompletedJobThrows) {
   EXPECT_TRUE(job.wait());
 
   const auto statusBefore = job.check();
-  EXPECT_THAT(statusBefore, testing::AnyOf(JobStatus::Done, JobStatus::Failed));
+  EXPECT_THAT(statusBefore,
+              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
 
   EXPECT_THROW(job.cancel(), std::invalid_argument);
 }

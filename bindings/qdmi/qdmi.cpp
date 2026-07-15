@@ -78,22 +78,34 @@ template <typename Query>
 NB_MODULE(MQT_CORE_MODULE_NAME,
           m) { // NOLINT(performance-unnecessary-value-param)
   auto sessionParameters = nb::class_<qdmi::SessionParameters>(
-      m, "SessionParameters", "Parameters for one QDMI device session.");
-  sessionParameters.def(nb::init<>())
-      .def_rw("base_url", &qdmi::SessionParameters::baseUrl)
-      .def_rw("token", &qdmi::SessionParameters::token)
-      .def_rw("auth_file", &qdmi::SessionParameters::authFile)
-      .def_rw("auth_url", &qdmi::SessionParameters::authUrl)
-      .def_rw("username", &qdmi::SessionParameters::username)
-      .def_rw("password", &qdmi::SessionParameters::password)
-      .def_rw("custom1", &qdmi::SessionParameters::custom1)
-      .def_rw("custom2", &qdmi::SessionParameters::custom2)
-      .def_rw("custom3", &qdmi::SessionParameters::custom3)
-      .def_rw("custom4", &qdmi::SessionParameters::custom4)
-      .def_rw("custom5", &qdmi::SessionParameters::custom5);
+      m, "SessionParameters", R"pb(Parameters for one QDMI device session.)pb");
+  sessionParameters.def(nb::init<>(), R"pb(Create empty session parameters.)pb")
+      .def_rw("base_url", &qdmi::SessionParameters::baseUrl,
+              R"pb(Base URL of the device service.)pb")
+      .def_rw("token", &qdmi::SessionParameters::token,
+              R"pb(Authentication token.)pb")
+      .def_rw("auth_file", &qdmi::SessionParameters::authFile,
+              R"pb(Path to an authentication file.)pb")
+      .def_rw("auth_url", &qdmi::SessionParameters::authUrl,
+              R"pb(URL of the authentication service.)pb")
+      .def_rw("username", &qdmi::SessionParameters::username,
+              R"pb(Authentication username.)pb")
+      .def_rw("password", &qdmi::SessionParameters::password,
+              R"pb(Authentication password.)pb")
+      .def_rw("custom1", &qdmi::SessionParameters::custom1,
+              R"pb(First implementation-defined session parameter.)pb")
+      .def_rw("custom2", &qdmi::SessionParameters::custom2,
+              R"pb(Second implementation-defined session parameter.)pb")
+      .def_rw("custom3", &qdmi::SessionParameters::custom3,
+              R"pb(Third implementation-defined session parameter.)pb")
+      .def_rw("custom4", &qdmi::SessionParameters::custom4,
+              R"pb(Fourth implementation-defined session parameter.)pb")
+      .def_rw("custom5", &qdmi::SessionParameters::custom5,
+              R"pb(Fifth implementation-defined session parameter.)pb");
 
   auto definition = nb::class_<qdmi::DeviceDefinition>(
-      m, "DeviceDefinition", "A side-effect-free QDMI device registration.");
+      m, "DeviceDefinition",
+      R"pb(A side-effect-free QDMI device registration.)pb");
   definition
       .def(
           "__init__",
@@ -109,17 +121,33 @@ NB_MODULE(MQT_CORE_MODULE_NAME,
           },
           "device_id"_a, "library"_a, "prefix"_a, nb::kw_only(),
           "abi"_a = "qdmi-v1", "enabled"_a = true,
-          "session"_a = qdmi::SessionParameters{})
-      .def_rw("device_id", &qdmi::DeviceDefinition::id)
-      .def_rw("library", &qdmi::DeviceDefinition::library)
-      .def_rw("abi", &qdmi::DeviceDefinition::abi)
-      .def_rw("prefix", &qdmi::DeviceDefinition::prefix)
-      .def_rw("enabled", &qdmi::DeviceDefinition::enabled)
-      .def_rw("session", &qdmi::DeviceDefinition::session)
-      .def_ro("source", &qdmi::DeviceDefinition::source);
+          "session"_a = qdmi::SessionParameters{},
+          R"pb(Create a device definition without loading its library.
+
+Args:
+    device_id: Stable identifier used for discovery and opening.
+    library: Path to the native QDMI device library.
+    prefix: Symbol prefix exported by the QDMI v1.3 implementation.
+    abi: Compatibility marker. Only ``"qdmi-v1"`` is supported.
+    enabled: Whether the definition participates in discovery.
+    session: Default parameters for sessions opened from this definition.)pb")
+      .def_rw("device_id", &qdmi::DeviceDefinition::id,
+              R"pb(Stable device identifier.)pb")
+      .def_rw("library", &qdmi::DeviceDefinition::library,
+              R"pb(Path to the native QDMI device library.)pb")
+      .def_rw("abi", &qdmi::DeviceDefinition::abi,
+              R"pb(QDMI ABI compatibility marker.)pb")
+      .def_rw("prefix", &qdmi::DeviceDefinition::prefix,
+              R"pb(Symbol prefix exported by the device library.)pb")
+      .def_rw("enabled", &qdmi::DeviceDefinition::enabled,
+              R"pb(Whether this definition is enabled.)pb")
+      .def_rw("session", &qdmi::DeviceDefinition::session,
+              R"pb(Default parameters for newly opened sessions.)pb")
+      .def_ro("source", &qdmi::DeviceDefinition::source,
+              R"pb(Configuration source that declared the definition.)pb");
 
   auto configOptions = nb::class_<qdmi::ConfigOptions>(
-      m, "ConfigOptions", "Controls QDMI configuration discovery.");
+      m, "ConfigOptions", R"pb(Controls QDMI configuration discovery.)pb");
   configOptions.def(
       "__init__",
       [](qdmi::ConfigOptions* self,
@@ -142,13 +170,24 @@ NB_MODULE(MQT_CORE_MODULE_NAME,
       nb::kw_only(), "config_root"_a = std::nullopt,
       "explicit_file"_a = std::nullopt, "base_directory"_a = std::nullopt,
       "isolated"_a = false, "inline_json"_a = std::nullopt,
-      "runtime_overrides"_a = std::vector<qdmi::DeviceDefinition>{});
+      "runtime_overrides"_a = std::vector<qdmi::DeviceDefinition>{},
+      R"pb(Create configuration discovery options.
+
+Args:
+    config_root: Root containing relocatable built-in manifest fragments.
+    explicit_file: Configuration file replacing system, user, and project discovery.
+    base_directory: Base for relative paths in inline configuration.
+    isolated: Exclude packaged built-in definitions when true.
+    inline_json: JSON configuration layered above discovered files.
+    runtime_overrides: Device definitions applied at highest precedence.)pb");
 
   // Job class
   auto job = nb::class_<qdmi::Job>(
-      m, "Job", "A job represents a submitted quantum program execution.");
+      m, "Job",
+      R"pb(A submitted quantum program execution retaining its device session.)pb");
 
-  job.def("check", &qdmi::Job::check, "Returns the current status of the job.");
+  job.def("check", &qdmi::Job::check,
+          R"pb(Return the current QDMI job status.)pb");
 
   job.def("wait", &qdmi::Job::wait, "timeout"_a = 0,
           R"pb(Waits for the job to complete.
@@ -159,29 +198,34 @@ Args:
 Returns:
     True if the job completed within the timeout, False otherwise.)pb");
 
-  job.def("cancel", &qdmi::Job::cancel, "Cancels the job.");
+  job.def("cancel", &qdmi::Job::cancel,
+          R"pb(Request cancellation of the job.)pb");
 
   job.def("get_shots", &qdmi::Job::getShots,
-          "Returns the raw shot results from the job.");
+          R"pb(Return the raw shot results.)pb");
 
   job.def("get_counts", &qdmi::Job::getCounts,
-          "Returns the measurement counts from the job.");
+          R"pb(Return measurement counts keyed by bit string.)pb");
 
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
-          "Returns the dense statevector from the job (typically only "
-          "available from simulator devices).");
+          R"pb(Return the dense state vector.
+
+This result is typically available only from simulator devices.)pb");
 
   job.def("get_dense_probabilities", &qdmi::Job::getDenseProbabilities,
-          "Returns the dense probabilities from the job (typically only "
-          "available from simulator devices).");
+          R"pb(Return the dense probability vector.
+
+This result is typically available only from simulator devices.)pb");
 
   job.def("get_sparse_statevector", &qdmi::Job::getSparseStateVector,
-          "Returns the sparse statevector from the job (typically only "
-          "available from simulator devices).");
+          R"pb(Return the sparse state vector keyed by basis state.
+
+This result is typically available only from simulator devices.)pb");
 
   job.def("get_sparse_probabilities", &qdmi::Job::getSparseProbabilities,
-          "Returns the sparse probabilities from the job (typically only "
-          "available from simulator devices).");
+          R"pb(Return sparse probabilities keyed by basis state.
+
+This result is typically available only from simulator devices.)pb");
 
   job.def(
       "query_custom_property",
@@ -224,52 +268,58 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  job.def_prop_ro("id", &qdmi::Job::getId, "The job ID.");
+  job.def_prop_ro("id", &qdmi::Job::getId,
+                  R"pb(The provider-assigned job identifier.)pb");
 
   job.def_prop_ro("program_format", &qdmi::Job::getProgramFormat,
-                  "The format of the submitted program.");
+                  R"pb(The QDMI format of the submitted program.)pb");
 
-  job.def_prop_ro("program", &qdmi::Job::getProgram, "The submitted program.");
+  job.def_prop_ro("program", &qdmi::Job::getProgram,
+                  R"pb(The submitted program.)pb");
 
-  job.def_prop_ro("num_shots", &qdmi::Job::getNumShots, "The number of shots.");
+  job.def_prop_ro("num_shots", &qdmi::Job::getNumShots,
+                  R"pb(The requested number of shots.)pb");
 
   job.def(nb::self == nb::self,
-          nb::sig("def __eq__(self, arg: object, /) -> bool"));
+          nb::sig("def __eq__(self, arg: object, /) -> bool"),
+          R"pb(Return whether two objects refer to the same job.)pb");
   job.def(nb::self != nb::self,
-          nb::sig("def __ne__(self, arg: object, /) -> bool"));
+          nb::sig("def __ne__(self, arg: object, /) -> bool"),
+          R"pb(Return whether two objects refer to different jobs.)pb");
 
   // JobStatus enum
-  nb::enum_<qdmi::JobStatus>(job, "Status", "Enumeration of job status.")
-      .value("CREATED", qdmi::JobStatus::Created)
-      .value("SUBMITTED", qdmi::JobStatus::Submitted)
-      .value("QUEUED", qdmi::JobStatus::Queued)
-      .value("RUNNING", qdmi::JobStatus::Running)
-      .value("DONE", qdmi::JobStatus::Done)
-      .value("CANCELED", qdmi::JobStatus::Canceled)
-      .value("FAILED", qdmi::JobStatus::Failed);
+  nb::enum_<QDMI_Job_Status>(job, "Status",
+                             R"pb(Status values defined by QDMI.)pb")
+      .value("CREATED", QDMI_JOB_STATUS_CREATED)
+      .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)
+      .value("QUEUED", QDMI_JOB_STATUS_QUEUED)
+      .value("RUNNING", QDMI_JOB_STATUS_RUNNING)
+      .value("DONE", QDMI_JOB_STATUS_DONE)
+      .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
+      .value("FAILED", QDMI_JOB_STATUS_FAILED);
 
   // ProgramFormat enum
-  nb::enum_<qdmi::ProgramFormat>(m, "ProgramFormat",
-                                 "Enumeration of program formats.")
-      .value("QASM2", qdmi::ProgramFormat::Qasm2)
-      .value("QASM3", qdmi::ProgramFormat::Qasm3)
-      .value("QIR_BASE_STRING", qdmi::ProgramFormat::QirBaseString)
-      .value("QIR_BASE_MODULE", qdmi::ProgramFormat::QirBaseModule)
-      .value("QIR_ADAPTIVE_STRING", qdmi::ProgramFormat::QirAdaptiveString)
-      .value("QIR_ADAPTIVE_MODULE", qdmi::ProgramFormat::QirAdaptiveModule)
-      .value("CALIBRATION", qdmi::ProgramFormat::Calibration)
-      .value("QPY", qdmi::ProgramFormat::Qpy)
-      .value("IQM_JSON", qdmi::ProgramFormat::IqmJson)
-      .value("BATCH_JOB", qdmi::ProgramFormat::BatchJob)
-      .value("CUSTOM1", qdmi::ProgramFormat::Custom1)
-      .value("CUSTOM2", qdmi::ProgramFormat::Custom2)
-      .value("CUSTOM3", qdmi::ProgramFormat::Custom3)
-      .value("CUSTOM4", qdmi::ProgramFormat::Custom4)
-      .value("CUSTOM5", qdmi::ProgramFormat::Custom5);
+  nb::enum_<QDMI_Program_Format>(m, "ProgramFormat",
+                                 R"pb(Program formats defined by QDMI.)pb")
+      .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
+      .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
+      .value("QIR_BASE_STRING", QDMI_PROGRAM_FORMAT_QIRBASESTRING)
+      .value("QIR_BASE_MODULE", QDMI_PROGRAM_FORMAT_QIRBASEMODULE)
+      .value("QIR_ADAPTIVE_STRING", QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
+      .value("QIR_ADAPTIVE_MODULE", QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
+      .value("CALIBRATION", QDMI_PROGRAM_FORMAT_CALIBRATION)
+      .value("QPY", QDMI_PROGRAM_FORMAT_QPY)
+      .value("IQM_JSON", QDMI_PROGRAM_FORMAT_IQMJSON)
+      .value("BATCH_JOB", QDMI_PROGRAM_FORMAT_BATCHJOB)
+      .value("CUSTOM1", QDMI_PROGRAM_FORMAT_CUSTOM1)
+      .value("CUSTOM2", QDMI_PROGRAM_FORMAT_CUSTOM2)
+      .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
+      .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
+      .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
   nb::enum_<qdmi::CustomProperty>(
       m, "CustomProperty",
-      "An implementation-defined custom property or result slot.")
+      R"pb(An implementation-defined custom property or result slot.)pb")
       .value("CUSTOM1", qdmi::CustomProperty::Custom1)
       .value("CUSTOM2", qdmi::CustomProperty::Custom2)
       .value("CUSTOM3", qdmi::CustomProperty::Custom3)
@@ -278,75 +328,74 @@ when the custom slot is unsupported.)pb");
 
   // Device class
   auto device = nb::class_<qdmi::Device>(
-      m, "Device",
-      "A device represents a quantum device with its properties and "
-      "capabilities.");
+      m, "Device", R"pb(One initialized QDMI device session.
 
-  nb::enum_<qdmi::DeviceStatus>(device, "Status",
-                                "Enumeration of device status.")
-      .value("OFFLINE", qdmi::DeviceStatus::Offline)
-      .value("IDLE", qdmi::DeviceStatus::Idle)
-      .value("BUSY", qdmi::DeviceStatus::Busy)
-      .value("ERROR", qdmi::DeviceStatus::Error)
-      .value("MAINTENANCE", qdmi::DeviceStatus::Maintenance)
-      .value("CALIBRATION", qdmi::DeviceStatus::Calibration);
+The object owns the native library and session state required by its sites,
+operations, child devices, and jobs.)pb");
 
-  device.def("name", &qdmi::Device::getName, "Returns the name of the device.");
+  nb::enum_<QDMI_Device_Status>(device, "Status",
+                                R"pb(Status values defined by QDMI.)pb")
+      .value("OFFLINE", QDMI_DEVICE_STATUS_OFFLINE)
+      .value("IDLE", QDMI_DEVICE_STATUS_IDLE)
+      .value("BUSY", QDMI_DEVICE_STATUS_BUSY)
+      .value("ERROR", QDMI_DEVICE_STATUS_ERROR)
+      .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
+      .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
+
+  device.def("name", &qdmi::Device::getName,
+             R"pb(Return the provider-reported device name.)pb");
 
   device.def("version", &qdmi::Device::getVersion,
-             "Returns the version of the device.");
+             R"pb(Return the provider-reported device version.)pb");
 
   device.def("status", &qdmi::Device::getStatus,
-             "Returns the current status of the device.");
+             R"pb(Return the current QDMI device status.)pb");
 
   device.def("library_version", &qdmi::Device::getLibraryVersion,
-             "Returns the version of the library used to define the device.");
+             R"pb(Return the provider library version.)pb");
 
   device.def("qubits_num", &qdmi::Device::getQubitsNum,
-             "Returns the number of qubits available on the device.");
+             R"pb(Return the number of qubits available on the device.)pb");
 
   device.def("sites", &qdmi::Device::getSites,
-             "Returns the list of all sites (zone and regular sites) available "
-             "on the device.");
+             R"pb(Return all regular sites and zones.)pb");
 
   device.def("regular_sites", &qdmi::Device::getRegularSites,
-             "Returns the list of regular sites (without zone sites) available "
-             "on the device.");
+             R"pb(Return sites that are not zones.)pb");
 
   device.def("zones", &qdmi::Device::getZones,
-             "Returns the list of zone sites (without regular sites) available "
-             "on the device.");
+             R"pb(Return sites that represent zones.)pb");
 
   device.def("operations", &qdmi::Device::getOperations,
-             "Returns the list of operations supported by the device.");
+             R"pb(Return operations supported by the device.)pb");
 
   device.def("coupling_map", &qdmi::Device::getCouplingMap,
-             "Returns the coupling map of the device as a list of site pairs.");
+             R"pb(Return the optional coupling map as site pairs.)pb");
 
   device.def("needs_calibration", &qdmi::Device::getNeedsCalibration,
-             "Returns whether the device needs calibration.");
+             R"pb(Return the optional calibration requirement.)pb");
 
   device.def("length_unit", &qdmi::Device::getLengthUnit,
-             "Returns the unit of length used by the device.");
+             R"pb(Return the optional device length unit.)pb");
 
   device.def("length_scale_factor", &qdmi::Device::getLengthScaleFactor,
-             "Returns the scale factor for length used by the device.");
+             R"pb(Return the optional length scale factor.)pb");
 
   device.def("duration_unit", &qdmi::Device::getDurationUnit,
-             "Returns the unit of duration used by the device.");
+             R"pb(Return the optional device duration unit.)pb");
 
   device.def("duration_scale_factor", &qdmi::Device::getDurationScaleFactor,
-             "Returns the scale factor for duration used by the device.");
+             R"pb(Return the optional duration scale factor.)pb");
 
   device.def("min_atom_distance", &qdmi::Device::getMinAtomDistance,
-             "Returns the minimum atom distance on the device.");
+             R"pb(Return the optional minimum atom distance.)pb");
 
   device.def("supported_program_formats",
              &qdmi::Device::getSupportedProgramFormats,
-             "Returns the list of program formats supported by the device.");
+             R"pb(Return the QDMI program formats accepted by the device.)pb");
 
   device.def("child_devices", &qdmi::Device::getChildDevices,
-             "Returns the direct child devices managed by this device.");
+             R"pb(Return directly managed child devices.)pb");
 
   device.def(
       "query_custom_property",
@@ -374,58 +423,77 @@ when the custom slot is unsupported.)pb");
              "custom1"_a = nb::none(), "custom2"_a = nb::none(),
              "custom3"_a = nb::none(), "custom4"_a = nb::none(),
              "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-             "Submits a job to the device.");
+             R"pb(Submit a quantum program to the device.
 
-  device.def("__repr__", [](const qdmi::Device& dev) {
-    return "<Device name=\"" + dev.getName() + "\">";
-  });
+Args:
+    program: Serialized program data.
+    program_format: QDMI format of ``program``.
+    num_shots: Number of requested executions.
+    custom1: First implementation-defined job parameter.
+    custom2: Second implementation-defined job parameter.
+    custom3: Third implementation-defined job parameter.
+    custom4: Fourth implementation-defined job parameter.
+    custom5: Fifth implementation-defined job parameter.
+
+Returns:
+    A job retaining the device session.)pb");
+
+  device.def(
+      "__repr__",
+      [](const qdmi::Device& dev) {
+        return "<Device name=\"" + dev.getName() + "\">";
+      },
+      R"pb(Return a concise device representation.)pb");
 
   device.def(nb::self == nb::self,
-             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+             nb::sig("def __eq__(self, arg: object, /) -> bool"),
+             R"pb(Return whether two objects refer to the same device.)pb");
   device.def(nb::self != nb::self,
-             nb::sig("def __ne__(self, arg: object, /) -> bool"));
+             nb::sig("def __ne__(self, arg: object, /) -> bool"),
+             R"pb(Return whether two objects refer to different devices.)pb");
 
   // Site class
   auto site = nb::class_<qdmi::Site>(
-      device, "Site",
-      "A site represents a potential qubit location on a quantum device.");
+      device, "Site", R"pb(A physical site or zone belonging to a device.)pb");
 
-  site.def("index", &qdmi::Site::getIndex, "Returns the index of the site.");
+  site.def("index", &qdmi::Site::getIndex,
+           R"pb(Return the provider-assigned site index.)pb");
 
   site.def("t1", &qdmi::Site::getT1,
-           "Returns the T1 coherence time of the site.");
+           R"pb(Return the optional T1 coherence time.)pb");
 
   site.def("t2", &qdmi::Site::getT2,
-           "Returns the T2 coherence time of the site.");
+           R"pb(Return the optional T2 coherence time.)pb");
 
-  site.def("name", &qdmi::Site::getName, "Returns the name of the site.");
+  site.def("name", &qdmi::Site::getName,
+           R"pb(Return the optional site name.)pb");
 
   site.def("x_coordinate", &qdmi::Site::getXCoordinate,
-           "Returns the x coordinate of the site.");
+           R"pb(Return the optional x coordinate.)pb");
 
   site.def("y_coordinate", &qdmi::Site::getYCoordinate,
-           "Returns the y coordinate of the site.");
+           R"pb(Return the optional y coordinate.)pb");
 
   site.def("z_coordinate", &qdmi::Site::getZCoordinate,
-           "Returns the z coordinate of the site.");
+           R"pb(Return the optional z coordinate.)pb");
 
   site.def("is_zone", &qdmi::Site::isZone,
-           "Returns whether the site is a zone.");
+           R"pb(Return whether this site represents a zone.)pb");
 
   site.def("x_extent", &qdmi::Site::getXExtent,
-           "Returns the x extent of the site.");
+           R"pb(Return the optional x extent of the zone.)pb");
 
   site.def("y_extent", &qdmi::Site::getYExtent,
-           "Returns the y extent of the site.");
+           R"pb(Return the optional y extent of the zone.)pb");
 
   site.def("z_extent", &qdmi::Site::getZExtent,
-           "Returns the z extent of the site.");
+           R"pb(Return the optional z extent of the zone.)pb");
 
   site.def("module_index", &qdmi::Site::getModuleIndex,
-           "Returns the index of the module the site belongs to.");
+           R"pb(Return the optional module index.)pb");
 
   site.def("submodule_index", &qdmi::Site::getSubmoduleIndex,
-           "Returns the index of the submodule the site belongs to.");
+           R"pb(Return the optional submodule index.)pb");
 
   site.def(
       "query_custom_property",
@@ -448,75 +516,81 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  site.def("__repr__", [](const qdmi::Site& s) {
-    return "<Site index=" + std::to_string(s.getIndex()) + ">";
-  });
+  site.def(
+      "__repr__",
+      [](const qdmi::Site& s) {
+        return "<Site index=" + std::to_string(s.getIndex()) + ">";
+      },
+      R"pb(Return a concise site representation.)pb");
 
   site.def(nb::self == nb::self,
-           nb::sig("def __eq__(self, arg: object, /) -> bool"));
+           nb::sig("def __eq__(self, arg: object, /) -> bool"),
+           R"pb(Return whether two objects refer to the same site.)pb");
   site.def(nb::self != nb::self,
-           nb::sig("def __ne__(self, arg: object, /) -> bool"));
+           nb::sig("def __ne__(self, arg: object, /) -> bool"),
+           R"pb(Return whether two objects refer to different sites.)pb");
 
   // Operation class
   auto operation = nb::class_<qdmi::Operation>(
-      device, "Operation",
-      "An operation represents a quantum operation that can be performed on a "
-      "quantum device.");
+      device, "Operation", R"pb(A quantum operation supported by a device.)pb");
 
-  operation.def("name", &qdmi::Operation::getName,
-                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
-                "params"_a.sig("...") = std::vector<double>{},
-                "Returns the name of the operation.");
+  operation.def(
+      "name", &qdmi::Operation::getName,
+      "sites"_a.sig("...") = std::vector<qdmi::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      R"pb(Return the operation name for the given sites and parameters.)pb");
 
   operation.def("qubits_num", &qdmi::Operation::getQubitsNum,
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
-                "Returns the number of qubits the operation acts on.");
+                R"pb(Return the optional operation arity.)pb");
 
   operation.def("parameters_num", &qdmi::Operation::getParametersNum,
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
-                "Returns the number of parameters the operation has.");
+                R"pb(Return the number of operation parameters.)pb");
 
-  operation.def("duration", &qdmi::Operation::getDuration,
-                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
-                "params"_a.sig("...") = std::vector<double>{},
-                "Returns the duration of the operation.");
+  operation.def(
+      "duration", &qdmi::Operation::getDuration,
+      "sites"_a.sig("...") = std::vector<qdmi::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      R"pb(Return the optional duration for this operation instance.)pb");
 
-  operation.def("fidelity", &qdmi::Operation::getFidelity,
-                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
-                "params"_a.sig("...") = std::vector<double>{},
-                "Returns the fidelity of the operation.");
+  operation.def(
+      "fidelity", &qdmi::Operation::getFidelity,
+      "sites"_a.sig("...") = std::vector<qdmi::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      R"pb(Return the optional fidelity for this operation instance.)pb");
 
   operation.def("interaction_radius", &qdmi::Operation::getInteractionRadius,
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
-                "Returns the interaction radius of the operation.");
+                R"pb(Return the optional interaction radius.)pb");
 
   operation.def("blocking_radius", &qdmi::Operation::getBlockingRadius,
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
-                "Returns the blocking radius of the operation.");
+                R"pb(Return the optional blocking radius.)pb");
 
   operation.def("idling_fidelity", &qdmi::Operation::getIdlingFidelity,
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
-                "Returns the idling fidelity of the operation.");
+                R"pb(Return the optional idling fidelity.)pb");
 
   operation.def("is_zoned", &qdmi::Operation::isZoned,
-                "Returns whether the operation is zoned.");
+                R"pb(Return whether the operation is restricted to zones.)pb");
 
   operation.def("sites", &qdmi::Operation::getSites,
-                "Returns the list of sites the operation can be performed on.");
+                R"pb(Return sites on which the operation is available.)pb");
 
-  operation.def("site_pairs", &qdmi::Operation::getSitePairs,
-                "Returns the list of site pairs the local 2-qubit operation "
-                "can be performed on.");
+  operation.def(
+      "site_pairs", &qdmi::Operation::getSitePairs,
+      R"pb(Return supported site pairs for a local two-site operation.)pb");
 
   operation.def("mean_shuttling_speed", &qdmi::Operation::getMeanShuttlingSpeed,
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
-                "Returns the mean shuttling speed of the operation.");
+                R"pb(Return the optional mean shuttling speed.)pb");
 
   operation.def(
       "query_custom_property",
@@ -545,36 +619,61 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  operation.def("__repr__", [](const qdmi::Operation& op) {
-    return "<Operation name=\"" + op.getName() + "\">";
-  });
+  operation.def(
+      "__repr__",
+      [](const qdmi::Operation& op) {
+        return "<Operation name=\"" + op.getName() + "\">";
+      },
+      R"pb(Return a concise operation representation.)pb");
 
-  operation.def(nb::self == nb::self,
-                nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  operation.def(nb::self != nb::self,
-                nb::sig("def __ne__(self, arg: object, /) -> bool"));
+  operation.def(
+      nb::self == nb::self, nb::sig("def __eq__(self, arg: object, /) -> bool"),
+      R"pb(Return whether two objects refer to the same operation.)pb");
+  operation.def(
+      nb::self != nb::self, nb::sig("def __ne__(self, arg: object, /) -> bool"),
+      R"pb(Return whether two objects refer to different operations.)pb");
 
   auto openAllResult = nb::class_<qdmi::OpenAllResult>(
-      m, "OpenAllResult", "Devices and per-ID errors from bulk opening.");
-  openAllResult.def_ro("devices", &qdmi::OpenAllResult::devices)
-      .def_ro("errors", &qdmi::OpenAllResult::errors);
+      m, "OpenAllResult",
+      R"pb(Devices and per-ID errors produced by bulk opening.)pb");
+  openAllResult
+      .def_ro("devices", &qdmi::OpenAllResult::devices,
+              R"pb(Successfully opened devices keyed by stable ID.)pb")
+      .def_ro(
+          "errors", &qdmi::OpenAllResult::errors,
+          R"pb(Error messages for failed definitions keyed by stable ID.)pb");
 
   auto manager = nb::class_<qdmi::DeviceManager>(
-      m, "DeviceManager", "Discovers and lazily opens QDMI devices.");
+      m, "DeviceManager", R"pb(Discover and lazily open QDMI devices.
+
+Definitions are discovered without loading native libraries. Opening a device
+creates an independent session while compatible devices may share a loaded
+library.)pb");
   manager
       .def(nb::init<const qdmi::ConfigOptions&>(),
-           "options"_a = qdmi::ConfigOptions{})
+           "options"_a = qdmi::ConfigOptions{},
+           R"pb(Create a manager using the supplied discovery options.)pb")
       .def_prop_ro(
           "definitions",
-          [](const qdmi::DeviceManager& self) { return self.definitions(); })
+          [](const qdmi::DeviceManager& self) { return self.definitions(); },
+          R"pb(A snapshot of the currently registered device definitions.)pb")
       .def("register_device", &qdmi::DeviceManager::registerDevice,
-           "definition"_a, nb::kw_only(), "replace"_a = false)
+           "definition"_a, nb::kw_only(), "replace"_a = false,
+           R"pb(Register a complete device definition.
+
+Args:
+    definition: Definition to register.
+    replace: Replace an existing definition with the same ID.)pb")
       .def(
           "unregister_device",
           [](qdmi::DeviceManager& self, const std::string& deviceId) {
             return self.unregisterDevice(deviceId);
           },
-          "device_id"_a)
+          "device_id"_a,
+          R"pb(Remove a definition without invalidating opened devices.
+
+Returns:
+    Whether a definition with the requested ID existed.)pb")
       .def(
           "open",
           [](qdmi::DeviceManager& self, const std::string& deviceId,
@@ -582,10 +681,17 @@ when the custom slot is unsupported.)pb");
             return self.open(deviceId, sessionOverrides);
           },
           "device_id"_a, nb::kw_only(),
-          "session_overrides"_a = qdmi::SessionParameters{})
+          "session_overrides"_a = qdmi::SessionParameters{},
+          R"pb(Open one device by stable ID.
+
+The supplied session values override the definition defaults field by field.
+The native library is loaded only when this method is called.)pb")
       .def("open_all", &qdmi::DeviceManager::openAll, nb::kw_only(),
            "session_overrides"_a = qdmi::SessionParameters{},
-           "Open all definitions independently and retain per-ID errors.");
+           R"pb(Open a snapshot of all definitions independently.
+
+Failures are retained by device ID and do not prevent other definitions from
+opening.)pb");
 }
 
 } // namespace mqt

@@ -23,9 +23,34 @@ from mqt.core.qdmi import (
     Job,
     OpenAllResult,
     ProgramFormat,
+    SessionParameters,
 )
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
+
+
+def test_public_bindings_have_docstrings() -> None:
+    """Every public QDMI binding documents its exposed Python API."""
+    classes = (
+        SessionParameters,
+        DeviceDefinition,
+        ConfigOptions,
+        Device,
+        Device.Site,
+        Device.Operation,
+        Job,
+        OpenAllResult,
+        DeviceManager,
+        ProgramFormat,
+        CustomProperty,
+    )
+    for cls in classes:
+        assert cls.__doc__, cls.__qualname__
+        for name, member in vars(cls).items():
+            if name.startswith("_"):
+                continue
+            if callable(member) or isinstance(member, property):
+                assert member.__doc__, f"{cls.__qualname__}.{name}"
 
 
 def _get_devices() -> list[Device]:

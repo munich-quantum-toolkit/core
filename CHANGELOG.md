@@ -74,11 +74,12 @@ releases may include breaking changes.
   Device libraries now load lazily, sessions are configured per device, child
   objects retain their required runtime state, and definitions can be inspected
   without executing provider code.
-- ♻️ Adapt QDMI v1.3 provider libraries through a private function table. The
-  public C++ and Python object model no longer exposes QDMI v1 client handles or
-  depends on process-global client state. Configuration accepts only the
-  `qdmi-v1` ABI marker; the implementation targets one supported QDMI ABI at a
-  time instead of maintaining parallel adapter hierarchies.
+- ♻️ Load QDMI v1.3 provider libraries through one private `V1DeviceApi` that
+  owns the library and stores the exact QDMI function pointer types. The public
+  C++ API uses QDMI's existing device-status, job-status, and program-format
+  enums directly instead of redefining them, while client handles remain
+  private. Configuration accepts only the `qdmi-v1` ABI marker.
+- 📝 Add binding-local docstrings for the complete public Python QDMI API.
 - ♻️ Use `device_id` for the Python `DeviceDefinition` property and constructor
   argument, avoiding collisions with Python's built-in `id` while retaining `id`
   in configuration and C++.
