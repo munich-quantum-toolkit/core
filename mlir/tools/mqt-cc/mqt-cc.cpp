@@ -156,16 +156,19 @@ parseOutputFormat(const StringRef format) {
 
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
-    llvm::cl::desc("Decompose multi-controlled gates (k>=4 Huang-Palsberg, "
-                   "k=3 three-controlled, k=2 two-controlled/RCCX). Requires "
-                   "--decompose-multi-controlled-min-controls >= 2."),
+    llvm::cl::desc(
+        "Decompose controlled X/Z gates with at least "
+        "--decompose-multi-controlled-min-controls controls (default 2; HP24 "
+        "for k>=4, then lower building blocks when min-controls allows)."),
     llvm::cl::init(false));
 
 static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
     "decompose-multi-controlled-min-controls",
-    llvm::cl::desc("Minimum top-level control count for "
-                   "--decompose-multi-controlled (k>=4 pass; default 2; must "
-                   "be at least 2)"),
+    llvm::cl::desc(
+        "Minimum control count for --decompose-multi-controlled: decompose "
+        "controlled X/Z with at least this many controls (default 2; must be "
+        "at least 2). Higher values leave smaller controlled gates and HP24 "
+        "building blocks undecomposed."),
     llvm::cl::init(2));
 
 /**

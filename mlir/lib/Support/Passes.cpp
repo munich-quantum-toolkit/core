@@ -48,8 +48,6 @@ runWithPassManager(ModuleOp module,
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
     qco::registerDecomposeMultiControlled();
-    qco::registerDecomposeThreeControlled();
-    qco::registerDecomposeTwoControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerHadamardLifting();
     qco::registerMergeSingleQubitRotationGates();
@@ -75,8 +73,6 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
   qco::DecomposeMultiControlledOptions options;
   options.minControls = minControls;
   pm.addPass(qco::createDecomposeMultiControlled(options));
-  pm.addPass(qco::createDecomposeThreeControlled());
-  pm.addPass(qco::createDecomposeTwoControlled());
 }
 
 LogicalResult runPassPipeline(ModuleOp module, const StringRef pipeline,

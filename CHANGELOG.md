@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X and Z
+  gates with a configurable `min-controls` threshold ([#1810])
+  ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -22,8 +25,6 @@ releases may include breaking changes.
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
-- ✨ Add a `decompose-multi-controlled` pass for decomposing multi-controlled X
-  and Z gates into one- and two-qubit gates ([#1810]) ([**@simon1hofmann**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function

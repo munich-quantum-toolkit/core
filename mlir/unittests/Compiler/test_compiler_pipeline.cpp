@@ -541,7 +541,7 @@ h q;
  * optimization
  *
  * @details
- * We run the decomposition pass sequence and check whether the QCO IR changes.
+ * We run the decomposition pass and check whether the QCO IR changes.
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
@@ -558,9 +558,8 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
   const auto before = qco->copy();
-  ASSERT_TRUE(qco->runPassPipeline(
-      "decompose-multi-controlled{min-controls=2},"
-      "decompose-three-controlled,decompose-two-controlled"));
+  ASSERT_TRUE(
+      qco->runPassPipeline("decompose-multi-controlled{min-controls=2}"));
   EXPECT_NE(qco->str(), before.str());
 }
 
@@ -578,9 +577,8 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
   const auto before = qco->copy();
-  ASSERT_TRUE(qco->runPassPipeline(
-      "decompose-multi-controlled{min-controls=2},"
-      "decompose-three-controlled,decompose-two-controlled"));
+  ASSERT_TRUE(
+      qco->runPassPipeline("decompose-multi-controlled{min-controls=2}"));
   EXPECT_NE(qco->str(), before.str());
 }
 

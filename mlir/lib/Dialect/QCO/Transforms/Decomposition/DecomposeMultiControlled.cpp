@@ -23,7 +23,6 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -35,14 +34,11 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_DECOMPOSEMULTICONTROLLED
-#define GEN_PASS_DEF_DECOMPOSETHREECONTROLLED
-#define GEN_PASS_DEF_DECOMPOSETWOCONTROLLED
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
-enum class ControlledTarget : std::uint8_t { X, Z, Phase };
 
-namespace {
+enum class ControlledTarget : std::uint8_t { X, Z, Phase };
 
 constexpr double K_PI = std::numbers::pi;
 constexpr double K_PI8 = K_PI / 8.0;
@@ -50,10 +46,8 @@ constexpr double K_PI8 = K_PI / 8.0;
 class GateEmitter {
 public:
   GateEmitter(OpBuilder& builder, Location loc, SmallVector<Value>& wires,
-              std::uint64_t minControls = UINT64_MAX,
               ArrayRef<std::size_t> remap = {})
-      : builder_(&builder), loc_(loc), wires_(&wires), remap_(remap),
-        minControls_(minControls) {}
+      : builder_(&builder), loc_(loc), wires_(&wires), remap_(remap) {}
 
   template <typename Fn> void compose(ArrayRef<std::size_t> qubitMap, Fn&& fn) {
     SmallVector<std::size_t, 16> composeRemap;
@@ -61,7 +55,7 @@ public:
     for (std::size_t local : qubitMap) {
       composeRemap.push_back(wireIndex(local));
     }
-    GateEmitter nested(*builder_, loc_, *wires_, minControls_, composeRemap);
+    GateEmitter nested(*builder_, loc_, *wires_, composeRemap);
     std::forward<Fn>(fn)(nested);
   }
 
@@ -200,13 +194,6 @@ public:
   }
 
   void emitCcx(std::size_t c0, std::size_t c1, std::size_t target) {
-    if (minControls_ <= 2) {
-      SmallVector<Value> local = {wire(c0), wire(c1), wire(target)};
-      GateEmitter inner(*builder_, loc_, local);
-      inner.emitTwoControlledXSequence(0, 1, 2);
-      assignWires(local, {c0, c1, target});
-      return;
-    }
     emitCtrl({c0, c1}, target, [](OpBuilder& builder, Location loc, Value arg) {
       return XOp::create(builder, loc, arg).getOutputQubit(0);
     });
@@ -214,13 +201,6 @@ public:
 
   void emitThreeControlledX(std::size_t c0, std::size_t c1, std::size_t c2,
                             std::size_t target) {
-    if (minControls_ <= 3) {
-      SmallVector<Value> local = {wire(c0), wire(c1), wire(c2), wire(target)};
-      GateEmitter inner(*builder_, loc_, local);
-      inner.emitThreeControlledXSequence();
-      assignWires(local, {c0, c1, c2, target});
-      return;
-    }
     emitCtrl({c0, c1, c2}, target,
              [](OpBuilder& builder, Location loc, Value arg) {
                return XOp::create(builder, loc, arg).getOutputQubit(0);
@@ -228,13 +208,6 @@ public:
   }
 
   void emitRCCX(std::size_t c0, std::size_t c1, std::size_t target) {
-    if (minControls_ <= 2) {
-      SmallVector<Value> local = {wire(c0), wire(c1), wire(target)};
-      GateEmitter inner(*builder_, loc_, local);
-      inner.emitRCCXSequence(0, 1, 2);
-      assignWires(local, {c0, c1, target});
-      return;
-    }
     auto rccxOp =
         RCCXOp::create(*builder_, loc_, wire(c0), wire(c1), wire(target));
     setWire(c0, rccxOp.getOutputQubit(0));
@@ -243,13 +216,6 @@ public:
   }
 
   void ccp(double theta, std::size_t c0, std::size_t c1, std::size_t target) {
-    if (minControls_ <= 2) {
-      SmallVector<Value> local = {wire(c0), wire(c1), wire(target)};
-      GateEmitter inner(*builder_, loc_, local);
-      inner.emitTwoControlledPhaseSequence(0, 1, 2, theta);
-      assignWires(local, {c0, c1, target});
-      return;
-    }
     emitCtrl({c0, c1}, target,
              [theta](OpBuilder& builder, Location loc, Value arg) {
                return POp::create(builder, loc, arg, theta).getOutputQubit(0);
@@ -265,7 +231,7 @@ public:
     auto invOp = InvOp::create(
         *builder_, loc_, invWires, [&](ValueRange args) -> SmallVector<Value> {
           SmallVector<Value> local(args.begin(), args.end());
-          GateEmitter inner(*builder_, loc_, local, minControls_);
+          GateEmitter inner(*builder_, loc_, local);
           emitGadgetBody(inner, 0, 1, 2);
           return local;
         });
@@ -325,13 +291,9 @@ private:
   Location loc_;
   SmallVector<Value>* wires_;
   ArrayRef<std::size_t> remap_;
-  std::uint64_t minControls_;
 };
 
-} // namespace
-
-static SmallVector<Value> threeControlledWires(ValueRange controls,
-                                               Value target) {
+SmallVector<Value> threeControlledWires(ValueRange controls, Value target) {
   if (controls.size() != 3) {
     llvm::reportFatalUsageError(
         "three-controlled synthesis requires exactly 3 control qubits");
@@ -665,65 +627,42 @@ synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
   return wires;
 }
 
-SmallVector<Value>
-synthesizeThreeControlled(OpBuilder& builder, Location loc, ValueRange controls,
-                          Value target, ControlledTarget gate,
-                          std::optional<double> theta = std::nullopt) {
+SmallVector<Value> synthesizeThreeControlled(OpBuilder& builder, Location loc,
+                                             ValueRange controls, Value target,
+                                             ControlledTarget gate) {
+  if (gate == ControlledTarget::Phase) {
+    llvm::reportFatalUsageError(
+        "synthesizeThreeControlled does not support phase gates");
+  }
   SmallVector<Value> wires = threeControlledWires(controls, target);
   GateEmitter emitter(builder, loc, wires);
-  switch (gate) {
-  case ControlledTarget::X:
+  if (gate == ControlledTarget::X) {
     emitter.emitThreeControlledXSequence();
-    break;
-  case ControlledTarget::Z:
+  } else {
     emitter.h(3);
     emitter.emitThreeControlledXSequence();
     emitter.h(3);
-    break;
-  case ControlledTarget::Phase: {
-    if (!theta) {
-      llvm::reportFatalUsageError(
-          "synthesizeThreeControlled: phase gate requires theta");
-    }
-    auto ctrlOp = CtrlOp::create(
-        builder, loc, ValueRange{wires[0], wires[1], wires[2]}, wires[3],
-        [&](Value targetArg) -> Value {
-          return POp::create(builder, loc, targetArg, *theta).getOutputQubit(0);
-        });
-    wires[0] = ctrlOp.getControlsOut()[0];
-    wires[1] = ctrlOp.getControlsOut()[1];
-    wires[2] = ctrlOp.getControlsOut()[2];
-    wires[3] = ctrlOp.getTargetsOut()[0];
-    break;
-  }
   }
   return wires;
 }
 
-SmallVector<Value>
-synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
-                          Value target, const std::uint64_t minControls,
-                          ControlledTarget gate,
-                          std::optional<double> theta = std::nullopt) {
-  if (controls.size() < 3) {
+SmallVector<Value> synthesizeMultiControlled(OpBuilder& builder, Location loc,
+                                             ValueRange controls, Value target,
+                                             ControlledTarget gate) {
+  if (controls.size() < 4) {
     llvm::reportFatalUsageError(
-        "synthesizeMultiControlled requires at least 3 control qubits");
-  }
-  if (controls.size() == 3) {
-    return synthesizeThreeControlled(builder, loc, controls, target, gate,
-                                     theta);
+        "synthesizeMultiControlled requires at least 4 control qubits");
   }
   if (gate == ControlledTarget::Phase) {
     llvm::reportFatalUsageError(
-        "synthesizeMultiControlled: phase gates with four or more controls "
-        "are not supported");
+        "synthesizeMultiControlled does not support phase gates");
   }
 
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
 
   const std::size_t targetIdx = controls.size();
-  GateEmitter emitter(builder, loc, wires, minControls);
+  GateEmitter emitter(builder, loc, wires);
   if (gate == ControlledTarget::X) {
     emitter.h(targetIdx);
     emitMcxHp24Core(emitter, wires.size());
@@ -734,21 +673,27 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
   return wires;
 }
 
+/// Match a controlled Pauli-X or Pauli-Z body.
+std::optional<ControlledTarget> matchControlledPauli(UnitaryOpInterface inner) {
+  if (isa<XOp>(inner.getOperation())) {
+    return ControlledTarget::X;
+  }
+  if (isa<ZOp>(inner.getOperation())) {
+    return ControlledTarget::Z;
+  }
+  return std::nullopt;
+}
+
 struct ControlledGateSpec {
   ControlledTarget gate;
   std::optional<double> theta;
 };
-} // namespace
 
-static std::optional<ControlledGateSpec>
-matchControlledGate(UnitaryOpInterface inner) {
-  if (isa<XOp>(inner.getOperation())) {
-    return ControlledGateSpec{.gate = ControlledTarget::X,
-                              .theta = std::nullopt};
-  }
-  if (isa<ZOp>(inner.getOperation())) {
-    return ControlledGateSpec{.gate = ControlledTarget::Z,
-                              .theta = std::nullopt};
+/// Match X, Z, or constant-theta phase (two-control / HP24 building blocks).
+std::optional<ControlledGateSpec>
+matchControlledXzOrPhase(UnitaryOpInterface inner) {
+  if (const auto pauli = matchControlledPauli(inner)) {
+    return ControlledGateSpec{.gate = *pauli, .theta = std::nullopt};
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
     if (const auto theta = utils::valueToDouble(pOp.getTheta())) {
@@ -759,132 +704,74 @@ matchControlledGate(UnitaryOpInterface inner) {
   return std::nullopt;
 }
 
-namespace {
-struct DecomposeTwoControlledPattern final : OpRewritePattern<CtrlOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    if (op.getNumControls() != 2 || op.getNumTargets() != 1) {
-      return failure();
-    }
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
-    if (!inner) {
-      return failure();
-    }
-    const auto spec = matchControlledGate(inner);
-    if (!spec) {
-      return failure();
-    }
-
-    rewriter.setInsertionPoint(op);
-    rewriter.replaceOp(op, synthesizeTwoControlled(
-                               rewriter, op.getLoc(), op.getControlsIn()[0],
-                               op.getControlsIn()[1], op.getInputTarget(0),
-                               spec->gate, spec->theta));
-    return success();
-  }
-};
-
-struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RCCXOp op,
-                                PatternRewriter& rewriter) const override {
-    rewriter.setInsertionPoint(op);
-    rewriter.replaceOp(
-        op, synthesizeRCCX(rewriter, op.getLoc(), op.getInputQubit(0),
-                           op.getInputQubit(1), op.getInputQubit(2)));
-    return success();
-  }
-};
-
-struct DecomposeTwoControlled final
-    : impl::DecomposeTwoControlledBase<DecomposeTwoControlled> {
-  using DecomposeTwoControlledBase::DecomposeTwoControlledBase;
-
-protected:
-  void runOnOperation() override {
-    RewritePatternSet patterns(&getContext());
-    patterns.add<DecomposeTwoControlledPattern, DecomposeRCCXPattern>(
-        &getContext());
-
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
-      signalPassFailure();
-    }
-  }
-};
-
-struct DecomposeThreeControlledPattern final : OpRewritePattern<CtrlOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    if (op.getNumControls() != 3 || op.getNumTargets() != 1) {
-      return failure();
-    }
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
-    if (!inner) {
-      return failure();
-    }
-    const auto spec = matchControlledGate(inner);
-    if (!spec) {
-      return failure();
-    }
-
-    rewriter.setInsertionPoint(op);
-    rewriter.replaceOp(op, synthesizeThreeControlled(
-                               rewriter, op.getLoc(), op.getControlsIn(),
-                               op.getInputTarget(0), spec->gate, spec->theta));
-    return success();
-  }
-};
-
-struct DecomposeThreeControlled final
-    : impl::DecomposeThreeControlledBase<DecomposeThreeControlled> {
-  using DecomposeThreeControlledBase::DecomposeThreeControlledBase;
-
-protected:
-  void runOnOperation() override {
-    RewritePatternSet patterns(&getContext());
-    patterns.add<DecomposeThreeControlledPattern>(&getContext());
-
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
-      signalPassFailure();
-    }
-  }
-};
-
-struct DecomposeMultiControlledPauliPattern final : OpRewritePattern<CtrlOp> {
-  explicit DecomposeMultiControlledPauliPattern(MLIRContext* context,
-                                                uint64_t minControls)
+struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
+  explicit DecomposeControlledGatePattern(MLIRContext* context,
+                                          uint64_t minControls)
       : OpRewritePattern<CtrlOp>(context), minControls_(minControls) {}
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     const auto numControls = op.getNumControls();
-    if (numControls < minControls_ || numControls < 4 ||
-        op.getNumTargets() != 1) {
+    if (numControls < minControls_ || op.getNumTargets() != 1) {
       return failure();
     }
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
-    const auto spec = matchControlledGate(inner);
-    if (!spec) {
-      return failure();
-    }
-    // HP24 core only supports Pauli-X/Z; leave k >= 4 phase gates untouched.
-    if (spec->gate == ControlledTarget::Phase) {
-      return failure();
-    }
 
     rewriter.setInsertionPoint(op);
+    if (numControls >= 4) {
+      const auto gate = matchControlledPauli(inner);
+      if (!gate) {
+        return failure();
+      }
+      rewriter.replaceOp(op, synthesizeMultiControlled(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), *gate));
+      return success();
+    }
+    if (numControls == 3) {
+      const auto gate = matchControlledPauli(inner);
+      if (!gate) {
+        return failure();
+      }
+      rewriter.replaceOp(op, synthesizeThreeControlled(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), *gate));
+      return success();
+    }
+    if (numControls == 2) {
+      const auto spec = matchControlledXzOrPhase(inner);
+      if (!spec) {
+        return failure();
+      }
+      rewriter.replaceOp(op, synthesizeTwoControlled(
+                                 rewriter, op.getLoc(), op.getControlsIn()[0],
+                                 op.getControlsIn()[1], op.getInputTarget(0),
+                                 spec->gate, spec->theta));
+      return success();
+    }
+    return failure();
+  }
+
+private:
+  uint64_t minControls_;
+};
+
+struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
+  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minControls)
+      : OpRewritePattern<RCCXOp>(context), minControls_(minControls) {}
+
+  LogicalResult matchAndRewrite(RCCXOp op,
+                                PatternRewriter& rewriter) const override {
+    if (minControls_ > 2) {
+      return failure();
+    }
+    rewriter.setInsertionPoint(op);
     rewriter.replaceOp(
-        op, synthesizeMultiControlled(rewriter, op.getLoc(), op.getControlsIn(),
-                                      op.getInputTarget(0), minControls_,
-                                      spec->gate, spec->theta));
+        op, synthesizeRCCX(rewriter, op.getLoc(), op.getInputQubit(0),
+                           op.getInputQubit(1), op.getInputQubit(2)));
     return success();
   }
 
@@ -906,8 +793,8 @@ protected:
     }
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<DecomposeMultiControlledPauliPattern>(&getContext(),
-                                                       minControls);
+    patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
+        &getContext(), minControls);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
