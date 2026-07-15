@@ -561,7 +561,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
 
   // Remove if operation completely if both branches are empty after propagation
   if (thenEmpty && elseEmpty) {
-    std::cout << "If and else empty" << std::endl;
     // Check that there is no implicit swap in one branch by re-ordered yield
     // operands and get order of returned qubits
     std::vector<unsigned int> order;
@@ -594,7 +593,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       throw std::runtime_error("Constant propagation does not allow implicit "
                                "swapping of qubits in branching.");
     }
-    std::cout << "Implicit swap checked..." << std::endl;
     // remove if Op and replace the values in the module and union table
     std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
     for (unsigned int inputQubitIndex = 0;
@@ -603,12 +601,10 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
                                   op->getQubits()[inputQubitIndex]);
     }
 
-    std::cout << "Replaced input with output after if removal..." << std::endl;
     std::vector<Value> inputQubitVec = {op->getQubits().begin(),
                                         op->getQubits().end()};
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs,
                               inputQubitVec);
-    std::cout << "Replaced values globally..." << std::endl;
     rewriter.eraseOp(*op);
     std::cout << "Erased If Op..." << std::endl;
   } else {
@@ -1043,6 +1039,7 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
       return failure();
     }
   }
+  std::cout << "Iterated" << std::endl;
   return success();
 }
 
