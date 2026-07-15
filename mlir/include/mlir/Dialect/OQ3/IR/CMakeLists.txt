@@ -13,4 +13,4 @@ mlir_tablegen(OQ3OpsEnums.h.inc -gen-enum-decls)
 mlir_tablegen(OQ3OpsEnums.cpp.inc -gen-enum-defs)
 add_public_tablegen_target(MLIROQ3EnumsIncGen)
 
-add_mlir_doc(OQ3Ops OQ3Dialect Dialects/ -gen-dialect-doc)
+add_mlir_doc(OQ3Ops OQ3Dialect Dialects/ -gen-dialect-doc -dialect=oq3)
