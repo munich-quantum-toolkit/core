@@ -17,9 +17,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/MultiControlled.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
@@ -719,62 +717,4 @@ TEST_F(McxDecompositionTest, LeavesMultiControlledHUntouched) {
   ASSERT_EQ(ctrlOp.getNumBodyUnitaries(), 1U);
   EXPECT_TRUE(isa<HOp>(ctrlOp.getBodyUnitary(0).getOperation()));
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
-}
-
-TEST_F(McxDecompositionTest, SynthesizeTwoControlledRequiresEightByEight) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context());
-        builder.initialize();
-        const Value q0 = builder.staticQubit(0);
-        const Value q1 = builder.staticQubit(1);
-        const Value q2 = builder.staticQubit(2);
-        decomposition::synthesizeTwoControlled(
-            builder, builder.getLoc(), q0, q1, q2, DynamicMatrix::identity(4));
-      },
-      "synthesizeTwoControlled requires an 8x8 unitary matrix");
-}
-
-TEST_F(McxDecompositionTest, SynthesizeMultiControlledRequiresThreeControls) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context());
-        builder.initialize();
-        const Value q0 = builder.staticQubit(0);
-        const Value q1 = builder.staticQubit(1);
-        decomposition::synthesizeMultiControlled(
-            builder, builder.getLoc(), ValueRange{q0}, q1, 2,
-            decomposition::ControlledTarget::X);
-      },
-      "synthesizeMultiControlled requires at least 3 control qubits");
-}
-
-TEST_F(McxDecompositionTest, SynthesizeThreeControlledRequiresThreeControls) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context());
-        builder.initialize();
-        const Value q0 = builder.staticQubit(0);
-        const Value q1 = builder.staticQubit(1);
-        const Value q2 = builder.staticQubit(2);
-        decomposition::synthesizeThreeControlled(
-            builder, builder.getLoc(), ValueRange{q0, q1}, q2,
-            decomposition::ControlledTarget::X);
-      },
-      "three-controlled synthesis requires exactly 3 control qubits");
-}
-
-TEST_F(McxDecompositionTest, SynthesizeThreeControlledZRequiresThreeControls) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context());
-        builder.initialize();
-        const Value q0 = builder.staticQubit(0);
-        const Value q1 = builder.staticQubit(1);
-        const Value q2 = builder.staticQubit(2);
-        decomposition::synthesizeThreeControlled(
-            builder, builder.getLoc(), ValueRange{q0, q1}, q2,
-            decomposition::ControlledTarget::Z);
-      },
-      "three-controlled synthesis requires exactly 3 control qubits");
 }

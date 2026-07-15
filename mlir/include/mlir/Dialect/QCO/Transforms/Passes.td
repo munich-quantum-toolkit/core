@@ -214,7 +214,7 @@ def DecomposeMultiControlled
   let description = [{
     Decomposes multi-controlled Pauli-X, Pauli-Z, and phase gates (`qco.ctrl`
     with `qco.x`, `qco.z`, or `qco.p` body) with at least four controls via
-    @ref mlir::qco::decomposition::synthesizeMultiControlled.
+    Huang-Palsberg (HP24) no-ancilla multi-controlled synthesis.
 
     Gates with exactly three controls are handled by
     @c decompose-three-controlled. Subcircuits with two or three controls are
@@ -243,7 +243,7 @@ def DecomposeThreeControlled
       "synthesis";
   let description = [{
     Decomposes three-control building-block gates (`CCCX`, `CCCZ`, and
-    `CCCPhase`) via @ref mlir::qco::decomposition::synthesizeThreeControlled.
+    `CCCPhase`) via elementary-gate three-controlled synthesis.
 
     Pauli-X and Pauli-Z gates are expanded to elementary one- and two-qubit
     gates. Phase gates are lowered to a three-control `qco.ctrl` with a
@@ -263,8 +263,8 @@ def DecomposeTwoControlled
                 "two-controlled synthesis";
   let description = [{
     Decomposes two-control building-block gates (`CCX`, `CCZ`, `CCPhase`) via
-    @ref mlir::qco::decomposition::synthesizeTwoControlled and standalone
-    `qco.rccx` gates via @ref mlir::qco::decomposition::synthesizeRCCX.
+    elementary-gate two-controlled synthesis and standalone `qco.rccx` gates via
+    an elementary RCCX expansion.
 
     The pass matches `qco.ctrl` operations with exactly two controls and a
     single `qco.x`, `qco.z`, or `qco.p` body on one target. Single-control
