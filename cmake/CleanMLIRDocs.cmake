@@ -19,7 +19,7 @@ foreach(MD_FILE ${MD_FILES})
   string(REGEX REPLACE "\n\\[TOC\\]\n" "" CONTENT "${CONTENT}")
 
   # Replace lines that only contain an llvm-project source link, allowing for whitespace.
-  string(REGEX REPLACE "\n\\[source\\]\\(https://github.com/llvm/llvm-project/blob/main.*\.td\\)\n"
+  string(REGEX REPLACE "\n\\[source\\]\\(https://github.com/llvm/llvm-project/blob/main.*\\.td\\)\n"
                        "" CONTENT "${CONTENT}")
 
   # Write the processed content back to the file.
