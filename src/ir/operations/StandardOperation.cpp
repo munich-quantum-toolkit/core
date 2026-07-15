@@ -450,31 +450,12 @@ void StandardOperation::dumpGateType(std::ostream& of, std::ostringstream& op,
     op << "xx_plus_yy(" << parameter[0] << "," << parameter[1] << ")";
     break;
   case RCCX:
-    if (openQASM3) {
-      assert(targets.size() == 3);
-      const auto& a = qubitMap.at(targets[0]).second;
-      const auto& b = qubitMap.at(targets[1]).second;
-      const auto& c = qubitMap.at(targets[2]).second;
-      const auto p = op.str();
-      std::ostringstream controlOperands;
-      for (const auto& control : controls) {
-        controlOperands << qubitMap.at(control.qubit).second << ", ";
-      }
-      const auto ctrl = controlOperands.str();
-
-      of << p << "u2(0, pi) " << ctrl << c << ";\n";
-      of << p << "u1(pi/4) " << ctrl << c << ";\n";
-      of << p << "cx " << ctrl << b << ", " << c << ";\n";
-      of << p << "u1(-pi/4) " << ctrl << c << ";\n";
-      of << p << "cx " << ctrl << a << ", " << c << ";\n";
-      of << p << "u1(pi/4) " << ctrl << c << ";\n";
-      of << p << "cx " << ctrl << b << ", " << c << ";\n";
-      of << p << "u1(-pi/4) " << ctrl << c << ";\n";
-      of << p << "u2(0, pi) " << ctrl << c << ";\n";
-      return;
+    // qelib1.inc uses rc3x for the single-control OpenQASM 2 gate.
+    if (!openQASM3 && controls.size() == 1) {
+      op << "rc3x";
+    } else {
+      op << "rccx";
     }
-    // qelib1.inc uses rc3x for the 4-qubit gate.
-    op << (controls.size() == 1 ? "rc3x" : "rccx");
     break;
   case SWAP:
     op << "swap";

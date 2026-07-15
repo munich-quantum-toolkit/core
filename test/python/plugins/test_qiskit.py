@@ -25,9 +25,10 @@ from qiskit.circuit import (
     QuantumRegister,
 )
 from qiskit.circuit.classical import expr
-from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
+from qiskit.circuit.library import RCCXGate, U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.qasm3 import dumps
+from qiskit.quantum_info import Operator
 
 from mqt.core.ir.operations import (
     ComparisonKind,
@@ -416,6 +417,19 @@ def test_operations() -> None:
     print(qiskit_qc)
     assert qiskit_qc.num_qubits == 3
     assert len(qiskit_qc) == len(qc)
+
+
+def test_controlled_rccx() -> None:
+    """Controlled RCCX imports via gate definition and round-trips."""
+    qc = QuantumCircuit(4)
+    qc.append(RCCXGate().control(1), [0, 1, 2, 3])
+
+    mqt_qc = qiskit_to_mqt(qc)
+    assert len(mqt_qc) == 1
+    assert isinstance(mqt_qc[0], CompoundOperation)
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    assert Operator(qc).equiv(Operator(qiskit_qc))
 
 
 def test_symbolic() -> None:
