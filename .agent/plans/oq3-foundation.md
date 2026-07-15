@@ -143,6 +143,11 @@ changes and other worktrees remain outside scope.
       OpenQASM 3 minor versions are rejected. Added target and verifier tests,
       including a constant-zero range step that must fail before it can form an
       infinite target loop.
+- [x] (2026-07-15 18:25Z) Fixed the OQ3 dialect documentation target after the
+      draft pull request's Read the Docs build reported that multiple dialects
+      occur in `OQ3Ops.td`. The generated OQ3 operation definition now shares
+      that file with the dialect definition, so `add_mlir_doc` explicitly
+      selects `oq3`; `OQ3DialectDocGen` builds successfully.
 
 ## Surprises & Discoveries
 
