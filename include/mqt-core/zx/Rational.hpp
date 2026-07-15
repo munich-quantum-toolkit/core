@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Rational.hpp
+ * @brief Exact rational and pi-rational number types for ZX diagrams.
+ */
+
 #pragma once
 
 #if defined(GMP)

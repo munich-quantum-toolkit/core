@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file GateMatrixDefinitions.hpp
+ * @brief Gate-matrix definitions used to construct decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

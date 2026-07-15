@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file InstVisitor.hpp
+ * @brief Visitors for OpenQASM 3 instructions and expressions.
+ */
+
 #pragma once
 
 #include "Statement_fwd.hpp"

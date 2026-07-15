@@ -110,7 +110,8 @@ class QDMIBackend(BackendV2):
     It automatically introspects device capabilities and constructs a
     :class:`~qiskit.transpiler.Target` object with supported operations.
 
-    Backends should be obtained through :class:`~mqt.core.qdmi.qiskit.QDMIProvider`
+    Backends should be obtained through
+    :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider`
     rather than instantiated directly.
 
     Args:
