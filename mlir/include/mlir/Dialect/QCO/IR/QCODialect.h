@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOAttrDefs.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>

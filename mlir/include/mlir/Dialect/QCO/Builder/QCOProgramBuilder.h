@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOAttrDefs.h"
+
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -1303,7 +1305,7 @@ public:
    * ```
    */
   ValueRange ppr(ValueRange qubits, std::int8_t piFraction,
-                 ArrayRef<StringRef> pauliProduct);
+                 ArrayRef<Pauli> pauliProduct);
 
   //===--------------------------------------------------------------------===//
   // Modifiers

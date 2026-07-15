@@ -867,7 +867,7 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 // PPRotationOp
 
 ValueRange QCOProgramBuilder::ppr(ValueRange qubits, std::int8_t piFraction,
-                                  ArrayRef<StringRef> pauliProduct) {
+                                  ArrayRef<Pauli> pauliProduct) {
   checkFinalized();
 
   auto op = PPRotationOp::create(*this, qubits, piFraction, pauliProduct);

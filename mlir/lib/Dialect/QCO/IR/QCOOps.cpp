@@ -502,6 +502,9 @@ void QCODialect::initialize() {
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
 
+// Generated enum conversion/utility definitions.
+#include "mlir/Dialect/QCO/IR/QCOEnums.cpp.inc"
+
 //===----------------------------------------------------------------------===//
 // Interfaces
 //===----------------------------------------------------------------------===//

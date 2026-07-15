@@ -9,6 +9,7 @@
 #ifndef MLIR_DIALECT_QCO_IR_QCOOPS_TD
 #define MLIR_DIALECT_QCO_IR_QCOOPS_TD
 
+include "mlir/Dialect/QCO/IR/QCOAttrDefs.td"
 include "mlir/Dialect/QCO/IR/QCODialect.td"
 include "mlir/Dialect/QCO/IR/QCOInterfaces.td"
 include "mlir/Dialect/QCO/IR/QCOTypes.td"
@@ -1125,7 +1126,7 @@ def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface, Pure]> {
   let arguments =
       (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in,
           ConfinedAttr<SI8Attr, [PauliRotationConstraint]>:$rotation,
-          TypedArrayAttrBase<StrAttr,
+          TypedArrayAttrBase<ArrayAttr,
                              "A product of Pauli operators.">:$pauli_product);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let assemblyFormat = "`(` $rotation `)` $pauli_product $qubits_in attr-dict "
@@ -1160,7 +1161,7 @@ def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface, Pure]> {
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits, "int8_t":$rotation,
-                      "ArrayRef<StringRef>":$pauli_product)>,
+                      "ArrayRef<Pauli>":$pauli_product)>,
   ];
 
   let hasVerifier = 1;

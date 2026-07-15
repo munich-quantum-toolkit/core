@@ -65,16 +65,21 @@ bool PPRotationOp::isClifford() { return !isNonClifford(); }
 
 void PPRotationOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                          ValueRange qubitsIn, std::int8_t rotation,
-                         ArrayRef<StringRef> pauliProduct) {
+                         ArrayRef<Pauli> pauliProduct) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubitsIn.size());
   for (auto qubit : qubitsIn) {
     resultTypes.push_back(qubit.getType());
   }
   auto si8Type = odsBuilder.getIntegerType(8, true);
+  SmallVector<Attribute> pauliAttrs;
+  pauliAttrs.reserve(pauliProduct.size());
+  for (const auto& pauli : pauliProduct) {
+    pauliAttrs.push_back(PauliAttr::get(odsBuilder.getContext(), pauli));
+  }
+  auto pauliWord = odsBuilder.getArrayAttr(pauliAttrs);
   build(odsBuilder, odsState, resultTypes, qubitsIn,
-        odsBuilder.getIntegerAttr(si8Type, rotation),
-        odsBuilder.getStrArrayAttr(pauliProduct));
+        odsBuilder.getIntegerAttr(si8Type, rotation), pauliWord);
 }
 
 LogicalResult PPRotationOp::verify() {
@@ -85,14 +90,6 @@ LogicalResult PPRotationOp::verify() {
   if (numPaulis != getQubitsIn().size()) {
     return emitOpError("number of elements in pauli_product must match "
                        "number of input qubits");
-  }
-  for (const auto& pauli : getPauliProduct()) {
-    const auto pauliStr = cast<StringAttr>(pauli).getValue();
-    if (pauliStr != "I" && pauliStr != "X" && pauliStr != "Y" &&
-        pauliStr != "Z") {
-      return emitOpError("pauli_product elements must be one of 'I', 'X', "
-                         "'Y', or 'Z'");
-    }
   }
   return success();
 }

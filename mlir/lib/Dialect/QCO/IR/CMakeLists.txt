@@ -24,6 +24,7 @@ add_mlir_dialect_library(
   DEPENDS
   MLIRQCOOpsIncGen
   MLIRQCOInterfacesIncGen
+  MLIRQCOAttrDefsIncGen
   LINK_LIBS
   PUBLIC
   MLIRQCOMatrix
