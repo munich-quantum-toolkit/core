@@ -259,14 +259,34 @@ private:
       case qasm3::UnaryExpression::LogicalNot:
         kind = ExpressionKind::LogicalNot;
         break;
+      case qasm3::UnaryExpression::Sin:
+        kind = ExpressionKind::Sin;
+        break;
+      case qasm3::UnaryExpression::Cos:
+        kind = ExpressionKind::Cos;
+        break;
+      case qasm3::UnaryExpression::Tan:
+        kind = ExpressionKind::Tan;
+        break;
+      case qasm3::UnaryExpression::Exp:
+        kind = ExpressionKind::Exp;
+        break;
+      case qasm3::UnaryExpression::Ln:
+        kind = ExpressionKind::Ln;
+        break;
+      case qasm3::UnaryExpression::Sqrt:
+        kind = ExpressionKind::Sqrt;
+        break;
       default:
         fail(debugInfo,
              "This scalar unary expression is not supported by OQ3 emission.");
       }
       const auto operand = convertExpression(unary->operand, debugInfo);
-      const auto type = kind == ExpressionKind::LogicalNot
-                            ? ScalarType::Bool
-                            : program.expressions[operand].type;
+      const auto type =
+          kind == ExpressionKind::LogicalNot ? ScalarType::Bool
+          : kind == ExpressionKind::BitwiseNot || kind == ExpressionKind::Negate
+              ? program.expressions[operand].type
+              : ScalarType::Float;
       return addExpression({.kind = kind, .type = type, .lhs = operand});
     }
 

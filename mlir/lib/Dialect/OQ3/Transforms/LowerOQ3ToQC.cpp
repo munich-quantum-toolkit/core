@@ -370,6 +370,8 @@ private:
 
     llvm::SmallVector<int64_t> controlCounts(
         application.getModifierKinds().size(), 0);
+    llvm::SmallVector<Value> negativeControls;
+    size_t controlOffset = 0;
     for (const auto [position, rawKind] :
          llvm::enumerate(application.getModifierKinds())) {
       const auto kind = static_cast<GateModifierKind>(rawKind);
@@ -385,20 +387,41 @@ private:
           application.getModifierOperandIndices()[position];
       if (operandIndex < 0) {
         controlCounts[position] = 1;
-        continue;
+      } else {
+        auto constant = application.getModifierOperands()[operandIndex]
+                            .getDefiningOp<arith::ConstantIntOp>();
+        if (!constant || constant.value() <= 0) {
+          return application.emitError(
+              "dynamic control counts cannot be lowered to the selected "
+              "target");
+        }
+        controlCounts[position] = constant.value();
       }
-      auto constant = application.getModifierOperands()[operandIndex]
-                          .getDefiningOp<arith::ConstantIntOp>();
-      if (!constant || constant.value() <= 0) {
+
+      const size_t controlCount = controlCounts[position];
+      if (application.getQubits().size() < controlOffset + controlCount) {
         return application.emitError(
-            "dynamic control counts cannot be lowered to the selected target");
+            "modifier control count exceeds the available gate operands");
       }
-      controlCounts[position] = constant.value();
+      if (kind == GateModifierKind::negctrl) {
+        const auto controls =
+            application.getQubits().slice(controlOffset, controlCount);
+        negativeControls.append(controls.begin(), controls.end());
+      }
+      controlOffset += controlCount;
     }
 
     OpBuilder builder(application);
-    if (failed(emitModifiers(builder, application, declaration, controlCounts,
-                             0, application.getQubits()))) {
+    for (const Value control : negativeControls) {
+      qc::XOp::create(builder, application.getLoc(), control);
+    }
+    const LogicalResult result =
+        emitModifiers(builder, application, declaration, controlCounts, 0,
+                      application.getQubits());
+    for (const Value control : negativeControls) {
+      qc::XOp::create(builder, application.getLoc(), control);
+    }
+    if (failed(result)) {
       return failure();
     }
     application.erase();
@@ -426,60 +449,28 @@ private:
       return result;
     }
 
-    size_t nextPosition = position;
-    size_t totalControlCount = 0;
-    while (nextPosition < application.getModifierKinds().size()) {
-      const auto nextKind = static_cast<GateModifierKind>(
-          application.getModifierKinds()[nextPosition]);
-      if (nextKind != GateModifierKind::ctrl &&
-          nextKind != GateModifierKind::negctrl) {
-        break;
-      }
-      totalControlCount += controlCounts[nextPosition];
-      ++nextPosition;
-    }
-    if (qubits.size() < totalControlCount) {
-      return application.emitError(
-          "modifier control count exceeds the available gate operands");
-    }
+    return emitControls(builder, application, declaration, controlCounts,
+                        position + 1, controlCounts[position], qubits);
+  }
 
-    const ValueRange controls = qubits.take_front(totalControlCount);
-    const ValueRange targets = qubits.drop_front(totalControlCount);
-    size_t controlOffset = 0;
-    for (size_t modifierPosition = position; modifierPosition < nextPosition;
-         ++modifierPosition) {
-      const size_t count = controlCounts[modifierPosition];
-      const auto modifierKind = static_cast<GateModifierKind>(
-          application.getModifierKinds()[modifierPosition]);
-      if (modifierKind == GateModifierKind::negctrl) {
-        for (const Value control : controls.slice(controlOffset, count)) {
-          qc::XOp::create(builder, application.getLoc(), control);
-        }
-      }
-      controlOffset += count;
+  LogicalResult emitControls(OpBuilder& builder, ApplyGateOp application,
+                             Operation* declaration,
+                             const ArrayRef<int64_t> controlCounts,
+                             const size_t nextPosition,
+                             const size_t remainingControls,
+                             const ValueRange qubits) const {
+    if (remainingControls == 0) {
+      return emitModifiers(builder, application, declaration, controlCounts,
+                           nextPosition, qubits);
     }
 
     LogicalResult result = success();
-    qc::CtrlOp::create(builder, application.getLoc(), controls, targets,
-                       [&](const ValueRange aliases) {
-                         result = emitModifiers(builder, application,
-                                                declaration, controlCounts,
-                                                nextPosition, aliases);
+    qc::CtrlOp::create(builder, application.getLoc(), qubits.take_front(1),
+                       qubits.drop_front(1), [&](const ValueRange aliases) {
+                         result = emitControls(
+                             builder, application, declaration, controlCounts,
+                             nextPosition, remainingControls - 1, aliases);
                        });
-
-    controlOffset = 0;
-    for (size_t modifierPosition = position; modifierPosition < nextPosition;
-         ++modifierPosition) {
-      const size_t count = controlCounts[modifierPosition];
-      const auto modifierKind = static_cast<GateModifierKind>(
-          application.getModifierKinds()[modifierPosition]);
-      if (modifierKind == GateModifierKind::negctrl) {
-        for (const Value control : controls.slice(controlOffset, count)) {
-          qc::XOp::create(builder, application.getLoc(), control);
-        }
-      }
-      controlOffset += count;
-    }
     return result;
   }
 };
