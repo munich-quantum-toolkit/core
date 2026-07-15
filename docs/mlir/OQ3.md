@@ -1,7 +1,7 @@
 # OQ3 Dialect
 
-The OQ3 dialect is an experimental typed semantic representation for OpenQASM
-3 programs. It preserves OpenQASM-specific concepts, such as source-level gate
+The OQ3 dialect is an experimental typed semantic representation for OpenQASM 3
+programs. It preserves OpenQASM-specific concepts, such as source-level gate
 definitions, ordered modifiers, and inclusive ranges, while ordinary classical
 computation uses the builtin MLIR dialects.
 
