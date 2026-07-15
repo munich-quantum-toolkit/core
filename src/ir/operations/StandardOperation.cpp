@@ -301,11 +301,6 @@ void StandardOperation::dumpOpenQASM2(
                  "work with this library.\n";
   }
 
-  // save the numbers of controls as a prefix to the operation name
-  const auto controlPrefix =
-      (type == RCCX && controls.size() == 1) ? 0U : controls.size();
-  op << std::string(controlPrefix, 'c');
-
   const bool isSpecialGate = type == Peres || type == Peresdg;
 
   if (!isSpecialGate) {
@@ -317,7 +312,15 @@ void StandardOperation::dumpOpenQASM2(
     }
   }
 
-  dumpGateType(of, op, qubitMap, false);
+  // qelib1.inc defines rc3x for the single-control OpenQASM 2 gate.
+  if (type == RCCX && controls.size() == 1) {
+    of << op.str() << "rc3x";
+    dumpOpenQASMGateOperands(of, qubitMap);
+  } else {
+    // save the numbers of controls as a prefix to the operation name
+    op << std::string(controls.size(), 'c');
+    dumpGateType(of, op, qubitMap);
+  }
 
   if (!isSpecialGate) {
     // apply X operations to negate the respective controls again
@@ -333,12 +336,12 @@ void StandardOperation::dumpOpenQASM3(
     std::ostream& of, std::ostringstream& op,
     const QubitIndexToRegisterMap& qubitMap) const {
   dumpControls(op);
-  dumpGateType(of, op, qubitMap, true);
+  dumpGateType(of, op, qubitMap);
 }
 
-void StandardOperation::dumpGateType(std::ostream& of, std::ostringstream& op,
-                                     const QubitIndexToRegisterMap& qubitMap,
-                                     const bool openQASM3) const {
+void StandardOperation::dumpGateType(
+    std::ostream& of, std::ostringstream& op,
+    const QubitIndexToRegisterMap& qubitMap) const {
   // Dump the operation name and parameters.
   switch (type) {
   case GPhase:
@@ -450,12 +453,7 @@ void StandardOperation::dumpGateType(std::ostream& of, std::ostringstream& op,
     op << "xx_plus_yy(" << parameter[0] << "," << parameter[1] << ")";
     break;
   case RCCX:
-    // qelib1.inc uses rc3x for the single-control OpenQASM 2 gate.
-    if (!openQASM3 && controls.size() == 1) {
-      op << "rc3x";
-    } else {
-      op << "rccx";
-    }
+    op << "rccx";
     break;
   case SWAP:
     op << "swap";
@@ -507,7 +505,11 @@ void StandardOperation::dumpGateType(std::ostream& of, std::ostringstream& op,
 
   // apply the operation
   of << op.str();
+  dumpOpenQASMGateOperands(of, qubitMap);
+}
 
+void StandardOperation::dumpOpenQASMGateOperands(
+    std::ostream& of, const QubitIndexToRegisterMap& qubitMap) const {
   // First print control qubits.
   for (auto it = controls.begin(); it != controls.end();) {
     of << " " << qubitMap.at(it->qubit).second;
