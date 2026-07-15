@@ -5,7 +5,3 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
-
-add_subdirectory(Conversion)
-add_subdirectory(Dialect)
-add_subdirectory(Target)
