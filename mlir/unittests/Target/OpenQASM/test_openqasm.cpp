@@ -326,4 +326,130 @@ powered(0.5) q;
             std::string::npos);
 }
 
+TEST(OpenQASMTargetTest,
+     LowersCustomGatesConditionalsAndQuantumRuntimeOperations) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate pair(theta) left, right {
+  rx(theta) left;
+  cx left, right;
+}
+qubit[2] q;
+bit c = measure q[0];
+if (!c) {
+  pair(0.5) q[0], q[1];
+} else {
+  reset q[1];
+}
+barrier q;
+output bit[2] out = measure q;
+)qasm";
+
+  MLIRContext context;
+  auto module = oq3::translateOpenQASMToOQ3(SOURCE, context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t customGates = 0;
+  std::size_t conditionals = 0;
+  module->walk([&](Operation* operation) {
+    customGates += isa<oq3::GateOp>(operation);
+    conditionals += operation->getName().getStringRef() == "scf.if";
+  });
+  EXPECT_EQ(customGates, 1);
+  EXPECT_EQ(conditionals, 1);
+
+  PassManager manager(&context);
+  manager.addPass(oq3::createLowerOQ3ToQCPass());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t resets = 0;
+  std::size_t barriers = 0;
+  module->walk([&](Operation* operation) {
+    const StringRef name = operation->getName().getStringRef();
+    resets += name == "qc.reset";
+    barriers += name == "qc.barrier";
+  });
+  EXPECT_EQ(resets, 1);
+  EXPECT_EQ(barriers, 1);
+}
+
+TEST(OpenQASMTargetTest, LowersOpenQASM2ControlledGateCompatibilityPrefixes) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[4];
+creg c[4];
+cccx q[0], q[1], q[2], q[3];
+measure q -> c;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t controls = 0;
+  module->walk(
+      [&](Operation* operation) { controls += isa<qc::CtrlOp>(operation); });
+  EXPECT_EQ(controls, 3);
+}
+
+TEST(OpenQASMFrontendTest, RejectsUnmeasuredOutputsAndInvalidConditions) {
+  constexpr llvm::StringLiteral UNMEASURED_OUTPUT = R"qasm(
+OPENQASM 3.1;
+qubit q;
+output bit result;
+)qasm";
+  constexpr llvm::StringLiteral UNMEASURED_CONDITION = R"qasm(
+OPENQASM 3.1;
+qubit q;
+bit c;
+if (c) { x q; }
+)qasm";
+
+  auto unmeasuredOutput = oq3::frontend::analyzeOpenQASM(UNMEASURED_OUTPUT);
+  ASSERT_FALSE(unmeasuredOutput);
+  ASSERT_FALSE(unmeasuredOutput.diagnostics.empty());
+  EXPECT_NE(
+      unmeasuredOutput.diagnostics.front().message.find("not fully measured"),
+      std::string::npos);
+
+  auto unmeasuredCondition =
+      oq3::frontend::analyzeOpenQASM(UNMEASURED_CONDITION);
+  ASSERT_FALSE(unmeasuredCondition);
+  ASSERT_FALSE(unmeasuredCondition.diagnostics.empty());
+  EXPECT_NE(unmeasuredCondition.diagnostics.front().message.find(
+                "has not been measured"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidGateControlAndBroadcastShapes) {
+  constexpr llvm::StringLiteral ZERO_CONTROL = R"qasm(
+OPENQASM 3.1;
+qubit[2] q;
+ctrl(0) @ x q[0], q[1];
+)qasm";
+  constexpr llvm::StringLiteral MIXED_BROADCAST = R"qasm(
+OPENQASM 3.1;
+qubit[2] q;
+qubit r;
+cx q, r;
+)qasm";
+
+  auto zeroControl = oq3::frontend::analyzeOpenQASM(ZERO_CONTROL);
+  ASSERT_FALSE(zeroControl);
+  ASSERT_FALSE(zeroControl.diagnostics.empty());
+  EXPECT_NE(zeroControl.diagnostics.front().message.find("must be positive"),
+            std::string::npos);
+
+  auto mixedBroadcast = oq3::frontend::analyzeOpenQASM(MIXED_BROADCAST);
+  ASSERT_FALSE(mixedBroadcast);
+  ASSERT_FALSE(mixedBroadcast.diagnostics.empty());
+  EXPECT_NE(mixedBroadcast.diagnostics.front().message.find("not a mixture"),
+            std::string::npos);
+}
+
 } // namespace
