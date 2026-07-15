@@ -63,7 +63,7 @@ using namespace mlir;
 // Command-line options
 static llvm::cl::opt<std::string>
     inputFilename(llvm::cl::Positional,
-                  llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
+                  llvm::cl::desc("<input .jeff/.mlir/.qco/.qasm file>"),
                   llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> inputFormat(
@@ -102,12 +102,15 @@ struct ParsedProgram {
 };
 } // namespace
 
+/**
+ * @brief Parse an input format or infer it from a filename.
+ */
 [[nodiscard]] static std::optional<InputFormat>
 parseInputFormat(const StringRef format, const StringRef filename) {
   if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
     return InputFormat::MLIR;
   }
-  if (format == "qco") {
+  if (format == "qco" || (format == "auto" && filename.ends_with(".qco"))) {
     return InputFormat::QCO;
   }
   if (format == "qasm" || (format == "auto" && filename.ends_with(".qasm"))) {
@@ -122,6 +125,9 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   return std::nullopt;
 }
 
+/**
+ * @brief Parse an output format.
+ */
 [[nodiscard]] static std::optional<OutputFormat>
 parseOutputFormat(const StringRef format) {
   if (format == "qc-import") {
@@ -349,41 +355,43 @@ int main(int argc, char** argv) {
   }
 
   const auto runPasses =
-      [&](const function_ref<void(OpPassManager&)> populate) {
+      [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
         PassManager pm(&context);
         if (failed(applyPassManagerCLOptions(pm))) {
           return failure();
         }
-        populate(pm);
+        if (failed(populate(pm))) {
+          return failure();
+        }
         return pm.run(*program.module);
       };
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       program.dialect == InputDialect::QC &&
-      failed(
-          runPasses([](OpPassManager& pm) { pm.addPass(createQCToQCO()); }))) {
+      failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(createQCToQCO());
+        return success();
+      }))) {
     return 1;
   }
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO) {
-    if (auto pipelineParseFailed = false;
-        failed(runPasses([&](OpPassManager& pm) {
+    if (failed(runPasses([&](OpPassManager& pm) {
           populateQCOCleanupPipeline(pm);
           if (passPipeline.hasAnyOccurrences()) {
             if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
                   llvm::errs() << message << "\n";
                   return failure();
                 }))) {
-              pipelineParseFailed = true;
-              return;
+              return failure();
             }
           } else {
             populateDefaultQCOOptimizationPipeline(pm);
           }
           populateQCOCleanupPipeline(pm);
-        })) ||
-        pipelineParseFailed) {
+          return success();
+        }))) {
       return 1;
     }
   }
@@ -392,6 +400,7 @@ int main(int argc, char** argv) {
     if (failed(runPasses([](OpPassManager& pm) {
           pm.addPass(createQCOToJeff());
           populateJeffCleanupPipeline(pm);
+          return success();
         }))) {
       return 1;
     }
@@ -401,6 +410,7 @@ int main(int argc, char** argv) {
     if (failed(runPasses([](OpPassManager& pm) {
           pm.addPass(createQCOToQC());
           populateQCCleanupPipeline(pm);
+          return success();
         }))) {
       return 1;
     }
@@ -408,6 +418,7 @@ int main(int argc, char** argv) {
         failed(runPasses([](OpPassManager& pm) {
           pm.addPass(createQCToQIRBase());
           populateQIRCleanupPipeline(pm, false);
+          return success();
         }))) {
       return 1;
     }
@@ -415,6 +426,7 @@ int main(int argc, char** argv) {
         failed(runPasses([](OpPassManager& pm) {
           pm.addPass(createQCToQIRAdaptive());
           populateQIRCleanupPipeline(pm, true);
+          return success();
         }))) {
       return 1;
     }
