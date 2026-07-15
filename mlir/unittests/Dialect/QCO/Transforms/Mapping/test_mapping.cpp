@@ -423,7 +423,7 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
 
   Value tensor = builder.qtensorAlloc(size);
-  
+
   loopGHZ(builder, tensor, size);
 
   for (int64_t i = 0; i < size; ++i) {

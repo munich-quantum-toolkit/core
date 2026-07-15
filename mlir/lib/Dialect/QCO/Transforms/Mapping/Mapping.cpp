@@ -1100,7 +1100,7 @@ private:
               const auto swaps = restore(child.layout, parent.layout);
               insertSWAPs<Mode>(swaps, child, stats, rewriter);
 
-              // Sort topologically to fix any occuring SSA dominance errors.
+              // Sort topologically to fix any occurring SSA dominance errors.
 
               if constexpr (Mode == RoutingMode::Hot) {
                 sortTopologically(forOp.getBody());
@@ -1175,7 +1175,7 @@ private:
 
               // Re-order the targets of a yield operation to match the input
               // order of hardware indices and ensure qubits[i] = yield[i] and
-              // sort topologically to fix any occuring SSA dominance errors.
+              // sort topologically to fix any occurring SSA dominance errors.
 
               if constexpr (Mode == RoutingMode::Hot) {
 
