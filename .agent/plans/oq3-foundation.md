@@ -161,6 +161,11 @@ changes and other worktrees remain outside scope.
       made the parser operator table's members explicit, converted the implicit
       statement counter deliberately, and initialized the defensive unary-op
       fallback. The complete lint gate and focused parser/frontend tests pass.
+- [x] (2026-07-15 19:45Z) Added behavior-driven staged-frontend tests for custom
+      gates in conditionals, reset and barrier emission, OpenQASM 2 controlled
+      gate compatibility prefixes, and observable diagnostics for unmeasured
+      outputs, unmeasured conditions, zero controls, and mixed broadcast
+      operands. All 20 focused frontend tests pass.
 - [ ] Expand behavior-driven frontend and lowering tests until the C++ patch
       coverage of the OQ3 foundation reaches the configured 90% target (current
       Codecov report: 76.78%, 322 missed lines). Do not lower the threshold or
