@@ -88,7 +88,9 @@ the planning refinements from pull requests 1907 and 1908.
 - [x] (2026-07-15 13:25Z) Removed generated build, Nox, documentation,
       test-discovery, and Python cache artifacts while preserving
       developer-local environment and IDE state.
-- [ ] Publish the reviewed iteration and update the pull request description.
+- [x] (2026-07-15 13:31Z) Committed and pushed the reviewed refinement and
+      replaced the pull request description with the version-neutral design,
+      review-driven corrections, current validation, and issue-closing lines.
 - [ ] Inspect the final CI run triggered by the plan-status commit and address
   any integration regressions.
 
@@ -205,7 +207,8 @@ reviewed native suites pass 165 object-model tests and 20 registry/manager
 tests; all 64 QDMI specification tests pass with two expected skips; and 173
 focused Python QDMI and estimator tests pass. Stub regeneration, the
 warning-as-error documentation build, and the full lint suite succeed. The
-artifact audit is clean; publication and CI observation remain.
+artifact audit is clean and the reviewed refinement and pull request description
+are published; CI observation remains.
 
 ## Context and Orientation
 
@@ -481,3 +484,6 @@ Python, stub, warning-as-error documentation, and full lint validation.
 
 Revision note (2026-07-15 13:25Z): Recorded the final generated-artifact cleanup
 and audit.
+
+Revision note (2026-07-15 13:31Z): Recorded commit publication and the verified
+pull request description update after GitHub authentication was restored.
