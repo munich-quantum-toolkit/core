@@ -20,6 +20,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -189,7 +190,8 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
             .Case<ResetOp, MeasureOp>([&](auto op) {
               m.try_emplace(op.getQubitOut(), /*hw= */ m.at(op.getQubitIn()));
               return true;
-            });
+            })
+            .Default([](Operation*) { return true; });
 
     if (!executable) {
       return false;
