@@ -12,9 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X and Z
-  gates with a configurable `min-controls` threshold ([#1810])
-  ([**@simon1hofmann**])
+- ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
+  and phase gates (including RCCX building blocks) with a configurable
+  `min-controls` threshold ([#1810]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries

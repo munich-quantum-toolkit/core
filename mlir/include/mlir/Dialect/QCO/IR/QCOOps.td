@@ -785,8 +785,8 @@ def DCXOp : QCOOp<"dcx",
   let hasCanonicalizer = 1;
 }
 
-def RCCXOp
-    : QCOOp<"rccx", traits = [UnitaryOpInterface, ThreeTargetZeroParameter]> {
+def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
+                                     ThreeTargetZeroParameter, Pure]> {
   let summary = "Apply a relative-phase CCX gate to three qubits";
   let description = [{
         Applies a relative-phase Toffoli (`RCCX`) to three qubits and returns the
@@ -804,10 +804,9 @@ def RCCXOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<QubitType, "the first control qubit", [MemRead]>:$qubit0_in,
-          Arg<QubitType, "the second control qubit", [MemRead]>:$qubit1_in,
-          Arg<QubitType, "the target qubit", [MemRead]>:$qubit2_in);
+  let arguments = (ins Arg<QubitType, "the first control qubit">:$qubit0_in,
+      Arg<QubitType, "the second control qubit">:$qubit1_in,
+      Arg<QubitType, "the target qubit">:$qubit2_in);
   let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out,
       QubitType:$qubit2_out);
   let assemblyFormat =

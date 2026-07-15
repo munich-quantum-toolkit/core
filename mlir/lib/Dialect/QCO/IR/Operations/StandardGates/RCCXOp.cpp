@@ -41,4 +41,7 @@ static DynamicMatrix elementaryRCCXUnitary() {
   return unitary;
 }
 
-DynamicMatrix RCCXOp::getUnitaryMatrix() { return elementaryRCCXUnitary(); }
+DynamicMatrix RCCXOp::getUnitaryMatrix() {
+  static const DynamicMatrix unitary = elementaryRCCXUnitary();
+  return unitary;
+}

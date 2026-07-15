@@ -73,10 +73,6 @@ public:
     setWire(q, POp::create(*builder_, loc_, wire(q), theta).getOutputQubit(0));
   }
 
-  void rz(std::size_t q, double theta) {
-    setWire(q, RZOp::create(*builder_, loc_, wire(q), theta).getOutputQubit(0));
-  }
-
   void t(std::size_t q) {
     setWire(q, TOp::create(*builder_, loc_, wire(q)).getOutputQubit(0));
   }
@@ -108,9 +104,9 @@ public:
 
   void crz(std::size_t control, std::size_t target, double theta) {
     const double half = theta / 2.0;
-    rz(target, half);
+    p(target, half);
     cx(control, target);
-    rz(target, -half);
+    p(target, -half);
     cx(control, target);
   }
 
@@ -150,13 +146,13 @@ public:
     const double quarter = theta / 4.0;
     const double half = theta / 2.0;
     cx(c0, target);
-    rz(target, -quarter);
+    p(target, -quarter);
     cx(c1, target);
-    rz(target, quarter);
+    p(target, quarter);
     cx(c0, target);
-    rz(target, -quarter);
+    p(target, -quarter);
     cx(c1, target);
-    rz(target, quarter);
+    p(target, quarter);
     crz(c0, c1, half);
     p(c0, quarter);
   }
