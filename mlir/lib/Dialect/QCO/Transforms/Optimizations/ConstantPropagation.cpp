@@ -944,10 +944,12 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (addedAtLeastOneQubit && ut->areStatesAllTop()) {
       return success();
     }
+    std::cout << "Continuing" << std::endl;
     if (curr == nullptr) {
       std::cout << "Op is null" << std::endl;
       continue; // Skip erased ops.
     }
+    std::cout << "Op is not null" << std::endl;
     std::string oName =
         "Op: " + curr->getName().getStringRef().str() +
         " dialect: " + curr->getName().getDialectNamespace().str();
