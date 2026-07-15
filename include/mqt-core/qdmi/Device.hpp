@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Device.hpp
- * @brief ABI-neutral C++ interface for QDMI devices.
- */
+/// @file Device.hpp
+/// @brief ABI-neutral C++ interface for QDMI devices.
 
 #pragma once
 
@@ -38,7 +37,7 @@ struct DeviceFactory;
 
 using CustomJobParameter = std::variant<std::string, bool, int, double>;
 
-/** Device availability state independent of the provider ABI. */
+/// Device availability state independent of the provider ABI.
 enum class DeviceStatus : std::uint8_t {
   Offline,
   Idle,
@@ -48,7 +47,7 @@ enum class DeviceStatus : std::uint8_t {
   Calibration,
 };
 
-/** Lifecycle state of a submitted job. */
+/// Lifecycle state of a submitted job.
 enum class JobStatus : std::uint8_t {
   Created,
   Submitted,
@@ -59,7 +58,7 @@ enum class JobStatus : std::uint8_t {
   Failed,
 };
 
-/** Program formats understood by the QDMI v1 adapter. */
+/// Program formats understood by the supported QDMI ABI.
 enum class ProgramFormat : std::uint32_t {
   Qasm2 = 0,
   Qasm3 = 1,
@@ -78,7 +77,7 @@ enum class ProgramFormat : std::uint32_t {
   Custom5 = 999999999,
 };
 
-/** Identifies an implementation-defined custom property or result slot. */
+/// Identifies an implementation-defined custom property or result slot.
 enum class CustomProperty : std::uint8_t {
   Custom1 = 1,
   Custom2 = 2,
@@ -127,135 +126,131 @@ class Site;
 class Operation;
 class DeviceManager;
 
-/** One initialized quantum-device session. */
+/// One initialized quantum-device session.
 class Device {
 public:
-  [[nodiscard]] auto getName() const -> std::string;
-  [[nodiscard]] auto getVersion() const -> std::string;
-  [[nodiscard]] auto getStatus() const -> DeviceStatus;
-  [[nodiscard]] auto getLibraryVersion() const -> std::string;
-  [[nodiscard]] auto getQubitsNum() const -> size_t;
-  [[nodiscard]] auto getSites() const -> std::vector<Site>;
-  [[nodiscard]] auto getRegularSites() const -> std::vector<Site>;
-  [[nodiscard]] auto getZones() const -> std::vector<Site>;
-  [[nodiscard]] auto getOperations() const -> std::vector<Operation>;
-  [[nodiscard]] auto getCouplingMap() const
-      -> std::optional<std::vector<std::pair<Site, Site>>>;
-  [[nodiscard]] auto getNeedsCalibration() const -> std::optional<size_t>;
-  [[nodiscard]] auto getLengthUnit() const -> std::optional<std::string>;
-  [[nodiscard]] auto getLengthScaleFactor() const -> std::optional<double>;
-  [[nodiscard]] auto getDurationUnit() const -> std::optional<std::string>;
-  [[nodiscard]] auto getDurationScaleFactor() const -> std::optional<double>;
-  [[nodiscard]] auto getMinAtomDistance() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getSupportedProgramFormats() const
-      -> std::vector<ProgramFormat>;
-  [[nodiscard]] auto getChildDevices() const -> std::vector<Device>;
+  [[nodiscard]] std::string getName() const;
+  [[nodiscard]] std::string getVersion() const;
+  [[nodiscard]] DeviceStatus getStatus() const;
+  [[nodiscard]] std::string getLibraryVersion() const;
+  [[nodiscard]] size_t getQubitsNum() const;
+  [[nodiscard]] std::vector<Site> getSites() const;
+  [[nodiscard]] std::vector<Site> getRegularSites() const;
+  [[nodiscard]] std::vector<Site> getZones() const;
+  [[nodiscard]] std::vector<Operation> getOperations() const;
+  [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
+  getCouplingMap() const;
+  [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
+  [[nodiscard]] std::optional<std::string> getLengthUnit() const;
+  [[nodiscard]] std::optional<double> getLengthScaleFactor() const;
+  [[nodiscard]] std::optional<std::string> getDurationUnit() const;
+  [[nodiscard]] std::optional<double> getDurationScaleFactor() const;
+  [[nodiscard]] std::optional<uint64_t> getMinAtomDistance() const;
+  [[nodiscard]] std::vector<ProgramFormat> getSupportedProgramFormats() const;
+  [[nodiscard]] std::vector<Device> getChildDevices() const;
 
   template <custom_property_value T>
-  [[nodiscard]] auto queryCustomProperty(const CustomProperty property) const
-      -> std::optional<T> {
+  [[nodiscard]] std::optional<T>
+  queryCustomProperty(const CustomProperty property) const {
     return detail::decodeCustomValue<T>(queryCustomPropertyBytes(property),
                                         "custom device property");
   }
 
-  [[nodiscard]] auto submitJob(
+  [[nodiscard]] Job submitJob(
       const std::string& program, ProgramFormat format, size_t numShots,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const
-      -> Job;
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   [[nodiscard]] auto operator<=>(const Device& other) const noexcept {
     return state_.get() <=> other.state_.get();
   }
-  [[nodiscard]] auto operator==(const Device& other) const noexcept -> bool {
+  [[nodiscard]] bool operator==(const Device& other) const noexcept {
     return state_ == other.state_;
   }
 
 private:
-  explicit Device(std::shared_ptr<detail::DeviceState> state)
+  explicit Device(std::shared_ptr<const detail::DeviceState> state)
       : state_(std::move(state)) {}
-  [[nodiscard]] auto queryCustomPropertyBytes(CustomProperty property) const
-      -> std::optional<std::vector<std::byte>>;
-  std::shared_ptr<detail::DeviceState> state_;
+  [[nodiscard]] std::optional<std::vector<std::byte>>
+  queryCustomPropertyBytes(CustomProperty property) const;
+  std::shared_ptr<const detail::DeviceState> state_;
   friend class DeviceManager;
   friend struct detail::DeviceFactory;
 };
 
-/** A submitted job retaining its device session. */
+/// A submitted job retaining its device session.
 class Job {
 public:
-  [[nodiscard]] auto check() const -> JobStatus;
-  [[nodiscard]] auto wait(size_t timeout = 0) const -> bool;
+  [[nodiscard]] JobStatus check() const;
+  [[nodiscard]] bool wait(size_t timeout = 0) const;
   void cancel() const;
-  [[nodiscard]] auto getId() const -> std::string;
-  [[nodiscard]] auto getProgramFormat() const -> ProgramFormat;
-  [[nodiscard]] auto getProgram() const -> std::string;
-  [[nodiscard]] auto getNumShots() const -> size_t;
+  [[nodiscard]] std::string getId() const;
+  [[nodiscard]] ProgramFormat getProgramFormat() const;
+  [[nodiscard]] std::string getProgram() const;
+  [[nodiscard]] size_t getNumShots() const;
 
   template <custom_property_value T>
-  [[nodiscard]] auto queryCustomProperty(const CustomProperty property) const
-      -> std::optional<T> {
+  [[nodiscard]] std::optional<T>
+  queryCustomProperty(const CustomProperty property) const {
     return detail::decodeCustomValue<T>(queryCustomPropertyBytes(property),
                                         "custom job property");
   }
   template <custom_property_value T>
-  [[nodiscard]] auto getCustomResult(const CustomProperty property) const
-      -> std::optional<T> {
+  [[nodiscard]] std::optional<T>
+  getCustomResult(const CustomProperty property) const {
     return detail::decodeCustomValue<T>(getCustomResultBytes(property),
                                         "custom job result");
   }
 
-  [[nodiscard]] auto getShots() const -> std::vector<std::string>;
-  [[nodiscard]] auto getCounts() const -> std::map<std::string, size_t>;
-  [[nodiscard]] auto getDenseStateVector() const
-      -> std::vector<std::complex<double>>;
-  [[nodiscard]] auto getDenseProbabilities() const -> std::vector<double>;
-  [[nodiscard]] auto getSparseStateVector() const
-      -> std::map<std::string, std::complex<double>>;
-  [[nodiscard]] auto getSparseProbabilities() const
-      -> std::map<std::string, double>;
+  [[nodiscard]] std::vector<std::string> getShots() const;
+  [[nodiscard]] std::map<std::string, size_t> getCounts() const;
+  [[nodiscard]] std::vector<std::complex<double>> getDenseStateVector() const;
+  [[nodiscard]] std::vector<double> getDenseProbabilities() const;
+  [[nodiscard]] std::map<std::string, std::complex<double>>
+  getSparseStateVector() const;
+  [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
 
   [[nodiscard]] auto operator<=>(const Job& other) const noexcept {
     return state_.get() <=> other.state_.get();
   }
-  [[nodiscard]] auto operator==(const Job& other) const noexcept -> bool {
+  [[nodiscard]] bool operator==(const Job& other) const noexcept {
     return state_ == other.state_;
   }
 
 private:
   explicit Job(std::shared_ptr<detail::JobState> state)
       : state_(std::move(state)) {}
-  [[nodiscard]] auto queryCustomPropertyBytes(CustomProperty property) const
-      -> std::optional<std::vector<std::byte>>;
-  [[nodiscard]] auto getCustomResultBytes(CustomProperty property) const
-      -> std::optional<std::vector<std::byte>>;
+  [[nodiscard]] std::optional<std::vector<std::byte>>
+  queryCustomPropertyBytes(CustomProperty property) const;
+  [[nodiscard]] std::optional<std::vector<std::byte>>
+  getCustomResultBytes(CustomProperty property) const;
   std::shared_ptr<detail::JobState> state_;
   friend class Device;
 };
 
-/** A physical site or zone belonging to a device. */
+/// A physical site or zone belonging to a device.
 class Site {
 public:
-  [[nodiscard]] auto getIndex() const -> size_t;
-  [[nodiscard]] auto getT1() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getT2() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getName() const -> std::optional<std::string>;
-  [[nodiscard]] auto getXCoordinate() const -> std::optional<int64_t>;
-  [[nodiscard]] auto getYCoordinate() const -> std::optional<int64_t>;
-  [[nodiscard]] auto getZCoordinate() const -> std::optional<int64_t>;
-  [[nodiscard]] auto isZone() const -> bool;
-  [[nodiscard]] auto getXExtent() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getYExtent() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getZExtent() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getModuleIndex() const -> std::optional<uint64_t>;
-  [[nodiscard]] auto getSubmoduleIndex() const -> std::optional<uint64_t>;
+  [[nodiscard]] size_t getIndex() const;
+  [[nodiscard]] std::optional<uint64_t> getT1() const;
+  [[nodiscard]] std::optional<uint64_t> getT2() const;
+  [[nodiscard]] std::optional<std::string> getName() const;
+  [[nodiscard]] std::optional<int64_t> getXCoordinate() const;
+  [[nodiscard]] std::optional<int64_t> getYCoordinate() const;
+  [[nodiscard]] std::optional<int64_t> getZCoordinate() const;
+  [[nodiscard]] bool isZone() const;
+  [[nodiscard]] std::optional<uint64_t> getXExtent() const;
+  [[nodiscard]] std::optional<uint64_t> getYExtent() const;
+  [[nodiscard]] std::optional<uint64_t> getZExtent() const;
+  [[nodiscard]] std::optional<uint64_t> getModuleIndex() const;
+  [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
 
   template <custom_property_value T>
-  [[nodiscard]] auto queryCustomProperty(const CustomProperty property) const
-      -> std::optional<T> {
+  [[nodiscard]] std::optional<T>
+  queryCustomProperty(const CustomProperty property) const {
     return detail::decodeCustomValue<T>(queryCustomPropertyBytes(property),
                                         "custom site property");
   }
@@ -266,66 +261,61 @@ public:
     }
     return handle_ <=> other.handle_;
   }
-  [[nodiscard]] auto operator==(const Site& other) const noexcept -> bool {
+  [[nodiscard]] bool operator==(const Site& other) const noexcept {
     return state_ == other.state_ && handle_ == other.handle_;
   }
 
 private:
-  Site(std::shared_ptr<detail::DeviceState> state, void* handle)
+  Site(std::shared_ptr<const detail::DeviceState> state, void* handle)
       : state_(std::move(state)), handle_(handle) {}
-  [[nodiscard]] auto queryCustomPropertyBytes(CustomProperty property) const
-      -> std::optional<std::vector<std::byte>>;
-  std::shared_ptr<detail::DeviceState> state_;
+  [[nodiscard]] std::optional<std::vector<std::byte>>
+  queryCustomPropertyBytes(CustomProperty property) const;
+  std::shared_ptr<const detail::DeviceState> state_;
   void* handle_ = nullptr;
   friend class Device;
   friend class Operation;
 };
 
-/** An operation supported by a device. */
+/// An operation supported by a device.
 class Operation {
 public:
-  [[nodiscard]] auto getName(const std::vector<Site>& sites = {},
-                             const std::vector<double>& params = {}) const
-      -> std::string;
-  [[nodiscard]] auto getQubitsNum(const std::vector<Site>& sites = {},
-                                  const std::vector<double>& params = {}) const
-      -> std::optional<size_t>;
-  [[nodiscard]] auto
+  [[nodiscard]] std::string
+  getName(const std::vector<Site>& sites = {},
+          const std::vector<double>& params = {}) const;
+  [[nodiscard]] std::optional<size_t>
+  getQubitsNum(const std::vector<Site>& sites = {},
+               const std::vector<double>& params = {}) const;
+  [[nodiscard]] size_t
   getParametersNum(const std::vector<Site>& sites = {},
-                   const std::vector<double>& params = {}) const -> size_t;
-  [[nodiscard]] auto getDuration(const std::vector<Site>& sites = {},
-                                 const std::vector<double>& params = {}) const
-      -> std::optional<uint64_t>;
-  [[nodiscard]] auto getFidelity(const std::vector<Site>& sites = {},
-                                 const std::vector<double>& params = {}) const
-      -> std::optional<double>;
-  [[nodiscard]] auto
+                   const std::vector<double>& params = {}) const;
+  [[nodiscard]] std::optional<uint64_t>
+  getDuration(const std::vector<Site>& sites = {},
+              const std::vector<double>& params = {}) const;
+  [[nodiscard]] std::optional<double>
+  getFidelity(const std::vector<Site>& sites = {},
+              const std::vector<double>& params = {}) const;
+  [[nodiscard]] std::optional<uint64_t>
   getInteractionRadius(const std::vector<Site>& sites = {},
-                       const std::vector<double>& params = {}) const
-      -> std::optional<uint64_t>;
-  [[nodiscard]] auto
+                       const std::vector<double>& params = {}) const;
+  [[nodiscard]] std::optional<uint64_t>
   getBlockingRadius(const std::vector<Site>& sites = {},
-                    const std::vector<double>& params = {}) const
-      -> std::optional<uint64_t>;
-  [[nodiscard]] auto
+                    const std::vector<double>& params = {}) const;
+  [[nodiscard]] std::optional<double>
   getIdlingFidelity(const std::vector<Site>& sites = {},
-                    const std::vector<double>& params = {}) const
-      -> std::optional<double>;
-  [[nodiscard]] auto isZoned() const -> bool;
-  [[nodiscard]] auto getSites() const -> std::optional<std::vector<Site>>;
-  [[nodiscard]] auto getSitePairs() const
-      -> std::optional<std::vector<std::pair<Site, Site>>>;
-  [[nodiscard]] auto
+                    const std::vector<double>& params = {}) const;
+  [[nodiscard]] bool isZoned() const;
+  [[nodiscard]] std::optional<std::vector<Site>> getSites() const;
+  [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
+  getSitePairs() const;
+  [[nodiscard]] std::optional<uint64_t>
   getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
-                        const std::vector<double>& params = {}) const
-      -> std::optional<uint64_t>;
+                        const std::vector<double>& params = {}) const;
 
   template <custom_property_value T>
-  [[nodiscard]] auto
+  [[nodiscard]] std::optional<T>
   queryCustomProperty(const CustomProperty property,
                       const std::vector<Site>& sites = {},
-                      const std::vector<double>& params = {}) const
-      -> std::optional<T> {
+                      const std::vector<double>& params = {}) const {
     return detail::decodeCustomValue<T>(
         queryCustomPropertyBytes(property, sites, params),
         "custom operation property");
@@ -337,21 +327,20 @@ public:
     }
     return handle_ <=> other.handle_;
   }
-  [[nodiscard]] auto operator==(const Operation& other) const noexcept -> bool {
+  [[nodiscard]] bool operator==(const Operation& other) const noexcept {
     return state_ == other.state_ && handle_ == other.handle_;
   }
 
 private:
-  [[nodiscard]] static auto siteHandles(const std::vector<Site>& sites)
-      -> std::vector<void*>;
-  Operation(std::shared_ptr<detail::DeviceState> state, void* handle)
+  [[nodiscard]] static std::vector<void*>
+  siteHandles(const std::vector<Site>& sites);
+  Operation(std::shared_ptr<const detail::DeviceState> state, void* handle)
       : state_(std::move(state)), handle_(handle) {}
-  [[nodiscard]] auto
+  [[nodiscard]] std::optional<std::vector<std::byte>>
   queryCustomPropertyBytes(CustomProperty property,
                            const std::vector<Site>& sites,
-                           const std::vector<double>& params) const
-      -> std::optional<std::vector<std::byte>>;
-  std::shared_ptr<detail::DeviceState> state_;
+                           const std::vector<double>& params) const;
+  std::shared_ptr<const detail::DeviceState> state_;
   void* handle_ = nullptr;
   friend class Device;
 };

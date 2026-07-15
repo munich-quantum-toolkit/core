@@ -14,7 +14,16 @@ from typing import cast
 
 import pytest
 
-from mqt.core.qdmi import CustomProperty, Device, DeviceManager, Job, ProgramFormat
+from mqt.core.qdmi import (
+    ConfigOptions,
+    CustomProperty,
+    Device,
+    DeviceDefinition,
+    DeviceManager,
+    Job,
+    OpenAllResult,
+    ProgramFormat,
+)
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
@@ -25,8 +34,25 @@ def _get_devices() -> list[Device]:
     Returns:
         List of all available QDMI devices.
     """
-    manager = DeviceManager()
-    return [manager.open(definition.id) for definition in manager.definitions]
+    result = DeviceManager().open_all()
+    return list(result.devices.values())
+
+
+def test_device_ids_and_bulk_open_result() -> None:
+    """Stable Python device IDs support named bulk-open results."""
+    discovery = DeviceManager()
+    definition = next(
+        (candidate for candidate in discovery.definitions if candidate.device_id == "mqt.sc.default"),
+        None,
+    )
+    if definition is None:
+        pytest.skip("SC device not installed")
+    bad = DeviceDefinition("missing", "does-not-exist", "MISSING")
+    manager = DeviceManager(ConfigOptions(isolated=True, runtime_overrides=[definition, bad]))
+    result = manager.open_all()
+    assert isinstance(result, OpenAllResult)
+    assert definition.device_id in result.devices
+    assert "missing" in result.errors
 
 
 @pytest.fixture(params=_get_devices())

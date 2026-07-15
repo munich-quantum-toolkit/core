@@ -22,10 +22,17 @@ initialized only when its stable device ID is passed to `open`. The QDMI v1.3
 ABI is now an implementation detail behind a private function-table adapter;
 public MQT objects no longer expose QDMI handles.
 
+MQT Core supports the QDMI v1.3 ABI exclusively in this release. The `abi`
+configuration field is a compatibility check, not an adapter selector, and must
+be `qdmi-v1`. Unsupported values and incomplete v1.3 symbol sets fail when the
+selected device is opened. A future QDMI v2 migration will replace this private
+implementation rather than adding a second public object model.
+
 | Concern | C++ | Python |
 | --- | --- | --- |
 | Discover registrations | `qdmi::DeviceRegistry` | `qdmi.DeviceManager.definitions` |
 | Open one device | `qdmi::DeviceManager::open` | `DeviceManager.open` |
+| Open every definition | `qdmi::DeviceManager::openAll` | `DeviceManager.open_all` |
 | Device capabilities | `qdmi::Device` | `qdmi.Device` |
 | Sites, operations, and jobs | `qdmi::Site`, `Operation`, `Job` | `Device.Site`, `Device.Operation`, `Job` |
 | Neutral-atom view | `na::qdmi::Device` | `mqt.core.na.qdmi.Device` |
@@ -38,8 +45,7 @@ entry points have been removed:
   neutral-atom wrappers;
 - the `Driver` singleton and `addDynamicDeviceLibrary`;
 - MQT Core's QDMI client C functions and public client handles;
-- global authentication/session configuration; and
-- `DeviceManager.openAll()` / `DeviceManager.open_all()`.
+- global authentication/session configuration.
 
 Replace old includes with `qdmi/Device.hpp` or `qdmi/DeviceManager.hpp`, and
 link `MQT::CoreQDMI`.
@@ -84,25 +90,20 @@ auto device = manager.open("mqt.ddsim.default");
 
 #### Opening devices
 
-Code that needs every configured device should iterate definitions and decide
-how to handle each failure. This keeps discovery usable even when a provider is
-temporarily unavailable and avoids an arbitrary bulk-open policy.
+Code that needs every configured device can use the bulk-open result. Each
+definition is opened independently, and errors remain associated with stable
+device IDs.
 
 Python:
 
 ```python
 from mqt.core import qdmi
 
-manager = qdmi.DeviceManager()
-print([definition.id for definition in manager.definitions])
-
-for definition in manager.definitions:
-    try:
-        device = manager.open(definition.id)
-    except RuntimeError as error:
-        print(f"{definition.id} could not be opened: {error}")
-        continue
+result = qdmi.DeviceManager().open_all()
+for device_id, device in result.devices.items():
     print(device.name())
+for device_id, error in result.errors.items():
+    print(f"{device_id} could not be opened: {error}")
 ```
 
 C++:
@@ -110,15 +111,18 @@ C++:
 ```cpp
 #include "qdmi/DeviceManager.hpp"
 
-qdmi::DeviceManager manager;
-for (const auto& definition : manager.definitions()) {
-  try {
-    auto device = manager.open(definition.id);
-  } catch (const std::exception& error) {
-    // Record this provider failure and continue with other definitions.
-  }
+const auto result = qdmi::DeviceManager().openAll();
+for (const auto& [id, device] : result.devices) {
+  // Use the opened device.
+}
+for (const auto& [id, error] : result.errors) {
+  // Report or otherwise handle this provider failure.
 }
 ```
+
+Use `definitions` and `open` instead when selection must happen before any
+provider library is loaded. In Python the stable identifier property is named
+`device_id`; configuration files and C++ continue to use `id`.
 
 #### Per-device session parameters
 

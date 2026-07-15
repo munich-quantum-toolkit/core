@@ -69,9 +69,9 @@ template <class Function>
   return function;
 }
 
-class V1DeviceApi final : public DeviceApi {
+class V1Context final {
 public:
-  V1DeviceApi(const std::filesystem::path& path, const std::string& prefix)
+  V1Context(const std::filesystem::path& path, const std::string& prefix)
       : library_(openLibrary(path)) {
     if (library_ == nullptr) {
       throw std::runtime_error("Could not open QDMI device library: " +
@@ -126,7 +126,7 @@ public:
     }
   }
 
-  ~V1DeviceApi() override {
+  ~V1Context() {
     if (initialized_) {
       static_cast<void>(finalize_());
     }
@@ -137,7 +137,7 @@ public:
 
   [[nodiscard]] auto openSession(const SessionParameters& parameters,
                                  QDMI_Child_Device child) const
-      -> QDMI_Device_Session override {
+      -> QDMI_Device_Session {
     QDMI_Device_Session session = nullptr;
     throwIfError(sessionAlloc_(&session), "Allocating QDMI device session");
     try {
@@ -186,49 +186,36 @@ public:
     }
   }
 
-  void closeSession(QDMI_Device_Session session) const noexcept override {
+  void closeSession(QDMI_Device_Session session) const noexcept {
     if (session != nullptr) {
       sessionFree_(session);
     }
   }
 
   [[nodiscard]] auto createJob(QDMI_Device_Session session) const
-      -> QDMI_Device_Job override {
+      -> QDMI_Device_Job {
     QDMI_Device_Job job = nullptr;
     throwIfError(createJob_(session, &job), "Creating QDMI device job");
     return job;
   }
-  void freeJob(QDMI_Device_Job job) const noexcept override {
+  void freeJob(QDMI_Device_Job job) const noexcept {
     if (job != nullptr) {
       jobFree_(job);
     }
   }
-  [[nodiscard]] auto setJobParameter(QDMI_Device_Job job,
-                                     QDMI_Device_Job_Parameter parameter,
-                                     const size_t size, const void* value) const
-      -> int override {
-    return jobSetParameter_(job, parameter, size, value);
-  }
-  [[nodiscard]] auto queryJobProperty(QDMI_Device_Job job,
-                                      QDMI_Device_Job_Property property,
-                                      const size_t size, void* value,
-                                      size_t* sizeRet) const -> int override {
-    return jobQueryProperty_(job, property, size, value, sizeRet);
-  }
-  void submitJob(QDMI_Device_Job job) const override {
+  void submitJob(QDMI_Device_Job job) const {
     throwIfError(jobSubmit_(job), "Submitting QDMI job");
   }
-  void cancelJob(QDMI_Device_Job job) const override {
+  void cancelJob(QDMI_Device_Job job) const {
     throwIfError(jobCancel_(job), "Canceling QDMI job");
   }
-  [[nodiscard]] auto checkJob(QDMI_Device_Job job) const
-      -> QDMI_Job_Status override {
+  [[nodiscard]] auto checkJob(QDMI_Device_Job job) const -> QDMI_Job_Status {
     QDMI_Job_Status status{};
     throwIfError(jobCheck_(job, &status), "Checking QDMI job");
     return status;
   }
   [[nodiscard]] auto waitJob(QDMI_Device_Job job, const size_t timeout) const
-      -> bool override {
+      -> bool {
     const auto result = jobWait_(job, timeout);
     if (result == QDMI_ERROR_TIMEOUT) {
       return false;
@@ -236,31 +223,91 @@ public:
     throwIfError(result, "Waiting for QDMI job");
     return true;
   }
-  [[nodiscard]] auto getJobResult(QDMI_Device_Job job, QDMI_Job_Result result,
-                                  const size_t size, void* data,
-                                  size_t* sizeRet) const -> int override {
-    return jobGetResults_(job, result, size, data, sizeRet);
-  }
-  [[nodiscard]] auto queryDevice(QDMI_Device_Session session,
-                                 QDMI_Device_Property property,
-                                 const size_t size, void* value,
-                                 size_t* sizeRet) const -> int override {
-    return queryDevice_(session, property, size, value, sizeRet);
-  }
-  [[nodiscard]] auto querySite(QDMI_Device_Session session, QDMI_Site site,
-                               QDMI_Site_Property property, const size_t size,
-                               void* value, size_t* sizeRet) const
-      -> int override {
-    return querySite_(session, site, property, size, value, sizeRet);
-  }
-  [[nodiscard]] auto
-  queryOperation(QDMI_Device_Session session, QDMI_Operation operation,
-                 const size_t numSites, const QDMI_Site* sites,
-                 const size_t numParams, const double* params,
-                 QDMI_Operation_Property property, const size_t size,
-                 void* value, size_t* sizeRet) const -> int override {
-    return queryOperation_(session, operation, numSites, sites, numParams,
-                           params, property, size, value, sizeRet);
+  [[nodiscard]] static auto functions() -> DeviceApi::Functions {
+    return {
+        .openSession =
+            [](const void* context, const SessionParameters& parameters,
+               const QDMI_Child_Device child) {
+              return static_cast<const V1Context*>(context)->openSession(
+                  parameters, child);
+            },
+        .closeSession =
+            [](const void* context,
+               const QDMI_Device_Session session) noexcept {
+              static_cast<const V1Context*>(context)->closeSession(session);
+            },
+        .createJob =
+            [](const void* context, const QDMI_Device_Session session) {
+              return static_cast<const V1Context*>(context)->createJob(session);
+            },
+        .freeJob =
+            [](const void* context, const QDMI_Device_Job job) noexcept {
+              static_cast<const V1Context*>(context)->freeJob(job);
+            },
+        .setJobParameter =
+            [](const void* context, const QDMI_Device_Job job,
+               const QDMI_Device_Job_Parameter parameter, const size_t size,
+               const void* value) {
+              return static_cast<const V1Context*>(context)->jobSetParameter_(
+                  job, parameter, size, value);
+            },
+        .queryJobProperty =
+            [](const void* context, const QDMI_Device_Job job,
+               const QDMI_Device_Job_Property property, const size_t size,
+               void* value, size_t* sizeRet) {
+              return static_cast<const V1Context*>(context)->jobQueryProperty_(
+                  job, property, size, value, sizeRet);
+            },
+        .submitJob =
+            [](const void* context, const QDMI_Device_Job job) {
+              static_cast<const V1Context*>(context)->submitJob(job);
+            },
+        .cancelJob =
+            [](const void* context, const QDMI_Device_Job job) {
+              static_cast<const V1Context*>(context)->cancelJob(job);
+            },
+        .checkJob =
+            [](const void* context, const QDMI_Device_Job job) {
+              return static_cast<const V1Context*>(context)->checkJob(job);
+            },
+        .waitJob =
+            [](const void* context, const QDMI_Device_Job job,
+               const size_t timeout) {
+              return static_cast<const V1Context*>(context)->waitJob(job,
+                                                                     timeout);
+            },
+        .getJobResult =
+            [](const void* context, const QDMI_Device_Job job,
+               const QDMI_Job_Result result, const size_t size, void* data,
+               size_t* sizeRet) {
+              return static_cast<const V1Context*>(context)->jobGetResults_(
+                  job, result, size, data, sizeRet);
+            },
+        .queryDevice =
+            [](const void* context, const QDMI_Device_Session session,
+               const QDMI_Device_Property property, const size_t size,
+               void* value, size_t* sizeRet) {
+              return static_cast<const V1Context*>(context)->queryDevice_(
+                  session, property, size, value, sizeRet);
+            },
+        .querySite =
+            [](const void* context, const QDMI_Device_Session session,
+               const QDMI_Site site, const QDMI_Site_Property property,
+               const size_t size, void* value, size_t* sizeRet) {
+              return static_cast<const V1Context*>(context)->querySite_(
+                  session, site, property, size, value, sizeRet);
+            },
+        .queryOperation =
+            [](const void* context, const QDMI_Device_Session session,
+               const QDMI_Operation operation, const size_t numSites,
+               const QDMI_Site* sites, const size_t numParams,
+               const double* params, const QDMI_Operation_Property property,
+               const size_t size, void* value, size_t* sizeRet) {
+              return static_cast<const V1Context*>(context)->queryOperation_(
+                  session, operation, numSites, sites, numParams, params,
+                  property, size, value, sizeRet);
+            },
+    };
   }
 
 private:
@@ -288,67 +335,11 @@ private:
 };
 } // namespace
 
-SessionState::SessionState(std::shared_ptr<DeviceApi> deviceApi,
-                           const SessionParameters& sessionParameters,
-                           QDMI_Child_Device child,
-                           std::shared_ptr<SessionState> parentSession)
-    : api(std::move(deviceApi)),
-      session(api->openSession(sessionParameters, child)),
-      parent(std::move(parentSession)) {}
-
-SessionState::~SessionState() { api->closeSession(session); }
-
-DeviceState::DeviceState(std::shared_ptr<DeviceApi> deviceApi,
-                         const SessionParameters& sessionParameters,
-                         QDMI_Child_Device child,
-                         std::shared_ptr<SessionState> parentSession)
-    : lifetime(std::make_shared<SessionState>(deviceApi, sessionParameters,
-                                              child, std::move(parentSession))),
-      api(std::move(deviceApi)), session(lifetime->session),
-      parameters(sessionParameters) {
-  try {
-    size_t size = 0;
-    const auto result = api->queryDevice(
-        session, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
-    if (result == QDMI_ERROR_NOTSUPPORTED) {
-      return;
-    }
-    throwIfError(result, "Querying QDMI child devices");
-    if (size % sizeof(QDMI_Child_Device) != 0) {
-      throw std::runtime_error("QDMI device returned an invalid child list");
-    }
-    std::vector<QDMI_Child_Device> handles(size / sizeof(QDMI_Child_Device));
-    if (size != 0) {
-      throwIfError(api->queryDevice(session, QDMI_DEVICE_PROPERTY_CHILDDEVICES,
-                                    size, static_cast<void*>(handles.data()),
-                                    nullptr),
-                   "Querying QDMI child devices");
-    }
-    children.reserve(handles.size());
-    for (auto* handle : handles) {
-      children.emplace_back(
-          std::make_shared<DeviceState>(api, parameters, handle, lifetime));
-    }
-  } catch (...) {
-    children.clear();
-    lifetime.reset();
-    session = nullptr;
-    throw;
-  }
-}
-
-DeviceState::~DeviceState() {
-  children.clear();
-  lifetime.reset();
-}
-
-JobState::JobState(std::shared_ptr<DeviceState> deviceState)
-    : device(std::move(deviceState)),
-      job(device->api->createJob(device->session)) {}
-JobState::~JobState() { device->api->freeJob(job); }
-
 auto makeV1DeviceApi(const std::filesystem::path& library,
-                     const std::string& prefix) -> std::shared_ptr<DeviceApi> {
-  return std::make_shared<V1DeviceApi>(library, prefix);
+                     const std::string& prefix)
+    -> std::shared_ptr<const DeviceApi> {
+  auto context = std::make_shared<V1Context>(library, prefix);
+  return std::make_shared<const DeviceApi>(DeviceApi{
+      .context = std::move(context), .functions = V1Context::functions()});
 }
 } // namespace qdmi::detail

@@ -98,10 +98,6 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add library
   add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMINaDevice)
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   add_dependencies(${TARGET_NAME} generate_qdmi_na_device_header)
 
   # Generate prefixed QDMI headers
@@ -127,14 +123,7 @@ if(NOT TARGET ${TARGET_NAME})
   # add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
 
-  # Make QDMI version available and ensure symbols are properly exported when building the library
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                                    ${QDMI_PREFIX}_QDMI_device_EXPORTS)
-
-  # add to list of MQT core targets
-  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
-
-  mqt_register_qdmi_device(${TARGET_NAME} ID mqt.na.default PREFIX ${QDMI_PREFIX})
+  mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.na.default PREFIX ${QDMI_PREFIX})
 endif()
 
 set(MQT_CORE_TARGETS

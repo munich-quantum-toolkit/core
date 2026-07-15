@@ -8,82 +8,31 @@
  * Licensed under the MIT License
  */
 
-/** @file DeviceManager.hpp
- * @brief Side-effect-free QDMI discovery and lazy device management.
- */
+/// @file DeviceManager.hpp
+/// @brief Lazy opening and lifetime management for configured QDMI devices.
 
 #pragma once
 
 #include "qdmi/Device.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
-#include <nlohmann/json.hpp>
-
-#include <filesystem>
+#include <map>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace qdmi {
 
-/** Parameters applied to one device session before it is initialized. */
-struct SessionParameters {
-  std::optional<std::string> baseUrl;
-  std::optional<std::string> token;
-  std::optional<std::filesystem::path> authFile;
-  std::optional<std::string> authUrl;
-  std::optional<std::string> username;
-  std::optional<std::string> password;
-  std::optional<std::string> custom1;
-  std::optional<std::string> custom2;
-  std::optional<std::string> custom3;
-  std::optional<std::string> custom4;
-  std::optional<std::string> custom5;
+/// Result of independently opening every enabled definition.
+struct OpenAllResult {
+  /// Successfully opened devices keyed by stable device ID.
+  std::map<std::string, Device> devices;
+  /// Error messages for definitions that could not be opened, keyed by ID.
+  std::map<std::string, std::string> errors;
 };
 
-/** A parsed, side-effect-free registration for one QDMI device. */
-struct DeviceDefinition {
-  std::string id;
-  std::filesystem::path library;
-  std::string abi = "qdmi-v1";
-  std::string prefix;
-  bool enabled = true;
-  SessionParameters session;
-  std::filesystem::path source;
-};
-
-/** Controls configuration discovery. */
-struct ConfigOptions {
-  std::optional<std::filesystem::path> configRoot;
-  std::optional<std::filesystem::path> explicitFile;
-  std::optional<std::filesystem::path> baseDirectory;
-  bool isolated = false;
-  std::optional<nlohmann::json> inlineOverrides;
-  std::vector<DeviceDefinition> runtimeOverrides;
-};
-
-/** Discovers and merges QDMI device definitions without loading libraries. */
-class DeviceRegistry {
-public:
-  explicit DeviceRegistry(const ConfigOptions& options = {});
-
-  /** Returns enabled definitions in stable ID order. */
-  [[nodiscard]] const std::vector<DeviceDefinition>& definitions() const {
-    return definitions_;
-  }
-
-  /** Registers a complete definition. */
-  void registerDevice(DeviceDefinition definition, bool replace = false);
-
-  /** Removes a definition, returning whether it existed. */
-  bool unregisterDevice(std::string_view id);
-
-private:
-  std::vector<DeviceDefinition> definitions_;
-};
-
-/** Lazily opens configured QDMI devices and shares loaded v1 libraries. */
+/// Lazily opens configured QDMI devices and shares loaded v1.3 libraries.
 class DeviceManager {
 public:
   explicit DeviceManager(const ConfigOptions& options = {});
@@ -95,12 +44,23 @@ public:
   DeviceManager(const DeviceManager&) = delete;
   DeviceManager& operator=(const DeviceManager&) = delete;
 
-  [[nodiscard]] const std::vector<DeviceDefinition>& definitions() const;
+  /// Returns a thread-safe snapshot of registered definitions.
+  [[nodiscard]] std::vector<DeviceDefinition> definitions() const;
+
+  /// Registers a definition. Concurrent manager operations remain safe.
   void registerDevice(DeviceDefinition definition, bool replace = false);
+
+  /// Unregisters a definition without invalidating opened devices.
   bool unregisterDevice(std::string_view id);
+
+  /// Opens one configured device by stable ID.
   [[nodiscard]] Device
   open(std::string_view id,
        const SessionParameters& sessionOverrides = SessionParameters{});
+
+  /// Opens a snapshot of all definitions and isolates failures by ID.
+  [[nodiscard]] OpenAllResult
+  openAll(const SessionParameters& sessionOverrides = SessionParameters{});
 
 private:
   struct Impl;

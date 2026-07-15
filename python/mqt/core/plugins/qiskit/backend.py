@@ -104,7 +104,7 @@ def _build_gate_mappings_for_backend(
 
 
 class QDMIBackend(BackendV2):
-    """A Qiskit BackendV2 adapter for QDMI devices via QDMI.
+    """A Qiskit BackendV2 adapter for QDMI devices.
 
     This backend provides program submission to QDMI devices.
     It automatically introspects device capabilities and constructs a

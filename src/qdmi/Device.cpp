@@ -190,6 +190,121 @@ template <class Query>
                                       customOffset(property));
 }
 
+[[nodiscard]] DeviceStatus fromV1Status(const QDMI_Device_Status status) {
+  switch (status) {
+  case QDMI_DEVICE_STATUS_OFFLINE:
+    return DeviceStatus::Offline;
+  case QDMI_DEVICE_STATUS_IDLE:
+    return DeviceStatus::Idle;
+  case QDMI_DEVICE_STATUS_BUSY:
+    return DeviceStatus::Busy;
+  case QDMI_DEVICE_STATUS_ERROR:
+    return DeviceStatus::Error;
+  case QDMI_DEVICE_STATUS_MAINTENANCE:
+    return DeviceStatus::Maintenance;
+  case QDMI_DEVICE_STATUS_CALIBRATION:
+    return DeviceStatus::Calibration;
+  default:
+    throw std::runtime_error("QDMI v1.3 device returned an unknown status");
+  }
+}
+
+[[nodiscard]] JobStatus fromV1Status(const QDMI_Job_Status status) {
+  switch (status) {
+  case QDMI_JOB_STATUS_CREATED:
+    return JobStatus::Created;
+  case QDMI_JOB_STATUS_SUBMITTED:
+    return JobStatus::Submitted;
+  case QDMI_JOB_STATUS_QUEUED:
+    return JobStatus::Queued;
+  case QDMI_JOB_STATUS_RUNNING:
+    return JobStatus::Running;
+  case QDMI_JOB_STATUS_DONE:
+    return JobStatus::Done;
+  case QDMI_JOB_STATUS_CANCELED:
+    return JobStatus::Canceled;
+  case QDMI_JOB_STATUS_FAILED:
+    return JobStatus::Failed;
+  default:
+    throw std::runtime_error("QDMI v1.3 device returned an unknown job status");
+  }
+}
+
+[[nodiscard]] ProgramFormat fromV1Format(const QDMI_Program_Format format) {
+  switch (format) {
+  case QDMI_PROGRAM_FORMAT_QASM2:
+    return ProgramFormat::Qasm2;
+  case QDMI_PROGRAM_FORMAT_QASM3:
+    return ProgramFormat::Qasm3;
+  case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
+    return ProgramFormat::QirBaseString;
+  case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
+    return ProgramFormat::QirBaseModule;
+  case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
+    return ProgramFormat::QirAdaptiveString;
+  case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
+    return ProgramFormat::QirAdaptiveModule;
+  case QDMI_PROGRAM_FORMAT_CALIBRATION:
+    return ProgramFormat::Calibration;
+  case QDMI_PROGRAM_FORMAT_QPY:
+    return ProgramFormat::Qpy;
+  case QDMI_PROGRAM_FORMAT_IQMJSON:
+    return ProgramFormat::IqmJson;
+  case QDMI_PROGRAM_FORMAT_BATCHJOB:
+    return ProgramFormat::BatchJob;
+  case QDMI_PROGRAM_FORMAT_CUSTOM1:
+    return ProgramFormat::Custom1;
+  case QDMI_PROGRAM_FORMAT_CUSTOM2:
+    return ProgramFormat::Custom2;
+  case QDMI_PROGRAM_FORMAT_CUSTOM3:
+    return ProgramFormat::Custom3;
+  case QDMI_PROGRAM_FORMAT_CUSTOM4:
+    return ProgramFormat::Custom4;
+  case QDMI_PROGRAM_FORMAT_CUSTOM5:
+    return ProgramFormat::Custom5;
+  default:
+    throw std::runtime_error(
+        "QDMI v1.3 device returned an unknown program format");
+  }
+}
+
+[[nodiscard]] QDMI_Program_Format toV1Format(const ProgramFormat format) {
+  switch (format) {
+  case ProgramFormat::Qasm2:
+    return QDMI_PROGRAM_FORMAT_QASM2;
+  case ProgramFormat::Qasm3:
+    return QDMI_PROGRAM_FORMAT_QASM3;
+  case ProgramFormat::QirBaseString:
+    return QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  case ProgramFormat::QirBaseModule:
+    return QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  case ProgramFormat::QirAdaptiveString:
+    return QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  case ProgramFormat::QirAdaptiveModule:
+    return QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  case ProgramFormat::Calibration:
+    return QDMI_PROGRAM_FORMAT_CALIBRATION;
+  case ProgramFormat::Qpy:
+    return QDMI_PROGRAM_FORMAT_QPY;
+  case ProgramFormat::IqmJson:
+    return QDMI_PROGRAM_FORMAT_IQMJSON;
+  case ProgramFormat::BatchJob:
+    return QDMI_PROGRAM_FORMAT_BATCHJOB;
+  case ProgramFormat::Custom1:
+    return QDMI_PROGRAM_FORMAT_CUSTOM1;
+  case ProgramFormat::Custom2:
+    return QDMI_PROGRAM_FORMAT_CUSTOM2;
+  case ProgramFormat::Custom3:
+    return QDMI_PROGRAM_FORMAT_CUSTOM3;
+  case ProgramFormat::Custom4:
+    return QDMI_PROGRAM_FORMAT_CUSTOM4;
+  case ProgramFormat::Custom5:
+    return QDMI_PROGRAM_FORMAT_CUSTOM5;
+  default:
+    throw std::invalid_argument("Unknown MQT QDMI program format");
+  }
+}
+
 void setCustomJobParameter(const detail::JobState& state,
                            const QDMI_Device_Job_Parameter parameter,
                            const CustomJobParameter& value) {
@@ -197,11 +312,13 @@ void setCustomJobParameter(const detail::JobState& state,
       [&state, parameter](const auto& typed) {
         using T = std::decay_t<decltype(typed)>;
         if constexpr (std::same_as<T, std::string>) {
-          return state.device->api->setJobParameter(
-              state.job, parameter, typed.size() + 1, typed.c_str());
+          return state.device->api->functions.setJobParameter(
+              state.device->api->context.get(), state.job, parameter,
+              typed.size() + 1, typed.c_str());
         } else {
-          return state.device->api->setJobParameter(state.job, parameter,
-                                                    sizeof(T), &typed);
+          return state.device->api->functions.setJobParameter(
+              state.device->api->context.get(), state.job, parameter, sizeof(T),
+              &typed);
         }
       },
       value);
@@ -209,55 +326,58 @@ void setCustomJobParameter(const detail::JobState& state,
 }
 } // namespace
 
-auto Device::getName() const -> std::string {
+std::string Device::getName() const {
   return queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(
-            state_->session, QDMI_DEVICE_PROPERTY_NAME, size, value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_NAME, size, value, sizeRet);
       },
       "device name");
 }
-auto Device::getVersion() const -> std::string {
+std::string Device::getVersion() const {
   return queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_VERSION, size,
-                                        value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_VERSION, size, value, sizeRet);
       },
       "device version");
 }
-auto Device::getStatus() const -> DeviceStatus {
+DeviceStatus Device::getStatus() const {
   const auto status = queryValue<QDMI_Device_Status>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(
-            state_->session, QDMI_DEVICE_PROPERTY_STATUS, size, value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_STATUS, size, value, sizeRet);
       },
       "device status");
-  return static_cast<DeviceStatus>(status);
+  return fromV1Status(status);
 }
-auto Device::getLibraryVersion() const -> std::string {
+std::string Device::getLibraryVersion() const {
   return queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_LIBRARYVERSION,
-                                        size, value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_LIBRARYVERSION, size, value, sizeRet);
       },
       "device library version");
 }
-auto Device::getQubitsNum() const -> size_t {
+size_t Device::getQubitsNum() const {
   return queryValue<size_t>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_QUBITSNUM, size,
-                                        value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_QUBITSNUM, size, value, sizeRet);
       },
       "device qubit count");
 }
-auto Device::getSites() const -> std::vector<Site> {
+std::vector<Site> Device::getSites() const {
   const auto handles = queryVector<QDMI_Site>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(
-            state_->session, QDMI_DEVICE_PROPERTY_SITES, size, value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_SITES, size, value, sizeRet);
       },
       "device sites");
   std::vector<Site> sites;
@@ -266,22 +386,22 @@ auto Device::getSites() const -> std::vector<Site> {
                          [this](auto* handle) { return Site(state_, handle); });
   return sites;
 }
-auto Device::getRegularSites() const -> std::vector<Site> {
+std::vector<Site> Device::getRegularSites() const {
   auto sites = getSites();
   std::erase_if(sites, [](const Site& site) { return site.isZone(); });
   return sites;
 }
-auto Device::getZones() const -> std::vector<Site> {
+std::vector<Site> Device::getZones() const {
   auto sites = getSites();
   std::erase_if(sites, [](const Site& site) { return !site.isZone(); });
   return sites;
 }
-auto Device::getOperations() const -> std::vector<Operation> {
+std::vector<Operation> Device::getOperations() const {
   const auto handles = queryVector<QDMI_Operation>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_OPERATIONS, size,
-                                        value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_OPERATIONS, size, value, sizeRet);
       },
       "device operations");
   std::vector<Operation> operations;
@@ -291,17 +411,17 @@ auto Device::getOperations() const -> std::vector<Operation> {
       [this](auto* handle) { return Operation(state_, handle); });
   return operations;
 }
-auto Device::getCouplingMap() const
-    -> std::optional<std::vector<std::pair<Site, Site>>> {
+std::optional<std::vector<std::pair<Site, Site>>>
+Device::getCouplingMap() const {
   struct Pair {
     QDMI_Site first;
     QDMI_Site second;
   };
   const auto pairs = queryOptionalVector<Pair>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_COUPLINGMAP, size,
-                                        value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_COUPLINGMAP, size, value, sizeRet);
       },
       "device coupling map");
   if (!pairs) {
@@ -320,8 +440,9 @@ auto Device::getCouplingMap() const
   auto Device::method() const -> std::optional<type> {                         \
     return queryOptionalValue<type>(                                           \
         [this](const size_t size, void* value, size_t* sizeRet) {              \
-          return state_->api->queryDevice(state_->session, property, size,     \
-                                          value, sizeRet);                     \
+          return state_->api->functions.queryDevice(                           \
+              state_->api->context.get(), state_->session, property, size,     \
+              value, sizeRet);                                                 \
         },                                                                     \
         description);                                                          \
   }
@@ -339,76 +460,77 @@ DEVICE_OPTIONAL_VALUE(getMinAtomDistance, uint64_t,
                       "device minimum atom distance")
 #undef DEVICE_OPTIONAL_VALUE
 
-auto Device::getLengthUnit() const -> std::optional<std::string> {
+std::optional<std::string> Device::getLengthUnit() const {
   return queryOptionalString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_LENGTHUNIT, size,
-                                        value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_LENGTHUNIT, size, value, sizeRet);
       },
       "device length unit");
 }
-auto Device::getDurationUnit() const -> std::optional<std::string> {
+std::optional<std::string> Device::getDurationUnit() const {
   return queryOptionalString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session,
-                                        QDMI_DEVICE_PROPERTY_DURATIONUNIT, size,
-                                        value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_DURATIONUNIT, size, value, sizeRet);
       },
       "device duration unit");
 }
-auto Device::getSupportedProgramFormats() const -> std::vector<ProgramFormat> {
+std::vector<ProgramFormat> Device::getSupportedProgramFormats() const {
   const auto formats = queryVector<QDMI_Program_Format>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(
-            state_->session, QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS, size,
-            value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session,
+            QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS, size, value, sizeRet);
       },
       "supported program formats");
   std::vector<ProgramFormat> result;
   result.reserve(formats.size());
-  std::ranges::transform(formats, std::back_inserter(result), [](const auto f) {
-    return static_cast<ProgramFormat>(f);
-  });
+  std::ranges::transform(formats, std::back_inserter(result), fromV1Format);
   return result;
 }
-auto Device::getChildDevices() const -> std::vector<Device> {
+std::vector<Device> Device::getChildDevices() const {
   std::vector<Device> result;
   result.reserve(state_->children.size());
   std::ranges::transform(state_->children, std::back_inserter(result),
                          [](const auto& child) { return Device(child); });
   return result;
 }
-auto Device::queryCustomPropertyBytes(const CustomProperty property) const
-    -> std::optional<std::vector<std::byte>> {
+std::optional<std::vector<std::byte>>
+Device::queryCustomPropertyBytes(const CustomProperty property) const {
   return queryBytes(
       [this, property](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryDevice(state_->session, deviceCustom(property),
-                                        size, value, sizeRet);
+        return state_->api->functions.queryDevice(
+            state_->api->context.get(), state_->session, deviceCustom(property),
+            size, value, sizeRet);
       },
       "custom device property");
 }
-auto Device::submitJob(const std::string& program, const ProgramFormat format,
-                       const size_t numShots,
-                       const std::optional<CustomJobParameter>& custom1,
-                       const std::optional<CustomJobParameter>& custom2,
-                       const std::optional<CustomJobParameter>& custom3,
-                       const std::optional<CustomJobParameter>& custom4,
-                       const std::optional<CustomJobParameter>& custom5) const
-    -> Job {
+Job Device::submitJob(const std::string& program, const ProgramFormat format,
+                      const size_t numShots,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
   auto jobState = std::make_shared<detail::JobState>(state_);
-  const auto qdmiFormat = static_cast<QDMI_Program_Format>(format);
-  throwIfError(jobState->device->api->setJobParameter(
-                   jobState->job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                   sizeof(qdmiFormat), &qdmiFormat),
+  const auto qdmiFormat = toV1Format(format);
+  throwIfError(jobState->device->api->functions.setJobParameter(
+                   jobState->device->api->context.get(), jobState->job,
+                   QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT, sizeof(qdmiFormat),
+                   &qdmiFormat),
                "Setting program format");
-  throwIfError(jobState->device->api->setJobParameter(
-                   jobState->job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM,
-                   program.size() + 1, program.c_str()),
+  throwIfError(jobState->device->api->functions.setJobParameter(
+                   jobState->device->api->context.get(), jobState->job,
+                   QDMI_DEVICE_JOB_PARAMETER_PROGRAM, program.size() + 1,
+                   program.c_str()),
                "Setting program");
-  throwIfError(jobState->device->api->setJobParameter(
-                   jobState->job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM,
-                   sizeof(numShots), &numShots),
+  throwIfError(jobState->device->api->functions.setJobParameter(
+                   jobState->device->api->context.get(), jobState->job,
+                   QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(numShots),
+                   &numShots),
                "Setting number of shots");
   const std::array customValues{&custom1, &custom2, &custom3, &custom4,
                                 &custom5};
@@ -421,76 +543,86 @@ auto Device::submitJob(const std::string& program, const ProgramFormat format,
           **customValues[i]);
     }
   }
-  jobState->device->api->submitJob(jobState->job);
+  jobState->device->api->functions.submitJob(
+      jobState->device->api->context.get(), jobState->job);
   return Job(std::move(jobState));
 }
 
-auto Job::check() const -> JobStatus {
-  return static_cast<JobStatus>(state_->device->api->checkJob(state_->job));
+JobStatus Job::check() const {
+  return fromV1Status(state_->device->api->functions.checkJob(
+      state_->device->api->context.get(), state_->job));
 }
-auto Job::wait(const size_t timeout) const -> bool {
-  return state_->device->api->waitJob(state_->job, timeout);
+bool Job::wait(const size_t timeout) const {
+  return state_->device->api->functions.waitJob(
+      state_->device->api->context.get(), state_->job, timeout);
 }
-void Job::cancel() const { state_->device->api->cancelJob(state_->job); }
-auto Job::getId() const -> std::string {
+void Job::cancel() const {
+  state_->device->api->functions.cancelJob(state_->device->api->context.get(),
+                                           state_->job);
+}
+std::string Job::getId() const {
   return queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->queryJobProperty(
-            state_->job, QDMI_DEVICE_JOB_PROPERTY_ID, size, value, sizeRet);
+        return state_->device->api->functions.queryJobProperty(
+            state_->device->api->context.get(), state_->job,
+            QDMI_DEVICE_JOB_PROPERTY_ID, size, value, sizeRet);
       },
       "job ID");
 }
-auto Job::getProgramFormat() const -> ProgramFormat {
+ProgramFormat Job::getProgramFormat() const {
   const auto format = queryValue<QDMI_Program_Format>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->queryJobProperty(
-            state_->job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT, size, value,
-            sizeRet);
+        return state_->device->api->functions.queryJobProperty(
+            state_->device->api->context.get(), state_->job,
+            QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT, size, value, sizeRet);
       },
       "job program format");
-  return static_cast<ProgramFormat>(format);
+  return fromV1Format(format);
 }
-auto Job::getProgram() const -> std::string {
+std::string Job::getProgram() const {
   return queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->queryJobProperty(
-            state_->job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, size, value,
-            sizeRet);
+        return state_->device->api->functions.queryJobProperty(
+            state_->device->api->context.get(), state_->job,
+            QDMI_DEVICE_JOB_PROPERTY_PROGRAM, size, value, sizeRet);
       },
       "job program");
 }
-auto Job::getNumShots() const -> size_t {
+size_t Job::getNumShots() const {
   return queryValue<size_t>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->queryJobProperty(
-            state_->job, QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size, value,
-            sizeRet);
+        return state_->device->api->functions.queryJobProperty(
+            state_->device->api->context.get(), state_->job,
+            QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size, value, sizeRet);
       },
       "job shot count");
 }
-auto Job::queryCustomPropertyBytes(const CustomProperty property) const
-    -> std::optional<std::vector<std::byte>> {
+std::optional<std::vector<std::byte>>
+Job::queryCustomPropertyBytes(const CustomProperty property) const {
   return queryBytes(
       [this, property](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->queryJobProperty(
-            state_->job, jobCustom(property), size, value, sizeRet);
+        return state_->device->api->functions.queryJobProperty(
+            state_->device->api->context.get(), state_->job,
+            jobCustom(property), size, value, sizeRet);
       },
       "custom job property");
 }
-auto Job::getCustomResultBytes(const CustomProperty property) const
-    -> std::optional<std::vector<std::byte>> {
+std::optional<std::vector<std::byte>>
+Job::getCustomResultBytes(const CustomProperty property) const {
   return queryBytes(
       [this, property](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, resultCustom(property), size, value, sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            resultCustom(property), size, value, sizeRet);
       },
       "custom job result");
 }
-auto Job::getShots() const -> std::vector<std::string> {
+std::vector<std::string> Job::getShots() const {
   const auto bytes = queryBytes(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_SHOTS, size, value, sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_SHOTS, size, value, sizeRet);
       },
       "job shots");
   if (!bytes) {
@@ -505,17 +637,19 @@ auto Job::getShots() const -> std::vector<std::string> {
   return splitCommaSeparated(std::string(
       reinterpret_cast<const char*>(bytes->data()), bytes->size() - 1));
 }
-auto Job::getCounts() const -> std::map<std::string, size_t> {
+std::map<std::string, size_t> Job::getCounts() const {
   const auto keys = splitCommaSeparated(queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_HIST_KEYS, size, value, sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_HIST_KEYS, size, value, sizeRet);
       },
       "histogram keys"));
   const auto values = queryVector<size_t>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_HIST_VALUES, size, value, sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_HIST_VALUES, size, value, sizeRet);
       },
       "histogram values");
   if (keys.size() != values.size()) {
@@ -527,38 +661,37 @@ auto Job::getCounts() const -> std::map<std::string, size_t> {
   }
   return result;
 }
-auto Job::getDenseStateVector() const -> std::vector<std::complex<double>> {
+std::vector<std::complex<double>> Job::getDenseStateVector() const {
   return queryVector<std::complex<double>>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, size, value,
-            sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_STATEVECTOR_DENSE, size, value, sizeRet);
       },
       "dense state vector");
 }
-auto Job::getDenseProbabilities() const -> std::vector<double> {
+std::vector<double> Job::getDenseProbabilities() const {
   return queryVector<double>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_PROBABILITIES_DENSE, size, value,
-            sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_PROBABILITIES_DENSE, size, value, sizeRet);
       },
       "dense probabilities");
 }
-auto Job::getSparseStateVector() const
-    -> std::map<std::string, std::complex<double>> {
+std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
   const auto keys = splitCommaSeparated(queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, size, value,
-            sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, size, value, sizeRet);
       },
       "sparse state-vector keys"));
   const auto values = queryVector<std::complex<double>>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, size, value,
-            sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, size, value, sizeRet);
       },
       "sparse state-vector values");
   if (keys.size() != values.size()) {
@@ -570,19 +703,19 @@ auto Job::getSparseStateVector() const
   }
   return result;
 }
-auto Job::getSparseProbabilities() const -> std::map<std::string, double> {
+std::map<std::string, double> Job::getSparseProbabilities() const {
   const auto keys = splitCommaSeparated(queryString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, size, value,
-            sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, size, value, sizeRet);
       },
       "sparse probability keys"));
   const auto values = queryVector<double>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->device->api->getJobResult(
-            state_->job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, size,
-            value, sizeRet);
+        return state_->device->api->functions.getJobResult(
+            state_->device->api->context.get(), state_->job,
+            QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, size, value, sizeRet);
       },
       "sparse probability values");
   if (keys.size() != values.size()) {
@@ -599,18 +732,20 @@ auto Job::getSparseProbabilities() const -> std::map<std::string, double> {
   auto Site::method() const -> std::optional<type> {                           \
     return queryOptionalValue<type>(                                           \
         [this](const size_t size, void* value, size_t* sizeRet) {              \
-          return state_->api->querySite(state_->session,                       \
-                                        static_cast<QDMI_Site>(handle_),       \
-                                        property, size, value, sizeRet);       \
+          return state_->api->functions.querySite(                             \
+              state_->api->context.get(), state_->session,                     \
+              static_cast<QDMI_Site>(handle_), property, size, value,          \
+              sizeRet);                                                        \
         },                                                                     \
         description);                                                          \
   }
-auto Site::getIndex() const -> size_t {
+size_t Site::getIndex() const {
   return queryValue<size_t>(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->querySite(
-            state_->session, static_cast<QDMI_Site>(handle_),
-            QDMI_SITE_PROPERTY_INDEX, size, value, sizeRet);
+        return state_->api->functions.querySite(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Site>(handle_), QDMI_SITE_PROPERTY_INDEX, size,
+            value, sizeRet);
       },
       "site index");
 }
@@ -633,38 +768,40 @@ SITE_OPTIONAL_VALUE(getModuleIndex, uint64_t, QDMI_SITE_PROPERTY_MODULEINDEX,
 SITE_OPTIONAL_VALUE(getSubmoduleIndex, uint64_t,
                     QDMI_SITE_PROPERTY_SUBMODULEINDEX, "site submodule index")
 #undef SITE_OPTIONAL_VALUE
-auto Site::getName() const -> std::optional<std::string> {
+std::optional<std::string> Site::getName() const {
   return queryOptionalString(
       [this](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->querySite(
-            state_->session, static_cast<QDMI_Site>(handle_),
-            QDMI_SITE_PROPERTY_NAME, size, value, sizeRet);
+        return state_->api->functions.querySite(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Site>(handle_), QDMI_SITE_PROPERTY_NAME, size,
+            value, sizeRet);
       },
       "site name");
 }
-auto Site::isZone() const -> bool {
+bool Site::isZone() const {
   return queryOptionalValue<bool>(
              [this](const size_t size, void* value, size_t* sizeRet) {
-               return state_->api->querySite(
-                   state_->session, static_cast<QDMI_Site>(handle_),
-                   QDMI_SITE_PROPERTY_ISZONE, size, value, sizeRet);
+               return state_->api->functions.querySite(
+                   state_->api->context.get(), state_->session,
+                   static_cast<QDMI_Site>(handle_), QDMI_SITE_PROPERTY_ISZONE,
+                   size, value, sizeRet);
              },
              "site zone flag")
       .value_or(false);
 }
-auto Site::queryCustomPropertyBytes(const CustomProperty property) const
-    -> std::optional<std::vector<std::byte>> {
+std::optional<std::vector<std::byte>>
+Site::queryCustomPropertyBytes(const CustomProperty property) const {
   return queryBytes(
       [this, property](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->querySite(
-            state_->session, static_cast<QDMI_Site>(handle_),
-            siteCustom(property), size, value, sizeRet);
+        return state_->api->functions.querySite(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Site>(handle_), siteCustom(property), size, value,
+            sizeRet);
       },
       "custom site property");
 }
 
-auto Operation::siteHandles(const std::vector<Site>& sites)
-    -> std::vector<void*> {
+std::vector<void*> Operation::siteHandles(const std::vector<Site>& sites) {
   std::vector<void*> handles;
   handles.reserve(sites.size());
   std::ranges::transform(
@@ -683,26 +820,27 @@ auto Operation::siteHandles(const std::vector<Site>& sites)
     return queryOptionalValue<type>(                                           \
         [this, &opaqueHandles, handles,                                        \
          &params](const size_t size, void* value, size_t* sizeRet) {           \
-          return state_->api->queryOperation(                                  \
-              state_->session, static_cast<QDMI_Operation>(handle_),           \
-              opaqueHandles.size(), handles, params.size(), params.data(),     \
-              property, size, value, sizeRet);                                 \
+          return state_->api->functions.queryOperation(                        \
+              state_->api->context.get(), state_->session,                     \
+              static_cast<QDMI_Operation>(handle_), opaqueHandles.size(),      \
+              handles, params.size(), params.data(), property, size, value,    \
+              sizeRet);                                                        \
         },                                                                     \
         description);                                                          \
   }
-auto Operation::getName(const std::vector<Site>& sites,
-                        const std::vector<double>& params) const
-    -> std::string {
+std::string Operation::getName(const std::vector<Site>& sites,
+                               const std::vector<double>& params) const {
   const auto opaqueHandles = siteHandles(sites);
   const auto* handles =
       reinterpret_cast<const QDMI_Site*>(opaqueHandles.data());
   return queryString(
       [this, &opaqueHandles, handles, &params](const size_t size, void* value,
                                                size_t* sizeRet) {
-        return state_->api->queryOperation(
-            state_->session, static_cast<QDMI_Operation>(handle_),
-            opaqueHandles.size(), handles, params.size(), params.data(),
-            QDMI_OPERATION_PROPERTY_NAME, size, value, sizeRet);
+        return state_->api->functions.queryOperation(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Operation>(handle_), opaqueHandles.size(), handles,
+            params.size(), params.data(), QDMI_OPERATION_PROPERTY_NAME, size,
+            value, sizeRet);
       },
       "operation name");
 }
@@ -726,45 +864,46 @@ OPERATION_OPTIONAL_VALUE(getMeanShuttlingSpeed, uint64_t,
                          QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
                          "operation mean shuttling speed")
 #undef OPERATION_OPTIONAL_VALUE
-auto Operation::getParametersNum(const std::vector<Site>& sites,
-                                 const std::vector<double>& params) const
-    -> size_t {
+size_t Operation::getParametersNum(const std::vector<Site>& sites,
+                                   const std::vector<double>& params) const {
   const auto opaqueHandles = siteHandles(sites);
   const auto* handles =
       reinterpret_cast<const QDMI_Site*>(opaqueHandles.data());
   return queryValue<size_t>(
       [this, &opaqueHandles, handles, &params](const size_t size, void* value,
                                                size_t* sizeRet) {
-        return state_->api->queryOperation(
-            state_->session, static_cast<QDMI_Operation>(handle_),
-            opaqueHandles.size(), handles, params.size(), params.data(),
-            QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size, value, sizeRet);
+        return state_->api->functions.queryOperation(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Operation>(handle_), opaqueHandles.size(), handles,
+            params.size(), params.data(), QDMI_OPERATION_PROPERTY_PARAMETERSNUM,
+            size, value, sizeRet);
       },
       "operation parameter count");
 }
-auto Operation::isZoned() const -> bool {
+bool Operation::isZoned() const {
   const std::vector<QDMI_Site> sites;
   const std::vector<double> params;
   return queryOptionalValue<bool>(
              [this, &sites, &params](const size_t size, void* value,
                                      size_t* sizeRet) {
-               return state_->api->queryOperation(
-                   state_->session, static_cast<QDMI_Operation>(handle_), 0,
-                   sites.data(), 0, params.data(),
-                   QDMI_OPERATION_PROPERTY_ISZONED, size, value, sizeRet);
+               return state_->api->functions.queryOperation(
+                   state_->api->context.get(), state_->session,
+                   static_cast<QDMI_Operation>(handle_), 0, sites.data(), 0,
+                   params.data(), QDMI_OPERATION_PROPERTY_ISZONED, size, value,
+                   sizeRet);
              },
              "operation zone flag")
       .value_or(false);
 }
-auto Operation::getSites() const -> std::optional<std::vector<Site>> {
+std::optional<std::vector<Site>> Operation::getSites() const {
   const std::vector<QDMI_Site> sites;
   const std::vector<double> params;
   const auto handles = queryOptionalVector<QDMI_Site>(
       [this, &sites, &params](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryOperation(
-            state_->session, static_cast<QDMI_Operation>(handle_), 0,
-            sites.data(), 0, params.data(), QDMI_OPERATION_PROPERTY_SITES, size,
-            value, sizeRet);
+        return state_->api->functions.queryOperation(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Operation>(handle_), 0, sites.data(), 0,
+            params.data(), QDMI_OPERATION_PROPERTY_SITES, size, value, sizeRet);
       },
       "operation sites");
   if (!handles) {
@@ -776,8 +915,8 @@ auto Operation::getSites() const -> std::optional<std::vector<Site>> {
                          [this](auto* site) { return Site(state_, site); });
   return result;
 }
-auto Operation::getSitePairs() const
-    -> std::optional<std::vector<std::pair<Site, Site>>> {
+std::optional<std::vector<std::pair<Site, Site>>>
+Operation::getSitePairs() const {
   if (isZoned() || getQubitsNum().value_or(0) != 2) {
     return std::nullopt;
   }
@@ -792,20 +931,21 @@ auto Operation::getSitePairs() const
   }
   return pairs;
 }
-auto Operation::queryCustomPropertyBytes(
-    const CustomProperty property, const std::vector<Site>& sites,
-    const std::vector<double>& params) const
-    -> std::optional<std::vector<std::byte>> {
+std::optional<std::vector<std::byte>>
+Operation::queryCustomPropertyBytes(const CustomProperty property,
+                                    const std::vector<Site>& sites,
+                                    const std::vector<double>& params) const {
   const auto opaqueHandles = siteHandles(sites);
   const auto* handles =
       reinterpret_cast<const QDMI_Site*>(opaqueHandles.data());
   return queryBytes(
       [this, property, &opaqueHandles, handles,
        &params](const size_t size, void* value, size_t* sizeRet) {
-        return state_->api->queryOperation(
-            state_->session, static_cast<QDMI_Operation>(handle_),
-            opaqueHandles.size(), handles, params.size(), params.data(),
-            operationCustom(property), size, value, sizeRet);
+        return state_->api->functions.queryOperation(
+            state_->api->context.get(), state_->session,
+            static_cast<QDMI_Operation>(handle_), opaqueHandles.size(), handles,
+            params.size(), params.data(), operationCustom(property), size,
+            value, sizeRet);
       },
       "custom operation property");
 }

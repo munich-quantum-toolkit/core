@@ -15,9 +15,11 @@
 
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
@@ -314,6 +316,11 @@ TEST(DeviceRegistry, RegistersReplacesAndUnregistersDefinitions) {
   EXPECT_TRUE(registry.unregisterDevice("example"));
   EXPECT_FALSE(registry.unregisterDevice("example"));
   EXPECT_THROW(registry.registerDevice({}), std::invalid_argument);
+  EXPECT_THROW(registry.registerDevice({.id = "future",
+                                        .library = "future-device",
+                                        .abi = "qdmi-v2",
+                                        .prefix = "FUTURE"}),
+               std::invalid_argument);
 }
 
 TEST(DeviceManager, LazilyOpensAndKeepsDeviceAlive) {
@@ -339,6 +346,51 @@ TEST(DeviceManager, OpensDefinitionsIndividually) {
   EXPECT_EQ(manager.open("good").getName(), "MQT SC Default QDMI Device");
   EXPECT_THROW(static_cast<void>(manager.open("bad")), std::runtime_error);
   EXPECT_THROW(static_cast<void>(manager.open("missing")), std::out_of_range);
+}
+
+TEST(DeviceManager, OpensAllDefinitionsAndIsolatesFailures) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides = {
+      {.id = "good", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"},
+      {.id = "bad", .library = "does-not-exist", .prefix = "MISSING"},
+  };
+  qdmi::DeviceManager manager(options);
+  const auto result = manager.openAll();
+  ASSERT_EQ(result.devices.size(), 1);
+  EXPECT_EQ(result.devices.at("good").getName(), "MQT SC Default QDMI Device");
+  ASSERT_EQ(result.errors.size(), 1);
+  EXPECT_FALSE(result.errors.at("bad").empty());
+}
+
+TEST(DeviceManager, DefinitionsAreStableSnapshots) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
+      .id = "snapshot", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"});
+  qdmi::DeviceManager manager(options);
+  const auto snapshot = manager.definitions();
+  EXPECT_TRUE(manager.unregisterDevice("snapshot"));
+  ASSERT_EQ(snapshot.size(), 1);
+  EXPECT_EQ(snapshot.front().id, "snapshot");
+  EXPECT_TRUE(manager.definitions().empty());
+}
+
+TEST(DeviceManager, ConcurrentOpenCallsShareTheLibrarySafely) {
+  qdmi::ConfigOptions options;
+  options.isolated = true;
+  options.runtimeOverrides.emplace_back(qdmi::DeviceDefinition{
+      .id = "concurrent", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"});
+  qdmi::DeviceManager manager(options);
+  std::vector<std::future<std::string>> names;
+  for (size_t i = 0; i < 4; ++i) {
+    names.emplace_back(std::async(std::launch::async, [&manager] {
+      return manager.open("concurrent").getName();
+    }));
+  }
+  for (auto& name : names) {
+    EXPECT_EQ(name.get(), "MQT SC Default QDMI Device");
+  }
 }
 
 TEST(DeviceManager, SharesLibrariesButKeepsSessionsIndependent) {

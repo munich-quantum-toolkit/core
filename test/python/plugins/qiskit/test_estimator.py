@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
@@ -17,20 +19,17 @@ from qiskit.circuit import Parameter
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.quantum_info import SparsePauliOp
 
-from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIBackend, QDMIEstimator
+
+if TYPE_CHECKING:
+    from mqt.core import qdmi
 
 
 @pytest.fixture
-def estimator() -> QDMIEstimator:
+def estimator(ddsim_device: qdmi.Device) -> QDMIEstimator:
     """Returns a QDMIEstimator based on the DDSIM backend."""
-    manager = qdmi.DeviceManager()
-    for definition in manager.definitions:
-        device = manager.open(definition.id)
-        if "DDSIM" in device.name():
-            backend = QDMIBackend(device=device, provider=None)
-            return QDMIEstimator(backend)
-    pytest.skip("DDSIM device not available")
+    backend = QDMIBackend(device=ddsim_device, provider=None)
+    return QDMIEstimator(backend)
 
 
 def test_estimator_run_simple_observable(estimator: QDMIEstimator) -> None:

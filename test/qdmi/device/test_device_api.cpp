@@ -30,15 +30,18 @@ namespace {
 // The fake implements a C ABI whose opaque handles intentionally require
 // ownership and pointer casts at this isolated test boundary.
 // NOLINTBEGIN(readability-named-parameter,cppcoreguidelines-owning-memory)
-class ScriptedDeviceApi final : public DeviceApi {
+class ScriptedDeviceApi final
+    : public std::enable_shared_from_this<ScriptedDeviceApi> {
   struct Child {
     size_t id;
   };
   struct Session {
     QDMI_Child_Device child = nullptr;
   };
+  struct ScriptedJob {};
 
   mutable std::array<Child, 2> children_{{{0}, {1}}};
+  mutable ScriptedJob job_;
 
   [[nodiscard]] static auto asSession(QDMI_Device_Session session) -> Session* {
     return reinterpret_cast<Session*>(session);
@@ -57,10 +60,107 @@ public:
   mutable size_t opened = 0;
   mutable size_t closed = 0;
   mutable std::vector<std::string> closeOrder;
+  mutable QDMI_Device_Status deviceStatus = QDMI_DEVICE_STATUS_IDLE;
+  mutable QDMI_Job_Status jobStatus = QDMI_JOB_STATUS_CREATED;
+  mutable QDMI_Program_Format programFormat = QDMI_PROGRAM_FORMAT_QASM3;
+
+  [[nodiscard]] auto deviceApi() const -> std::shared_ptr<const DeviceApi> {
+    const auto context = shared_from_this();
+    return std::make_shared<const DeviceApi>(DeviceApi{
+        .context = context,
+        .functions = {
+            .openSession =
+                [](const void* ctx, const SessionParameters& parameters,
+                   const QDMI_Child_Device child) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)
+                      ->openSession(parameters, child);
+                },
+            .closeSession =
+                [](const void* ctx,
+                   const QDMI_Device_Session session) noexcept {
+                  static_cast<const ScriptedDeviceApi*>(ctx)->closeSession(
+                      session);
+                },
+            .createJob =
+                [](const void* ctx, const QDMI_Device_Session session) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)->createJob(
+                      session);
+                },
+            .freeJob =
+                [](const void* ctx, const QDMI_Device_Job job) noexcept {
+                  static_cast<const ScriptedDeviceApi*>(ctx)->freeJob(job);
+                },
+            .setJobParameter =
+                [](const void* ctx, const QDMI_Device_Job job,
+                   const QDMI_Device_Job_Parameter parameter, const size_t size,
+                   const void* value) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)
+                      ->setJobParameter(job, parameter, size, value);
+                },
+            .queryJobProperty =
+                [](const void* ctx, const QDMI_Device_Job job,
+                   const QDMI_Device_Job_Property property, const size_t size,
+                   void* value, size_t* sizeRet) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)
+                      ->queryJobProperty(job, property, size, value, sizeRet);
+                },
+            .submitJob =
+                [](const void* ctx, const QDMI_Device_Job job) {
+                  static_cast<const ScriptedDeviceApi*>(ctx)->submitJob(job);
+                },
+            .cancelJob =
+                [](const void* ctx, const QDMI_Device_Job job) {
+                  static_cast<const ScriptedDeviceApi*>(ctx)->cancelJob(job);
+                },
+            .checkJob =
+                [](const void* ctx, const QDMI_Device_Job job) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)->checkJob(
+                      job);
+                },
+            .waitJob =
+                [](const void* ctx, const QDMI_Device_Job job,
+                   const size_t timeout) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)->waitJob(
+                      job, timeout);
+                },
+            .getJobResult =
+                [](const void* ctx, const QDMI_Device_Job job,
+                   const QDMI_Job_Result result, const size_t size, void* data,
+                   size_t* sizeRet) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)
+                      ->getJobResult(job, result, size, data, sizeRet);
+                },
+            .queryDevice =
+                [](const void* ctx, const QDMI_Device_Session session,
+                   const QDMI_Device_Property property, const size_t size,
+                   void* value, size_t* sizeRet) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)
+                      ->queryDevice(session, property, size, value, sizeRet);
+                },
+            .querySite =
+                [](const void* ctx, const QDMI_Device_Session session,
+                   const QDMI_Site site, const QDMI_Site_Property property,
+                   const size_t size, void* value, size_t* sizeRet) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)->querySite(
+                      session, site, property, size, value, sizeRet);
+                },
+            .queryOperation =
+                [](const void* ctx, const QDMI_Device_Session session,
+                   const QDMI_Operation operation, const size_t numSites,
+                   const QDMI_Site* sites, const size_t numParams,
+                   const double* params, const QDMI_Operation_Property property,
+                   const size_t size, void* value, size_t* sizeRet) {
+                  return static_cast<const ScriptedDeviceApi*>(ctx)
+                      ->queryOperation(session, operation, numSites, sites,
+                                       numParams, params, property, size, value,
+                                       sizeRet);
+                },
+        }});
+  }
 
   [[nodiscard]] auto openSession(const SessionParameters& parameters,
                                  QDMI_Child_Device child) const
-      -> QDMI_Device_Session override {
+      -> QDMI_Device_Session {
     static_cast<void>(parameters);
     ++opened;
     if (child != nullptr && behavior == ChildBehavior::SelectionFailure) {
@@ -70,7 +170,7 @@ public:
     return reinterpret_cast<QDMI_Device_Session>(new Session{child});
   }
 
-  void closeSession(QDMI_Device_Session session) const noexcept override {
+  void closeSession(QDMI_Device_Session session) const noexcept {
     if (session == nullptr) {
       return;
     }
@@ -85,43 +185,49 @@ public:
     delete typed;
   }
 
-  [[nodiscard]] auto createJob(QDMI_Device_Session) const
-      -> QDMI_Device_Job override {
-    throw std::runtime_error("jobs are not scripted");
+  [[nodiscard]] auto createJob(QDMI_Device_Session) const -> QDMI_Device_Job {
+    return reinterpret_cast<QDMI_Device_Job>(&job_);
   }
-  void freeJob(QDMI_Device_Job) const noexcept override {}
+  void freeJob(QDMI_Device_Job) const noexcept {}
   [[nodiscard]] auto setJobParameter(QDMI_Device_Job, QDMI_Device_Job_Parameter,
-                                     size_t, const void*) const
-      -> int override {
-    return QDMI_ERROR_NOTSUPPORTED;
+                                     size_t, const void*) const -> int {
+    return QDMI_SUCCESS;
   }
-  [[nodiscard]] auto queryJobProperty(QDMI_Device_Job, QDMI_Device_Job_Property,
-                                      size_t, void*, size_t*) const
-      -> int override {
-    return QDMI_ERROR_NOTSUPPORTED;
+  [[nodiscard]] auto queryJobProperty(QDMI_Device_Job,
+                                      const QDMI_Device_Job_Property property,
+                                      const size_t size, void* value,
+                                      size_t* sizeRet) const -> int {
+    if (property != QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(programFormat);
+    }
+    if (value != nullptr) {
+      if (size < sizeof(programFormat)) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, &programFormat, sizeof(programFormat));
+    }
+    return QDMI_SUCCESS;
   }
-  void submitJob(QDMI_Device_Job) const override {
-    throw std::runtime_error("jobs are not scripted");
+  void submitJob(QDMI_Device_Job) const {}
+  void cancelJob(QDMI_Device_Job) const {}
+  [[nodiscard]] auto checkJob(QDMI_Device_Job) const -> QDMI_Job_Status {
+    return jobStatus;
   }
-  void cancelJob(QDMI_Device_Job) const override {
-    throw std::runtime_error("jobs are not scripted");
-  }
-  [[nodiscard]] auto checkJob(QDMI_Device_Job) const
-      -> QDMI_Job_Status override {
-    return QDMI_JOB_STATUS_FAILED;
-  }
-  [[nodiscard]] auto waitJob(QDMI_Device_Job, size_t) const -> bool override {
+  [[nodiscard]] auto waitJob(QDMI_Device_Job, size_t) const -> bool {
     return false;
   }
   [[nodiscard]] auto getJobResult(QDMI_Device_Job, QDMI_Job_Result, size_t,
-                                  void*, size_t*) const -> int override {
+                                  void*, size_t*) const -> int {
     return QDMI_ERROR_NOTSUPPORTED;
   }
 
   [[nodiscard]] auto queryDevice(QDMI_Device_Session session,
                                  QDMI_Device_Property property,
                                  const size_t size, void* value,
-                                 size_t* sizeRet) const -> int override {
+                                 size_t* sizeRet) const -> int {
     const auto* typed = asSession(session);
     if (property == QDMI_DEVICE_PROPERTY_CHILDDEVICES) {
       if (typed->child != nullptr || behavior == ChildBehavior::Unsupported) {
@@ -151,6 +257,30 @@ public:
       }
       return QDMI_SUCCESS;
     }
+    if (property == QDMI_DEVICE_PROPERTY_STATUS) {
+      if (sizeRet != nullptr) {
+        *sizeRet = sizeof(deviceStatus);
+      }
+      if (value != nullptr) {
+        if (size < sizeof(deviceStatus)) {
+          return QDMI_ERROR_INVALIDARGUMENT;
+        }
+        std::memcpy(value, &deviceStatus, sizeof(deviceStatus));
+      }
+      return QDMI_SUCCESS;
+    }
+    if (property == QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
+      if (sizeRet != nullptr) {
+        *sizeRet = sizeof(programFormat);
+      }
+      if (value != nullptr) {
+        if (size < sizeof(programFormat)) {
+          return QDMI_ERROR_INVALIDARGUMENT;
+        }
+        std::memcpy(value, &programFormat, sizeof(programFormat));
+      }
+      return QDMI_SUCCESS;
+    }
     if (property != QDMI_DEVICE_PROPERTY_NAME) {
       return QDMI_ERROR_NOTSUPPORTED;
     }
@@ -173,13 +303,13 @@ public:
 
   [[nodiscard]] auto querySite(QDMI_Device_Session, QDMI_Site,
                                QDMI_Site_Property, size_t, void*, size_t*) const
-      -> int override {
+      -> int {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   [[nodiscard]] auto queryOperation(QDMI_Device_Session, QDMI_Operation, size_t,
                                     const QDMI_Site*, size_t, const double*,
                                     QDMI_Operation_Property, size_t, void*,
-                                    size_t*) const -> int override {
+                                    size_t*) const -> int {
     return QDMI_ERROR_NOTSUPPORTED;
   }
 };
@@ -189,7 +319,7 @@ TEST(DeviceApiTest, ChildRetainsParentSessionAndLibrary) {
   const auto api = std::make_shared<ScriptedDeviceApi>();
   std::optional<Device> retainedChild;
   {
-    const auto parent = DeviceFactory::create(api);
+    const auto parent = DeviceFactory::create(api->deviceApi());
     EXPECT_EQ(parent.getName(), "parent");
     const auto children = parent.getChildDevices();
     ASSERT_EQ(children.size(), 2);
@@ -208,18 +338,20 @@ TEST(DeviceApiTest, ChildRetainsParentSessionAndLibrary) {
 TEST(DeviceApiTest, HandlesUnsupportedAndInvalidChildLists) {
   const auto unsupported = std::make_shared<ScriptedDeviceApi>();
   unsupported->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
-  EXPECT_TRUE(DeviceFactory::create(unsupported).getChildDevices().empty());
+  EXPECT_TRUE(DeviceFactory::create(unsupported->deviceApi())
+                  .getChildDevices()
+                  .empty());
   EXPECT_EQ(unsupported->opened, unsupported->closed);
 
   const auto malformed = std::make_shared<ScriptedDeviceApi>();
   malformed->behavior = ScriptedDeviceApi::ChildBehavior::Malformed;
-  EXPECT_THROW(static_cast<void>(DeviceFactory::create(malformed)),
+  EXPECT_THROW(static_cast<void>(DeviceFactory::create(malformed->deviceApi())),
                std::runtime_error);
   EXPECT_EQ(malformed->opened, malformed->closed);
 
   const auto failed = std::make_shared<ScriptedDeviceApi>();
   failed->behavior = ScriptedDeviceApi::ChildBehavior::QueryFailure;
-  EXPECT_THROW(static_cast<void>(DeviceFactory::create(failed)),
+  EXPECT_THROW(static_cast<void>(DeviceFactory::create(failed->deviceApi())),
                std::runtime_error);
   EXPECT_EQ(failed->opened, failed->closed);
 }
@@ -227,7 +359,7 @@ TEST(DeviceApiTest, HandlesUnsupportedAndInvalidChildLists) {
 TEST(DeviceApiTest, CleansUpWhenChildSelectionFails) {
   const auto api = std::make_shared<ScriptedDeviceApi>();
   api->behavior = ScriptedDeviceApi::ChildBehavior::SelectionFailure;
-  EXPECT_THROW(static_cast<void>(DeviceFactory::create(api)),
+  EXPECT_THROW(static_cast<void>(DeviceFactory::create(api->deviceApi())),
                std::runtime_error);
   EXPECT_EQ(api->opened, api->closed);
 }
@@ -235,11 +367,33 @@ TEST(DeviceApiTest, CleansUpWhenChildSelectionFails) {
 TEST(DeviceApiTest, RejectsInvalidCustomPropertySelector) {
   const auto api = std::make_shared<ScriptedDeviceApi>();
   api->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
-  const auto device = DeviceFactory::create(api);
+  const auto device = DeviceFactory::create(api->deviceApi());
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalid = static_cast<CustomProperty>(0);
   EXPECT_THROW(static_cast<void>(device.queryCustomProperty<int>(invalid)),
                std::invalid_argument);
+}
+
+TEST(DeviceApiTest, RejectsUnknownV1EnumValues) {
+  const auto api = std::make_shared<ScriptedDeviceApi>();
+  api->behavior = ScriptedDeviceApi::ChildBehavior::Unsupported;
+  const auto device = DeviceFactory::create(api->deviceApi());
+  // These deliberately simulate malformed values crossing the QDMI v1.3 ABI.
+  // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+  api->deviceStatus = static_cast<QDMI_Device_Status>(QDMI_DEVICE_STATUS_MAX);
+  EXPECT_THROW(static_cast<void>(device.getStatus()), std::runtime_error);
+  api->programFormat =
+      static_cast<QDMI_Program_Format>(QDMI_PROGRAM_FORMAT_MAX);
+  EXPECT_THROW(static_cast<void>(device.getSupportedProgramFormats()),
+               std::runtime_error);
+  auto job = device.submitJob("", ProgramFormat::Qasm3, 1);
+  api->jobStatus = static_cast<QDMI_Job_Status>(1234);
+  EXPECT_THROW(static_cast<void>(job.check()), std::runtime_error);
+  EXPECT_THROW(static_cast<void>(job.getProgramFormat()), std::runtime_error);
+  constexpr auto invalidFormat = static_cast<ProgramFormat>(1234);
+  EXPECT_THROW(static_cast<void>(device.submitJob("", invalidFormat, 1)),
+               std::invalid_argument);
+  // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
 }
 } // namespace
 } // namespace qdmi::detail

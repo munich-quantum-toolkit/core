@@ -23,65 +23,48 @@
 
 namespace qdmi::detail {
 
-/** Private, ABI-neutral interface used by the public QDMI object model. */
-class DeviceApi {
-public:
-  DeviceApi() = default;
-  DeviceApi(const DeviceApi&) = delete;
-  DeviceApi& operator=(const DeviceApi&) = delete;
-  DeviceApi(DeviceApi&&) = delete;
-  DeviceApi& operator=(DeviceApi&&) = delete;
-  virtual ~DeviceApi() = default;
+/// Private context/function table for the single supported QDMI ABI.
+struct DeviceApi {
+  /// Operations consumed by the object model. Every function receives the
+  /// matching immutable context as its first argument.
+  struct Functions {
+    QDMI_Device_Session (*openSession)(const void*, const SessionParameters&,
+                                       QDMI_Child_Device) = nullptr;
+    void (*closeSession)(const void*, QDMI_Device_Session) noexcept = nullptr;
+    QDMI_Device_Job (*createJob)(const void*, QDMI_Device_Session) = nullptr;
+    void (*freeJob)(const void*, QDMI_Device_Job) noexcept = nullptr;
+    int (*setJobParameter)(const void*, QDMI_Device_Job,
+                           QDMI_Device_Job_Parameter, size_t,
+                           const void*) = nullptr;
+    int (*queryJobProperty)(const void*, QDMI_Device_Job,
+                            QDMI_Device_Job_Property, size_t, void*,
+                            size_t*) = nullptr;
+    void (*submitJob)(const void*, QDMI_Device_Job) = nullptr;
+    void (*cancelJob)(const void*, QDMI_Device_Job) = nullptr;
+    QDMI_Job_Status (*checkJob)(const void*, QDMI_Device_Job) = nullptr;
+    bool (*waitJob)(const void*, QDMI_Device_Job, size_t) = nullptr;
+    int (*getJobResult)(const void*, QDMI_Device_Job, QDMI_Job_Result, size_t,
+                        void*, size_t*) = nullptr;
+    int (*queryDevice)(const void*, QDMI_Device_Session, QDMI_Device_Property,
+                       size_t, void*, size_t*) = nullptr;
+    int (*querySite)(const void*, QDMI_Device_Session, QDMI_Site,
+                     QDMI_Site_Property, size_t, void*, size_t*) = nullptr;
+    int (*queryOperation)(const void*, QDMI_Device_Session, QDMI_Operation,
+                          size_t, const QDMI_Site*, size_t, const double*,
+                          QDMI_Operation_Property, size_t, void*,
+                          size_t*) = nullptr;
+  };
 
-  [[nodiscard]] virtual auto
-  openSession(const SessionParameters& parameters,
-              QDMI_Child_Device child = nullptr) const
-      -> QDMI_Device_Session = 0;
-  virtual void closeSession(QDMI_Device_Session session) const noexcept = 0;
-
-  [[nodiscard]] virtual auto createJob(QDMI_Device_Session session) const
-      -> QDMI_Device_Job = 0;
-  virtual void freeJob(QDMI_Device_Job job) const noexcept = 0;
-  [[nodiscard]] virtual auto
-  setJobParameter(QDMI_Device_Job job, QDMI_Device_Job_Parameter parameter,
-                  size_t size, const void* value) const -> int = 0;
-  [[nodiscard]] virtual auto queryJobProperty(QDMI_Device_Job job,
-                                              QDMI_Device_Job_Property property,
-                                              size_t size, void* value,
-                                              size_t* sizeRet) const -> int = 0;
-  virtual void submitJob(QDMI_Device_Job job) const = 0;
-  virtual void cancelJob(QDMI_Device_Job job) const = 0;
-  [[nodiscard]] virtual auto checkJob(QDMI_Device_Job job) const
-      -> QDMI_Job_Status = 0;
-  [[nodiscard]] virtual auto waitJob(QDMI_Device_Job job, size_t timeout) const
-      -> bool = 0;
-  [[nodiscard]] virtual auto getJobResult(QDMI_Device_Job job,
-                                          QDMI_Job_Result result, size_t size,
-                                          void* data, size_t* sizeRet) const
-      -> int = 0;
-
-  [[nodiscard]] virtual auto queryDevice(QDMI_Device_Session session,
-                                         QDMI_Device_Property property,
-                                         size_t size, void* value,
-                                         size_t* sizeRet) const -> int = 0;
-  [[nodiscard]] virtual auto querySite(QDMI_Device_Session session,
-                                       QDMI_Site site,
-                                       QDMI_Site_Property property, size_t size,
-                                       void* value, size_t* sizeRet) const
-      -> int = 0;
-  [[nodiscard]] virtual auto
-  queryOperation(QDMI_Device_Session session, QDMI_Operation operation,
-                 size_t numSites, const QDMI_Site* sites, size_t numParams,
-                 const double* params, QDMI_Operation_Property property,
-                 size_t size, void* value, size_t* sizeRet) const -> int = 0;
+  std::shared_ptr<const void> context;
+  Functions functions;
 };
 
 struct SessionState {
-  std::shared_ptr<DeviceApi> api;
+  std::shared_ptr<const DeviceApi> api;
   QDMI_Device_Session session = nullptr;
   std::shared_ptr<SessionState> parent;
 
-  SessionState(std::shared_ptr<DeviceApi> deviceApi,
+  SessionState(std::shared_ptr<const DeviceApi> deviceApi,
                const SessionParameters& sessionParameters,
                QDMI_Child_Device child,
                std::shared_ptr<SessionState> parentSession);
@@ -94,12 +77,12 @@ struct SessionState {
 
 struct DeviceState {
   std::shared_ptr<SessionState> lifetime;
-  std::shared_ptr<DeviceApi> api;
+  std::shared_ptr<const DeviceApi> api;
   QDMI_Device_Session session = nullptr;
   SessionParameters parameters;
   std::vector<std::shared_ptr<DeviceState>> children;
 
-  DeviceState(std::shared_ptr<DeviceApi> deviceApi,
+  DeviceState(std::shared_ptr<const DeviceApi> deviceApi,
               const SessionParameters& sessionParameters,
               QDMI_Child_Device child = nullptr,
               std::shared_ptr<SessionState> parentSession = nullptr);
@@ -111,10 +94,10 @@ struct DeviceState {
 };
 
 struct JobState {
-  std::shared_ptr<DeviceState> device;
+  std::shared_ptr<const DeviceState> device;
   QDMI_Device_Job job = nullptr;
 
-  explicit JobState(std::shared_ptr<DeviceState> deviceState);
+  explicit JobState(std::shared_ptr<const DeviceState> deviceState);
   ~JobState();
   JobState(const JobState&) = delete;
   JobState& operator=(const JobState&) = delete;
@@ -124,7 +107,7 @@ struct JobState {
 
 /** Test-only/private construction access for ABI adapters. */
 struct DeviceFactory {
-  [[nodiscard]] static auto create(std::shared_ptr<DeviceApi> api,
+  [[nodiscard]] static auto create(std::shared_ptr<const DeviceApi> api,
                                    const SessionParameters& parameters = {})
       -> Device {
     return Device(std::make_shared<DeviceState>(std::move(api), parameters));
@@ -133,6 +116,6 @@ struct DeviceFactory {
 
 [[nodiscard]] auto makeV1DeviceApi(const std::filesystem::path& library,
                                    const std::string& prefix)
-    -> std::shared_ptr<DeviceApi>;
+    -> std::shared_ptr<const DeviceApi>;
 
 } // namespace qdmi::detail

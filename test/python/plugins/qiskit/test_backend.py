@@ -19,7 +19,6 @@ from qiskit.circuit import Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core import qdmi
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -28,6 +27,7 @@ from mqt.core.plugins.qiskit import (
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 
 if TYPE_CHECKING:
+    from mqt.core import qdmi
 
     class _QDMIDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
         def name(self) -> str: ...
@@ -46,18 +46,13 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def ddsim_backend() -> QDMIBackend:
+def ddsim_backend(ddsim_device: qdmi.Device) -> QDMIBackend:
     """Get a QDMIBackend for the DDSIM device.
 
     Returns:
         A QDMIBackend instance wrapping the DDSIM device.
     """
-    manager = qdmi.DeviceManager()
-    for definition in manager.definitions:
-        device = manager.open(definition.id)
-        if "DDSIM" in device.name():
-            return QDMIBackend(device=device, provider=None)
-    pytest.skip("DDSIM device not available")
+    return QDMIBackend(device=ddsim_device, provider=None)
 
 
 def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
@@ -598,13 +593,7 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
     assert sum(counts.values()) == 100
 
 
-def test_zoned_operation_rejected_at_backend_init() -> None:
+def test_zoned_operation_rejected_at_backend_init(na_device: qdmi.Device) -> None:
     """Backend rejects devices exposing zoned operations."""
-    manager = qdmi.DeviceManager()
-    for definition in manager.definitions:
-        device = manager.open(definition.id)
-        if device.name().startswith("MQT NA"):
-            with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
-                QDMIBackend(device)
-            return
-    pytest.skip("NA device not available")
+    with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
+        QDMIBackend(na_device)

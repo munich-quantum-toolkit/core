@@ -28,10 +28,8 @@ def device_tuple() -> tuple[Device, Mapping[str, Any]]:
     """Return a neutral atom QDMI device instance."""
     with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
         device_dict = load(f)
-    manager = DeviceManager()
-    devices = (manager.open(definition.id) for definition in manager.definitions)
-    converted = (Device.try_create_from_device(candidate) for candidate in devices)
-    device = next(candidate for candidate in converted if candidate is not None)
+    device = Device.try_create_from_device(DeviceManager().open("mqt.na.default"))
+    assert device is not None
     return device, device_dict
 
 

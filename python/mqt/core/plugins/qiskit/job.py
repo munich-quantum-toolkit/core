@@ -35,7 +35,7 @@ def __dir__() -> list[str]:
 
 
 class QDMIJob(JobV1):
-    """Qiskit job wrapping one or more QDMI/QDMI jobs.
+    """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
     aggregating results from multiple QDMI jobs when needed.

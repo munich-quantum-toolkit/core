@@ -28,9 +28,9 @@ from mqt.core.qdmi import DeviceManager
 manager = DeviceManager()
 for definition in manager.definitions:
     try:
-        device = manager.open(definition.id)
+        device = manager.open(definition.device_id)
     except RuntimeError as error:
-        print(f"{definition.id}: {error}")
+        print(f"{definition.device_id}: {error}")
         continue
     print(device.name())
 ```
@@ -38,6 +38,10 @@ for definition in manager.definitions:
 Discovery is side-effect free. Each `open` call loads and initializes only the
 selected definition, and separate definitions can share one loaded provider
 library while retaining independent sessions.
+
+When every configured device is useful, `openAll()`/`open_all()` returns
+successfully opened devices and per-ID errors without allowing one unavailable
+provider to abort the remaining opens.
 
 See [QDMI configuration](configuration.md) for discovery, precedence, and
 registration examples.

@@ -319,18 +319,43 @@ def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
     return MockQDMIDevice
 
 
-def _patch_manager_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
+def _patch_manager_devices(
+    monkeypatch: pytest.MonkeyPatch,
+    devices: list[MockQDMIDevice],
+    errors: dict[str, str] | None = None,
+) -> None:
     """Patch QDMI device discovery to return the supplied mock devices."""
 
     class MockManager:
         def __init__(self) -> None:
-            self.definitions = [SimpleNamespace(id=f"mock-{index}") for index in range(len(devices))]
+            self.definitions = [SimpleNamespace(device_id=f"mock-{index}") for index in range(len(devices))]
             self.devices = devices
 
         def open(self, device_id: str, **_kwargs: object) -> MockQDMIDevice:
             return self.devices[int(device_id.removeprefix("mock-"))]
 
+        def open_all(self, **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                devices={f"mock-{index}": device for index, device in enumerate(self.devices)}, errors=errors or {}
+            )
+
     monkeypatch.setattr(qdmi, "DeviceManager", MockManager)
+
+
+def test_provider_keeps_openable_devices_after_partial_discovery_failure(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+) -> None:
+    """Provider retains successful bulk-open results when another definition fails."""
+    mock_device = mock_qdmi_device_factory(
+        name="Available Device",
+        num_qubits=2,
+        operations=["h", "measure"],
+    )
+    _patch_manager_devices(monkeypatch, [mock_device], {"unavailable": "provider failed"})
+
+    provider = QDMIProvider()
+
+    assert provider.get_backend("Available Device").name == "Available Device"
 
 
 def test_backend_warns_on_unmappable_operation(

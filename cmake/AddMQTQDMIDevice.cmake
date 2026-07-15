@@ -8,16 +8,25 @@
 
 include(GNUInstallDirs)
 
-# Register a relocatable built-in QDMI device. The generated fragment is emitted beside the runtime
-# library in both build and install trees.
-function(mqt_register_qdmi_device target)
+# Configure and register a relocatable built-in QDMI device. The generated fragment is emitted
+# beside the runtime library in both build and install trees.
+function(mqt_configure_qdmi_device target)
   cmake_parse_arguments(ARG "" "ID;PREFIX" "SESSION" ${ARGN})
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI device target: ${target}")
   endif()
   if(NOT ARG_ID OR NOT ARG_PREFIX)
-    message(FATAL_ERROR "mqt_register_qdmi_device requires ID and PREFIX")
+    message(FATAL_ERROR "mqt_configure_qdmi_device requires ID and PREFIX")
   endif()
+
+  set_target_properties(
+    ${target} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+                         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
+  target_compile_definitions(${target} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                               ${ARG_PREFIX}_QDMI_device_EXPORTS)
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${target}
+      PARENT_SCOPE)
 
   set(session_json "")
   foreach(pair IN LISTS ARG_SESSION)

@@ -11,26 +11,24 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 
-from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIBackend, QDMISampler
+
+if TYPE_CHECKING:
+    from mqt.core import qdmi
 
 
 @pytest.fixture
-def sampler() -> QDMISampler:
+def sampler(ddsim_device: qdmi.Device) -> QDMISampler:
     """Returns a QDMISampler based on the DDSIM backend."""
-    manager = qdmi.DeviceManager()
-    for definition in manager.definitions:
-        device = manager.open(definition.id)
-        if "DDSIM" in device.name():
-            backend = QDMIBackend(device=device, provider=None)
-            return QDMISampler(backend)
-    pytest.skip("DDSIM device not available")
+    backend = QDMIBackend(device=ddsim_device, provider=None)
+    return QDMISampler(backend)
 
 
 def test_sampler_run_simple_circuit(sampler: QDMISampler) -> None:

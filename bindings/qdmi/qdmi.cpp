@@ -96,19 +96,20 @@ NB_MODULE(MQT_CORE_MODULE_NAME,
   definition
       .def(
           "__init__",
-          [](qdmi::DeviceDefinition* self, std::string id,
+          [](qdmi::DeviceDefinition* self, std::string deviceId,
              std::filesystem::path library, std::string prefix, std::string abi,
              bool enabled, qdmi::SessionParameters session) {
-            new (self) qdmi::DeviceDefinition{.id = std::move(id),
+            new (self) qdmi::DeviceDefinition{.id = std::move(deviceId),
                                               .library = std::move(library),
                                               .abi = std::move(abi),
                                               .prefix = std::move(prefix),
-                                              .enabled = enabled,
-                                              .session = std::move(session)};
+                                              .session = std::move(session),
+                                              .enabled = enabled};
           },
-          "id"_a, "library"_a, "prefix"_a, nb::kw_only(), "abi"_a = "qdmi-v1",
-          "enabled"_a = true, "session"_a = qdmi::SessionParameters{})
-      .def_rw("id", &qdmi::DeviceDefinition::id)
+          "device_id"_a, "library"_a, "prefix"_a, nb::kw_only(),
+          "abi"_a = "qdmi-v1", "enabled"_a = true,
+          "session"_a = qdmi::SessionParameters{})
+      .def_rw("device_id", &qdmi::DeviceDefinition::id)
       .def_rw("library", &qdmi::DeviceDefinition::library)
       .def_rw("abi", &qdmi::DeviceDefinition::abi)
       .def_rw("prefix", &qdmi::DeviceDefinition::prefix)
@@ -129,9 +130,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME,
         qdmi::ConfigOptions options{.configRoot = std::move(configRoot),
                                     .explicitFile = std::move(explicitFile),
                                     .baseDirectory = std::move(baseDirectory),
-                                    .isolated = isolated,
                                     .runtimeOverrides =
-                                        std::move(runtimeOverrides)};
+                                        std::move(runtimeOverrides),
+                                    .isolated = isolated};
         if (inlineJson) {
           options.inlineOverrides = Json::parse(*inlineJson);
         }
@@ -552,6 +553,11 @@ when the custom slot is unsupported.)pb");
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
+  auto openAllResult = nb::class_<qdmi::OpenAllResult>(
+      m, "OpenAllResult", "Devices and per-ID errors from bulk opening.");
+  openAllResult.def_ro("devices", &qdmi::OpenAllResult::devices)
+      .def_ro("errors", &qdmi::OpenAllResult::errors);
+
   auto manager = nb::class_<qdmi::DeviceManager>(
       m, "DeviceManager", "Discovers and lazily opens QDMI devices.");
   manager
@@ -564,18 +570,21 @@ when the custom slot is unsupported.)pb");
            "definition"_a, nb::kw_only(), "replace"_a = false)
       .def(
           "unregister_device",
-          [](qdmi::DeviceManager& self, const std::string& id) {
-            return self.unregisterDevice(id);
+          [](qdmi::DeviceManager& self, const std::string& deviceId) {
+            return self.unregisterDevice(deviceId);
           },
-          "id"_a)
+          "device_id"_a)
       .def(
           "open",
-          [](qdmi::DeviceManager& self, const std::string& id,
+          [](qdmi::DeviceManager& self, const std::string& deviceId,
              const qdmi::SessionParameters& sessionOverrides) {
-            return self.open(id, sessionOverrides);
+            return self.open(deviceId, sessionOverrides);
           },
-          "id"_a, nb::kw_only(),
-          "session_overrides"_a = qdmi::SessionParameters{});
+          "device_id"_a, nb::kw_only(),
+          "session_overrides"_a = qdmi::SessionParameters{})
+      .def("open_all", &qdmi::DeviceManager::openAll, nb::kw_only(),
+           "session_overrides"_a = qdmi::SessionParameters{},
+           "Open all definitions independently and retain per-ID errors.");
 }
 
 } // namespace mqt

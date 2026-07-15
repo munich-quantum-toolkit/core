@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -82,6 +83,10 @@ def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> Non
     class EmptyManager:
         def __init__(self) -> None:
             self.definitions: list[object] = []
+
+        @staticmethod
+        def open_all(**_kwargs: object) -> object:
+            return SimpleNamespace(devices={}, errors={})
 
     monkeypatch.setattr(qdmi, "DeviceManager", EmptyManager)
 

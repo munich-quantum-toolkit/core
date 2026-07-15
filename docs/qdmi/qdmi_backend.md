@@ -534,7 +534,7 @@ When you run a circuit, the backend:
 
 The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
-1. Querying the QDMI (QDMI) device for available operations
+1. Querying the QDMI device for available operations
 2. Mapping each operation to the corresponding Qiskit gate
 3. Determining qubit connectivity from the device's coupling map
 4. Including operation properties (duration, fidelity) if available
