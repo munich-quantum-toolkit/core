@@ -201,6 +201,8 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableQuantumCombination) {
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
 
+  std::cout << "Did CP" << std::endl;
+
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
