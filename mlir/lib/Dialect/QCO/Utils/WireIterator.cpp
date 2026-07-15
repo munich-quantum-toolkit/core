@@ -137,7 +137,7 @@ void WireIterator::backward() {
         // Because the scf::WhileOp doesn't implement "getLoopResults", we
         // have to fallback to the following instead of using
         // "getTiedLoopInit".
-        
+
         if (auto result = dyn_cast<OpResult>(qubit_)) {
           qubit_ = op.getInits()[result.getResultNumber()];
           return;
