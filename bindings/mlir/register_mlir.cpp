@@ -98,10 +98,15 @@ void requireValid(const mlir::Program& program) {
  * @brief Check whether @p input unambiguously looks like source text.
  */
 [[nodiscard]] bool isSourceString(const std::string_view input) {
+  auto source = input;
+  while (!source.empty() &&
+         std::isspace(static_cast<unsigned char>(source.front())) != 0) {
+    source.remove_prefix(1);
+  }
   return input.find('\n') != std::string_view::npos ||
          input.find("OPENQASM") != std::string_view::npos ||
-         (input.starts_with("module") && input.size() > 6U &&
-          std::isspace(static_cast<unsigned char>(input[6])));
+         (source.starts_with("module") && source.size() > 6U &&
+          std::isspace(static_cast<unsigned char>(source[6])) != 0);
 }
 
 /**
@@ -195,17 +200,22 @@ programFromPath(const std::filesystem::path& path) {
     return inplace ? mlir::CompilerInput(std::move(value))
                    : mlir::CompilerInput(value.copy());
   }
-  const auto qiskitCircuit =
-      nb::module_::import_("qiskit.circuit").attr("QuantumCircuit");
-  if (nb::isinstance(program, qiskitCircuit)) {
-    const auto computation = nb::cast<qc::QuantumComputation>(
-        nb::module_::import_("mqt.core.load").attr("load")(program));
-    return takeResult(mlir::QCProgram::fromQuantumComputation(computation));
+  const auto programType =
+      nb::cast<std::string>(program.type().attr("__name__"));
+  const auto programModule =
+      nb::cast<std::string>(program.type().attr("__module__"));
+  if (programModule.starts_with("qiskit.")) {
+    const auto qiskitCircuit =
+        nb::module_::import_("qiskit.circuit").attr("QuantumCircuit");
+    if (nb::isinstance(program, qiskitCircuit)) {
+      const auto computation = nb::cast<qc::QuantumComputation>(
+          nb::module_::import_("mqt.core.load").attr("load")(program));
+      return takeResult(mlir::QCProgram::fromQuantumComputation(computation));
+    }
   }
 
-  throw std::runtime_error(
-      "Program type " + nb::cast<std::string>(program.type().attr("__name__")) +
-      " is not supported.");
+  throw std::runtime_error("Program type " + programType +
+                           " is not supported.");
 }
 
 /**

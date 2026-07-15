@@ -89,6 +89,16 @@ def test_compile_program_mlir_string() -> None:
     assert result.ir == MLIR_STRING
 
 
+def test_compile_program_mlir_string_with_leading_whitespace() -> None:
+    """Compile a whitespace-prefixed single-line MLIR string."""
+    source = " module { %0 = qc.alloc : !qc.qubit qc.dealloc %0 : !qc.qubit }"
+
+    result = compile_program(source)
+
+    assert isinstance(result, QCProgram)
+    assert result.ir.startswith("module")
+
+
 def test_compile_program_mlir_file(tmp_path: Path) -> None:
     """Compile a `.mlir` file."""
     path = tmp_path / "program.mlir"

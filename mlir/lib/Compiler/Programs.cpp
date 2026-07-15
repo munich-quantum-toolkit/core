@@ -148,7 +148,12 @@ template <class ProgramType, class Parse>
 parseTypedProgram(const StringRef dialect, Parse&& parse) {
   auto context = createCompilerContext();
   auto module = std::forward<Parse>(parse)(context.get());
-  if (failed(module) || !moduleUsesDialect(**module, dialect)) {
+  if (failed(module)) {
+    return std::nullopt;
+  }
+  if (!moduleUsesDialect(**module, dialect)) {
+    (**module).emitError() << "expected a module using the '" << dialect
+                           << "' dialect";
     return std::nullopt;
   }
   return ProgramType(
