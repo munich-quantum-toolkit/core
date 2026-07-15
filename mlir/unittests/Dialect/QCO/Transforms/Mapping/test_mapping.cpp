@@ -218,6 +218,47 @@ static Device getNineQubitSquareGrid() {
                           {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}}};
 }
 
+/// Creates an N-qubit GHZ state, where N = `qubits.size()` using straight-line
+/// programming.
+static void flatGHZ(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+  qubits[0] = builder.h(qubits[0]);
+  for (size_t i = 1; i < qubits.size(); ++i) {
+    std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
+  }
+}
+
+/// Creates an N-qubit GHZ state, where N = `qubits.size()` using an scf.for
+/// operation.
+static void loopGHZ(QCOProgramBuilder& builder, Value& tensor,
+                    const int64_t size) {
+  Value q0;
+  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  q0 = builder.h(q0);
+  tensor = builder.qtensorInsert(q0, tensor, 0);
+
+  tensor = builder
+               .scfFor(1, size, 1, {tensor},
+                       [&builder](Value iv, ValueRange args) {
+                         SmallVector argQs{args[0]}; // ... is a tensor.
+
+                         Value ctrl;
+                         Value targ;
+
+                         std::tie(argQs[0], ctrl) =
+                             builder.qtensorExtract(argQs[0], 0);
+                         std::tie(argQs[0], targ) =
+                             builder.qtensorExtract(argQs[0], iv);
+
+                         std::tie(ctrl, targ) = builder.cx(ctrl, targ);
+
+                         argQs[0] = builder.qtensorInsert(ctrl, argQs[0], 0);
+                         argQs[0] = builder.qtensorInsert(targ, argQs[0], iv);
+
+                         return SmallVector{argQs};
+                       })
+               .front();
+}
+
 namespace {
 
 class MappingPassTest : public testing::Test,
@@ -245,7 +286,7 @@ protected:
 
 }; // namespace
 
-TEST_P(MappingPassTest, NoEntryPoint) {
+TEST_P(MappingPassTest, FailNoEntryPoint) {
   const auto& device = GetParam();
 
   OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
@@ -253,7 +294,7 @@ TEST_P(MappingPassTest, NoEntryPoint) {
   ASSERT_TRUE(res.failed());
 }
 
-TEST_P(MappingPassTest, NoQubitAllocations) {
+TEST_P(MappingPassTest, FailNoQubitAllocations) {
   const auto& device = GetParam();
 
   QCOProgramBuilder builder(context.get());
@@ -272,7 +313,7 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
   ASSERT_TRUE(res.failed());
 }
 
-TEST_P(MappingPassTest, NoExtractAfterInsert) {
+TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
   const auto& device = GetParam();
 
   QCOProgramBuilder builder(context.get());
@@ -299,7 +340,7 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
   ASSERT_TRUE(res.failed());
 }
 
-TEST_P(MappingPassTest, TooManyQubitsForArch) {
+TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
   const auto& device = GetParam();
   const auto size = static_cast<int64_t>(device.nqubits) + 1;
 
@@ -329,7 +370,7 @@ TEST_P(MappingPassTest, TooManyQubitsForArch) {
   ASSERT_TRUE(res.failed());
 }
 
-TEST_P(MappingPassTest, GHZ) {
+TEST_P(MappingPassTest, MapFlatGHZ) {
   const auto& device = GetParam();
   const int64_t size = 3;
 
@@ -339,22 +380,22 @@ TEST_P(MappingPassTest, GHZ) {
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
 
-  Value tensor = builder.qtensorAlloc(3);
-  std::tie(tensor, qubits[0]) = builder.qtensorExtract(tensor, 0);
-  std::tie(tensor, qubits[1]) = builder.qtensorExtract(tensor, 1);
-  std::tie(tensor, qubits[2]) = builder.qtensorExtract(tensor, 2);
+  auto tensor = builder.qtensorAlloc(3);
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
 
-  qubits[0] = builder.h(qubits[0]);
-  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
-  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+  flatGHZ(builder, qubits);
 
-  std::tie(qubits[0], bits[0]) = builder.measure(qubits[0]);
-  std::tie(qubits[1], bits[1]) = builder.measure(qubits[1]);
-  std::tie(qubits[2], bits[2]) = builder.measure(qubits[2]);
+  qubits = builder.barrier(qubits);
 
-  tensor = builder.qtensorInsert(qubits[0], tensor, 0);
-  tensor = builder.qtensorInsert(qubits[1], tensor, 1);
-  tensor = builder.qtensorInsert(qubits[2], tensor, 2);
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+  }
+
+  for (int64_t i = 0; i < size; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
 
   builder.qtensorDealloc(tensor);
 
@@ -366,10 +407,11 @@ TEST_P(MappingPassTest, GHZ) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
-TEST_P(MappingPassTest, GHZUnrolled) {
+TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   const auto& device = GetParam();
   const auto size = static_cast<int64_t>(device.nqubits);
 
+  SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
 
   PassManager pm(context.get());
@@ -382,32 +424,21 @@ TEST_P(MappingPassTest, GHZUnrolled) {
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
 
   Value tensor = builder.qtensorAlloc(size);
-  Value q0;
-  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
-  q0 = builder.h(q0);
-  tensor = builder.qtensorInsert(q0, tensor, 0);
-  tensor = builder.scfFor(
-      1, size, 1, {tensor}, [&builder](Value iv, ValueRange iterArgs) {
-        Value loopTensor = iterArgs[0];
-        Value ctrl;
-        Value targ;
-
-        std::tie(loopTensor, ctrl) = builder.qtensorExtract(loopTensor, 0);
-        std::tie(loopTensor, targ) = builder.qtensorExtract(loopTensor, iv);
-
-        std::tie(ctrl, targ) = builder.cx(ctrl, targ);
-
-        loopTensor = builder.qtensorInsert(ctrl, loopTensor, 0);
-        loopTensor = builder.qtensorInsert(targ, loopTensor, iv);
-
-        return SmallVector{loopTensor};
-      })[0];
+  
+  loopGHZ(builder, tensor, size);
 
   for (int64_t i = 0; i < size; ++i) {
-    Value q;
-    std::tie(tensor, q) = builder.qtensorExtract(tensor, i);
-    std::tie(q, bits[i]) = builder.measure(q);
-    tensor = builder.qtensorInsert(q, tensor, i);
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  qubits = builder.barrier(qubits);
+
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+  }
+
+  for (int64_t i = 0; i < size; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
   }
 
   builder.qtensorDealloc(tensor);
@@ -420,7 +451,7 @@ TEST_P(MappingPassTest, GHZUnrolled) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
-TEST_P(MappingPassTest, GroverLike) {
+TEST_P(MappingPassTest, MapGroverLike) {
   const auto& device = GetParam();
   const int64_t size = 5;
 
@@ -486,7 +517,7 @@ TEST_P(MappingPassTest, GroverLike) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
-TEST_P(MappingPassTest, ParallelLoops) {
+TEST_P(MappingPassTest, MapParallelLoops) {
   const auto& device = GetParam();
   constexpr int64_t size = 6;
 
@@ -566,7 +597,7 @@ TEST_P(MappingPassTest, ParallelLoops) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
-TEST_P(MappingPassTest, Sabre) {
+TEST_P(MappingPassTest, MapSABRECircuit) {
   const auto& device = GetParam();
   constexpr int64_t size = 6;
 
@@ -626,6 +657,7 @@ TEST_P(MappingPassTest, Sabre) {
   tensorUp = builder.qtensorInsert(qubits[3], tensorUp, 3);
   tensorDown = builder.qtensorInsert(qubits[4], tensorDown, 0);
   tensorDown = builder.qtensorInsert(qubits[5], tensorDown, 1);
+
   builder.qtensorDealloc(tensorUp);
   builder.qtensorDealloc(tensorDown);
 
@@ -637,9 +669,9 @@ TEST_P(MappingPassTest, Sabre) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
-TEST_P(MappingPassTest, RandomOrderGHZ) {
+TEST_P(MappingPassTest, MapBranchingGHZ) {
   const auto& device = GetParam();
-  constexpr int64_t size = 3;
+  constexpr int64_t size = 7;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -658,22 +690,17 @@ TEST_P(MappingPassTest, RandomOrderGHZ) {
   qubits = builder.qcoIf(
       bits[0], qubits,
       [&](ValueRange args) {
-        SmallVector<Value> values(args);
-        values[0] = builder.h(values[0]);
-        for (size_t i = 1; i < size; ++i) {
-          std::tie(values[0], values[i]) = builder.cx(values[0], values[i]);
-        }
-        return values;
+        SmallVector<Value> argQs(args);
+        flatGHZ(builder, argQs);
+        return argQs;
       },
       [&](ValueRange args) {
-        SmallVector<Value> values(args);
-        values[size - 1] = builder.h(values[size - 1]);
-        for (size_t i = size - 1; i > 0; --i) {
-          std::tie(values[size - 1], values[i - 1]) =
-              builder.cx(values[size - 1], values[i - 1]);
-        }
-        return values;
+        SmallVector<Value> argQs(llvm::reverse(args));
+        flatGHZ(builder, argQs);
+        return argQs;
       });
+
+  flatGHZ(builder, qubits);
 
   qubits = builder.barrier(qubits);
 
@@ -691,8 +718,6 @@ TEST_P(MappingPassTest, RandomOrderGHZ) {
   auto res =
       runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
   auto entry = getEntryPoint(m.get());
-
-  entry->dumpPretty();
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
