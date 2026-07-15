@@ -130,6 +130,25 @@ TEST_F(OQ3Test, LowersControlledUGateFamiliesNatively) {
   }
 }
 
+TEST_F(OQ3Test, PreservesInverseNativeGateAliases) {
+  auto module = buildGateApplication("iswapdg", 0);
+  ASSERT_TRUE(succeeded(verify(module.get())));
+
+  PassManager manager(context.get());
+  manager.addPass(oq3::createLowerOQ3ToQCPass());
+  ASSERT_TRUE(succeeded(manager.run(module.get())));
+  EXPECT_TRUE(succeeded(verify(module.get())));
+
+  size_t inverses = 0;
+  size_t swaps = 0;
+  module->walk([&](Operation* operation) {
+    inverses += isa<qc::InvOp>(operation);
+    swaps += isa<qc::iSWAPOp>(operation);
+  });
+  EXPECT_EQ(inverses, 1);
+  EXPECT_EQ(swaps, 1);
+}
+
 TEST_F(OQ3Test, DiagnosesUnprovenDynamicRangeStepsAtLowering) {
   OpBuilder builder(context.get());
   const Location loc = builder.getUnknownLoc();
