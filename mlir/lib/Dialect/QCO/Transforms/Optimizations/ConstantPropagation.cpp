@@ -488,20 +488,27 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
   std::vector<Value> thenArgs;
   std::vector<Value> elseArgs;
 
+  std::vector<Operation*> newThenWorklist;
+  std::vector<Operation*> newElseWorklist;
+
+  // Create a new worklist to iterate over the inner instructions
+  op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+    newThenWorklist.push_back(innerOp);
+    std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
+  });
+  op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+    newElseWorklist.push_back(innerOp);
+    std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
+  });
+
   // propagate through then and else block
   if (!thenEmpty) {
     for (const Value arg : thenBlock->getArguments()) {
       thenArgs.push_back(arg);
     }
     ut->replaceValuesGlobally(targets, thenArgs);
-    std::vector<Operation*> newWorklist;
 
-    // Create a new worklist to iterate over the inner instructions
-    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-      newWorklist.push_back(innerOp);
-      std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
-    });
-    std::span wl(newWorklist.data(), newWorklist.size());
+    std::span wl(newThenWorklist.data(), newThenWorklist.size());
     std::vector<Value> newPosClassicalCtrls = {posClassicalCtrls.begin(),
                                                posClassicalCtrls.end()};
     newPosClassicalCtrls.push_back(condition);
@@ -524,13 +531,8 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       elseArgs.push_back(arg);
     }
     ut->replaceValuesGlobally(thenArgs.empty() ? targets : thenArgs, elseArgs);
-    std::vector<Operation*> newWorklist;
 
-    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-      newWorklist.push_back(innerOp);
-      std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
-    });
-    std::span wl(newWorklist.data(), newWorklist.size());
+    std::span wl(newElseWorklist.data(), newElseWorklist.size());
     std::vector<Value> newNegClassicalCtrls = {negClassicalCtrls.begin(),
                                                negClassicalCtrls.end()};
     newNegClassicalCtrls.push_back(condition);
