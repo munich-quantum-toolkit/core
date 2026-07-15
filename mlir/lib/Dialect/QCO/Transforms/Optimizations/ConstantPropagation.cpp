@@ -950,13 +950,15 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
       continue; // Skip erased ops.
     }
     std::cout << "Op is not null" << std::endl;
-    std::string oName =
-        "Op: " + curr->getName().getStringRef().str() +
-        " dialect: " + curr->getName().getDialectNamespace().str();
-
-    std::cout << oName << std::endl;
+    // std::string oName =
+    //     "Op: " + curr->getName().getStringRef().str() +
+    //     " dialect: " + curr->getName().getDialectNamespace().str();
+    //
+    // std::cout << oName << std::endl;
+    std::cout << "Setting insertion point" << std::endl;
 
     rewriter.setInsertionPoint(curr);
+    std::cout << "Insertion point set" << std::endl;
 
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
