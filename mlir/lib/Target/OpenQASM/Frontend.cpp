@@ -392,7 +392,8 @@ private:
       program.openQASM2 = true;
       return;
     }
-    if (declaration->version >= 3.0 && declaration->version < 4.0) {
+    if (std::abs(declaration->version - 3.0) < 0.001 ||
+        std::abs(declaration->version - 3.1) < 0.001) {
       program.openQASM2 = false;
       return;
     }
@@ -432,11 +433,10 @@ private:
       kind = RegisterKind::Bit;
       break;
     case qasm3::Int:
-      kind = RegisterKind::Int;
-      break;
     case qasm3::Uint:
-      kind = RegisterKind::Uint;
-      break;
+      fail(declaration->debugInfo,
+           "Integer declarations are not implemented by the current OQ3 "
+           "foundation.");
     default:
       fail(declaration->debugInfo,
            "Unsupported declaration type for the current OQ3 foundation.");
@@ -762,10 +762,10 @@ private:
                static_cast<std::int64_t>(compatibilityControls), false))});
     }
 
-    const std::size_t expectedOperands =
-        signature.variadicControls ? call->operands.size()
-                                   : signature.qubitCount + addedControls;
-    if (call->operands.size() != expectedOperands) {
+    const std::size_t minimumOperands = signature.qubitCount + addedControls;
+    if ((signature.variadicControls
+             ? call->operands.size() < minimumOperands
+             : call->operands.size() != minimumOperands)) {
       fail(call->debugInfo, "Invalid number of qubit operands for gate '" +
                                 call->identifier + "'.");
     }
@@ -805,6 +805,15 @@ private:
       application.qubits.reserve(selections.size());
       for (const auto& selection : selections) {
         application.qubits.push_back(selection.qubits[broadcasts ? index : 0]);
+      }
+      for (const auto [position, qubit] : llvm::enumerate(application.qubits)) {
+        if (llvm::is_contained(
+                llvm::ArrayRef(application.qubits).take_front(position),
+                qubit)) {
+          fail(call->debugInfo,
+               "Gate operands must not reference the same qubit more than "
+               "once.");
+        }
       }
       applications.push_back(std::move(application));
     }

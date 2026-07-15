@@ -134,6 +134,15 @@ changes and other worktrees remain outside scope.
       right associative; `^` now means bitwise XOR; modulo, shifts, bitwise,
       logical, equality, and comparison operators all parse at their specified
       precedence. All 98 QASM parser tests and 12 staged-frontend tests pass.
+- [x] (2026-07-15 18:10Z) Performed two independent MLIR-focused reviews of the
+      draft and stabilized the accepted local invariants: OQ3 gate and range
+      regions now require `oq3.yield`; gate applications reject surplus qubits
+      without controls and non-integer control counts; variadic native gates
+      retain their declared minimum arity; duplicate qubits and unsupported
+      integer declarations receive source diagnostics; and explicit unsupported
+      OpenQASM 3 minor versions are rejected. Added target and verifier tests,
+      including a constant-zero range step that must fail before it can form an
+      infinite target loop.
 
 ## Surprises & Discoveries
 
@@ -206,6 +215,18 @@ changes and other worktrees remain outside scope.
   The maintained OpenQASM hierarchy uses right-associative `**` for power and
   `^` for bitwise XOR, followed by unary, multiplicative, additive, shift,
   comparison, equality, bitwise, and logical levels.
+
+- Observation: a local operation verifier must defend IR created outside the
+  source frontend. `oq3.apply_gate` previously accepted surplus qubits and
+  control-count operands of arbitrary scalar type; `GateOp` and `ForOp` did not
+  require the terminator that lowering omits while cloning. These are malformed
+  typed IR, not source-language analysis concerns. Local checks and
+  `SingleBlockImplicitTerminator` traits preserve that boundary.
+
+- Observation: accepting an `int` or `uint` declaration and emitting it as a
+  `bit` register silently changes signedness, width semantics, and stored
+  values. The analyzer now rejects those declarations until typed storage and
+  assignment lowering exist.
 
 ## Decision Log
 
@@ -305,6 +326,14 @@ changes and other worktrees remain outside scope.
   and establishes the core of the planned Pratt-style expression parser without
   coupling syntax parsing to MLIR or forcing a simultaneous ownership rewrite.
   Date/Author: 2026-07-15 / Codex.
+
+- Decision: Address only local, testable review findings in this stabilization
+  batch and defer SourceMgr-backed include resolution. Rationale: operation
+  verification, source arity, and version checks have narrow ownership and
+  direct regression tests. Reworking the parser's shared include stack needs a
+  dedicated MLIR adapter or duplicated resolver so it does not accidentally
+  perturb the legacy `QuantumComputation` importer. Date/Author: 2026-07-15 /
+  Codex.
 
 ## Outcomes & Retrospective
 

@@ -42,14 +42,15 @@ protected:
   }
 
   OwningOpRef<ModuleOp> buildGateApplication(const StringRef name,
-                                             const size_t parameterCount) {
+                                             const size_t parameterCount,
+                                             const size_t gateQubitCount = 2) {
     OpBuilder builder(context.get());
     const Location loc = builder.getUnknownLoc();
     auto module = ModuleOp::create(loc);
     builder.setInsertionPointToStart(module.getBody());
 
     SmallVector<Type> gateInputs(parameterCount, builder.getF64Type());
-    gateInputs.append(2, qc::QubitType::get(context.get()));
+    gateInputs.append(gateQubitCount, qc::QubitType::get(context.get()));
     oq3::GateDeclOp::create(builder, loc, name,
                             builder.getFunctionType(gateInputs, {}));
 
@@ -149,6 +150,11 @@ TEST_F(OQ3Test, PreservesInverseNativeGateAliases) {
   EXPECT_EQ(swaps, 1);
 }
 
+TEST_F(OQ3Test, RejectsSurplusQubitsWithoutControlModifiers) {
+  auto module = buildGateApplication("x", 0, 1);
+  EXPECT_TRUE(failed(verify(module.get())));
+}
+
 TEST_F(OQ3Test, DiagnosesUnprovenDynamicRangeStepsAtLowering) {
   OpBuilder builder(context.get());
   const Location loc = builder.getUnknownLoc();
@@ -182,6 +188,42 @@ TEST_F(OQ3Test, DiagnosesUnprovenDynamicRangeStepsAtLowering) {
   manager.addPass(oq3::createLowerOQ3ToQCPass());
   EXPECT_TRUE(failed(manager.run(module)));
   EXPECT_NE(diagnostic.find("dynamic range step cannot be proven nonzero"),
+            std::string::npos);
+}
+
+TEST_F(OQ3Test, DiagnosesConstantZeroRangeStepsAtLowering) {
+  OpBuilder builder(context.get());
+  const Location loc = builder.getUnknownLoc();
+  auto module = ModuleOp::create(loc);
+  auto function = func::FuncOp::create(builder, loc, "main",
+                                       builder.getFunctionType({}, {}));
+  module.getBody()->push_back(function);
+  Block* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+  Value start = arith::ConstantIntOp::create(builder, loc, 0, 64);
+  Value stop = arith::ConstantIntOp::create(builder, loc, 4, 64);
+  Value step = arith::ConstantIntOp::create(builder, loc, 0, 64);
+  OperationState state(loc, oq3::ForOp::getOperationName());
+  state.addOperands({start, stop, step});
+  Region* body = state.addRegion();
+  body->push_back(new Block());
+  body->front().addArgument(builder.getI64Type(), loc);
+  auto loop = cast<oq3::ForOp>(builder.create(state));
+  builder.setInsertionPointToStart(&loop.getBody().front());
+  oq3::YieldOp::create(builder, loc);
+  builder.setInsertionPointToEnd(entry);
+  func::ReturnOp::create(builder, loc);
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& value) {
+    llvm::raw_string_ostream(diagnostic) << value;
+    return success();
+  });
+  PassManager manager(context.get());
+  manager.addPass(oq3::createLowerOQ3ToQCPass());
+  EXPECT_TRUE(failed(manager.run(module)));
+  EXPECT_NE(diagnostic.find("OpenQASM range step cannot be zero"),
             std::string::npos);
 }
 

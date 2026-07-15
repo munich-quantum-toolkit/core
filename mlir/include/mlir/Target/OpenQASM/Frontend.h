@@ -143,6 +143,8 @@ struct QubitReference {
   QubitReferenceKind kind = QubitReferenceKind::Register;
   std::uint32_t symbol = 0;
   std::uint64_t index = 0;
+
+  bool operator==(const QubitReference&) const = default;
 };
 
 struct BitReference {
