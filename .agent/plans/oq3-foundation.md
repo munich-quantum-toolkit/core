@@ -170,6 +170,11 @@ changes and other worktrees remain outside scope.
       OpenQASM language builtin `gphase` and physical `$` qubit operands; it
       confirms both survive semantic analysis and lower to the intended QC
       operations. All 21 focused frontend tests pass.
+- [x] (2026-07-15 20:15Z) Reproduced the Read the Docs build configuration and
+      built the exact `mqt-core-docs` target. Added the missing direct TableGen
+      dependency from `MLIROpenQASMTarget` to `MLIROQ3OpsIncGen`, ensuring
+      `OQ3OpsDialect.h.inc` exists before consumers compile. Also added the
+      direct standard header required by the C++ linter for `std::size_t`.
 - [ ] Expand behavior-driven frontend and lowering tests until the C++ patch
       coverage of the OQ3 foundation reaches the configured 90% target (current
       Codecov report: 76.78%, 322 missed lines). Do not lower the threshold or
