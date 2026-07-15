@@ -47,7 +47,7 @@
 namespace mlir::oq3 {
 namespace {
 
-enum class SourceVersion { OpenQASM2, OpenQASM31 };
+enum class SourceVersion { OpenQASM2, OpenQASM3 };
 
 struct GateSignature {
   size_t numParameters;
@@ -172,7 +172,7 @@ public:
     entry = main.addEntryBlock();
     builder.setInsertionPointToStart(entry);
     declareExternalGate("U", {3, 1});
-    if (version == SourceVersion::OpenQASM31) {
+    if (version == SourceVersion::OpenQASM3) {
       declareExternalGate("gphase", {1, 0});
     }
   }
@@ -375,7 +375,7 @@ private:
     if (name == "stdgates.inc") {
       if (version == SourceVersion::OpenQASM2) {
         return fail(include,
-                    "stdgates.inc is only available in OpenQASM 3.1 mode");
+                    "stdgates.inc is only available in OpenQASM 3 mode");
       }
       for (const auto& [gate, signature] : standardGates31()) {
         declareExternalGate(gate, signature);
@@ -1707,18 +1707,18 @@ std::optional<SourceVersion> parseVersion(qasm3Parser::ProgramContext* program,
                                           MLIRContext& context,
                                           llvm::StringRef filename) {
   if (program->version() == nullptr) {
-    return SourceVersion::OpenQASM31;
+    return SourceVersion::OpenQASM3;
   }
   const std::string version = program->version()->VersionSpecifier()->getText();
-  if (version == "3.1") {
-    return SourceVersion::OpenQASM31;
+  if (version == "3.0" || version == "3.1") {
+    return SourceVersion::OpenQASM3;
   }
   if (version == "2.0") {
     return SourceVersion::OpenQASM2;
   }
   emitError(locationFor(context, filename, program->version()->getStart()))
       << "unsupported OpenQASM version '" << version
-      << "'; supported versions are 3.1 and 2.0 compatibility mode";
+      << "'; supported versions are 3.0, 3.1, and 2.0 compatibility mode";
   return std::nullopt;
 }
 

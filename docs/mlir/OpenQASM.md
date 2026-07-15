@@ -1,14 +1,16 @@
 # Experimental OpenQASM frontend
 
-MQT Core contains an experimental, staged OpenQASM frontend. It parses source
-with the OpenQASM 3.1 ANTLR grammar, performs semantic checks, and produces
-typed `oq3` IR before target-specific lowering. The textual dialect and its C++
-interfaces are experimental and carry no compatibility guarantee yet.
+MQT Core contains an experimental, staged OpenQASM frontend. It parses OpenQASM
+3 source with an ANTLR grammar pinned to the 3.1 specification, performs
+semantic checks, and produces typed `oq3` IR before target-specific lowering.
+The textual dialect and its C++ interfaces are experimental and carry no
+compatibility guarantee yet.
 
-The frontend accepts an explicit `OPENQASM 3.1;` declaration or defaults
-versionless source to 3.1. `OPENQASM 2.0;` selects the compatibility mode. Other
-explicit versions, including 3.0, are rejected. `stdgates.inc` is loaded only
-when requested in 3.1 mode, and `qelib1.inc` is available only in 2.0
+The frontend accepts explicit `OPENQASM 3.0;` and `OPENQASM 3.1;` declarations
+and applies the same current OpenQASM 3 semantics to both. Versionless source
+also defaults to those semantics. `OPENQASM 2.0;` selects the compatibility
+mode. Other explicit versions are rejected. `stdgates.inc` is loaded only when
+requested in OpenQASM 3 mode, and `qelib1.inc` is available only in 2.0
 compatibility mode. Additional include directories can be supplied through
 `OpenQASMTranslationOptions`.
 
@@ -27,7 +29,7 @@ compatibility mode. Additional include directories can be supplied through
 | Inclusive dynamic integer ranges | Representable in `oq3.for` | Rejected unless nonzero can be proven |
 | Classical declarations, expressions, and assignments | Bit registers plus scalar `bool`, `int`, `uint`, and floating-point declarations, constants, assignments, and common expressions supported | Builtin `arith` and `memref` operations; complete signed/unsigned semantics, casts, and operator coverage remain planned |
 | Program inputs and outputs | Declared `bit[n]` inputs and outputs preserve source order and width | Lowered to width-matched builtin integer function arguments and results |
-| Measurement and classical registers | OpenQASM 3.1 and 2.0 forms supported | Already represented with QC measurement and `memref` storage |
+| Measurement and classical registers | OpenQASM 3 and 2.0 forms supported | Already represented with QC measurement and `memref` storage |
 | `if` and `while` | Supported with storage-backed mutable state | Builtin `scf` operations |
 | `switch`, `break`, and `continue` | Feature-named diagnostic | Planned |
 | Arrays, aliases, and subroutines | Feature-named diagnostic | Planned |

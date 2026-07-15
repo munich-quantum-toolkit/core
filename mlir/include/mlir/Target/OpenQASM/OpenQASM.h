@@ -35,7 +35,7 @@ struct OpenQASMTranslationOptions {
 };
 
 /**
- * @brief Translate OpenQASM 3.1 or compatible OpenQASM 2.0 to typed OQ3 IR.
+ * @brief Translate OpenQASM 3 or compatible OpenQASM 2.0 to typed OQ3 IR.
  * @param sourceMgr Source manager containing the main OpenQASM buffer.
  * @param context MLIR context in which to construct the module.
  * @param options Translation and include-resolution options.

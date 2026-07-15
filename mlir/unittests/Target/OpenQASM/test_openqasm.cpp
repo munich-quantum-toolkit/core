@@ -361,7 +361,7 @@ TEST_F(OpenQASMTargetTest, PreservesDeclaredInputAndOutputOrderAndTypes) {
   EXPECT_TRUE(succeeded(verify(module.get())));
 }
 
-TEST_F(OpenQASMTargetTest, DefaultsVersionlessProgramsToOpenQASM31) {
+TEST_F(OpenQASMTargetTest, DefaultsVersionlessProgramsToOpenQASM3Semantics) {
   auto module = oq3::translateOpenQASMToOQ3("qubit q;", *context);
   ASSERT_TRUE(module);
   EXPECT_EQ(module->getOperation()
@@ -370,9 +370,18 @@ TEST_F(OpenQASMTargetTest, DefaultsVersionlessProgramsToOpenQASM31) {
             "3.1");
 }
 
-TEST_F(OpenQASMTargetTest, RejectsOpenQASM30) {
-  const auto diagnostic = translateFailure("OPENQASM 3.0; qubit q;");
-  EXPECT_NE(diagnostic.find("unsupported OpenQASM version '3.0'"),
+TEST_F(OpenQASMTargetTest, TreatsOpenQASM30AsOpenQASM31) {
+  auto module = oq3::translateOpenQASMToOQ3("OPENQASM 3.0; qubit q;", *context);
+  ASSERT_TRUE(module);
+  EXPECT_EQ(module->getOperation()
+                ->getAttrOfType<StringAttr>("oq3.version")
+                .getValue(),
+            "3.1");
+}
+
+TEST_F(OpenQASMTargetTest, RejectsUnsupportedOpenQASMVersions) {
+  const auto diagnostic = translateFailure("OPENQASM 3.2; qubit q;");
+  EXPECT_NE(diagnostic.find("unsupported OpenQASM version '3.2'"),
             std::string::npos);
 }
 
