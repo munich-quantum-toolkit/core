@@ -519,7 +519,6 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     });
   }
   if (!elseEmpty) {
-    std::cout << "Working on else branch..." << std::endl;
     for (const Value arg : elseBlock->getArguments()) {
       elseArgs.push_back(arg);
     }
@@ -550,6 +549,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
         std::ranges::replace(elseArgs, input[i], output[i]);
       }
     });
+    std::cout << "Walked through else branch..." << std::endl;
   }
   const auto resultQubits = op->getResults();
   std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
@@ -561,11 +561,13 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
 
   // Remove if operation completely if both branches are empty after propagation
   if (thenEmpty && elseEmpty) {
+    std::cout << "If and else empty" << std::endl;
     // Check that there is no implicit swap in one branch by re-ordered yield
     // operands and get order of returned qubits
     std::vector<unsigned int> order;
     bool implicitSwap = false;
     if (!thenArgs.empty()) {
+      std::cout << "Then args not empty..." << std::endl;
       for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
         auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
         if (it != thenArgs.end()) {
@@ -575,6 +577,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     }
     if (!elseArgs.empty()) {
+      std::cout << "Else args not empty..." << std::endl;
       for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
         auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
         if (it != elseArgs.end()) {
@@ -591,6 +594,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       throw std::runtime_error("Constant propagation does not allow implicit "
                                "swapping of qubits in branching.");
     }
+    std::cout << "Implicit swap checked..." << std::endl;
     // remove if Op and replace the values in the module and union table
     std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
     for (unsigned int inputQubitIndex = 0;
@@ -598,16 +602,15 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       rewriter.replaceAllUsesWith(op->getResults()[order.at(inputQubitIndex)],
                                   op->getQubits()[inputQubitIndex]);
     }
-    for (unsigned int inputQubitIndex = 0;
-         inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
-      rewriter.replaceAllUsesWith(op->getResults()[inputQubitIndex],
-                                  op->getQubits()[inputQubitIndex]);
-    }
+
+    std::cout << "Replaced input with output after if removal..." << std::endl;
     std::vector<Value> inputQubitVec = {op->getQubits().begin(),
                                         op->getQubits().end()};
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs,
                               inputQubitVec);
+    std::cout << "Replaced values globally..." << std::endl;
     rewriter.eraseOp(*op);
+    std::cout << "Erased If Op..." << std::endl;
   } else {
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs, results);
   }
