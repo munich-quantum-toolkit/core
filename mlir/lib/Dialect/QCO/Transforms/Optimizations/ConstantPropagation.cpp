@@ -53,6 +53,7 @@
 #include <iterator>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -944,13 +945,11 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (curr == nullptr) {
       continue; // Skip erased ops.
     }
-
-    auto n = curr->getName().stripDialect().str();
     std::string oName =
         "Op: " + curr->getName().getStringRef().str() +
         " dialect: " + curr->getName().getDialectNamespace().str();
 
-    std::cout << n << std::endl;
+    std::cout << oName << std::endl;
 
     rewriter.setInsertionPoint(curr);
 
