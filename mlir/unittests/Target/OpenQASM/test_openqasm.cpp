@@ -397,6 +397,28 @@ measure q -> c;
   EXPECT_EQ(controls, 3);
 }
 
+TEST(OpenQASMTargetTest, LowersLanguageBuiltinsOnHardwareQubits) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+gphase(pi / 2);
+x $3;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t globalPhases = 0;
+  std::size_t xGates = 0;
+  module->walk([&](Operation* operation) {
+    globalPhases += isa<qc::GPhaseOp>(operation);
+    xGates += isa<qc::XOp>(operation);
+  });
+  EXPECT_EQ(globalPhases, 1);
+  EXPECT_EQ(xGates, 1);
+}
+
 TEST(OpenQASMFrontendTest, RejectsUnmeasuredOutputsAndInvalidConditions) {
   constexpr llvm::StringLiteral UNMEASURED_OUTPUT = R"qasm(
 OPENQASM 3.1;
