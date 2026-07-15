@@ -49,6 +49,7 @@
 #include <algorithm>
 #include <complex>
 #include <cstddef>
+#include <iostream>
 #include <iterator>
 #include <span>
 #include <stdexcept>
@@ -518,6 +519,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     });
   }
   if (!elseEmpty) {
+    std::cout << "Working on else branch..." << std::endl;
     for (const Value arg : elseBlock->getArguments()) {
       elseArgs.push_back(arg);
     }
@@ -534,6 +536,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     newNegClassicalCtrls.push_back(condition);
     const auto resElse = iterateThroughWorklist(
         rewriter, ut, wl, posClassicalCtrls, newNegClassicalCtrls);
+    std::cout << "Iterated through else branch..." << std::endl;
 
     if (resElse.failed()) {
       return WalkResult::interrupt();
@@ -560,42 +563,42 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
   if (thenEmpty && elseEmpty) {
     // Check that there is no implicit swap in one branch by re-ordered yield
     // operands and get order of returned qubits
-    // std::vector<unsigned int> order;
-    // bool implicitSwap = false;
-    // if (!thenArgs.empty()) {
-    //   for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
-    //     auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
-    //     if (it != thenArgs.end()) {
-    //       const unsigned int pos = std::distance(thenArgs.begin(), it);
-    //       order.push_back(pos);
-    //     }
-    //   }
-    // }
-    // if (!elseArgs.empty()) {
-    //   for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
-    //     auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
-    //     if (it != elseArgs.end()) {
-    //       const unsigned int pos = std::distance(elseArgs.begin(), it);
-    //       if (!thenArgs.empty()) {
-    //         implicitSwap |= order.at(i) == pos;
-    //       } else {
-    //         order.push_back(pos);
-    //       }
-    //     }
-    //   }
-    // }
-    // if (implicitSwap) {
-    //   throw std::runtime_error("Constant propagation does not allow implicit
-    //   "
-    //                            "swapping of qubits in branching.");
-    // }
+    std::vector<unsigned int> order;
+    bool implicitSwap = false;
+    if (!thenArgs.empty()) {
+      for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
+        auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
+        if (it != thenArgs.end()) {
+          const unsigned int pos = std::distance(thenArgs.begin(), it);
+          order.push_back(pos);
+        }
+      }
+    }
+    if (!elseArgs.empty()) {
+      for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
+        auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
+        if (it != elseArgs.end()) {
+          const unsigned int pos = std::distance(elseArgs.begin(), it);
+          if (!thenArgs.empty()) {
+            implicitSwap |= order.at(i) == pos;
+          } else {
+            order.push_back(pos);
+          }
+        }
+      }
+    }
+    if (implicitSwap) {
+      throw std::runtime_error("Constant propagation does not allow implicit
+                               "
+                               "swapping of qubits in branching.");
+    }
     // remove if Op and replace the values in the module and union table
     std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
-    // for (unsigned int inputQubitIndex = 0;
-    //      inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
-    //   rewriter.replaceAllUsesWith(op->getResults()[order.at(inputQubitIndex)],
-    //                               op->getQubits()[inputQubitIndex]);
-    // }
+    for (unsigned int inputQubitIndex = 0;
+         inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
+      rewriter.replaceAllUsesWith(op->getResults()[order.at(inputQubitIndex)],
+                                  op->getQubits()[inputQubitIndex]);
+    }
     for (unsigned int inputQubitIndex = 0;
          inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
       rewriter.replaceAllUsesWith(op->getResults()[inputQubitIndex],
