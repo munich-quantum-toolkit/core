@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file FoMaC.hpp
+ * @brief FoMaC C++ device-management interface.
+ */
+
 #pragma once
 
 #include "qdmi/common/Common.hpp"

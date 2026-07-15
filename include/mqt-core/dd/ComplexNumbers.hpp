@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file ComplexNumbers.hpp
+ * @brief Complex-number table and arithmetic manager for decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/CachedEdge.hpp"

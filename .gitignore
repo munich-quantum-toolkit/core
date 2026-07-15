@@ -7,6 +7,7 @@ __pycache__/
 *.so
 .ccache/
 cmake-build-*
+build_*
 
 # Distribution / packaging
 .Python
@@ -150,6 +151,9 @@ test/**/build/
 
 # ruff
 .ruff_cache/
+
+# rumdl
+.rumdl_cache/
 
 # Claude
 CLAUDE.md

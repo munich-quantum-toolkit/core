@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Generator.hpp
+ * @brief Neutral-atom QDMI device-description generator.
+ */
+
 #pragma once
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)

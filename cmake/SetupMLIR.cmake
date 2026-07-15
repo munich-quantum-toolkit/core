@@ -13,6 +13,26 @@ set(MQT_MLIR_MIN_VERSION
     "22.1"
     CACHE STRING "Minimum required MLIR version")
 
+# Attempt to load MLIR_DIR from a local .env file for developer convenience.
+if (NOT DEFINED MLIR_DIR AND EXISTS "${PROJECT_SOURCE_DIR}/.env")
+    file(STRINGS "${PROJECT_SOURCE_DIR}/.env" MQT_CORE_DOTENV_LINES)
+    foreach (MQT_CORE_DOTENV_LINE IN LISTS MQT_CORE_DOTENV_LINES)
+        if (MQT_CORE_DOTENV_LINE MATCHES "^[ \t]*(#|$)")
+            continue()
+        endif ()
+
+        if (MQT_CORE_DOTENV_LINE MATCHES
+                "^[ \t]*(export[ \t]+)?MLIR_DIR[ \t]*=[ \t]*['\"]?([^'\"]+)['\"]?[ \t]*$")
+            file(TO_CMAKE_PATH "${CMAKE_MATCH_2}" MQT_CORE_DOTENV_MLIR_DIR)
+            set(MLIR_DIR
+                    "${MQT_CORE_DOTENV_MLIR_DIR}"
+                    CACHE PATH "Path to MLIRConfig.cmake" FORCE)
+            message(STATUS "Using MLIR_DIR from ${PROJECT_SOURCE_DIR}/.env: ${MLIR_DIR}")
+            break()
+        endif ()
+    endforeach ()
+endif ()
+
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
 if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)

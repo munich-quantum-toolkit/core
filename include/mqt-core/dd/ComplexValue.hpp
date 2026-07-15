@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file ComplexValue.hpp
+ * @brief Complex scalar values used by decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

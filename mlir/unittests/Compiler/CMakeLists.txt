@@ -18,6 +18,7 @@ target_link_libraries(
           MLIRParser
           MLIRSupportMQT
           MLIRQCPrograms
+        MLIRQCOPrograms
           MLIRQIRPrograms
           MLIRQuantumComputationPrograms
           MQT::CoreIR)

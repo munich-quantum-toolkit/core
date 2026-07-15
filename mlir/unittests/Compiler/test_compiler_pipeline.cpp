@@ -10,20 +10,24 @@
 
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
-#include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
+#include "qco_programs.h"
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
+#include <jeff/IR/JeffDialect.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -34,15 +38,21 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iosfwd>
 #include <memory>
 #include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
 namespace mqt::test::compiler {
 
@@ -93,10 +103,10 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<QCDialect, QCODialect, qtensor::QTensorDialect,
-                arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-                memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+    registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
+                    arith::ArithDialect, cf::ControlFlowDialect,
+                    func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
+                    LLVM::LLVMDialect, jeff::JeffDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -120,24 +130,6 @@ protected:
   [[nodiscard]] OwningOpRef<ModuleOp>
   parseRecordedModule(const std::string& ir) const {
     return parseSourceString<ModuleOp>(ir, context.get());
-  }
-
-  static void runPipeline(const ModuleOp module, const bool convertToQIR,
-                          const bool disableMergeSingleQubitRotationGates,
-                          const bool enableHadamardLifting,
-                          const bool enableConstantPropagation,
-                          CompilationRecord& record) {
-    QuantumCompilerConfig config;
-    config.convertToQIRAdaptive = convertToQIR;
-    config.disableMergeSingleQubitRotationGates =
-        disableMergeSingleQubitRotationGates;
-    config.enableHadamardLifting = enableHadamardLifting;
-    config.enableConstantPropagation = enableConstantPropagation;
-    config.recordIntermediates = true;
-    config.printIRAfterAllStages = true;
-
-    QuantumCompilerPipeline pipeline(config);
-    ASSERT_TRUE(pipeline.runPipeline(module, &record).succeeded());
   }
 
   void expectEquivalent(const std::string& stage, const std::string& ir,
@@ -175,109 +167,373 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   }
   EXPECT_TRUE(verify(*module).succeeded());
 
-  CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, false, false, false, record);
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  module->print(sourceStream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto compiled = runDefaultPipeline(
+      CompilerInput{std::move(*input)},
+      testCase.convertToQIR ? ProgramFormat::QIRAdaptive : ProgramFormat::QC);
+  ASSERT_TRUE(compiled);
 
-  ASSERT_TRUE(testCase.qcReferenceBuilder);
-  auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
-  ASSERT_TRUE(qcReference);
-  printer.record(qcReference.get(), "Reference QC IR" + name);
-
-  expectEquivalent("Final QC", record.afterQCCanon, qcReference.get());
-  auto finalQC = parseRecordedModule(record.afterQCCanon);
-  ASSERT_TRUE(finalQC);
-  printer.record(finalQC.get(), "Final QC IR" + name);
-
+  OwningOpRef<ModuleOp> expected;
   if (testCase.convertToQIR) {
     ASSERT_TRUE(testCase.qirReferenceBuilder);
-
-    auto qirReference = buildQIRReference(testCase.qirReferenceBuilder);
-    ASSERT_TRUE(qirReference);
-    printer.record(qirReference.get(), "Reference QIR IR" + name);
-
-    expectEquivalent("Final QIR", record.afterQIRCanon, qirReference.get());
-    auto finalQIR = parseRecordedModule(record.afterQIRCanon);
-    ASSERT_TRUE(finalQIR);
-    printer.record(finalQIR.get(), "Final QIR IR" + name);
+    expected = buildQIRReference(testCase.qirReferenceBuilder);
+  } else {
+    ASSERT_TRUE(testCase.qcReferenceBuilder);
+    expected = buildQCReference(testCase.qcReferenceBuilder);
   }
+  ASSERT_TRUE(expected);
+  const auto actualIR =
+      std::visit([](const auto& value) { return value.str(); }, *compiled);
+  expectEquivalent("Final output", actualIR, expected.get());
+}
+
+/** @brief Raw QCO stops before the registered default optimization pipeline. */
+
+TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+rz(1.0) q;
+rx(1.0) q;
+)";
+  auto rawInput = QCProgram::fromQASMString(qasm);
+  auto optimizedInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(rawInput);
+  ASSERT_TRUE(optimizedInput);
+
+  auto raw = runDefaultPipeline(CompilerInput{std::move(*rawInput)},
+                                ProgramFormat::QCO);
+  auto optimized = runDefaultPipeline(CompilerInput{std::move(*optimizedInput)},
+                                      ProgramFormat::QCOOptimized);
+  ASSERT_TRUE(raw);
+  ASSERT_TRUE(optimized);
+  EXPECT_NE(std::get<QCOProgram>(*raw).str(),
+            std::get<QCOProgram>(*optimized).str());
+}
+
+TEST_F(CompilerPipelineTest, CustomTextualQCOOptimizationPipeline) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+x q;
+h q;
+)";
+  auto input = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(input);
+  auto result =
+      runDefaultPipeline(CompilerInput{std::move(*input)},
+                         ProgramFormat::QCOOptimized, "hadamard-lifting");
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(std::get<QCOProgram>(*result).str().empty());
 }
 
 /**
- * @brief Test: Rotation merging pass is invoked during the optimization stage
- *
- * @details
- * The merged U gate parameters are computed via floating-point arithmetic
- * that is not bit-identical across platforms, so we cannot use
- * verifyAllStages with hardcoded expected values. Instead, we run the
- * pipeline once with the pass enabled and compare afterQCOCanon against
- * afterOptimization to verify the pass transformed the IR.
- * Correctness of the pass is tested in a dedicated test.
+ * @brief Test: typed programs transfer ownership between compiler dialects
  */
-TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
-  auto module =
-      QCProgramBuilder::build(context.get(), [&](QCProgramBuilder& b) {
-        auto q = b.allocQubit();
-        b.rz(1.0, q);
-        b.rx(1.0, q);
-        return b.measure(q);
-      });
-  ASSERT_TRUE(module);
+TEST_F(CompilerPipelineTest, TypedProgramsComposeWithoutImplicitCopies) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
 
-  CompilationRecord record;
-  runPipeline(module.get(), false, false, false, false, record);
+  auto qcResult = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcResult);
+  auto qc = std::move(*qcResult);
+  EXPECT_TRUE(qc.isValid());
+  auto qcoResult = std::move(qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  EXPECT_TRUE(qco.isValid());
 
-  // The outputs must differ, proving the pass ran and transformed the IR
-  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+  EXPECT_TRUE(qco.cleanup());
+  EXPECT_TRUE(qco.mergeSingleQubitRotationGates());
+  EXPECT_TRUE(qco.isValid());
+  auto roundTripResult = std::move(qco).intoQC();
+  ASSERT_TRUE(roundTripResult);
+  auto roundTrip = std::move(*roundTripResult);
+  EXPECT_TRUE(roundTrip.isValid());
+  EXPECT_TRUE(roundTrip.cleanup());
+  auto reparsed = parseRecordedModule(roundTrip.str());
+  ASSERT_TRUE(reparsed);
+  EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
 }
 
 /**
- * @brief Test: Hadamard lifting pass is invoked during the optimization stage
- *
- * We run the pipeline with enabled Hadamard lifting and check whether the
- * outputs differ, i.e. that the pipeline ran and changed the IR.
- * Correctness of the pass is tested in a dedicated test.
+ * @brief Test: typed programs import MLIR and OpenQASM from their public APIs
  */
-TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
-  auto module =
-      QCProgramBuilder::build(context.get(), [&](QCProgramBuilder& b) {
-        auto q = b.allocQubit();
-        b.x(q);
-        b.h(q);
-        return b.measure(q);
-      });
-  ASSERT_TRUE(module);
+TEST_F(CompilerPipelineTest, TypedProgramImportsAndCopies) {
+  const std::string mlir = R"(module {
+  %0 = qc.alloc : !qc.qubit
+  qc.dealloc %0 : !qc.qubit
+})";
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  const auto temporaryDirectory = std::filesystem::path(testing::TempDir());
+  const auto mlirPath = temporaryDirectory / "typed_program_input.mlir";
+  const auto qasmPath = temporaryDirectory / "typed_program_input.qasm";
+  std::ofstream(mlirPath) << mlir;
+  std::ofstream(qasmPath) << qasm;
 
-  CompilationRecord record;
-  runPipeline(module.get(), false, true, true, false, record);
+  auto qcFromMLIR = QCProgram::fromMLIRString(mlir);
+  auto qcFromMLIRFile = QCProgram::fromMLIRFile(mlirPath);
+  auto qcFromQASM = QCProgram::fromQASMString(qasm);
+  auto qcFromQASMFile = QCProgram::fromQASMFile(qasmPath);
+  ::qc::QuantumComputation computation;
+  computation.addQubitRegister(1);
+  computation.h(0);
+  auto qcFromComputation = QCProgram::fromQuantumComputation(computation);
 
-  // The outputs must differ, proving the pass ran and transformed the IR
-  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+  ASSERT_TRUE(qcFromMLIR);
+  ASSERT_TRUE(qcFromMLIRFile);
+  ASSERT_TRUE(qcFromQASM);
+  ASSERT_TRUE(qcFromQASMFile);
+  ASSERT_TRUE(qcFromComputation);
+  EXPECT_EQ(qcFromMLIR->str(), qcFromMLIRFile->str());
+  EXPECT_EQ(qcFromQASM->str(), qcFromQASMFile->str());
+  EXPECT_EQ(qcFromMLIR->str(), qcFromMLIR->copy().str());
+  EXPECT_FALSE(qcFromComputation->str().empty());
+  EXPECT_FALSE(QCProgram::fromMLIRString("not valid MLIR"));
+  EXPECT_FALSE(QCProgram::fromMLIRFile(temporaryDirectory / "missing.mlir"));
+  EXPECT_FALSE(QCProgram::fromQASMString("not valid OpenQASM"));
+  EXPECT_FALSE(QCProgram::fromQASMFile(temporaryDirectory / "missing.qasm"));
+  EXPECT_FALSE(QCOProgram::fromMLIRString("not valid MLIR"));
+  EXPECT_FALSE(
+      QCOProgram::fromMLIRFile(temporaryDirectory / "missing.qco.mlir"));
+  auto qcoFromQC = std::move(*qcFromMLIR).intoQCO();
+  ASSERT_TRUE(qcoFromQC);
+  EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
 }
 
 /**
- * @brief Test: Constant propagation pass is invoked during the optimization
- * stage
- *
- * We run the pipeline with enabled constant propagation and check whether the
- * outputs differ, i.e. that the pipeline ran and changed the IR.
- * Correctness of the pass is tested in a dedicated test.
+ * @brief Test: Jeff programs round-trip through their binary APIs
  */
-TEST_F(CompilerPipelineTest, ConstantPropagationPass) {
-  auto module =
-      QCProgramBuilder::build(context.get(), [&](QCProgramBuilder& b) {
-        auto q0 = b.allocQubit();
-        auto q1 = b.allocQubit();
-        b.x(q0);
-        b.cx(q0, q1);
-        return b.measure(q0);
-      });
-  ASSERT_TRUE(module);
+TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughBytesAndFiles) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+x q;
+)";
+  const auto path = std::filesystem::path(testing::TempDir()) /
+                    "typed_program_round_trip.jeff";
 
-  mlir::CompilationRecord record;
-  runPipeline(module.get(), false, true, false, true, record);
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto jeffResult = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeffResult);
+  auto jeff = std::move(*jeffResult);
+  const auto bytes = jeff.toBytes();
+  ASSERT_FALSE(bytes.empty());
+  ASSERT_TRUE(jeff.write(path));
 
-  // The outputs must differ, proving the pass ran and transformed the IR
-  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+  auto fromBytes = JeffProgram::fromBytes(bytes);
+  auto fromFile = JeffProgram::fromFile(path);
+  ASSERT_TRUE(fromBytes);
+  ASSERT_TRUE(fromFile);
+  EXPECT_EQ(fromBytes->str(), fromFile->str());
+  EXPECT_EQ(fromBytes->toBytes(), bytes);
+  EXPECT_EQ(jeff.copy().toBytes(), bytes);
+  EXPECT_TRUE(fromBytes->cleanup());
+  EXPECT_FALSE(fromBytes->str().empty());
+
+  auto roundTrip = std::move(*fromFile).intoQCO();
+  ASSERT_TRUE(roundTrip);
+  auto reparsed = parseRecordedModule(roundTrip->str());
+  ASSERT_TRUE(reparsed);
+  EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
+  const std::vector<std::byte> invalid(1);
+  EXPECT_FALSE(JeffProgram::fromBytes(invalid));
+  EXPECT_FALSE(jeff.write(path.parent_path() / "missing" / "output.jeff"));
+}
+
+/**
+ * @brief Test: QCO and QIR typed programs retain their respective semantics
+ */
+TEST_F(CompilerPipelineTest, QCOAndQIRProgramsImportCopyAndOptimize) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  const auto qcoPath = std::filesystem::path(testing::TempDir()) /
+                       "typed_program_input.qco.mlir";
+
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  const auto qcoIR = qco->str();
+  std::ofstream(qcoPath) << qcoIR;
+  auto qcoFromString = QCOProgram::fromMLIRString(qcoIR);
+  auto qcoFromFile = QCOProgram::fromMLIRFile(qcoPath);
+  ASSERT_TRUE(qcoFromString);
+  ASSERT_TRUE(qcoFromFile);
+  EXPECT_EQ(qcoFromString->str(), qcoFromFile->str());
+  EXPECT_EQ(qcoFromString->str(), qcoFromString->copy().str());
+  EXPECT_TRUE(qcoFromString->liftHadamards());
+  EXPECT_TRUE(
+      qcoFromString->runPassPipeline("merge-single-qubit-rotation-gates"));
+  EXPECT_TRUE(qcoFromString->runPassPipeline("canonicalize,cse"));
+  EXPECT_FALSE(qcoFromString->runPassPipeline("not-a-pass"));
+  EXPECT_FALSE(qcoFromString->str().empty());
+
+  auto baseInput = QCProgram::fromQASMString(qasm);
+  auto adaptiveInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(baseInput);
+  ASSERT_TRUE(adaptiveInput);
+  auto base = std::move(*baseInput).intoQIR(QIRProfile::Base);
+  auto adaptive = std::move(*adaptiveInput).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(base);
+  ASSERT_TRUE(adaptive);
+  EXPECT_EQ(base->copy().profile(), QIRProfile::Base);
+  EXPECT_EQ(adaptive->copy().profile(), QIRProfile::Adaptive);
+  auto llvmIR = base->llvmIR();
+  ASSERT_TRUE(llvmIR);
+  EXPECT_FALSE(llvmIR->empty());
+  auto bitcode = base->toBitcode();
+  ASSERT_TRUE(bitcode);
+  ASSERT_GE(bitcode->size(), 4U);
+  EXPECT_EQ((*bitcode)[0], std::byte{'B'});
+  EXPECT_EQ((*bitcode)[1], std::byte{'C'});
+  const auto bitcodePath =
+      std::filesystem::path(testing::TempDir()) / "typed_program_output.bc";
+  EXPECT_TRUE(base->writeBitcode(bitcodePath));
+  EXPECT_FALSE(
+      base->writeBitcode(bitcodePath.parent_path() / "missing" / "output.bc"));
+}
+
+/**
+ * @brief Test: QCO program APIs configure and execute their associated passes.
+ */
+TEST_F(CompilerPipelineTest, QCOProgramOptimizationAPIs) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+x q[0];
+cx q[0], q[2];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  const auto beforeFusion = qco.str();
+
+  EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
+  EXPECT_NE(qco.str(), beforeFusion);
+  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
+      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+  EXPECT_TRUE(qco.placeAndRoute(coupling));
+  EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
+
+  auto loopModule = mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
+  ASSERT_TRUE(loopModule);
+  std::string loopIR;
+  llvm::raw_string_ostream stream(loopIR);
+  loopModule->print(stream);
+  auto loopProgram = QCOProgram::fromMLIRString(loopIR);
+  ASSERT_TRUE(loopProgram);
+  EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
+  EXPECT_TRUE(loopProgram->unrollQuantumLoops());
+  EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: default compilation returns the requested typed program format
+ */
+TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  const auto compile = [&qasm](const ProgramFormat output) {
+    auto input = QCProgram::fromQASMString(qasm);
+    EXPECT_TRUE(input);
+    return runDefaultPipeline(CompilerInput{std::move(*input)}, output);
+  };
+
+  auto qcOutput = compile(ProgramFormat::QC);
+  auto qcoOutput = compile(ProgramFormat::QCO);
+  auto optimizedQCOOutput = compile(ProgramFormat::QCOOptimized);
+  auto jeffOutput = compile(ProgramFormat::Jeff);
+  ASSERT_TRUE(qcOutput);
+  ASSERT_TRUE(qcoOutput);
+  ASSERT_TRUE(optimizedQCOOutput);
+  ASSERT_TRUE(jeffOutput);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(*qcOutput));
+  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*qcoOutput));
+  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*optimizedQCOOutput));
+  EXPECT_TRUE(std::holds_alternative<JeffProgram>(*jeffOutput));
+
+  auto profiledInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(profiledInput);
+  auto profiled = runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
+                                     ProgramFormat::QCOOptimized,
+                                     "mqt-qco-default", true, true);
+  ASSERT_TRUE(profiled);
+  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+
+  auto customPipelineInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(customPipelineInput);
+  EXPECT_FALSE(runDefaultPipeline(
+      CompilerInput{std::move(*customPipelineInput)}, ProgramFormat::QCO,
+      "builtin.module(merge-single-qubit-rotation-gates)"));
+
+  auto base = compile(ProgramFormat::QIRBase);
+  ASSERT_TRUE(base);
+  ASSERT_TRUE(std::holds_alternative<QIRProgram>(*base));
+  EXPECT_EQ(std::get<QIRProgram>(*base).profile(), QIRProfile::Base);
+  EXPECT_TRUE(std::get<QIRProgram>(*base).llvmIR());
+
+  auto adaptive = compile(ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(adaptive);
+  ASSERT_TRUE(std::holds_alternative<QIRProgram>(*adaptive));
+  EXPECT_EQ(std::get<QIRProgram>(*adaptive).profile(), QIRProfile::Adaptive);
+
+  auto imported = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(imported);
+  auto importedResult = runDefaultPipeline(CompilerInput{std::move(*imported)},
+                                           ProgramFormat::QCImport);
+  ASSERT_TRUE(importedResult);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(*importedResult));
+
+  auto qcoInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcoInput);
+  auto qco = std::move(*qcoInput).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_FALSE(
+      runDefaultPipeline(CompilerInput{qco->copy()}, ProgramFormat::QCImport));
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{qco->copy()},
+                                  ProgramFormat::QCImport,
+                                  "merge-single-qubit-rotation-gates"));
+  auto fromQCO =
+      runDefaultPipeline(CompilerInput{std::move(*qco)}, ProgramFormat::QC);
+  ASSERT_TRUE(fromQCO);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromQCO));
+
+  auto jeffInput = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(jeffInput);
+  auto jeffQCO = std::move(*jeffInput).intoQCO();
+  ASSERT_TRUE(jeffQCO);
+  auto jeff = std::move(*jeffQCO).intoJeff();
+  ASSERT_TRUE(jeff);
+  auto fromJeff =
+      runDefaultPipeline(CompilerInput{std::move(*jeff)}, ProgramFormat::QC);
+  ASSERT_TRUE(fromJeff);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromJeff));
 }
 
 INSTANTIATE_TEST_SUITE_P(

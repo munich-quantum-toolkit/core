@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Simplify.hpp
+ * @brief ZX-diagram simplification routines.
+ */
+
 #pragma once
 
 #include "Rules.hpp"

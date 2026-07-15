@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file QuantumComputation.hpp
+ * @brief Quantum-computation intermediate representation.
+ */
+
 #pragma once
 
 #include "Definitions.hpp"

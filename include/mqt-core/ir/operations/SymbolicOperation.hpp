@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file SymbolicOperation.hpp
+ * @brief Symbolic-parameter quantum operations.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"
