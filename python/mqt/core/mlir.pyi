@@ -133,7 +133,7 @@ def compile_program(
     | QCOProgram
     | JeffProgram,
     *,
-    output: Literal[OutputFormat.QC] = ...,
+    output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
     inplace: bool = False,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
