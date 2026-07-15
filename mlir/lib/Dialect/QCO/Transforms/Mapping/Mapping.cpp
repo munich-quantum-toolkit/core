@@ -13,12 +13,13 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
-#include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Layout.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 #include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/Graph.h"
+#include "mlir/Support/SuperconductingDevice.h"
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
@@ -48,7 +49,6 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -79,48 +79,6 @@ private:
   using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
   enum class RoutingMode : bool { Cold, Hot };
-
-  class AugmentedDevice {
-  public:
-    explicit AugmentedDevice(
-        const DenseSet<std::pair<size_t, size_t>>& couplingSet)
-        : coupling_(couplingSet), dist_(coupling_.getDistMatrix()) {}
-
-    /// Return the device's number of qubits.
-    [[nodiscard]] size_t nqubits() const { return coupling_.getNumNodes(); }
-
-    /// Return true if two qubits are adjacent.
-    [[nodiscard]] bool areAdjacent(const size_t u, const size_t v) const {
-      return dist_[u][v] == 1UL;
-    }
-
-    /// Return the length of the shortest path between two qubits.
-    [[nodiscard]] size_t distanceBetween(const size_t u, const size_t v) const {
-      const auto dist = dist_[u][v];
-      if (dist == UINT64_MAX) {
-        report_fatal_error("Failed to compute the distance between qubits " +
-                           Twine(u) + " and " + Twine(v));
-      }
-      return dist;
-    }
-
-    /// Return the qubit identifiers.
-    [[nodiscard]] SmallVector<size_t> qubits() const {
-      return coupling_.getNodes();
-    }
-
-    /// Return all neighbours of a qubit.
-    [[nodiscard]] ArrayRef<size_t> neighboursOf(const size_t u) const {
-      return coupling_.getNeighbours(u);
-    }
-
-    /// Return the max degree (connectivity) of any qubit of the device.
-    [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
-
-  private:
-    Graph coupling_;
-    Graph::DistanceMatrix dist_;
-  };
 
   struct WireInfos {
     /// Return the mapped wire index of a program index.
@@ -201,7 +159,7 @@ private:
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const AugmentedDevice& device, const Parameters& params)
+         const SuperconductingDevice& device, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
@@ -211,7 +169,7 @@ private:
     /// Return true, if the current SWAP sequence makes all gates in the front
     /// executable.
     [[nodiscard]] bool isGoal(const IndexPairType& front,
-                              const AugmentedDevice& device) const {
+                              const SuperconductingDevice& device) const {
       const auto [hw0, hw1] =
           layout.getHardwareIndices(front.first, front.second);
       return device.areAdjacent(hw0, hw1);
@@ -231,7 +189,8 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const AugmentedDevice& device,
+    [[nodiscard]] float h(const Window& window,
+                          const SuperconductingDevice& device,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
@@ -249,7 +208,7 @@ private:
 
   /// Describes the graph F of arXiv:1602.05150v3.
   struct FGraph {
-    explicit FGraph(std::shared_ptr<AugmentedDevice> device)
+    explicit FGraph(std::shared_ptr<SuperconductingDevice> device)
         : f_(device->qubits()), device_(std::move(device)) {};
 
     /// Build F-graph: Add edges to F for each edge in the coupling graph.
@@ -315,7 +274,7 @@ private:
     }
 
     Graph f_;
-    std::shared_ptr<AugmentedDevice> device_;
+    std::shared_ptr<SuperconductingDevice> device_;
   };
 
 public:
@@ -326,11 +285,10 @@ public:
   explicit MappingPass(const MappingPassOptions& options)
       : MappingPassBase(options) {}
 
-  /// Construct mapping from coupling set.
-  explicit MappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
-                       const MappingPassOptions& options)
-      : MappingPassBase(options),
-        device(std::make_shared<AugmentedDevice>(couplingSet)) {}
+  /// Construct mapping pass from superconducting device.
+  explicit MappingPass(std::shared_ptr<SuperconductingDevice> device,
+                       MappingPassOptions options)
+      : MappingPassBase(options), device(std::move(device)) {}
 
 protected:
   void runOnOperation() override {
@@ -365,7 +323,7 @@ protected:
       func.emitError()
           << "requires " + Twine(wires.size()) +
                  " qubits. However, the architecture only supports " +
-                 Twine(device->nqubits()) + "qubits.";
+                 Twine(device->nqubits()) + " qubits.";
       signalPassFailure();
       return;
     }
@@ -1258,32 +1216,15 @@ private:
     return success();
   }
 
-  std::shared_ptr<AugmentedDevice> device;
+  std::shared_ptr<SuperconductingDevice> device;
 };
 
 } // namespace
 
 std::unique_ptr<Pass>
-createMappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
+createMappingPass(std::shared_ptr<SuperconductingDevice> device,
                   MappingPassOptions options) {
-
-  // Verify the assumption that the coupling set is symmetric:
-  // For every edge (u, v) in the set, (v, u) must also be present.
-
-  for (const auto& [u, v] : couplingSet) {
-    if (u == v) {
-      llvm::reportFatalUsageError("Found an invalid (u, u) edge.");
-    }
-
-    if (!couplingSet.contains({v, u})) {
-      llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
-                                  Twine(u) + ", " + Twine(v) +
-                                  ") exists but (" + Twine(v) + ", " +
-                                  Twine(u) + ") does not.");
-    }
-  }
-
-  return std::make_unique<MappingPass>(couplingSet, options);
+  return std::make_unique<MappingPass>(std::move(device), options);
 }
 
 } // namespace mlir::qco

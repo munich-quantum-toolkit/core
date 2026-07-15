@@ -22,7 +22,7 @@
 #include <optional>
 #include <utility>
 
-namespace mlir::qco {
+namespace mlir {
 
 /// A directed graph.
 class Graph {
@@ -58,6 +58,13 @@ public:
 
   /// Construct graph from edge set.
   explicit Graph(const llvm::DenseSet<std::pair<size_t, size_t>>& edges) {
+    for_each(edges, [this](const auto& e) { addEdge(e.first, e.second); });
+  }
+
+  /// Construct graph from node identifiers and edge set.
+  explicit Graph(ArrayRef<size_t> nodes,
+                 const llvm::DenseSet<std::pair<size_t, size_t>>& edges) {
+    for_each(nodes, [this](const auto u) { std::ignore = adj_[u]; });
     for_each(edges, [this](const auto& e) { addEdge(e.first, e.second); });
   }
 
@@ -105,4 +112,4 @@ public:
 private:
   llvm::DenseMap<size_t, SmallVector<size_t>> adj_;
 };
-} // namespace mlir::qco
+} // namespace mlir

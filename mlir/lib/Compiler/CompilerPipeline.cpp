@@ -14,15 +14,18 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
+#include "mlir/Support/SuperconductingDevice.h"
 
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <memory>
 #include <string>
 
 namespace mlir {
@@ -100,6 +103,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (convertToQIR) {
     totalStages += 2;
   }
+  if (config_.device != nullptr) {
+    totalStages += 2;
+  }
   auto currentStage = 0;
 
   // Stage 1: QC import
@@ -171,11 +177,42 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (record != nullptr && config_.recordIntermediates) {
     record->afterOptimizationCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QCO Cleanup", ++currentStage,
+      prettyPrintStage(module, "Post-Optimization QCO Cleanup", ++currentStage,
                        totalStages);
     }
   }
-  // Stage 7: QCO-to-QC conversion
+  // Stage 7: Transpilation passes (optional)
+  // Assume superconducting devices for now.
+  if (config_.device != nullptr) {
+    if (failed(runStage([&](PassManager& pm) {
+          pm.addPass(qco::createMappingPass(
+              std::make_shared<SuperconductingDevice>(config_.device),
+              qco::MappingPassOptions{}));
+        }))) {
+      return failure();
+    }
+    if (record != nullptr && config_.recordIntermediates) {
+      record->afterTranspilation = captureIR(module);
+      if (config_.printIRAfterAllStages) {
+        prettyPrintStage(module, "Transpilation Passes", ++currentStage,
+                         totalStages);
+      }
+    }
+    // Stage 8: QCO cleanup (optional)
+    if (failed(runStage(
+            [&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
+      return failure();
+    }
+    if (record != nullptr && config_.recordIntermediates) {
+      record->afterTranspilationCanon = captureIR(module);
+      if (config_.printIRAfterAllStages) {
+        prettyPrintStage(module, "Post-Transpilation QCO Cleanup",
+                         ++currentStage, totalStages);
+      }
+    }
+  }
+
+  // Stage 9: QCO-to-QC conversion
   if (failed(runStage([&](PassManager& pm) { pm.addPass(createQCOToQC()); }))) {
     return failure();
   }
@@ -186,7 +223,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  // Stage 8: QC cleanup
+  // Stage 10: QC cleanup
   if (failed(
           runStage([&](PassManager& pm) { populateQCCleanupPipeline(pm); }))) {
     return failure();
@@ -197,7 +234,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
       prettyPrintStage(module, "Final QC Cleanup", ++currentStage, totalStages);
     }
   }
-  // Stage 9: QC-to-QIR conversion (optional)
+  // Stage 11: QC-to-QIR conversion (optional)
   if (convertToQIR) {
     if (failed(runStage([&](PassManager& pm) {
           if (config_.convertToQIRAdaptive) {
@@ -215,7 +252,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                          totalStages);
       }
     }
-    // Stage 10: QIR cleanup (optional)
+    // Stage 12: QIR cleanup (optional)
     if (failed(runStage([&](PassManager& pm) {
           populateQIRCleanupPipeline(pm, config_.convertToQIRAdaptive);
         }))) {

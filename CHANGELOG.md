@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Integrate QDMI into the MLIR Compiler Collection ([#1687])
+  ([**@MatthiasReumann**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
   ([#1897]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
@@ -692,6 +694,7 @@ changelogs._
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
+[#1687]: https://github.com/munich-quantum-toolkit/core/pull/1687
 [#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
 [#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
 [#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674

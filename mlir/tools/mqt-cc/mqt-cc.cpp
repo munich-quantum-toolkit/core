@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Support/Qdmi.h"
 
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -43,6 +44,7 @@
 #include <mlir/Target/LLVMIR/Export.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -97,6 +99,21 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     "hadamard-lifting",
     llvm::cl::desc("Apply Hadamard lifting during optimization"),
     llvm::cl::init(false));
+
+static llvm::cl::opt<bool>
+    qdmiListDevices("qdmi-list-devices",
+                    llvm::cl::desc("List all available devices via QDMI"),
+                    llvm::cl::init(false));
+
+static llvm::cl::opt<std::optional<std::string>>
+    qdmiDevice("qdmi-device",
+               llvm::cl::desc("Specify a target device via QDMI"),
+               llvm::cl::init(std::nullopt));
+
+static llvm::cl::opt<std::optional<std::string>> qdmiConfigPath(
+    "qdmi-config",
+    llvm::cl::desc("Specify the path to a JSON configuration file for QDMI"),
+    llvm::cl::init(std::nullopt));
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -179,6 +196,39 @@ int main(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  // Configure the compiler pipeline
+  QuantumCompilerConfig config;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
+  config.recordIntermediates = recordIntermediates;
+  config.enableTiming = enableTiming;
+  config.enableStatistics = enableStatistics;
+  config.printIRAfterAllStages = printIRAfterAllStages;
+  config.disableMergeSingleQubitRotationGates =
+      disableMergeSingleQubitRotationGates;
+  config.enableHadamardLifting = enableHadamardLifting;
+
+  auto session = [&] {
+    if (qdmiConfigPath) {
+      return mlir::qdmi::prepareSession(*qdmiConfigPath);
+    }
+    return mlir::qdmi::prepareSession();
+  }();
+
+  if (qdmiListDevices) {
+    mlir::qdmi::listAvailableDevices(session);
+    return 0;
+  }
+
+  if (qdmiDevice != std::nullopt) {
+    config.device = mlir::qdmi::getDevice(session, *qdmiDevice);
+    if (!config.device) {
+      llvm::errs() << "Device '" << qdmiDevice << "' not found!\n";
+      mlir::qdmi::listAvailableDevices(session, llvm::errs());
+      return 1;
+    }
+  }
+
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
   registry
@@ -202,18 +252,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Configure the compiler pipeline
-  QuantumCompilerConfig config;
-  config.convertToQIRBase = convertToQIRBase;
-  config.convertToQIRAdaptive = convertToQIRAdaptive;
-  config.recordIntermediates = recordIntermediates;
-  config.enableTiming = enableTiming;
-  config.enableStatistics = enableStatistics;
-  config.printIRAfterAllStages = printIRAfterAllStages;
-  config.disableMergeSingleQubitRotationGates =
-      disableMergeSingleQubitRotationGates;
-  config.enableHadamardLifting = enableHadamardLifting;
-
   // Run the compilation pipeline
   CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
@@ -235,6 +273,10 @@ int main(int argc, char** argv) {
     llvm::outs() << "After Optimization:\n" << record.afterOptimization << "\n";
     llvm::outs() << "After Final QCO Canonicalization:\n"
                  << record.afterOptimizationCanon << "\n";
+    llvm::outs() << "After Transpilation:\n"
+                 << record.afterTranspilation << "\n";
+    llvm::outs() << "After Transpilation Canonicalization:\n"
+                 << record.afterTranspilationCanon << "\n";
     llvm::outs() << "After QCO-to-QC Conversion:\n"
                  << record.afterQCConversion << "\n";
     llvm::outs() << "After Final QC Canonicalization:\n"
