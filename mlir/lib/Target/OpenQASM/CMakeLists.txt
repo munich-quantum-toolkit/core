@@ -10,6 +10,8 @@ add_mlir_library(
   MLIROpenQASMTarget
   Frontend.cpp
   OpenQASM.cpp
+  DEPENDS
+  MLIROQ3OpsIncGen
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect

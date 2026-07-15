@@ -18,6 +18,7 @@
 #include "qasm3/Token.hpp"
 #include "qasm3/Types.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <istream>
