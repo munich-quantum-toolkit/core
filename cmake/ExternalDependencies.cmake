@@ -30,24 +30,6 @@ if(BUILD_MQT_CORE_MLIR)
     GIT_TAG v0.3.0)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 
-  # The OpenQASM frontend uses parser sources generated with the official grammar and links only the
-  # small C++ runtime into the MLIR translation library. Parser generation is intentionally not part
-  # of a normal build.
-  set(ANTLR_BUILD_CPP_TESTS
-      OFF
-      CACHE BOOL "Disable ANTLR runtime tests" FORCE)
-  set(ANTLR_BUILD_SHARED
-      OFF
-      CACHE BOOL "Build the ANTLR runtime statically" FORCE)
-  set(ANTLR4_INSTALL
-      OFF
-      CACHE BOOL "Do not install the private ANTLR runtime" FORCE)
-  FetchContent_Declare(
-    antlr4
-    GIT_REPOSITORY https://github.com/antlr/antlr4.git
-    GIT_TAG 4.13.2
-    SOURCE_SUBDIR runtime/Cpp)
-  list(APPEND FETCH_PACKAGES antlr4)
 endif()
 
 set(JSON_VERSION

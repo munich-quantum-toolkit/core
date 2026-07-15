@@ -74,7 +74,6 @@ repos:
     rev: v1.48.0
     hooks:
       - id: typos
-        exclude: ^mlir/lib/Target/OpenQASM/(Generated|Grammar)/
         priority: 3
 
   ## Check license headers
@@ -82,7 +81,6 @@ repos:
     rev: v2.9.0
     hooks:
       - id: license-tools
-        exclude: ^mlir/lib/Target/OpenQASM/(Generated|Grammar)/
         priority: 4
 
   ## Format BibTeX files with bibtex-tidy
@@ -138,7 +136,6 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
-        exclude: ^mlir/lib/Target/OpenQASM/Generated/
         priority: 5
       - id: clang-format
         name: clang-format (TableGen)

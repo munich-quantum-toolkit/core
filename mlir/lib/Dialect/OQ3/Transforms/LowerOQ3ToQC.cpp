@@ -221,10 +221,11 @@ private:
         .Case("cy", "y")
         .Case("cz", "z")
         .Case("ch", "h")
-        .Case("cp", "p")
+        .Cases("cp", "cu1", "p")
         .Case("crx", "rx")
         .Case("cry", "ry")
         .Case("crz", "rz")
+        .Cases("cu", "cu3", "U")
         .Case("cswap", "swap")
         .Default(name);
   }
@@ -232,7 +233,9 @@ private:
   static size_t implicitControlCount(const StringRef name) {
     return llvm::StringSwitch<size_t>(name)
         .Case("ccx", 2)
-        .Cases("cx", "cy", "cz", "ch", "cp", "crx", "cry", "crz", "cswap", 1)
+        .Cases({"cx", "cy", "cz", "ch", "cp", "cu", "cu1", "cu3", "crx", "cry",
+                "crz", "cswap"},
+               1)
         .Default(0);
   }
 
@@ -298,12 +301,6 @@ private:
     }
 
     const StringRef resolvedName = application.getCallee();
-    if (resolvedName == "cu" || resolvedName == "cu1" ||
-        resolvedName == "cu3") {
-      return application.emitError()
-             << "gate '" << resolvedName
-             << "' has no semantics-preserving QC lowering yet";
-    }
     const size_t controls = implicitControlCount(resolvedName);
     if (qubits.size() < controls) {
       return application.emitError(
@@ -322,10 +319,25 @@ private:
 
     const ValueRange controlValues = qubits.take_front(controls);
     const ValueRange targets = qubits.drop_front(controls);
+    ValueRange primitiveParameters = parameters;
+    if (resolvedName == "cu") {
+      if (controls != 1 || controlValues.size() != 1 || targets.size() != 1 ||
+          parameters.size() != 4) {
+        return application.emitError(
+            "cu operands do not match its verified standard signature");
+      }
+      // OpenQASM's four-parameter cu applies p(gamma) to the control before a
+      // controlled U(theta, phi, lambda). Keep the relative phase instead of
+      // silently treating cu as the three-parameter cu3 alias.
+      qc::POp::create(builder, application.getLoc(), controlValues.front(),
+                      parameters.back());
+      primitiveParameters = parameters.drop_back();
+    }
     qc::CtrlOp::create(builder, application.getLoc(), controlValues, targets,
                        [&](const ValueRange aliases) {
                          (void)emitPrimitive(builder, application.getLoc(),
-                                             primitive, parameters, aliases);
+                                             primitive, primitiveParameters,
+                                             aliases);
                        });
     return success();
   }
