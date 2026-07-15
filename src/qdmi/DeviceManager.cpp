@@ -112,7 +112,7 @@ Device DeviceManager::open(const std::string_view id,
 }
 
 OpenAllResult
-DeviceManager::openAll(const SessionParameters& sessionOverrides) {
+DeviceManager::openAll(const SessionParameters& sessionOverrides) const {
   OpenAllResult result;
   for (const auto& definition : definitions()) {
     try {

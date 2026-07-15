@@ -358,7 +358,7 @@ TEST(DeviceManager, OpensAllDefinitionsAndIsolatesFailures) {
       {.id = "good", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"},
       {.id = "bad", .library = "does-not-exist", .prefix = "MISSING"},
   };
-  qdmi::DeviceManager manager(options);
+  const qdmi::DeviceManager manager(options);
   const auto result = manager.openAll();
   ASSERT_EQ(result.devices.size(), 1);
   EXPECT_EQ(result.devices.at("good").getName(), "MQT SC Default QDMI Device");

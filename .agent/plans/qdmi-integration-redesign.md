@@ -94,6 +94,9 @@ the planning refinements from pull requests 1907 and 1908.
 - [x] (2026-07-15 14:06Z) Removed the docstring-only Python tests, addressed
       every clang-tidy concern from the first CI report, and reproduced the
       affected checks with Clang 22.1.8 and warnings treated as errors.
+- [x] (2026-07-15 14:52Z) Made bulk opening logically const, added compile-time
+      coverage through a const manager, and cleared the final clang-tidy concern
+      from the follow-up CI report.
 - [ ] Inspect the final CI run triggered by the plan-status commit and address
   any integration regressions.
 

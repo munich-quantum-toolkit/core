@@ -59,8 +59,8 @@ public:
        const SessionParameters& sessionOverrides = SessionParameters{});
 
   /// Opens a snapshot of all definitions and isolates failures by ID.
-  [[nodiscard]] OpenAllResult
-  openAll(const SessionParameters& sessionOverrides = SessionParameters{});
+  [[nodiscard]] OpenAllResult openAll(
+      const SessionParameters& sessionOverrides = SessionParameters{}) const;
 
 private:
   struct Impl;
