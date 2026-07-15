@@ -336,6 +336,7 @@ void StandardOperation::dumpOpenQASM3(
     std::ostream& of, std::ostringstream& op,
     const QubitIndexToRegisterMap& qubitMap) const {
   dumpControls(op);
+
   dumpGateType(of, op, qubitMap);
 }
 
