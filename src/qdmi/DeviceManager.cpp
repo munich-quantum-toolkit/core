@@ -394,6 +394,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   if (!options.isolated) {
     const auto root = options.configRoot.value_or(moduleDirectory());
     appendFragments(files, root);
+    appendFragments(files, root / "bin");
     appendFragments(files, root / "lib");
     appendFragments(files, root / "mqt-core" / "qdmi");
     appendFragments(files, root / "qdmi");

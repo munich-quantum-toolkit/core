@@ -144,6 +144,28 @@ TEST(DeviceRegistry, MergesExplicitConfigurationOverBuiltInFragments) {
   EXPECT_EQ(definitions.front().session.custom1, "two");
 }
 
+TEST(DeviceRegistry, DiscoversWindowsRuntimeLayout) {
+  const TemporaryDirectory directory;
+  directory.write("bin/runtime.qdmi.json", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "runtime", "library": "device.dll", "prefix": "RUNTIME"
+    }]}
+  })");
+  directory.write("override.json", R"({
+    "schema-version": 1,
+    "qdmi": {}
+  })");
+  qdmi::ConfigOptions options;
+  options.configRoot = directory.path();
+  options.explicitFile = directory.path() / "override.json";
+
+  const qdmi::DeviceRegistry registry(options);
+  ASSERT_EQ(registry.definitions().size(), 1);
+  EXPECT_EQ(registry.definitions().front().library,
+            directory.path() / "bin" / "device.dll");
+}
+
 TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
   const TemporaryDirectory directory;
   directory.write("pyproject.toml", R"(

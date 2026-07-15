@@ -45,8 +45,15 @@ function(mqt_register_qdmi_device target)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}"
             "$<TARGET_FILE_DIR:${target}>/${target}.qdmi.json")
+  if(WIN32)
+    # Shared-library targets are runtime artifacts on Windows and are installed under bin. Keep the
+    # fragment beside the DLL so its relative path resolves.
+    set(fragment_install_dir ${CMAKE_INSTALL_BINDIR})
+  else()
+    set(fragment_install_dir ${CMAKE_INSTALL_LIBDIR})
+  endif()
   install(
     FILES "${fragment}"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    DESTINATION ${fragment_install_dir}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
 endfunction()
