@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/OQ3/IR/GateCatalog.h"
 #include "mlir/Dialect/OQ3/IR/OQ3Ops.h"
 #include "mlir/Dialect/OQ3/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -41,9 +42,10 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  OwningOpRef<ModuleOp> buildGateApplication(const StringRef name,
-                                             const size_t parameterCount,
-                                             const size_t gateQubitCount = 2) {
+  OwningOpRef<ModuleOp>
+  buildGateApplication(const StringRef name, const size_t parameterCount,
+                       const size_t gateQubitCount = 2,
+                       const size_t applicationQubitCount = 2) {
     OpBuilder builder(context.get());
     const Location loc = builder.getUnknownLoc();
     auto module = ModuleOp::create(loc);
@@ -55,9 +57,9 @@ protected:
                             builder.getFunctionType(gateInputs, {}));
 
     const auto qubitType = qc::QubitType::get(context.get());
+    SmallVector<Type> functionInputs(applicationQubitCount, qubitType);
     auto function = func::FuncOp::create(
-        builder, loc, "main",
-        builder.getFunctionType({qubitType, qubitType}, {}));
+        builder, loc, "main", builder.getFunctionType(functionInputs, {}));
     Block* entry = function.addEntryBlock();
     builder.setInsertionPointToStart(entry);
 
@@ -79,8 +81,9 @@ protected:
                        DenseI32ArrayAttr::get(context.get(), {}));
     state.addAttribute(
         "operandSegmentSizes",
-        DenseI32ArrayAttr::get(context.get(),
-                               {static_cast<int32_t>(parameterCount), 2, 0}));
+        DenseI32ArrayAttr::get(
+            context.get(), {static_cast<int32_t>(parameterCount),
+                            static_cast<int32_t>(applicationQubitCount), 0}));
     builder.create(state);
     func::ReturnOp::create(builder, loc);
     return OwningOpRef<ModuleOp>(module);
@@ -148,6 +151,23 @@ TEST_F(OQ3Test, PreservesInverseNativeGateAliases) {
   });
   EXPECT_EQ(inverses, 1);
   EXPECT_EQ(swaps, 1);
+}
+
+TEST_F(OQ3Test, LowersEveryCanonicalGateCatalogEntry) {
+  for (const auto& gate : oq3::getGateCatalog()) {
+    auto module = buildGateApplication(gate.name, gate.parameterCount,
+                                       gate.qubitCount(), gate.qubitCount());
+    ASSERT_TRUE(succeeded(verify(module.get()))) << gate.name.str();
+
+    PassManager manager(context.get());
+    manager.addPass(oq3::createLowerOQ3ToQCPass());
+    ASSERT_TRUE(succeeded(manager.run(module.get()))) << gate.name.str();
+    EXPECT_TRUE(succeeded(verify(module.get()))) << gate.name.str();
+
+    bool hasOQ3GateApplication = false;
+    module->walk([&](oq3::ApplyGateOp) { hasOQ3GateApplication = true; });
+    EXPECT_FALSE(hasOQ3GateApplication) << gate.name.str();
+  }
 }
 
 TEST_F(OQ3Test, RejectsSurplusQubitsWithoutControlModifiers) {

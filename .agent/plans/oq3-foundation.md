@@ -175,6 +175,10 @@ changes and other worktrees remain outside scope.
       dependency from `MLIROpenQASMTarget` to `MLIROQ3OpsIncGen`, ensuring
       `OQ3OpsDialect.h.inc` exists before consumers compile. Also added the
       direct standard header required by the C++ linter for `std::size_t`.
+- [x] (2026-07-15 20:35Z) Added a catalog-wide OQ3-to-QC lowering contract test:
+      every canonical gate is instantiated from its declared parameter and qubit
+      signature, lowered, and verified without residual OQ3 gate applications.
+      The focused OQ3 suite now has seven passing tests.
 - [ ] Expand behavior-driven frontend and lowering tests until the C++ patch
       coverage of the OQ3 foundation reaches the configured 90% target (current
       Codecov report: 76.78%, 322 missed lines). Do not lower the threshold or
