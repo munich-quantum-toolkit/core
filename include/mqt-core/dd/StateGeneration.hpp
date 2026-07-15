@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file StateGeneration.hpp
+ * @brief Construct common quantum states as decision diagrams.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"

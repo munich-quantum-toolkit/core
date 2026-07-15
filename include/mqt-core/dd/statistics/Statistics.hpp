@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Statistics.hpp
+ * @brief Base interface for decision-diagram statistics.
+ */
+
 #pragma once
 
 #include "nlohmann/json_fwd.hpp"
