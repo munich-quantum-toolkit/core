@@ -611,6 +611,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
   } else {
     ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs, results);
   }
+  std::cout << "Returning to iteration..." << std::endl;
 
   return WalkResult::advance();
 }
@@ -939,10 +940,12 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
   /// Iterate work-list.
   bool addedAtLeastOneQubit = false;
   for (Operation* curr : worklist) {
+    std::cout << "Starting with curr operation..." << std::endl;
     if (addedAtLeastOneQubit && ut->areStatesAllTop()) {
       return success();
     }
     if (curr == nullptr) {
+      std::cout << "Op is null" << std::endl;
       continue; // Skip erased ops.
     }
     std::string oName =
@@ -1044,6 +1047,7 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (res.wasInterrupted()) {
       return failure();
     }
+    std::cout << "Finished curr operation" << std::endl;
   }
   std::cout << "Iterated" << std::endl;
   return success();
