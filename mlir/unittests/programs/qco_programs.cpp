@@ -2752,6 +2752,13 @@ SmallVector<Value> rccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+SmallVector<Value> twoRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
+  std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
+}
+
 SmallVector<Value> singleControlledRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.crccx(q[0], q[1], q[2], q[3]);

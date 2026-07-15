@@ -1041,6 +1041,8 @@ def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
         [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
         [[nodiscard]] static DynamicMatrix getUnitaryMatrix();
     }];
+
+  let hasCanonicalizer = 1;
 }
 
 def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {

@@ -997,6 +997,9 @@ SmallVector<Value> twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 /// Creates a circuit with just an RCCX gate.
 SmallVector<Value> rccx(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RCCX gates in a row.
+SmallVector<Value> twoRccx(QCOProgramBuilder& b);
+
 /// Creates a circuit with a single controlled RCCX gate.
 SmallVector<Value> singleControlledRccx(QCOProgramBuilder& b);
 

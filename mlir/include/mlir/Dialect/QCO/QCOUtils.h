@@ -125,6 +125,43 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
 }
 
 /**
+ * @brief Remove a pair of inverse three-target, zero-parameter operations.
+ *
+ * @tparam InverseOpType The type of the inverse operation.
+ * @tparam OpType The type of the operation to be checked.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename InverseOpType, typename OpType>
+LogicalResult
+removeInversePairThreeTargetZeroParameter(OpType op,
+                                          PatternRewriter& rewriter) {
+  auto output0 = op.getOutputQubit(0);
+
+  // Check if the successor is the inverse operation
+  auto nextOp = dyn_cast<InverseOpType>(*output0.user_begin());
+  if (!nextOp) {
+    return failure();
+  }
+
+  // All three qubits have to point to the same successor
+  if (*op.getOutputQubit(1).user_begin() != nextOp ||
+      *op.getOutputQubit(2).user_begin() != nextOp) {
+    return failure();
+  }
+
+  if (output0 == nextOp.getInputQubit(0) &&
+      op.getOutputQubit(1) == nextOp.getInputQubit(1) &&
+      op.getOutputQubit(2) == nextOp.getInputQubit(2)) {
+    rewriter.replaceOp(op, op.getInputQubits());
+    rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+    return success();
+  }
+  return failure();
+}
+
+/**
  * @brief Merge two compatible one-target, zero-parameter operations
  *
  * @details
