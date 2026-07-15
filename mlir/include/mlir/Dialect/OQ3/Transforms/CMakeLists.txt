@@ -6,8 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QC)
-add_subdirectory(QCO)
-add_subdirectory(OQ3)
-add_subdirectory(QIR)
-add_subdirectory(QTensor)
+add_mlir_doc(Passes OQ3Passes ./ -gen-pass-doc)
+set(LLVM_TARGET_DEFINITIONS Passes.td)
+mlir_tablegen(Passes.h.inc -gen-pass-decls -name OQ3)
+add_public_tablegen_target(MLIROQ3PassIncGen)
