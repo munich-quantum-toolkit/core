@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Register.hpp
+ * @brief Quantum and classical register representations.
+ */
+
 #pragma once
 
 #include "Definitions.hpp"

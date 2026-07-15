@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file MemoryManagerStatistics.hpp
+ * @brief Memory-manager statistics for decision-diagram packages.
+ */
+
 #pragma once
 
 #include "dd/statistics/Statistics.hpp"

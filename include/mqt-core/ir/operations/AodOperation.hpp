@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file AodOperation.hpp
+ * @brief Atom-array operation representation.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

@@ -39,8 +39,7 @@ namespace dd {
  * Its main purpose is to construct a representation of the statevector after
  * simulating the quantum computation for the given input state.
  * For more elaborate simulation methods that can handle classical control and
- * mid-circuit measurements, see @ref sample(const QuantumComputation&,
- * std::size_t, std::size_t).
+ * mid-circuit measurements, see @ref dd::sample.
  *
  * @param qc The quantum computation to simulate
  * @param in The input state to simulate. Represented as a vector DD.
@@ -59,8 +58,8 @@ VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
  * The seed for the random number generator can be set using @p seed.
  *
  * For a circuit without mid-circuit measurements, this function will construct
- * a representation of the final statevector similar to @ref simulate and then
- * repeatedly sample from the resulting decision diagram, without actually
+ * a representation of the final statevector similar to @ref dd::simulate and
+ * then repeatedly sample from the resulting decision diagram, without actually
  * collapsing the state. For a fixed number of qubits, each sample can be drawn
  * in constant time, which is a significant of the decision diagram structure.
  *
@@ -80,7 +79,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
 /**
  * @brief Sample from the output distribution of a quantum computation
  *
- * @details This is a more general version of @ref sample that allows for
+ * @details This is a more general version of @ref dd::sample that allows for
  * choosing the input state to simulate as well as the DD package to use for the
  * simulation.
  *

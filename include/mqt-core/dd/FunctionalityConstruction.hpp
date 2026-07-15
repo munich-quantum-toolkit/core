@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file FunctionalityConstruction.hpp
+ * @brief Construct decision-diagram functionality from quantum circuits.
+ */
+
 #pragma once
 
 #include "dd/Package_fwd.hpp"

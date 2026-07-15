@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file WState.hpp
+ * @brief W-state circuit construction.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

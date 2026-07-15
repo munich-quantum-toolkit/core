@@ -1,4 +1,4 @@
-# The MQT Compiler Collection
+# MQT Compiler Collection
 
 The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof
 quantum-classical compilation framework built on the Multi-Level Intermediate
