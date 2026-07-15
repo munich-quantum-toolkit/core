@@ -157,8 +157,7 @@ def docs(session: nox.Session) -> None:
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
-        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_MLIR=ON;-DBUILD_MQT_CORE_DOCUMENTATION=ON;"
-        "-DBUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR=OFF",
+        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_DOCUMENTATION=ON",
     }
     # install build and docs dependencies on top of the existing environment
     session.run(
@@ -224,10 +223,12 @@ def stubs(session: nox.Session) -> None:
         "mqt.core.dd",
         "--module",
         "mqt.core.fomac",
-        "--pattern-file",
-        "bindings/fomac/patterns.txt",
+        "--module",
+        "mqt.core.mlir",
         "--module",
         "mqt.core.na",
+        "--pattern-file",
+        "bindings/patterns.txt",
     )
 
     pyi_files = list(package_root.glob("**/*.pyi"))

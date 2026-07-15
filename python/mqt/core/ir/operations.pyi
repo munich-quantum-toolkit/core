@@ -683,7 +683,7 @@ class NonUnitaryOperation(Operation):
     @overload
     def __init__(self, target: int, classic: int) -> None: ...
     @overload
-    def __init__(self, targets: Sequence[int], op_type: OpType = ...) -> None: ...
+    def __init__(self, targets: Sequence[int], op_type: OpType = OpType.reset) -> None: ...
     @property
     def classics(self) -> list[int]:
         """The classical bits that are associated with the operation."""
@@ -833,7 +833,7 @@ class IfElseOperation(Operation):
         else_operation: Operation | None,
         control_register: mqt.core.ir.registers.ClassicalRegister,
         expected_value: int = 1,
-        comparison_kind: ComparisonKind = ...,
+        comparison_kind: ComparisonKind = ComparisonKind.eq,
     ) -> None: ...
     @overload
     def __init__(
@@ -842,7 +842,7 @@ class IfElseOperation(Operation):
         else_operation: Operation | None,
         control_bit: int,
         expected_value: bool = True,
-        comparison_kind: ComparisonKind = ...,
+        comparison_kind: ComparisonKind = ComparisonKind.eq,
     ) -> None: ...
     @property
     def then_operation(self) -> Operation:

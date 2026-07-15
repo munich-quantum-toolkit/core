@@ -10,7 +10,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from qiskit.circuit import QuantumCircuit
@@ -229,8 +230,9 @@ class QDMIEstimator(BaseEstimatorV2):
 
             # Decompose into Pauli strings
             if not isinstance(observable, SparsePauliOp):
-                if isinstance(observable, dict):
-                    observable = SparsePauliOp.from_list(observable.items())
+                if isinstance(observable, Mapping):
+                    pauli_terms = cast("Mapping[str, int | float | complex]", observable)
+                    observable = SparsePauliOp.from_list(pauli_terms.items())
                 else:
                     observable = SparsePauliOp(observable)
 
