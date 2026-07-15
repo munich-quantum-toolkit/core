@@ -945,6 +945,13 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
       continue; // Skip erased ops.
     }
 
+    auto n = curr->getName().stripDialect().str();
+    std::string oName =
+        "Op: " + curr->getName().getStringRef().str() +
+        " dialect: " + curr->getName().getDialectNamespace().str();
+
+    std::cout << n << std::endl;
+
     rewriter.setInsertionPoint(curr);
 
     const auto res =
