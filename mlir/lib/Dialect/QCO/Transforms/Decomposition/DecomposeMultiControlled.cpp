@@ -17,8 +17,11 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -293,7 +296,15 @@ private:
   ArrayRef<std::size_t> remap_;
 };
 
-SmallVector<Value> threeControlledWires(ValueRange controls, Value target) {
+struct ControlledGateSpec {
+  ControlledTarget gate;
+  std::optional<double> theta;
+};
+
+} // namespace
+
+static SmallVector<Value> threeControlledWires(ValueRange controls,
+                                               Value target) {
   if (controls.size() != 3) {
     llvm::reportFatalUsageError(
         "three-controlled synthesis requires exactly 3 control qubits");
@@ -593,15 +604,15 @@ static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   }
 }
 
-SmallVector<Value> synthesizeRCCX(OpBuilder& builder, Location loc,
-                                  Value control0, Value control1,
-                                  Value target) {
+static SmallVector<Value> synthesizeRCCX(OpBuilder& builder, Location loc,
+                                         Value control0, Value control1,
+                                         Value target) {
   SmallVector<Value> wires = {control0, control1, target};
   GateEmitter(builder, loc, wires).emitRCCXSequence(0, 1, 2);
   return wires;
 }
 
-SmallVector<Value>
+static SmallVector<Value>
 synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
                         Value control1, Value target, ControlledTarget gate,
                         std::optional<double> theta = std::nullopt) {
@@ -627,9 +638,9 @@ synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
   return wires;
 }
 
-SmallVector<Value> synthesizeThreeControlled(OpBuilder& builder, Location loc,
-                                             ValueRange controls, Value target,
-                                             ControlledTarget gate) {
+static SmallVector<Value>
+synthesizeThreeControlled(OpBuilder& builder, Location loc, ValueRange controls,
+                          Value target, ControlledTarget gate) {
   if (gate == ControlledTarget::Phase) {
     llvm::reportFatalUsageError(
         "synthesizeThreeControlled does not support phase gates");
@@ -646,9 +657,9 @@ SmallVector<Value> synthesizeThreeControlled(OpBuilder& builder, Location loc,
   return wires;
 }
 
-SmallVector<Value> synthesizeMultiControlled(OpBuilder& builder, Location loc,
-                                             ValueRange controls, Value target,
-                                             ControlledTarget gate) {
+static SmallVector<Value>
+synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
+                          Value target, ControlledTarget gate) {
   if (controls.size() < 4) {
     llvm::reportFatalUsageError(
         "synthesizeMultiControlled requires at least 4 control qubits");
@@ -674,7 +685,8 @@ SmallVector<Value> synthesizeMultiControlled(OpBuilder& builder, Location loc,
 }
 
 /// Match a controlled Pauli-X or Pauli-Z body.
-std::optional<ControlledTarget> matchControlledPauli(UnitaryOpInterface inner) {
+static std::optional<ControlledTarget>
+matchControlledPauli(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
     return ControlledTarget::X;
   }
@@ -684,13 +696,8 @@ std::optional<ControlledTarget> matchControlledPauli(UnitaryOpInterface inner) {
   return std::nullopt;
 }
 
-struct ControlledGateSpec {
-  ControlledTarget gate;
-  std::optional<double> theta;
-};
-
 /// Match X, Z, or constant-theta phase (two-control / HP24 building blocks).
-std::optional<ControlledGateSpec>
+static std::optional<ControlledGateSpec>
 matchControlledXzOrPhase(UnitaryOpInterface inner) {
   if (const auto pauli = matchControlledPauli(inner)) {
     return ControlledGateSpec{.gate = *pauli, .theta = std::nullopt};
@@ -703,6 +710,8 @@ matchControlledXzOrPhase(UnitaryOpInterface inner) {
   }
   return std::nullopt;
 }
+
+namespace {
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
