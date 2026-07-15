@@ -93,22 +93,78 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 
               return true;
             })
-            .Case<scf::ForOp>([&](scf::ForOp forOp) {
-              DenseMap<Value, size_t> bodyM;
-              for (const auto [init, arg] : llvm::zip_equal(
-                       forOp.getInits(), forOp.getRegionIterArgs())) {
-                const auto hw = m.at(init);
-                bodyM.try_emplace(arg, hw);
-              }
+            .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+              const auto inits = whileOp.getInitsMutable();
+
+              DenseMap<Value, size_t> beforeM;
+              DenseMap<Value, size_t> afterM;
 
               SmallVector<size_t> initialHardwareOrder;
-              initialHardwareOrder.reserve(forOp.getInits().size());
+              initialHardwareOrder.reserve(inits.size());
 
-              for (OpOperand& operand : forOp.getInitsMutable()) {
-                const auto pred = operand.get();
-                const auto succ = forOp.getTiedLoopResult(&operand);
+              for (const auto [init, beforeArg, afterArg] :
+                   llvm::zip_equal(inits, whileOp.getBeforeArguments(),
+                                   whileOp.getAfterArguments())) {
+                const auto pred = init.get();
+                const auto hw = m.at(pred);
+                const auto succ = whileOp->getResult(init.getOperandNumber());
+
+                beforeM.try_emplace(beforeArg, hw);
+                afterM.try_emplace(afterArg, hw);
+                m.try_emplace(succ, hw);
+                initialHardwareOrder.emplace_back(hw);
+              }
+
+              if (!isExecutable(whileOp.getBefore(), beforeM, couplingSet)) {
+                return false;
+              }
+
+              if (!isExecutable(whileOp.getAfter(), afterM, couplingSet)) {
+                return false;
+              }
+
+              auto condOp = cast<scf::ConditionOp>(
+                  whileOp.getBeforeBody()->getTerminator());
+              auto yieldOp =
+                  cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator());
+
+              const auto beforeHardwareOrder = to_vector(llvm::map_range(
+                  condOp.getArgs(), [&](auto v) { return beforeM.at(v); }));
+              const auto afterHardwareOrder = to_vector(llvm::map_range(
+                  yieldOp.getResults(), [&](auto v) { return afterM.at(v); }));
+
+              if (beforeHardwareOrder != initialHardwareOrder) {
+                llvm::dbgs()
+                    << "The hardware indices of the condition argument qubit "
+                       "values must be in the same order as the scf::WhileOp's "
+                       "input qubit values!\n";
+                return false;
+              }
+
+              if (afterHardwareOrder != initialHardwareOrder) {
+                llvm::dbgs()
+                    << "The hardware indices of the yielded qubit values "
+                       "values must be in the same order as the scf::WhileOp's "
+                       "input qubit values!\n";
+                return false;
+              }
+
+              return true;
+            })
+            .Case<scf::ForOp>([&](scf::ForOp forOp) {
+              const auto inits = forOp.getInitsMutable();
+
+              DenseMap<Value, size_t> bodyM;
+              SmallVector<size_t> initialHardwareOrder;
+              initialHardwareOrder.reserve(inits.size());
+
+              for (const auto [init, arg] :
+                   llvm::zip_equal(inits, forOp.getRegionIterArgs())) {
+                const auto pred = init.get();
+                const auto succ = forOp.getTiedLoopResult(&init);
                 const auto hw = m.at(pred);
 
+                bodyM.try_emplace(arg, hw);
                 m.try_emplace(succ, hw);
                 initialHardwareOrder.emplace_back(hw);
               }
@@ -119,7 +175,7 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 
               auto yield = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
 
-              const SmallVector<size_t> bodyHardwareOrder(llvm::map_range(
+              const auto bodyHardwareOrder = to_vector(llvm::map_range(
                   yield.getResults(), [&](auto v) { return bodyM.at(v); }));
 
               if (bodyHardwareOrder != initialHardwareOrder) {
@@ -133,23 +189,24 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
               return true;
             })
             .Case<qco::IfOp>([&](qco::IfOp ifOp) {
-              std::array mappings{DenseMap<Value, size_t>{},
-                                  DenseMap<Value, size_t>{}};
-
+              const auto qubits = ifOp.getQubitsMutable();
               const std::array regions{&ifOp.getThenRegion(),
                                        &ifOp.getElseRegion()};
 
+              std::array mappings{DenseMap<Value, size_t>{},
+                                  DenseMap<Value, size_t>{}};
+
+              SmallVector<size_t> initialHardwareOrder;
+              initialHardwareOrder.reserve(qubits.size());
+
               for (size_t i = 0; i < 2; ++i) {
-                for (const auto [init, arg] : llvm::zip_equal(
-                         ifOp.getQubits(), regions[i]->getArguments())) {
-                  mappings[i].try_emplace(arg, /*hw = */ m.at(init));
+                for (const auto [qubit, arg] :
+                     llvm::zip_equal(qubits, regions[i]->getArguments())) {
+                  mappings[i].try_emplace(arg, /*hw = */ m.at(qubit.get()));
                 }
               }
 
-              SmallVector<size_t> initialHardwareOrder;
-              initialHardwareOrder.reserve(ifOp.getQubits().size());
-
-              for (OpOperand& operand : ifOp.getQubitsMutable()) {
+              for (OpOperand& operand : qubits) {
                 const auto pred = operand.get();
                 const auto succ = ifOp.getTiedResult(&operand);
                 const auto hw = m.at(pred);
@@ -714,6 +771,65 @@ TEST_P(MappingPassTest, MapBranchingGHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
+  auto res =
+      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
+  auto entry = getEntryPoint(m.get());
+
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapDoUntil) {
+  const auto& device = GetParam();
+  const auto size = 4;
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(size);
+  SmallVector<Value> qubits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  qubits = builder.scfWhile(
+      qubits,
+      [&](ValueRange args) {
+        SmallVector<Value> beforeArgs(args);
+        SmallVector<Value> beforeBits(args);
+
+        flatGHZ(builder, beforeArgs);
+
+        beforeArgs = builder.barrier(beforeArgs);
+
+        for (int64_t i = 0; i < size; ++i) {
+          std::tie(beforeArgs[i], beforeBits[i]) =
+              builder.measure(beforeArgs[i]);
+        }
+
+        for (int64_t i = 0; i < size - 1; ++i) {
+          beforeBits[i + 1] =
+              arith::AndIOp::create(builder, beforeBits[i], beforeBits[i + 1])
+                  .getResult();
+        }
+
+        builder.scfCondition(beforeBits[size - 1], beforeArgs);
+        return beforeArgs;
+      },
+      [&](ValueRange args) { return args; });
+
+  flatGHZ(builder, qubits);
+
+  qubits = builder.barrier(qubits);
+
+  for (int64_t i = 0; i < size; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
   auto res =
       runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
   auto entry = getEntryPoint(m.get());

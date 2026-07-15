@@ -437,6 +437,83 @@ private:
     return newIfOp;
   }
 
+  /// Extend the arguments of an `scf::WhileOp` by adding a given range of
+  /// additional SSA values. Replaces the existing operation and returns the
+  /// newly created one.
+  static scf::WhileOp extend(scf::WhileOp whileOp, ValueRange addons,
+                             IRRewriter& rewriter) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(whileOp);
+
+    Block* oldBefBlock = whileOp.getBeforeBody();
+    Block* oldAftBlock = whileOp.getAfterBody();
+
+    const auto oldBefNumArgs = oldBefBlock->getNumArguments();
+    const auto oldAftNumArgs = oldAftBlock->getNumArguments();
+
+    // Create a new while op at the same location as the old one with the
+    // additional arguments.
+
+    SmallVector<Value> newInits(whileOp.getInits());
+    newInits.append(addons.begin(), addons.end());
+
+    SmallVector<Type> newTypes(whileOp.getResultTypes());
+    newTypes.append(addons.getTypes().begin(), addons.getTypes().end());
+
+    auto newWhileOp =
+        rewriter.create<scf::WhileOp>(whileOp.getLoc(), newTypes, newInits);
+
+    const SmallVector<Location> locs(newTypes.size(), whileOp.getLoc());
+    Block* newBefBlock =
+        rewriter.createBlock(&newWhileOp.getBefore(), {}, newTypes, locs);
+    Block* newAftBlock =
+        rewriter.createBlock(&newWhileOp.getAfter(), {}, newTypes, locs);
+
+    rewriter.mergeBlocks(oldBefBlock, newBefBlock,
+                         newBefBlock->getArguments().take_front(oldBefNumArgs));
+    rewriter.mergeBlocks(oldAftBlock, newAftBlock,
+                         newAftBlock->getArguments().take_front(oldAftNumArgs));
+
+    auto conditionOp = cast<scf::ConditionOp>(newBefBlock->getTerminator());
+    rewriter.setInsertionPoint(conditionOp);
+
+    // Replace the old condition operation with one that includes the new
+    // "before" block arguments.
+
+    SmallVector<Value> newConditionArgs(conditionOp.getArgs());
+    llvm::append_range(newConditionArgs,
+                       newBefBlock->getArguments().drop_front(oldBefNumArgs));
+
+    rewriter.create<scf::ConditionOp>(
+        conditionOp.getLoc(), conditionOp.getCondition(), newConditionArgs);
+    rewriter.eraseOp(conditionOp);
+
+    // Replace the old yield operation with one that includes the new "after"
+    // block arguments.
+
+    auto yieldOp = cast<scf::YieldOp>(newAftBlock->getTerminator());
+    rewriter.setInsertionPoint(yieldOp);
+
+    SmallVector<Value> newYieldArgs(yieldOp.getResults());
+    llvm::append_range(newYieldArgs,
+                       newAftBlock->getArguments().drop_front(oldBefNumArgs));
+
+    rewriter.create<scf::YieldOp>(yieldOp.getLoc(), newYieldArgs);
+    rewriter.eraseOp(yieldOp);
+
+    // Finally, replace the old while operation with the new one.
+
+    rewriter.replaceOp(
+        whileOp, newWhileOp.getResults().take_front(whileOp.getNumResults()));
+
+    for (const auto [before, after] : llvm::zip_equal(
+             addons, newWhileOp->getResults().take_back(addons.size()))) {
+      rewriter.replaceAllUsesExcept(before, after, newWhileOp);
+    }
+
+    return newWhileOp;
+  }
+
   /// Return the wires of a dynamic computation.
   /// The mapping pass currently assumes that
   /// - there are no `qco.alloc` operation
@@ -597,6 +674,28 @@ private:
                   newForOp.getRegion(),
                   DenseSet<Value>(newForOp.getRegionIterArgs().begin(),
                                   newForOp.getRegionIterArgs().end()));
+            })
+            .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+              assert(qubits.size() == layout.nqubits());
+
+              llvm::for_each(whileOp.getInits(),
+                             [&](Value v) { qubits.erase(v); });
+
+              auto newWhileOp = extend(whileOp, to_vector(qubits), rewriter);
+              for (const auto [init, result] : llvm::zip_equal(
+                       newWhileOp.getInits(), newWhileOp.getResults())) {
+                qubits.insert(result);
+                qubits.erase(init);
+              }
+
+              const auto beforeArgs = newWhileOp.getBeforeArguments();
+              const auto afterArgs = newWhileOp.getAfterArguments();
+              stack.emplace_back(
+                  newWhileOp.getBefore(),
+                  DenseSet<Value>(beforeArgs.begin(), beforeArgs.end()));
+              stack.emplace_back(
+                  newWhileOp.getAfter(),
+                  DenseSet<Value>(afterArgs.begin(), afterArgs.end()));
             })
             .Case<IfOp>([&](IfOp ifOp) {
               assert(qubits.size() == layout.nqubits());
@@ -1032,7 +1131,7 @@ private:
                     released.emplace_back(op);
                   }
                 })
-                .template Case<scf::ForOp, IfOp>(
+                .template Case<scf::ForOp, scf::WhileOp, IfOp>(
                     [&](auto op) { stack.emplace_back(op, indices); });
           }
 
@@ -1054,6 +1153,17 @@ private:
                          RoutingBundle& parent, Statistics& stats,
                          IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = item;
+
+    const auto constructMap = [](const RoutingBundle& bundle) {
+      DenseMap<size_t, Value> curr(bundle.wires.size());
+      for (size_t i = 0; i < bundle.wires.size(); ++i) {
+        const auto prog = bundle.infos.lookupProgram(i);
+        const auto hw = bundle.layout.getHardwareIndex(prog);
+        curr.try_emplace(hw, bundle.wires[i].qubit());
+      }
+      return curr;
+    };
+
     const LogicalResult res =
         TypeSwitch<Operation*, LogicalResult>(op)
             .template Case<scf::ForOp>([&](scf::ForOp forOp) {
@@ -1105,6 +1215,115 @@ private:
               if constexpr (Mode == RoutingMode::Hot) {
                 sortTopologically(forOp.getBody());
               }
+
+              return success();
+            })
+            .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+              auto condOp = cast<scf::ConditionOp>(
+                  whileOp.getBeforeBody()->getTerminator());
+              auto yieldOp =
+                  cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator());
+
+              // Construct "before" child bundle. Particularly, find the
+              // block-argument (forward) or condition-yielded value (backward)
+              // for each result qubit the selected (via indices) iterators
+              // point at.
+
+              SmallVector<size_t> perm(indices.size());
+              RoutingBundle befChild{.layout = parent.layout};
+
+              for (size_t i : indices) {
+                const auto prog = parent.infos.lookupProgram(i);
+                const auto res = cast<OpResult>(parent.wires[i].qubit());
+                const auto resNum = res.getResultNumber();
+                const auto arg = whileOp.getBeforeArguments()[resNum];
+                const auto index = befChild.wires.size();
+
+                perm[res.getResultNumber()] =
+                    parent.layout.getHardwareIndex(prog);
+
+                if constexpr (Direction == WireDirection::Forward) {
+                  befChild.wires.emplace_back(arg);
+                } else {
+                  befChild.wires.emplace_back(condOp.getArgs()[resNum]);
+                }
+
+                befChild.infos.map(index, prog);
+              }
+
+              if (failed(route<Direction, Mode>(befChild, stats, rewriter))) {
+                return failure();
+              }
+
+              if constexpr (Mode == RoutingMode::Hot) {
+                for_each(befChild.wires,
+                         [](auto& it) { std::advance(it, -2); });
+
+                const auto m = constructMap(befChild);
+                rewriter->setInsertionPoint(condOp);
+                rewriter->replaceOpWithNewOp<scf::ConditionOp>(
+                    condOp, condOp.getCondition(),
+                    to_vector(
+                        map_range(perm, [&](size_t hw) { return m.at(hw); })));
+                sortTopologically(whileOp.getBeforeBody());
+              }
+
+              RoutingBundle aftChild{.layout = befChild.layout};
+
+              const auto rng = [&] -> ValueRange {
+                if constexpr (Direction == WireDirection::Forward) {
+                  return whileOp.getAfterArguments();
+                }
+
+                return yieldOp.getResults();
+              }();
+
+              for (const auto& [i, arg] : llvm::enumerate(rng)) {
+                const auto hw = perm[i];
+                const auto prog = befChild.layout.getProgramIndex(hw);
+                aftChild.wires.emplace_back(arg);
+                aftChild.infos.map(i, prog);
+              }
+
+              if (failed(route<Direction, Mode>(aftChild, stats, rewriter))) {
+                return failure();
+              }
+
+              if constexpr (Mode == RoutingMode::Hot) {
+                for_each(aftChild.wires,
+                         [](auto& it) { std::advance(it, -2); });
+              }
+
+              const auto swaps = restore(aftChild.layout, parent.layout);
+              insertSWAPs<Mode>(swaps, aftChild, stats, rewriter);
+
+              // Re-order the targets of the yield operation, to match the input
+              // order of hardware indices and ensure qubits[i] = yield[i] and
+              // sort topologically to fix any occurring SSA dominance errors.
+
+              if constexpr (Mode == RoutingMode::Hot) {
+                const auto m = constructMap(aftChild);
+                rewriter->setInsertionPoint(yieldOp);
+                rewriter->replaceOpWithNewOp<scf::YieldOp>(
+                    yieldOp, to_vector(map_range(
+                                 perm, [&](size_t hw) { return m.at(hw); })));
+
+                sortTopologically(whileOp.getAfterBody());
+              }
+
+              // Propagate the correct layout and index-to-program mapping to
+              // the parent.
+
+              WireInfos realigendInfos;
+              for (size_t i = 0; i < parent.wires.size(); ++i) {
+                const auto oldProg = parent.infos.lookupProgram(i);
+                const auto oldHw = parent.layout.getHardwareIndex(oldProg);
+                const auto newProg = befChild.layout.getProgramIndex(oldHw);
+                realigendInfos.map(i, newProg);
+              }
+
+              parent.layout = befChild.layout;
+              parent.infos = std::move(realigendInfos);
 
               return success();
             })
@@ -1186,18 +1405,15 @@ private:
                     return isa<qco::YieldOp>(std::next(it).operation());
                   }));
 
-                  DenseMap<size_t, Value> curr(child.wires.size());
-                  for (size_t i = 0; i < child.wires.size(); ++i) {
-                    const auto prog = child.infos.lookupProgram(i);
-                    const auto hw = child.layout.getHardwareIndex(prog);
-                    curr.try_emplace(hw, child.wires[i].qubit());
-                  }
+                  const auto m = constructMap(child);
 
                   auto yieldOp = cast<YieldOp>(body->getTerminator());
                   const SmallVector<Value> targets(
-                      map_range(perm, [&](size_t hw) { return curr.at(hw); }));
+                      map_range(perm, [&](size_t hw) { return m.at(hw); }));
                   rewriter->setInsertionPoint(yieldOp);
-                  rewriter->replaceOpWithNewOp<qco::YieldOp>(yieldOp, targets);
+                  rewriter->replaceOpWithNewOp<YieldOp>(
+                      yieldOp, to_vector(map_range(
+                                   perm, [&](size_t hw) { return m.at(hw); })));
 
                   sortTopologically(body);
                 }
