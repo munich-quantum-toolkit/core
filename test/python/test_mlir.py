@@ -178,6 +178,23 @@ def test_compile_program_qiskit_quantum_circuit() -> None:
     _assert_bell_program(result, measured=True)
 
 
+def test_compile_program_qiskit_quantum_circuit_subclass() -> None:
+    """Compile a user-defined Qiskit ``QuantumCircuit`` subclass."""
+
+    class CustomQuantumCircuit(QuantumCircuit):
+        """A user-defined circuit type."""
+
+    qc = CustomQuantumCircuit(2, 2)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure(range(2), range(2))
+
+    result = compile_program(qc)
+
+    assert isinstance(result, QCProgram)
+    _assert_bell_program(result, measured=True)
+
+
 def test_jeff_program_round_trip(tmp_path: Path) -> None:
     """Store and load a `JeffProgram` through bytes and a file."""
     path = tmp_path / "program.jeff"

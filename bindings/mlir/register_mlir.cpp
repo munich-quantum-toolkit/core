@@ -202,9 +202,9 @@ programFromPath(const std::filesystem::path& path) {
   }
   const auto programType =
       nb::cast<std::string>(program.type().attr("__name__"));
-  const auto programModule =
-      nb::cast<std::string>(program.type().attr("__module__"));
-  if (programModule.starts_with("qiskit.")) {
+  const auto sysModules =
+      nb::cast<nb::dict>(nb::module_::import_("sys").attr("modules"));
+  if (sysModules.contains("qiskit.circuit")) {
     const auto qiskitCircuit =
         nb::module_::import_("qiskit.circuit").attr("QuantumCircuit");
     if (nb::isinstance(program, qiskitCircuit)) {
