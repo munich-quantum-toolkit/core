@@ -65,6 +65,41 @@ void compareFiles(const std::string& file1, const std::string& file2) {
   ASSERT_EQ(str1, str2);
 }
 
+void expectRccxSourceRoundTrip(const std::string& source,
+                               const bool openQASM3) {
+  const auto imported = qasm3::Importer::imports(source);
+  ASSERT_EQ(imported.getNops(), 1U);
+  ASSERT_EQ(imported.front()->getType(), qc::RCCX);
+  EXPECT_EQ(imported.front()->getNcontrols(), 0U);
+
+  std::ostringstream oss;
+  imported.dumpOpenQASM(oss, openQASM3);
+  EXPECT_EQ(oss.str(), source);
+}
+
+void expectRccxExport(const qc::QuantumComputation& circuit,
+                      const bool openQASM3, const std::string_view snippet,
+                      const std::size_t expectedNops,
+                      const std::size_t expectedNcontrols,
+                      const std::size_t opIndex = 0,
+                      const std::string_view extraSnippet = {},
+                      const bool expectNegControl = false) {
+  const auto qasm = circuit.toQASM(openQASM3);
+  EXPECT_NE(qasm.find(snippet), std::string::npos);
+  if (!extraSnippet.empty()) {
+    EXPECT_NE(qasm.find(extraSnippet), std::string::npos);
+  }
+
+  const auto roundTrip = qasm3::Importer::imports(qasm);
+  ASSERT_EQ(roundTrip.getNops(), expectedNops);
+  const auto& op = roundTrip.at(opIndex);
+  EXPECT_EQ(op->getType(), qc::RCCX);
+  EXPECT_EQ(op->getNcontrols(), expectedNcontrols);
+  if (expectNegControl) {
+    EXPECT_EQ(op->getControls().begin()->type, qc::Control::Type::Neg);
+  }
+}
+
 } // namespace
 
 TEST_F(IO, importAndDumpQASM) {
@@ -492,95 +527,44 @@ TEST_F(IO, NativeTwoQubitGateImportAndExport) {
   }
 }
 
-TEST_F(IO, NativeThreeQubitGateImportAndExport) {
-  qc = qasm3::Importer::imports(
-      "OPENQASM 3.0; include \"stdgates.inc\"; qubit[3] q; "
-      "rccx q[0], q[1], q[2];");
-  EXPECT_EQ(qc.front()->getType(), qc::RCCX);
-
-  const auto qasm = qc.toQASM(true);
-  EXPECT_NE(qasm.find("rccx q[0], q[1], q[2];"), std::string::npos);
-
-  const auto roundTrip = qasm3::Importer::imports(qasm);
-  EXPECT_EQ(roundTrip.getNops(), 1U);
-  EXPECT_EQ(roundTrip.front()->getType(), qc::RCCX);
+TEST_F(IO, RccxUncontrolledOpenQASMRoundTrip) {
+  expectRccxSourceRoundTrip("// i 0 1 2\n"
+                            "// o 0 1 2\n"
+                            "OPENQASM 2.0;\n"
+                            "include \"qelib1.inc\";\n"
+                            "qreg q[3];\n"
+                            "rccx q[0], q[1], q[2];\n",
+                            false);
+  expectRccxSourceRoundTrip("// i 0 1 2\n"
+                            "// o 0 1 2\n"
+                            "OPENQASM 3.0;\n"
+                            "include \"stdgates.inc\";\n"
+                            "qubit[3] q;\n"
+                            "rccx q[0], q[1], q[2];\n",
+                            true);
 }
 
-TEST_F(IO, ControlledRccxOpenQASM3Export) {
-  qc.addQubitRegister(4);
-  qc.crccx(3, 0, 1, 2);
-
-  const auto qasm = qc.toQASM(true);
-  EXPECT_NE(qasm.find("ctrl @ rccx q[3], q[0], q[1], q[2];"),
-            std::string::npos);
-
-  const auto roundTrip = qasm3::Importer::imports(qasm);
-  EXPECT_EQ(roundTrip.getNops(), 1U);
-  EXPECT_EQ(roundTrip.front()->getType(), qc::RCCX);
-  EXPECT_EQ(roundTrip.front()->getNcontrols(), 1U);
-}
-
-TEST_F(IO, NegControlledRccxOpenQASM3Export) {
-  qc.addQubitRegister(4);
-  qc.crccx(0_nc, 1, 2, 3);
-
-  const auto qasm = qc.toQASM(true);
-  EXPECT_NE(qasm.find("negctrl @ rccx q[0], q[1], q[2], q[3];"),
-            std::string::npos);
-
-  const auto roundTrip = qasm3::Importer::imports(qasm);
-  EXPECT_EQ(roundTrip.getNops(), 1U);
-  EXPECT_EQ(roundTrip.front()->getType(), qc::RCCX);
-  EXPECT_EQ(roundTrip.front()->getNcontrols(), 1U);
-  EXPECT_EQ(roundTrip.front()->getControls().begin()->type,
-            qc::Control::Type::Neg);
-}
-
-TEST_F(IO, RccxOpenQASM2RoundTrip) {
-  const std::string source = "// i 0 1 2\n"
-                             "// o 0 1 2\n"
-                             "OPENQASM 2.0;\n"
-                             "include \"qelib1.inc\";\n"
-                             "qreg q[3];\n"
-                             "rccx q[0], q[1], q[2];\n";
-
-  qc = qasm3::Importer::imports(source);
-  EXPECT_EQ(qc.getNops(), 1U);
-  EXPECT_EQ(qc.front()->getType(), qc::RCCX);
-  EXPECT_EQ(qc.front()->getNcontrols(), 0U);
-
-  std::ostringstream oss;
-  qc.dumpOpenQASM(oss, false);
-  EXPECT_EQ(oss.str(), source);
-}
-
-TEST_F(IO, ControlledRccxOpenQASM2Export) {
+TEST_F(IO, RccxControlledOpenQASMRoundTrip) {
   qc.addQubitRegister(4);
   qc.crccx(0, 1, 2, 3);
-  std::ostringstream oss;
-  qc.dumpOpenQASM(oss, false);
-  const auto qasm = oss.str();
-  EXPECT_NE(qasm.find("rc3x q[0], q[1], q[2], q[3];"), std::string::npos);
+  expectRccxExport(qc, false, "rc3x q[0], q[1], q[2], q[3];", 1, 1);
+  expectRccxExport(qc, true, "ctrl @ rccx q[0], q[1], q[2], q[3];", 1, 1);
 
-  const auto roundTrip = qasm3::Importer::imports(qasm);
-  EXPECT_EQ(roundTrip.getNops(), 1U);
-  EXPECT_EQ(roundTrip.front()->getType(), qc::RCCX);
-  EXPECT_EQ(roundTrip.front()->getNcontrols(), 1U);
-}
+  qc.reset();
+  qc.addQubitRegister(4);
+  qc.crccx(0_nc, 1, 2, 3);
+  // OpenQASM 2 encodes negative controls via X conjugation around rc3x.
+  expectRccxExport(qc, false, "rc3x q[0], q[1], q[2], q[3];", 3, 1, 1,
+                   "x q[0];\n");
+  expectRccxExport(qc, true, "negctrl @ rccx q[0], q[1], q[2], q[3];", 1, 1, 0,
+                   {}, true);
 
-TEST_F(IO, MultiControlledRccxOpenQASM2RoundTrip) {
+  qc.reset();
   qc.addQubitRegister(5);
   qc.mcrccx({0, 1}, 2, 3, 4);
-  std::ostringstream oss;
-  qc.dumpOpenQASM(oss, false);
-  const auto qasm = oss.str();
-  EXPECT_NE(qasm.find("ccrccx q[0], q[1], q[2], q[3], q[4];"),
-            std::string::npos);
-
-  const auto roundTrip = qasm3::Importer::imports(qasm);
-  EXPECT_EQ(roundTrip.getNops(), 1U);
-  EXPECT_EQ(roundTrip.front()->getType(), qc::RCCX);
-  EXPECT_EQ(roundTrip.front()->getNcontrols(), 2U);
+  expectRccxExport(qc, false, "ccrccx q[0], q[1], q[2], q[3], q[4];", 1, 2);
+  expectRccxExport(qc, true, "ctrl(2) @ rccx q[0], q[1], q[2], q[3], q[4];", 1,
+                   2);
 }
 
 TEST_F(IO, ParameterizedGateDefinition) {
