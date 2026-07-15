@@ -167,12 +167,17 @@ dependency has the required behavior in isolation.
 
 ## MQT Core requirements
 
-In addition to the requirements above, an MQT Core ExecPlan must state the task
-worktree and branch it owns, preserve unrelated user changes, and never modify
-another task's worktree. It must follow the repository's `AGENTS.md` and
-`docs/ai_usage.md`, including the rules for generated files, secrets, AI
-disclosure, authorization, and human review. An ExecPlan does not itself
-authorize external GitHub actions.
+In addition to the requirements above, an MQT Core ExecPlan must describe its
+repository-relative scope and any coordination boundaries relevant to the task.
+It must preserve unrelated user changes and never modify another task's
+worktree. Do not record local filesystem paths, developer accounts, a specific
+checkout location, or an ephemeral branch name: the checked-in plan must work
+from any clone. Describe command locations as "from the repository root" and
+refer to files by repository-relative path.
+
+It must follow the repository's `AGENTS.md` and `docs/ai_usage.md`, including
+the rules for generated files, secrets, AI disclosure, authorization, and human
+review. An ExecPlan does not itself authorize external GitHub actions.
 
 Use the exact Core commands relevant to the change. For example, name the
 applicable CMake preset and focused C++ or MLIR test binary; for Python changes,
