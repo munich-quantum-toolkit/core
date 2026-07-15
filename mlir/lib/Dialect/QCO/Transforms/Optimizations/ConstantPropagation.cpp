@@ -588,8 +588,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     }
     if (implicitSwap) {
-      throw std::runtime_error("Constant propagation does not allow implicit
-                               "
+      throw std::runtime_error("Constant propagation does not allow implicit "
                                "swapping of qubits in branching.");
     }
     // remove if Op and replace the values in the module and union table
