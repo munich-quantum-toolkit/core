@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "DebugInfo.hpp"     // IWYU pragma: export
 #include "Statement_fwd.hpp" // IWYU pragma: export
 #include "Types_fwd.hpp"
 #include "ir/Permutation.hpp"
@@ -34,22 +35,6 @@ enum ComparisonKind : std::uint8_t;
 
 namespace qasm3 {
 class InstVisitor;
-
-struct DebugInfo {
-  size_t line;
-  size_t column;
-  std::string filename;
-  std::shared_ptr<DebugInfo> parent;
-
-  DebugInfo(const size_t l, const size_t c, std::string file,
-            std::shared_ptr<DebugInfo> parentDebugInfo = nullptr)
-      : line(l), column(c), filename(std::move(std::move(file))),
-        parent(std::move(parentDebugInfo)) {}
-
-  [[nodiscard]] std::string toString() const {
-    return filename + ":" + std::to_string(line) + ":" + std::to_string(column);
-  }
-};
 
 // Expressions
 class Expression {

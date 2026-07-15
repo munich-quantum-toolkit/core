@@ -30,6 +30,9 @@ extern const std::string allocLargeRegister;
 /// Measures a single qubit into a single classical bit.
 extern const std::string singleMeasurementToSingleBit;
 
+/// Measures a two-qubit register into a two-bit register.
+extern const std::string singleMeasurementToTwoBits;
+
 /// Repeatedly measures a single qubit into the same classical bit.
 extern const std::string repeatedMeasurementToSameBit;
 
@@ -77,9 +80,6 @@ extern const std::string singleNegControlledX;
 
 /// Creates a circuit with a multi-controlled X gate.
 extern const std::string multipleControlledX;
-
-/// Creates a circuit with a triple-controlled X gate in OpenQASM 2.
-extern const std::string tripleControlledXOpenQASM2;
 
 /// Creates a circuit with an X gate that is positively and negatively
 /// controlled.
@@ -355,11 +355,10 @@ extern const std::string ctrlTwo;
 /// non-controlled gate.
 extern const std::string ctrlTwoMixed;
 
+// --- IfOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
-
-/// Creates a circuit with an if operation with a negated condition.
-extern const std::string ifNot;
 
 /// Creates a circuit with an if operation with two qubits.
 extern const std::string ifTwoQubits;
@@ -369,6 +368,104 @@ extern const std::string ifEmptyThen;
 
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+extern const std::string nestedIfOpForLoop;
+
+// --- WhileOp -------------------------------------------------------------- //
+
+/// Creates a circuit with a while operation using a while loop.
+extern const std::string simpleWhileReset;
+
+// --- ForOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple for operation with a register.
+extern const std::string simpleForLoop;
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+extern const std::string nestedForLoopIfOp;
+
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+extern const std::string nestedForLoopWhileOp;
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is separately allocated from the
+/// register.
+extern const std::string nestedForLoopCtrlOpWithSeparateQubit;
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is extracted from the register.
+extern const std::string nestedForLoopCtrlOpWithExtractedQubit;
+
+// --- Broadcasting --------------------------------------------------------- //
+
+/// Broadcasts a controlled X gate over a register and a single qubit.
+extern const std::string broadcastRegisterAndQubit;
+
+/// Broadcasts a compound gate over a register and a single qubit.
+extern const std::string broadcastCompoundGate;
+
+// --- Expressions ---------------------------------------------------------- //
+
+/// Uses an arithmetic expression with parentheses and precedence as an angle.
+extern const std::string expressionArithmetic;
+
+/// Uses negated expressions as angles.
+extern const std::string expressionUnaryMinus;
+
+/// Uses the built-in constants `pi`, `tau`, and `euler` as angles.
+extern const std::string expressionBuiltinConstants;
+
+/// Uses each built-in math function as an angle.
+extern const std::string expressionMathFunctions;
+
+/// Uses nested built-in math functions as an angle.
+extern const std::string expressionNestedMathFunctions;
+
+/// Uses a `const float` and an expression over it as angles.
+extern const std::string expressionConstFloat;
+
+/// Uses a mutable `float` that is reassigned between two gates.
+extern const std::string expressionMutableFloat;
+
+/// Uses `const int` expressions as a register size, as indices, and as an
+/// angle.
+extern const std::string expressionConstIntArithmetic;
+
+/// Uses a mutable `int` derived from a loop variable as a qubit index.
+extern const std::string expressionDynamicIntIndex;
+
+/// Uses `mod` of a loop variable as a qubit index.
+extern const std::string expressionModIndex;
+
+// --- Conditions ----------------------------------------------------------- //
+
+/// Branches on the literals `true` and `false`.
+extern const std::string conditionLiteral;
+
+/// Branches on a measurement.
+extern const std::string conditionMeasurement;
+
+/// Branches on a conjunction of two measured bits.
+extern const std::string conditionAnd;
+
+/// Branches on a disjunction of two measured bits, with an else branch.
+extern const std::string conditionOr;
+
+/// Branches on a negated conjunction combined with a disjunction.
+extern const std::string conditionNotAndOr;
+
+/// Branches on `bool` variables holding conditions.
+extern const std::string conditionBoolVariable;
+
+/// Branches on an indexed bit of a classical register.
+extern const std::string conditionIndexedBit;
+
+/// Loops while a conjunction of two measurements holds.
+extern const std::string conditionWhileAnd;
 
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

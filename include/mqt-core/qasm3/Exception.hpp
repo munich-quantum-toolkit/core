@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "Statement.hpp"
+#include "DebugInfo.hpp"
 
 #include <exception>
 #include <memory>

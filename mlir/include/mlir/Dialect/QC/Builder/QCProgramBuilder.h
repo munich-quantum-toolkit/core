@@ -101,6 +101,21 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Create a constant floating-point value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.floatConstant(3.14);
+   * ```
+   * ```mlir
+   * %c = arith.constant 3.14 : f64
+   * ```
+   */
+  Value floatConstant(double value);
+
+  /**
    * @brief Create a constant bool value
    * @param value The value to store in the constant
    * @return The value produced by the constant operation
@@ -129,6 +144,21 @@ public:
    * ```
    */
   Value intConstant(int64_t value);
+
+  /**
+   * @brief Create a constant index value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.indexConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : index
+   * ```
+   */
+  Value indexConstant(int64_t value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management

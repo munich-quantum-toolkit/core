@@ -77,6 +77,11 @@ void QCProgramBuilder::retype(TypeRange returnTypes) {
   mainFunc.setType(funcType);
 }
 
+Value QCProgramBuilder::floatConstant(const double value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
+}
+
 Value QCProgramBuilder::boolConstant(const bool value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
@@ -85,6 +90,11 @@ Value QCProgramBuilder::boolConstant(const bool value) {
 Value QCProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QCProgramBuilder::indexConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getIndexAttr(value)).getResult();
 }
 
 Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {

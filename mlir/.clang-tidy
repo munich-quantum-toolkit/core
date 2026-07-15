@@ -8,6 +8,7 @@ Checks: |
   -bugprone-throwing-static-initialization,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-slicing,
   -misc-use-anonymous-namespace,
   -modernize-type-traits,
   -*-const-correctness,
