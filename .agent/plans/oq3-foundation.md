@@ -156,6 +156,11 @@ changes and other worktrees remain outside scope.
       upstream MLIR check set. It retains correctness and performance checks
       suitable for MLIR while avoiding repository-wide checks that diagnose
       generated operation code and intentional MLIR conventions.
+- [x] (2026-07-15 19:25Z) Addressed the remaining PR lint diagnostics in source
+      rather than broadening suppressions: removed two redundant constant moves,
+      made the parser operator table's members explicit, converted the implicit
+      statement counter deliberately, and initialized the defensive unary-op
+      fallback. The complete lint gate and focused parser/frontend tests pass.
 - [ ] Expand behavior-driven frontend and lowering tests until the C++ patch
       coverage of the OQ3 foundation reaches the configured 90% target (current
       Codecov report: 76.78%, 322 missed lines). Do not lower the threshold or

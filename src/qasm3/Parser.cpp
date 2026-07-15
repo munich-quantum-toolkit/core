@@ -44,43 +44,44 @@ std::optional<BinaryOperatorInfo> getBinaryOperator(const Token::Kind kind) {
   using Op = BinaryExpression::Op;
   switch (kind) {
   case Kind::DoublePipe:
-    return BinaryOperatorInfo{Op::LogicalOr, 1};
+    return BinaryOperatorInfo{.op = Op::LogicalOr, .precedence = 1};
   case Kind::DoubleAmpersand:
-    return BinaryOperatorInfo{Op::LogicalAnd, 2};
+    return BinaryOperatorInfo{.op = Op::LogicalAnd, .precedence = 2};
   case Kind::Pipe:
-    return BinaryOperatorInfo{Op::BitwiseOr, 3};
+    return BinaryOperatorInfo{.op = Op::BitwiseOr, .precedence = 3};
   case Kind::Caret:
-    return BinaryOperatorInfo{Op::BitwiseXor, 4};
+    return BinaryOperatorInfo{.op = Op::BitwiseXor, .precedence = 4};
   case Kind::Ampersand:
-    return BinaryOperatorInfo{Op::BitwiseAnd, 5};
+    return BinaryOperatorInfo{.op = Op::BitwiseAnd, .precedence = 5};
   case Kind::DoubleEquals:
-    return BinaryOperatorInfo{Op::Equal, 6};
+    return BinaryOperatorInfo{.op = Op::Equal, .precedence = 6};
   case Kind::NotEquals:
-    return BinaryOperatorInfo{Op::NotEqual, 6};
+    return BinaryOperatorInfo{.op = Op::NotEqual, .precedence = 6};
   case Kind::LessThan:
-    return BinaryOperatorInfo{Op::LessThan, 7};
+    return BinaryOperatorInfo{.op = Op::LessThan, .precedence = 7};
   case Kind::LessThanEquals:
-    return BinaryOperatorInfo{Op::LessThanOrEqual, 7};
+    return BinaryOperatorInfo{.op = Op::LessThanOrEqual, .precedence = 7};
   case Kind::GreaterThan:
-    return BinaryOperatorInfo{Op::GreaterThan, 7};
+    return BinaryOperatorInfo{.op = Op::GreaterThan, .precedence = 7};
   case Kind::GreaterThanEquals:
-    return BinaryOperatorInfo{Op::GreaterThanOrEqual, 7};
+    return BinaryOperatorInfo{.op = Op::GreaterThanOrEqual, .precedence = 7};
   case Kind::LeftShift:
-    return BinaryOperatorInfo{Op::LeftShift, 8};
+    return BinaryOperatorInfo{.op = Op::LeftShift, .precedence = 8};
   case Kind::RightShift:
-    return BinaryOperatorInfo{Op::RightShift, 8};
+    return BinaryOperatorInfo{.op = Op::RightShift, .precedence = 8};
   case Kind::Plus:
-    return BinaryOperatorInfo{Op::Add, 9};
+    return BinaryOperatorInfo{.op = Op::Add, .precedence = 9};
   case Kind::Minus:
-    return BinaryOperatorInfo{Op::Subtract, 9};
+    return BinaryOperatorInfo{.op = Op::Subtract, .precedence = 9};
   case Kind::Asterisk:
-    return BinaryOperatorInfo{Op::Multiply, 10};
+    return BinaryOperatorInfo{.op = Op::Multiply, .precedence = 10};
   case Kind::Slash:
-    return BinaryOperatorInfo{Op::Divide, 10};
+    return BinaryOperatorInfo{.op = Op::Divide, .precedence = 10};
   case Kind::Percent:
-    return BinaryOperatorInfo{Op::Modulo, 10};
+    return BinaryOperatorInfo{.op = Op::Modulo, .precedence = 10};
   case Kind::DoubleAsterisk:
-    return BinaryOperatorInfo{Op::Power, 12, true};
+    return BinaryOperatorInfo{
+        .op = Op::Power, .precedence = 12, .rightAssociative = true};
   default:
     return std::nullopt;
   }
@@ -214,7 +215,7 @@ std::vector<std::shared_ptr<Statement>> Parser::parseProgram() {
 
     const bool implicitStatement = scanner.top().isImplicitInclude;
     statements.push_back(parseStatement());
-    implicitStatementCount += implicitStatement;
+    implicitStatementCount += static_cast<std::size_t>(implicitStatement);
   }
   return statements;
 }
@@ -819,7 +820,7 @@ std::shared_ptr<Expression> Parser::parseUnaryExpression() {
   if (current().kind == Token::Kind::Minus ||
       current().kind == Token::Kind::ExclamationPoint ||
       current().kind == Token::Kind::Tilde) {
-    UnaryExpression::Op op;
+    UnaryExpression::Op op = UnaryExpression::Op::Negate;
     switch (current().kind) {
     case Token::Kind::Minus:
       op = UnaryExpression::Op::Negate;

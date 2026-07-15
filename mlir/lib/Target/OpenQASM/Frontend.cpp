@@ -181,7 +181,7 @@ private:
 
   ExpressionId addExpression(ScalarExpression expression) {
     const auto id = static_cast<ExpressionId>(program.expressions.size());
-    program.expressions.push_back(std::move(expression));
+    program.expressions.push_back(expression);
     return id;
   }
 
@@ -207,7 +207,7 @@ private:
       expression.constant = std::get<double>(value.value);
       break;
     }
-    return addExpression(std::move(expression));
+    return addExpression(expression);
   }
 
   ExpressionId
