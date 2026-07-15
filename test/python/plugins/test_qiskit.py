@@ -419,10 +419,11 @@ def test_operations() -> None:
     assert len(qiskit_qc) == len(qc)
 
 
-def test_controlled_rccx() -> None:
+@pytest.mark.parametrize("ctrl_state", ["0", "1"])
+def test_controlled_rccx(ctrl_state: str) -> None:
     """Controlled RCCX imports via gate definition and round-trips."""
     qc = QuantumCircuit(4)
-    qc.append(RCCXGate().control(1), [0, 1, 2, 3])
+    qc.append(RCCXGate().control(1, ctrl_state=ctrl_state), [0, 1, 2, 3])
 
     mqt_qc = qiskit_to_mqt(qc)
     assert len(mqt_qc) == 1

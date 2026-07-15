@@ -319,7 +319,7 @@ def _emplace_operation(
         return _add_two_target_operation(qc, OpType.xx_plus_yy, qargs, params, qubit_map)
 
     if name == "rccx":
-        qc.append(StandardOperation([qubit_map[q] for q in qargs], OpType.rccx))
+        qc.append(StandardOperation(qubits, OpType.rccx))
         return []
 
     if name == "if_else":
