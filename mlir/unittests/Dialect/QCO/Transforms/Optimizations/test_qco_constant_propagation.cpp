@@ -225,6 +225,7 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
       });
   // programBuilder.y(qRange01[1]);
   module = programBuilder.finalize();
+  std::cout << "After program finalization." << std::endl;
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
   qRef[0] = referenceBuilder.h(qRef[0]);
@@ -233,6 +234,7 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   referenceBuilder.measure(qRef0);
   // referenceBuilder.y(qRef1);
   reference = referenceBuilder.finalize();
+  std::cout << "After reference finalization." << std::endl;
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
 
