@@ -56,9 +56,9 @@ concept custom_property_value =
 
 namespace detail {
 template <custom_property_value T>
-[[nodiscard]] auto
+[[nodiscard]] std::optional<T>
 decodeCustomValue(const std::optional<std::vector<std::byte>>& bytes,
-                  const std::string& description) -> std::optional<T> {
+                  const std::string& description) {
   if (!bytes) {
     return std::nullopt;
   }

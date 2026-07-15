@@ -11,7 +11,6 @@
 #include "DeviceApi.hpp"
 #include "DeviceState.hpp"
 #include "qdmi/Device.hpp"
-#include "qdmi/DeviceManager.hpp"
 
 #include <gtest/gtest.h>
 #include <qdmi/device.h>
@@ -101,12 +100,13 @@ public:
       if (typed->owner->behavior == ChildBehavior::SelectionFailure) {
         return QDMI_ERROR_BADSTATE;
       }
-      std::memcpy(&typed->child, value, sizeof(typed->child));
+      std::memcpy(static_cast<void*>(&typed->child), value,
+                  sizeof(QDMI_Child_Device));
       return QDMI_SUCCESS;
     };
     api->device_session_create_device_job = [](QDMI_Device_Session session,
                                                QDMI_Device_Job* job) -> int {
-      auto* owner = asSession(session)->owner;
+      const auto* owner = asSession(session)->owner;
       owner->job_.owner = owner;
       *job = reinterpret_cast<QDMI_Device_Job>(&owner->job_);
       return QDMI_SUCCESS;
@@ -115,7 +115,7 @@ public:
     api->device_job_set_parameter = [](QDMI_Device_Job job,
                                        QDMI_Device_Job_Parameter parameter,
                                        size_t size, const void* value) {
-      return asJob(job)->owner->setJobParameter(job, parameter, size, value);
+      return ScriptedDeviceApi::setJobParameter(job, parameter, size, value);
     };
     api->device_job_query_property =
         [](QDMI_Device_Job job, QDMI_Device_Job_Property property, size_t size,
@@ -137,13 +137,13 @@ public:
       return QDMI_SUCCESS;
     };
     api->device_job_wait = [](QDMI_Device_Job job, size_t timeout) -> int {
-      return asJob(job)->owner->waitJob(job, timeout) ? QDMI_SUCCESS
+      return ScriptedDeviceApi::waitJob(job, timeout) ? QDMI_SUCCESS
                                                       : QDMI_ERROR_TIMEOUT;
     };
     api->device_job_get_results = [](QDMI_Device_Job job,
                                      QDMI_Job_Result result, size_t size,
                                      void* data, size_t* sizeRet) {
-      return asJob(job)->owner->getJobResult(job, result, size, data, sizeRet);
+      return ScriptedDeviceApi::getJobResult(job, result, size, data, sizeRet);
     };
     api->device_session_query_device_property =
         [](QDMI_Device_Session session, QDMI_Device_Property property,
@@ -155,15 +155,15 @@ public:
         [](QDMI_Device_Session session, QDMI_Site site,
            QDMI_Site_Property property, size_t size, void* value,
            size_t* sizeRet) {
-          return asSession(session)->owner->querySite(session, site, property,
-                                                      size, value, sizeRet);
+          return ScriptedDeviceApi::querySite(session, site, property, size,
+                                              value, sizeRet);
         };
     api->device_session_query_operation_property =
         [](QDMI_Device_Session session, QDMI_Operation operation,
            size_t numSites, const QDMI_Site* sites, size_t numParams,
            const double* params, QDMI_Operation_Property property, size_t size,
            void* value, size_t* sizeRet) {
-          return asSession(session)->owner->queryOperation(
+          return ScriptedDeviceApi::queryOperation(
               session, operation, numSites, sites, numParams, params, property,
               size, value, sizeRet);
         };
@@ -185,8 +185,9 @@ public:
     delete typed;
   }
 
-  [[nodiscard]] auto setJobParameter(QDMI_Device_Job, QDMI_Device_Job_Parameter,
-                                     size_t, const void*) const -> int {
+  [[nodiscard]] static auto setJobParameter(QDMI_Device_Job,
+                                            QDMI_Device_Job_Parameter, size_t,
+                                            const void*) -> int {
     return QDMI_SUCCESS;
   }
   [[nodiscard]] auto queryJobProperty(QDMI_Device_Job,
@@ -212,11 +213,11 @@ public:
   [[nodiscard]] auto checkJob(QDMI_Device_Job) const -> QDMI_Job_Status {
     return jobStatus;
   }
-  [[nodiscard]] auto waitJob(QDMI_Device_Job, size_t) const -> bool {
+  [[nodiscard]] static auto waitJob(QDMI_Device_Job, size_t) -> bool {
     return false;
   }
-  [[nodiscard]] auto getJobResult(QDMI_Device_Job, QDMI_Job_Result, size_t,
-                                  void*, size_t*) const -> int {
+  [[nodiscard]] static auto getJobResult(QDMI_Device_Job, QDMI_Job_Result,
+                                         size_t, void*, size_t*) -> int {
     return QDMI_ERROR_NOTSUPPORTED;
   }
 
@@ -297,15 +298,16 @@ public:
     return QDMI_SUCCESS;
   }
 
-  [[nodiscard]] auto querySite(QDMI_Device_Session, QDMI_Site,
-                               QDMI_Site_Property, size_t, void*, size_t*) const
-      -> int {
+  [[nodiscard]] static auto querySite(QDMI_Device_Session, QDMI_Site,
+                                      QDMI_Site_Property, size_t, void*,
+                                      size_t*) -> int {
     return QDMI_ERROR_NOTSUPPORTED;
   }
-  [[nodiscard]] auto queryOperation(QDMI_Device_Session, QDMI_Operation, size_t,
-                                    const QDMI_Site*, size_t, const double*,
-                                    QDMI_Operation_Property, size_t, void*,
-                                    size_t*) const -> int {
+  [[nodiscard]] static auto queryOperation(QDMI_Device_Session, QDMI_Operation,
+                                           size_t, const QDMI_Site*, size_t,
+                                           const double*,
+                                           QDMI_Operation_Property, size_t,
+                                           void*, size_t*) -> int {
     return QDMI_ERROR_NOTSUPPORTED;
   }
 };

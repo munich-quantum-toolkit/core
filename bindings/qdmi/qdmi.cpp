@@ -23,6 +23,7 @@
 #include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
 #include <nlohmann/json.hpp>         // NOLINT(misc-include-cleaner)
+#include <qdmi/constants.h>
 
 #include <cstddef>
 #include <filesystem>

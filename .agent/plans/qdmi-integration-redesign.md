@@ -91,6 +91,9 @@ the planning refinements from pull requests 1907 and 1908.
 - [x] (2026-07-15 13:31Z) Committed and pushed the reviewed refinement and
       replaced the pull request description with the version-neutral design,
       review-driven corrections, current validation, and issue-closing lines.
+- [x] (2026-07-15 14:06Z) Removed the docstring-only Python tests, addressed
+      every clang-tidy concern from the first CI report, and reproduced the
+      affected checks with Clang 22.1.8 and warnings treated as errors.
 - [ ] Inspect the final CI run triggered by the plan-status commit and address
   any integration regressions.
 
@@ -142,6 +145,12 @@ the planning refinements from pull requests 1907 and 1908.
   floats are accepted. Evidence: the binding signature includes `int`, the
   generated stub simplifies it, and the Python regression test submits an
   integer custom parameter successfully through binding conversion.
+- Observation: CMake's C++ dependency scanner records response-file paths
+  relative to the build directory, so invoking clang-tidy from the source root
+  cannot find generated module maps. Evidence: the first local reproduction
+  failed on missing `.modmap` files; generating the affected dyndep targets and
+  running Clang 22.1.8 from the build directory checked all seven reported
+  translation units without warnings.
 
 ## Decision Log
 
@@ -204,11 +213,12 @@ wording in historical release records. A fresh-context review then strengthened
 process-wide provider reuse, operation/site ownership, disabled runtime
 replacement semantics, migration examples, and integer custom-job coverage. The
 reviewed native suites pass 165 object-model tests and 20 registry/manager
-tests; all 64 QDMI specification tests pass with two expected skips; and 173
+tests; all 64 QDMI specification tests pass with two expected skips; and 171
 focused Python QDMI and estimator tests pass. Stub regeneration, the
-warning-as-error documentation build, and the full lint suite succeed. The
-artifact audit is clean and the reviewed refinement and pull request description
-are published; CI observation remains.
+warning-as-error documentation build, and the full lint suite succeed. The first
+CI clang-tidy report has also been addressed and reproduced locally with Clang
+22.1.8. The artifact audit is clean and the reviewed refinement and pull request
+description are published; CI observation remains.
 
 ## Context and Orientation
 
@@ -409,10 +419,11 @@ Focused validation after the fresh-context review produced:
     object model: 165 tests passed
     registry and manager: 20 tests passed
     QDMI CTest selection: 64 tests passed, 2 expected skips
-    Python QDMI and estimator: 173 tests passed
+    Python QDMI and estimator: 171 tests passed
     stub generation: successful, expected QDMI stub update generated
     documentation: successful with -W
     lint: successful, all hooks passed
+    reported clang-tidy translation units: clean with Clang 22.1.8 and warnings as errors
 
 The final artifact audit is clean.
 

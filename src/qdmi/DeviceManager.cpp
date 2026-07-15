@@ -16,6 +16,7 @@
 #include "qdmi/DeviceRegistry.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -56,7 +57,7 @@ struct DeviceManager::Impl {
   DeviceRegistry registry;
   mutable std::mutex registryMutex;
 
-  [[nodiscard]] Device
+  [[nodiscard]] static Device
   openDefinition(const DeviceDefinition& definition,
                  const SessionParameters& sessionOverrides) {
     const auto library =
@@ -107,7 +108,7 @@ Device DeviceManager::open(const std::string_view id,
     }
     definition = *found;
   }
-  return impl_->openDefinition(definition, sessionOverrides);
+  return Impl::openDefinition(definition, sessionOverrides);
 }
 
 OpenAllResult
@@ -116,7 +117,7 @@ DeviceManager::openAll(const SessionParameters& sessionOverrides) {
   for (const auto& definition : definitions()) {
     try {
       result.devices.emplace(
-          definition.id, impl_->openDefinition(definition, sessionOverrides));
+          definition.id, Impl::openDefinition(definition, sessionOverrides));
     } catch (const std::exception& error) {
       result.errors.emplace(definition.id, error.what());
     }

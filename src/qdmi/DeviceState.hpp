@@ -11,11 +11,11 @@
 #pragma once
 
 #include "DeviceApi.hpp"
-#include "qdmi/DeviceManager.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
 #include <qdmi/device.h>
 
-#include <cstddef>
 #include <memory>
 #include <utility>
 #include <vector>

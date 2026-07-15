@@ -10,6 +10,7 @@
 
 #include "DeviceState.hpp"
 
+#include "DeviceApi.hpp"
 #include "qdmi/DeviceRegistry.hpp"
 #include "qdmi/common/Common.hpp"
 
@@ -28,8 +29,7 @@ namespace qdmi::detail {
 namespace {
 [[nodiscard]] auto openSession(const DeviceApi& api,
                                const SessionParameters& parameters,
-                               const QDMI_Child_Device child)
-    -> QDMI_Device_Session {
+                               QDMI_Child_Device child) -> QDMI_Device_Session {
   QDMI_Device_Session session = nullptr;
   throwIfError(api.device_session_alloc(&session),
                "Allocating QDMI device session");

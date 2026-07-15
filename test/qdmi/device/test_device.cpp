@@ -10,6 +10,7 @@
 
 #include "qdmi/Device.hpp"
 #include "qdmi/DeviceManager.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <gmock/gmock-matchers.h>

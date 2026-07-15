@@ -8,11 +8,14 @@
  * Licensed under the MIT License
  */
 
+#include "qdmi/Device.hpp"
 #include "qdmi/DeviceManager.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -383,6 +386,7 @@ TEST(DeviceManager, ConcurrentOpenCallsShareTheLibrarySafely) {
       .id = "concurrent", .library = SC_DEVICE_LIBRARY, .prefix = "MQT_SC"});
   qdmi::DeviceManager manager(options);
   std::vector<std::future<std::string>> names;
+  names.reserve(4);
   for (size_t i = 0; i < 4; ++i) {
     names.emplace_back(std::async(std::launch::async, [&manager] {
       return manager.open("concurrent").getName();

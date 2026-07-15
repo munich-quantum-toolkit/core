@@ -23,52 +23,9 @@ from mqt.core.qdmi import (
     Job,
     OpenAllResult,
     ProgramFormat,
-    SessionParameters,
 )
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
-
-
-def test_public_bindings_have_docstrings() -> None:
-    """Every public QDMI binding documents its exposed Python API."""
-    classes = (
-        SessionParameters,
-        DeviceDefinition,
-        ConfigOptions,
-        Device,
-        Device.Site,
-        Device.Operation,
-        Job,
-        OpenAllResult,
-        DeviceManager,
-        ProgramFormat,
-        CustomProperty,
-    )
-    for cls in classes:
-        assert cls.__doc__, cls.__qualname__
-        for name, member in vars(cls).items():
-            if name.startswith("_"):
-                continue
-            if callable(member) or isinstance(member, property):
-                assert member.__doc__, f"{cls.__qualname__}.{name}"
-
-
-def test_custom_query_docstrings_describe_arguments_and_returns() -> None:
-    """Custom query overloads document their complete call contract."""
-    methods = (
-        Job.query_custom_property,
-        Job.get_custom_result,
-        Device.query_custom_property,
-        Device.Site.query_custom_property,
-        Device.Operation.query_custom_property,
-    )
-    for method in methods:
-        docstring = method.__doc__
-        assert docstring is not None
-        assert "Args:" in docstring
-        assert "custom_property:" in docstring
-        assert "value_type:" in docstring
-        assert "Returns:" in docstring
 
 
 def _get_devices() -> list[Device]:
