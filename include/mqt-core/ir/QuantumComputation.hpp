@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file QuantumComputation.hpp
+ * @brief Quantum-computation intermediate representation.
+ */
+
 #pragma once
 
 #include "Definitions.hpp"
@@ -322,11 +326,12 @@ public:
   /**
    * @brief Add measurements to all qubits
    * @param addBits Whether to add new classical bits to the circuit
+   * @param addBarrier Whether to add a barrier before the measurements
    * @details This function adds measurements to all qubits in the circuit and
    * appends a new classical register (named "meas") to the circuit if addBits
    * is true. Otherwise, qubit q is measured into classical bit q.
    */
-  void measureAll(bool addBits = true);
+  void measureAll(bool addBits = true, bool addBarrier = true);
 
   void bridge(const Targets& targets);
 

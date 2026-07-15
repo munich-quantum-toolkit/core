@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Parser.hpp
+ * @brief Parser for OpenQASM 3 source programs.
+ */
+
 /*
  * This file is part of MQT QFR library which is released under the MIT license.
  * See file README.md or go to https://www.cda.cit.tum.de/research/quantum/ for
@@ -114,7 +118,7 @@ public:
 
   std::shared_ptr<BarrierStatement> parseBarrierStatement();
 
-  std::shared_ptr<Statement> parseDeclaration(bool isConst);
+  std::shared_ptr<Statement> parseDeclaration(bool isConst, bool isOutput);
 
   std::shared_ptr<GateDeclaration> parseGateDefinition();
 

@@ -15,6 +15,8 @@ target_link_libraries(
           MLIRParser
           MLIRSupport
           MLIRQCTranslation
+          MLIRJeffTranslation
+          MLIRJeffToQCO
           MLIRBytecodeWriter
           MLIRTargetLLVMIRExport
           MLIRBuiltinToLLVMIRTranslation

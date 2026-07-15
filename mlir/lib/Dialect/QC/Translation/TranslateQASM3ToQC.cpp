@@ -220,7 +220,44 @@ public:
     }
   }
 
-  OwningOpRef<ModuleOp> finalize() { return builder.finalize(); }
+  OwningOpRef<ModuleOp> finalize() {
+    if (outputRegisters.empty()) {
+      outputRegisters = allBitRegisters;
+    }
+
+    if (outputRegisters.empty()) {
+      return builder.finalize();
+    }
+
+    // Collect measurement results for all output bit registers
+    SmallVector<Value> returnValues;
+    for (const auto& regName : outputRegisters) {
+      auto it = bitValues.find(regName);
+      if (it == bitValues.end()) {
+        llvm::errs() << "Output register '" << regName
+                     << "' was never measured.\n";
+        return nullptr;
+      }
+
+      auto expectedSize = classicalRegisters[regName].size;
+      if (it->second.size() < expectedSize) {
+        llvm::errs() << "Not all bits of output register '" << regName
+                     << "' have been measured.\n";
+        return nullptr;
+      }
+      for (auto bit : it->second) {
+        if (!bit) {
+          llvm::errs() << "Not all bits of output register '" << regName
+                       << "' have been measured.\n";
+          return nullptr;
+        }
+        returnValues.push_back(bit);
+      }
+    }
+
+    builder.retype(ValueRange(returnValues).getTypes());
+    return builder.finalize(returnValues);
+  }
 
 private:
   QCProgramBuilder builder;
@@ -237,6 +274,12 @@ private:
 
   /// Map from classical-register name to measurement results.
   llvm::StringMap<SmallVector<Value>> bitValues;
+
+  /// Names of all bit registers, in declaration order.
+  SmallVector<std::string> allBitRegisters;
+
+  /// Names of classical registers declared as output, in declaration order.
+  SmallVector<std::string> outputRegisters;
 
   /// Map from gate identifier to OpenQASM 3 definition.
   llvm::StringMap<std::shared_ptr<qasm3::Gate>> gates;
@@ -361,6 +404,13 @@ public:
     case qasm3::Int:
     case qasm3::Uint: {
       classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
+      if (sizedType->type == qasm3::Bit) {
+        allBitRegisters.push_back(id);
+        if (stmt->isOutput || openQASM2CompatMode) {
+          // We return `output` bits in QASM3, or all named bits in QASM2.
+          outputRegisters.push_back(id);
+        }
+      }
       break;
     }
     default:

@@ -44,7 +44,7 @@ class Device final : public Singleton<Device> {
     /**
      * @brief The scale factor of the unit.
      * @details This factor must be multiplied with all values before
-     * interpreting them in the unit specified by @ref Unit::unit.
+     * interpreting them in the unit specified by @c unit.
      */
     double scaleFactor = 1.0;
   };
@@ -177,11 +177,10 @@ public:
       : session_(session) {}
   /**
    * @brief Frees the device job.
-   * @note This function just forwards to the session's @ref freeDeviceJob
-   * function. This function is needed because the interface only provides the
-   * job handle to the @ref QDMI_job_free function and the job's session handle
-   * is private.
-   * @see QDMI_job_free
+   * @note This function just forwards to the session's @ref
+   * MQT_NA_QDMI_Device_Session_impl_d::freeDeviceJob function. This function is
+   * needed because the interface only provides the job handle to the @ref
+   * QDMI_job_free function and the job's session handle is private.
    */
   auto free() -> void;
 

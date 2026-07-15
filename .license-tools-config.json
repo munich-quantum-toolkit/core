@@ -28,6 +28,7 @@
     ".*\\.css",
     ".*\\.json",
     ".*\\.html",
+    ".*\\.tag",
     ".*\\.tfc",
     ".*\\.qc",
     ".*\\.real",
@@ -35,6 +36,7 @@
     "uv\\.lock",
     "py\\.typed",
     ".*build.*",
-    "(^|/)LICENSE$"
+    "(^|/)LICENSE$",
+    "patterns.txt"
   ]
 }

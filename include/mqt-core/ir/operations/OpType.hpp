@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file OpType.hpp
+ * @brief Quantum operation type enumeration and helper functions.
+ */
+
 #pragma once
 
 #include <cstdint>

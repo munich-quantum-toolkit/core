@@ -44,7 +44,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
     Note:
         The conversion currently supports only operations that are natively
         supported by the IQM hardware. Unsupported operations will raise
-        :class:`UnsupportedOperationError`.
+        :class:`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`.
 
     Args:
         circuit: The Qiskit quantum circuit to convert.

@@ -12,6 +12,14 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
+  ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
+  ([#1897]) ([**@burgholzer**])
+- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
+  libraries ([#1895]) ([**@burgholzer**])
+- ✨ Add support for custom job parameters to C++ and Python FoMaC library
+  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -27,8 +35,8 @@ releases may include breaking changes.
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
   single-qubit unitary runs via Euler resynthesis ([#1672])
   ([**@simon1hofmann**], [**@burgholzer**])
-- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
-  ([**@rturrado**])
+- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766], [#1815])
+  ([**@rturrado**], [**@burgholzer**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
   containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
@@ -37,10 +45,10 @@ releases may include breaking changes.
   rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776]) ([**@denialhaag**], [**@burgholzer**])
+  [#1676], [#1706], [#1776], [#1836]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870])
+  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904])
   ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
@@ -48,14 +56,16 @@ releases may include breaking changes.
   [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
   [#1570], [#1572], [#1573], [#1580], [#1602], [#1603], [#1620], [#1623],
   [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700],
-  [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765],
-  [#1780], [#1781], [#1782], [#1787], [#1806], [#1807], [#1808], [#1823],
-  [#1824], [#1830], [#1869], [#1872]) ([**@burgholzer**], [**@denialhaag**],
-  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
-  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1755], [#1762],
+  [#1765], [#1780], [#1781], [#1782], [#1787], [#1806], [#1807], [#1815],
+  [#1808], [#1823], [#1824], [#1830], [#1869], [#1872]) ([**@burgholzer**],
+  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
+- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
+  ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
   [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
@@ -627,6 +637,10 @@ changelogs._
 
 <!-- PR links -->
 
+[#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
+[#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
+[#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
+[#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
 [#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
@@ -637,6 +651,7 @@ changelogs._
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
+[#1836]: https://github.com/munich-quantum-toolkit/core/pull/1836
 [#1832]: https://github.com/munich-quantum-toolkit/core/pull/1832
 [#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
@@ -644,6 +659,7 @@ changelogs._
 [#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
+[#1815]: https://github.com/munich-quantum-toolkit/core/pull/1815
 [#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
@@ -662,6 +678,7 @@ changelogs._
 [#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
+[#1755]: https://github.com/munich-quantum-toolkit/core/pull/1755
 [#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
 [#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748

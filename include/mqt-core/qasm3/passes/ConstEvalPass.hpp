@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file ConstEvalPass.hpp
+ * @brief Compile-time evaluation pass for OpenQASM 3 expressions.
+ */
+
 #pragma once
 
 #include "qasm3/InstVisitor.hpp"

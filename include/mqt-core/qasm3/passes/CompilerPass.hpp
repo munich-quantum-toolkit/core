@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file CompilerPass.hpp
+ * @brief Base interface for OpenQASM 3 compiler passes.
+ */
+
 #pragma once
 
 namespace qasm3 {
