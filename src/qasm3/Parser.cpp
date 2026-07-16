@@ -279,7 +279,7 @@ void Parser::parseInclude() {
   std::unique_ptr<std::istream> is{nullptr};
   if (in->fail()) {
     if (filename == "stdgates.inc") {
-      // stdgates.inc has already been included implicitly, so we just return.
+      // stdgates.inc has already been included implicitly, so we just return
       if (includeDebugInfo) {
         includeDebugInfo = includeDebugInfo->parent;
       }

@@ -31,8 +31,6 @@ const std::string STDGATES =
 
 // Non-natively supported gates from
 // https://github.com/Qiskit/qiskit/blob/main/qiskit/qasm/libs/qelib1.inc
-// Note: `rccx` is a native builtin (OpType::RCCX). `rc3x` is the relative CCCX
-// and must not be confused with a controlled `rccx`.
 const std::string QE1LIB = "gate rc3x a,b,c,d {\n"
                            "  u2(0,pi) d; u1(pi/4) d; \n"
                            "  cx c,d; u1(-pi/4) d; u2(0,pi) d; \n"
