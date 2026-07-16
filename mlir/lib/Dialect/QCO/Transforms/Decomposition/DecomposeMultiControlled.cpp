@@ -61,6 +61,7 @@ public:
     std::forward<Fn>(fn)(nested);
   }
 
+  // Single- and two-qubit primitives
   void h(std::size_t q) {
     setWire(q, HOp::create(*builder_, loc_, wire(q)).getOutputQubit(0));
   }
@@ -110,6 +111,37 @@ public:
     cx(control, target);
   }
 
+  // Building blocks left as QCO ops (further lowered by min-controls)
+  void emitCcx(std::size_t c0, std::size_t c1, std::size_t target) {
+    emitCtrl({c0, c1}, target, [](OpBuilder& builder, Location loc, Value arg) {
+      return XOp::create(builder, loc, arg).getOutputQubit(0);
+    });
+  }
+
+  void emitThreeControlledX(std::size_t c0, std::size_t c1, std::size_t c2,
+                            std::size_t target) {
+    emitCtrl({c0, c1, c2}, target,
+             [](OpBuilder& builder, Location loc, Value arg) {
+               return XOp::create(builder, loc, arg).getOutputQubit(0);
+             });
+  }
+
+  void emitRCCX(std::size_t c0, std::size_t c1, std::size_t target) {
+    auto rccxOp =
+        RCCXOp::create(*builder_, loc_, wire(c0), wire(c1), wire(target));
+    setWire(c0, rccxOp.getOutputQubit(0));
+    setWire(c1, rccxOp.getOutputQubit(1));
+    setWire(target, rccxOp.getOutputQubit(2));
+  }
+
+  void ccp(double theta, std::size_t c0, std::size_t c1, std::size_t target) {
+    emitCtrl({c0, c1}, target,
+             [theta](OpBuilder& builder, Location loc, Value arg) {
+               return POp::create(builder, loc, arg, theta).getOutputQubit(0);
+             });
+  }
+
+  // Fully expanded elementary sequences
   void emitRCCXSequence(std::size_t c0, std::size_t c1, std::size_t target) {
     h(target);
     t(target);
@@ -191,35 +223,7 @@ public:
     h(3);
   }
 
-  void emitCcx(std::size_t c0, std::size_t c1, std::size_t target) {
-    emitCtrl({c0, c1}, target, [](OpBuilder& builder, Location loc, Value arg) {
-      return XOp::create(builder, loc, arg).getOutputQubit(0);
-    });
-  }
-
-  void emitThreeControlledX(std::size_t c0, std::size_t c1, std::size_t c2,
-                            std::size_t target) {
-    emitCtrl({c0, c1, c2}, target,
-             [](OpBuilder& builder, Location loc, Value arg) {
-               return XOp::create(builder, loc, arg).getOutputQubit(0);
-             });
-  }
-
-  void emitRCCX(std::size_t c0, std::size_t c1, std::size_t target) {
-    auto rccxOp =
-        RCCXOp::create(*builder_, loc_, wire(c0), wire(c1), wire(target));
-    setWire(c0, rccxOp.getOutputQubit(0));
-    setWire(c1, rccxOp.getOutputQubit(1));
-    setWire(target, rccxOp.getOutputQubit(2));
-  }
-
-  void ccp(double theta, std::size_t c0, std::size_t c1, std::size_t target) {
-    emitCtrl({c0, c1}, target,
-             [theta](OpBuilder& builder, Location loc, Value arg) {
-               return POp::create(builder, loc, arg, theta).getOutputQubit(0);
-             });
-  }
-
+  // Dirty-ancilla gadgets for HP24
   void addGadget(std::size_t q0, std::size_t q1, std::size_t q2, bool invert) {
     if (!invert) {
       emitGadgetBody(*this, q0, q1, q2);
@@ -298,12 +302,27 @@ struct ControlledGateSpec {
 
 } // namespace
 
-static SmallVector<Value> threeControlledWires(ValueRange controls,
-                                               Value target) {
-  SmallVector<Value> wires(controls.begin(), controls.end());
-  wires.push_back(target);
-  return wires;
+//===----------------------------------------------------------------------===//
+// HP24 low-level helpers
+//===----------------------------------------------------------------------===//
+
+static void ux(GateEmitter& builder, std::size_t q1, std::size_t q2,
+               std::size_t q3) {
+  builder.cx(q1, q3);
+  builder.cx(q1, q2);
+  builder.emitCcx(q2, q3, q1);
 }
+
+static void uz(GateEmitter& builder, std::size_t q1, std::size_t q2,
+               std::size_t q3) {
+  builder.emitCcx(q2, q3, q1);
+  builder.cx(q1, q2);
+  builder.cx(q2, q3);
+}
+
+//===----------------------------------------------------------------------===//
+// n-dirty relative / absolute MCX
+//===----------------------------------------------------------------------===//
 
 static void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   if (numControls == 1) {
@@ -330,19 +349,9 @@ static void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   }
 }
 
-static void ux(GateEmitter& builder, std::size_t q1, std::size_t q2,
-               std::size_t q3) {
-  builder.cx(q1, q3);
-  builder.cx(q1, q2);
-  builder.emitCcx(q2, q3, q1);
-}
-
-static void uz(GateEmitter& builder, std::size_t q1, std::size_t q2,
-               std::size_t q3) {
-  builder.emitCcx(q2, q3, q1);
-  builder.cx(q1, q2);
-  builder.cx(q2, q3);
-}
+//===----------------------------------------------------------------------===//
+// Dirty increment
+//===----------------------------------------------------------------------===//
 
 static void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
   const std::size_t lastQubit = n - 1;
@@ -409,6 +418,10 @@ static void incrementNDirty(GateEmitter& builder, std::size_t n) {
   }
 }
 
+//===----------------------------------------------------------------------===//
+// Relative-phase MCX
+//===----------------------------------------------------------------------===//
+
 static void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   const std::size_t target = numControls;
 
@@ -464,6 +477,10 @@ static void synthRelativeMcxNDirty(GateEmitter& builder,
     synthMcxNDirtyI15(builder, numControls);
   }
 }
+
+//===----------------------------------------------------------------------===//
+// Dirty-ancilla increment (HP24)
+//===----------------------------------------------------------------------===//
 
 static void incrementDirty(GateEmitter& builder, std::size_t n,
                            std::size_t numDirtyAncillae, bool flagAdd) {
@@ -542,6 +559,10 @@ static void incrementDirty(GateEmitter& builder, std::size_t n,
   }
 }
 
+//===----------------------------------------------------------------------===//
+// HP24 multi-controlled core
+//===----------------------------------------------------------------------===//
+
 static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   const std::size_t lastControl = n - 1;
   const std::size_t c0 = n - 2;
@@ -593,6 +614,17 @@ static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
     }
     emitter.ccp(phi, 0, c0, c1);
   }
+}
+
+//===----------------------------------------------------------------------===//
+// Rewrite entry points (called by patterns)
+//===----------------------------------------------------------------------===//
+
+static SmallVector<Value> threeControlledWires(ValueRange controls,
+                                               Value target) {
+  SmallVector<Value> wires(controls.begin(), controls.end());
+  wires.push_back(target);
+  return wires;
 }
 
 static SmallVector<Value> synthesizeRCCX(OpBuilder& builder, Location loc,
@@ -658,6 +690,10 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
   return wires;
 }
 
+//===----------------------------------------------------------------------===//
+// CtrlOp body matchers
+//===----------------------------------------------------------------------===//
+
 /// Match a controlled Pauli-X or Pauli-Z body.
 static std::optional<ControlledTarget>
 matchControlledPauli(UnitaryOpInterface inner) {
@@ -686,6 +722,10 @@ matchControlledXzOrPhase(UnitaryOpInterface inner) {
 }
 
 namespace {
+
+//===----------------------------------------------------------------------===//
+// Patterns and pass
+//===----------------------------------------------------------------------===//
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
