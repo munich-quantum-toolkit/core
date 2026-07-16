@@ -138,7 +138,6 @@ public:
                    const FrontendOptions& frontendOptions)
       : syntax(syntaxProgram), sources(sourceManager),
         options(frontendOptions) {
-    program.gatePolicy = options.gatePolicy;
     scopes.emplace_back();
   }
 
