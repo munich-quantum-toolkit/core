@@ -44,17 +44,12 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  * @return True if the operation is a diagonal gate, false otherwise.
  */
 static bool isDiagonal(Operation* op) {
-  if (auto c = dyn_cast<CtrlOp>(op)) {
-    if (c.getNumBodyUnitaries() != 1) {
-      return false;
-    }
-    return isDiagonal(c.getBodyUnitary(0));
+  if (op == nullptr) {
+    return false;
   }
-  if (auto i = dyn_cast<InvOp>(op)) {
-    if (i.getNumBodyUnitaries() != 1) {
-      return false;
-    }
-    return isDiagonal(i.getBodyUnitary(0));
+  if (isa<CtrlOp, InvOp>(op)) {
+    return isDiagonal(utils::getSoleBodyUnitary<UnitaryOpInterface>(
+        *op->getRegion(0).getBlocks().begin()));
   }
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
