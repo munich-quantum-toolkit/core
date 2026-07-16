@@ -538,12 +538,9 @@ h q;
 }
 
 /**
- * @brief Test: Multi-controlled decomposition pass is invoked during
- * optimization
+ * @brief Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
  *
- * @details
- * We run the decomposition pass and check whether the QCO IR changes.
- * Correctness of the pass is tested in a dedicated test.
+ * @details Correctness of the decomposition is tested in a dedicated suite.
  */
 TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   auto module = mlir::qc::QCProgramBuilder::build(
@@ -559,8 +556,7 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
   const auto before = qco->copy();
-  ASSERT_TRUE(
-      qco->runPassPipeline("decompose-multi-controlled{min-controls=2}"));
+  ASSERT_TRUE(qco->decomposeMultiControlled(2));
   EXPECT_NE(qco->str(), before.str());
 }
 
@@ -587,6 +583,18 @@ TEST_F(CompilerPipelineTest,
        RejectsDecomposeMultiControlledMinControlsBelowTwo) {
   EXPECT_FALSE(isDecomposeMultiControlledConfigValid(1U));
   EXPECT_TRUE(isDecomposeMultiControlledConfigValid(2U));
+
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_FALSE(qco->decomposeMultiControlled(1));
 }
 
 TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
