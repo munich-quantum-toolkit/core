@@ -788,15 +788,15 @@ static void emitMcpSp22Step(GateEmitter& emitter, double phi,
       pairs.emplace_back(control, target);
     }
   }
-  std::stable_sort(pairs.begin(), pairs.end(),
-                   [reverse](const auto& a, const auto& b) {
-                     const std::size_t sumA = a.first + a.second;
-                     const std::size_t sumB = b.first + b.second;
-                     return reverse ? sumA > sumB : sumA < sumB;
-                   });
+  std::ranges::stable_sort(pairs, [reverse](const auto& a, const auto& b) {
+    const std::size_t sumA = a.first + a.second;
+    const std::size_t sumB = b.first + b.second;
+    return reverse ? sumA > sumB : sumA < sumB;
+  });
 
   for (const auto& [control, target] : pairs) {
-    long exponent = static_cast<long>(target) - static_cast<long>(control);
+    std::int64_t exponent =
+        static_cast<std::int64_t>(target) - static_cast<std::int64_t>(control);
     if (control == 0) {
       exponent -= 1;
     }
