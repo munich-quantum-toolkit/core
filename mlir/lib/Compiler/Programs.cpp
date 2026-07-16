@@ -361,6 +361,15 @@ bool QCOProgram::liftHadamards() {
       "failed to lift Hadamard gates"));
 }
 
+bool QCOProgram::decomposeMultiControlled(const std::uint64_t minControls) {
+  return succeeded(runPasses(
+      module(),
+      [minControls](OpPassManager& pm) {
+        populateDecomposeMultiControlledPipeline(pm, minControls);
+      },
+      "failed to decompose multi-controlled gates"));
+}
+
 bool QCOProgram::placeAndRoute(
     const std::span<const std::pair<std::size_t, std::size_t>> coupling,
     const std::size_t nlookahead, const float alpha, const float lambda,
