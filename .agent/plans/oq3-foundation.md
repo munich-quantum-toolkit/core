@@ -77,6 +77,14 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       QIR, and legacy-parser tests; warning-as-error documentation; repository
       lint; diff checks; and sequential coverage. The substantive frontend and
       emitter surface reached 90.7 percent line coverage.
+- [x] (2026-07-16) Incorporated the first post-implementation review: tightened
+      the accepted-input contract for runtime indices, made structured custom
+      gate capability checks transitive, added native result-bearing SCF
+      conversion regressions, verified result types across Jeff, and routed the
+      Base profile through the optimized Jeff round trip.
+- [x] (2026-07-16) Ran the complete affected validation and repository checks
+      after the first review fixes. Clean sequential coverage reached 91.0
+      percent lines over the substantive frontend and emitter sources.
 
 ## Surprises & Discoveries
 
@@ -126,8 +134,20 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
 - Observation: the Jeff representation cannot preserve the frontend's runtime
   `cf.assert` bounds checks. Evidence: genuinely runtime-dynamic indexing
   reaches verified QC and QCO but QCO-to-Jeff rejects `cf.assert`; an index
-  resolved by cleanup traverses the complete chain. This limitation is
-  documented rather than erased or hidden by an expected-failure fixture flag.
+  resolved by cleanup traverses the complete chain. The direct emitter now
+  accepts only indices proven resolvable by conservative scalar dataflow and
+  reports a source-located target diagnostic for the remainder.
+
+- Observation: `scf.for` is an automatic allocation scope, so selecting the
+  nearest such scope left result-bearing `scf.if` scratch storage inside a loop.
+  Evidence: the nested native regression found the alloca in the loop body.
+  Hoisting to the enclosing function allocates each conditional's storage once.
+
+- Observation: successful final QIR alone does not prove that observable entry
+  results survived intermediate formats. Evidence: the full-chain tests now
+  compare entry result types in QC, optimized QCO, Jeff bytes and restored Jeff,
+  reconstructed QCO, and reconstructed QC before checking the QIR status
+  signature and output-recording calls.
 
 ## Decision Log
 
@@ -193,11 +213,23 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   still receive the historical i64 status result. Date/Author: 2026-07-16 /
   Codex.
 
-- Decision: do not erase bounds assertions merely to make runtime dynamic
-  indexing serializable as Jeff. Rationale: doing so would silently weaken
-  source semantics. The full-chain corpus covers a dynamically written index
-  that cleanup resolves; general runtime dynamic dispatch remains explicitly
-  supported through QC but not claimed as Jeff-compatible. Date/Author:
+- Decision: accept only compile-time or cleanup-resolvable dynamic indices at
+  the QC boundary. Rationale: erasing bounds assertions would weaken source
+  semantics, while returning QC that fails the required Jeff path violates the
+  accepted-input contract. Conservative scalar dataflow retains constant
+  variables and static loop induction and rejects measurement-dependent values
+  with a source location. Date/Author: 2026-07-16 / Codex.
+
+- Decision: retain the second structured-terminator conversion phase in
+  QC-to-QCO. Rationale: result-bearing `if`, `for`, and `while` need the final
+  region-local QCO value maps, and converting terminators in the first worklist
+  makes correctness depend on traversal order. Four native regressions now cover
+  the parent and terminator contracts. Date/Author: 2026-07-16 / Codex.
+
+- Decision: compute structured-control capability transitively and memoize it
+  per reachable custom gate. Rationale: modifiers on a wrapper around a looped
+  gate are just as unsupported as modifiers on the looped gate itself, while
+  unused definitions must have no effect on accepted source. Date/Author:
   2026-07-16 / Codex.
 
 ## Outcomes & Retrospective
@@ -215,14 +247,18 @@ math parameters, nested `if`/`for`, measurement-controlled `while`, mutable bit
 state carried by a loop, a dynamically written index resolved during cleanup,
 reset, barrier, and mixed positive and negative controls.
 
-The only new downstream production correction is in Jeff-to-QCO: entry points
-with observable results now regain their compiler marker without losing those
-results. Its native regression is independent of OpenQASM. General runtime
-dynamic indexing remains a deliberate limitation of the Jeff path because Jeff
-cannot represent the source bounds assertion. The frontend and direct QC target
-continue to support and test it; the documentation does not overclaim full-chain
-support. All final validation gates passed, including 90.7 percent line coverage
-over the substantive frontend and emitter sources.
+The downstream production corrections are constrained to demonstrated conversion
+invariants. QC-to-QCO preserves classical results alongside linear quantum state
+through `if`, `for`, and `while`, converts their terminators after region
+contents, and allocates conditional scratch storage once per function.
+Jeff-to-QCO restores entry-point markers without losing observable results. Both
+areas have parser-independent native regressions.
+
+General runtime-dynamic indices are valid source but are rejected at direct QC
+emission because Jeff cannot preserve their required bounds assertion. Constant
+variables, static loop induction, and a dynamically written value proven by
+cleanup remain accepted. All accepted corpus sources preserve their entry result
+types across the Jeff round trip and record outputs in final QIR.
 
 ## Context and Orientation
 
@@ -583,9 +619,9 @@ programs. One new native Jeff-to-QCO regression proves that a serialized entry
 point with observable results regains its marker without losing those results.
 The validation results are:
 
-    OpenQASM frontend and target: 87 tests passed.
+    OpenQASM frontend and target: 92 tests passed.
     QC translation: 241 tests passed.
-    QC-to-QCO: 121 tests passed.
+    QC-to-QCO: 124 tests passed.
     QCO-to-QC: 121 tests passed.
     Jeff round trip: 113 tests passed.
     Compiler pipeline: 142 tests passed, including 26 corpus cases.
@@ -594,7 +630,7 @@ The validation results are:
     Legacy OpenQASM parser: 97 tests passed.
     Warning-as-error documentation: passed.
     Repository lint and diff checks: passed.
-    Frontend and direct-emitter line coverage: 90.7 percent (4001/4409).
+    Frontend and direct-emitter line coverage: 91.0 percent (4148/4558).
 
 No public GitHub action is authorized by this plan.
 

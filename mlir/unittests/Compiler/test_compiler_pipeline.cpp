@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -33,8 +34,11 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -52,6 +56,7 @@
 #include <fstream>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -271,6 +276,11 @@ namespace {
 class OpenQASMCompilerPipelineTest
     : public testing::TestWithParam<qasm::OpenQASMProgram> {};
 
+struct EntryInfo {
+  std::vector<std::string> resultTypes;
+  std::size_t outputRecordingCalls = 0;
+};
+
 [[nodiscard]] std::string
 openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   std::string name = info.param.name.str();
@@ -282,7 +292,140 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   return name;
 }
 
-void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name) {
+[[nodiscard]] std::string printType(const Type type) {
+  std::string text;
+  llvm::raw_string_ostream stream(text);
+  type.print(stream);
+  return text;
+}
+
+[[nodiscard]] std::optional<EntryInfo> inspectEntry(const llvm::StringRef ir) {
+  DialectRegistry registry;
+  registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, cf::ControlFlowDialect,
+                  func::FuncDialect, math::MathDialect, memref::MemRefDialect,
+                  scf::SCFDialect, tensor::TensorDialect, ub::UBDialect,
+                  LLVM::LLVMDialect, jeff::JeffDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto module = parseSourceString<ModuleOp>(ir, &context);
+  if (!module) {
+    return std::nullopt;
+  }
+
+  EntryInfo info;
+  if (auto main = module->lookupSymbol<func::FuncOp>("main")) {
+    for (const auto type : main.getFunctionType().getResults()) {
+      info.resultTypes.push_back(printType(type));
+    }
+    return info;
+  }
+
+  auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  if (!main) {
+    return std::nullopt;
+  }
+  const auto result = main.getFunctionType().getReturnType();
+  if (!isa<LLVM::LLVMVoidType>(result)) {
+    info.resultTypes.push_back(printType(result));
+  }
+  main.walk([&](LLVM::CallOp call) {
+    const auto callee = call.getCallee();
+    if (callee &&
+        (*callee == QIR_RECORD_OUTPUT || *callee == QIR_ARRAY_RECORD_OUTPUT)) {
+      ++info.outputRecordingCalls;
+    }
+  });
+  return info;
+}
+
+[[nodiscard]] testing::AssertionResult
+roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
+                              std::optional<QCProgram>& restored,
+                              std::vector<std::string>& resultTypes) {
+  auto qc = QCProgram::fromQASMString(source.source.str());
+  if (!qc) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": OpenQASM to QC";
+  }
+  const auto qcEntry = inspectEntry(qc->str());
+  if (!qcEntry) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": inspect QC entry";
+  }
+  resultTypes = qcEntry->resultTypes;
+
+  const auto matchesEntry = [&](const Program& program,
+                                const llvm::StringRef stage) {
+    const auto entry = inspectEntry(program.str());
+    if (!entry) {
+      return testing::AssertionFailure()
+             << source.name.str() << ": inspect " << stage.str() << " entry";
+    }
+    if (entry->resultTypes != resultTypes) {
+      return testing::AssertionFailure()
+             << source.name.str() << ": " << stage.str()
+             << " changed entry result types";
+    }
+    return testing::AssertionSuccess();
+  };
+
+  auto qco = std::move(*qc).intoQCO();
+  if (!qco || !qco->cleanup() || !qco->runPassPipeline("mqt-qco-default") ||
+      !qco->cleanup()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": QC/QCO optimization";
+  }
+  if (auto result = matchesEntry(*qco, "optimized QCO"); !result) {
+    return result;
+  }
+  auto jeff = std::move(*qco).intoJeff();
+  if (!jeff || !jeff->cleanup()) {
+    return testing::AssertionFailure() << source.name.str() << ": QCO to Jeff";
+  }
+  if (auto result = matchesEntry(*jeff, "Jeff"); !result) {
+    return result;
+  }
+  const auto bytes = jeff->toBytes();
+  if (bytes.empty()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": Jeff serialization";
+  }
+  auto restoredJeff = JeffProgram::fromBytes(bytes);
+  if (!restoredJeff || !restoredJeff->cleanup()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": Jeff deserialization";
+  }
+  if (auto result = matchesEntry(*restoredJeff, "restored Jeff"); !result) {
+    return result;
+  }
+  auto restoredQCO = std::move(*restoredJeff).intoQCO();
+  if (!restoredQCO || !restoredQCO->cleanup()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": restored Jeff to QCO";
+  }
+  if (auto result = matchesEntry(*restoredQCO, "restored QCO"); !result) {
+    return result;
+  }
+  restored = std::move(*restoredQCO).intoQC();
+  if (!restored || !restored->cleanup()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": restored QCO to QC";
+  }
+  return matchesEntry(*restored, "restored QC");
+}
+
+void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
+                        const ArrayRef<std::string> sourceResultTypes) {
+  const auto entry = inspectEntry(program.str());
+  ASSERT_TRUE(entry) << name.str() << ": QIR entry inspection";
+  ASSERT_EQ(entry->resultTypes.size(), 1) << name.str() << ": QIR main result";
+  EXPECT_EQ(entry->resultTypes.front(), "i64")
+      << name.str() << ": QIR main status type";
+  if (!sourceResultTypes.empty()) {
+    EXPECT_GT(entry->outputRecordingCalls, 0)
+        << name.str() << ": QIR output recording";
+  }
   auto llvmIR = program.llvmIR();
   ASSERT_TRUE(llvmIR) << name.str() << ": LLVM IR translation";
   EXPECT_FALSE(llvmIR->empty()) << name.str() << ": LLVM IR is empty";
@@ -299,49 +442,26 @@ void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name) {
 
 TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitAdaptiveJeffChain) {
   const auto& source = GetParam();
-  auto qc = QCProgram::fromQASMString(source.source.str());
-  ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco) << source.name.str() << ": QC to QCO";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": QCO cleanup";
-  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"))
-      << source.name.str() << ": QCO optimization";
-  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": optimized QCO cleanup";
-  const auto optimizedQCO = qco->str();
-  auto jeff = std::move(*qco).intoJeff();
-  ASSERT_TRUE(jeff) << source.name.str() << ": QCO to Jeff\n" << optimizedQCO;
-  ASSERT_TRUE(jeff->cleanup()) << source.name.str() << ": Jeff cleanup";
-  const auto bytes = jeff->toBytes();
-  ASSERT_FALSE(bytes.empty()) << source.name.str() << ": Jeff serialization";
-  auto restoredJeff = JeffProgram::fromBytes(bytes);
-  ASSERT_TRUE(restoredJeff) << source.name.str() << ": Jeff deserialization";
-  ASSERT_TRUE(restoredJeff->cleanup())
-      << source.name.str() << ": restored Jeff cleanup";
-  auto restoredQCO = std::move(*restoredJeff).intoQCO();
-  ASSERT_TRUE(restoredQCO) << source.name.str() << ": Jeff to QCO";
-  ASSERT_TRUE(restoredQCO->cleanup())
-      << source.name.str() << ": restored QCO cleanup";
-  auto restoredQC = std::move(*restoredQCO).intoQC();
-  ASSERT_TRUE(restoredQC) << source.name.str() << ": QCO to QC";
-  ASSERT_TRUE(restoredQC->cleanup())
-      << source.name.str() << ": restored QC cleanup";
-  const auto restoredQCText = restoredQC->str();
+  std::optional<QCProgram> restoredQC;
+  std::vector<std::string> resultTypes;
+  ASSERT_TRUE(roundTripThroughOptimizedJeff(source, restoredQC, resultTypes));
   auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
-  ASSERT_TRUE(qir) << source.name.str() << ": QC to Adaptive QIR\n"
-                   << restoredQCText;
-  expectQIRArtifacts(*qir, source.name);
+  ASSERT_TRUE(qir) << source.name.str() << ": QC to Adaptive QIR";
+  expectQIRArtifacts(*qir, source.name, resultTypes);
 }
 
 TEST_P(OpenQASMCompilerPipelineTest, TraversesTheDefaultAdaptivePipeline) {
   const auto& source = GetParam();
   auto input = QCProgram::fromQASMString(source.source.str());
   ASSERT_TRUE(input) << source.name.str() << ": OpenQASM to QC";
+  const auto inputEntry = inspectEntry(input->str());
+  ASSERT_TRUE(inputEntry) << source.name.str() << ": inspect QC entry";
   auto output = runDefaultPipeline(CompilerInput{std::move(*input)},
                                    ProgramFormat::QIRAdaptive);
   ASSERT_TRUE(output) << source.name.str() << ": default Adaptive pipeline";
   auto* qir = std::get_if<QIRProgram>(&*output);
   ASSERT_NE(qir, nullptr) << source.name.str() << ": default output format";
-  expectQIRArtifacts(*qir, source.name);
+  expectQIRArtifacts(*qir, source.name, inputEntry->resultTypes);
 }
 
 class OpenQASMBasePipelineTest
@@ -349,12 +469,14 @@ class OpenQASMBasePipelineTest
 
 TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
   const auto& source = GetParam();
+  std::optional<QCProgram> restoredQC;
+  std::vector<std::string> resultTypes;
+  ASSERT_TRUE(roundTripThroughOptimizedJeff(source, restoredQC, resultTypes));
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
-    auto input = QCProgram::fromQASMString(source.source.str());
-    ASSERT_TRUE(input) << source.name.str() << ": OpenQASM to QC";
-    auto qir = std::move(*input).intoQIR(profile);
+    auto input = restoredQC->copy();
+    auto qir = std::move(input).intoQIR(profile);
     ASSERT_TRUE(qir) << source.name.str() << ": QC to QIR";
-    expectQIRArtifacts(*qir, source.name);
+    expectQIRArtifacts(*qir, source.name, resultTypes);
   }
 }
 

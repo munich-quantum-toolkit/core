@@ -518,8 +518,8 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
 }
 
 /**
- * @brief Creates scalar scratch storage that is allocated once in the nearest
- * automatic-allocation scope.
+ * @brief Creates scalar scratch storage that is allocated once in the enclosing
+ * function.
  *
  * Hoisting the allocation outside enclosing loops lets result-bearing
  * `scf.if` operations communicate classical branch results without growing the
@@ -529,21 +529,13 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
 [[nodiscard]] static FailureOr<SmallVector<Value>>
 createHoistedScratchStorage(Operation* operation, TypeRange elementTypes,
                             ConversionPatternRewriter& rewriter) {
-  Operation* insertionAnchor = operation;
-  while (auto* parent = insertionAnchor->getParentOp()) {
-    if (parent->hasTrait<OpTrait::AutomaticAllocationScope>()) {
-      break;
-    }
-    insertionAnchor = parent;
-  }
-  if (insertionAnchor->getParentOp() == nullptr ||
-      !insertionAnchor->getParentOp()
-           ->hasTrait<OpTrait::AutomaticAllocationScope>()) {
+  auto function = operation->getParentOfType<func::FuncOp>();
+  if (!function || function.getBody().empty()) {
     return failure();
   }
 
   OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPoint(insertionAnchor);
+  rewriter.setInsertionPointToStart(&function.getBody().front());
   SmallVector<Value> storage;
   storage.reserve(elementTypes.size());
   for (auto type : elementTypes) {

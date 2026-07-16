@@ -589,12 +589,39 @@ include "stdgates.inc";
 qubit[65] q;
 qubit[65] aux;
 int i = 0;
-int j = 1;
+  int j = 1;
 cx q[i], aux[j];
 )qasm";
 
   MLIRContext context;
-  EXPECT_FALSE(qc::translateQASM3ToQC(SOURCE, &context));
+  testing::internal::CaptureStderr();
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_FALSE(module);
+  EXPECT_NE(diagnostic.find("<input>:8:1"), std::string::npos);
+  EXPECT_NE(diagnostic.find("structured-dispatch expansion budget"),
+            std::string::npos);
+}
+
+TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
+  std::string source = "OPENQASM 3.1;\n"
+                       "include \"stdgates.inc\";\n"
+                       "gate g0 q { x q; }\n";
+  for (std::size_t level = 1; level <= 17; ++level) {
+    source += "gate g" + std::to_string(level) + " q { g" +
+              std::to_string(level - 1) + " q; g" + std::to_string(level - 1) +
+              " q; }\n";
+  }
+  source += "qubit q;\ng17 q;\n";
+
+  MLIRContext context;
+  testing::internal::CaptureStderr();
+  auto module = qc::translateQASM3ToQC(source, &context);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_FALSE(module);
+  EXPECT_NE(diagnostic.find("<input>:"), std::string::npos);
+  EXPECT_NE(diagnostic.find("custom-gate expansion exceeds"),
+            std::string::npos);
 }
 
 TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {
@@ -1785,6 +1812,80 @@ inv @ looped(pi / 2) q;
   const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_FALSE(module);
   EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
+}
+
+TEST(OpenQASMTargetTest,
+     RejectsModifiersOnTransitivelyStructuredCustomGatesAtQCTarget) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate looped q { for int i in [0:0] { x q; } }
+gate wrapper q { looped q; }
+qubit q;
+inv @ wrapper q;
+)qasm";
+
+  MLIRContext context;
+  testing::internal::CaptureStderr();
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_FALSE(module);
+  EXPECT_NE(diagnostic.find("<input>:7:1"), std::string::npos);
+  EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
+}
+
+TEST(OpenQASMTargetTest, IgnoresUnreachableStructuredCustomGates) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate looped q { for int i in [0:0] { x q; } }
+gate wrapper q { looped q; }
+qubit q;
+x q;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(OpenQASMTargetTest, RejectsRuntimeDynamicIndicesAtQCTarget) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int i = 0;
+if (measure q[0]) { i = 1; }
+x q[i];
+)qasm";
+
+  MLIRContext context;
+  testing::internal::CaptureStderr();
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_FALSE(module);
+  EXPECT_NE(diagnostic.find("<input>:7:1"), std::string::npos);
+  EXPECT_NE(diagnostic.find("runtime-dynamic indexing"), std::string::npos);
+  EXPECT_NE(diagnostic.find("QC/QCO/Jeff/QIR"), std::string::npos);
+}
+
+TEST(OpenQASMTargetTest, RejectsLoopVariantDynamicIndicesAtQCTarget) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int i = 0;
+while (measure q[0]) { x q[i]; i = 1; }
+)qasm";
+
+  MLIRContext context;
+  testing::internal::CaptureStderr();
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_FALSE(module);
+  EXPECT_NE(diagnostic.find("<input>:6:"), std::string::npos);
+  EXPECT_NE(diagnostic.find("runtime-dynamic indexing"), std::string::npos);
 }
 
 TEST(OpenQASMTargetTest, DynamicQubitDispatchLowersThroughQCO) {
