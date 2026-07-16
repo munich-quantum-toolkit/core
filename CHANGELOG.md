@@ -23,6 +23,9 @@ releases may include breaking changes.
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
   ([**@simon1hofmann**])
+- ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis,
+  lexical scope, assignment, inclusive ranges, and structured control-flow
+  lowering ([#1910]) ([**@burgholzer**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -662,6 +665,7 @@ changelogs._
 [#1915]: https://github.com/munich-quantum-toolkit/core/pull/1915
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
+[#1910]: https://github.com/munich-quantum-toolkit/core/pull/1910
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895

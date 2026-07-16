@@ -17,6 +17,4 @@
 #include "mlir/Dialect/OQ3/IR/OQ3OpsDialect.h.inc" // IWYU pragma: export
 // clang-format on
 
-#define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/OQ3/IR/OQ3OpsEnums.h.inc" // IWYU pragma: export
-#include "mlir/Dialect/OQ3/IR/OQ3OpsTypes.h.inc" // IWYU pragma: export

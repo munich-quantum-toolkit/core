@@ -17,7 +17,10 @@ add_mlir_dialect_library(
   MLIROQ3OpsIncGen
   LINK_LIBS
   PRIVATE
+  MLIRArithDialect
+  MLIRControlFlowDialect
   MLIRIR
+  MLIRMemRefDialect
   MLIRQCDialect
   MLIRSideEffectInterfaces)
 

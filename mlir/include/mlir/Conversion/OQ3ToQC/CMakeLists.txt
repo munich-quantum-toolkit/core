@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_mlir_doc(Passes OQ3Transforms Passes/ -gen-pass-doc)
-set(LLVM_TARGET_DEFINITIONS Passes.td)
-mlir_tablegen(Passes.h.inc -gen-pass-decls -name OQ3)
-add_public_tablegen_target(MLIROQ3PassIncGen)
+set(LLVM_TARGET_DEFINITIONS OQ3ToQC.td)
+mlir_tablegen(OQ3ToQC.h.inc -gen-pass-decls -name OQ3ToQC)
+add_public_tablegen_target(OQ3ToQCIncGen)
+
+add_mlir_doc(OQ3ToQC OQ3ToQC Conversions/ -gen-pass-doc)

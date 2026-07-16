@@ -14,12 +14,11 @@ add_mlir_library(
   MLIRArithDialect
   MLIRFuncDialect
   MLIROpenQASMTarget
-  MLIROQ3Transforms
+  MLIROQ3ToQC
   MLIRSCFDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
-  MQT::CoreIR
-  MQT::CoreQASM)
+  MQT::CoreIR)
 
 mqt_mlir_target_use_project_options(MLIRQCTranslation)
 

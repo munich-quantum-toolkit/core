@@ -10,7 +10,7 @@
 
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 
-#include "mlir/Dialect/OQ3/Transforms/Passes.h"
+#include "mlir/Conversion/OQ3ToQC/OQ3ToQC.h"
 #include "mlir/Target/OpenQASM/OpenQASM.h"
 
 #include <llvm/Support/MemoryBuffer.h>
@@ -32,7 +32,7 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
   }
 
   PassManager manager(context);
-  manager.addPass(oq3::createLowerOQ3ToQCPass());
+  manager.addPass(oq3::createOQ3ToQCPass());
   if (failed(manager.run(*module))) {
     llvm::errs() << "OpenQASM target lowering failed.\n";
     return nullptr;
