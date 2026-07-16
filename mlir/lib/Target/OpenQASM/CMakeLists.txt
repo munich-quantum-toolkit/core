@@ -7,30 +7,19 @@
 # Licensed under the MIT License
 
 add_mlir_library(
-  MLIROpenQASMTarget
+  MLIROpenQASMFrontend
   Frontend.cpp
-  OpenQASM.cpp
+  GateCatalog.cpp
   OpenQASMLexer.cpp
   OpenQASMSemantics.cpp
   OpenQASMSyntax.cpp
-  DEPENDS
-  MLIROQ3OpsIncGen
   LINK_LIBS
-  MLIRArithDialect
-  MLIRControlFlowDialect
-  MLIRFuncDialect
-  MLIRMathDialect
-  MLIRMemRefDialect
-  MLIROQ3Dialect
-  MLIRQCDialect
-  MLIRQCProgramBuilder
-  MLIRSCFDialect
-  MLIRUBDialect
   LLVMSupport)
 
-mqt_mlir_target_use_project_options(MLIROpenQASMTarget)
+mqt_mlir_target_use_project_options(MLIROpenQASMFrontend)
 
 file(GLOB_RECURSE OPENQASM_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Target/OpenQASM/*.h)
 
-target_sources(MLIROpenQASMTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-                                         FILES ${OPENQASM_HEADERS_SOURCE})
+target_sources(
+  MLIROpenQASMFrontend PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+                              ${OPENQASM_HEADERS_SOURCE})

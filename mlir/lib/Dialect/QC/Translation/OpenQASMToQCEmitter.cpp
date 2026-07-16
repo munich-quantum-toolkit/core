@@ -8,21 +8,18 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/OpenQASM.h"
+#include "OpenQASMToQCEmitter.h"
 
-#include "mlir/Dialect/OQ3/IR/GateCatalog.h"
-#include "mlir/Dialect/OQ3/IR/OQ3Dialect.h"
-#include "mlir/Dialect/OQ3/IR/OQ3Ops.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
+#include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -36,7 +33,6 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/Verifier.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -49,27 +45,32 @@
 #include <variant>
 #include <vector>
 
-namespace mlir::oq3 {
+namespace mlir::qc::detail {
 namespace {
 
-class OQ3Emitter {
+namespace frontend = oq3::frontend;
+using oq3::frontend::GateCatalogEntry;
+
+class OpenQASMToQCEmitter {
 public:
-  OQ3Emitter(const frontend::TypedProgram& typedProgram,
-             MLIRContext& mlirContext)
+  OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
+                      MLIRContext& mlirContext)
       : program(typedProgram), context(mlirContext), builder(&context),
         registerValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
         bitValues(program.registers.size()),
         scalarValues(program.scalars.size()) {
-    context.loadDialect<OQ3Dialect, qc::QCDialect, arith::ArithDialect,
-                        cf::ControlFlowDialect, func::FuncDialect,
-                        math::MathDialect, memref::MemRefDialect,
-                        scf::SCFDialect, ub::UBDialect>();
+    context
+        .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                     func::FuncDialect, math::MathDialect,
+                     memref::MemRefDialect, scf::SCFDialect, ub::UBDialect>();
     builder.initialize();
   }
 
   OwningOpRef<ModuleOp> emit() {
-    emitGateSymbols();
+    if (!preflight()) {
+      return nullptr;
+    }
     for (const auto statement : program.body) {
       emitStatement(statement, {}, {});
     }
@@ -97,7 +98,7 @@ public:
   }
 
 private:
-  const frontend::TypedProgram& program;
+  const oq3::frontend::TypedProgram& program;
   MLIRContext& context;
   qc::QCProgramBuilder builder;
   std::vector<SmallVector<Value>> registerValues;
@@ -121,68 +122,101 @@ private:
                                source.column);
   }
 
-  [[nodiscard]] ModuleOp getModule() const {
-    return builder.getInsertionBlock()
-        ->getParentOp()
-        ->getParentOfType<ModuleOp>();
+  static constexpr std::size_t customGateExpansionLimit = 100000;
+
+  [[nodiscard]] const oq3::frontend::GateDefinition*
+  findCustomGate(const StringRef name) const {
+    const auto found = llvm::find_if(
+        program.gates, [&](const auto& gate) { return gate.name == name; });
+    return found == program.gates.end() ? nullptr : &*found;
   }
 
-  static FunctionType gateType(MLIRContext& context,
-                               const std::size_t parameters,
-                               const std::size_t qubits) {
-    SmallVector<Type> inputs(parameters, Float64Type::get(&context));
-    inputs.append(qubits, qc::QubitType::get(&context));
-    return FunctionType::get(&context, inputs, {});
+  [[nodiscard]] bool gateContainsStructuredControlFlow(
+      const oq3::frontend::GateDefinition& gate) const {
+    return llvm::any_of(gate.body, [&](const auto id) {
+      const auto& data = program.statements.at(id).data;
+      return std::holds_alternative<oq3::frontend::ForStatement>(data) ||
+             std::holds_alternative<oq3::frontend::WhileStatement>(data) ||
+             std::holds_alternative<oq3::frontend::IfStatement>(data);
+    });
   }
 
-  void emitGateSymbols() {
-    OpBuilder symbolBuilder(&context);
-    symbolBuilder.setInsertionPointToStart(getModule().getBody());
-    for (const auto& gate : getGateCatalog()) {
-      if (gate.availability != GateAvailability::Language &&
-          program.gatePolicy == frontend::GatePolicy::Strict &&
-          (gate.availability != GateAvailability::StandardLibrary ||
-           !program.standardLibraryIncluded)) {
+  [[nodiscard]] bool
+  preflightStatements(const ArrayRef<oq3::frontend::StatementId> statements,
+                      std::size_t& expansionCost) {
+    for (const auto id : statements) {
+      const auto& statement = program.statements.at(id);
+      const auto* application =
+          std::get_if<oq3::frontend::GateApplication>(&statement.data);
+      if (application == nullptr) {
+        if (const auto* conditional =
+                std::get_if<oq3::frontend::IfStatement>(&statement.data)) {
+          if (!preflightStatements(conditional->thenStatements,
+                                   expansionCost) ||
+              !preflightStatements(conditional->elseStatements,
+                                   expansionCost)) {
+            return false;
+          }
+        } else if (const auto* loop = std::get_if<oq3::frontend::ForStatement>(
+                       &statement.data)) {
+          if (!preflightStatements(loop->body, expansionCost)) {
+            return false;
+          }
+        } else if (const auto* loop =
+                       std::get_if<oq3::frontend::WhileStatement>(
+                           &statement.data)) {
+          if (!preflightStatements(loop->body, expansionCost)) {
+            return false;
+          }
+        }
         continue;
       }
-      GateDeclOp::create(
-          symbolBuilder, symbolBuilder.getUnknownLoc(), gate.name,
-          gateType(context, gate.parameterCount, gate.qubitCount()));
-    }
-    for (const auto& definition : program.gates) {
-      emitGateDefinition(symbolBuilder, definition);
-    }
-  }
-
-  void emitGateDefinition(OpBuilder& symbolBuilder,
-                          const frontend::GateDefinition& definition) {
-    auto loc = getLocation(definition.location);
-    auto type =
-        gateType(context, definition.parameterCount, definition.qubitCount);
-    OperationState state(loc, GateOp::getOperationName());
-    state.addAttribute(SymbolTable::getSymbolAttrName(),
-                       symbolBuilder.getStringAttr(definition.name));
-    state.addAttribute("function_type", TypeAttr::get(type));
-    state.addRegion();
-    auto gate = cast<GateOp>(symbolBuilder.create(state));
-    auto* block = new Block();
-    gate.getBody().push_back(block);
-    for (auto input : type.getInputs()) {
-      block->addArgument(input, loc);
-    }
-
-    OpBuilder bodyBuilder = OpBuilder::atBlockBegin(block);
-    const auto parameterCount = definition.parameterCount;
-    auto parameters = block->getArguments().take_front(parameterCount);
-    auto qubits = block->getArguments().drop_front(parameterCount);
-    {
-      OpBuilder::InsertionGuard guard(builder);
-      builder.setInsertionPointToStart(block);
-      for (const auto statement : definition.body) {
-        emitStatement(statement, parameters, qubits);
+      for (const auto& modifier : application->modifiers) {
+        if (modifier.kind == oq3::frontend::ModifierKind::Pow) {
+          const auto& source = statement.location;
+          llvm::errs() << source.filename << ':' << source.line << ':'
+                       << source.column
+                       << ": OpenQASM QC emission error: power gate modifiers "
+                          "are not supported by the QC dialect.\n";
+          return false;
+        }
+      }
+      const auto* gate = findCustomGate(application->callee);
+      if (gate == nullptr) {
+        if (++expansionCost > customGateExpansionLimit) {
+          return reportExpansionLimit(statement.location);
+        }
+        continue;
+      }
+      if (!application->modifiers.empty() &&
+          gateContainsStructuredControlFlow(*gate)) {
+        const auto& source = statement.location;
+        llvm::errs() << source.filename << ':' << source.line << ':'
+                     << source.column
+                     << ": OpenQASM QC emission error: modifiers on custom "
+                        "gates with structured control flow are not supported "
+                        "by the QC dialect.\n";
+        return false;
+      }
+      if (!preflightStatements(gate->body, expansionCost)) {
+        return false;
       }
     }
-    YieldOp::create(bodyBuilder, loc);
+    return true;
+  }
+
+  [[nodiscard]] bool
+  reportExpansionLimit(const oq3::frontend::SourceLocation& source) const {
+    llvm::errs() << source.filename << ':' << source.line << ':'
+                 << source.column
+                 << ": OpenQASM QC emission error: custom-gate expansion "
+                    "exceeds the safe lowering limit.\n";
+    return false;
+  }
+
+  [[nodiscard]] bool preflight() {
+    std::size_t expansionCost = 0;
+    return preflightStatements(program.body, expansionCost);
   }
 
   [[nodiscard]] Value emitCheckedSignedResult(OpBuilder& opBuilder,
@@ -653,6 +687,163 @@ private:
     return emitCase(0);
   }
 
+  static LogicalResult emitPrimitive(OpBuilder& opBuilder, const Location loc,
+                                     const StringRef name,
+                                     const ValueRange parameters,
+                                     const ValueRange qubits) {
+    const auto operationName =
+        llvm::StringSwitch<StringRef>(name)
+            .Case("gphase", qc::GPhaseOp::getOperationName())
+            .Case("id", qc::IdOp::getOperationName())
+            .Case("x", qc::XOp::getOperationName())
+            .Case("y", qc::YOp::getOperationName())
+            .Case("z", qc::ZOp::getOperationName())
+            .Case("h", qc::HOp::getOperationName())
+            .Case("s", qc::SOp::getOperationName())
+            .Case("sdg", qc::SdgOp::getOperationName())
+            .Case("t", qc::TOp::getOperationName())
+            .Case("tdg", qc::TdgOp::getOperationName())
+            .Case("sx", qc::SXOp::getOperationName())
+            .Case("sxdg", qc::SXdgOp::getOperationName())
+            .Case("p", qc::POp::getOperationName())
+            .Case("rx", qc::RXOp::getOperationName())
+            .Case("ry", qc::RYOp::getOperationName())
+            .Case("rz", qc::RZOp::getOperationName())
+            .Case("r", qc::ROp::getOperationName())
+            .Case("u2", qc::U2Op::getOperationName())
+            .Case("U", qc::UOp::getOperationName())
+            .Case("swap", qc::SWAPOp::getOperationName())
+            .Case("iswap", qc::iSWAPOp::getOperationName())
+            .Case("dcx", qc::DCXOp::getOperationName())
+            .Case("ecr", qc::ECROp::getOperationName())
+            .Case("rxx", qc::RXXOp::getOperationName())
+            .Case("ryy", qc::RYYOp::getOperationName())
+            .Case("rzx", qc::RZXOp::getOperationName())
+            .Case("rzz", qc::RZZOp::getOperationName())
+            .Case("xx_plus_yy", qc::XXPlusYYOp::getOperationName())
+            .Case("xx_minus_yy", qc::XXMinusYYOp::getOperationName())
+            .Default({});
+    if (operationName.empty()) {
+      return failure();
+    }
+    OperationState state(loc, operationName);
+    if (name == "gphase") {
+      state.addOperands(parameters);
+    } else {
+      state.addOperands(qubits);
+      state.addOperands(parameters);
+    }
+    opBuilder.create(state);
+    return success();
+  }
+
+  LogicalResult emitResolvedGate(OpBuilder& opBuilder,
+                                 const frontend::GateApplication& application,
+                                 const Location loc, ValueRange parameters,
+                                 ValueRange qubits) {
+    if (const auto* custom = findCustomGate(application.callee)) {
+      if (parameters.size() != custom->parameterCount ||
+          qubits.size() != custom->qubitCount) {
+        llvm::errs() << "OpenQASM QC emission error: custom-gate operands do "
+                        "not match its verified declaration.\n";
+        return failure();
+      }
+      OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPoint(opBuilder.getInsertionBlock(),
+                                opBuilder.getInsertionPoint());
+      for (const auto statement : custom->body) {
+        emitStatement(statement, parameters, qubits);
+      }
+      return emissionFailed ? failure() : success();
+    }
+
+    const GateCatalogEntry* catalog =
+        oq3::frontend::lookupGate(application.callee);
+    if (catalog == nullptr || qubits.size() < catalog->targetCount) {
+      return failure();
+    }
+    const std::size_t controls = catalog->variadicControls
+                                     ? qubits.size() - catalog->targetCount
+                                     : catalog->controlCount;
+    if (qubits.size() < controls + catalog->targetCount) {
+      return failure();
+    }
+    auto primitiveParameters = parameters;
+    auto controlValues = qubits.take_front(controls);
+    auto targets = qubits.drop_front(controls);
+    if (application.callee == "cu") {
+      if (controls != 1 || parameters.size() != 4 || targets.size() != 1) {
+        return failure();
+      }
+      qc::POp::create(opBuilder, loc, controlValues.front(), parameters.back());
+      primitiveParameters = parameters.drop_back();
+    }
+    const auto emitCatalogPrimitive = [&](ValueRange primitiveQubits) {
+      if (!catalog->inverse) {
+        return emitPrimitive(opBuilder, loc, catalog->primitive,
+                             primitiveParameters, primitiveQubits);
+      }
+      LogicalResult result = success();
+      qc::InvOp::create(
+          opBuilder, loc, primitiveQubits, [&](ValueRange aliases) {
+            result = emitPrimitive(opBuilder, loc, catalog->primitive,
+                                   primitiveParameters, aliases);
+          });
+      return result;
+    };
+    if (controls == 0) {
+      return emitCatalogPrimitive(qubits);
+    }
+    LogicalResult result = success();
+    qc::CtrlOp::create(
+        opBuilder, loc, controlValues, targets,
+        [&](ValueRange aliases) { result = emitCatalogPrimitive(aliases); });
+    return result;
+  }
+
+  LogicalResult emitModifiers(OpBuilder& opBuilder,
+                              const frontend::GateApplication& application,
+                              const Location loc, ValueRange parameters,
+                              ArrayRef<std::int64_t> controlCounts,
+                              const std::size_t position, ValueRange qubits) {
+    if (position == application.modifiers.size()) {
+      return emitResolvedGate(opBuilder, application, loc, parameters, qubits);
+    }
+    const auto kind = application.modifiers[position].kind;
+    if (kind == frontend::ModifierKind::Inv) {
+      LogicalResult result = success();
+      qc::InvOp::create(opBuilder, loc, qubits, [&](ValueRange aliases) {
+        result = emitModifiers(opBuilder, application, loc, parameters,
+                               controlCounts, position + 1, aliases);
+      });
+      return result;
+    }
+    return emitControls(opBuilder, application, loc, parameters, controlCounts,
+                        position + 1, controlCounts[position], qubits);
+  }
+
+  LogicalResult emitControls(OpBuilder& opBuilder,
+                             const frontend::GateApplication& application,
+                             const Location loc, ValueRange parameters,
+                             ArrayRef<std::int64_t> controlCounts,
+                             const std::size_t nextPosition,
+                             const std::size_t remainingControls,
+                             ValueRange qubits) {
+    if (remainingControls == 0) {
+      return emitModifiers(opBuilder, application, loc, parameters,
+                           controlCounts, nextPosition, qubits);
+    }
+    LogicalResult result = success();
+    qc::CtrlOp::create(opBuilder, loc, qubits.take_front(1),
+                       qubits.drop_front(1), [&](ValueRange aliases) {
+                         result = emitControls(opBuilder, application, loc,
+                                               parameters, controlCounts,
+                                               nextPosition,
+                                               remainingControls - 1, aliases);
+                       });
+    return result;
+  }
+
   void emitGateApplication(OpBuilder& opBuilder,
                            const frontend::GateApplication& application,
                            const Location loc, ValueRange gateParameters,
@@ -701,19 +892,27 @@ private:
                              "gate operands must not reference the same qubit");
       }
     }
-    SmallVector<Value> modifierOperands;
-    SmallVector<std::int32_t> modifierKinds;
-    SmallVector<std::int32_t> modifierIndices;
-    for (const auto& modifier : application.modifiers) {
-      modifierKinds.push_back(static_cast<std::int32_t>(modifier.kind));
-      if (!modifier.operand) {
-        modifierIndices.push_back(-1);
+    SmallVector<std::int64_t> controlCounts(application.modifiers.size(), 0);
+    for (const auto [position, modifier] :
+         llvm::enumerate(application.modifiers)) {
+      if (modifier.kind != frontend::ModifierKind::Ctrl &&
+          modifier.kind != frontend::ModifierKind::NegCtrl) {
         continue;
       }
-      modifierIndices.push_back(
-          static_cast<std::int32_t>(modifierOperands.size()));
-      modifierOperands.push_back(
-          emitExpression(opBuilder, *modifier.operand, gateParameters));
+      std::int64_t count = 1;
+      if (modifier.operand) {
+        auto countValue =
+            emitExpression(opBuilder, *modifier.operand, gateParameters);
+        auto constant = countValue.getDefiningOp<arith::ConstantIntOp>();
+        if (!constant || constant.value() <= 0) {
+          emissionFailed = true;
+          llvm::errs() << "OpenQASM QC emission error: gate control count "
+                          "must be a positive constant integer.\n";
+          return;
+        }
+        count = constant.value();
+      }
+      controlCounts[position] = count;
     }
 
     dispatchQubits(
@@ -722,24 +921,45 @@ private:
           if (distinctQubits.size() != qubits.size()) {
             return;
           }
-          OperationState state(loc, ApplyGateOp::getOperationName());
-          state.addOperands(parameters);
-          state.addOperands(qubits);
-          state.addOperands(modifierOperands);
-          state.addAttribute(
-              "callee", FlatSymbolRefAttr::get(&context, application.callee));
-          state.addAttribute("modifier_kinds",
-                             DenseI32ArrayAttr::get(&context, modifierKinds));
-          state.addAttribute("modifier_operand_indices",
-                             DenseI32ArrayAttr::get(&context, modifierIndices));
-          state.addAttribute(
-              "operandSegmentSizes",
-              DenseI32ArrayAttr::get(
-                  &context,
-                  {static_cast<std::int32_t>(parameters.size()),
-                   static_cast<std::int32_t>(qubits.size()),
-                   static_cast<std::int32_t>(modifierOperands.size())}));
-          opBuilder.create(state);
+          std::size_t negativeOffset = 0;
+          for (const auto [position, modifier] :
+               llvm::enumerate(application.modifiers)) {
+            if (modifier.kind == frontend::ModifierKind::Ctrl ||
+                modifier.kind == frontend::ModifierKind::NegCtrl) {
+              if (modifier.kind == frontend::ModifierKind::NegCtrl) {
+                for (auto control :
+                     qubits.slice(negativeOffset, controlCounts[position])) {
+                  qc::XOp::create(opBuilder, loc, control);
+                }
+              }
+              negativeOffset +=
+                  static_cast<std::size_t>(controlCounts[position]);
+            }
+          }
+          const auto result =
+              emitModifiers(opBuilder, application, loc, parameters,
+                            controlCounts, 0, qubits);
+          negativeOffset = 0;
+          for (const auto [position, modifier] :
+               llvm::enumerate(application.modifiers)) {
+            if (modifier.kind == frontend::ModifierKind::Ctrl ||
+                modifier.kind == frontend::ModifierKind::NegCtrl) {
+              if (modifier.kind == frontend::ModifierKind::NegCtrl) {
+                for (auto control :
+                     qubits.slice(negativeOffset, controlCounts[position])) {
+                  qc::XOp::create(opBuilder, loc, control);
+                }
+              }
+              negativeOffset +=
+                  static_cast<std::size_t>(controlCounts[position]);
+            }
+          }
+          if (failed(result)) {
+            emissionFailed = true;
+            llvm::errs() << "OpenQASM QC emission error: gate '"
+                         << application.callee
+                         << "' has no lowering to the QC dialect.\n";
+          }
         });
   }
 
@@ -1338,45 +1558,11 @@ private:
   }
 };
 
-void printDiagnostics(const std::vector<frontend::Diagnostic>& diagnostics) {
-  for (const auto& diagnostic : diagnostics) {
-    llvm::errs() << diagnostic.location.filename << ':'
-                 << diagnostic.location.line << ':'
-                 << diagnostic.location.column
-                 << ": OpenQASM frontend error: " << diagnostic.message << '\n';
-  }
-}
-
 } // namespace
 
-OwningOpRef<ModuleOp> emitOQ3(const frontend::TypedProgram& program,
-                              MLIRContext& context) {
-  auto module = OQ3Emitter(program, context).emit();
-  if (module && failed(verify(*module))) {
-    llvm::errs() << "OpenQASM emission produced invalid OQ3 IR.\n";
-    return nullptr;
-  }
-  return module;
+OwningOpRef<ModuleOp> emitOpenQASMToQC(const frontend::TypedProgram& program,
+                                       MLIRContext& context) {
+  return OpenQASMToQCEmitter(program, context).emit();
 }
 
-OwningOpRef<ModuleOp>
-translateOpenQASMToOQ3(llvm::SourceMgr& sourceMgr, MLIRContext& context,
-                       const OpenQASMTranslationOptions& options) {
-  auto analyzed = frontend::analyzeOpenQASM(sourceMgr, options.frontend);
-  if (!analyzed) {
-    printDiagnostics(analyzed.diagnostics);
-    return nullptr;
-  }
-  return emitOQ3(*analyzed.program, context);
-}
-
-OwningOpRef<ModuleOp>
-translateOpenQASMToOQ3(const llvm::StringRef source, MLIRContext& context,
-                       const OpenQASMTranslationOptions& options) {
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(source),
-                               llvm::SMLoc());
-  return translateOpenQASMToOQ3(sourceMgr, context, options);
-}
-
-} // namespace mlir::oq3
+} // namespace mlir::qc::detail

@@ -18,8 +18,8 @@ We define multiple dialects, each with its dedicated purpose:
 - The {doc}`QTensor dialect <QTensor>` adds support for one-dimensional tensors
   of qubits with linear typing and is used in the QCO dialect to represent
   collections of qubits such as registers.
-- The {doc}`OQ3 dialect <OQ3>` is an experimental typed semantic representation
-  for OpenQASM 3 input.
+- The {doc}`OpenQASM frontend <OpenQASM>` translates supported OpenQASM 3 input
+  directly to QC.
 
 These dialects define various canonicalization and transformation passes that
 enable the compilation of quantum programs to native quantum hardware. For
@@ -32,7 +32,7 @@ python_compiler_collection
 QC
 QCO
 QTensor
-OQ3
+OpenQASM
 Conversions
 ```
 

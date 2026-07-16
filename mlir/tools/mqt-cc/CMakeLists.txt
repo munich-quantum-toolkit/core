@@ -17,7 +17,6 @@ target_link_libraries(
           MLIRQCTranslation
           MLIRJeffTranslation
           MLIRJeffToQCO
-          MLIROQ3Dialect
           MLIRBytecodeWriter
           MLIRTargetLLVMIRExport
           MLIRBuiltinToLLVMIRTranslation

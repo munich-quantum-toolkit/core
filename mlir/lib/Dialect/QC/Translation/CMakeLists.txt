@@ -8,14 +8,18 @@
 
 add_mlir_library(
   MLIRQCTranslation
+  OpenQASMToQCEmitter.cpp
   TranslateQuantumComputationToQC.cpp
   TranslateQASM3ToQC.cpp
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
-  MLIROpenQASMTarget
-  MLIROQ3ToQC
+  MLIROpenQASMFrontend
+  MLIRControlFlowDialect
+  MLIRMathDialect
+  MLIRMemRefDialect
   MLIRSCFDialect
+  MLIRUBDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
   MQT::CoreIR)

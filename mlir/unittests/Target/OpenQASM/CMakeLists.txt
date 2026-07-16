@@ -10,9 +10,7 @@ set(target_name mqt-core-mlir-unittest-openqasm-target)
 add_executable(${target_name} test_openqasm.cpp)
 target_link_libraries(
   ${target_name}
-  PRIVATE MLIROpenQASMTarget
-          MLIROQ3Dialect
-          MLIROQ3ToQC
+  PRIVATE MLIROpenQASMFrontend
           MLIRQCToQCO
           MLIRQCTranslation
           MLIRQASMPrograms

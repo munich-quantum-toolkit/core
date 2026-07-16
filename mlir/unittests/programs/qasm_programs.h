@@ -10,10 +10,25 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringRef.h>
+
 #include <string>
 
 // NOLINTBEGIN(readability-identifier-naming)
 namespace mlir::qasm {
+
+struct OpenQASMProgram {
+  llvm::StringRef name;
+  llvm::StringRef source;
+};
+
+/// OpenQASM programs expected to traverse QC, optimized QCO, Jeff, and
+/// Adaptive QIR.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> compilerPrograms();
+
+/// Straight-line compiler programs that additionally support Base QIR.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms();
 
 /// Allocates a single qubit.
 extern const std::string allocQubit;

@@ -2,10 +2,6 @@
 
 ## Internal Conversions
 
-```{include} Conversions/OQ3ToQC.md
-
-```
-
 ```{include} Conversions/QCToQCO.md
 
 ```
