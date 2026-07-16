@@ -369,7 +369,7 @@ bool QCOProgram::liftHadamards() {
 
 bool QCOProgram::decomposeMultiControlled(const std::uint64_t minControls) {
   return succeeded(runPasses(
-      module(),
+      mod(),
       [minControls](OpPassManager& pm) {
         populateDecomposeMultiControlledPipeline(pm, minControls);
       },
