@@ -12,8 +12,10 @@ target_link_libraries(
   ${target_name}
   PRIVATE MLIROpenQASMTarget
           MLIROQ3Dialect
-          MLIROQ3Transforms
+          MLIROQ3ToQC
+          MLIRQCToQCO
           MLIRQCTranslation
+          MLIRQASMPrograms
           MLIRQCDialect
           MLIRSupportMQT
           GTest::gtest_main)

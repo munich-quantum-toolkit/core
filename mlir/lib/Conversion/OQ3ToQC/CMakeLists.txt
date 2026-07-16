@@ -6,19 +6,18 @@
 #
 # Licensed under the MIT License
 
-add_mlir_dialect_library(
-  MLIROQ3Transforms
-  LowerOQ3ToQC.cpp
+add_mlir_conversion_library(
+  MLIROQ3ToQC
+  OQ3ToQC.cpp
   DEPENDS
-  MLIROQ3PassIncGen
+  OQ3ToQCIncGen
   LINK_LIBS
-  PRIVATE
   MLIRArithDialect
   MLIRFuncDialect
   MLIRIR
   MLIROQ3Dialect
   MLIRQCDialect
   MLIRSCFDialect
-  MLIRTransformUtils)
+  MLIRTransforms)
 
-mqt_mlir_target_use_project_options(MLIROQ3Transforms)
+mqt_mlir_target_use_project_options(MLIROQ3ToQC)

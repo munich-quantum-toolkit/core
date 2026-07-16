@@ -11,10 +11,11 @@ add_executable(${target_name} test_oq3.cpp)
 target_link_libraries(
   ${target_name}
   PRIVATE MLIROQ3Dialect
-          MLIROQ3Transforms
+          MLIROQ3ToQC
           MLIRQCDialect
           MLIRArithDialect
           MLIRFuncDialect
+          MLIRMemRefDialect
           MLIRParser
           MLIRSCFDialect
           MLIRSupportMQT

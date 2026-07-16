@@ -1130,41 +1130,25 @@ TEST_F(Qasm3ParserTest, ImportQasmParseUnaryExpressions) {
 
 TEST_F(Qasm3ParserTest, ImportQasmParseBinaryExpressions) {
   std::stringstream ss{};
-  const std::string testfile = "x ** 5\n"
-                               "x % 5\n"
-                               "x << 5\n"
-                               "x >> 5\n"
+  const std::string testfile = "x^5\n"
                                "x == 5\n"
                                "x != 5\n"
                                "x <= 5\n"
                                "x < 5\n"
                                "x >= 5\n"
-                               "x > 5\n"
-                               "x & 5\n"
-                               "x ^ 5\n"
-                               "x | 5\n"
-                               "x && y\n"
-                               "x || y\n";
+                               "x > 5\n";
 
   ss << testfile;
   qasm3::Parser parser(ss, false);
 
   const auto expectedTypes = std::vector{
       qasm3::BinaryExpression::Op::Power,
-      qasm3::BinaryExpression::Op::Modulo,
-      qasm3::BinaryExpression::Op::LeftShift,
-      qasm3::BinaryExpression::Op::RightShift,
       qasm3::BinaryExpression::Op::Equal,
       qasm3::BinaryExpression::Op::NotEqual,
       qasm3::BinaryExpression::Op::LessThanOrEqual,
       qasm3::BinaryExpression::Op::LessThan,
       qasm3::BinaryExpression::Op::GreaterThanOrEqual,
       qasm3::BinaryExpression::Op::GreaterThan,
-      qasm3::BinaryExpression::Op::BitwiseAnd,
-      qasm3::BinaryExpression::Op::BitwiseXor,
-      qasm3::BinaryExpression::Op::BitwiseOr,
-      qasm3::BinaryExpression::Op::LogicalAnd,
-      qasm3::BinaryExpression::Op::LogicalOr,
   };
 
   for (const auto& expected : expectedTypes) {
@@ -1174,26 +1158,6 @@ TEST_F(Qasm3ParserTest, ImportQasmParseBinaryExpressions) {
     EXPECT_NE(binaryExpr, nullptr);
     EXPECT_EQ(binaryExpr->op, expected);
   }
-}
-
-TEST_F(Qasm3ParserTest, OpenQasmOperatorPrecedenceAndAssociativity) {
-  std::stringstream stream(
-      "1 + 2 * 3 << 1 == 14 && true || false\n2 ** 3 ** 2\n5 ^ 3");
-  qasm3::Parser parser(stream, false);
-  qasm3::const_eval::ConstEvalPass evaluator;
-
-  const auto logical = evaluator.visit(parser.parseExpression());
-  ASSERT_TRUE(logical.has_value());
-  EXPECT_EQ(logical,
-            qasm3::const_eval::ConstEvalValue(static_cast<bool>(true)));
-
-  const auto power = evaluator.visit(parser.parseExpression());
-  ASSERT_TRUE(power.has_value());
-  EXPECT_EQ(power, qasm3::const_eval::ConstEvalValue(512, false));
-
-  const auto bitwiseXor = evaluator.visit(parser.parseExpression());
-  ASSERT_TRUE(bitwiseXor.has_value());
-  EXPECT_EQ(bitwiseXor, qasm3::const_eval::ConstEvalValue(6, false));
 }
 
 TEST_F(Qasm3ParserTest, ImportQasmUnknownQreg) {

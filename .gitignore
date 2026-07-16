@@ -79,13 +79,7 @@ docs/api/
 
 # PyBuilder
 .pybuilder/
-target/
-!mlir/include/mlir/Target/
-!mlir/include/mlir/Target/**
-!mlir/lib/Target/
-!mlir/lib/Target/**
-!mlir/unittests/Target/
-!mlir/unittests/Target/**
+/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints

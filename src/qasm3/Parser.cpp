@@ -18,7 +18,6 @@
 #include "qasm3/Token.hpp"
 #include "qasm3/Types.hpp"
 
-#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <istream>
@@ -32,64 +31,6 @@
 #include <vector>
 
 namespace qasm3 {
-namespace {
-
-struct BinaryOperatorInfo {
-  BinaryExpression::Op op;
-  uint8_t precedence;
-  bool rightAssociative = false;
-};
-
-std::optional<BinaryOperatorInfo> getBinaryOperator(const Token::Kind kind) {
-  using Kind = Token::Kind;
-  using Op = BinaryExpression::Op;
-  switch (kind) {
-  case Kind::DoublePipe:
-    return BinaryOperatorInfo{.op = Op::LogicalOr, .precedence = 1};
-  case Kind::DoubleAmpersand:
-    return BinaryOperatorInfo{.op = Op::LogicalAnd, .precedence = 2};
-  case Kind::Pipe:
-    return BinaryOperatorInfo{.op = Op::BitwiseOr, .precedence = 3};
-  case Kind::Caret:
-    return BinaryOperatorInfo{.op = Op::BitwiseXor, .precedence = 4};
-  case Kind::Ampersand:
-    return BinaryOperatorInfo{.op = Op::BitwiseAnd, .precedence = 5};
-  case Kind::DoubleEquals:
-    return BinaryOperatorInfo{.op = Op::Equal, .precedence = 6};
-  case Kind::NotEquals:
-    return BinaryOperatorInfo{.op = Op::NotEqual, .precedence = 6};
-  case Kind::LessThan:
-    return BinaryOperatorInfo{.op = Op::LessThan, .precedence = 7};
-  case Kind::LessThanEquals:
-    return BinaryOperatorInfo{.op = Op::LessThanOrEqual, .precedence = 7};
-  case Kind::GreaterThan:
-    return BinaryOperatorInfo{.op = Op::GreaterThan, .precedence = 7};
-  case Kind::GreaterThanEquals:
-    return BinaryOperatorInfo{.op = Op::GreaterThanOrEqual, .precedence = 7};
-  case Kind::LeftShift:
-    return BinaryOperatorInfo{.op = Op::LeftShift, .precedence = 8};
-  case Kind::RightShift:
-    return BinaryOperatorInfo{.op = Op::RightShift, .precedence = 8};
-  case Kind::Plus:
-    return BinaryOperatorInfo{.op = Op::Add, .precedence = 9};
-  case Kind::Minus:
-    return BinaryOperatorInfo{.op = Op::Subtract, .precedence = 9};
-  case Kind::Asterisk:
-    return BinaryOperatorInfo{.op = Op::Multiply, .precedence = 10};
-  case Kind::Slash:
-    return BinaryOperatorInfo{.op = Op::Divide, .precedence = 10};
-  case Kind::Percent:
-    return BinaryOperatorInfo{.op = Op::Modulo, .precedence = 10};
-  case Kind::DoubleAsterisk:
-    return BinaryOperatorInfo{
-        .op = Op::Power, .precedence = 12, .rightAssociative = true};
-  default:
-    return std::nullopt;
-  }
-}
-
-} // namespace
-
 void Parser::scan() {
   if (scanner.empty()) {
     throw std::runtime_error("No scanner available");
@@ -159,9 +100,8 @@ Token Parser::expect(const Token::Kind& expected,
   return token;
 }
 
-Parser::Parser(std::istream& is, const bool implicitlyIncludeStdgates,
-               std::optional<std::string> debugFilename) {
-  scanner.emplace(&is, std::move(debugFilename));
+Parser::Parser(std::istream& is, const bool implicitlyIncludeStdgates) {
+  scanner.emplace(&is);
   scan();
   if (implicitlyIncludeStdgates) {
     scanner.emplace(std::make_unique<std::istringstream>(STDGATES),
@@ -214,9 +154,7 @@ std::vector<std::shared_ptr<Statement>> Parser::parseProgram() {
       }
     }
 
-    const bool implicitStatement = scanner.top().isImplicitInclude;
     statements.push_back(parseStatement());
-    implicitStatementCount += static_cast<std::size_t>(implicitStatement);
   }
   return statements;
 }
@@ -331,7 +269,6 @@ void Parser::parseInclude() {
   auto const tBegin = expect(Token::Kind::Include);
   auto filename = expect(Token::Kind::StringLiteral).str;
   auto const tEnd = expect(Token::Kind::Semicolon);
-  includedFiles.push_back(filename);
 
   // we need to make sure to report errors across includes
   includeDebugInfo = makeDebugInfo(tBegin, tEnd);
@@ -808,60 +745,96 @@ std::shared_ptr<Expression> Parser::exponentiation() {
 }
 
 std::shared_ptr<Expression> Parser::factor() {
-  return parseBinaryExpression(12);
+  auto x = exponentiation();
+  while (current().kind == Token::Kind::Caret) {
+    scan();
+    const auto y = exponentiation();
+    x = std::make_shared<BinaryExpression>(BinaryExpression::Op::Power, x, y);
+  }
+  return x;
 }
 
-std::shared_ptr<Expression> Parser::term() { return parseBinaryExpression(10); }
+std::shared_ptr<Expression> Parser::term() {
+  auto x = factor();
+  while (current().kind == Token::Kind::Asterisk ||
+         current().kind == Token::Kind::Slash) {
+    auto const op = current().kind == Token::Kind::Asterisk
+                        ? BinaryExpression::Op::Multiply
+                        : BinaryExpression::Op::Divide;
+    scan();
+    const auto y = factor();
+    x = std::make_shared<BinaryExpression>(op, x, y);
+  }
+  return x;
+}
 
 std::shared_ptr<Expression> Parser::comparison() {
-  return parseBinaryExpression(6);
-}
-
-std::shared_ptr<Expression> Parser::parseUnaryExpression() {
-  if (current().kind == Token::Kind::Minus ||
-      current().kind == Token::Kind::ExclamationPoint ||
-      current().kind == Token::Kind::Tilde) {
-    UnaryExpression::Op op = UnaryExpression::Op::Negate;
+  auto x = term();
+  while (current().kind == Token::Kind::DoubleEquals ||
+         current().kind == Token::Kind::NotEquals ||
+         current().kind == Token::Kind::LessThan ||
+         current().kind == Token::Kind::GreaterThan ||
+         current().kind == Token::Kind::LessThanEquals ||
+         current().kind == Token::Kind::GreaterThanEquals) {
+    BinaryExpression::Op op = BinaryExpression::Op::Equal;
     switch (current().kind) {
-    case Token::Kind::Minus:
-      op = UnaryExpression::Op::Negate;
+    case Token::Kind::DoubleEquals:
+      op = BinaryExpression::Op::Equal;
       break;
-    case Token::Kind::ExclamationPoint:
-      op = UnaryExpression::Op::LogicalNot;
+    case Token::Kind::NotEquals:
+      op = BinaryExpression::Op::NotEqual;
       break;
-    case Token::Kind::Tilde:
-      op = UnaryExpression::Op::BitwiseNot;
+    case Token::Kind::LessThan:
+      op = BinaryExpression::Op::LessThan;
+      break;
+    case Token::Kind::GreaterThan:
+      op = BinaryExpression::Op::GreaterThan;
+      break;
+    case Token::Kind::LessThanEquals:
+      op = BinaryExpression::Op::LessThanOrEqual;
+      break;
+    case Token::Kind::GreaterThanEquals:
+      op = BinaryExpression::Op::GreaterThanOrEqual;
       break;
     default:
-      error(current(), "Expected unary operator");
+      error(current(), "Expected comparison operator");
     }
     scan();
-    return std::make_shared<UnaryExpression>(
-        UnaryExpression{op, parseBinaryExpression(11)});
+    const auto y = term();
+    x = std::make_shared<BinaryExpression>(op, x, y);
   }
-  return exponentiation();
-}
-
-std::shared_ptr<Expression>
-Parser::parseBinaryExpression(const uint8_t minPrecedence) {
-  auto lhs = parseUnaryExpression();
-  while (true) {
-    const auto operatorInfo = getBinaryOperator(current().kind);
-    if (!operatorInfo || operatorInfo->precedence < minPrecedence) {
-      return lhs;
-    }
-    scan();
-    const uint8_t rhsPrecedence = operatorInfo->rightAssociative
-                                      ? operatorInfo->precedence
-                                      : operatorInfo->precedence + 1;
-    auto rhs = parseBinaryExpression(rhsPrecedence);
-    lhs = std::make_shared<BinaryExpression>(
-        BinaryExpression{operatorInfo->op, std::move(lhs), std::move(rhs)});
-  }
+  return x;
 }
 
 std::shared_ptr<Expression> Parser::parseExpression() {
-  return parseBinaryExpression(1);
+  std::shared_ptr<Expression> x{};
+  if (current().kind == Token::Kind::Minus) {
+    scan();
+    x = std::make_shared<UnaryExpression>(
+        UnaryExpression{UnaryExpression::Op::Negate, term()});
+  } else if (current().kind == Token::Kind::ExclamationPoint) {
+    scan();
+    x = std::make_shared<UnaryExpression>(
+        UnaryExpression{UnaryExpression::Op::LogicalNot, term()});
+  } else if (current().kind == Token::Kind::Tilde) {
+    scan();
+    x = std::make_shared<UnaryExpression>(
+        UnaryExpression{UnaryExpression::Op::BitwiseNot, term()});
+  } else {
+    x = comparison();
+  }
+
+  while (current().kind == Token::Kind::Plus ||
+         current().kind == Token::Kind::Minus) {
+    auto const op = current().kind == Token::Kind::Plus
+                        ? BinaryExpression::Op::Add
+                        : BinaryExpression::Op::Subtract;
+    scan();
+    const auto y = comparison();
+    x = std::make_shared<BinaryExpression>(BinaryExpression{op, x, y});
+  }
+
+  return x;
 }
 
 std::shared_ptr<IdentifierList> Parser::parseIdentifierList() {

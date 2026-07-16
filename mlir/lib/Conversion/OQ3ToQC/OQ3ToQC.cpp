@@ -8,11 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Conversion/OQ3ToQC/OQ3ToQC.h"
+
 #include "mlir/Dialect/OQ3/IR/GateCatalog.h"
 #include "mlir/Dialect/OQ3/IR/OQ3Ops.h"
-#include "mlir/Dialect/OQ3/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -21,55 +23,67 @@
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Pass/Pass.h>
+#include <mlir/Transforms/DialectConversion.h>
 
 namespace mlir::oq3 {
-#define GEN_PASS_DEF_LOWEROQ3TOQC
-#include "mlir/Dialect/OQ3/Transforms/Passes.h.inc"
+#define GEN_PASS_DEF_OQ3TOQC
+#include "mlir/Conversion/OQ3ToQC/OQ3ToQC.h.inc"
 
 namespace {
 
-class LowerOQ3ToQCPass final : public impl::LowerOQ3ToQCBase<LowerOQ3ToQCPass> {
+class OQ3ToQCPass final : public impl::OQ3ToQCBase<OQ3ToQCPass> {
 public:
-  explicit LowerOQ3ToQCPass(const OpenQASMLoweringOptions /*options*/) {}
-
   void runOnOperation() override {
-    llvm::SmallVector<ForOp> loops;
-    const WalkResult ranges = getOperation().walk([&](ForOp op) {
-      auto constant = op.getStep().getDefiningOp<arith::ConstantIntOp>();
-      if (!constant) {
-        op.emitError("dynamic range step cannot be proven nonzero for the "
-                     "selected target");
-        return WalkResult::interrupt();
-      }
-      if (constant.value() == 0) {
-        op.emitError("OpenQASM range step cannot be zero");
-        return WalkResult::interrupt();
-      }
-      loops.push_back(op);
-      return WalkResult::advance();
-    });
-    if (ranges.wasInterrupted()) {
+    auto configureTarget = [&](ConversionTarget& target) {
+      target.addIllegalDialect<OQ3Dialect>();
+      target.addLegalOp<GateOp, GateDeclOp, YieldOp>();
+      target.markUnknownOpDynamicallyLegal([](Operation*) { return true; });
+    };
+
+    llvm::SmallVector<GateOp> gates;
+    if (failed(collectReachableGates(gates))) {
       signalPassFailure();
       return;
     }
-
-    llvm::SmallVector<ApplyGateOp> applications;
-    getOperation().walk([&](ApplyGateOp op) { applications.push_back(op); });
-    for (ApplyGateOp application : applications) {
-      if (failed(lowerGateApplication(application))) {
+    llvm::DenseSet<Operation*> reachable;
+    for (auto gate : gates) {
+      reachable.insert(gate.getOperation());
+    }
+    llvm::SmallVector<GateOp> unreachableGates;
+    for (auto gate : getOperation().getOps<GateOp>()) {
+      if (!reachable.contains(gate.getOperation())) {
+        unreachableGates.push_back(gate);
+      }
+    }
+    for (auto gate : unreachableGates) {
+      gate.erase();
+    }
+    for (auto gate : gates) {
+      llvm::SmallVector<Operation*> bodyOperations;
+      for (auto& operation : gate.getBody().getOps()) {
+        bodyOperations.push_back(&operation);
+      }
+      ConversionTarget gateTarget(getContext());
+      configureTarget(gateTarget);
+      RewritePatternSet gatePatterns(&getContext());
+      gatePatterns.add<ApplyGateOpConversion>(&getContext(), *this);
+      if (failed(applyFullConversion(bodyOperations, gateTarget,
+                                     std::move(gatePatterns)))) {
         signalPassFailure();
         return;
       }
     }
 
-    for (ForOp loop : llvm::reverse(loops)) {
-      if (failed(lowerInclusiveRange(loop))) {
-        signalPassFailure();
-        return;
-      }
-    }
+    ConversionTarget target(getContext());
+    configureTarget(target);
 
-    lowerBitInterfaces();
+    RewritePatternSet patterns(&getContext());
+    patterns.add<ApplyGateOpConversion>(&getContext(), *this);
+    if (failed(
+            applyFullConversion(getOperation(), target, std::move(patterns)))) {
+      signalPassFailure();
+      return;
+    }
 
     llvm::SmallVector<Operation*> declarations;
     getOperation().walk([&](Operation* op) {
@@ -80,150 +94,115 @@ public:
     for (Operation* declaration : declarations) {
       declaration->erase();
     }
+
+    ConversionTarget finalTarget(getContext());
+    finalTarget.addIllegalDialect<OQ3Dialect>();
+    finalTarget.markUnknownOpDynamicallyLegal([](Operation*) { return true; });
+    if (failed(applyFullConversion(getOperation(), finalTarget, {}))) {
+      signalPassFailure();
+    }
   }
 
 private:
-  void lowerBitInterfaces() {
-    getOperation().walk([&](func::FuncOp function) {
-      llvm::SmallVector<Type> inputTypes;
-      inputTypes.reserve(function.getNumArguments());
-      for (BlockArgument argument : function.getArguments()) {
-        Type type = argument.getType();
-        if (const auto bit = dyn_cast<BitType>(type)) {
-          type = IntegerType::get(function.getContext(), bit.getWidth());
-          argument.setType(type);
-        }
-        inputTypes.push_back(type);
-      }
-      llvm::SmallVector<Type> resultTypes;
-      for (Type type : function.getResultTypes()) {
-        if (const auto bit = dyn_cast<BitType>(type)) {
-          type = IntegerType::get(function.getContext(), bit.getWidth());
-        }
-        resultTypes.push_back(type);
-      }
-      function.setType(
-          FunctionType::get(function.getContext(), inputTypes, resultTypes));
-    });
+  enum class VisitState : std::uint8_t { Unvisited, Active, Complete };
 
-    llvm::SmallVector<UnpackBitOp> unpackOperations;
-    getOperation().walk(
-        [&](UnpackBitOp operation) { unpackOperations.push_back(operation); });
-    for (UnpackBitOp operation : unpackOperations) {
-      OpBuilder builder(operation);
-      Value value = operation->getOperand(0);
-      const auto type = cast<IntegerType>(value.getType());
-      if (operation.getIndex() != 0) {
-        const Value shift = arith::ConstantIntOp::create(
-            builder, operation.getLoc(), operation.getIndex(), type.getWidth());
-        value =
-            arith::ShRUIOp::create(builder, operation.getLoc(), value, shift);
-      }
-      if (type.getWidth() != 1) {
-        value = arith::TruncIOp::create(builder, operation.getLoc(),
-                                        builder.getI1Type(), value);
-      }
-      operation.replaceAllUsesWith(value);
-      operation.erase();
-    }
+  LogicalResult collectReachableGates(SmallVectorImpl<GateOp>& postorder) {
+    llvm::DenseMap<Operation*, VisitState> states;
+    llvm::DenseMap<Operation*, std::size_t> expansionCosts;
+    constexpr std::size_t expansionLimit = 100000;
+    std::size_t totalExpansionCost = 0;
 
-    llvm::SmallVector<PackBitsOp> packOperations;
-    getOperation().walk(
-        [&](PackBitsOp operation) { packOperations.push_back(operation); });
-    for (PackBitsOp operation : packOperations) {
-      OpBuilder builder(operation);
-      const unsigned width = operation.getResult().getType().getWidth();
-      const auto type = IntegerType::get(operation.getContext(), width);
-      Value packed =
-          arith::ConstantIntOp::create(builder, operation.getLoc(), 0, width);
-      for (const auto [index, bit] : llvm::enumerate(operation.getBits())) {
-        Value extended = bit;
-        if (width != 1) {
-          extended =
-              arith::ExtUIOp::create(builder, operation.getLoc(), type, bit);
+    const auto visit = [&](auto&& self, GateOp gate) -> LogicalResult {
+      auto& state = states[gate.getOperation()];
+      if (state == VisitState::Complete) {
+        return success();
+      }
+      if (state == VisitState::Active) {
+        return gate.emitError("recursive custom gates cannot be lowered");
+      }
+      state = VisitState::Active;
+      std::size_t expansionCost = 1;
+      WalkResult result = gate.getBody().walk([&](ApplyGateOp application) {
+        auto callee =
+            dyn_cast_or_null<GateOp>(SymbolTable::lookupNearestSymbolFrom(
+                application.getOperation(), application.getCalleeAttr()));
+        if (!callee) {
+          if (++expansionCost > expansionLimit) {
+            return WalkResult::interrupt();
+          }
+          return WalkResult::advance();
         }
-        if (index != 0) {
-          const Value shift = arith::ConstantIntOp::create(
-              builder, operation.getLoc(), index, width);
-          extended = arith::ShLIOp::create(builder, operation.getLoc(),
-                                           extended, shift);
+        if (failed(self(self, callee))) {
+          return WalkResult::interrupt();
         }
-        packed =
-            arith::OrIOp::create(builder, operation.getLoc(), packed, extended);
+        const auto dependencyCost =
+            expansionCosts.lookup(callee.getOperation());
+        if (dependencyCost > expansionLimit - expansionCost) {
+          expansionCost = expansionLimit + 1;
+          return WalkResult::interrupt();
+        }
+        expansionCost += dependencyCost;
+        return WalkResult::advance();
+      });
+      if (result.wasInterrupted()) {
+        if (states[gate.getOperation()] == VisitState::Active &&
+            expansionCost <= expansionLimit) {
+          return failure();
+        }
+        return gate.emitError(
+            "custom-gate expansion exceeds the safe lowering limit");
       }
-      operation.replaceAllUsesWith(packed);
-      operation.erase();
-    }
-  }
-
-  static LogicalResult lowerInclusiveRange(ForOp loop) {
-    auto sourceType = cast<IntegerType>(loop.getStart().getType());
-    if (sourceType.getWidth() == IntegerType::kMaxWidth) {
-      return loop.emitError(
-          "range induction width cannot be widened without exceeding MLIR's "
-          "integer-width limit");
-    }
-    auto step = loop.getStep().getDefiningOp<arith::ConstantIntOp>();
-    if (!step) {
-      return loop.emitError("dynamic range step cannot be proven nonzero for "
-                            "the selected target");
-    }
-    if (step.value() == 0) {
-      return loop.emitError("OpenQASM range step cannot be zero");
-    }
-
-    OpBuilder builder(loop);
-    const Location loc = loop.getLoc();
-    const auto wideType =
-        IntegerType::get(loop.getContext(), sourceType.getWidth() + 1,
-                         sourceType.getSignedness());
-    auto extend = [&](const Value value) -> Value {
-      if (sourceType.isUnsigned()) {
-        return arith::ExtUIOp::create(builder, loc, wideType, value);
-      }
-      return arith::ExtSIOp::create(builder, loc, wideType, value);
+      state = VisitState::Complete;
+      expansionCosts[gate.getOperation()] = expansionCost;
+      postorder.push_back(gate);
+      return success();
     };
-    const Value start = extend(loop.getStart());
-    const Value stop = extend(loop.getStop());
-    const Value wideStep = extend(loop.getStep());
 
-    auto whileOp = scf::WhileOp::create(builder, loc, TypeRange{wideType},
-                                        ValueRange{start});
-    Block& conditionBlock = whileOp.getBefore().emplaceBlock();
-    conditionBlock.addArgument(wideType, loc);
-    builder.setInsertionPointToStart(&conditionBlock);
-    const bool descending = step.value() < 0;
-    const arith::CmpIPredicate predicate =
-        sourceType.isUnsigned() ? arith::CmpIPredicate::ule
-                                : (descending ? arith::CmpIPredicate::sge
-                                              : arith::CmpIPredicate::sle);
-    const Value condition = arith::CmpIOp::create(
-        builder, loc, predicate, conditionBlock.getArgument(0), stop);
-    scf::ConditionOp::create(builder, loc, condition,
-                             conditionBlock.getArguments());
-
-    Block& bodyBlock = whileOp.getAfter().emplaceBlock();
-    bodyBlock.addArgument(wideType, loc);
-    builder.setInsertionPointToStart(&bodyBlock);
-    const Value visibleInduction = arith::TruncIOp::create(
-        builder, loc, sourceType, bodyBlock.getArgument(0));
-    IRMapping mapping;
-    mapping.map(loop.getBody().front().getArgument(0), visibleInduction);
-    for (Operation& operation : loop.getBody().front().without_terminator()) {
-      builder.clone(operation, mapping);
-    }
-    const Value next =
-        arith::AddIOp::create(builder, loc, bodyBlock.getArgument(0), wideStep);
-    scf::YieldOp::create(builder, loc, next);
-    loop.erase();
-    return success();
+    LogicalResult result = success();
+    getOperation().walk([&](ApplyGateOp application) {
+      if (application->getParentOfType<GateOp>()) {
+        return WalkResult::advance();
+      }
+      auto gate = dyn_cast_or_null<GateOp>(SymbolTable::lookupNearestSymbolFrom(
+          application.getOperation(), application.getCalleeAttr()));
+      if (gate) {
+        if (failed(visit(visit, gate))) {
+          result = failure();
+          return WalkResult::interrupt();
+        }
+        const auto rootCost = expansionCosts.lookup(gate.getOperation());
+        if (rootCost > expansionLimit - totalExpansionCost) {
+          (void)application.emitError(
+              "module custom-gate expansion exceeds the safe lowering limit");
+          result = failure();
+          return WalkResult::interrupt();
+        }
+        totalExpansionCost += rootCost;
+      }
+      return WalkResult::advance();
+    });
+    return result;
   }
 
-  static LogicalResult emitPrimitive(OpBuilder& builder, const Location loc,
-                                     const StringRef name,
-                                     const ValueRange parameters,
-                                     const ValueRange qubits) {
-    const StringRef operationName =
+  class ApplyGateOpConversion final : public OpConversionPattern<ApplyGateOp> {
+  public:
+    ApplyGateOpConversion(MLIRContext* context, OQ3ToQCPass& pass)
+        : OpConversionPattern(context), pass(pass) {}
+
+    LogicalResult
+    matchAndRewrite(ApplyGateOp application, OpAdaptor /*adaptor*/,
+                    ConversionPatternRewriter& rewriter) const override {
+      return pass.lowerGateApplication(application, rewriter);
+    }
+
+  private:
+    OQ3ToQCPass& pass;
+  };
+
+  static LogicalResult emitPrimitive(OpBuilder& builder, Location loc,
+                                     StringRef name, ValueRange parameters,
+                                     ValueRange qubits) {
+    auto operationName =
         llvm::StringSwitch<StringRef>(name)
             .Case("gphase", qc::GPhaseOp::getOperationName())
             .Case("id", qc::IdOp::getOperationName())
@@ -271,9 +250,8 @@ private:
   }
 
   LogicalResult emitResolvedGate(OpBuilder& builder, ApplyGateOp application,
-                                 Operation* declaration,
-                                 const ValueRange parameters,
-                                 const ValueRange qubits) const {
+                                 Operation* declaration, ValueRange parameters,
+                                 ValueRange qubits) const {
     if (auto gate = dyn_cast<GateOp>(declaration)) {
       IRMapping mapping;
       llvm::SmallVector<Value> arguments(parameters.begin(), parameters.end());
@@ -289,7 +267,7 @@ private:
       return success();
     }
 
-    const StringRef resolvedName = application.getCallee();
+    auto resolvedName = application.getCallee();
     const GateCatalogEntry* catalogEntry = lookupGate(resolvedName);
     if (!catalogEntry) {
       return application.emitError() << "gate '" << resolvedName
@@ -306,15 +284,15 @@ private:
       return application.emitError(
           "implicit-control count exceeds gate operands");
     }
-    const StringRef primitive = catalogEntry->primitive;
-    const auto emitCatalogPrimitive = [&](const ValueRange primitiveQubits) {
+    auto primitive = catalogEntry->primitive;
+    auto emitCatalogPrimitive = [&](ValueRange primitiveQubits) {
       if (!catalogEntry->inverse) {
         return emitPrimitive(builder, application.getLoc(), primitive,
                              parameters, primitiveQubits);
       }
       LogicalResult result = success();
       qc::InvOp::create(builder, application.getLoc(), primitiveQubits,
-                        [&](const ValueRange aliases) {
+                        [&](ValueRange aliases) {
                           result =
                               emitPrimitive(builder, application.getLoc(),
                                             primitive, parameters, aliases);
@@ -330,8 +308,8 @@ private:
       return success();
     }
 
-    const ValueRange controlValues = qubits.take_front(controls);
-    const ValueRange targets = qubits.drop_front(controls);
+    auto controlValues = qubits.take_front(controls);
+    auto targets = qubits.drop_front(controls);
     ValueRange primitiveParameters = parameters;
     if (resolvedName == "cu") {
       if (controls != 1 || controlValues.size() != 1 || targets.size() != 1 ||
@@ -348,10 +326,10 @@ private:
     }
     qc::CtrlOp::create(
         builder, application.getLoc(), controlValues, targets,
-        [&](const ValueRange aliases) {
+        [&](ValueRange aliases) {
           if (catalogEntry->inverse) {
             qc::InvOp::create(builder, application.getLoc(), aliases,
-                              [&](const ValueRange inverseAliases) {
+                              [&](ValueRange inverseAliases) {
                                 (void)emitPrimitive(
                                     builder, application.getLoc(), primitive,
                                     primitiveParameters, inverseAliases);
@@ -364,11 +342,37 @@ private:
     return success();
   }
 
-  LogicalResult lowerGateApplication(ApplyGateOp application) const {
+  LogicalResult
+  lowerGateApplication(ApplyGateOp application,
+                       ConversionPatternRewriter& rewriter) const {
     Operation* declaration = SymbolTable::lookupNearestSymbolFrom(
         application.getOperation(), application.getCalleeAttr());
     if (declaration == nullptr) {
       return application.emitError("cannot lower an unresolved gate symbol");
+    }
+
+    if (auto gate = dyn_cast<GateOp>(declaration);
+        gate &&
+        llvm::any_of(application.getModifierKinds(), [](const auto raw) {
+          const auto kind = static_cast<GateModifierKind>(raw);
+          return kind == GateModifierKind::inv ||
+                 kind == GateModifierKind::ctrl ||
+                 kind == GateModifierKind::negctrl;
+        })) {
+      const auto containsStructuredControlFlow =
+          gate.walk([&](Operation* nested) {
+                if (nested->getName().getDialectNamespace() == "scf" &&
+                    nested->getNumRegions() > 0) {
+                  return WalkResult::interrupt();
+                }
+                return WalkResult::advance();
+              })
+              .wasInterrupted();
+      if (containsStructuredControlFlow) {
+        return application.emitError(
+            "modifiers on custom gates with structured control flow cannot "
+            "be represented by the QC target");
+      }
     }
 
     llvm::SmallVector<int64_t> controlCounts(
@@ -407,35 +411,34 @@ private:
             "modifier control count exceeds the available gate operands");
       }
       if (kind == GateModifierKind::negctrl) {
-        const auto controls =
+        auto controls =
             application.getQubits().slice(controlOffset, controlCount);
         negativeControls.append(controls.begin(), controls.end());
       }
       controlOffset += controlCount;
     }
 
-    OpBuilder builder(application);
-    for (const Value control : negativeControls) {
+    rewriter.setInsertionPoint(application);
+    OpBuilder& builder = rewriter;
+    for (auto control : negativeControls) {
       qc::XOp::create(builder, application.getLoc(), control);
     }
-    const LogicalResult result =
-        emitModifiers(builder, application, declaration, controlCounts, 0,
-                      application.getQubits());
-    for (const Value control : negativeControls) {
+    auto result = emitModifiers(builder, application, declaration,
+                                controlCounts, 0, application.getQubits());
+    for (auto control : negativeControls) {
       qc::XOp::create(builder, application.getLoc(), control);
     }
     if (failed(result)) {
       return failure();
     }
-    application.erase();
+    rewriter.eraseOp(application);
     return success();
   }
 
   LogicalResult emitModifiers(OpBuilder& builder, ApplyGateOp application,
                               Operation* declaration,
-                              const ArrayRef<int64_t> controlCounts,
-                              const size_t position,
-                              const ValueRange qubits) const {
+                              ArrayRef<int64_t> controlCounts,
+                              const size_t position, ValueRange qubits) const {
     if (position == application.getModifierKinds().size()) {
       return emitResolvedGate(builder, application, declaration,
                               application.getParameters(), qubits);
@@ -445,7 +448,7 @@ private:
     if (kind == GateModifierKind::inv) {
       LogicalResult result = success();
       qc::InvOp::create(
-          builder, application.getLoc(), qubits, [&](const ValueRange aliases) {
+          builder, application.getLoc(), qubits, [&](ValueRange aliases) {
             result = emitModifiers(builder, application, declaration,
                                    controlCounts, position + 1, aliases);
           });
@@ -458,10 +461,10 @@ private:
 
   LogicalResult emitControls(OpBuilder& builder, ApplyGateOp application,
                              Operation* declaration,
-                             const ArrayRef<int64_t> controlCounts,
+                             ArrayRef<int64_t> controlCounts,
                              const size_t nextPosition,
                              const size_t remainingControls,
-                             const ValueRange qubits) const {
+                             ValueRange qubits) const {
     if (remainingControls == 0) {
       return emitModifiers(builder, application, declaration, controlCounts,
                            nextPosition, qubits);
@@ -469,7 +472,7 @@ private:
 
     LogicalResult result = success();
     qc::CtrlOp::create(builder, application.getLoc(), qubits.take_front(1),
-                       qubits.drop_front(1), [&](const ValueRange aliases) {
+                       qubits.drop_front(1), [&](ValueRange aliases) {
                          result = emitControls(
                              builder, application, declaration, controlCounts,
                              nextPosition, remainingControls - 1, aliases);
@@ -480,9 +483,8 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass>
-createLowerOQ3ToQCPass(const OpenQASMLoweringOptions options) {
-  return std::make_unique<LowerOQ3ToQCPass>(options);
+std::unique_ptr<Pass> createOQ3ToQCPass() {
+  return std::make_unique<OQ3ToQCPass>();
 }
 
 } // namespace mlir::oq3

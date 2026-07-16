@@ -370,5 +370,86 @@ extern const std::string ifEmptyThen;
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
 
+/// Creates an if operation with a nested register loop.
+extern const std::string nestedIfOpForLoop;
+
+/// Creates a measurement-controlled while loop.
+extern const std::string simpleWhileReset;
+
+/// Applies a gate to every qubit selected by a source-level for loop.
+extern const std::string simpleForLoop;
+
+/// Creates a for loop containing a measurement-controlled branch.
+extern const std::string nestedForLoopIfOp;
+
+/// Creates two register loops, one containing a while loop.
+extern const std::string nestedForLoopWhileOp;
+
+/// Uses a separately allocated control in a register loop.
+extern const std::string nestedForLoopCtrlOpWithSeparateQubit;
+
+/// Uses one register element as a control for dynamically selected elements.
+extern const std::string nestedForLoopCtrlOpWithExtractedQubit;
+
+/// Broadcasts a controlled gate over a register and scalar qubit.
+extern const std::string broadcastRegisterAndQubit;
+
+/// Broadcasts a custom compound gate over a register and scalar qubit.
+extern const std::string broadcastCompoundGate;
+
+/// Exercises arithmetic precedence in gate parameters.
+extern const std::string expressionArithmetic;
+
+/// Exercises unary negation in a gate parameter.
+extern const std::string expressionUnaryMinus;
+
+/// Exercises the built-in pi, tau, and Euler constants.
+extern const std::string expressionBuiltinConstants;
+
+/// Exercises scalar mathematical functions in gate parameters.
+extern const std::string expressionMathFunctions;
+
+/// Exercises nested scalar mathematical functions.
+extern const std::string expressionNestedMathFunctions;
+
+/// Uses a constant floating-point variable as a gate parameter.
+extern const std::string expressionConstFloat;
+
+/// Reassigns a mutable floating-point variable used by a gate.
+extern const std::string expressionMutableFloat;
+
+/// Exercises constant integer arithmetic used as an index.
+extern const std::string expressionConstIntArithmetic;
+
+/// Uses a mutable integer as a dynamic qubit index.
+extern const std::string expressionDynamicIntIndex;
+
+/// Uses the integer modulo operator to derive a dynamic qubit index.
+extern const std::string expressionModIndex;
+
+/// Creates a conditional from a Boolean literal.
+extern const std::string conditionLiteral;
+
+/// Creates a conditional directly from a measurement.
+extern const std::string conditionMeasurement;
+
+/// Combines two measurement conditions with logical conjunction.
+extern const std::string conditionAnd;
+
+/// Combines two measurement conditions with logical disjunction.
+extern const std::string conditionOr;
+
+/// Exercises precedence among negation, conjunction, and disjunction.
+extern const std::string conditionNotAndOr;
+
+/// Creates a conditional from a mutable Boolean variable.
+extern const std::string conditionBoolVariable;
+
+/// Creates a conditional from an indexed classical bit.
+extern const std::string conditionIndexedBit;
+
+/// Combines a while loop with a compound measurement condition.
+extern const std::string conditionWhileAnd;
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

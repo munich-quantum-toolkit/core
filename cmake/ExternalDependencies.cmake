@@ -29,7 +29,6 @@ if(BUILD_MQT_CORE_MLIR)
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
     GIT_TAG v0.3.0)
   list(APPEND FETCH_PACKAGES jeff-mlir)
-
 endif()
 
 set(JSON_VERSION

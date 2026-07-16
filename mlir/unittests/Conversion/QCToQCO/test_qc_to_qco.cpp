@@ -28,6 +28,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -79,6 +80,57 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQCO());
   return pm.run(module);
+}
+
+TEST(QCToQCORegressionTest, ConvertsCompleteMixedSCFQuantumState) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %qco = qco.alloc : !qco.qubit
+    %qc = qc.alloc : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %loop = scf.for %i = %c0 to %c1 step %c1
+        iter_args(%qco_arg = %qco) -> (!qco.qubit) {
+      qc.h %qc : !qc.qubit
+      scf.yield %qco_arg : !qco.qubit
+    }
+    qco.sink %loop : !qco.qubit
+    qc.dealloc %qc : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawMixedLoop = false;
+  module->walk([&](scf::ForOp loop) {
+    sawMixedLoop = true;
+    EXPECT_EQ(loop.getNumResults(), 2);
+    auto yield = cast<scf::YieldOp>(loop.getBody()->getTerminator());
+    EXPECT_EQ(yield.getNumOperands(), loop.getNumResults());
+    EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getResultTypes()));
+  });
+  EXPECT_TRUE(sawMixedLoop);
+
+  bool retainsQCOperations = false;
+  module->walk([&](Operation* operation) {
+    retainsQCOperations |=
+        operation->getDialect() == context.getLoadedDialect<qc::QCDialect>();
+  });
+  EXPECT_FALSE(retainsQCOperations);
 }
 
 TEST_P(QCToQCOTest, ProgramEquivalence) {

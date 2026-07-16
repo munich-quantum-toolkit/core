@@ -880,5 +880,267 @@ if (c) {
 bit[1] out = measure q;
 )qasm";
 
+const std::string nestedIfOpForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] reg;
+qubit q;
+h q;
+bit c = measure q;
+if (c) { h q; } else {
+  for uint i in [0:2] { h reg[i]; }
+}
+output bit out = measure q;
+)qasm";
+
+const std::string simpleWhileReset = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+while (measure q) { h q; }
+bit out = measure q;
+)qasm";
+
+const std::string simpleForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:1] { h q[i]; }
+bit[2] out = measure q;
+)qasm";
+
+const std::string nestedForLoopIfOp = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] reg;
+qubit q;
+for uint i in [0:1] {
+  h q;
+  if (measure q) { h reg[i]; }
+}
+bit out = measure q;
+)qasm";
+
+const std::string nestedForLoopWhileOp = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:1] { h q[i]; }
+for uint i in [0:1] {
+  while (measure q[i]) { h q[i]; }
+}
+bit[2] out = measure q;
+)qasm";
+
+const std::string nestedForLoopCtrlOpWithSeparateQubit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+qubit control;
+h control;
+for uint i in [0:2] { h q[i]; cx control, q[i]; }
+bit out = measure control;
+)qasm";
+
+const std::string nestedForLoopCtrlOpWithExtractedQubit =
+    R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+h q[0];
+for uint i in [1:3] { h q[i]; cx q[0], q[i]; }
+bit out = measure q[0];
+)qasm";
+
+const std::string broadcastRegisterAndQubit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] reg;
+qubit q;
+cx reg, q;
+bit[3] left = measure reg;
+bit right = measure q;
+)qasm";
+
+const std::string broadcastCompoundGate = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+gate compound a, b { x a; cx a, b; }
+qubit[3] reg;
+qubit q;
+compound reg, q;
+bit[3] left = measure reg;
+bit right = measure q;
+)qasm";
+
+const std::string expressionArithmetic = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx((1.0 + 2.0) * 3.0 / 2.0 - 0.5) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionUnaryMinus = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(-0.5) q;
+ry(-(1.0 + 2.0)) q;
+rz(-(-0.25)) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionBuiltinConstants = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(pi / 2) q;
+ry(tau / 4) q;
+rz(euler) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionMathFunctions = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(arccos(0.5)) q;
+rx(arcsin(0.5)) q;
+rx(arctan(0.5)) q;
+rx(cos(0.5)) q;
+rx(exp(0.5)) q;
+rx(log(2.0)) q;
+rx(mod(5.5, 2.0)) q;
+rx(pow(2.0, 3.0)) q;
+rx(sin(0.5)) q;
+rx(sqrt(2.0)) q;
+rx(tan(0.5)) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionNestedMathFunctions = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(sqrt(pow(sin(0.5), 2.0) + pow(cos(0.5), 2.0))) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionConstFloat = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+const float theta = pi / 4;
+qubit q;
+h q;
+rx(theta) q;
+ry(theta * 2.0) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionMutableFloat = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+float theta = 0.5;
+h q;
+rx(theta) q;
+theta = theta + 0.25;
+ry(theta) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionConstIntArithmetic = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+const int n = pow(2, 3);
+const int m = mod(11, 4);
+const int k = (1 + 2) * 3 - 4;
+qubit[n] q;
+h q[m];
+h q[k];
+rx(m + k) q[m];
+bit[2] c;
+c[0] = measure q[m];
+c[1] = measure q[k];
+)qasm";
+
+const std::string expressionDynamicIntIndex = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+for uint i in [0:2] { int x = i + 1; h q[x]; }
+bit[4] c = measure q;
+)qasm";
+
+const std::string expressionModIndex = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:3] { h q[mod(i, 2)]; }
+bit[2] c = measure q;
+)qasm";
+
+const std::string conditionLiteral = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+if (true) { x q[0]; }
+if (false) { x q[1]; }
+bit[2] c = measure q;
+)qasm";
+
+const std::string conditionMeasurement = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+if (measure q[0]) { x q[1]; }
+bit c = measure q[1];
+)qasm";
+
+const std::string conditionAnd = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+if (c0 && c1) { x q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionOr = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+if (c0 || c1) { x q[2]; } else { h q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionNotAndOr = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+h q[0]; h q[1]; h q[2];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+bit c2 = measure q[2];
+if (!(c0 && c1) || c2) { x q[3]; }
+bit out = measure q[3];
+)qasm";
+
+const std::string conditionBoolVariable = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+bool both = c0 && c1;
+bool neither = !both;
+if (neither) { x q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionIndexedBit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit[2] c;
+c[0] = measure q[0]; c[1] = measure q[1];
+if (c[1]) { x q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionWhileAnd = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+while (measure q[0] && measure q[1]) { h q[0]; h q[1]; }
+bit[2] c = measure q;
+)qasm";
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

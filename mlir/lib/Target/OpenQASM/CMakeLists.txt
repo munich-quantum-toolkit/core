@@ -10,10 +10,14 @@ add_mlir_library(
   MLIROpenQASMTarget
   Frontend.cpp
   OpenQASM.cpp
+  OpenQASMLexer.cpp
+  OpenQASMSemantics.cpp
+  OpenQASMSyntax.cpp
   DEPENDS
   MLIROQ3OpsIncGen
   LINK_LIBS
   MLIRArithDialect
+  MLIRControlFlowDialect
   MLIRFuncDialect
   MLIRMathDialect
   MLIRMemRefDialect
@@ -21,8 +25,8 @@ add_mlir_library(
   MLIRQCDialect
   MLIRQCProgramBuilder
   MLIRSCFDialect
-  MQT::CoreIR
-  MQT::CoreQASM)
+  MLIRUBDialect
+  LLVMSupport)
 
 mqt_mlir_target_use_project_options(MLIROpenQASMTarget)
 
