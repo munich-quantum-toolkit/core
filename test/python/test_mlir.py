@@ -74,7 +74,7 @@ def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
 
 
 def test_compile_program_jeff_file() -> None:
-    """Compile a `.jeff` file."""
+    """Compile a ``.jeff`` file."""
     path = Path(__file__).parent.parent / "circuits" / "bell.jeff"
 
     result = compile_program(path)
@@ -100,7 +100,7 @@ def test_compile_program_mlir_string_with_leading_whitespace() -> None:
 
 
 def test_compile_program_mlir_file(tmp_path: Path) -> None:
-    """Compile a `.mlir` file."""
+    """Compile a ``.mlir`` file."""
     path = tmp_path / "program.mlir"
     path.write_text(MLIR_STRING, encoding="utf-8")
 
@@ -145,7 +145,7 @@ def test_compile_program_single_line_qasm_string() -> None:
 
 
 def test_compile_program_qasm_file(tmp_path: Path) -> None:
-    """Compile a `.qasm` file."""
+    """Compile a ``.qasm`` file."""
     path = tmp_path / "program.qasm"
     path.write_text(QASM_STRING, encoding="utf-8")
 
@@ -155,7 +155,7 @@ def test_compile_program_qasm_file(tmp_path: Path) -> None:
 
 
 def test_compile_program_quantum_computation() -> None:
-    """Compile a `QuantumComputation`."""
+    """Compile a ``QuantumComputation``."""
     qc = QuantumComputation(2, 2)
     qc.h(0)
     qc.cx(0, 1)
@@ -167,7 +167,7 @@ def test_compile_program_quantum_computation() -> None:
 
 
 def test_compile_program_qiskit_quantum_circuit() -> None:
-    """Compile a `QuantumCircuit`."""
+    """Compile a ``QuantumCircuit``."""
     qc = QuantumCircuit(2, 2)
     qc.h(0)
     qc.cx(0, 1)
@@ -196,7 +196,7 @@ def test_compile_program_qiskit_quantum_circuit_subclass() -> None:
 
 
 def test_jeff_program_round_trip(tmp_path: Path) -> None:
-    """Store and load a `JeffProgram` through bytes and a file."""
+    """Store and load a ``JeffProgram`` through bytes and a file."""
     path = tmp_path / "program.jeff"
     result = compile_program(QASM_STRING, output=OutputFormat.JEFF)
     assert isinstance(result, JeffProgram)
