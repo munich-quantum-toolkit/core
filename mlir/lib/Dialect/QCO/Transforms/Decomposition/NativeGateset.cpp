@@ -10,12 +10,16 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/StringSwitch.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
 #include <optional>
@@ -139,6 +143,48 @@ NativeGateset::decomposeTarget(const Matrix4x4& target) const {
     return std::nullopt;
   }
   return cachedNativeBasisDecomposer(*entangler).decomposeTarget(target);
+}
+
+static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
+  return TypeSwitch<Operation*, std::optional<NativeGateKind>>(
+             op.getOperation())
+      .Case<UOp>([](UOp) { return NativeGateKind::U; })
+      .Case<XOp>([](XOp) { return NativeGateKind::X; })
+      .Case<SXOp>([](SXOp) { return NativeGateKind::SX; })
+      .Case<RZOp>([](RZOp) { return NativeGateKind::RZ; })
+      .Case<RXOp>([](RXOp) { return NativeGateKind::RX; })
+      .Case<RYOp>([](RYOp) { return NativeGateKind::RY; })
+      .Case<ROp>([](ROp) { return NativeGateKind::R; })
+      .Default([](Operation*) { return std::nullopt; });
+}
+
+static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
+  if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1 ||
+      ctrl.getNumBodyUnitaries() != 1) {
+    return std::nullopt;
+  }
+  return TypeSwitch<Operation*, std::optional<NativeGateKind>>(
+             ctrl.getBodyUnitary(0).getOperation())
+      .Case<XOp>([](XOp) { return NativeGateKind::CX; })
+      .Case<ZOp>([](ZOp) { return NativeGateKind::CZ; })
+      .Default([](Operation*) { return std::nullopt; });
+}
+
+bool NativeGateset::allowsOp(Operation* op) const {
+  return TypeSwitch<Operation*, bool>(op)
+      .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
+      .Case<CtrlOp>([&](CtrlOp ctrl) {
+        const auto kind = entanglerKindFor(ctrl);
+        return kind && gates.contains(*kind);
+      })
+      .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+        if (!unitary.isSingleQubit()) {
+          return false;
+        }
+        const auto gate = gateKindFor(unitary);
+        return gate && gates.contains(*gate);
+      })
+      .Default([](Operation*) { return false; });
 }
 
 std::optional<NativeGateset> NativeGateset::parse(StringRef nativeGates) {

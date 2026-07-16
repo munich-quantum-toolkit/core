@@ -137,10 +137,13 @@ namespace {
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
-                                    const decomposition::EulerBasis basis)
-      : OpInterfaceRewritePattern(context), basis(basis) {}
+                                    const decomposition::EulerBasis basis,
+                                    const bool skipControlledBodies)
+      : OpInterfaceRewritePattern(context), basis(basis),
+        skipControlledBodies(skipControlledBodies) {}
 
   decomposition::EulerBasis basis;
+  bool skipControlledBodies;
 
   /**
    * @brief Whether `op` starts a run.
@@ -165,6 +168,10 @@ struct FuseSingleQubitUnitaryRunsPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
+    if (skipControlledBodies &&
+        (op.getOperation()->getParentOfType<CtrlOp>() != nullptr)) {
+      return failure();
+    }
     if (!isRunStart(op)) {
       return failure();
     }
@@ -208,8 +215,8 @@ protected:
     }
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(),
-                                                    *parsed);
+    decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+        patterns, *parsed, /*skipControlledBodies=*/false);
 
     if (failed(applyPatternsGreedily(module, std::move(patterns)))) {
       signalPassFailure();
@@ -220,3 +227,14 @@ protected:
 } // namespace
 
 } // namespace mlir::qco
+
+namespace mlir::qco::decomposition {
+
+void populateFuseSingleQubitUnitaryRunsPatterns(
+    RewritePatternSet& patterns, const EulerBasis basis,
+    const bool skipControlledBodies) {
+  patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
+                                                  skipControlledBodies);
+}
+
+} // namespace mlir::qco::decomposition
