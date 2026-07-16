@@ -1145,6 +1145,27 @@ private:
     return stack;
   }
 
+  /// Helper function to realign a terminator operation based on a permutation
+  /// of hardware indices. This constructs a value map from the given bundle and
+  /// reorders the terminator's operands according to the permutation vector.
+  template <typename T, typename... Args>
+  static void realignTerminator(Operation* terminator, ArrayRef<size_t> perm,
+                                const RoutingBundle& bundle,
+                                IRRewriter& rewriter, Args&&... extraArgs) {
+    // Map hardware indices to qubit values for the given bundle.
+    DenseMap<size_t, Value> m(bundle.wires.size());
+    for (size_t i = 0; i < bundle.wires.size(); ++i) {
+      const auto prog = bundle.infos.lookupProgram(i);
+      const auto hw = bundle.layout.getHardwareIndex(prog);
+      m.try_emplace(hw, bundle.wires[i].qubit());
+    }
+
+    rewriter.setInsertionPoint(terminator);
+    rewriter.replaceOpWithNewOp<T>(
+        terminator, std::forward<Args>(extraArgs)...,
+        to_vector(map_range(perm, [&](size_t hw) { return m.at(hw); })));
+  }
+
   /// Processes the recursive stack item by routing the nested operation and
   /// inserting epilogue SWAPs.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
@@ -1153,16 +1174,6 @@ private:
                          RoutingBundle& parent, Statistics& stats,
                          IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = item;
-
-    const auto constructMap = [](const RoutingBundle& bundle) {
-      DenseMap<size_t, Value> curr(bundle.wires.size());
-      for (size_t i = 0; i < bundle.wires.size(); ++i) {
-        const auto prog = bundle.infos.lookupProgram(i);
-        const auto hw = bundle.layout.getHardwareIndex(prog);
-        curr.try_emplace(hw, bundle.wires[i].qubit());
-      }
-      return curr;
-    };
 
     const LogicalResult res =
         TypeSwitch<Operation*, LogicalResult>(op)
@@ -1259,12 +1270,9 @@ private:
                 for_each(befChild.wires,
                          [](auto& it) { std::advance(it, -2); });
 
-                const auto m = constructMap(befChild);
-                rewriter->setInsertionPoint(condOp);
-                rewriter->replaceOpWithNewOp<scf::ConditionOp>(
-                    condOp, condOp.getCondition(),
-                    to_vector(
-                        map_range(perm, [&](size_t hw) { return m.at(hw); })));
+                realignTerminator<scf::ConditionOp>(
+                    whileOp.getBeforeBody()->getTerminator(), perm, befChild,
+                    *rewriter, condOp.getCondition());
                 sortTopologically(whileOp.getBeforeBody());
               }
 
@@ -1302,12 +1310,9 @@ private:
               // sort topologically to fix any occurring SSA dominance errors.
 
               if constexpr (Mode == RoutingMode::Hot) {
-                const auto m = constructMap(aftChild);
-                rewriter->setInsertionPoint(yieldOp);
-                rewriter->replaceOpWithNewOp<scf::YieldOp>(
-                    yieldOp, to_vector(map_range(
-                                 perm, [&](size_t hw) { return m.at(hw); })));
-
+                realignTerminator<scf::YieldOp>(
+                    whileOp.getAfterBody()->getTerminator(), perm, aftChild,
+                    *rewriter);
                 sortTopologically(whileOp.getAfterBody());
               }
 
@@ -1405,15 +1410,8 @@ private:
                     return isa<qco::YieldOp>(std::next(it).operation());
                   }));
 
-                  const auto m = constructMap(child);
-
-                  auto yieldOp = cast<YieldOp>(body->getTerminator());
-                  const SmallVector<Value> targets(
-                      map_range(perm, [&](size_t hw) { return m.at(hw); }));
-                  rewriter->setInsertionPoint(yieldOp);
-                  rewriter->replaceOpWithNewOp<YieldOp>(
-                      yieldOp, to_vector(map_range(
-                                   perm, [&](size_t hw) { return m.at(hw); })));
+                  realignTerminator<YieldOp>(body->getTerminator(), perm, child,
+                                             *rewriter);
 
                   sortTopologically(body);
                 }
