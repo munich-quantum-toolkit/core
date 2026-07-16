@@ -63,13 +63,12 @@ using namespace mlir;
 // Command-line options
 static llvm::cl::opt<std::string>
     inputFilename(llvm::cl::Positional,
-                  llvm::cl::desc("<input .jeff/.mlir/.qco/.qasm file>"),
+                  llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
                   llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> inputFormat(
     "input-format",
-    llvm::cl::desc(
-        "Input format: auto, jeff, mlir, qco, or qasm (default: auto)"),
+    llvm::cl::desc("Input format: auto, jeff, mlir, or qasm (default: auto)"),
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
 static llvm::cl::opt<std::string>
@@ -84,7 +83,7 @@ static llvm::cl::opt<std::string> outputFormat(
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
 
 namespace {
-enum class InputFormat : std::uint8_t { MLIR, QCO, QASM, Jeff };
+enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
 enum class InputDialect : std::uint8_t { QC, QCO };
 enum class OutputFormat : std::uint8_t {
   QCImport,
@@ -110,9 +109,6 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
     return InputFormat::MLIR;
   }
-  if (format == "qco" || (format == "auto" && filename.ends_with(".qco"))) {
-    return InputFormat::QCO;
-  }
   if (format == "qasm" || (format == "auto" && filename.ends_with(".qasm"))) {
     return InputFormat::QASM;
   }
@@ -123,6 +119,30 @@ parseInputFormat(const StringRef format, const StringRef filename) {
     return InputFormat::MLIR;
   }
   return std::nullopt;
+}
+
+/**
+ * @brief Check whether a module contains an operation from a dialect.
+ */
+[[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
+                                            const StringRef dialect) {
+  auto found = false;
+  mod->walk([&](Operation* operation) {
+    found |= operation->getDialect()->getNamespace() == dialect;
+  });
+  return found;
+}
+
+/**
+ * @brief Detect the input dialect of a module.
+ *
+ * @details Defaults to QC if no QCO operation is found.
+ */
+[[nodiscard]] static InputDialect detectInputDialect(ModuleOp mod) {
+  if (moduleUsesDialect(mod, "qco")) {
+    return InputDialect::QCO;
+  }
+  return InputDialect::QC;
 }
 
 /**
@@ -325,10 +345,7 @@ int main(int argc, char** argv) {
   switch (*parsedInputFormat) {
   case InputFormat::MLIR:
     program.mod = loadMLIRFile(inputFilename, &context);
-    break;
-  case InputFormat::QCO:
-    program.mod = loadMLIRFile(inputFilename, &context);
-    program.dialect = InputDialect::QCO;
+    program.dialect = detectInputDialect(*program.mod);
     break;
   case InputFormat::QASM:
     program.mod = loadQASMFile(inputFilename, &context);
