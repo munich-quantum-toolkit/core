@@ -134,7 +134,7 @@ protected:
   }
 
   void expectEquivalent(const std::string& stage, const std::string& ir,
-                        const ModuleOp expected) const {
+                        ModuleOp expected) const {
     auto actual = parseRecordedModule(ir);
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
