@@ -23,9 +23,16 @@ struct OpenQASMProgram {
   llvm::StringRef source;
 };
 
-/// OpenQASM programs expected to traverse QC, optimized QCO, Jeff, and
-/// Adaptive QIR.
-[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> compilerPrograms();
+/// OpenQASM programs expected to traverse QC, optimized QCO, reconstructed QC,
+/// and Adaptive QIR.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms();
+
+/// OpenQASM programs that additionally round-trip through jeff.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms();
+
+/// OpenQASM programs accepted by the standard pipeline but rejected when QCO
+/// is converted to jeff.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms();
 
 /// Straight-line compiler programs that additionally support Base QIR.
 [[nodiscard]] llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms();

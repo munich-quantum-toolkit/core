@@ -340,6 +340,40 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
 }
 
 [[nodiscard]] testing::AssertionResult
+throughOptimizedQCO(const qasm::OpenQASMProgram& source,
+                    std::optional<QCProgram>& restored,
+                    std::vector<std::string>& resultTypes) {
+  auto qc = QCProgram::fromQASMString(source.source.str());
+  if (!qc) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": OpenQASM to QC";
+  }
+  const auto qcEntry = inspectEntry(qc->str());
+  if (!qcEntry) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": inspect QC entry";
+  }
+  resultTypes = qcEntry->resultTypes;
+  auto qco = std::move(*qc).intoQCO();
+  if (!qco || !qco->cleanup() || !qco->runPassPipeline("mqt-qco-default") ||
+      !qco->cleanup()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": QC/QCO optimization";
+  }
+  restored = std::move(*qco).intoQC();
+  if (!restored || !restored->cleanup()) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": optimized QCO to QC";
+  }
+  const auto restoredEntry = inspectEntry(restored->str());
+  if (!restoredEntry || restoredEntry->resultTypes != resultTypes) {
+    return testing::AssertionFailure()
+           << source.name.str() << ": reconstructed QC changed entry results";
+  }
+  return testing::AssertionSuccess();
+}
+
+[[nodiscard]] testing::AssertionResult
 roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
                               std::optional<QCProgram>& restored,
                               std::vector<std::string>& resultTypes) {
@@ -417,9 +451,11 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
   return matchesEntry(*restored, "restored QC");
 }
 
+enum class OutputRecordingShape : std::uint8_t { Arrays, Scalars };
+
 void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
                         const ArrayRef<std::string> sourceResultTypes,
-                        const bool afterJeffRoundTrip) {
+                        const OutputRecordingShape outputShape) {
   const auto entry = inspectEntry(program.str());
   ASSERT_TRUE(entry) << name.str() << ": QIR entry inspection";
   ASSERT_EQ(entry->resultTypes.size(), 1) << name.str() << ": QIR main result";
@@ -431,7 +467,7 @@ void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
   }
   if (name == "broadcast-custom-gate") {
     const std::vector<std::string> expected =
-        afterJeffRoundTrip
+        outputShape == OutputRecordingShape::Scalars
             ? std::vector<std::string>(4, QIR_RECORD_OUTPUT)
             : std::vector<std::string>(2, QIR_ARRAY_RECORD_OUTPUT);
     EXPECT_EQ(entry->outputRecordings, expected)
@@ -451,15 +487,15 @@ void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
 
 } // namespace
 
-TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitAdaptiveJeffChain) {
+TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitStandardPipeline) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
   std::vector<std::string> resultTypes;
-  ASSERT_TRUE(roundTripThroughOptimizedJeff(source, restoredQC, resultTypes));
+  ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes));
   auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
   ASSERT_TRUE(qir) << source.name.str() << ": QC to Adaptive QIR";
   expectQIRArtifacts(*qir, source.name, resultTypes,
-                     /*afterJeffRoundTrip=*/true);
+                     OutputRecordingShape::Arrays);
 }
 
 TEST_P(OpenQASMCompilerPipelineTest, TraversesTheDefaultAdaptivePipeline) {
@@ -474,32 +510,74 @@ TEST_P(OpenQASMCompilerPipelineTest, TraversesTheDefaultAdaptivePipeline) {
   auto* qir = std::get_if<QIRProgram>(&*output);
   ASSERT_NE(qir, nullptr) << source.name.str() << ": default output format";
   expectQIRArtifacts(*qir, source.name, inputEntry->resultTypes,
-                     /*afterJeffRoundTrip=*/false);
+                     OutputRecordingShape::Arrays);
 }
 
 class OpenQASMBasePipelineTest
     : public testing::TestWithParam<qasm::OpenQASMProgram> {};
 
-TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
+class OpenQASMJeffPipelineTest
+    : public testing::TestWithParam<qasm::OpenQASMProgram> {};
+
+TEST_P(OpenQASMJeffPipelineTest, TraversesTheExplicitJeffRoundTrip) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
   std::vector<std::string> resultTypes;
   ASSERT_TRUE(roundTripThroughOptimizedJeff(source, restoredQC, resultTypes));
+  auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(qir) << source.name.str() << ": QC to Adaptive QIR";
+  expectQIRArtifacts(*qir, source.name, resultTypes,
+                     OutputRecordingShape::Scalars);
+}
+
+class OpenQASMJeffBoundaryTest
+    : public testing::TestWithParam<qasm::OpenQASMProgram> {};
+
+TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
+  const auto& source = GetParam();
+  auto qc = QCProgram::fromQASMString(source.source.str());
+  ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco) << source.name.str() << ": QC to QCO";
+  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": QCO cleanup";
+  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"))
+      << source.name.str() << ": QCO optimization";
+  ASSERT_TRUE(qco->cleanup())
+      << source.name.str() << ": optimized QCO cleanup";
+  EXPECT_FALSE(std::move(*qco).intoJeff())
+      << source.name.str() << ": unexpectedly converted to jeff";
+}
+
+TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
+  const auto& source = GetParam();
+  std::optional<QCProgram> restoredQC;
+  std::vector<std::string> resultTypes;
+  ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes));
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto input = restoredQC->copy();
     auto qir = std::move(input).intoQIR(profile);
     ASSERT_TRUE(qir) << source.name.str() << ": QC to QIR";
     expectQIRArtifacts(*qir, source.name, resultTypes,
-                       /*afterJeffRoundTrip=*/true);
+                       profile == QIRProfile::Base
+                           ? OutputRecordingShape::Scalars
+                           : OutputRecordingShape::Arrays);
   }
 }
 
 INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMCompilerPipelineTest,
-                         testing::ValuesIn(qasm::compilerPrograms()),
+                         testing::ValuesIn(qasm::standardPipelinePrograms()),
                          openQASMProgramName);
 
 INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMBasePipelineTest,
                          testing::ValuesIn(qasm::baseProfilePrograms()),
+                         openQASMProgramName);
+
+INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffPipelineTest,
+                         testing::ValuesIn(qasm::jeffCompatiblePrograms()),
+                         openQASMProgramName);
+
+INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
+                         testing::ValuesIn(qasm::jeffIncompatiblePrograms()),
                          openQASMProgramName);
 
 /**

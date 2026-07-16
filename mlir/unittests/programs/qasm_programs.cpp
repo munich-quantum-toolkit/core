@@ -1142,15 +1142,14 @@ while (measure q[0] && measure q[1]) { h q[0]; h q[1]; }
 bit[2] c = measure q;
 )qasm";
 
-llvm::ArrayRef<OpenQASMProgram> compilerPrograms() {
-  static const std::string nestedStaticControlFlow = R"qasm(OPENQASM 3.1;
+static const std::string nestedStaticControlFlow = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
 bit enabled = false;
 if (enabled) { h q; } else { for int i in [0:2] { x q; } }
 output bit result = measure q;
 )qasm";
-  static const std::string mutableLoopState = R"qasm(OPENQASM 3.1;
+static const std::string mutableLoopState = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
 bit enabled = measure q;
@@ -1161,14 +1160,14 @@ while (enabled) {
 if (enabled) { h q; }
 output bit result = measure q;
 )qasm";
-  static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
+static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int index = 1;
 x q[index];
 output bit[2] result = measure q;
 )qasm";
-  static const std::string equalConstantIndexJoin = R"qasm(OPENQASM 3.1;
+static const std::string equalConstantIndexJoin = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int index = 0;
@@ -1176,7 +1175,7 @@ if (measure q[0]) { index = 1; } else { index = 1; }
 x q[index];
 output bit[2] result = measure q;
 )qasm";
-  static const std::string scalarLoopState = R"qasm(OPENQASM 3.1;
+static const std::string scalarLoopState = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
 float theta = 0.0;
@@ -1188,6 +1187,40 @@ while (measure q) {
 rx(theta) q;
 output bit result = measure q;
 )qasm";
+static const std::string runtimeDynamicIndex = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int index = 0;
+if (measure q[0]) { index = 1; }
+x q[index];
+output bit[2] result = measure q;
+)qasm";
+static const std::string inductionVariableIndex = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[3] q;
+for uint i in [0:2] { x q[i]; }
+output bit[3] result = measure q;
+)qasm";
+static const std::string checkedIntegerState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int turns = 0;
+for int i in [0:2] { turns += 1; }
+rx(turns) q;
+output bit result = measure q;
+)qasm";
+static const std::string dynamicRange = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int start = 0;
+int step = 1;
+int stop = 2;
+if (measure q) { start = 1; }
+for int i in [start:step:stop] { x q; }
+output bit result = measure q;
+)qasm";
+
+llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
   static const OpenQASMProgram programs[]{
       {"broadcast-custom-gate", broadcastCompoundGate},
       {"arithmetic-parameters", expressionArithmetic},
@@ -1202,6 +1235,32 @@ output bit result = measure q;
       {"reset", resetQubitAfterSingleOp},
       {"barrier", barrierMultipleQubits},
       {"mixed-controls", mixedControlledX},
+      {"runtime-dynamic-index", runtimeDynamicIndex},
+      {"induction-variable-index", inductionVariableIndex},
+      {"checked-integer-state", checkedIntegerState},
+      {"dynamic-range", dynamicRange},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
+  static const OpenQASMProgram programs[]{
+      {"broadcast-custom-gate", broadcastCompoundGate},
+      {"nested-static-control-flow", nestedStaticControlFlow},
+      {"mutable-loop-state", mutableLoopState},
+      {"scalar-loop-state", scalarLoopState},
+      {"reset", resetQubitAfterSingleOp},
+      {"mixed-controls", mixedControlledX},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
+  static const OpenQASMProgram programs[]{
+      {"runtime-dynamic-index", runtimeDynamicIndex},
+      {"induction-variable-index", inductionVariableIndex},
+      {"checked-integer-state", checkedIntegerState},
+      {"dynamic-range", dynamicRange},
   };
   return programs;
 }
