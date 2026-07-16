@@ -726,10 +726,6 @@ constexpr std::size_t K_MCP_SP22_MIN_CONTROLS = 5;
 // Wires: controls 0..numControls-1, target numControls.
 static void emitMcpV24(GateEmitter& emitter, double phi,
                        std::size_t numControls) {
-  if (numControls == 0) {
-    emitter.p(0, phi);
-    return;
-  }
   if (numControls == 1) {
     emitter.cp(0, 1, phi);
     return;
@@ -826,14 +822,6 @@ static void emitMcpSp22Step(GateEmitter& emitter, double phi,
 // target numControls.
 static void emitMcpSp22(GateEmitter& emitter, double phi,
                         std::size_t numControls) {
-  if (numControls == 0) {
-    emitter.p(0, phi);
-    return;
-  }
-  if (numControls == 1) {
-    emitter.cp(0, 1, phi);
-    return;
-  }
   const std::size_t numQubits = numControls + 1;
   emitMcpSp22Step(emitter, phi, numQubits, 1);
   emitMcpSp22Step(emitter, phi, numQubits, 2);
