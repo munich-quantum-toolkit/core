@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -27,6 +28,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
@@ -34,6 +36,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 
@@ -180,12 +183,30 @@ module {
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
   EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
   expectNoQCOperations(*module);
+  qco::IfOp branch;
+  module->walk([&](qco::IfOp candidate) { branch = candidate; });
+  ASSERT_TRUE(branch);
+  const auto storedResult = [](Region& region) -> std::optional<APInt> {
+    for (auto store : region.front().getOps<memref::StoreOp>()) {
+      APInt value;
+      if (matchPattern(store.getValue(), m_ConstantInt(&value))) {
+        return value;
+      }
+    }
+    return std::nullopt;
+  };
+  const auto thenResult = storedResult(branch.getThenRegion());
+  const auto elseResult = storedResult(branch.getElseRegion());
+  ASSERT_TRUE(thenResult);
+  ASSERT_TRUE(elseResult);
+  EXPECT_TRUE(thenResult->isZero());
+  EXPECT_TRUE(elseResult->isOne());
 }
 
 TEST_F(QCToQCORegressionTest, PreservesWhileConditionArgumentsAndOrdering) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
     %qco = qco.alloc : !qco.qubit
     %qc = qc.alloc : !qc.qubit
     %true = arith.constant true
@@ -201,7 +222,7 @@ module {
     }
     qco.sink %result#1 : !qco.qubit
     qc.dealloc %qc : !qc.qubit
-    return
+    return %result#0 : i1
   }
 }
 )mlir";
@@ -227,6 +248,13 @@ module {
   });
   EXPECT_TRUE(sawWhile);
   expectNoQCOperations(*module);
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  APInt result;
+  ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&result)));
+  EXPECT_TRUE(result.isZero());
 }
 
 TEST_F(QCToQCORegressionTest, ConvertsNestedResultsAfterRegionContents) {

@@ -85,6 +85,22 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
 - [x] (2026-07-16) Ran the complete affected validation and repository checks
       after the first review fixes. Clean sequential coverage reached 91.0
       percent lines over the substantive frontend and emitter sources.
+- [x] (2026-07-16) Incorporated the final review: replaced Boolean index
+      resolvability with a small constant lattice, made literal branches and
+      equal-constant joins precise, rejected multi-iteration induction indices,
+      and collapsed dispatch and custom-gate expansion into one overflow-safe
+      projected-emission budget.
+- [x] (2026-07-16) Added a mutable floating-point `for`/`while` fixture to the
+      complete Adaptive-plus-Jeff corpus, exact QIR output-recording assertions,
+      and stronger native result-bearing `if`/`while` conversion semantics.
+- [x] (2026-07-16) Closed the checked-integer acceptance gap by rejecting
+      non-folded checked integer arithmetic and ranges at the QC boundary with a
+      source-located diagnostic while preserving frontend support.
+- [x] (2026-07-16) Ran final documentation, lint, architecture, affected unit,
+      legacy-parser, and clean sequential coverage validation. Coverage is 89.9
+      percent (4117/4579), five executable lines below the plan's 90 percent
+      threshold; a final simplification pass should close that acceptance delta
+      without adding test-only bloat.
 
 ## Surprises & Discoveries
 
@@ -148,6 +164,21 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   compare entry result types in QC, optimized QCO, Jeff bytes and restored Jeff,
   reconstructed QCO, and reconstructed QC before checking the QIR status
   signature and output-recording calls.
+
+- Observation: static loop bounds do not make a multi-iteration induction value
+  static at each source use. Evidence:
+  `for uint i in [0:2] { int x = i + 1; h q[x]; }` previously passed the QC
+  preflight but could not satisfy the Jeff contract. Only a proven singleton
+  range may retain a constant induction fact.
+
+- Observation: separate dynamic-dispatch and custom-gate expansion limits can
+  each pass while their composition is excessive. Evidence: 4096 dispatch leaves
+  applying a 25-operation custom gate project 102400 primitive emissions.
+
+- Observation: non-folded checked integer expressions emit i128 arithmetic and
+  `cf.assert` operations that Jeff does not preserve. Evidence: a mutable
+  integer carried through source loops failed the optimized QCO-to-Jeff stage,
+  while the equivalent mutable floating-point state completes the full chain.
 
 ## Decision Log
 
@@ -232,13 +263,30 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   unused definitions must have no effect on accepted source. Date/Author:
   2026-07-16 / Codex.
 
+- Decision: treat only singleton loop induction as a static index fact and join
+  branch state by exact constant equality. Rationale: this accepts statically
+  selected and equal-constant branches without claiming that a varying source
+  induction has one compile-time value. Date/Author: 2026-07-16 / Codex.
+
+- Decision: enforce one 100000-operation projected-emission budget that composes
+  custom-gate expansion and register dispatch with overflow-safe multiplication.
+  Rationale: emitted work, not either mechanism independently, is the relevant
+  safety bound. Date/Author: 2026-07-16 / Codex.
+
+- Decision: reject non-folded checked integer arithmetic and ranges at direct QC
+  emission, but continue to parse and analyze them. Rationale: removing their
+  overflow assertions would weaken source semantics, while expanding Jeff and
+  QIR integer support is disproportionate to this frontend change. Mutable
+  floating-point state remains the full-chain carried-scalar contract.
+  Date/Author: 2026-07-16 / Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
 analyzer cover the source-language behavior needed by the compiler. The earlier
 OQ3 target architecture has been removed in favor of direct QC emission.
 
-The direct architecture and end-to-end behavior are implemented. Eleven broad
+The direct architecture and end-to-end behavior are implemented. Thirteen broad
 OpenQASM fixtures traverse direct QC, QCO cleanup and optimization, Jeff byte
 serialization and deserialization, reconstructed QCO and QC, and Adaptive QIR;
 the same fixtures pass `runDefaultPipeline`. Four straight-line fixtures also
@@ -256,9 +304,11 @@ areas have parser-independent native regressions.
 
 General runtime-dynamic indices are valid source but are rejected at direct QC
 emission because Jeff cannot preserve their required bounds assertion. Constant
-variables, static loop induction, and a dynamically written value proven by
-cleanup remain accepted. All accepted corpus sources preserve their entry result
-types across the Jeff round trip and record outputs in final QIR.
+variables, singleton loop induction, statically selected branches, and
+equal-constant branch joins remain accepted. Multi-iteration induction and
+non-folded checked integer expressions are rejected before QC is returned. All
+accepted corpus sources preserve their entry result types across the Jeff round
+trip and record outputs in final QIR.
 
 ## Context and Orientation
 
@@ -614,23 +664,23 @@ The full-chain proof must record a representative structured fixture reaching:
     OpenQASM -> QC -> QCO -> optimized QCO -> Jeff bytes -> Jeff -> QCO
     -> QC -> Adaptive QIR -> LLVM IR and bitcode
 
-The final corpus contains eleven Adaptive-plus-Jeff programs and four Base
+The final corpus contains thirteen Adaptive-plus-Jeff programs and four Base
 programs. One new native Jeff-to-QCO regression proves that a serialized entry
 point with observable results regains its marker without losing those results.
 The validation results are:
 
-    OpenQASM frontend and target: 92 tests passed.
+    OpenQASM frontend and target: 93 tests passed.
     QC translation: 241 tests passed.
     QC-to-QCO: 124 tests passed.
     QCO-to-QC: 121 tests passed.
     Jeff round trip: 113 tests passed.
-    Compiler pipeline: 142 tests passed, including 26 corpus cases.
+    Compiler pipeline: 146 tests passed, including 30 corpus cases.
     QC-to-QIR Adaptive: 125 tests passed.
     QC-to-QIR Base: 107 tests passed.
-    Legacy OpenQASM parser: 97 tests passed.
+    Legacy IR and OpenQASM parser: 280 tests passed.
     Warning-as-error documentation: passed.
     Repository lint and diff checks: passed.
-    Frontend and direct-emitter line coverage: 91.0 percent (4148/4558).
+    Frontend and direct-emitter line coverage: 89.9 percent (4117/4579).
 
 No public GitHub action is authorized by this plan.
 

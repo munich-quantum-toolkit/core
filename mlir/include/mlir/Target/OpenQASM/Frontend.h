@@ -32,10 +32,6 @@ using ScalarId = std::uint32_t;
 using ConditionId = std::uint32_t;
 using StatementId = std::uint32_t;
 
-/// Maximum number of leaves materialized for one structured dynamic-qubit
-/// dispatch. This bounds the Cartesian expansion of multiple dynamic operands.
-inline constexpr std::size_t kDynamicQubitDispatchLeafLimit = 4096;
-
 struct SourceLocation {
   std::string filename = "<input>";
   std::uint32_t line = 1;

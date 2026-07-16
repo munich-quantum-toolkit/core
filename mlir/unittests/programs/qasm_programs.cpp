@@ -1168,6 +1168,26 @@ int index = 1;
 x q[index];
 output bit[2] result = measure q;
 )qasm";
+  static const std::string equalConstantIndexJoin = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int index = 0;
+if (measure q[0]) { index = 1; } else { index = 1; }
+x q[index];
+output bit[2] result = measure q;
+)qasm";
+  static const std::string scalarLoopState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+float theta = 0.0;
+for int i in [0:2] { theta += 0.125; }
+while (measure q) {
+  theta += 0.25;
+  rx(theta) q;
+}
+rx(theta) q;
+output bit result = measure q;
+)qasm";
   static const OpenQASMProgram programs[]{
       {"broadcast-custom-gate", broadcastCompoundGate},
       {"arithmetic-parameters", expressionArithmetic},
@@ -1177,6 +1197,8 @@ output bit[2] result = measure q;
       {"mutable-loop-state", mutableLoopState},
       {"measurement-controlled-while", conditionWhileAnd},
       {"resolved-dynamic-index", resolvedDynamicIndex},
+      {"equal-constant-index-join", equalConstantIndexJoin},
+      {"scalar-loop-state", scalarLoopState},
       {"reset", resetQubitAfterSingleOp},
       {"barrier", barrierMultipleQubits},
       {"mixed-controls", mixedControlledX},
