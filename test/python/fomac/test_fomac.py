@@ -465,6 +465,30 @@ c = measure q;
     assert job.num_shots == 100
 
 
+def test_device_executes_qir_program(ddsim_device: Device) -> None:
+    """Compile and execute a QIR program with the DDSIM device."""
+    # Keep this lazy to cover loading MLIR after the QIR-enabled device.
+    from mqt.core.mlir import OutputFormat, compile_program  # noqa: PLC0415
+
+    qasm3_program = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+"""
+    program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE)
+    assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
+
+    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=10)
+    job.wait()
+
+    assert job.check() == Job.Status.DONE
+    assert sum(job.get_counts().values()) == 10
+
+
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):

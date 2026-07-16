@@ -1,123 +1,139 @@
-<!--- This file has been generated from an external template. Please do not modify it directly. -->
-<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
+# MQT Core Agent Guide
 
-# MQT Core
+This file contains repository-specific instructions for coding agents working on
+MQT Core. The project-wide policy for AI-assisted contributions is
+[`docs/ai_usage.md`](docs/ai_usage.md); follow it in addition to this guide.
 
-## C++
+## Repository Layout
 
-- Configure: `cmake --preset release`
-- Build: `cmake --build --preset release`
-- Test: `ctest --preset release`
-- Single test binary: `./build/release/test/path/to/binary`
-- For debug builds, replace `release` with `debug`.
-- For more presets, see `CMakePresets.json`.
+- `include/mqt-core/` contains the public C++ headers; implementations live in
+  `src/`.
+- `bindings/` contains the nanobind-based Python bindings, and
+  `python/mqt/core/` contains the Python package and generated type stubs.
+- `mlir/` contains the MQT MLIR dialects, transformations, tools, and unit
+  tests. Building it requires LLVM/MLIR 22.1 or newer.
+- `test/` contains the C++ and Python tests. C++ tests generally mirror the
+  corresponding component under `src/`.
+- `docs/` contains the Sphinx and MyST documentation; `json/` contains schemas
+  and data used by the project.
+- `cmake/` and `CMakePresets.json` define the supported builds. Keep generated
+  build output in `build/` and do not commit it.
 
-## Python
+## Working Principles
 
-- Set up build and test dependencies:
-  `uv sync --inexact --only-group build --only-group test`
-- Install package without build isolation (fast rebuilds):
-  `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`
-- Run tests: `uv run --no-sync pytest`
-- Nox test shortcuts: `uvx nox -s tests`, `uvx nox -s minimums`
-- Python 3.14 variants: `uvx nox -s tests-3.14`, `uvx nox -s minimums-3.14`
+- Keep changes focused on the assigned task. Do not perform unrelated cleanup,
+  broad reformatting, dependency upgrades, or refactors without explicit
+  authorization.
+- Preserve user changes and inspect the working tree before editing. Never
+  discard or overwrite changes that are outside the task.
+- Follow the patterns in neighboring files and prefer the smallest change that
+  fully solves the problem.
+- Add or update automated tests for every behavioral code change. During
+  development, run the narrowest relevant test first, then the required lint
+  checks before handoff.
+- Update `CHANGELOG.md` and `UPGRADING.md` for user-facing, breaking, or
+  otherwise noteworthy changes.
+- Format changelog entries with the pull request reference and every
+  contributing author, for example `([#123]) ([**@username**])`, and define the
+  corresponding links at the bottom of `CHANGELOG.md`.
+- Never commit credentials, tokens, private keys, personal data, or other
+  secrets. Do not print secrets from the environment or GitHub Actions. Use
+  documented environment variables and repository secrets instead.
+- Do not edit files whose header says that they are generated from an external
+  template. Propose those changes in the
+  [MQT templates repository](https://github.com/munich-quantum-toolkit/templates)
+  or let the templating workflow update them.
 
-## Documentation
-
-- Sources: `docs/`
-- Build MLIR docs: `cmake --build --preset release --target mlir-doc`
-- Build docs locally: `uvx nox --non-interactive -s docs`
-- Link check: `uvx nox -s docs -- -b linkcheck`
-
-## Tech Stack
-
-### General
-
-- `prek` for pre-commit hooks
-
-### C++
-
-- Targets Linux (glibc 2.28+), macOS (11.0+), and Windows on x86_64 and arm64
-  architectures
-- C++20
-- CMake 3.24+
-- `FetchContent` for dependency management (configured in
-  `cmake/ExternalDependencies.cmake`)
-- `clang-format` and `clang-tidy` for formatting/linting (see `.clang-format`
-  and `.clang-tidy`)
-- LLVM 22.1+ for building MLIR code
-- GoogleTest for unit tests (located in `test/` and `mlir/unittests/`)
-
-### Python
-
-- Python 3.10+
-- Stable ABI wheels for 3.12+; free-threading support for 3.14+
-- `scikit-build-core` as build backend
-- `nanobind` for bindings
-- `uv` for installation, packaging, and tooling
-- `ruff` for formatting/linting (configured in `pyproject.toml`)
-- `ty` for type checking
-- `pytest` for unit tests (located in `test/python/`)
-- `nox` for task orchestration (tests, linting, docs)
-
-### Documentation
-
-- `sphinx`
-- MyST (Markdown)
-- Furo theme
-- `breathe` for C++ API docs
-
-## Development Guidelines
-
-### General
-
-- MUST run `uvx nox -s lint` after every batch of changes. This runs the full
-  `prek` hook set from `.pre-commit-config.yaml` (including `ruff`, `typos`,
-  `ty`, formatting, and metadata checks). All hooks must pass before submitting.
-- MUST add or update tests for every code change, even if not explicitly
-  requested.
-- MUST follow existing code style by checking neighboring files for patterns.
-- MUST update `CHANGELOG.md` and `UPGRADING.md` when changes are user-facing,
-  breaking, or otherwise noteworthy.
-- MUST include a commit footer attribution in the form
-  `Assisted-by: [Model Name] via [Tool Name]` (example:
-  `Assisted-by: Claude Sonnet 4.6 via GitHub Copilot`) if AI tools are used to
-  prepare a commit.
-- NEVER modify files that start with "This file has been generated from an
-  external template. Please do not modify it directly." These files are managed
-  by
-  [the MQT templates action](https://github.com/munich-quantum-toolkit/templates)
-  and changes will be overwritten.
-- PREFER running targeted tests over the full test suite during development.
+## Build and Test
 
 ### C++
 
-- MUST use Doxygen-style comments.
-- MUST use `#pragma once` for header guards.
-- MUST regenerate stubs via `uvx nox -s stubs` when files in `bindings/` are
-  added or modified.
-- NEVER edit `.pyi` files in `python/mqt/core/` manually; they are
-  auto-generated by `nanobind.stubgen`.
-- PREFER C++20 STL features over custom implementations.
-- PREFER LLVM data structures and methods in `mlir/` (`llvm::SmallVector`,
-  `llvm::function_ref`, etc.) over the STL.
+- Configure a release build with `cmake --preset release`.
+- Build it with `cmake --build --preset release`.
+- Run all configured C++ tests with `ctest --preset release`.
+- Run a component binary directly when iterating, for example
+  `./build/release/test/ir/mqt-core-ir-test` or
+  `./build/release/test/qdmi/driver/mqt-core-qdmi-driver-test`.
+- Use GoogleTest filters to narrow a binary further, for example
+  `./build/release/test/ir/mqt-core-ir-test --gtest_filter='StandardOperation.*'`.
+- Replace `release` with `debug` for a debug build. Consult `CMakePresets.json`
+  for other supported configurations.
 
-### Python
+The C++ code targets C++20 and uses GoogleTest. Use Doxygen-style documentation,
+`#pragma once` in headers, and existing project abstractions. Prefer C++20
+standard-library facilities over custom equivalents. Within `mlir/`, prefer LLVM
+types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate.
 
-- MUST use Google-style docstrings
-- PREFER running a single Python version over the full test suite during
-  development.
-- PREFER fixing reported warnings over suppressing them (e.g., with `# noqa`
-  comments for ruff); only add ignore rules when necessary and document why.
-- PREFER fixing typing issues reported by `ty` before adding suppression
-  comments (`# ty: ignore[code]`); suppressions are sometimes necessary for
-  incompletely typed libraries (e.g., Qiskit).
+### Python and Bindings
 
-## Self-Review Checklist
+- Install build and test dependencies with
+  `uv sync --inexact --only-group build --only-group test`.
+- Install the package for fast local rebuilds with
+  `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`.
+- Run the Python tests with `uv run --no-sync pytest`; pass a file or `-k`
+  expression while iterating.
+- Run the supported test sessions with `uvx nox -s tests` and
+  `uvx nox -s minimums`. Python 3.14 variants are `tests-3.14` and
+  `minimums-3.14`.
+- If a file in `bindings/` is added or changed, regenerate type stubs with
+  `uvx nox -s stubs`. Never edit generated `.pyi` files in `python/mqt/core/`
+  manually.
 
-- Did `uvx nox -s lint` pass without errors?
-- Are all changes covered by at least one automated test?
-- Were Python stubs regenerated via `uvx nox -s stubs` if bindings were
-  modified?
-- Are `CHANGELOG.md` and `UPGRADING.md` updated when changes are user-facing,
-  breaking, or otherwise noteworthy?
+Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
+`ty` over suppressing them; document suppressions that are genuinely required.
+
+### MLIR and Documentation
+
+- Build the MLIR documentation with
+  `cmake --build --preset release --target mlir-doc`.
+- A real focused MLIR test binary is
+  `./build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`.
+- Build the complete documentation with `uvx nox --non-interactive -s docs`.
+- Check documentation links with `uvx nox -s docs -- -b linkcheck`.
+
+## Generated Files and Validation
+
+- Do not hand-edit generated stubs, rendered documentation, CMake-generated
+  files, or template-managed files.
+- Run `uvx nox -s lint` after each completed batch of changes. It runs the full
+  `prek` hook set, including formatting, spelling, type, and metadata checks.
+- Inspect the final diff and working-tree status. Report every check run and
+  clearly distinguish passes, failures, and checks that could not be run.
+
+## ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as
+described in [`.agent/PLANS.md`](.agent/PLANS.md)) from design to
+implementation. Keep one ExecPlan per independently implemented task and store
+it under `.agent/plans/<task-slug>.md`; the plan is a living record of that
+task's decisions and progress.
+
+## Git and GitHub Actions
+
+- A coding agent may perform coding, Git, and GitHub workflow tasks that a human
+  has explicitly delegated. Authorization is limited to that stated scope;
+  request fresh authorization before taking an external action outside it.
+- Scoped authorization to create or update public GitHub text permits posting
+  within that scope without separate approval for each message. A human remains
+  accountable and must review agent-assisted work before it is accepted or
+  merged.
+- Every public text body authored or edited by an agent—including issue and
+  pull-request descriptions, comments, and reviews—must visibly include the
+  exact disclosure `🤖 *AI text below* 🤖`. Titles are exempt.
+- Never use an agent to work on an issue labeled `good first issue`, and never
+  generate spam, repetitive reviews, or unreviewed contributions.
+- Do not push, open or merge a pull request, post on GitHub, or otherwise change
+  remote state unless the human has explicitly authorized that action.
+- Every commit prepared with AI assistance must include the trailer
+  `Assisted-by: [Model Name] via [Tool Name]`, using the actual model and tool.
+
+## Handoff Checklist
+
+- The diff is focused and follows neighboring code conventions.
+- Behavioral changes have automated test coverage, and targeted tests pass.
+- `uvx nox -s lint` passes.
+- Binding changes have regenerated stubs.
+- User-facing changes update `CHANGELOG.md` and `UPGRADING.md` when appropriate.
+- Generated, template-managed, secret, and unrelated files are absent from the
+  diff.
+- AI assistance and validation results are reported transparently.
