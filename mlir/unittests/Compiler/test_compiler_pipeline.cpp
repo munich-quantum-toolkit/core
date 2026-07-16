@@ -416,29 +416,29 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
   const auto optimizedQCO = qco->str();
   auto jeff = std::move(*qco).intoJeff();
   if (!jeff || !jeff->cleanup()) {
-    return testing::AssertionFailure() << source.name.str() << ": QCO to Jeff\n"
+    return testing::AssertionFailure() << source.name.str() << ": QCO to jeff\n"
                                        << optimizedQCO;
   }
-  if (auto result = matchesEntry(*jeff, "Jeff"); !result) {
+  if (auto result = matchesEntry(*jeff, "jeff"); !result) {
     return result;
   }
   const auto bytes = jeff->toBytes();
   if (bytes.empty()) {
     return testing::AssertionFailure()
-           << source.name.str() << ": Jeff serialization";
+           << source.name.str() << ": jeff serialization";
   }
   auto restoredJeff = JeffProgram::fromBytes(bytes);
   if (!restoredJeff || !restoredJeff->cleanup()) {
     return testing::AssertionFailure()
-           << source.name.str() << ": Jeff deserialization";
+           << source.name.str() << ": jeff deserialization";
   }
-  if (auto result = matchesEntry(*restoredJeff, "restored Jeff"); !result) {
+  if (auto result = matchesEntry(*restoredJeff, "restored jeff"); !result) {
     return result;
   }
   auto restoredQCO = std::move(*restoredJeff).intoQCO();
   if (!restoredQCO || !restoredQCO->cleanup()) {
     return testing::AssertionFailure()
-           << source.name.str() << ": restored Jeff to QCO";
+           << source.name.str() << ": restored jeff to QCO";
   }
   if (auto result = matchesEntry(*restoredQCO, "restored QCO"); !result) {
     return result;
@@ -542,8 +542,7 @@ TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
   ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": QCO cleanup";
   ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"))
       << source.name.str() << ": QCO optimization";
-  ASSERT_TRUE(qco->cleanup())
-      << source.name.str() << ": optimized QCO cleanup";
+  ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": optimized QCO cleanup";
   EXPECT_FALSE(std::move(*qco).intoJeff())
       << source.name.str() << ": unexpectedly converted to jeff";
 }
@@ -631,7 +630,7 @@ h q;
 }
 
 /**
- * @brief Test: Jeff programs round-trip through their binary APIs
+ * @brief Test: jeff programs round-trip through their binary APIs
  */
 TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughBytesAndFiles) {
   const std::string qasm = R"(OPENQASM 3.0;

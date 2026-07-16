@@ -87,9 +87,9 @@ static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
 
 TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect,
-                      cf::ControlFlowDialect, func::FuncDialect,
-                      LLVM::LLVMDialect>();
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   cf::AssertOp::create(builder, builder.boolConstant(true),
