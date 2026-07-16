@@ -17,6 +17,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/MathExtras.h>
 #include <llvm/Support/MemoryBuffer.h>
 
 #include <algorithm>
@@ -846,13 +847,13 @@ private:
     bool overflow = false;
     switch (expression.kind) {
     case Expr::Kind::Add:
-      overflow = __builtin_add_overflow(left, right, &result);
+      overflow = llvm::AddOverflow(left, right, result);
       break;
     case Expr::Kind::Sub:
-      overflow = __builtin_sub_overflow(left, right, &result);
+      overflow = llvm::SubOverflow(left, right, result);
       break;
     case Expr::Kind::Mul:
-      overflow = __builtin_mul_overflow(left, right, &result);
+      overflow = llvm::MulOverflow(left, right, result);
       break;
     case Expr::Kind::Div:
       if (right == 0) {
@@ -888,11 +889,11 @@ private:
       auto exponent = static_cast<std::uint64_t>(right);
       while (exponent != 0 && !overflow) {
         if ((exponent & 1U) != 0) {
-          overflow = __builtin_mul_overflow(result, base, &result);
+          overflow = llvm::MulOverflow(result, base, result);
         }
         exponent >>= 1U;
         if (exponent != 0 && !overflow) {
-          overflow = __builtin_mul_overflow(base, base, &base);
+          overflow = llvm::MulOverflow(base, base, base);
         }
       }
       break;

@@ -103,6 +103,11 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       implementation commits. Removed the unused gate-policy field from the
       resolved program model and corrected stale plan claims; retained the
       production and regression surface required by the demonstrated contracts.
+- [x] (2026-07-16) Repaired CI portability after Windows MSVC builds rejected
+      Clang/GCC-only signed-overflow builtins in semantic constant evaluation.
+      The evaluator now uses LLVM's portable overflow helpers. Restored the
+      non-inheriting MLIR clang-tidy configuration after the rebase accidentally
+      enabled the repository-wide checks and produced 1,194 unrelated reports.
 
 ## Surprises & Discoveries
 
