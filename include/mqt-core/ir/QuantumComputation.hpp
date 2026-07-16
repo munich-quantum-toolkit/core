@@ -535,6 +535,8 @@ protected:
   void checkQubitRange(Qubit qubit, const Controls& controls) const;
   void checkQubitRange(Qubit qubit0, Qubit qubit1,
                        const Controls& controls) const;
+  void checkQubitRange(Qubit qubit0, Qubit qubit1, Qubit qubit2,
+                       const Controls& controls) const;
   void checkQubitRange(const std::vector<Qubit>& qubits) const;
   void checkBitRange(Bit bit) const;
   void checkBitRange(const std::vector<Bit>& bits) const;
