@@ -6,7 +6,7 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### MLIR enabled by default for C++ builds
+### MLIR enabled by default for C++ and Python package builds
 
 The MLIR-based functionality within MQT Core has long been experimental and
 opt-in. Starting with this release, MLIR is enabled by default for C++ library
@@ -20,11 +20,16 @@ Please follow the instructions there to install the distribution for your
 platform. You can then point CMake to the installation directory using the
 `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
 
+As of this release, MLIR is also enabled for Python package builds, since the
+package now exposes an MLIR-based compiler entry point in `mqt.core.mlir`.
+
+For local development, you can configure `MLIR_DIR` once in a repository-local
+`.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
+Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
+otherwise provided.
+
 The MLIR components can still be manually disabled by passing
-`-DBUILD_MQT_CORE_MLIR=OFF` to CMake. MLIR is also not enabled for the Python
-package builds because no functionality depends on it yet. This is expected to
-change in the future, when we expose the MLIR-based functionality via the Python
-package.
+`-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
 
 Known limitations:
 
@@ -34,9 +39,6 @@ Known limitations:
 - AppleClang 17+ is required to build MQT Core with MLIR enabled due to some
   C++20 features being used that are not yet properly supported by older
   versions.
-- Our pre-built distributions are compiled in Release mode. On Windows, this
-  leads to ABI incompatibilities with debug builds. Either build in Release mode
-  or build LLVM from source in Debug mode to resolve this.
 
 ### Removal of the density matrix support from the DD package
 
@@ -53,6 +55,41 @@ The `datastructures` (sub)library has been removed from the MQT Core repository.
 Its functionality has only ever been used in [MQT QMAP] since its inception. As
 a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
 Core version that includes this change.
+
+### Dev container
+
+A [dev container](https://containers.dev/) configuration is available to provide
+a consistent local development environment. Common IDEs like
+[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
+and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
+open the repository directly inside the container. If you are on Windows, we
+recommend using Docker Desktop with the WSL 2 backend.
+
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
+
+## [3.7.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.6` to `3.7`.
+Thus, consuming libraries need to update their wheel repair configuration for
+`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
+wheel repair step.
+
+### `nanobind` updated to version 2.13.0
+
+This release updates the `nanobind` dependency to version 2.13.0, which includes
+an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
+need to be recompiled with the new `nanobind` version.
+
+### QDMI updated to version 1.3.2
+
+While not a breaking change, this release updates the QDMI dependency to version
+1.3.2
 
 ### CMake presets
 
@@ -74,15 +111,6 @@ Additionally, the `lint` preset can be used to configure and build MQT Core in
 preparation for a `clang-tidy` run.
 
 If you are on Windows, use the `debug-windows` and `release-windows` presets.
-
-### Dev container
-
-A [dev container](https://containers.dev/) configuration is available to provide
-a consistent local development environment. Common IDEs like
-[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
-and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
-open the repository directly inside the container. If you are on Windows, we
-recommend using Docker Desktop with the WSL 2 backend.
 
 ## [3.6.0]
 
@@ -378,7 +406,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...v3.5.0

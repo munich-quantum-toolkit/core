@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Statement.hpp
+ * @brief OpenQASM 3 abstract-syntax-tree statements and expressions.
+ */
+
 #pragma once
 
 #include "Statement_fwd.hpp" // IWYU pragma: export
@@ -347,15 +351,18 @@ class DeclarationStatement final
       public std::enable_shared_from_this<DeclarationStatement> {
 public:
   bool isConst;
+  bool isOutput;
   std::variant<std::shared_ptr<TypeExpr>, std::shared_ptr<ResolvedType>> type;
   std::string identifier;
   std::shared_ptr<DeclarationExpression> expression;
 
   DeclarationStatement(std::shared_ptr<DebugInfo> debug, const bool declIsConst,
-                       std::shared_ptr<TypeExpr> ty, std::string id,
+                       bool declIsOutput, std::shared_ptr<TypeExpr> ty,
+                       std::string id,
                        std::shared_ptr<DeclarationExpression> expr)
-      : Statement(std::move(debug)), isConst(declIsConst), type(ty),
-        identifier(std::move(id)), expression(std::move(expr)) {}
+      : Statement(std::move(debug)), isConst(declIsConst),
+        isOutput(declIsOutput), type(ty), identifier(std::move(id)),
+        expression(std::move(expr)) {}
 
   void accept(InstVisitor* visitor) override;
 };

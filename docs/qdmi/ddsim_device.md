@@ -20,10 +20,11 @@ switch between these two modes, either set the
 for weak simulation or to `0` for strong simulation.
 
 Under the hood, the QDMI device uses the MQT Core OpenQASM parser (see
-{cpp:func}`qasm3::Importer::imports`) to parse the program into a
-{cpp:class}`qc::QuantumComputation` object. That circuit is then passed either
-to the {cpp:func}`dd::sample` or {cpp:func}`dd::simulate` function, depending on
-the mode. Consult the respective documentation for more details and limitations.
+{cpp-api:func}`qasm3::Importer::imports`) to parse the program into a
+{cpp-api:class}`qc::QuantumComputation` object. That circuit is then passed
+either to the {cpp-api:func}`dd::sample` or {cpp-api:func}`dd::simulate`
+function, depending on the mode. Consult the respective documentation for more
+details and limitations.
 
 The device implements the full QDMI job interface (except for the
 `QDMI_JOB_RESULT_SHOTS` result format not supported by the simulator).

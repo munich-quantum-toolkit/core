@@ -181,7 +181,8 @@ class QDMIJob(JobV1):
     def submit(self) -> None:
         """This method should not be called.
 
-        QDMI jobs are submitted via :meth:`~mqt.core.plugins.qiskit.QDMIBackend.run`.
+        QDMI jobs are submitted via
+        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run`.
         """
         msg = (
             "You should never have to submit jobs by calling this method. "

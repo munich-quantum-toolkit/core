@@ -1,0 +1,171 @@
+mqt\.core\.fomac\.(?:Job|Device|Device\.Site)\.query_custom_property$:
+    \from typing import overload
+    @overload
+    def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
+    @overload
+    def query_custom_property(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
+    @overload
+    def query_custom_property(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
+    @overload
+    def query_custom_property(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
+    @overload
+    def query_custom_property(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
+    @overload
+    def query_custom_property(
+        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+    ) -> str | bool | int | float | bytes | None:
+        \doc
+
+mqt\.core\.fomac\.Job\.get_custom_result$:
+    \from typing import overload
+    @overload
+    def get_custom_result(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
+    @overload
+    def get_custom_result(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
+    @overload
+    def get_custom_result(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
+    @overload
+    def get_custom_result(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
+    @overload
+    def get_custom_result(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+    ) -> str | bool | int | float | bytes | None:
+        \doc
+
+mqt\.core\.fomac\.Device\.Operation\.query_custom_property$:
+    \from typing import overload
+    @overload
+    def query_custom_property(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[str],
+        sites: Sequence[Device.Site] = ...,
+        params: Sequence[float] = ...,
+    ) -> str | None: ...
+    @overload
+    def query_custom_property(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[bool],
+        sites: Sequence[Device.Site] = ...,
+        params: Sequence[float] = ...,
+    ) -> bool | None: ...
+    @overload
+    def query_custom_property(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[int],
+        sites: Sequence[Device.Site] = ...,
+        params: Sequence[float] = ...,
+    ) -> int | None: ...
+    @overload
+    def query_custom_property(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[float],
+        sites: Sequence[Device.Site] = ...,
+        params: Sequence[float] = ...,
+    ) -> float | None: ...
+    @overload
+    def query_custom_property(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[bytes],
+        sites: Sequence[Device.Site] = ...,
+        params: Sequence[float] = ...,
+    ) -> bytes | None: ...
+    @overload
+    def query_custom_property(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[str | bool | int | float | bytes],
+        sites: Sequence[Device.Site] = ...,
+        params: Sequence[float] = ...,
+    ) -> str | bool | int | float | bytes | None:
+        \doc
+
+mqt.core.mlir.compile_program:
+    \from typing import overload, Literal
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram,
+        *,
+        output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> QCProgram: ...
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram,
+        *,
+        output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> QCOProgram: ...
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram,
+        *,
+        output: Literal[OutputFormat.JEFF],
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> JeffProgram: ...
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram,
+        *,
+        output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> QIRProgram: ...
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram,
+        *,
+        output: OutputFormat,
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
+        \doc

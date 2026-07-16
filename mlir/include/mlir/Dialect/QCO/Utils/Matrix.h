@@ -63,7 +63,7 @@ struct Matrix1x1 {
    * @param col Column index (must be `0`).
    * @return Reference to the sole matrix entry.
    */
-  [[nodiscard]] Complex& operator()(std::size_t row, std::size_t col);
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /**
    * @brief Const element access with `(row, col)` indexing.
@@ -71,7 +71,7 @@ struct Matrix1x1 {
    * @param col Column index (must be `0`).
    * @return Copy of the sole matrix entry.
    */
-  [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /**
    * @brief Element-wise scaling by a complex scalar.
@@ -126,11 +126,11 @@ struct Matrix1x1 {
  */
 struct Matrix2x2 {
   /// Number of rows.
-  static constexpr std::size_t K_ROWS = 2;
+  static constexpr size_t K_ROWS = 2;
   /// Number of columns.
-  static constexpr std::size_t K_COLS = 2;
+  static constexpr size_t K_COLS = 2;
   /// Total number of stored elements.
-  static constexpr std::size_t K_SIZE_AT_COMPILE_TIME = 4;
+  static constexpr size_t K_SIZE_AT_COMPILE_TIME = 4;
 
   /// Flat row-major storage of all matrix entries.
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
@@ -162,7 +162,7 @@ struct Matrix2x2 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Reference to the element at `(row, col)`.
    */
-  [[nodiscard]] Complex& operator()(std::size_t row, std::size_t col);
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /**
    * @brief Const element access.
@@ -170,7 +170,7 @@ struct Matrix2x2 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Copy of the element at `(row, col)`.
    */
-  [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /**
    * @brief Matrix product `*this * rhs`.
@@ -272,8 +272,8 @@ struct Matrix2x2 {
    * @param qubitIndex Wire index to act on.
    * @return Embedded unitary as a dynamic matrix.
    */
-  [[nodiscard]] DynamicMatrix embedInNqubit(std::size_t numQubits,
-                                            std::size_t qubitIndex) const;
+  [[nodiscard]] DynamicMatrix embedInNqubit(size_t numQubits,
+                                            size_t qubitIndex) const;
 
   /**
    * @brief Embed this single-qubit matrix into a two-qubit Hilbert space.
@@ -281,7 +281,7 @@ struct Matrix2x2 {
    * @param qubitIndex Wire index (`0` = high bit / MSB, `1` = low bit).
    * @return The `4x4` embedded unitary.
    */
-  [[nodiscard]] Matrix4x4 embedInTwoQubit(std::size_t qubitIndex) const;
+  [[nodiscard]] Matrix4x4 embedInTwoQubit(size_t qubitIndex) const;
 };
 
 /**
@@ -292,11 +292,11 @@ struct Matrix2x2 {
  */
 struct Matrix4x4 {
   /// Number of rows.
-  static constexpr std::size_t K_ROWS = 4;
+  static constexpr size_t K_ROWS = 4;
   /// Number of columns.
-  static constexpr std::size_t K_COLS = 4;
+  static constexpr size_t K_COLS = 4;
   /// Total number of stored elements.
-  static constexpr std::size_t K_SIZE_AT_COMPILE_TIME = 16;
+  static constexpr size_t K_SIZE_AT_COMPILE_TIME = 16;
 
   /// Flat row-major storage of all matrix entries.
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
@@ -351,7 +351,7 @@ struct Matrix4x4 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Reference to the element at `(row, col)`.
    */
-  [[nodiscard]] Complex& operator()(std::size_t row, std::size_t col);
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /**
    * @brief Const element access.
@@ -359,7 +359,7 @@ struct Matrix4x4 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Copy of the element at `(row, col)`.
    */
-  [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /**
    * @brief Matrix product `*this * rhs`.
@@ -474,28 +474,28 @@ struct Matrix4x4 {
    * @param col Column index in `[0, K_COLS)`.
    * @return Array of the four column entries.
    */
-  [[nodiscard]] std::array<Complex, K_ROWS> column(std::size_t col) const;
+  [[nodiscard]] std::array<Complex, K_ROWS> column(size_t col) const;
 
   /**
    * @brief Overwrites column @p col with @p values.
    * @param col Column index in `[0, K_COLS)`.
    * @param values New column entries, top to bottom; must have length `K_ROWS`.
    */
-  void setColumn(std::size_t col, ArrayRef<Complex> values);
+  void setColumn(size_t col, ArrayRef<Complex> values);
 
   /**
    * @brief Returns the entries of row @p row, left to right.
    * @param row Row index in `[0, K_ROWS)`.
    * @return View over the four row entries.
    */
-  [[nodiscard]] ArrayRef<const Complex> row(std::size_t row) const;
+  [[nodiscard]] ArrayRef<const Complex> row(size_t row) const;
 
   /**
    * @brief Overwrites row @p row with @p values.
    * @param row Row index in `[0, K_ROWS)`.
    * @param values New row entries, left to right; must have length `K_COLS`.
    */
-  void setRow(std::size_t row, ArrayRef<Complex> values);
+  void setRow(size_t row, ArrayRef<Complex> values);
 
   /**
    * @brief Returns the element-wise real parts in row-major order.
@@ -575,9 +575,8 @@ struct Matrix4x4 {
    * @param q1Index Wire index of operand 1.
    * @return Embedded unitary as a dynamic matrix.
    */
-  [[nodiscard]] DynamicMatrix embedInNqubit(std::size_t numQubits,
-                                            std::size_t q0Index,
-                                            std::size_t q1Index) const;
+  [[nodiscard]] DynamicMatrix embedInNqubit(size_t numQubits, size_t q0Index,
+                                            size_t q1Index) const;
 
   /**
    * @brief Reorder this matrix to act on qubits `{0, 1}`.
@@ -585,8 +584,8 @@ struct Matrix4x4 {
    * @param q0Index Wire index of operand 0; @p q1Index wire index of operand 1.
    * @return Reordered copy of this matrix.
    */
-  [[nodiscard]] Matrix4x4 reorderForQubits(std::size_t q0Index,
-                                           std::size_t q1Index) const;
+  [[nodiscard]] Matrix4x4 reorderForQubits(size_t q0Index,
+                                           size_t q1Index) const;
 };
 
 /**
@@ -605,7 +604,7 @@ public:
    * @brief Creates a zero-initialized square matrix.
    * @param dim Side length of the square matrix.
    */
-  explicit DynamicMatrix(std::int64_t dim);
+  explicit DynamicMatrix(int64_t dim);
 
   /**
    * @brief Creates a dynamic matrix from a fixed 2x2 matrix.
@@ -635,7 +634,7 @@ public:
    * @param dim Side length of the identity matrix.
    * @return Identity matrix with ones on the diagonal.
    */
-  [[nodiscard]] static DynamicMatrix identity(std::int64_t dim);
+  [[nodiscard]] static DynamicMatrix identity(int64_t dim);
 
   /**
    * @brief Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
@@ -648,13 +647,13 @@ public:
    * @brief Returns the number of rows.
    * @return Matrix dimension.
    */
-  [[nodiscard]] std::int64_t rows() const;
+  [[nodiscard]] int64_t rows() const;
 
   /**
    * @brief Returns the number of columns.
    * @return Matrix dimension.
    */
-  [[nodiscard]] std::int64_t cols() const;
+  [[nodiscard]] int64_t cols() const;
 
   /**
    * @brief Mutable element access.
@@ -662,7 +661,7 @@ public:
    * @param col Column index in `[0, dim)`.
    * @return Reference to the element at `(row, col)`.
    */
-  [[nodiscard]] Complex& operator()(std::int64_t row, std::int64_t col);
+  [[nodiscard]] Complex& operator()(int64_t row, int64_t col);
 
   /**
    * @brief Const element access.
@@ -670,7 +669,7 @@ public:
    * @param col Column index in `[0, dim)`.
    * @return Copy of the element at `(row, col)`.
    */
-  [[nodiscard]] Complex operator()(std::int64_t row, std::int64_t col) const;
+  [[nodiscard]] Complex operator()(int64_t row, int64_t col) const;
 
   /**
    * @brief Copies a 2x2 block into the bottom-right corner.
@@ -784,6 +783,40 @@ public:
    * @return Product of the two matrices.
    */
   [[nodiscard]] DynamicMatrix operator*(const DynamicMatrix& rhs) const;
+
+  /**
+   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
+   * @param lhs Left-hand factor.
+   */
+  void premultiplyBy(const DynamicMatrix& lhs);
+
+  /**
+   * @brief Premultiplies by a single-qubit gate embedded on @p qubitIndex.
+   *
+   * Uses the same MSB-first wire convention as @ref Matrix2x2::embedInNqubit.
+   *
+   * @param gate Single-qubit unitary.
+   * @param numQubits Number of qubits in this matrix.
+   * @param qubitIndex Target wire index.
+   */
+  void premultiplyByEmbedded1Q(const Matrix2x2& gate, size_t numQubits,
+                               size_t qubitIndex);
+
+  /**
+   * @brief Premultiplies by a two-qubit gate embedded on @p q0Index and @p
+   * q1Index.
+   *
+   * @p gate must already be reordered for wires @p q0Index and @p q1Index when
+   * @p numQubits is 2. Uses the same MSB-first convention as @ref
+   * Matrix4x4::embedInNqubit.
+   *
+   * @param gate Two-qubit unitary.
+   * @param numQubits Number of qubits in this matrix.
+   * @param q0Index First target wire index.
+   * @param q1Index Second target wire index.
+   */
+  void premultiplyByEmbedded2Q(const Matrix4x4& gate, size_t numQubits,
+                               size_t q0Index, size_t q1Index);
 
   /**
    * @brief Element-wise scaling by a complex scalar.

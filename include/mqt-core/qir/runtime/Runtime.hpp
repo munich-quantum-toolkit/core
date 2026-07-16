@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Runtime.hpp
+ * @brief C++ QIR runtime support.
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
@@ -214,7 +218,7 @@ public:
     /// If @c dd is currently populated, the existing package's `decRef` plus
     /// `garbageCollect` path is used so the package (and its internal caches)
     /// is kept warm.
-    /// If @c dd was moved out (e.g. by @ref Runtime::takeState), a new package
+    /// If @c dd was moved out (e.g., by @ref Runtime::takeState), a new package
     /// is allocated.
     auto reset() -> void {
       if (dd) {
@@ -227,6 +231,8 @@ public:
       numQubits = 0;
     }
   };
+
+  enum class OutputSchema : uint8_t { Labeled, Ordered };
 
 private:
   static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
@@ -245,6 +251,9 @@ private:
   QState qState;
   std::mt19937_64 mt;
   std::ostream* os = &std::cout;
+  // The QIR spec does not define a default output schema.
+  // The runtime picks @c Labeled when a program doesn't declare one.
+  OutputSchema outputSchema = OutputSchema::Labeled;
 
   Runtime();
   explicit Runtime(uint64_t randomSeed);
@@ -289,6 +298,13 @@ private:
     const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
     return {targets, Op, paramVec};
   }
+
+  // Helper function to output a type (bool, int...) to @c os, honoring the
+  // active @c outputSchema.
+  // The label is included only in Labeled mode.
+  // Tab separator between fields, newline at end.
+  void outputType(const char* type, std::string_view value,
+                  const char* label) const;
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
@@ -398,12 +414,6 @@ public:
   /// @returns the accumulated measurement string.
   auto getMeasurements() const -> const std::string&;
 
-  /// Emit `label:\n` to the output stream.
-  auto outputContainer(int64_t elementCount, const char* label) const -> void;
-
-  /// Emit `label: valueStr\n` to the output stream.
-  auto outputValue(std::string_view valueStr, const char* label) const -> void;
-
   /// Move the quantum state out of the runtime.
   /// Then reset the runtime to a clean state ready for the next job.
   /// Intended for use after a @c JitSession constructed with
@@ -414,6 +424,44 @@ public:
   auto getOstream() const -> std::ostream&;
   auto setOstream(std::ostream& other) -> void;
   auto resetOstream() -> void;
+
+  /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
+  auto outputResult(bool value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tBOOL\t<true|false>[\tlabel]\n` to the output stream.
+  auto outputBool(bool value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tINT\t<value>[\tlabel]\n` to the output stream.
+  auto outputInt(int64_t value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tDOUBLE\t<value>[\tlabel]\n` to the output stream.
+  auto outputFloat(double value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tTUPLE\t<elementCount>[\tlabel]\n` to the output stream.
+  auto outputTuple(int64_t elementCount, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tARRAY\t<elementCount>[\tlabel]\n` to the output stream.
+  auto outputArray(int64_t elementCount, const char* label) const -> void;
+
+  /// Emit the HEADER records (once per submitted program):
+  /// `HEADER\tschema_id\t<labeled|ordered>`
+  /// `HEADER\tschema_version\t2.1`
+  auto outputProgramHeader() const -> void;
+
+  /// Emit `START\n` followed by
+  /// `METADATA\toutput_labeling_schema\t<labeled|ordered>\n` (one per shot).
+  auto outputShotStart() const -> void;
+
+  /// Emit `END\t0\n` (one per shot).
+  /// The trailing `0` is a spec literal, not a runtime exit code.
+  auto outputShotEnd() const -> void;
+
+  [[nodiscard]] auto getOutputSchema() const -> OutputSchema;
+  auto setOutputSchema(OutputSchema schema) -> void;
 };
+
+/// Write the schema's spec-mandated literal (`labeled` or `ordered`).
+auto operator<<(std::ostream& os, Runtime::OutputSchema schema)
+    -> std::ostream&;
 
 } // namespace qir

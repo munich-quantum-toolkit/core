@@ -142,7 +142,7 @@ def qiskit(session: nox.Session) -> None:
         session.run("uv", "pip", "show", "qiskit", env=env)
 
 
-@nox.session(reuse_venv=True)
+@nox.session(python="3.14", reuse_venv=False)
 def docs(session: nox.Session) -> None:
     """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
     parser = argparse.ArgumentParser()
@@ -153,7 +153,12 @@ def docs(session: nox.Session) -> None:
     if serve:
         session.install("sphinx-autobuild")
 
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Let scikit-build-core generate the MLIR reference pages while it
+        # builds the extension used to execute the documentation examples.
+        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_DOCUMENTATION=ON",
+    }
     # install build and docs dependencies on top of the existing environment
     session.run(
         "uv",
@@ -166,33 +171,11 @@ def docs(session: nox.Session) -> None:
         env=env,
     )
 
-    # build the C++ API docs using doxygen
-    with session.chdir("docs"):
-        if shutil.which("doxygen") is None:
-            session.error("doxygen is required to build the C++ API docs")
-
-        Path("_build/doxygen").mkdir(parents=True, exist_ok=True)
-        session.run("doxygen", "Doxyfile", external=True)
-        Path("api/cpp").mkdir(parents=True, exist_ok=True)
-        session.run(
-            "breathe-apidoc",
-            "-o",
-            "api/cpp",
-            "-m",
-            "-f",
-            "-g",
-            "namespace",
-            "_build/doxygen/xml/",
-            external=True,
-        )
-
-    # build the MLIR API docs via building mlir-doc
-    session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
-    session.run("uvx", "cmake", "--build", "build", "--target", "mlir-doc")
-
     shared_args = [
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
+        "-E",  # Doxygen inventories are regenerated for every docs build
+        "-W",  # fail the session if documentation diagnostics are emitted
         f"-b={args.builder}",
         "docs",
         f"docs/_build/{args.builder}",
@@ -241,7 +224,11 @@ def stubs(session: nox.Session) -> None:
         "--module",
         "mqt.core.fomac",
         "--module",
+        "mqt.core.mlir",
+        "--module",
         "mqt.core.na",
+        "--pattern-file",
+        "bindings/patterns.txt",
     )
 
     pyi_files = list(package_root.glob("**/*.pyi"))

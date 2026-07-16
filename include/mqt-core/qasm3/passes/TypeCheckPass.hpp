@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file TypeCheckPass.hpp
+ * @brief Type-checking pass for OpenQASM 3 programs.
+ */
+
 #pragma once
 
 #include "qasm3/InstVisitor.hpp"

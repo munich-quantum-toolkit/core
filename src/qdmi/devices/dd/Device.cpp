@@ -146,8 +146,16 @@ makeOperationAddresses(const std::array<OperationInfo, N>& ops) {
 }
 constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
-constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
-                                                  QDMI_PROGRAM_FORMAT_QASM3};
+constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
+    QDMI_PROGRAM_FORMAT_QASM2,
+    QDMI_PROGRAM_FORMAT_QASM3,
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+    QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+    QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+    QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+    QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+#endif
+};
 
 } // namespace
 
@@ -483,9 +491,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
         },
         program_);
     auto jitSession = qir::JitSession(irBytes, "QDMI job");
+    runtime.outputProgramHeader();
     for (size_t i = 0; i < numShots_; ++i) {
       runtime.reset();
-      if (const auto rc = jitSession.run(); rc != 0) {
+      runtime.outputShotStart();
+      const auto rc = jitSession.run();
+      runtime.outputShotEnd();
+      if (rc != 0) {
         throw std::runtime_error(
             llvm::formatv("QIR program failed with error: {}", rc));
       }

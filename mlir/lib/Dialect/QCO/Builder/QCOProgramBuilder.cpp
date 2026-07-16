@@ -35,6 +35,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -52,12 +53,14 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
   ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
 }
 
-void QCOProgramBuilder::initialize() {
+void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
+
+void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
   setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, {getI64Type()});
+  auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -67,6 +70,16 @@ void QCOProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+}
+
+void QCOProgramBuilder::retype(TypeRange returnTypes) {
+  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
+  if (!mainFunc) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType =
+      getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
+  mainFunc.setType(funcType);
 }
 
 Value QCOProgramBuilder::intConstant(const int64_t value) {
@@ -400,7 +413,8 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   return {qubitOut, result};
 }
 
-Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
+std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit,
+                                                   const Bit& bit) {
   checkFinalized();
 
   auto nameAttr = getStringAttr(bit.registerName);
@@ -413,7 +427,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  return qubitOut;
+  return {qubitOut, measureOp.getResult()};
 }
 
 Value QCOProgramBuilder::reset(Value qubit) {
@@ -480,19 +494,15 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
                                                         Value target) {        \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(targets[0])};                                        \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+        ctrl(control, target, [&](Value target) { return OP_NAME(target); });  \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       ValueRange controls, Value target) {                                     \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(targets[0])};                                        \
-        });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+        ctrl(controls, target, [&](Value target) { return OP_NAME(target); }); \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
@@ -526,10 +536,9 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(param, targets[0])};                                 \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+        ctrl(control, target,                                                  \
+             [&](Value target) { return OP_NAME(param, target); });            \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
@@ -537,10 +546,9 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(param, targets[0])};                                 \
-        });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+        ctrl(controls, target,                                                 \
+             [&](Value target) { return OP_NAME(param, target); });            \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
@@ -570,10 +578,9 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(param1, param2, targets[0])};                        \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+        ctrl(control, target,                                                  \
+             [&](Value target) { return OP_NAME(param1, param2, target); });   \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -583,10 +590,9 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(param1, param2, targets[0])};                        \
-        });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+        ctrl(controls, target,                                                 \
+             [&](Value target) { return OP_NAME(param1, param2, target); });   \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
@@ -618,10 +624,10 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(param1, param2, param3, targets[0])};                \
+        ctrl(control, target, [&](Value target) {                              \
+          return OP_NAME(param1, param2, param3, target);                      \
         });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -633,10 +639,10 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(param1, param2, param3, targets[0])};                \
+        ctrl(controls, target, [&](Value target) {                             \
+          return OP_NAME(param1, param2, param3, target);                      \
         });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
@@ -879,6 +885,56 @@ QCOProgramBuilder::inv(ValueRange qubits,
   return targetsOut;
 }
 
+std::pair<ValueRange, Value>
+QCOProgramBuilder::ctrl(ValueRange controls, Value target,
+                        function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerTargetOut;
+  auto ctrlOp =
+      CtrlOp::create(*this, controls, target, [&](Value targetArg) -> Value {
+        updateQubitTracking(target, targetArg);
+        innerTargetOut = body(targetArg);
+        return innerTargetOut;
+      });
+
+  const auto& controlsOut = ctrlOp.getControlsOut();
+  for (const auto& [control, controlOut] :
+       llvm::zip_equal(controls, controlsOut)) {
+    updateQubitTracking(control, controlOut);
+  }
+  const auto& targetsOut = ctrlOp.getTargetsOut();
+  assert(targetsOut.size() == 1);
+  updateQubitTracking(innerTargetOut, targetsOut.front());
+
+  return {controlsOut, targetsOut.front()};
+}
+
+std::pair<Value, Value>
+QCOProgramBuilder::ctrl(Value control, Value target,
+                        function_ref<Value(Value)> body) {
+  const auto [controlsOut, targetOut] = ctrl(ValueRange{control}, target, body);
+  assert(controlsOut.size() == 1);
+  return {controlsOut.front(), targetOut};
+}
+
+Value QCOProgramBuilder::inv(Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto invOp = InvOp::create(*this, qubit, [&](Value qubitArg) -> Value {
+    updateQubitTracking(qubit, qubitArg);
+    innerQubitOut = body(qubitArg);
+    return innerQubitOut;
+  });
+
+  const auto& qubitsOut = invOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
@@ -1103,6 +1159,13 @@ void QCOProgramBuilder::ensureAllocationMode(
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();
 
+  auto exitCode = intConstant(0);
+  return finalize({exitCode});
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
+  checkFinalized();
+
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
@@ -1151,11 +1214,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   validQubits.clear();
   validTensors.clear();
 
-  // Create constant 0 for successful exit code
-  auto exitCode = intConstant(0);
-
-  // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, exitCode);
+  // Add return statement with the given return values to the main function
+  func::ReturnOp::create(*this, returnValues);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
@@ -1165,11 +1225,22 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QCOProgramBuilder&)>& buildFunc) {
+    const function_ref<SmallVector<Value>(QCOProgramBuilder&)>& buildFunc) {
   QCOProgramBuilder builder(context);
   builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
+  auto result = buildFunc(builder);
+  builder.retype(ValueRange(result).getTypes());
+  return builder.finalize(result);
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<Value(QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qco

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file QIR.h
+ * @brief C QIR runtime declarations.
+ */
+
 // initially taken from
 // https://github.com/qir-alliance/qir-runner/blob/main/stdlib/include/qir_stdlib.h
 // and adopted to match the QIR specification

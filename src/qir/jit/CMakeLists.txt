@@ -10,7 +10,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-jit)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add QIRJIT library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QIRJIT)
+  add_mqt_core_library(${TARGET_NAME} FORCE_STATIC ALIAS_NAME QIRJIT)
 
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE Session.cpp IRRewriter.cpp)
