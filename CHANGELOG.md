@@ -12,9 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis,
-  lexical scope, assignment, inclusive ranges, and structured control-flow
-  lowering ([#1910]) ([**@burgholzer**])
+- ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
+  and direct QC emission, including lexical scope, assignment, inclusive ranges,
+  and structured control flow ([#1910]) ([**@burgholzer**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries

@@ -1,4 +1,4 @@
-# Complete a staged, specification-driven OpenQASM frontend
+# Complete a direct, specification-driven OpenQASM-to-QC frontend
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -9,445 +9,638 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core needs an OpenQASM frontend that separates source-language validity from
-target capability. Parsing and semantic analysis must work without an MLIR
-context, valid programs must produce verified target-neutral IR, and a separate
-conversion must either produce verified QC or report a precise target
-limitation. This distinction is observable with a valid `pow`-modified gate:
-analysis and OQ3 emission succeed, while conversion reports that QC cannot
-represent power modifiers.
+MQT Core must accept as many valid OpenQASM programs as its compiler can
+faithfully process, diagnose unsupported language features at the QC emission
+boundary, and carry every accepted program through the complete compiler. After
+this work, a user can give OpenQASM to `QCProgram::fromQASMString`, receive
+verified QC directly, optimize it in QCO, optionally serialize and deserialize
+it through Jeff, convert it back to QC, and obtain valid QIR. The unit tests
+make that path observable stage by stage.
 
-The frontend must support real source programs, not only isolated syntax. That
-includes lexical scope, mutable scalar and bit state, `for`, `while`, `if`,
-loop-carried values, includes, custom gates, dynamic indices, measurement, and
-OpenQASM 2 compatibility behavior. Ordinary arithmetic and structured control
-flow use standard MLIR dialects. The small OQ3 dialect retains only resolved
-gate declarations, applications, and ordered modifiers for which a
-target-neutral boundary adds observable value.
+The parser and semantic analyzer remain independent of MLIR and continue to
+recognize valid source even when the selected compiler target lacks a concept.
+The gate `pow @` modifier is the defining example: parsing and semantic analysis
+succeed, but the direct QC emitter reports a source-located unsupported-feature
+diagnostic until QC gains power semantics. There is no OQ3 MLIR dialect or
+OQ3-to-QC conversion. An intermediate dialect that cannot proceed through the
+compiler adds maintenance and test surface without user value.
 
-The repository-relative scope is `mlir/include/mlir/Target/OpenQASM`,
-`mlir/lib/Target/OpenQASM`, `mlir/include/mlir/Dialect/OQ3`,
-`mlir/lib/Dialect/OQ3`, `mlir/include/mlir/Conversion/OQ3ToQC`,
-`mlir/lib/Conversion/OQ3ToQC`, the QC-to-QCO structured-control conversion,
-focused tests, and directly related CMake and documentation files. The legacy
-`QuantumComputation` parser remains available and its tests remain regression
-coverage; it is not used as an adapter by the MLIR frontend.
+The scope is the staged frontend under `mlir/include/mlir/Target/OpenQASM` and
+`mlir/lib/Target/OpenQASM`, direct QC translation under
+`mlir/lib/Dialect/QC/Translation`, the OpenQASM fixture corpus and compiler
+tests, and only those existing conversion files for which a full-chain fixture
+demonstrates a real defect. Preserve the legacy `QuantumComputation` parser and
+unrelated behavior. Do not push or publish GitHub text under this plan.
 
 ## Progress
 
-- [x] (2026-07-15) Replaced the direct syntax-to-QC experiment with explicit
-  parse, analyze, emit OQ3, and convert-to-QC stages.
-- [x] (2026-07-15) Evaluated the unresolved review findings on pull request 1910
-      and the implementation and fixtures from pull request 1862. Identified the
-      stream parser bridge, unreachable loop support, and missing carried state
-      as release blockers.
-- [x] (2026-07-15) Moved OQ3-to-QC into `mlir/Conversion/OQ3ToQC`, implemented
-  it with MLIR dialect conversion, made OQ3 illegal after conversion, and
-  removed speculative OQ3 classical and loop concepts.
-- [x] (2026-07-16) Replaced the `SourceMgr`-to-`std::istringstream` bridge with
-  an LLVM-native, zero-copy lexer and recursive-descent parser that produce
-  persistent syntax and collected `SMLoc` diagnostics.
-- [x] (2026-07-16) Centralized names, types, scope, initialization, gate
-  availability, and source restrictions in semantic analysis. Added exact
-  version handling, textual includes, strict UTF-8 identifiers, constants,
-  assignments, comparisons, broadcasting, and dynamic index checks.
-- [x] (2026-07-16) Implemented source `if`, `for`, and `while` with standard SCF
-  operations. Mutation analysis carries only state written by nested control
-  flow through region arguments, yields, and results.
-- [x] (2026-07-16) Implemented canonical-reference dynamic-qubit dispatch,
-  runtime bounds and alias checks, physical/virtual addressing diagnostics,
-  and a 4,096-leaf expansion budget enforced at analysis and emitter trust
-  boundaries.
-- [x] (2026-07-16) Hardened OQ3 gate signatures, modifiers, operand provenance,
-  custom-gate reachability, recursion, expansion cost, and structured custom
-  gate target errors.
-- [x] (2026-07-16) Updated QC-to-QCO to preserve existing classical SCF state,
-  append quantum state, use region-local mappings, and convert structured
-  terminators only after their regions have established final values.
-- [x] (2026-07-16) Ported all 27 healthy pull request 1862 fixtures. Seventeen
-  non-looping programs compare exact QC output and ten loop or dynamic-index
-  programs assert behavior-sensitive structural contracts.
-- [x] (2026-07-16) Removed iteration artifacts from the complete effective diff:
-      obsolete cleanup scaffolding, duplicated declaration metadata, parallel
-      structured-value maps, stale test names, repetitive revision notes, and
-      incidental comments.
-- [x] (2026-07-16) Rebuilt from clean build and documentation directories. All
-      focused binaries, 97 legacy parser tests, warning-as-error documentation,
-      repository lint, and diff checks pass. Refreshed substantive
-      changed-surface line coverage is 91.4 percent.
+- [x] (2026-07-15) Replaced the legacy stream adapter with an LLVM-native lexer,
+      grammar-only parser, persistent syntax tree, and separate semantic
+      analyzer.
+- [x] (2026-07-16) Implemented source locations and includes, lexical scope,
+  types, definite initialization, assignments, expressions, custom gates,
+  broadcasting, dynamic indices, measurement, `if`, `for`, `while`, and
+  loop-carried scalar and bit state in the staged frontend.
+- [x] (2026-07-16) Ported 27 healthy behavior fixtures from the earlier OpenQASM
+      implementation and completed a cleanup and clean-build validation of that
+      implementation.
+- [x] (2026-07-16) Re-evaluated the architecture after review and concluded that
+      the reduced OQ3 dialect is unnecessary. Inspected the public compiler
+      program APIs and identified the complete QC/QCO/Jeff/QIR path that must
+      become the acceptance boundary.
+- [x] (2026-07-16) Revised this plan after critical review: isolate direct
+      emission in a private emitter, build the full-chain harness before
+      changing conversions, and require evidence-backed minimal regression
+      fixes.
+- [x] (2026-07-16) Removed the OQ3 dialect, OQ3-to-QC conversion, registrations,
+      documentation, and dialect-specific tests, while relocating the gate
+      catalog to the frontend.
+- [x] (2026-07-16) Implemented direct typed-program-to-QC emission behind
+      private `OpenQASMToQCEmitter` files and kept `TranslateQASM3ToQC.cpp` as a
+      small public adapter.
+- [x] (2026-07-16) Converted target tests from OQ3 inspection to direct QC
+  behavior and precise target diagnostics, including rejection of `pow @`.
+- [x] (2026-07-16) Defined a shared `{name, source}` OpenQASM compiler corpus
+      and added public-API full-chain tests, including both direct composition
+      and `runDefaultPipeline`.
+- [x] (2026-07-16) Used failing full-chain stages to isolate the Jeff
+      entry-point round-trip defect and added a parser-independent native
+      regression. Retained the structured QC-to-QCO changes with their existing
+      native regressions.
+- [x] (2026-07-16) Minimized the complete diff against `origin/main`, removing
+      superseded OQ3 code, duplicated dispatch data, stale registrations, and
+      iteration artifacts. The only new downstream production change is the Jeff
+      entry-point correction backed by a native regression.
+- [x] (2026-07-16) Added maintained parser, semantic, QC-emission,
+  Adaptive-plus-Jeff, and Base support matrices.
+- [x] (2026-07-16) Ran the affected frontend, translation, conversion, compiler,
+      QIR, and legacy-parser tests; warning-as-error documentation; repository
+      lint; diff checks; and sequential coverage. The substantive frontend and
+      emitter surface reached 90.7 percent line coverage.
 
 ## Surprises & Discoveries
 
-- Observation: the previous MLIR entry point copied the `SourceMgr` main buffer
-  into `std::istringstream` and invoked the legacy scanner and parser. The
-  source manager therefore did not own included source or parser locations.
-  Evidence: the replacement can destroy the caller's source manager and still
-  diagnose and emit from included buffers.
+- Observation: the old MLIR entry point copied the `SourceMgr` main buffer into
+  `std::istringstream`, losing the source manager's include and location model.
+  Evidence: the replacement parser consumes LLVM buffers directly and its
+  persistent program retains included source identity.
 
 - Observation: the legacy scanner recognized `for` and `while`, but its parser
-  had no statement cases for them. The prior OQ3 loop operation was therefore
-  unreachable from source. Evidence: the new source fixtures exercise both forms
-  and inspect their emitted SCF regions.
+  could not construct those statements. Evidence: the staged frontend now has
+  source fixtures that produce and exercise standard SCF regions.
 
-- Observation: pull request 1862 contains useful zero-copy lexing mechanics,
-  scope and loop grammar, and broad behavior fixtures, but its parser and sink
-  share semantic decisions and emit MLIR immediately. Its mechanics and tests
-  are reusable; its architecture is incompatible with a persistent typed stage.
+- Observation: valid source and target support are distinct, but a dialect is
+  not required to preserve that distinction. Evidence: the typed semantic
+  program already retains modifiers and source locations, so a QC emitter can
+  reject `pow @` before creating target IR.
 
-- Observation: mutable outer values cannot be represented by retaining SSA
-  values created inside a branch or loop. Those values do not dominate later
-  uses. Explicit SCF region arguments, yields, and results are required, and
-  carrying only transitively mutated values keeps signatures small.
+- Observation: the OQ3 dialect has shrunk to gate declarations, applications,
+  and modifiers while classical computation and control flow already use
+  standard MLIR. Its conversion mostly expands typed custom gates and maps a
+  gate catalog to QC, work that can be performed directly from the typed model.
 
-- Observation: OpenQASM integer ranges are inclusive, may descend, and may span
-  the full signed 64-bit domain. Normalizing them through i128 distance
-  arithmetic avoids `stop + 1` overflow and makes dynamic zero steps and
-  unrepresentable trip counts explicit assertions.
+- Observation: the branch changes QC-to-QCO for structured classical and quantum
+  state, but that change has not yet been justified by the complete
+  OpenQASM-to-QIR path. The correct evidence is a parser-independent conversion
+  regression distilled from a failing full-chain source fixture, not the mere
+  existence of structured OpenQASM.
 
-- Observation: parser-owned symbol resolution fails for textual includes because
-  declarations become visible according to include expansion order, not buffer
-  parse order. A grammar-only parser and one semantic pass correctly handle
-  included declarations and declaration-before-use rules.
+- Observation: `runDefaultPipeline` covers QC to QCO optimization, QCO back to
+  QC, and QC to QIR, but intentionally does not include a Jeff round trip.
+  Therefore acceptance needs both an explicit public-API Jeff chain and a
+  separate `runDefaultPipeline` check.
 
-- Observation: the QC qubit type has reference semantics. Loading a dynamic
-  element again can create an alias that QC-to-QCO cannot represent, and a
-  qubit-valued `arith.select` is not lowerable. Structured `scf.if` dispatch
-  applies operations to canonical register references in each branch.
+- Observation: structured control flow generally requires the Adaptive QIR
+  profile, while straight-line circuits can exercise both Base and Adaptive
+  profiles. Encoding expected failures as fixture flags would hide unsupported
+  behavior, so the corpus contains only names and sources and profile grouping
+  is expressed by the test suites that select it.
 
-- Observation: dialect-conversion worklist order does not guarantee that a
-  structured terminator sees the final values produced in its region. A second
-  conversion phase for `scf.yield` and `scf.condition`, sharing region-local
-  maps with the first phase, makes value threading deterministic.
+- Observation: Jeff round trips preserved entry functions with observable bit
+  results, but `JeffToQCO` restored the `entry_point` marker only for
+  result-less functions. Evidence: the first explicit chain reached
+  reconstructed QC but Adaptive QIR reported that no entry point existed. The
+  native Jeff regression now proves that nonempty result types and the marker
+  survive together.
 
-- Observation: QCO structured conditionals carry linear quantum state but not
-  arbitrary classical results. QC-to-QCO therefore spills branch-local classical
-  measurement results into distinct one-element scratch slots hoisted outside
-  enclosing loops while keeping quantum values in SSA form.
-
-- Observation: direct dynamic dispatch grows as the Cartesian product of dynamic
-  operands. The 4,096-leaf budget prevents exponential IR construction before it
-  starts and is also checked when a caller directly mutates a `TypedProgram`.
-
-- Observation: a successful whole-module conversion can still visit OQ3 calls
-  inside unused gate definitions. Erasing unreachable definitions before
-  conversion prevents unused recursion or doubling chains from blocking or
-  expanding otherwise valid programs.
-
-- Observation: the repository-wide hook wrapper consults the shared Git index
-  and can report missing-file metadata for intentional unstaged deletions.
-  Running every hook over all live changed and untracked paths validates the
-  same surface without staging work that has not been approved.
+- Observation: the Jeff representation cannot preserve the frontend's runtime
+  `cf.assert` bounds checks. Evidence: genuinely runtime-dynamic indexing
+  reaches verified QC and QCO but QCO-to-Jeff rejects `cf.assert`; an index
+  resolved by cleanup traverses the complete chain. This limitation is
+  documented rather than erased or hidden by an expected-failure fixture flag.
 
 ## Decision Log
 
-- Decision: retain a minimal OQ3 dialect for resolved gates and ordered
-  modifiers. Rationale: `pow` demonstrates valid source semantics that QC cannot
-  represent, while standard MLIR already models classical values and structured
-  control flow. Date/Author: 2026-07-15 / Codex.
-
-- Decision: implement OQ3-to-QC as dialect conversion with OQ3 illegal in the
-  final target. Rationale: success then proves mechanically that no OQ3
-  operation remains. Date/Author: 2026-07-15 / Codex.
-
-- Decision: adapt selected mechanics and all healthy behavior fixtures from pull
-  request 1862 without adopting its direct parser-to-emitter design. Rationale:
-  parsing must produce persistent target-independent data and semantic rules
-  must have one owner. Date/Author: 2026-07-15 / Codex.
-
-- Decision: keep the parser grammar-only and use one syntax expression graph for
-  arithmetic, conditions, indices, and measurements. Rationale: names, types,
-  scope, initialization, and gate order belong in semantic analysis, especially
-  across textual includes. Date/Author: 2026-07-16 / Codex.
-
-- Decision: represent ordinary control flow with SCF and thread only
-  transitively mutated scalar and bit state. Rationale: SCF provides the
-  required dominance and region contracts without duplicating them in OQ3.
+- Decision: remove the OQ3 MLIR dialect and emit QC directly from the typed
+  frontend program. Rationale: OpenQASM is compiler input, and successful import
+  should mean that the program can enter the compiler's supported dialects.
+  Unsupported target concepts remain diagnosable from the typed source model.
   Date/Author: 2026-07-16 / Codex.
 
-- Decision: normalize inclusive ranges to a zero-based positive SCF trip count
-  using i128 calculations. Rationale: this handles ascending, descending,
-  dynamic, empty, and boundary ranges without source-width overflow.
+- Decision: retain the staged lexer, syntax, and semantic design. Rationale:
+  parsing, source-language validity, and target emission have different
+  responsibilities, and includes, scope, and precise diagnostics already rely on
+  that separation. Date/Author: 2026-07-16 / Codex.
+
+- Decision: keep the existing `oq3::frontend` namespace unless a narrow rename
+  is independently justified. Rationale: the namespace denotes the OpenQASM 3
+  language frontend and is not itself an MLIR dialect; renaming every frontend
+  type would add churn without changing behavior. Only dialect-specific
+  identifiers must disappear. Date/Author: 2026-07-16 / Codex.
+
+- Decision: put direct emission in private `OpenQASMToQCEmitter.h` and
+  `OpenQASMToQCEmitter.cpp`, leaving `TranslateQASM3ToQC.cpp` as a small public
+  adapter. Rationale: a large emitter should not obscure the stable translation
+  entry points, and private files avoid exposing a second public API.
   Date/Author: 2026-07-16 / Codex.
 
-- Decision: perform definite-initialization analysis and use `ub.poison` only
-  for emitter slots proven unreachable before initialization. Rationale: the
-  emitter must not invent source values. Date/Author: 2026-07-16 / Codex.
+- Decision: rename the frontend library target to `MLIROpenQASMFrontend`.
+  Rationale: after emission moves to QC translation, the target contains only
+  lexing, parsing, persistent syntax, semantic analysis, and the gate catalog;
+  the name should describe that boundary. Date/Author: 2026-07-16 / Codex.
 
-- Decision: follow the OpenQASM C99 conversion rules consistently in constant
-  folding and MLIR emission. Rationale: mixed `int`, `uint`, float, comparison,
-  and assignment behavior must agree at compile time and run time. Date/Author:
-  2026-07-16 / Codex.
+- Decision: keep custom-gate expansion limits and QC capability preflight in the
+  emitter. Rationale: semantics validates source legality, including recursion,
+  while expansion cost and target representability depend on the selected
+  output. Date/Author: 2026-07-16 / Codex.
 
-- Decision: treat standard-library includes as ordered events and custom
-  includes as cached syntax expanded once per occurrence. Rationale: this
-  preserves textual visibility while avoiding repeated lexing and still detects
-  active recursive expansion. Date/Author: 2026-07-16 / Codex.
-
-- Decision: allow gate bodies to read parameters, loop variables, built-in
-  constants, and immutable global constants, but reject mutable global captures.
-  Rationale: immutable values can be embedded safely; mutable values would
-  create closure-like references in emitted gate symbols. Date/Author:
-  2026-07-16 / Codex.
-
-- Decision: use structured dispatch over canonical QC references for dynamic
-  qubit indices and cap expansion at 4,096 leaves. Rationale: this preserves
-  alias identity and downstream conversion while bounding generated IR.
-  Date/Author: 2026-07-16 / Codex.
-
-- Decision: preflight custom-gate reachability and expansion, convert reachable
-  gate bodies before call sites, and reject modifiers on structured custom gates
-  that QC cannot represent. Rationale: target conversion must never drop
-  semantics or introduce fresh illegal operations. Date/Author: 2026-07-16 /
+- Decision: reject unsupported gate modifiers before emitting any part of the
+  affected application. Rationale: target failure must be precise and cannot
+  silently alter or partially lower source semantics. Date/Author: 2026-07-16 /
   Codex.
 
-- Decision: convert QC structured parents and quantum operations before their
-  terminators, using one region-local state model. Rationale: terminators must
-  resolve values after all branch or loop-body updates, independently of the
-  conversion driver's traversal order. Date/Author: 2026-07-16 / Codex.
+- Decision: build the full compiler-chain corpus before altering downstream
+  conversions and do not blanket-revert QC-to-QCO. Rationale: the current branch
+  may contain both necessary and speculative hunks. Stage-specific failures and
+  minimized native-IR regressions provide the evidence needed to retain,
+  simplify, or remove each change safely. Date/Author: 2026-07-16 / Codex.
 
-- Decision: store frontend program IDs by canonical vector position and retain
-  only metadata consumed after analysis. Rationale: declaration IDs duplicated
-  their vector indices, gate parameter names were reduced immediately to counts,
-  and statement locations already identify gate applications. Scalar names
-  remain because source-order and include-identity tests inspect them. Removing
-  the other metadata makes the typed model smaller and its invariants explicit.
-  Date/Author: 2026-07-16 / Codex.
+- Decision: conversion unit tests remain parser-independent. Rationale: a QC,
+  QCO, Jeff, or QIR conversion regression should construct or parse the smallest
+  native MLIR that demonstrates the conversion invariant. OpenQASM belongs only
+  in translation and compiler integration tests. Date/Author: 2026-07-16 /
+  Codex.
+
+- Decision: share at most `{name, source}` across OpenQASM compiler fixtures.
+  Rationale: per-fixture expected-failure or capability flags turn gaps into
+  accepted behavior. Separate positive suites select the source subset they are
+  required to support. Date/Author: 2026-07-16 / Codex.
+
+- Decision: preserve observable Jeff entry-point results when restoring QCO.
+  Rationale: Jeff serialization already retains those results; replacing them
+  with a synthetic status code discarded program output and prevented the
+  reconstructed QC module from reaching QIR. Result-less legacy entry points
+  still receive the historical i64 status result. Date/Author: 2026-07-16 /
+  Codex.
+
+- Decision: do not erase bounds assertions merely to make runtime dynamic
+  indexing serializable as Jeff. Rationale: doing so would silently weaken
+  source semantics. The full-chain corpus covers a dynamically written index
+  that cleanup resolves; general runtime dynamic dispatch remains explicitly
+  supported through QC but not claimed as Jeff-compatible. Date/Author:
+  2026-07-16 / Codex.
 
 ## Outcomes & Retrospective
 
-The completed architecture separates source concerns from target concerns. The
-LLVM-native frontend owns source buffers and diagnostics, parsing produces
-persistent syntax, semantic analysis produces a compact typed program, and
-emission uses standard MLIR wherever the semantics are already expressible. OQ3
-retains the small gate/modifier boundary needed to distinguish valid source from
-QC capability, and dialect conversion proves that successful QC output has no
-residual OQ3 operations.
+The completed frontend groundwork is retained: the native parser and semantic
+analyzer cover the source-language behavior needed by the compiler. The earlier
+OQ3 target architecture has been removed in favor of direct QC emission.
 
-The implementation now supports source loops, assignments, comparisons, lexical
-shadowing, definite initialization, local bits, negative and dynamic indices,
-compound arithmetic, general conditions, targetless and targeted measurement,
-whole-register bit assignment, OpenQASM 2 classical-register conditions, Unicode
-identifiers, custom includes, immutable constants in gate bodies, and mixed
-register/scalar broadcasting. SCF iteration arguments and results solve the
-original dominance problem for nested mutable state.
+The direct architecture and end-to-end behavior are implemented. Eleven broad
+OpenQASM fixtures traverse direct QC, QCO cleanup and optimization, Jeff byte
+serialization and deserialization, reconstructed QCO and QC, and Adaptive QIR;
+the same fixtures pass `runDefaultPipeline`. Four straight-line fixtures also
+reach Base QIR. The corpus includes custom and broadcast gates, arithmetic and
+math parameters, nested `if`/`for`, measurement-controlled `while`, mutable bit
+state carried by a loop, a dynamically written index resolved during cleanup,
+reset, barrier, and mixed positive and negative controls.
 
-Pull request 1862 is represented as behavior coverage rather than a second
-frontend architecture. Seventeen imported programs compare exact QC and ten
-exercise loop or dynamic-index structure. After cleanup, the focused evidence is
-13 OQ3 tests, 87 staged frontend and target tests, 241 QC translation tests, 121
-QC-to-QCO tests, 97 legacy parser tests, and 91.4 percent substantive
-changed-surface line coverage (4,348 of 4,759 lines).
+The only new downstream production correction is in Jeff-to-QCO: entry points
+with observable results now regain their compiler marker without losing those
+results. Its native regression is independent of OpenQASM. General runtime
+dynamic indexing remains a deliberate limitation of the Jeff path because Jeff
+cannot represent the source bounds assertion. The frontend and direct QC target
+continue to support and test it; the documentation does not overclaim full-chain
+support. All final validation gates passed, including 90.7 percent line coverage
+over the substantive frontend and emitter sources.
 
 ## Context and Orientation
 
-`mlir/lib/Target/OpenQASM/Frontend.cpp` owns the source manager and returns an
-opaque `ParsedProgram`. `OpenQASMLexer.cpp`, `OpenQASMParser.h`,
-`OpenQASMSyntax.h`, and `OpenQASMSyntax.cpp` implement tokenization, grammar,
-source recovery, and persistent target-independent syntax.
-`OpenQASMSemantics.cpp` resolves that syntax into the `TypedProgram` declared in
-`mlir/include/mlir/Target/OpenQASM/Frontend.h`. These stages do not depend on an
-MLIR context.
+`mlir/lib/Target/OpenQASM/Frontend.cpp` owns source buffers and orchestrates
+parsing. `OpenQASMLexer.cpp`, `OpenQASMParser.h`, `OpenQASMSyntax.h`, and
+`OpenQASMSyntax.cpp` implement tokenization, grammar, recovery, and persistent
+syntax. `OpenQASMSemantics.cpp` resolves syntax into the `TypedProgram` declared
+in `mlir/include/mlir/Target/OpenQASM/Frontend.h`. These files use LLVM support
+but do not require an `MLIRContext`. A `TypedProgram` is a compact resolved
+representation containing expressions, conditions, declarations, statements,
+gate definitions, source locations, and output registers.
 
-`mlir/lib/Target/OpenQASM/OpenQASM.cpp` emits the typed program using builtin
-MLIR plus `arith`, `cf`, `func`, `math`, `memref`, `scf`, `ub`, QC, and OQ3.
-Mutable state is held by standard SSA values and explicitly crosses SCF region
-boundaries. Dynamic qubit references become structured dispatch over canonical
-QC references rather than new loads or qubit-valued selection.
+Direct QC construction lives in the private
+`mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp`. The reusable gate
+metadata lives in `mlir/include/mlir/Target/OpenQASM/GateCatalog.h` and
+`mlir/lib/Target/OpenQASM/GateCatalog.cpp`, where semantic analysis and target
+emission share one authoritative catalog.
 
-`mlir/lib/Conversion/OQ3ToQC/OQ3ToQC.cpp` is the target boundary. It validates
-and orders reachable custom gates, lowers supported OQ3 gate applications,
-reports unsupported target semantics, erases gate symbols, and completes with
-OQ3 marked illegal.
+The stable user-facing translation functions are declared in
+`mlir/include/mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h` and implemented
+in `mlir/lib/Dialect/QC/Translation/TranslateQASM3ToQC.cpp`. They accept either
+an LLVM source manager or source text and return an owning reference to an MLIR
+module. `QCProgram::fromQASMString` in `mlir/lib/Compiler/Programs.cpp` calls
+this API. The translation source must stay small; a new private emitter beside
+it owns all typed-program-to-QC construction.
 
-`mlir/lib/Conversion/QCToQCO/QCToQCO.cpp` converts QC reference semantics to QCO
-value semantics. Structured operations preserve their classical operands and
-results while appending quantum values. Region-local mappings and a separate
-terminator phase preserve the latest branch and loop state.
+QC uses reference-like qubits. QCO is the optimizer dialect and uses linear SSA
+values, meaning each quantum operation returns the next value representing its
+qubit. QC-to-QCO and QCO-to-QC bridge those models. Jeff is a serializable
+exchange representation reached from QCO. QIR is LLVM-based output reached from
+QC. The compiler program wrappers in `mlir/include/mlir/Compiler/Programs.h`
+provide ownership-safe transitions between these representations.
 
-Tests under `mlir/unittests/Target/OpenQASM` exercise parsing, analysis, OQ3
-emission, QC conversion, source diagnostics, and the imported fixture corpus.
-Tests under `mlir/unittests/Dialect/OQ3`,
-`mlir/unittests/Dialect/QC/Translation`, and `mlir/unittests/Conversion/QCToQCO`
-defend the IR and conversion boundaries.
+`mlir/unittests/programs/qasm_programs.cpp` and its header contain reusable
+OpenQASM source fixtures. Translation equivalence tests live in
+`mlir/unittests/Dialect/QC/Translation/test_qasm3_translation.cpp`. The complete
+public compiler path belongs in
+`mlir/unittests/Compiler/test_compiler_pipeline.cpp`. Tests directly attached to
+QC-to-QCO, QCO-to-QC, Jeff, and QIR must use their dialect-native builders or
+small MLIR strings, not invoke the OpenQASM parser.
 
 ## Plan of Work
 
-### Milestone 1: establish the target-neutral boundary
+### Milestone 1: remove the intermediate dialect and establish direct emission
 
-Keep only source distinctions that QC cannot faithfully represent in OQ3. Move
-target lowering to `Conversion/OQ3ToQC`, express it through MLIR dialect
-conversion, and mark OQ3 illegal in the successful target. Demonstrate both a
-supported gate program and the valid-but-unsupported `pow` boundary.
+Delete `mlir/include/mlir/Dialect/OQ3`, `mlir/lib/Dialect/OQ3`,
+`mlir/include/mlir/Conversion/OQ3ToQC`, `mlir/lib/Conversion/OQ3ToQC`, and
+`mlir/unittests/Dialect/OQ3`. Remove their `add_subdirectory` entries, generated
+operation dependencies, tool dialect registrations, unit-test registration, and
+link libraries from the adjacent CMake files. Delete `docs/mlir/OQ3.md` and
+remove its navigation entries. Do not remove `oq3::frontend` merely because its
+name contains `oq3`; it is language code rather than a dialect identifier.
 
-### Milestone 2: replace the legacy parser bridge
+Move the gate catalog to `mlir/include/mlir/Target/OpenQASM/GateCatalog.h` and
+`mlir/lib/Target/OpenQASM/GateCatalog.cpp`, retaining one authoritative table
+for language gates, standard-library gates, compatibility aliases, canonical QC
+primitives, parameter counts, control counts, target counts, variadic controls,
+and inverse aliases. Update semantic includes and namespaces without duplicating
+the table.
 
-Use LLVM source ownership, `StringRef` token spans, `SMLoc` diagnostics, and
-bump-allocated transient parser data. Parsing must return persistent syntax and
-diagnostics without constructing MLIR. Includes must retain source identity and
-lifetime after the caller source manager is destroyed.
+Rename the CMake library in `mlir/lib/Target/OpenQASM/CMakeLists.txt` from
+`MLIROpenQASMTarget` to `MLIROpenQASMFrontend`. It contains `Frontend.cpp`, the
+lexer, syntax, semantics, and `GateCatalog.cpp`, and links only what those
+stages use. Remove `mlir/include/mlir/Target/OpenQASM/OpenQASM.h` and the old
+emitter source after direct emission has replaced their behavior.
 
-### Milestone 3: implement source semantics and structured state
+Add private `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.h` and
+`OpenQASMToQCEmitter.cpp`. The header declares only a translation-internal
+function that accepts a resolved `oq3::frontend::TypedProgram` and an
+`MLIRContext` and returns `OwningOpRef<ModuleOp>`. `TranslateQASM3ToQC.cpp`
+parses, analyzes, prints collected source diagnostics on failure, invokes this
+private function, verifies the returned QC module, and contains no lowering
+implementation.
 
-Resolve all names, types, scopes, initialization, gates, indices, assignments,
-and conditions in one semantic pass. Emit `if`, `for`, and `while` as SCF with
-minimal carried state. Cover ascending, descending, empty, dynamic, zero-step,
-and integer-boundary ranges and nested updates to outer scalar and bit state.
+The emitter reuses standard `arith`, `cf`, `func`, `math`, `memref`, `scf`, and
+`ub` operations for classical behavior and emits QC operations directly. Port
+only the target logic from OQ3-to-QC: catalog-to-primitive dispatch, implicit
+and variadic controls, inverse aliases, the four-parameter `cu` phase behavior,
+ordered inverse/positive-control/negative-control modifiers, and recursive
+inlining of typed custom-gate bodies. Semantic analysis continues to reject
+source-illegal recursion. The emitter preflights reachable custom-gate expansion
+cost, target support, modifier operands, and structured custom-gate limitations
+before creating each affected application. A `pow @` modifier produces a
+source-located error and a null translation result; scalar exponentiation and
+the scalar `pow()` function remain supported.
 
-### Milestone 4: close specification and target gaps
+Acceptance for this milestone is a clean build with no OQ3 dialect or conversion
+target and direct QC translation for existing supported sources. Repository
+searches for `OQ3Dialect`, OQ3 operation class names, `createOQ3ToQCPass`, and
+`MLIROQ3` must be empty. A search for `oq3::frontend` is not an acceptance
+failure.
 
-Add exact version and include behavior, strict identifiers and numeric forms,
-OpenQASM 2 compatibility, custom gates, broadcasting, dynamic canonical-qubit
-dispatch, physical addressing checks, recursion and expansion budgets, and
-precise target errors for unsupported modifiers. Update QC-to-QCO wherever the
-new valid structured QC exposes a downstream value-semantics gap.
+### Milestone 2: convert target tests to direct behavior
 
-### Milestone 5: prove and clean the complete result
+Refactor `mlir/unittests/Target/OpenQASM/test_openqasm.cpp` so parser tests
+inspect parse results, semantic tests inspect `TypedProgram`, and target tests
+inspect verified QC or emitted diagnostics. Remove all tests whose only purpose
+is OQ3 operation verification. Preserve behavior tests for source ownership,
+recovery, includes, scope, initialization, expressions, broadcasting, dynamic
+dispatch, control flow, recursion, and cost bounds.
 
-Port the useful pull request 1862 fixtures, add behavior-driven tests at each
-trust boundary, run changed-surface coverage, and obtain fresh read-only review.
-Remove experimental scaffolding, duplicate concepts, stale names, repetitive
-plan history, and comments that describe iteration rather than the final design.
-Repeat all affected validation after cleanup.
+Add a positive direct-emission test for representative primitive and custom
+gates and a negative test proving that a valid `pow @` program parses and
+analyzes but `qc::translateQASM3ToQC` returns null with a source-located message
+stating that QC power support is unavailable. Add equivalent focused cases for
+every other frontend-accepted feature that the emitter rejects. Update
+`mlir/unittests/Target/OpenQASM/CMakeLists.txt` to link `MLIROpenQASMFrontend`,
+`MLIRQCTranslation`, and only directly used test libraries.
+
+Keep exact QC equivalence tests in
+`mlir/unittests/Dialect/QC/Translation/test_qasm3_translation.cpp`. They compare
+canonicalized direct translation against QC builder references and should cover
+catalog aliases, controls, inverses, custom-gate expansion, expressions,
+broadcasting, measurement, and structured control flow where a stable reference
+is practical.
+
+### Milestone 3: build the full compiler-chain corpus
+
+In `mlir/unittests/programs/qasm_programs.h` and `qasm_programs.cpp`, expose a
+small shared corpus whose descriptors contain only a stable name and source.
+Keep the sources themselves as the existing named constants where useful. Do not
+attach expected-failure, Jeff-support, profile, or workaround flags. Create
+explicit positive source groups in the consuming tests: a broad
+Adaptive-plus-Jeff group and a straight-line subset that must additionally pass
+Base QIR. Include nested `if`, `for`, and `while`; loop-carried mutable scalar
+and bit state; dynamic indexing; measurement-controlled flow; broadcast
+primitive and custom gates; custom-gate expansion; inverse and positive and
+negative controls; arithmetic and math gate parameters; reset; barrier; and
+observable outputs.
+
+Add a parameterized integration suite to
+`mlir/unittests/Compiler/test_compiler_pipeline.cpp`. For every source in the
+Adaptive-plus-Jeff group, use the public APIs in exactly this order:
+
+    QCProgram::fromQASMString
+    QCProgram::intoQCO
+    QCOProgram::cleanup
+    QCOProgram::runPassPipeline("mqt-qco-default")
+    QCOProgram::cleanup
+    QCOProgram::intoJeff
+    JeffProgram::cleanup
+    JeffProgram::toBytes
+    JeffProgram::fromBytes
+    JeffProgram::cleanup
+    JeffProgram::intoQCO
+    QCOProgram::cleanup
+    QCOProgram::intoQC
+    QCProgram::cleanup
+    QCProgram::intoQIR(QIRProfile::Adaptive)
+    QIRProgram::llvmIR and QIRProgram::toBitcode
+
+Retain copies at the necessary ownership boundaries so the test can identify the
+exact failing stage. Require every optional result to be present, every cleanup
+or pipeline call to succeed, the LLVM IR to be nonempty, and bitcode to begin
+with the LLVM bitcode magic. For the straight-line subset, repeat the QIR tail
+with `QIRProfile::Base` as well as Adaptive.
+
+Add a separate parameterized call to `runDefaultPipeline` for every broad corpus
+source, requesting Adaptive QIR and checking its LLVM IR and bitcode. This
+proves the production default path independently; it does not replace the
+explicit chain because the default pipeline intentionally omits Jeff. Test
+failure messages must include the source name and stage.
+
+### Milestone 4: isolate and fix demonstrated downstream defects
+
+Run the full-chain corpus against the current conversion implementations. For
+each failure, save the smallest native QC, QCO, or Jeff MLIR that reproduces the
+stage failure. Add that reduced program to the appropriate conversion unit test
+using existing program builders when they express it cleanly, otherwise a small
+MLIR string. Do not make these unit tests parse OpenQASM.
+
+Inspect the branch diff in `mlir/lib/Conversion/QCToQCO/QCToQCO.cpp` hunk by
+hunk. Retain a change only when a reduced regression proves that it is needed,
+and simplify it to the smallest dialect-native correction. Pay particular
+attention to SCF operands and results, region arguments, `scf.yield`,
+`scf.condition`, measurement results, and the distinction between classical
+state and linear quantum state. Apply the same evidence rule to
+`mlir/lib/Conversion/QCOToQC`, Jeff conversions, and QC-to-QIR. Do not edit a
+downstream conversion merely because it was named in this plan.
+
+After each fix, run its focused native conversion test first, then the failing
+full-chain fixture, then the entire corpus. If a feature cannot be represented
+faithfully by the current pipeline, move its failure to the direct QC emitter
+only when the limitation is intrinsic to accepted compiler dialects rather than
+a correctable conversion bug, and document the diagnostic and matrix status.
+Never add a fixture flag that makes the integration test accept failure.
+
+### Milestone 5: minimize, document, and validate
+
+Inspect the effective diff against `origin/main`, including all commits and
+unstaged files. Delete obsolete OQ3 concepts, duplicate gate dispatch,
+superseded tests, stale target names, temporary compatibility wrappers,
+iteration comments, and downstream conversion hunks lacking native regression
+evidence. Keep `TranslateQASM3ToQC.cpp` small and keep production dependencies
+pointing in one direction: QC translation depends on the OpenQASM frontend, not
+the reverse.
+
+Create `docs/mlir/OpenQASM.md` and link it from `docs/mlir/index.md` and the
+relevant translation overview. It contains two maintained feature tables but
+does not duplicate the language specification. The first covers parser and
+semantic behavior. The second has columns for feature, Parse, Semantics, QC,
+Full Adaptive plus Jeff, Base, restriction or rejection reason, and the
+representative test. Use precise statuses such as supported, recognized and
+rejected semantically, or accepted by the frontend and rejected by QC. Mark
+structured fixtures Adaptive-only and record Base support only for the tested
+straight-line subset. List `pow @` as parsed and semantically valid but rejected
+by QC. Update `CHANGELOG.md` to describe direct OpenQASM import without an OQ3
+dialect claim.
+
+Run formatting, all affected unit binaries, the legacy parser regression,
+warning-as-error documentation, coverage, and repository lint after cleanup.
+Record the final evidence in this plan's progress, discoveries, outcomes, and
+artifacts sections.
 
 ## Concrete Steps
 
-Run commands from the repository root. Configure with an installed MLIR 22.1
-CMake package and build the affected targets:
+Run all commands from the repository root. Preserve unrelated changes and
+inspect status before editing:
+
+    git status --short --branch
+    git diff --stat origin/main...HEAD
+    git diff --stat origin/main
+
+Configure a clean debug build using an installed MLIR 22.1 CMake package. The
+path is supplied by the environment and must not be committed to this plan:
 
     MLIR_DIR=/path/to/mlir/lib/cmake/mlir cmake --preset debug
-    cmake --build build/debug --target mqt-core-mlir-unittest-oq3 mqt-core-mlir-unittest-openqasm-target mqt-core-mlir-unittest-qc-translation mqt-core-mlir-unittest-qc-to-qco -j4
 
-Run the focused binaries:
+Build the direct frontend, translation, conversion, and compiler tests:
 
-    ./build/debug/mlir/unittests/Dialect/OQ3/mqt-core-mlir-unittest-oq3
+    cmake --build build/debug --target \
+      mqt-core-mlir-unittest-openqasm-target \
+      mqt-core-mlir-unittest-qc-translation \
+      mqt-core-mlir-unittest-qc-to-qco \
+      mqt-core-mlir-unittest-qco-to-qc \
+      mqt-core-mlir-unittest-jeff-round-trip \
+      mqt-core-mlir-unittests-compiler -j4
+
+Run the binaries directly so stage failures are visible:
+
     ./build/debug/mlir/unittests/Target/OpenQASM/mqt-core-mlir-unittest-openqasm-target
     ./build/debug/mlir/unittests/Dialect/QC/Translation/mqt-core-mlir-unittest-qc-translation
     ./build/debug/mlir/unittests/Conversion/QCToQCO/mqt-core-mlir-unittest-qc-to-qco
+    ./build/debug/mlir/unittests/Conversion/QCOToQC/mqt-core-mlir-unittest-qco-to-qc
+    ./build/debug/mlir/unittests/Conversion/JeffRoundTrip/mqt-core-mlir-unittest-jeff-round-trip
+    ./build/debug/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
 
-Build and run the legacy parser regression:
+Build and run the QC-to-QIR Base and Adaptive test targets discovered under
+`mlir/unittests/Conversion/QCToQIR`, and run all configured MLIR unit tests to
+catch target-name or registration omissions:
 
-    cmake --build --preset debug --target mqt-core-ir-test -j4
+    cmake --build build/debug --target mqt-core-mlir-unittests -j4
+    ctest --test-dir build/debug --output-on-failure -L mqt-mlir-unittests
+
+Build and run the unaffected legacy parser regression:
+
+    cmake --build build/debug --target mqt-core-ir-test -j4
     (cd build/debug/test/ir && ./mqt-core-ir-test --gtest_filter='Qasm3ParserTest.*')
 
-Validate generated documentation and repository policy:
+Check the architecture after deletion. These searches are deliberately limited
+to dialect-specific identifiers and must return no matches:
+
+    rg 'OQ3Dialect|OQ3Ops|ApplyGateOp|GateDeclOp|createOQ3ToQCPass|MLIROQ3' mlir docs
+    rg 'add_subdirectory\(OQ3\)|OQ3ToQC' mlir
+
+Build documentation and run repository policy checks:
 
     MLIR_DIR=/path/to/mlir/lib/cmake/mlir uvx nox --non-interactive -s docs
     uvx nox -s lint
     git diff --check origin/main
     git status --short --branch
 
-When deletions remain unstaged, pass every live changed and untracked path to
-the repository hooks as a second lint run because the shared index can prevent
-the wrapper from collecting that set itself. Do not stage files merely to make
-the wrapper's path collection succeed.
-
-For changed-surface coverage, build the coverage preset, remove stale `.gcda`
-files, and run the OQ3, OpenQASM, QC translation, and QC-to-QCO binaries
-sequentially. Concurrent runs corrupt shared counters. Generate the report with:
-
-    gcovr --root . --object-directory build/coverage \
-      --gcov-executable '/path/to/llvm-cov gcov' \
-      --filter 'mlir/lib/Conversion/OQ3ToQC/OQ3ToQC.cpp' \
-      --filter 'mlir/lib/Dialect/OQ3/IR/GateCatalog.cpp' \
-      --filter 'mlir/lib/Dialect/OQ3/IR/OQ3Ops.cpp' \
-      --filter 'mlir/lib/Target/OpenQASM/.*' \
-      --json build/coverage/oq3-focused-coverage.json --print-summary
-
-All generated output belongs under ignored build directories. Do not record a
-machine-specific MLIR path in this plan.
+For coverage, use the coverage preset, delete only ignored stale coverage
+counters, and run the affected binaries sequentially because concurrent runs can
+corrupt shared counters. Report line and branch coverage for
+`mlir/lib/Target/OpenQASM` and the private direct emitter. Keep generated output
+under `build/coverage` and record the final command and summary here when run.
 
 ## Validation and Acceptance
 
-Parsing is accepted when tokens and diagnostics retain source identity, includes
-remain owned, multiple recoverable errors are returned as data, and no parser or
-analyzer operation requires MLIR. Semantic analysis is accepted when valid
-programs produce a typed program and invalid programs fail with source-located
-diagnostics before emission.
+The frontend is accepted when parsing and semantic analysis require no MLIR
+context, included buffers retain accurate source locations, valid programs
+produce a resolved typed program, and invalid source returns collected
+diagnostics at the owning stage.
 
-Emission is accepted when ordinary programs verify, source loops produce valid
-SCF, nested mutable state crosses regions through explicit arguments and
-results, and dynamic qubit operations use canonical references with bounded
-structured dispatch. The valid `pow` program must still verify as OQ3.
+Direct emission is accepted when supported programs return verified modules
+containing QC and standard MLIR dialects only. Primitive aliases, custom gates,
+broadcasting, controls, inverse and negative controls, expressions, dynamic
+indices, measurements, reset, barrier, and structured control flow must retain
+their tested behavior. A valid `pow @` program must parse and analyze, then fail
+QC translation with a precise source-located message and no fallback IR.
 
-OQ3-to-QC is accepted when supported programs produce verified QC with no OQ3
-operations, while unsupported power or structured custom-gate modifiers fail
-with target-specific diagnostics. Reachable recursion and excessive expansion
-must fail; unreachable definitions must not affect valid programs.
+The complete compiler is accepted when every broad corpus fixture passes the
+explicit public API chain through optimized QCO, Jeff byte serialization and
+deserialization, reconstructed QC, Adaptive QIR, LLVM IR, and bitcode. Every
+fixture must also pass `runDefaultPipeline` to Adaptive QIR. Every source in the
+straight-line subset must additionally produce Base QIR. Structured sources are
+not required to produce Base QIR and must not be encoded as expected failures in
+the corpus.
 
-QC-to-QCO is accepted when structured branches and loops preserve original
-classical results and final quantum values independent of conversion traversal
-order. Dynamic measurement dispatch must remain valid through this conversion.
+Every retained downstream conversion change is accepted only with a focused
+parser-independent native-IR regression that fails without the change and passes
+with it. The related full-chain OpenQASM fixture must also pass. No conversion
+test may link the OpenQASM frontend solely to construct its input.
 
-Final acceptance requires all focused binaries and legacy parser tests to pass,
-all 27 imported fixtures to assert behavior, documentation to build with
-warnings as errors, repository hooks to pass over every live file,
-`git diff --check origin/main` to succeed, and changed-surface substantive line
-coverage to remain at least 90 percent.
+The architecture is accepted when there is no OQ3 dialect, OQ3 operation,
+OQ3-to-QC pass, generated OQ3 target, tool registration, or dialect test. The
+`oq3::frontend` namespace may remain. There is one gate catalog, the frontend
+library is named `MLIROpenQASMFrontend`, the public translation adapter is
+small, and direct emission is private to QC translation.
+
+Final acceptance requires all affected and full MLIR unit tests, the legacy
+parser regression, documentation with warnings treated as errors, coverage of at
+least 90 percent of substantive newly added frontend/emitter lines,
+`uvx nox -s lint`, and `git diff --check origin/main` to pass. The final diff
+must contain no build output, generated documentation, temporary workaround, or
+unjustified production conversion change.
 
 ## Idempotence and Recovery
 
-Configuration, builds, tests, documentation, lint, and coverage commands are
-repeatable and write only ignored output. Coverage binaries must be run
-sequentially after removing stale counters.
+Configuration, compilation, unit tests, documentation, lint, and diff checks are
+repeatable and write only to ignored build directories. If CMake retains deleted
+OQ3 targets, remove the ignored `build` and `docs/_build` directories and
+configure again; do not add source-tree cleanup workarounds.
 
-Do not restore the stream bridge or introduce a parser-to-emitter fallback if a
-syntax family fails. Preserve the failing source test and repair the staged
-frontend at the owning layer. Preserve unrelated user changes, do not modify
-another task worktree, and require a clean task worktree before any rebase.
+Make the architecture transition in coherent local commits when useful, but do
+not push. Before removing an old source, ensure its required direct-emission
+behavior has moved into the private emitter and its tests pass. If a downstream
+fixture fails, preserve the failing source, reduce it to native IR, and repair
+the owning conversion instead of introducing a parser-side special case.
 
-This plan does not authorize pushing, changing pull request state, resolving
-review threads, or publishing comments. Those actions require separate human
-authorization.
+Never discard unrelated user changes or edit another task worktree. This plan
+does not authorize pushing, changing pull request state, resolving review
+threads, or publishing comments. Any later public action requires explicit human
+authorization and the disclosure required by `docs/ai_usage.md`.
 
 ## Artifacts and Notes
 
-The original staged baseline was 7 OQ3 tests, 21 staged frontend and target
-tests, and 224 QC translation tests. It also contained a stream adapter and no
-source path from loop tokens to a loop statement.
+The completed groundwork before this revision comprised an LLVM-native staged
+frontend, 27 imported behavior fixtures, source control flow and carried state,
+and clean focused validation. It also comprised an OQ3 dialect and OQ3-to-QC
+pass that this plan now deliberately removes. Earlier OQ3-specific test counts
+are historical evidence, not revised acceptance evidence.
 
-The cleaned implementation produces:
-
-    13 OQ3 tests passed.
-    87 staged frontend and target tests passed.
-    241 QC translation tests passed.
-    121 QC-to-QCO tests passed.
-    97 legacy OpenQASM parser tests passed.
-    17 imported programs matched exact QC references.
-    10 imported loop or dynamic-index programs passed structural contracts.
-    4,348 of 4,759 substantive changed lines were covered (91.4 percent).
-
-The target-boundary proof is:
+The target-boundary proof after implementation must read:
 
     analyzeOpenQASM(pow-source) succeeds.
-    emitOQ3(pow-source) returns a verified module.
-    OQ3ToQC rejects pow because QC has no power operation.
+    translateQASM3ToQC(pow-source) fails at the pow modifier location.
+    No OQ3 module is constructed.
 
-No public GitHub action is authorized by this plan. Any later agent-authored
-public text must begin with the disclosure required by `docs/ai_usage.md`.
+The full-chain proof must record a representative structured fixture reaching:
+
+    OpenQASM -> QC -> QCO -> optimized QCO -> Jeff bytes -> Jeff -> QCO
+    -> QC -> Adaptive QIR -> LLVM IR and bitcode
+
+The final corpus contains eleven Adaptive-plus-Jeff programs and four Base
+programs. One new native Jeff-to-QCO regression proves that a serialized entry
+point with observable results regains its marker without losing those results.
+The validation results are:
+
+    OpenQASM frontend and target: 87 tests passed.
+    QC translation: 241 tests passed.
+    QC-to-QCO: 121 tests passed.
+    QCO-to-QC: 121 tests passed.
+    Jeff round trip: 113 tests passed.
+    Compiler pipeline: 142 tests passed, including 26 corpus cases.
+    QC-to-QIR Adaptive: 125 tests passed.
+    QC-to-QIR Base: 107 tests passed.
+    Legacy OpenQASM parser: 97 tests passed.
+    Warning-as-error documentation: passed.
+    Repository lint and diff checks: passed.
+    Frontend and direct-emitter line coverage: 90.7 percent (4001/4409).
+
+No public GitHub action is authorized by this plan.
 
 ## Interfaces and Dependencies
 
-The source frontend exposes:
+The source frontend continues to expose from
+`mlir/include/mlir/Target/OpenQASM/Frontend.h`:
 
     ParseResult parseOpenQASM(llvm::SourceMgr&);
+    ParseResult parseOpenQASM(llvm::StringRef);
     AnalysisResult analyzeOpenQASM(const ParsedProgram&,
+                                   const FrontendOptions& = {});
+    AnalysisResult analyzeOpenQASM(llvm::SourceMgr&,
                                    const FrontendOptions& = {});
 
 `ParseResult` and `AnalysisResult` carry diagnostics as data. `ParsedProgram`
-owns persistent syntax. `TypedProgram` owns resolved expressions, conditions,
-declarations, statements, source locations, and output information.
+owns persistent syntax. `TypedProgram` owns resolved source semantics. These
+interfaces remain in `oq3::frontend` unless a separate, evidence-backed rename
+is approved.
 
-The target adapter exposes:
+The public QC translation interface remains only the existing overloads in
+`mlir/include/mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h`:
 
-    OwningOpRef<ModuleOp> emitOQ3(const frontend::TypedProgram&, MLIRContext&);
-    OwningOpRef<ModuleOp>
-    translateOpenQASMToOQ3(llvm::SourceMgr&, MLIRContext&,
-                           const OpenQASMTranslationOptions& = {});
+    OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr&,
+                                             MLIRContext*);
+    OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::StringRef,
+                                             MLIRContext*);
 
-The conversion exposes:
+The private emitter header beside the translation source declares an internal
+typed-program-to-QC function; it is not installed as a public header and no
+compiler caller uses it directly. `MLIRQCTranslation` links
+`MLIROpenQASMFrontend`, QC and its builder, and the standard MLIR dialects used
+by the emitter. `MLIROpenQASMFrontend` must not link QC or depend on the
+translation library.
 
-    std::unique_ptr<Pass> createOQ3ToQCPass();
+The compiler acceptance interfaces are `QCProgram::fromQASMString`,
+`QCProgram::intoQCO`, `QCOProgram::cleanup`, `QCOProgram::runPassPipeline`,
+`QCOProgram::intoJeff`, `JeffProgram::cleanup`, `JeffProgram::toBytes`,
+`JeffProgram::fromBytes`, `JeffProgram::intoQCO`, `QCOProgram::intoQC`,
+`QCProgram::cleanup`, `QCProgram::intoQIR`, `QIRProgram::llvmIR`,
+`QIRProgram::toBitcode`, and `runDefaultPipeline`. Tests must respect their
+move-only ownership contracts by copying at explicit branch points.
 
-The parser and analyzer use LLVM support but have no MLIR, ANTLR, Java, or Rust
-dependency. Emission and conversion depend on OQ3, QC, builtin IR, `arith`,
-`cf`, `func`, `math`, `memref`, `scf`, `ub`, and MLIR dialect conversion.
+Revision note (2026-07-16): this plan replaces the completed OQ3-intermediate
+architecture with direct QC emission. Review feedback moved the implementation
+into private emitter files, renamed the frontend target, assigned custom-gate
+target preflight to emission, made full-chain tests precede downstream changes,
+required parser-independent conversion regressions, removed fixture capability
+flags, and defined exact Jeff and QIR acceptance paths.

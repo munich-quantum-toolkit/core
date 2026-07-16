@@ -1134,23 +1134,27 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       return failure();
     }
 
-    // Update function signature and add passthrough attribute
+    // Restore the compiler entry-point marker. Jeff functions may retain
+    // observable classical results, so only synthesize the legacy i64 status
+    // result for a result-less entry point.
     rewriter.startOpModification(op);
     auto* ctx = rewriter.getContext();
-    op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
     auto entryPointAttr = StringAttr::get(ctx, "entry_point");
     op->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
+    const bool needsStatusResult = op.getFunctionType().getResults().empty();
+    if (needsStatusResult) {
+      op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
+    }
     rewriter.finalizeOpModification(op);
 
-    // Replace return operation
-    rewriter.setInsertionPointToStart(block);
-    auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
-                                             rewriter.getI64IntegerAttr(0));
-
-    rewriter.setInsertionPointToEnd(block);
-    func::ReturnOp::create(rewriter, op.getLoc(), constOp.getResult());
-
-    rewriter.eraseOp(returnOp);
+    if (needsStatusResult) {
+      rewriter.setInsertionPointToStart(block);
+      auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                               rewriter.getI64IntegerAttr(0));
+      rewriter.setInsertionPointToEnd(block);
+      func::ReturnOp::create(rewriter, op.getLoc(), constOp.getResult());
+      rewriter.eraseOp(returnOp);
+    }
 
     return success();
   }
@@ -1201,8 +1205,8 @@ protected:
                            tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return !(op.getSymName() == getEntryPointName(module) &&
-               op.getFunctionType().getResults().empty());
+      return op.getSymName() != getEntryPointName(module) ||
+             op->hasAttr("passthrough");
     });
     target.addLegalOp<func::ReturnOp>();
 

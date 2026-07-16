@@ -1142,5 +1142,57 @@ while (measure q[0] && measure q[1]) { h q[0]; h q[1]; }
 bit[2] c = measure q;
 )qasm";
 
+llvm::ArrayRef<OpenQASMProgram> compilerPrograms() {
+  static const std::string nestedStaticControlFlow = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit enabled = false;
+if (enabled) { h q; } else { for int i in [0:2] { x q; } }
+output bit result = measure q;
+)qasm";
+  static const std::string mutableLoopState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit enabled = measure q;
+while (enabled) {
+  x q;
+  enabled = measure q;
+}
+if (enabled) { h q; }
+output bit result = measure q;
+)qasm";
+  static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int index = 1;
+x q[index];
+output bit[2] result = measure q;
+)qasm";
+  static const OpenQASMProgram programs[]{
+      {"broadcast-custom-gate", broadcastCompoundGate},
+      {"arithmetic-parameters", expressionArithmetic},
+      {"math-parameters", expressionMathFunctions},
+      {"simple-if", conditionLiteral},
+      {"nested-static-control-flow", nestedStaticControlFlow},
+      {"mutable-loop-state", mutableLoopState},
+      {"measurement-controlled-while", conditionWhileAnd},
+      {"resolved-dynamic-index", resolvedDynamicIndex},
+      {"reset", resetQubitAfterSingleOp},
+      {"barrier", barrierMultipleQubits},
+      {"mixed-controls", mixedControlledX},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms() {
+  static const OpenQASMProgram programs[]{
+      {"broadcast-custom-gate", broadcastCompoundGate},
+      {"arithmetic-parameters", expressionArithmetic},
+      {"math-parameters", expressionMathFunctions},
+      {"barrier", barrierMultipleQubits},
+  };
+  return programs;
+}
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

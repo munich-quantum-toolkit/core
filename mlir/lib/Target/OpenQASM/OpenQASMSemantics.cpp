@@ -10,7 +10,7 @@
 
 #include "OpenQASMSemantics.h"
 
-#include "mlir/Dialect/OQ3/IR/GateCatalog.h"
+#include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>

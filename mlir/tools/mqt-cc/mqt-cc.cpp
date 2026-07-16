@@ -14,7 +14,6 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mlir/Dialect/OQ3/IR/OQ3Dialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -333,11 +332,10 @@ int main(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry
-      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-              LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
-              qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
-              math::MathDialect, oq3::OQ3Dialect, jeff::JeffDialect>();
+  registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
+                  func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                  qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  scf::SCFDialect, math::MathDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 

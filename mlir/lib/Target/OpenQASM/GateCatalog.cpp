@@ -8,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/OQ3/IR/GateCatalog.h"
+#include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/STLExtras.h>
 
 #include <array>
 
-namespace mlir::oq3 {
+namespace mlir::oq3::frontend {
 namespace {
 
 using Availability = GateAvailability;
@@ -101,4 +101,4 @@ const GateCatalogEntry* lookupGate(const llvm::StringRef name) {
   return iterator == CATALOG.end() ? nullptr : &*iterator;
 }
 
-} // namespace mlir::oq3
+} // namespace mlir::oq3::frontend

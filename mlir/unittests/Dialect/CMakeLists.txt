@@ -9,6 +9,5 @@
 add_subdirectory(QC)
 add_subdirectory(QCO)
 add_subdirectory(QIR)
-add_subdirectory(OQ3)
 add_subdirectory(QTensor)
 add_subdirectory(Utils)

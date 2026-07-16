@@ -16,7 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace mlir::oq3 {
+namespace mlir::oq3::frontend {
 
 enum class GateAvailability : std::uint8_t {
   Language,
@@ -43,4 +43,4 @@ struct GateCatalogEntry {
 
 [[nodiscard]] const GateCatalogEntry* lookupGate(llvm::StringRef name);
 
-} // namespace mlir::oq3
+} // namespace mlir::oq3::frontend
