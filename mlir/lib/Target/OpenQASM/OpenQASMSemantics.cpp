@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "OpenQASMSemantics.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSemantics.h"
 
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -297,7 +297,7 @@ private:
          (customGates.contains(name) || catalogNameReserved))) {
       fail(location, "identifier '" + name + "' is already declared");
     }
-    if (!scopes.back().insert({name, std::move(symbol)}).second) {
+    if (!scopes.back().insert({name, symbol}).second) {
       fail(location, "identifier '" + name + "' is already declared");
     }
   }
@@ -366,7 +366,7 @@ private:
       visitApplications(
           visitApplications, program.gates[index].body,
           [&](const GateApplication& application,
-              const SourceLocation location) {
+              const SourceLocation& location) {
             const auto callee = gateIndices.find(application.callee);
             if (callee == gateIndices.end()) {
               return;
@@ -398,7 +398,7 @@ private:
 
   [[nodiscard]] ExpressionId addExpression(ScalarExpression expression) {
     const auto id = static_cast<ExpressionId>(program.expressions.size());
-    program.expressions.push_back(std::move(expression));
+    program.expressions.push_back(expression);
     return id;
   }
 
@@ -1170,10 +1170,8 @@ private:
             analyzeScalarDeclaration(statement.location, data, destination);
           } else if constexpr (std::is_same_v<T, SyntaxAssignment>) {
             analyzeAssignment(statement.location, data, destination);
-          } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration>) {
-            analyzeRegisterDeclaration(statement.location, data, destination,
-                                       global);
-          } else if constexpr (std::is_same_v<T, SyntaxBitDeclaration>) {
+          } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration> ||
+                               std::is_same_v<T, SyntaxBitDeclaration>) {
             analyzeRegisterDeclaration(statement.location, data, destination,
                                        global);
           } else if constexpr (std::is_same_v<T, SyntaxMeasurement>) {
@@ -1232,10 +1230,9 @@ private:
       }
       auto constant = coerceConstant(evaluateConstant(*declaration.initializer),
                                      type, location);
-      declare(location, declaration.identifier,
-              {.kind = SymbolKind::Constant,
-               .type = type,
-               .constant = std::move(constant)});
+      declare(
+          location, declaration.identifier,
+          {.kind = SymbolKind::Constant, .type = type, .constant = constant});
       return;
     }
 
@@ -1325,9 +1322,9 @@ private:
     }
     const auto value = analyzeBoolValue(assignment.value);
     markBitInitialized(targets.front());
-    destination.push_back(addStatement(
-        location, BitAssignmentStatement{.target = std::move(targets.front()),
-                                         .value = value}));
+    destination.push_back(
+        addStatement(location, BitAssignmentStatement{.target = targets.front(),
+                                                      .value = value}));
   }
 
   template <class Declaration>

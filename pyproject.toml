@@ -261,6 +261,7 @@ mch = "mch"
 ket = "ket"
 optin = "optin"
 nd = "nd"
+olt = "olt"
 
 
 [tool.repo-review.ignore]

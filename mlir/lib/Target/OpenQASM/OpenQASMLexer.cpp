@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "OpenQASMLexer.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
 
-#include "OpenQASMUnicode.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMUnicode.h"
 
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>

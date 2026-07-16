@@ -1354,7 +1354,7 @@ private:
         case frontend::ComparisonKind::NotEqual:
           return arith::CmpFPredicate::UNE;
         case frontend::ComparisonKind::Less:
-          return arith::CmpFPredicate::OLT; // spellchecker:disable-line
+          return arith::CmpFPredicate::OLT;
         case frontend::ComparisonKind::LessEqual:
           return arith::CmpFPredicate::OLE;
         case frontend::ComparisonKind::Greater:

@@ -10,10 +10,10 @@
 
 #include "mlir/Target/OpenQASM/Frontend.h"
 
-#include "OpenQASMLexer.h"
-#include "OpenQASMParser.h"
-#include "OpenQASMSemantics.h"
-#include "OpenQASMSyntax.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSemantics.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
