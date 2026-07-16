@@ -24,11 +24,11 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MLIRQCOTransforms)
 
-# collect header files
-file(GLOB_RECURSE PASSES_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h)
-file(GLOB_RECURSE PASSES_HEADERS_BUILD
-     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.inc)
+# collect header files (subdirs: Decomposition/, …)
+file(GLOB_RECURSE PASSES_HEADERS_SOURCE CONFIGURE_DEPENDS
+     "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h")
+file(GLOB_RECURSE PASSES_HEADERS_BUILD CONFIGURE_DEPENDS
+     "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.inc")
 
 # add public headers using file sets
 target_sources(

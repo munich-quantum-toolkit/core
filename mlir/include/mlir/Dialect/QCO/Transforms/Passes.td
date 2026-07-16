@@ -67,6 +67,57 @@ def FuseSingleQubitUnitaryRuns
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
+def FuseTwoQubitUnitaryRuns
+    : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
+  let description = [{
+    Rewrites unitaries to match the comma-separated `native-gates` gateset.
+    `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is treated as a
+    two-qubit gate only when it has a single control and a single target; gates
+    acting on more than two qubits (e.g. multi-controlled `qco.ctrl`) are out of
+    scope and left untouched for a dedicated multi-controlled synthesis pass.
+
+    The gateset is a comma-separated list of gate tokens (order not
+    significant) from which the pass resolves a single-qubit Euler basis
+    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
+    `x`, `sx`, and `rz` are present; IQM-style `qco.r` when `r` is present;
+    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus the
+    two-qubit entangler `cx` or `cz`.
+
+    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `cx`,
+    `cz`. An empty or whitespace-only gateset is a no-op, which is the intended
+    pipeline default when synthesis is not needed. An unrecognised token causes
+    the pass to fail.
+
+    Example gatesets (each line is one illustrative gateset; pick either `cx`
+    or `cz` as the entangler, or list both if both are native):
+    - IBM: `x,sx,rz,cx` or `x,sx,rz,cz`
+    - Generic single-qubit U: `u,cx` or `u,cz`
+    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
+    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
+      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
+
+    Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
+    which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
+    and lower any remaining off-gateset two-qubit ops via Weyl synthesis; fuse
+    the single-qubit seams introduced by that synthesis. The pass fails if any
+    single- or two-qubit op remains off the native gateset afterwards; gates on
+    more than two qubits are left untouched and do not cause a failure.
+
+    Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
+    factors use the resolved Euler basis, and two-qubit run replacement uses
+    the minimal entangler count from the synthesizer.
+  }];
+  let options = [Option<
+      "nativeGates", "native-gates", "std::string", "\"\"",
+      "Comma-separated native gateset. Empty or whitespace-only is "
+      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, cx, cz. "
+      "Examples: x,sx,rz,cx; u,cx; r,cz; rx,rz,cx.">];
+}
+
+//===----------------------------------------------------------------------===//
+
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];

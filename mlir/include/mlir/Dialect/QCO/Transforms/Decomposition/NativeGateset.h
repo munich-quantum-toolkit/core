@@ -18,6 +18,10 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir {
+class Operation;
+} // namespace mlir
+
 namespace mlir::qco::decomposition {
 
 /**
@@ -63,6 +67,15 @@ struct NativeGateset {
    */
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   decomposeTarget(const Matrix4x4& target) const;
+
+  /**
+   * @brief Whether @p op is already on this native gateset.
+   *
+   * `qco.barrier` and `qco.gphase` are always allowed. Single-qubit primitives
+   * and single-target `qco.ctrl` shells (with an `X`/`Z` body) are checked
+   * against @p gates. All other ops are rejected.
+   */
+  [[nodiscard]] bool allowsOp(Operation* op) const;
 };
 
 } // namespace mlir::qco::decomposition

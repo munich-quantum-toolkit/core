@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
+  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -22,10 +25,12 @@ releases may include breaking changes.
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
+  unitary windows via Weyl/KAK resynthesis ([#1655]) ([**@simon1hofmann**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1826]) ([**@ystade**])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
@@ -646,6 +651,7 @@ changelogs._
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
 [#1870]: https://github.com/munich-quantum-toolkit/core/pull/1870
 [#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
+[#1865]: https://github.com/munich-quantum-toolkit/core/pull/1865
 [#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
@@ -704,6 +710,7 @@ changelogs._
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
+[#1655]: https://github.com/munich-quantum-toolkit/core/pull/1655
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1638]: https://github.com/munich-quantum-toolkit/core/pull/1638
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637

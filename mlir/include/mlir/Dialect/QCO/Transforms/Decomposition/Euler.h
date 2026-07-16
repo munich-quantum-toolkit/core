@@ -20,6 +20,10 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir {
+class RewritePatternSet;
+} // namespace mlir
+
 namespace mlir::qco::decomposition {
 
 /**
@@ -98,5 +102,16 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
  * @param phase Global phase in radians.
  */
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
+
+/**
+ * @brief Populates @p patterns with the single-qubit run fusion rewrite for
+ * @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
+ *
+ * @param skipControlledBodies When set, single-qubit gates nested in `qco.ctrl`
+ * bodies are left untouched.
+ */
+void populateFuseSingleQubitUnitaryRunsPatterns(
+    RewritePatternSet& patterns, EulerBasis basis,
+    bool skipControlledBodies = false);
 
 } // namespace mlir::qco::decomposition
