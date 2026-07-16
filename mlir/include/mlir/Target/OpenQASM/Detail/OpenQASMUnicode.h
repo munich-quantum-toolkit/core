@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 
 namespace mlir::oq3::frontend::detail {
 

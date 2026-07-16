@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "OpenQASMParser.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>

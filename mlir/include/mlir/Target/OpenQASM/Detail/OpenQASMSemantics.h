@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "OpenQASMSyntax.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 
 #include <llvm/Support/SourceMgr.h>

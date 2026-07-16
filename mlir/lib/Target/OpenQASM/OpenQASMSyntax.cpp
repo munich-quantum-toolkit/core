@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "OpenQASMSyntax.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Twine.h>
@@ -129,7 +129,7 @@ LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
   if (initializer != nullptr) {
     declaration.initializer = copyExpression(*initializer);
   }
-  (void)addStatement(location, std::move(declaration));
+  (void)addStatement(location, declaration);
   return success();
 }
 
@@ -174,7 +174,7 @@ LogicalResult SyntaxBuilder::measure(SMLoc location, const BitReference* target,
   if (target != nullptr) {
     measurement.target = copyBitReference(*target);
   }
-  (void)addStatement(location, std::move(measurement));
+  (void)addStatement(location, measurement);
   return success();
 }
 

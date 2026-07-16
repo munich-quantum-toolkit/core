@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "OpenQASMLexer.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -496,11 +496,8 @@ private:
     const auto kind = current().kind;
     switch (kind) {
     case TokenKind::Bool:
-      break;
     case TokenKind::Int:
-      break;
     case TokenKind::Uint:
-      break;
     case TokenKind::Float:
       break;
     case TokenKind::Angle:
