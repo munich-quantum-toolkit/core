@@ -554,7 +554,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     return it + 1;
   }
 
-  if (op->getType() == qc::OpType::RCCX && op->getNtargets() == 3) {
+  if (op->getType() == qc::OpType::RCCX) {
     const auto qubit0 = static_cast<Qubit>(p.at(op->getTargets()[0]));
     const auto qubit1 = static_cast<Qubit>(p.at(op->getTargets()[1]));
     const auto qubit2 = static_cast<Qubit>(p.at(op->getTargets()[2]));
@@ -1071,13 +1071,12 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::ECR:
     case qc::OpType::XXplusYY:
     case qc::OpType::XXminusYY:
-      return true;
     case qc::OpType::RCCX:
-      return op->getNtargets() == 3;
+      return true;
     default:
       return false;
     }
-  } else if (op->getType() == qc::OpType::RCCX && op->getNtargets() == 3) {
+  } else if (op->getType() == qc::OpType::RCCX) {
     return true;
   } else if (op->getNcontrols() == 1 && op->getNtargets() == 1) {
     switch (op->getType()) { // TODO: any gate can be controlled
