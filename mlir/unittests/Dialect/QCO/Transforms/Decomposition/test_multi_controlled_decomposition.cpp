@@ -37,7 +37,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -87,6 +89,9 @@ class LargeMcxTest : public McxDecompositionTest,
 class LargeMczTest : public McxDecompositionTest,
                      public testing::WithParamInterface<std::size_t> {};
 
+class McpDdTest : public McxDecompositionTest,
+                  public testing::WithParamInterface<std::size_t> {};
+
 } // namespace
 
 [[nodiscard]] static OwningOpRef<ModuleOp>
@@ -129,11 +134,23 @@ buildRCCXModule(MLIRContext* context) {
 }
 
 [[nodiscard]] static OwningOpRef<ModuleOp>
+buildMcpModule(MLIRContext* context, std::size_t numControls, double theta) {
+  return QCOProgramBuilder::build(
+      context, [numControls, theta](QCOProgramBuilder& b) {
+        SmallVector<Value> wires;
+        wires.reserve(numControls + 1);
+        for (std::size_t i = 0; i <= numControls; ++i) {
+          wires.push_back(b.staticQubit(i));
+        }
+        const auto controls = ValueRange(wires).drop_back();
+        b.mcp(theta, controls, wires.back());
+        return SmallVector<Value>{};
+      });
+}
+
+[[nodiscard]] static OwningOpRef<ModuleOp>
 buildTwoControlledPhaseModule(MLIRContext* context, double theta) {
-  return QCOProgramBuilder::build(context, [theta](QCOProgramBuilder& b) {
-    b.mcp(theta, {b.staticQubit(0), b.staticQubit(1)}, b.staticQubit(2));
-    return SmallVector<Value>{};
-  });
+  return buildMcpModule(context, 2, theta);
 }
 
 static void appendRCCXElementaryOnQubits(qc::QuantumComputation& qc,
@@ -302,23 +319,29 @@ static void expectImplementsRCCX(func::FuncOp funcOp) {
   EXPECT_EQ(decomposedDD, referenceDD);
 }
 
-static void expectImplementsTwoControlledPhase(func::FuncOp funcOp,
-                                               double theta) {
+static void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
+                                double theta) {
   std::size_t numQubits = 0;
   auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
-  ASSERT_EQ(numQubits, 3U);
+  ASSERT_EQ(numQubits, numControls + 1);
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
-  controls.emplace(static_cast<qc::Qubit>(0));
-  controls.emplace(static_cast<qc::Qubit>(1));
-  referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(2));
+  for (std::size_t i = 0; i < numControls; ++i) {
+    controls.emplace(static_cast<qc::Qubit>(i));
+  }
+  referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
 
   const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
   EXPECT_EQ(decomposedDD, referenceDD);
+}
+
+static void expectImplementsTwoControlledPhase(func::FuncOp funcOp,
+                                               double theta) {
+  expectImplementsMcp(funcOp, 2, theta);
 }
 
 [[nodiscard]] static std::size_t
@@ -480,6 +503,60 @@ TEST_F(McxDecompositionTest, DecomposesCcPhase) {
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   expectImplementsTwoControlledPhase(funcOp, theta);
+}
+
+// Covers both synthesis methods via the size-based default chooser: v24 for
+// 3-4 controls and SP22 for >= 5 controls.
+TEST_P(McpDdTest, ImplementsMcp) {
+  const std::size_t numControls = GetParam();
+  constexpr double theta = 0.7;
+  auto moduleOp = buildMcpModule(context(), numControls, theta);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+  EXPECT_EQ(countRCCXOps(moduleOp.get()), 0U);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcp(funcOp, numControls, theta);
+}
+
+INSTANTIATE_TEST_SUITE_P(McpDd, McpDdTest,
+                         testing::Values<std::size_t>(3, 4, 5, 6, 7),
+                         [](const testing::TestParamInfo<std::size_t>& info) {
+                           return "controls" + std::to_string(info.param);
+                         });
+
+// A compile-time phase of pi is exactly Z and is routed through the MCZ path.
+TEST_F(McxDecompositionTest, DecomposesMultiControlledPhasePi) {
+  for (const std::size_t numControls : {3U, 4U, 5U}) {
+    const double theta = std::numbers::pi;
+    auto moduleOp = buildMcpModule(context(), numControls, theta);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+    EXPECT_EQ(countRCCXOps(moduleOp.get()), 0U);
+
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectImplementsMcp(funcOp, numControls, theta);
+  }
+}
+
+TEST_F(McxDecompositionTest, LeavesMultiControlledPhaseWhenBelowMinControls) {
+  constexpr double theta = 0.7;
+  auto moduleOp = buildMcpModule(context(), 3, theta);
+  ASSERT_TRUE(moduleOp);
+
+  DecomposeMultiControlledOptions options;
+  options.minControls = 4;
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 1U);
+
+  options.minControls = 2;
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcp(funcOp, 3, theta);
 }
 
 TEST_F(McxDecompositionTest, LeavesTwoControlledWhenMinControlsIsThree) {

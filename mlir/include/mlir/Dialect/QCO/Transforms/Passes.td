@@ -209,18 +209,24 @@ def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Decompose controlled X/Z gates with at least min-controls "
-                "controls";
+  let summary = "Decompose controlled X/Z/phase gates with at least "
+                "min-controls controls";
   let description = [{
-    Decomposes controlled Pauli-X and Pauli-Z gates (`qco.ctrl` with a `qco.x`
-    or `qco.z` body) that have at least `min-controls` controls:
+    Decomposes controlled Pauli-X, Pauli-Z, and phase gates (`qco.ctrl` with a
+    `qco.x`, `qco.z`, or constant-angle `qco.p` body) that have at least
+    `min-controls` controls:
 
-    - Four or more controls: Huang-Palsberg (HP24) synthesis. Intermediate
-      two- and three-control building blocks (`CCX`, `CCCX`, `RCCX`, and
-      two-control phase) are left as `qco.ctrl` / `qco.rccx` ops.
+    - Four or more controls: Huang-Palsberg (HP24) synthesis for X/Z.
+      Intermediate two- and three-control building blocks (`CCX`, `CCCX`,
+      `RCCX`, and two-control phase) are left as `qco.ctrl` / `qco.rccx` ops.
     - Exactly three controls: elementary CCCX/CCCZ synthesis.
     - Exactly two controls: elementary CCX/CCZ/CCPhase synthesis; standalone
       `qco.rccx` is expanded when `min-controls` is at most 2.
+
+    Multi-controlled phase gates with three or more controls are synthesized
+    with a size-based chooser: the recursive "v24" method for up to four
+    controls and the linear-depth da Silva-Park 2022 (SP22) method for five or
+    more controls, matching the CX-count crossover of the two methods.
 
     The greedy rewriter applies these patterns in one pass, so HP24 leftovers
     are lowered further when `min-controls` allows (e.g. default `2` fully
@@ -230,9 +236,9 @@ def DecomposeMultiControlled
   }];
   let options = [Option<
       "minControls", "min-controls", "uint64_t", "2",
-      "Decompose controlled X/Z gates with at least this many controls (must "
-      "be at least 2). Also controls whether HP24 two-/three-control building "
-      "blocks are lowered in the same pass.">];
+      "Decompose controlled X/Z/phase gates with at least this many controls "
+      "(must be at least 2). Also controls whether HP24 two-/three-control "
+      "building blocks are lowered in the same pass.">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

@@ -25,6 +25,8 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -111,9 +113,28 @@ public:
     cx(control, target);
   }
 
+  // Controlled-RX via RX(theta) = H RZ(theta) H, reusing crz.
+  void crx(std::size_t control, std::size_t target, double theta) {
+    h(target);
+    crz(control, target, theta);
+    h(target);
+  }
+
   // Building blocks left as QCO ops (further lowered by min-controls)
   void emitCcx(std::size_t c0, std::size_t c1, std::size_t target) {
     emitCtrl({c0, c1}, target, [](OpBuilder& builder, Location loc, Value arg) {
+      return XOp::create(builder, loc, arg).getOutputQubit(0);
+    });
+  }
+
+  // Multi-controlled X of arbitrary width, left as a single CtrlOp for the
+  // greedy driver to decompose recursively (used by the v24 phase recursion).
+  void mcx(ArrayRef<std::size_t> controls, std::size_t target) {
+    if (controls.size() == 1) {
+      cx(controls[0], target);
+      return;
+    }
+    emitCtrl(controls, target, [](OpBuilder& builder, Location loc, Value arg) {
       return XOp::create(builder, loc, arg).getOutputQubit(0);
     });
   }
@@ -691,26 +712,172 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
 }
 
 //===----------------------------------------------------------------------===//
+// Multi-controlled phase synthesis
+//===----------------------------------------------------------------------===//
+
+// Number of controls at which the linear-depth SP22 synthesis becomes more
+// CX-efficient than the recursive v24 synthesis: v24 uses fewer CX gates for
+// two to four controls, SP22 for five or more.
+constexpr std::size_t K_MCP_SP22_MIN_CONTROLS = 5;
+
+// Recursive multi-controlled phase synthesis (referred to as "v24"), using the
+// textbook cp + mcx recursion (see Barenco et al., "Elementary gates for
+// quantum computation", Phys. Rev. A 52, 3457 (1995)).
+// Wires: controls 0..numControls-1, target numControls.
+static void emitMcpV24(GateEmitter& emitter, double phi,
+                       std::size_t numControls) {
+  if (numControls == 0) {
+    emitter.p(0, phi);
+    return;
+  }
+  if (numControls == 1) {
+    emitter.cp(0, 1, phi);
+    return;
+  }
+
+  const std::size_t lastControl = numControls - 1;
+  const std::size_t target = numControls;
+
+  SmallVector<std::size_t, 16> innerControls;
+  innerControls.reserve(lastControl);
+  for (std::size_t c = 0; c < lastControl; ++c) {
+    innerControls.push_back(c);
+  }
+
+  emitter.cp(lastControl, target, phi / 2.0);
+  emitter.mcx(innerControls, lastControl);
+  emitter.cp(lastControl, target, -phi / 2.0);
+  emitter.mcx(innerControls, lastControl);
+
+  // Recurse on the reduced control set with the same target. Remap so the
+  // sub-emitter's target index (numControls - 1) refers to the real target.
+  SmallVector<std::size_t, 16> recurseMap(innerControls.begin(),
+                                          innerControls.end());
+  recurseMap.push_back(target);
+  emitter.compose(recurseMap, [&](GateEmitter& sub) {
+    emitMcpV24(sub, phi / 2.0, numControls - 1);
+  });
+}
+
+/// One of the four ordered passes of the SP22 linear-depth multi-controlled
+/// phase synthesis.
+///
+/// Implements the multi-controlled phase construction of A. J. da Silva and
+/// D. K. Park, "Linear-depth quantum circuits for multiqubit controlled gates",
+/// Phys. Rev. A 106, 042602 (2022).
+///
+/// @note Adapted from the `MCPhaseGate` synthesis in the IBM Qiskit framework.
+///       (C) Copyright IBM 2026
+///
+///       This code is licensed under the Apache License, Version 2.0. You may
+///       obtain a copy of this license in the LICENSE.txt file in the root
+///       directory of this source tree or at
+///       https://www.apache.org/licenses/LICENSE-2.0.
+///
+///       Any modifications or derivative works of this code must retain this
+///       copyright notice, and modified files need to carry a notice
+///       indicating that they have been altered from the originals.
+static void emitMcpSp22Step(GateEmitter& emitter, double phi,
+                            std::size_t numQubits, int step) {
+  const bool reverse = step == 1 || step == 3;
+  const std::size_t start = reverse ? 0 : 1;
+
+  SmallVector<std::pair<std::size_t, std::size_t>, 32> pairs;
+  for (std::size_t target = 0; target < numQubits; ++target) {
+    for (std::size_t control = start; control < target; ++control) {
+      pairs.emplace_back(control, target);
+    }
+  }
+  std::stable_sort(pairs.begin(), pairs.end(),
+                   [reverse](const auto& a, const auto& b) {
+                     const std::size_t sumA = a.first + a.second;
+                     const std::size_t sumB = b.first + b.second;
+                     return reverse ? sumA > sumB : sumA < sumB;
+                   });
+
+  for (const auto& [control, target] : pairs) {
+    long exponent = static_cast<long>(target) - static_cast<long>(control);
+    if (control == 0) {
+      exponent -= 1;
+    }
+    const double param = std::pow(2.0, static_cast<double>(exponent));
+
+    if (target == numQubits - 1 && (step == 1 || step == 2)) {
+      const double sign = step == 1 ? 1.0 : -1.0;
+      emitter.cp(control, target, sign * phi / param);
+      continue;
+    }
+
+    double sign = 1.0;
+    if (step == 1) {
+      sign = 1.0;
+    } else if (step == 2) {
+      sign = -1.0;
+    } else if (step == 3) {
+      sign = control == 0 ? -1.0 : 1.0;
+    } else {
+      sign = control == 0 ? 1.0 : -1.0;
+    }
+    emitter.crx(control, target, sign * K_PI / param);
+  }
+}
+
+// SP22 linear-depth multi-controlled phase. Wires: controls 0..numControls-1,
+// target numControls.
+static void emitMcpSp22(GateEmitter& emitter, double phi,
+                        std::size_t numControls) {
+  if (numControls == 0) {
+    emitter.p(0, phi);
+    return;
+  }
+  if (numControls == 1) {
+    emitter.cp(0, 1, phi);
+    return;
+  }
+  const std::size_t numQubits = numControls + 1;
+  emitMcpSp22Step(emitter, phi, numQubits, 1);
+  emitMcpSp22Step(emitter, phi, numQubits, 2);
+  emitMcpSp22Step(emitter, phi, numQubits - 1, 3);
+  emitMcpSp22Step(emitter, phi, numQubits - 1, 4);
+}
+
+// Choose the CX-optimal synthesis for the given control count.
+static void emitMcpDefault(GateEmitter& emitter, double phi,
+                           std::size_t numControls) {
+  if (numControls < K_MCP_SP22_MIN_CONTROLS) {
+    emitMcpV24(emitter, phi, numControls);
+  } else {
+    emitMcpSp22(emitter, phi, numControls);
+  }
+}
+
+static SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
+                                                         Location loc,
+                                                         ValueRange controls,
+                                                         Value target,
+                                                         double theta) {
+  SmallVector<Value> wires(controls.begin(), controls.end());
+  wires.push_back(target);
+  GateEmitter emitter(builder, loc, wires);
+  emitMcpDefault(emitter, theta, controls.size());
+  return wires;
+}
+
+//===----------------------------------------------------------------------===//
 // CtrlOp body matchers
 //===----------------------------------------------------------------------===//
 
-/// Match a controlled Pauli-X or Pauli-Z body.
-static std::optional<ControlledTarget>
-matchControlledPauli(UnitaryOpInterface inner) {
+/// Match a supported controlled-target body: Pauli-X, Pauli-Z, or a
+/// constant-theta phase.
+static std::optional<ControlledGateSpec>
+matchControlledTarget(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
-    return ControlledTarget::X;
+    return ControlledGateSpec{.gate = ControlledTarget::X,
+                              .theta = std::nullopt};
   }
   if (isa<ZOp>(inner.getOperation())) {
-    return ControlledTarget::Z;
-  }
-  return std::nullopt;
-}
-
-/// Match X, Z, or constant-theta phase (two-control / HP24 building blocks).
-static std::optional<ControlledGateSpec>
-matchControlledXzOrPhase(UnitaryOpInterface inner) {
-  if (const auto pauli = matchControlledPauli(inner)) {
-    return ControlledGateSpec{.gate = *pauli, .theta = std::nullopt};
+    return ControlledGateSpec{.gate = ControlledTarget::Z,
+                              .theta = std::nullopt};
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
     if (const auto theta = utils::valueToDouble(pOp.getTheta())) {
@@ -742,37 +909,43 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     if (!inner) {
       return failure();
     }
-
-    rewriter.setInsertionPoint(op);
-    if (numControls >= 4) {
-      const auto gate = matchControlledPauli(inner);
-      if (!gate) {
-        return failure();
-      }
-      rewriter.replaceOp(op, synthesizeMultiControlled(
-                                 rewriter, op.getLoc(), op.getControlsIn(),
-                                 op.getInputTarget(0), *gate));
-      return success();
-    }
-    if (numControls == 3) {
-      const auto gate = matchControlledPauli(inner);
-      if (!gate) {
-        return failure();
-      }
-      rewriter.replaceOp(op, synthesizeThreeControlled(
-                                 rewriter, op.getLoc(), op.getControlsIn(),
-                                 op.getInputTarget(0), *gate));
-      return success();
-    }
-    // Exactly two controls (k < 2 is rejected by min-controls >= 2).
-    const auto spec = matchControlledXzOrPhase(inner);
+    const auto spec = matchControlledTarget(inner);
     if (!spec) {
       return failure();
     }
-    rewriter.replaceOp(op, synthesizeTwoControlled(
-                               rewriter, op.getLoc(), op.getControlsIn()[0],
-                               op.getControlsIn()[1], op.getInputTarget(0),
-                               spec->gate, spec->theta));
+
+    rewriter.setInsertionPoint(op);
+    if (numControls < 3) {
+      // Exactly two controls (k < 2 is rejected by min-controls >= 2).
+      rewriter.replaceOp(op, synthesizeTwoControlled(
+                                 rewriter, op.getLoc(), op.getControlsIn()[0],
+                                 op.getControlsIn()[1], op.getInputTarget(0),
+                                 spec->gate, spec->theta));
+      return success();
+    }
+
+    ControlledTarget gate = spec->gate;
+    // A compile-time phase of +/- pi is exactly Z; route it through the more
+    // efficient multi-controlled-Z (HP24 core) path.
+    if (gate == ControlledTarget::Phase && spec->theta &&
+        std::abs(std::abs(*spec->theta) - K_PI) <= utils::TOLERANCE) {
+      gate = ControlledTarget::Z;
+    }
+    if (gate == ControlledTarget::Phase) {
+      rewriter.replaceOp(op, synthesizeMultiControlledPhase(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), *spec->theta));
+      return success();
+    }
+    if (numControls == 3) {
+      rewriter.replaceOp(op, synthesizeThreeControlled(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), gate));
+    } else {
+      rewriter.replaceOp(op, synthesizeMultiControlled(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), gate));
+    }
     return success();
   }
 
