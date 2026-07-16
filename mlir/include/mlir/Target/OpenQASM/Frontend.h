@@ -287,7 +287,6 @@ struct Statement {
 
 struct TypedProgram {
   bool openQASM2 = false;
-  GatePolicy gatePolicy = GatePolicy::MQTCompatibility;
   bool standardLibraryIncluded = false;
   std::vector<ScalarExpression> expressions;
   std::vector<ConditionExpression> conditions;
