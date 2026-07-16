@@ -188,7 +188,7 @@ public:
   [[nodiscard]] bool liftHadamards();
 
   /// Decompose controlled X/Z/phase gates with at least @p minControls
-  /// controls (and `qco.rccx` when @p minControls is at most 2).
+  /// controls.
   [[nodiscard]] bool decomposeMultiControlled(std::uint64_t minControls = 2);
 
   /// Place and route the program on a coupling graph.
