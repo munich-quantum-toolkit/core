@@ -184,23 +184,6 @@ private:
                          .message = message.str()});
   }
 
-  void validateDynamicDispatchCost(SMLoc location,
-                                   ArrayRef<QubitReference> references) const {
-    std::size_t leaves = 1;
-    for (const auto& reference : references) {
-      if (!reference.dynamicIndex) {
-        continue;
-      }
-      const auto width = program.registers.at(reference.symbol).width;
-      if (width > kDynamicQubitDispatchLeafLimit / leaves) {
-        fail(location,
-             "dynamic qubit selection exceeds the structured-dispatch "
-             "expansion budget");
-      }
-      leaves *= static_cast<std::size_t>(width);
-    }
-  }
-
   void restoreStatePrefix(const std::vector<std::vector<bool>>& bitsInitialized,
                           const std::vector<bool>& scalarsInitialized,
                           const std::vector<std::uint64_t>& generations) {
@@ -1453,7 +1436,6 @@ private:
   [[nodiscard]] StatementId
   analyzeMeasurement(SMLoc location, const SyntaxMeasurement& measurement) {
     auto qubits = resolveQubitOperand(measurement.source);
-    validateDynamicDispatchCost(location, qubits);
     if (!measurement.target) {
       return addStatement(location,
                           MeasurementStatement{.qubits = std::move(qubits)});
@@ -1493,7 +1475,6 @@ private:
   [[nodiscard]] StatementId analyzeReset(SMLoc location,
                                          const SyntaxReset& reset) {
     auto qubits = resolveQubitOperand(reset.operand);
-    validateDynamicDispatchCost(location, qubits);
     return addStatement(location, ResetStatement{.qubits = std::move(qubits)});
   }
 
@@ -1521,7 +1502,6 @@ private:
       auto selection = resolveQubitOperand(operand);
       qubits.insert(qubits.end(), selection.begin(), selection.end());
     }
-    validateDynamicDispatchCost(location, qubits);
     return addStatement(location,
                         BarrierStatement{.qubits = std::move(qubits)});
   }
@@ -2103,7 +2083,6 @@ private:
                "once");
         }
       }
-      validateDynamicDispatchCost(call.location, application.qubits);
       applications.push_back(std::move(application));
     }
     return applications;
