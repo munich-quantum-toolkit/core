@@ -259,21 +259,6 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::multipleControlledDcx)}));
 /// @}
 
-/// \name JeffRoundTrip/Operations/StandardGates/RCCXOp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCORCCXOpTest, JeffRoundTripTest,
-    testing::Values(
-        JeffRoundTripTestCase{"RCCX", MQT_NAMED_BUILDER(qco::rccx),
-                              MQT_NAMED_BUILDER(qco::rccx)},
-        JeffRoundTripTestCase{"SingleControlledRCCX",
-                              MQT_NAMED_BUILDER(qco::singleControlledRccx),
-                              MQT_NAMED_BUILDER(qco::singleControlledRccx)},
-        JeffRoundTripTestCase{"MultipleControlledRCCX",
-                              MQT_NAMED_BUILDER(qco::multipleControlledRccx),
-                              MQT_NAMED_BUILDER(qco::multipleControlledRccx)}));
-/// @}
-
 /// \name JeffRoundTrip/Operations/StandardGates/EcrOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -344,6 +329,21 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"MultipleControlledP",
                               MQT_NAMED_BUILDER(qco::multipleControlledP),
                               MQT_NAMED_BUILDER(qco::multipleControlledP)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORCCXOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"RCCX", MQT_NAMED_BUILDER(qco::rccx),
+                              MQT_NAMED_BUILDER(qco::rccx)},
+        JeffRoundTripTestCase{"SingleControlledRCCX",
+                              MQT_NAMED_BUILDER(qco::singleControlledRccx),
+                              MQT_NAMED_BUILDER(qco::singleControlledRccx)},
+        JeffRoundTripTestCase{"MultipleControlledRCCX",
+                              MQT_NAMED_BUILDER(qco::multipleControlledRccx),
+                              MQT_NAMED_BUILDER(qco::multipleControlledRccx)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/ROp.cpp

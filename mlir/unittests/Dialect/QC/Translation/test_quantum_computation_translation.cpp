@@ -338,16 +338,6 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledDCX",
             MQT_NAMED_BUILDER(qc::multipleControlledDcx),
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledDcx)},
-        QuantumComputationTranslationTestCase{
-            "RCCX", MQT_NAMED_BUILDER(qc::rccx),
-            MQT_NAMED_BUILDER(mlir::qc::rccx)},
-        QuantumComputationTranslationTestCase{
-            "SingleControlledRCCX", MQT_NAMED_BUILDER(qc::singleControlledRccx),
-            MQT_NAMED_BUILDER(mlir::qc::singleControlledRccx)},
-        QuantumComputationTranslationTestCase{
-            "MultipleControlledRCCX",
-            MQT_NAMED_BUILDER(qc::multipleControlledRccx),
-            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRccx)},
         QuantumComputationTranslationTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr),
                                               MQT_NAMED_BUILDER(mlir::qc::ecr)},
         QuantumComputationTranslationTestCase{
@@ -418,6 +408,16 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledXXMinusYY",
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY)},
+        QuantumComputationTranslationTestCase{
+            "RCCX", MQT_NAMED_BUILDER(qc::rccx),
+            MQT_NAMED_BUILDER(mlir::qc::rccx)},
+        QuantumComputationTranslationTestCase{
+            "SingleControlledRCCX", MQT_NAMED_BUILDER(qc::singleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledRccx)},
+        QuantumComputationTranslationTestCase{
+            "MultipleControlledRCCX",
+            MQT_NAMED_BUILDER(qc::multipleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRccx)},
         QuantumComputationTranslationTestCase{
             "Barrier", MQT_NAMED_BUILDER(qc::barrier),
             MQT_NAMED_BUILDER(mlir::qc::barrier)},

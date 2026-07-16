@@ -154,22 +154,6 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qir::multipleControlledDcx<>)}));
 /// @}
 
-/// \name QCToQIRAdaptive/Operations/StandardGates/RCCXOp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRAdaptiveRCCXOpTest, QCToQIRAdaptiveTest,
-    testing::Values(QCToQIRAdaptiveTestCase{"RCCX", MQT_NAMED_BUILDER(qc::rccx),
-                                            MQT_NAMED_BUILDER(qir::rccx<>)},
-                    QCToQIRAdaptiveTestCase{
-                        "SingleControlledRCCX",
-                        MQT_NAMED_BUILDER(qc::singleControlledRccx),
-                        MQT_NAMED_BUILDER(qir::singleControlledRccx<>)},
-                    QCToQIRAdaptiveTestCase{
-                        "MultipleControlledRCCX",
-                        MQT_NAMED_BUILDER(qc::multipleControlledRccx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRccx<>)}));
-/// @}
-
 /// \name QCToQIRAdaptive/Operations/StandardGates/EcrOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -258,6 +242,22 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRAdaptiveTestCase{
             "MultipleControlledP", MQT_NAMED_BUILDER(qc::multipleControlledP),
             MQT_NAMED_BUILDER(qir::multipleControlledP<>)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveRCCXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"RCCX", MQT_NAMED_BUILDER(qc::rccx),
+                                            MQT_NAMED_BUILDER(qir::rccx<>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRCCX",
+                        MQT_NAMED_BUILDER(qc::singleControlledRccx),
+                        MQT_NAMED_BUILDER(qir::singleControlledRccx<>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRCCX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledRccx),
+                        MQT_NAMED_BUILDER(qir::multipleControlledRccx<>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/ROp.cpp

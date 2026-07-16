@@ -477,38 +477,6 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
-// ThreeTargetZeroParameter
-
-#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CORE, OP_QC)                     \
-  /**                                                                          \
-   * @brief Adds a qc.OP_QC operation                                          \
-   *                                                                           \
-   * @details                                                                  \
-   * Translates an OP_CORE operation from the QuantumComputation to            \
-   * qc.OP_QC.                                                                 \
-   *                                                                           \
-   * @param builder The QCProgramBuilder used to create operations             \
-   * @param operation The OP_CORE operation to translate                       \
-   * @param state The translation state                                        \
-   */                                                                          \
-  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
-                               const ::qc::Operation& operation,               \
-                               TranslationState& state) {                      \
-    const auto& target0 = state.getQubit(operation.getTargets()[0]);           \
-    const auto& target1 = state.getQubit(operation.getTargets()[1]);           \
-    const auto& target2 = state.getQubit(operation.getTargets()[2]);           \
-    if (const auto& controls = getControls(operation, state);                  \
-        controls.empty()) {                                                    \
-      builder.OP_QC(target0, target1, target2);                                \
-    } else {                                                                   \
-      builder.mc##OP_QC(controls, target0, target1, target2);                  \
-    }                                                                          \
-  }
-
-DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCX, rccx)
-
-#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
-
 static void addISWAPdgOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
                          TranslationState& state) {
@@ -595,6 +563,38 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXplusYY, xx_plus_yy)
 DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
+
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CORE, OP_QC)                     \
+  /**                                                                          \
+   * @brief Adds a qc.OP_QC operation                                          \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_CORE operation from the QuantumComputation to            \
+   * qc.OP_QC.                                                                 \
+   *                                                                           \
+   * @param builder The QCProgramBuilder used to create operations             \
+   * @param operation The OP_CORE operation to translate                       \
+   * @param state The translation state                                        \
+   */                                                                          \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               TranslationState& state) {                      \
+    const auto& target0 = state.getQubit(operation.getTargets()[0]);           \
+    const auto& target1 = state.getQubit(operation.getTargets()[1]);           \
+    const auto& target2 = state.getQubit(operation.getTargets()[2]);           \
+    if (const auto& controls = getControls(operation, state);                  \
+        controls.empty()) {                                                    \
+      builder.OP_QC(target0, target1, target2);                                \
+    } else {                                                                   \
+      builder.mc##OP_QC(controls, target0, target1, target2);                  \
+    }                                                                          \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCX, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
 
 // BarrierOp
 
@@ -800,9 +800,9 @@ static LogicalResult translateOperation(QCProgramBuilder& builder,
     ADD_OP_CASE(RYY)
     ADD_OP_CASE(RZX)
     ADD_OP_CASE(RZZ)
-    ADD_OP_CASE(RCCX)
     ADD_OP_CASE(XXplusYY)
     ADD_OP_CASE(XXminusYY)
+    ADD_OP_CASE(RCCX)
     ADD_OP_CASE(Barrier)
   case ::qc::OpType::iSWAPdg:
     addISWAPdgOp(builder, operation, state);

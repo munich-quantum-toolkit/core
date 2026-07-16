@@ -545,6 +545,38 @@ TEST_F(QCOMatrixTest, POpMatrix) {
 }
 /// @}
 
+/// \name QCO/Operations/StandardGates/RCCXOp.cpp
+/// @{
+TEST_F(QCOMatrixTest, RCCXOpMatrix) {
+  const auto matrix = RCCXOp::getUnitaryMatrix();
+
+  qc::QuantumComputation comp;
+  comp.addQubitRegister(3, "q");
+  comp.h(2);
+  comp.t(2);
+  comp.cx(1, 2);
+  comp.tdg(2);
+  comp.cx(0, 2);
+  comp.t(2);
+  comp.cx(1, 2);
+  comp.tdg(2);
+  comp.h(2);
+
+  const auto package = std::make_unique<dd::Package>(3);
+  const auto& definition = dd::buildFunctionality(comp, *package).getMatrix(3);
+  const auto dim = static_cast<int64_t>(definition.size());
+  DynamicMatrix expected(dim);
+  for (int64_t row = 0; row < dim; ++row) {
+    for (int64_t col = 0; col < dim; ++col) {
+      expected(row, col) = definition[static_cast<std::size_t>(row)]
+                                     [static_cast<std::size_t>(col)];
+    }
+  }
+
+  ASSERT_TRUE(matrix.isApprox(expected));
+}
+/// @}
+
 /// \name QCO/Operations/StandardGates/ROp.cpp
 /// @{
 TEST_F(QCOMatrixTest, ROpMatrix) {
@@ -703,38 +735,6 @@ TEST_F(QCOMatrixTest, RZZOpMatrix) {
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RZZ, {0.123});
 
   const Matrix4x4 expected = matrix4FromDefinition(definition);
-
-  ASSERT_TRUE(matrix.isApprox(expected));
-}
-/// @}
-
-/// \name QCO/Operations/StandardGates/RCCXOp.cpp
-/// @{
-TEST_F(QCOMatrixTest, RCCXOpMatrix) {
-  const auto matrix = RCCXOp::getUnitaryMatrix();
-
-  qc::QuantumComputation comp;
-  comp.addQubitRegister(3, "q");
-  comp.h(2);
-  comp.t(2);
-  comp.cx(1, 2);
-  comp.tdg(2);
-  comp.cx(0, 2);
-  comp.t(2);
-  comp.cx(1, 2);
-  comp.tdg(2);
-  comp.h(2);
-
-  const auto package = std::make_unique<dd::Package>(3);
-  const auto& definition = dd::buildFunctionality(comp, *package).getMatrix(3);
-  const auto dim = static_cast<int64_t>(definition.size());
-  DynamicMatrix expected(dim);
-  for (int64_t row = 0; row < dim; ++row) {
-    for (int64_t col = 0; col < dim; ++col) {
-      expected(row, col) = definition[static_cast<std::size_t>(row)]
-                                     [static_cast<std::size_t>(col)];
-    }
-  }
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
