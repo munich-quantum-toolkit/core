@@ -56,14 +56,6 @@ Its functionality has only ever been used in [MQT QMAP] since its inception. As
 a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
 Core version that includes this change.
 
-### QDMI child devices
-
-The QDMI driver now translates device-library-specific `QDMI_Child_Device`
-handles into client-facing `QDMI_Device` handles backed by dedicated child
-sessions. Direct child devices can be queried through
-`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
-Python. Devices without child-device support continue to behave unchanged.
-
 ### Dev container
 
 A [dev container](https://containers.dev/) configuration is available to provide
@@ -72,6 +64,14 @@ a consistent local development environment. Common IDEs like
 and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
+
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
 
 ## [3.7.0]
 
