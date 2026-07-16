@@ -255,7 +255,6 @@ default.extend-ignore-re = [
 ]
 
 [tool.typos.default.extend-words]
-Iten = "Iten"
 wille = "wille"
 anc = "anc"
 mch = "mch"
