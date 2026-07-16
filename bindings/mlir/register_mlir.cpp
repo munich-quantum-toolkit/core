@@ -310,11 +310,12 @@ before conversion to QCO.)pb");
           "from_qasm_file",
           &OptionalFunctionAdapter<&mlir::QCProgram::fromQASMFile>::call,
           "path"_a, "Translate an OpenQASM 3 file to QC MLIR.")
-      .def_static("from_quantum_computation",
-                  &OptionalFunctionAdapter<
-                      &mlir::QCProgram::fromQuantumComputation>::call,
-                  "computation"_a,
-                  "Translate an MQT ``QuantumComputation`` to QC MLIR.")
+      .def_static(
+          "from_quantum_computation",
+          &OptionalFunctionAdapter<
+              &mlir::QCProgram::fromQuantumComputation>::call,
+          "computation"_a,
+          R"pb(Translate an MQT {py:class}`~mqt.core.ir.QuantumComputation` to QC MLIR.)pb")
       .def_static(
           "from_qiskit",
           [](const nb::object& circuit) {
@@ -326,7 +327,7 @@ before conversion to QCO.)pb");
           "circuit"_a,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
                   "-> QCProgram"),
-          "Translate a Qiskit ``QuantumCircuit`` to QC MLIR.")
+          R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.)pb")
       .def("copy", &mlir::QCProgram::copy,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
@@ -362,11 +363,11 @@ operations.)pb");
       .def_static(
           "from_mlir_str",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,
-          "source"_a, "Parse a QCO dialect MLIR source string.")
+          "source"_a, "Parse a QCO MLIR source string.")
       .def_static(
           "from_mlir_file",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
-          "path"_a, "Parse QCO dialect MLIR from a file.")
+          "path"_a, "Parse QCO MLIR from a file.")
       .def("copy", &mlir::QCOProgram::copy,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
@@ -506,11 +507,11 @@ LLVM bitcode.)pb");
         R"pb(
 Run the coordinated default MQT compiler pipeline.
 
-Input source strings, files, MQT ``QuantumComputation`` objects, Qiskit
-``QuantumCircuit`` objects, and typed compiler programs can be combined with
-any supported output format. Typed program inputs are copied by default; set
-``inplace=True`` to consume them. Use the typed programs directly to construct
-a custom pipeline stage by stage.
+Input source strings, files, MQT {py:class}`~mqt.core.ir.QuantumComputation`
+objects, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed
+compiler programs can be combined with any supported output format. Typed
+program inputs are copied by default; set ``inplace=True`` to consume them.
+Use the typed programs directly to construct a custom pipeline stage by stage.
 
 Args:
     program: Source text, a file path, a circuit, or a typed compiler program.

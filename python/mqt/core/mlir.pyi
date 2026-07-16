@@ -90,11 +90,11 @@ class QCProgram(Program):
 
     @staticmethod
     def from_quantum_computation(computation: mqt.core.ir.QuantumComputation) -> QCProgram:
-        """Translate an MQT ``QuantumComputation`` to QC MLIR."""
+        """Translate an MQT {py:class}`~mqt.core.ir.QuantumComputation` to QC MLIR."""
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
-        """Translate a Qiskit ``QuantumCircuit`` to QC MLIR."""
+        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR."""
 
     def copy(self) -> QCProgram:
         """Return an independent copy of this program."""
@@ -123,11 +123,11 @@ class QCOProgram(Program):
 
     @staticmethod
     def from_mlir_str(source: str) -> QCOProgram:
-        """Parse a QCO dialect MLIR source string."""
+        """Parse a QCO MLIR source string."""
 
     @staticmethod
     def from_mlir_file(path: str | os.PathLike) -> QCOProgram:
-        """Parse QCO dialect MLIR from a file."""
+        """Parse QCO MLIR from a file."""
 
     def copy(self) -> QCOProgram:
         """Return an independent copy of this program."""
@@ -317,11 +317,11 @@ def compile_program(
 ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
-    Input source strings, files, MQT ``QuantumComputation`` objects, Qiskit
-    ``QuantumCircuit`` objects, and typed compiler programs can be combined with
-    any supported output format. Typed program inputs are copied by default; set
-    ``inplace=True`` to consume them. Use the typed programs directly to construct
-    a custom pipeline stage by stage.
+    Input source strings, files, MQT {py:class}`~mqt.core.ir.QuantumComputation`
+    objects, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed
+    compiler programs can be combined with any supported output format. Typed
+    program inputs are copied by default; set ``inplace=True`` to consume them.
+    Use the typed programs directly to construct a custom pipeline stage by stage.
 
     Args:
         program: Source text, a file path, a circuit, or a typed compiler program.
