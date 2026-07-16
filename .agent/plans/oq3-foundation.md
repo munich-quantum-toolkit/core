@@ -14,8 +14,10 @@ faithfully process, diagnose unsupported language features at the QC emission
 boundary, and carry every accepted program through the complete compiler. After
 this work, a user can give OpenQASM to `QCProgram::fromQASMString`, receive
 verified QC directly, optimize it in QCO, optionally serialize and deserialize
-it through Jeff, convert it back to QC, and obtain valid QIR. The unit tests
-make that path observable stage by stage.
+it through `jeff`, convert it back to QC, and obtain valid QIR. The standard
+acceptance path is QC to QCO to reconstructed QC to QIR; `jeff` compatibility is
+tracked independently and never blocks valid QC or QIR. The unit tests make that
+path observable stage by stage.
 
 The parser and semantic analyzer remain independent of MLIR and continue to
 recognize valid source even when the selected compiler target lacks a concept.
@@ -46,8 +48,8 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       implementation.
 - [x] (2026-07-16) Re-evaluated the architecture after review and concluded that
       the reduced OQ3 dialect is unnecessary. Inspected the public compiler
-      program APIs and identified the complete QC/QCO/Jeff/QIR path that must
-      become the acceptance boundary.
+      program APIs and identified the compiler paths that require separate
+      acceptance contracts.
 - [x] (2026-07-16) Revised this plan after critical review: isolate direct
       emission in a private emitter, build the full-chain harness before
       changing conversions, and require evidence-backed minimal regression
@@ -63,16 +65,16 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
 - [x] (2026-07-16) Defined a shared `{name, source}` OpenQASM compiler corpus
       and added public-API full-chain tests, including both direct composition
       and `runDefaultPipeline`.
-- [x] (2026-07-16) Used failing full-chain stages to isolate the Jeff
+- [x] (2026-07-16) Used failing full-chain stages to isolate the `jeff`
       entry-point round-trip defect and added a parser-independent native
       regression. Retained the structured QC-to-QCO changes with their existing
       native regressions.
 - [x] (2026-07-16) Minimized the complete diff against `origin/main`, removing
       superseded OQ3 code, duplicated dispatch data, stale registrations, and
-      iteration artifacts. Retained only the QC-to-QCO structured-state and Jeff
-      entry-point corrections backed by native regressions.
-- [x] (2026-07-16) Added maintained parser, semantic, QC-emission,
-  Adaptive-plus-Jeff, and Base support matrices.
+      iteration artifacts. Retained only the QC-to-QCO structured-state and
+      `jeff` entry-point corrections backed by native regressions.
+- [x] (2026-07-16) Added maintained parser, semantic, QC-emission, standard
+      Adaptive, `jeff`, and Base support matrices.
 - [x] (2026-07-16) Ran the affected frontend, translation, conversion, compiler,
       QIR, and legacy-parser tests; warning-as-error documentation; repository
       lint; diff checks; and sequential coverage. The substantive frontend and
@@ -80,8 +82,7 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
 - [x] (2026-07-16) Incorporated the first post-implementation review: tightened
       the accepted-input contract for runtime indices, made structured custom
       gate capability checks transitive, added native result-bearing SCF
-      conversion regressions, verified result types across Jeff, and routed the
-      Base profile through the optimized Jeff round trip.
+      conversion regressions and verified result types across `jeff`.
 - [x] (2026-07-16) Ran the complete affected validation and repository checks
       after the first review fixes. Clean sequential coverage reached 91.0
       percent lines over the substantive frontend and emitter sources.
@@ -91,8 +92,8 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       and collapsed dispatch and custom-gate expansion into one overflow-safe
       projected-emission budget.
 - [x] (2026-07-16) Added a mutable floating-point `for`/`while` fixture to the
-      complete Adaptive-plus-Jeff corpus, exact QIR output-recording assertions,
-      and stronger native result-bearing `if`/`while` conversion semantics.
+      initial `jeff` corpus, exact QIR output-recording assertions, and stronger
+      native result-bearing `if`/`while` conversion semantics.
 - [x] (2026-07-16) Closed the checked-integer acceptance gap by rejecting
       non-folded checked integer arithmetic and ranges at the QC boundary with a
       source-located diagnostic while preserving frontend support.
@@ -114,15 +115,20 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       `mlir/include/mlir/Target/OpenQASM/Detail`. The owning containers remain
       standard vectors, while local bounded working sets continue to use LLVM
       small vectors.
-- [x] (2026-07-16) Removed Jeff-derived QC-emission rejection of runtime
+- [x] (2026-07-16) Removed `jeff`-derived QC-emission rejection of runtime
       indices, varying induction indices, and non-folded integer expressions.
       Implemented faithful runtime signed and unsigned integer arithmetic,
       retained dynamic index bounds assertions, and replaced division-based
       range trip counts with constant structured bounds or comparison-driven
       inclusive loops.
-- [ ] (2026-07-16) Split compiler contracts into a broad standard
-      QC-to-QCO-to-QC-to-QIR corpus, a smaller Jeff-compatible round-trip
-      corpus, and explicit Jeff-boundary failure tests.
+- [x] (2026-07-16) Split compiler contracts into a 17-program standard
+      QC-to-QCO-to-QC-to-QIR corpus, a 6-program `jeff`-compatible round-trip
+      corpus, and four explicit `jeff`-boundary failure tests. Added MLIR's
+      canonical `cf.assert`-to-LLVM lowering to QIR with a parser-independent
+      regression so runtime source checks survive the standard path.
+- [x] (2026-07-16) Rebuilt and ran all affected frontend, translation,
+      conversion, compiler, QIR, and legacy-parser tests. The warning-as-error
+      documentation session, repository lint, and diff checks pass.
 
 ## Surprises & Discoveries
 
@@ -151,9 +157,9 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   full-chain failures, rather than by the mere existence of structured OpenQASM.
 
 - Observation: `runDefaultPipeline` covers QC to QCO optimization, QCO back to
-  QC, and QC to QIR, but intentionally does not include a Jeff round trip.
-  Therefore acceptance needs both an explicit public-API Jeff chain and a
-  separate `runDefaultPipeline` check.
+  QC, and QC to QIR, but intentionally does not include a `jeff` round trip.
+  Therefore the standard path is the acceptance contract; `jeff` has separate
+  positive and explicit boundary-failure suites.
 
 - Observation: structured control flow generally requires the Adaptive QIR
   profile, while straight-line circuits can exercise both Base and Adaptive
@@ -161,19 +167,18 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   behavior, so the corpus contains only names and sources and profile grouping
   is expressed by the test suites that select it.
 
-- Observation: Jeff round trips preserved entry functions with observable bit
+- Observation: `jeff` round trips preserved entry functions with observable bit
   results, but `JeffToQCO` restored the `entry_point` marker only for
   result-less functions. Evidence: the first explicit chain reached
   reconstructed QC but Adaptive QIR reported that no entry point existed. The
-  native Jeff regression now proves that nonempty result types and the marker
+  native `jeff` regression now proves that nonempty result types and the marker
   survive together.
 
-- Observation: the Jeff representation cannot preserve the frontend's runtime
+- Observation: the `jeff` representation cannot preserve the frontend's runtime
   `cf.assert` bounds checks. Evidence: genuinely runtime-dynamic indexing
-  reaches verified QC and QCO but QCO-to-Jeff rejects `cf.assert`; an index
-  resolved by cleanup traverses the complete chain. The direct emitter now
-  accepts only indices proven resolvable by conservative scalar dataflow and
-  reports a source-located target diagnostic for the remainder.
+  reaches verified QC, optimized QCO, reconstructed QC, and QIR, while
+  QCO-to-`jeff` rejects `cf.assert`. The limitation is now reported at
+  `intoJeff()` rather than by the source emitter.
 
 - Observation: `scf.for` is an automatic allocation scope, so selecting the
   nearest such scope left result-bearing `scf.if` scratch storage inside a loop.
@@ -182,24 +187,23 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
 
 - Observation: successful final QIR alone does not prove that observable entry
   results survived intermediate formats. Evidence: the full-chain tests now
-  compare entry result types in QC, optimized QCO, Jeff bytes and restored Jeff,
-  reconstructed QCO, and reconstructed QC before checking the QIR status
+  compare entry result types in QC, optimized QCO, `jeff` bytes and restored
+  `jeff`, reconstructed QCO, and reconstructed QC before checking the QIR status
   signature and output-recording calls.
 
 - Observation: static loop bounds do not make a multi-iteration induction value
-  static at each source use. Evidence:
-  `for uint i in [0:2] { int x = i + 1; h q[x]; }` previously passed the QC
-  preflight but could not satisfy the Jeff contract. Only a proven singleton
-  range may retain a constant induction fact.
+  static at each source use, but this is not a QC limitation. Evidence:
+  `for uint i in [0:2] { x q[i]; }` now reaches QIR with runtime bounds checks
+  and fails only at QCO-to-`jeff`.
 
 - Observation: separate dynamic-dispatch and custom-gate expansion limits can
   each pass while their composition is excessive. Evidence: 4096 dispatch leaves
   applying a 25-operation custom gate project 102400 primitive emissions.
 
 - Observation: non-folded checked integer expressions emit i128 arithmetic and
-  `cf.assert` operations that Jeff does not preserve. Evidence: a mutable
-  integer carried through source loops failed the optimized QCO-to-Jeff stage,
-  while the equivalent mutable floating-point state completes the full chain.
+  `cf.assert` operations. MLIR's control-flow-to-LLVM conversion requires the
+  assert pattern to be registered separately. Once registered, checked integer
+  state reaches QIR; `jeff` still rejects it at its conversion boundary.
 
 ## Decision Log
 
@@ -248,29 +252,28 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   simplify, or remove each change safely. Date/Author: 2026-07-16 / Codex.
 
 - Decision: conversion unit tests remain parser-independent. Rationale: a QC,
-  QCO, Jeff, or QIR conversion regression should construct or parse the smallest
-  native MLIR that demonstrates the conversion invariant. OpenQASM belongs only
-  in translation and compiler integration tests. Date/Author: 2026-07-16 /
-  Codex.
+  QCO, `jeff`, or QIR conversion regression should construct or parse the
+  smallest native MLIR that demonstrates the conversion invariant. OpenQASM
+  belongs only in translation and compiler integration tests. Date/Author:
+  2026-07-16 / Codex.
 
 - Decision: share at most `{name, source}` across OpenQASM compiler fixtures.
   Rationale: per-fixture expected-failure or capability flags turn gaps into
   accepted behavior. Separate positive suites select the source subset they are
   required to support. Date/Author: 2026-07-16 / Codex.
 
-- Decision: preserve observable Jeff entry-point results when restoring QCO.
-  Rationale: Jeff serialization already retains those results; replacing them
+- Decision: preserve observable `jeff` entry-point results when restoring QCO.
+  Rationale: `jeff` serialization already retains those results; replacing them
   with a synthetic status code discarded program output and prevented the
   reconstructed QC module from reaching QIR. Result-less legacy entry points
   still receive the historical i64 status result. Date/Author: 2026-07-16 /
   Codex.
 
-- Decision: accept only compile-time or cleanup-resolvable dynamic indices at
-  the QC boundary. Rationale: erasing bounds assertions would weaken source
-  semantics, while returning QC that fails the required Jeff path violates the
-  accepted-input contract. Conservative scalar dataflow retains constant
-  variables and static loop induction and rejects measurement-dependent values
-  with a source location. Date/Author: 2026-07-16 / Codex.
+- Decision: accept runtime dynamic indices at the QC boundary and retain their
+  bounds assertions. Rationale: QC and QIR represent the checks faithfully;
+  inability to serialize them through `jeff` is an optional-format limitation
+  reported by `intoJeff()`, not a reason to reject OpenQASM. Date/Author:
+  2026-07-16 / Codex.
 
 - Decision: retain the second structured-terminator conversion phase in
   QC-to-QCO. Rationale: result-bearing `if`, `for`, and `while` need the final
@@ -284,22 +287,27 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   unused definitions must have no effect on accepted source. Date/Author:
   2026-07-16 / Codex.
 
-- Decision: treat only singleton loop induction as a static index fact and join
-  branch state by exact constant equality. Rationale: this accepts statically
-  selected and equal-constant branches without claiming that a varying source
-  induction has one compile-time value. Date/Author: 2026-07-16 / Codex.
+- Decision: lower all valid induction-variable indices with runtime bounds
+  checks. Rationale: varying indices are first-class QC and QIR behavior;
+  constant simplification is an optimization rather than an acceptance rule.
+  Date/Author: 2026-07-16 / Codex.
 
 - Decision: enforce one 100000-operation projected-emission budget that composes
   custom-gate expansion and register dispatch with overflow-safe multiplication.
   Rationale: emitted work, not either mechanism independently, is the relevant
   safety bound. Date/Author: 2026-07-16 / Codex.
 
-- Decision: reject non-folded checked integer arithmetic and ranges at direct QC
-  emission, but continue to parse and analyze them. Rationale: removing their
-  overflow assertions would weaken source semantics, while expanding Jeff and
-  QIR integer support is disproportionate to this frontend change. Mutable
-  floating-point state remains the full-chain carried-scalar contract.
-  Date/Author: 2026-07-16 / Codex.
+- Decision: emit non-folded signed integer arithmetic with overflow assertions,
+  unsigned arithmetic with 64-bit wrap semantics, and inclusive ranges without
+  division-based trip counts. Rationale: these operations traverse the standard
+  QC-to-QIR pipeline faithfully. Unsupported `jeff` serialization is tested at
+  that boundary. Date/Author: 2026-07-16 / Codex.
+
+- Decision: use constant `scf.for` bounds when all range components are known
+  and a comparison-driven `scf.while` otherwise. Rationale: positive, negative,
+  empty, singleton, non-divisible, and boundary ranges avoid endpoint overflow,
+  while dynamic zero steps remain guarded by `cf.assert`. Date/Author:
+  2026-07-16 / Codex.
 
 - Decision: accept the measured 89.9 percent frontend and emitter line coverage
   without adding tests whose only purpose is crossing a round-number threshold.
@@ -313,40 +321,41 @@ The completed frontend groundwork is retained: the native parser and semantic
 analyzer cover the source-language behavior needed by the compiler. The earlier
 OQ3 target architecture has been removed in favor of direct QC emission.
 
-The direct architecture and end-to-end behavior are implemented. Thirteen broad
-OpenQASM fixtures traverse direct QC, QCO cleanup and optimization, Jeff byte
-serialization and deserialization, reconstructed QCO and QC, and Adaptive QIR;
-the same fixtures pass `runDefaultPipeline`. Four straight-line fixtures also
-reach Base QIR. The corpus includes custom and broadcast gates, arithmetic and
-math parameters, nested `if`/`for`, measurement-controlled `while`, mutable bit
-state carried by a loop, a dynamically written index resolved during cleanup,
-reset, barrier, and mixed positive and negative controls.
+The direct architecture and end-to-end behavior are implemented. Seventeen
+OpenQASM fixtures traverse direct QC, QCO cleanup and optimization,
+reconstructed QC, and Adaptive QIR; the same fixtures pass `runDefaultPipeline`.
+Four straight-line fixtures also reach Base QIR. A separate six-program corpus
+round-trips through `jeff`, while four explicitly tracked cases reach optimized
+QCO and then fail at `intoJeff()`. The standard corpus includes runtime and
+induction-variable indexing, checked integer state, and dynamic ranges in
+addition to custom gates and structured control flow.
 
 The downstream production corrections are constrained to demonstrated conversion
 invariants. QC-to-QCO preserves classical results alongside linear quantum state
 through `if`, `for`, and `while`, converts their terminators after region
 contents, and allocates conditional scratch storage once per function.
-Jeff-to-QCO restores entry-point markers without losing observable results. Both
+`JeffToQCO` restores entry-point markers without losing observable results. Both
 areas have parser-independent native regressions.
 
-General runtime-dynamic indices are valid source but are rejected at direct QC
-emission because Jeff cannot preserve their required bounds assertion. Constant
-variables, singleton loop induction, statically selected branches, and
-equal-constant branch joins remain accepted. Multi-iteration induction and
-non-folded checked integer expressions are rejected before QC is returned. All
-accepted corpus sources preserve their entry result types across the Jeff round
-trip and record outputs in final QIR.
+Runtime-dynamic indices, multi-iteration induction indices, and non-folded
+integer expressions now produce verified QC and reach QIR. Signed operations
+assert overflow and invalid division, unsigned operations wrap at 64 bits, and
+dynamic ranges use comparison-driven structured control flow. MLIR's canonical
+`cf.assert` conversion preserves these checks in QIR. Cases that `jeff` cannot
+represent fail at its conversion boundary instead of reducing source support.
 
 ## Context and Orientation
 
 `mlir/lib/Target/OpenQASM/Frontend.cpp` owns source buffers and orchestrates
-parsing. `OpenQASMLexer.cpp`, `OpenQASMParser.h`, `OpenQASMSyntax.h`, and
-`OpenQASMSyntax.cpp` implement tokenization, grammar, recovery, and persistent
-syntax. `OpenQASMSemantics.cpp` resolves syntax into the `TypedProgram` declared
-in `mlir/include/mlir/Target/OpenQASM/Frontend.h`. These files use LLVM support
-but do not require an `MLIRContext`. A `TypedProgram` is a compact resolved
-representation containing expressions, conditions, declarations, statements,
-gate definitions, source locations, and output registers.
+parsing. Implementation headers live under
+`mlir/include/mlir/Target/OpenQASM/Detail`; their corresponding sources under
+`mlir/lib/Target/OpenQASM` implement tokenization, grammar, recovery, persistent
+syntax, and semantic analysis. `OpenQASMSemantics.cpp` resolves syntax into the
+`TypedProgram` declared in `mlir/include/mlir/Target/OpenQASM/Frontend.h`. These
+files use LLVM support but do not require an `MLIRContext`. A `TypedProgram` is
+a compact resolved representation containing expressions, conditions,
+declarations, statements, gate definitions, source locations, and output
+registers.
 
 Direct QC construction lives in the private
 `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp`. The reusable gate
@@ -364,7 +373,7 @@ it owns all typed-program-to-QC construction.
 
 QC uses reference-like qubits. QCO is the optimizer dialect and uses linear SSA
 values, meaning each quantum operation returns the next value representing its
-qubit. QC-to-QCO and QCO-to-QC bridge those models. Jeff is a serializable
+qubit. QC-to-QCO and QCO-to-QC bridge those models. `jeff` is a serializable
 exchange representation reached from QCO. QIR is LLVM-based output reached from
 QC. The compiler program wrappers in `mlir/include/mlir/Compiler/Programs.h`
 provide ownership-safe transitions between these representations.
@@ -374,7 +383,7 @@ OpenQASM source fixtures. Translation equivalence tests live in
 `mlir/unittests/Dialect/QC/Translation/test_qasm3_translation.cpp`. The complete
 public compiler path belongs in
 `mlir/unittests/Compiler/test_compiler_pipeline.cpp`. Tests directly attached to
-QC-to-QCO, QCO-to-QC, Jeff, and QIR must use their dialect-native builders or
+QC-to-QCO, QCO-to-QC, `jeff`, and QIR must use their dialect-native builders or
 small MLIR strings, not invoke the OpenQASM parser.
 
 ## Plan of Work
@@ -457,55 +466,45 @@ is practical.
 In `mlir/unittests/programs/qasm_programs.h` and `qasm_programs.cpp`, expose a
 small shared corpus whose descriptors contain only a stable name and source.
 Keep the sources themselves as the existing named constants where useful. Do not
-attach expected-failure, Jeff-support, profile, or workaround flags. Create
-explicit positive source groups in the consuming tests: a broad
-Adaptive-plus-Jeff group and a straight-line subset that must additionally pass
-Base QIR. Include nested `if`, `for`, and `while`; loop-carried mutable scalar
-and bit state; dynamic indexing; measurement-controlled flow; broadcast
-primitive and custom gates; custom-gate expansion; inverse and positive and
-negative controls; arithmetic and math gate parameters; reset; barrier; and
+attach capability flags to descriptors. Expose separate source groups for the
+broad standard QC-to-QCO-to-QC-to-QIR path, the smaller `jeff` round trip, known
+`jeff`-boundary failures, and the straight-line Base subset. Include nested
+control flow, loop-carried state, runtime and induction-variable indexing,
+checked integer arithmetic, dynamic ranges, gates, reset, barrier, and
 observable outputs.
 
 Add a parameterized integration suite to
 `mlir/unittests/Compiler/test_compiler_pipeline.cpp`. For every source in the
-Adaptive-plus-Jeff group, use the public APIs in exactly this order:
+standard group, use the public APIs in exactly this order:
 
     QCProgram::fromQASMString
     QCProgram::intoQCO
     QCOProgram::cleanup
     QCOProgram::runPassPipeline("mqt-qco-default")
     QCOProgram::cleanup
-    QCOProgram::intoJeff
-    JeffProgram::cleanup
-    JeffProgram::toBytes
-    JeffProgram::fromBytes
-    JeffProgram::cleanup
-    JeffProgram::intoQCO
-    QCOProgram::cleanup
     QCOProgram::intoQC
     QCProgram::cleanup
     QCProgram::intoQIR(QIRProfile::Adaptive)
     QIRProgram::llvmIR and QIRProgram::toBitcode
 
-Retain copies at the necessary ownership boundaries so the test can identify the
-exact failing stage. Require every optional result to be present, every cleanup
-or pipeline call to succeed, the LLVM IR to be nonempty, and bitcode to begin
-with the LLVM bitcode magic. For the straight-line subset, repeat the QIR tail
-with `QIRProfile::Base` as well as Adaptive.
+The `jeff`-positive group inserts serialization and deserialization between
+optimized QCO and reconstructed QC. The incompatible group requires every stage
+through optimized QCO to succeed and `intoJeff()` to fail. Retain copies at
+ownership boundaries, require nonempty LLVM IR and valid bitcode, and run the
+straight-line subset through Base and Adaptive QIR.
 
 Add a separate parameterized call to `runDefaultPipeline` for every broad corpus
 source, requesting Adaptive QIR and checking its LLVM IR and bitcode. This
 proves the production default path independently; it does not replace the
-explicit chain because the default pipeline intentionally omits Jeff. Test
-failure messages must include the source name and stage.
+explicit chain. Test failure messages must include the source name and stage.
 
 ### Milestone 4: isolate and fix demonstrated downstream defects
 
 Run the full-chain corpus against the current conversion implementations. For
-each failure, save the smallest native QC, QCO, or Jeff MLIR that reproduces the
-stage failure. Add that reduced program to the appropriate conversion unit test
-using existing program builders when they express it cleanly, otherwise a small
-MLIR string. Do not make these unit tests parse OpenQASM.
+each failure, save the smallest native QC, QCO, or `jeff` MLIR that reproduces
+the stage failure. Add that reduced program to the appropriate conversion unit
+test using existing program builders when they express it cleanly, otherwise a
+small MLIR string. Do not make these unit tests parse OpenQASM.
 
 Inspect the branch diff in `mlir/lib/Conversion/QCToQCO/QCToQCO.cpp` hunk by
 hunk. Retain a change only when a reduced regression proves that it is needed,
@@ -513,7 +512,7 @@ and simplify it to the smallest dialect-native correction. Pay particular
 attention to SCF operands and results, region arguments, `scf.yield`,
 `scf.condition`, measurement results, and the distinction between classical
 state and linear quantum state. Apply the same evidence rule to
-`mlir/lib/Conversion/QCOToQC`, Jeff conversions, and QC-to-QIR. Do not edit a
+`mlir/lib/Conversion/QCOToQC`, `jeff` conversions, and QC-to-QIR. Do not edit a
 downstream conversion merely because it was named in this plan.
 
 After each fix, run its focused native conversion test first, then the failing
@@ -537,7 +536,7 @@ Create `docs/mlir/OpenQASM.md` and link it from `docs/mlir/index.md` and the
 relevant translation overview. It contains two maintained feature tables but
 does not duplicate the language specification. The first covers parser and
 semantic behavior. The second has columns for feature, Parse, Semantics, QC,
-Full Adaptive plus Jeff, Base, restriction or rejection reason, and the
+standard Adaptive QIR, `jeff`, Base, restriction or rejection reason, and the
 representative test. Use precise statuses such as supported, recognized and
 rejected semantically, or accepted by the frontend and rejected by QC. Mark
 structured fixtures Adaptive-only and record Base support only for the tested
@@ -629,12 +628,11 @@ their tested behavior. A valid `pow @` program must parse and analyze, then fail
 QC translation with a precise source-located message and no fallback IR.
 
 The complete compiler is accepted when every broad corpus fixture passes the
-explicit public API chain through optimized QCO, Jeff byte serialization and
-deserialization, reconstructed QC, Adaptive QIR, LLVM IR, and bitcode. Every
-fixture must also pass `runDefaultPipeline` to Adaptive QIR. Every source in the
-straight-line subset must additionally produce Base QIR. Structured sources are
-not required to produce Base QIR and must not be encoded as expected failures in
-the corpus.
+explicit public API chain through optimized QCO, reconstructed QC, Adaptive QIR,
+LLVM IR, and bitcode, and also passes `runDefaultPipeline`. Every source in the
+straight-line subset must additionally produce Base QIR. The smaller `jeff`
+corpus must round-trip, while tracked incompatible programs must succeed through
+optimized QCO and fail specifically at `intoJeff()`.
 
 Every retained downstream conversion change is accepted only with a focused
 parser-independent native-IR regression that fails without the change and passes
@@ -687,25 +685,30 @@ The target-boundary proof after implementation must read:
     translateQASM3ToQC(pow-source) fails at the pow modifier location.
     No OQ3 module is constructed.
 
-The full-chain proof must record a representative structured fixture reaching:
+The standard-chain proof must record a representative structured fixture
+reaching:
 
-    OpenQASM -> QC -> QCO -> optimized QCO -> Jeff bytes -> Jeff -> QCO
-    -> QC -> Adaptive QIR -> LLVM IR and bitcode
+    OpenQASM -> QC -> QCO -> optimized QCO -> QC -> Adaptive QIR
+    -> LLVM IR and bitcode
 
-The final corpus contains thirteen Adaptive-plus-Jeff programs and four Base
-programs. One new native Jeff-to-QCO regression proves that a serialized entry
-point with observable results regains its marker without losing those results.
-The validation results are:
+The final corpus contains seventeen standard programs, six `jeff` round-trip
+programs, four `jeff`-incompatible programs, and four Base programs. One native
+`JeffToQCO` regression proves that a serialized entry point with observable
+results regains its marker without losing those results. A native QC-to-QIR
+regression proves that `cf.assert` lowers through LLVM. The latest focused
+validation results are:
 
-    OpenQASM frontend and target: 93 tests passed.
+    OpenQASM frontend and target: 96 tests passed.
+    OpenQASM compiler corpus: 48 tests passed.
+    Native QC-to-QIR assertion regression: passed.
     QC translation: 241 tests passed.
     QC-to-QCO: 124 tests passed.
     QCO-to-QC: 121 tests passed.
-    Jeff round trip: 113 tests passed.
-    Compiler pipeline: 146 tests passed, including 30 corpus cases.
-    QC-to-QIR Adaptive: 125 tests passed.
+    `jeff` round trip: 113 tests passed.
+    Compiler pipeline: 164 tests passed, including 48 corpus cases.
+    QC-to-QIR Adaptive: 126 tests passed.
     QC-to-QIR Base: 107 tests passed.
-    Legacy IR and OpenQASM parser: 280 tests passed.
+    Legacy OpenQASM parser: 97 tests passed.
     Warning-as-error documentation: passed.
     Repository lint and diff checks: passed.
     Frontend and direct-emitter line coverage: 89.9 percent (4117/4579).
@@ -759,6 +762,13 @@ architecture with direct QC emission. Review feedback moved the implementation
 into private emitter files, renamed the frontend target, assigned custom-gate
 target preflight to emission, made full-chain tests precede downstream changes,
 required parser-independent conversion regressions, removed fixture capability
-flags, and defined exact Jeff and QIR acceptance paths. The final whole-branch
+flags, and defined exact `jeff` and QIR acceptance paths. The final whole-branch
 cleanup removed unused resolved-program state and replaced the arbitrary
 90-percent coverage gate with behavior-driven coverage evidence.
+
+Revision note (2026-07-16): post-review work made QC-to-QCO-to-QC-to-QIR the
+primary acceptance path and moved `jeff` compatibility to separate positive and
+boundary-failure suites. It removed the constant-lattice preflight, implemented
+runtime integer and inclusive-range semantics, relocated implementation headers,
+fixed the remaining lint diagnostics, and added canonical `cf.assert` lowering
+to QIR.
