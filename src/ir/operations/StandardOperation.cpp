@@ -301,6 +301,9 @@ void StandardOperation::dumpOpenQASM2(
                  "work with this library.\n";
   }
 
+  // save the numbers of controls as a prefix to the operation name
+  op << std::string(controls.size(), 'c');
+
   const bool isSpecialGate = type == Peres || type == Peresdg;
 
   if (!isSpecialGate) {
@@ -312,15 +315,7 @@ void StandardOperation::dumpOpenQASM2(
     }
   }
 
-  // qelib1.inc defines rc3x for the single-control OpenQASM 2 gate.
-  if (type == RCCX && controls.size() == 1) {
-    of << op.str() << "rc3x";
-    dumpOpenQASMGateOperands(of, qubitMap);
-  } else {
-    // save the numbers of controls as a prefix to the operation name
-    op << std::string(controls.size(), 'c');
-    dumpGateType(of, op, qubitMap);
-  }
+  dumpGateType(of, op, qubitMap);
 
   if (!isSpecialGate) {
     // apply X operations to negate the respective controls again
@@ -506,11 +501,7 @@ void StandardOperation::dumpGateType(
 
   // apply the operation
   of << op.str();
-  dumpOpenQASMGateOperands(of, qubitMap);
-}
 
-void StandardOperation::dumpOpenQASMGateOperands(
-    std::ostream& of, const QubitIndexToRegisterMap& qubitMap) const {
   // First print control qubits.
   for (auto it = controls.begin(); it != controls.end();) {
     of << " " << qubitMap.at(it->qubit).second;

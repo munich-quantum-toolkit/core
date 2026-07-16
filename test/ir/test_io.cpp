@@ -548,14 +548,14 @@ TEST_F(IO, RccxUncontrolledOpenQASMRoundTrip) {
 TEST_F(IO, RccxControlledOpenQASMRoundTrip) {
   qc.addQubitRegister(4);
   qc.crccx(0, 1, 2, 3);
-  expectRccxExport(qc, false, "rc3x q[0], q[1], q[2], q[3];", 1, 1);
+  expectRccxExport(qc, false, "crccx q[0], q[1], q[2], q[3];", 1, 1);
   expectRccxExport(qc, true, "ctrl @ rccx q[0], q[1], q[2], q[3];", 1, 1);
 
   qc.reset();
   qc.addQubitRegister(4);
   qc.crccx(0_nc, 1, 2, 3);
-  // OpenQASM 2 encodes negative controls via X conjugation around rc3x.
-  expectRccxExport(qc, false, "rc3x q[0], q[1], q[2], q[3];", 3, 1, 1,
+  // OpenQASM 2 encodes negative controls via X conjugation around crccx.
+  expectRccxExport(qc, false, "crccx q[0], q[1], q[2], q[3];", 3, 1, 1,
                    "x q[0];\n");
   expectRccxExport(qc, true, "negctrl @ rccx q[0], q[1], q[2], q[3];", 1, 1, 0,
                    {}, true);
@@ -566,6 +566,20 @@ TEST_F(IO, RccxControlledOpenQASMRoundTrip) {
   expectRccxExport(qc, false, "ccrccx q[0], q[1], q[2], q[3], q[4];", 1, 2);
   expectRccxExport(qc, true, "ctrl(2) @ rccx q[0], q[1], q[2], q[3], q[4];", 1,
                    2);
+}
+
+TEST_F(IO, Rc3xFromQelib1IsCompoundNotControlledRccx) {
+  qc = qasm3::Importer::imports("OPENQASM 2.0;\n"
+                                "include \"qelib1.inc\";\n"
+                                "qreg q[4];\n"
+                                "rc3x q[0], q[1], q[2], q[3];\n");
+  ASSERT_EQ(qc.getNops(), 1U);
+  EXPECT_EQ(qc.front()->getType(), qc::Compound);
+  EXPECT_EQ(qc.front()->getNcontrols(), 0U);
+  const auto* compound =
+      dynamic_cast<const qc::CompoundOperation*>(qc.front().get());
+  ASSERT_NE(compound, nullptr);
+  EXPECT_GT(compound->size(), 1U);
 }
 
 TEST_F(IO, ParameterizedGateDefinition) {
