@@ -106,6 +106,8 @@ private:
       classicalRegisters;
   std::vector<SmallVector<Value>> bitValues;
   std::vector<Value> scalarValues;
+  DenseMap<const oq3::frontend::GateDefinition*, bool>
+      structuredGateCapabilities;
   bool emissionFailed = false;
 
   enum class StateKind : std::uint8_t { Scalar, Bit };
@@ -131,19 +133,143 @@ private:
     return found == program.gates.end() ? nullptr : &*found;
   }
 
-  [[nodiscard]] bool gateContainsStructuredControlFlow(
-      const oq3::frontend::GateDefinition& gate) const {
-    return llvm::any_of(gate.body, [&](const auto id) {
+  [[nodiscard]] bool statementsRequireStructuredControlFlow(
+      const ArrayRef<oq3::frontend::StatementId> statements) {
+    return llvm::any_of(statements, [&](const auto id) {
       const auto& data = program.statements.at(id).data;
-      return std::holds_alternative<oq3::frontend::ForStatement>(data) ||
-             std::holds_alternative<oq3::frontend::WhileStatement>(data) ||
-             std::holds_alternative<oq3::frontend::IfStatement>(data);
+      if (std::holds_alternative<oq3::frontend::ForStatement>(data) ||
+          std::holds_alternative<oq3::frontend::WhileStatement>(data) ||
+          std::holds_alternative<oq3::frontend::IfStatement>(data)) {
+        return true;
+      }
+      const auto* application =
+          std::get_if<oq3::frontend::GateApplication>(&data);
+      const auto* callee = application == nullptr
+                               ? nullptr
+                               : findCustomGate(application->callee);
+      return callee != nullptr && gateRequiresStructuredControlFlow(*callee);
     });
   }
 
   [[nodiscard]] bool
+  gateRequiresStructuredControlFlow(const oq3::frontend::GateDefinition& gate) {
+    if (const auto it = structuredGateCapabilities.find(&gate);
+        it != structuredGateCapabilities.end()) {
+      return it->second;
+    }
+    const bool requiresStructuredControlFlow =
+        statementsRequireStructuredControlFlow(gate.body);
+    structuredGateCapabilities[&gate] = requiresStructuredControlFlow;
+    return requiresStructuredControlFlow;
+  }
+
+  [[nodiscard]] bool expressionIsCompileTimeResolvable(
+      const frontend::ExpressionId id,
+      const ArrayRef<bool> resolvableScalars) const {
+    const auto& expression = program.expressions.at(id);
+    switch (expression.kind) {
+    case frontend::ExpressionKind::Constant:
+      return true;
+    case frontend::ExpressionKind::GateParameter:
+      return false;
+    case frontend::ExpressionKind::Variable:
+      return resolvableScalars[expression.variable];
+    case frontend::ExpressionKind::Negate:
+    case frontend::ExpressionKind::ArcCos:
+    case frontend::ExpressionKind::ArcSin:
+    case frontend::ExpressionKind::ArcTan:
+    case frontend::ExpressionKind::Sin:
+    case frontend::ExpressionKind::Cos:
+    case frontend::ExpressionKind::Tan:
+    case frontend::ExpressionKind::Exp:
+    case frontend::ExpressionKind::Ln:
+    case frontend::ExpressionKind::Sqrt:
+      return expressionIsCompileTimeResolvable(expression.lhs,
+                                               resolvableScalars);
+    case frontend::ExpressionKind::Add:
+    case frontend::ExpressionKind::Subtract:
+    case frontend::ExpressionKind::Multiply:
+    case frontend::ExpressionKind::Divide:
+    case frontend::ExpressionKind::Modulo:
+    case frontend::ExpressionKind::Power:
+      return expressionIsCompileTimeResolvable(expression.lhs,
+                                               resolvableScalars) &&
+             expressionIsCompileTimeResolvable(expression.rhs,
+                                               resolvableScalars);
+    }
+    llvm_unreachable("unknown scalar expression kind");
+  }
+
+  template <typename Reference>
+  [[nodiscard]] bool
+  dynamicIndexIsResolvable(const Reference& reference,
+                           const ArrayRef<bool> resolvableScalars) const {
+    return !reference.dynamicIndex ||
+           expressionIsCompileTimeResolvable(*reference.dynamicIndex,
+                                             resolvableScalars);
+  }
+
+  template <typename Reference>
+  [[nodiscard]] bool
+  dynamicIndicesAreResolvable(const ArrayRef<Reference> references,
+                              const ArrayRef<bool> resolvableScalars) const {
+    return llvm::all_of(references, [&](const auto& reference) {
+      return dynamicIndexIsResolvable(reference, resolvableScalars);
+    });
+  }
+
+  [[nodiscard]] bool
+  conditionIndicesAreResolvable(const frontend::ConditionId id,
+                                const ArrayRef<bool> resolvableScalars) const {
+    const auto& condition = program.conditions.at(id);
+    switch (condition.kind) {
+    case frontend::ConditionKind::Bit:
+      return dynamicIndexIsResolvable(condition.bit, resolvableScalars);
+    case frontend::ConditionKind::Measurement:
+      return dynamicIndexIsResolvable(condition.measurement, resolvableScalars);
+    case frontend::ConditionKind::Not:
+      return conditionIndicesAreResolvable(condition.lhs, resolvableScalars);
+    case frontend::ConditionKind::And:
+    case frontend::ConditionKind::Or:
+      return conditionIndicesAreResolvable(condition.lhs, resolvableScalars) &&
+             conditionIndicesAreResolvable(condition.rhs, resolvableScalars);
+    case frontend::ConditionKind::Literal:
+    case frontend::ConditionKind::Scalar:
+    case frontend::ConditionKind::Comparison:
+      return true;
+    }
+    llvm_unreachable("unknown condition kind");
+  }
+
+  [[nodiscard]] bool
+  reportRuntimeDynamicIndex(const oq3::frontend::SourceLocation& source) const {
+    llvm::errs()
+        << source.filename << ':' << source.line << ':' << source.column
+        << ": OpenQASM QC emission error: runtime-dynamic indexing is not "
+           "supported by the complete QC/QCO/Jeff/QIR compiler path.\n";
+    return false;
+  }
+
+  void invalidateMutatedScalars(
+      const ArrayRef<oq3::frontend::StatementId> statements,
+      SmallVectorImpl<bool>& resolvableScalars) const {
+    llvm::DenseSet<std::uint64_t> mutations;
+    for (const auto statement : statements) {
+      collectMutations(statement, mutations);
+    }
+    for (const auto scalar :
+         llvm::seq<std::size_t>(0, resolvableScalars.size())) {
+      if (mutations.contains(
+              scalarStateKey(static_cast<frontend::ScalarId>(scalar)))) {
+        resolvableScalars[scalar] = false;
+      }
+    }
+  }
+
+  [[nodiscard]] bool
   preflightStatements(const ArrayRef<oq3::frontend::StatementId> statements,
-                      std::size_t& expansionCost) {
+                      std::size_t& expansionCost,
+                      SmallVectorImpl<bool>& resolvableScalars) {
     for (const auto id : statements) {
       const auto& statement = program.statements.at(id);
       const auto* application =
@@ -151,25 +277,116 @@ private:
       if (application == nullptr) {
         if (const auto* conditional =
                 std::get_if<oq3::frontend::IfStatement>(&statement.data)) {
-          if (!preflightStatements(conditional->thenStatements,
-                                   expansionCost) ||
-              !preflightStatements(conditional->elseStatements,
-                                   expansionCost)) {
+          if (!conditionIndicesAreResolvable(conditional->condition,
+                                             resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+          SmallVector<bool> thenScalars(resolvableScalars.begin(),
+                                        resolvableScalars.end());
+          SmallVector<bool> elseScalars(resolvableScalars.begin(),
+                                        resolvableScalars.end());
+          if (!preflightStatements(conditional->thenStatements, expansionCost,
+                                   thenScalars) ||
+              !preflightStatements(conditional->elseStatements, expansionCost,
+                                   elseScalars)) {
             return false;
           }
+          invalidateMutatedScalars(conditional->thenStatements,
+                                   resolvableScalars);
+          invalidateMutatedScalars(conditional->elseStatements,
+                                   resolvableScalars);
         } else if (const auto* loop = std::get_if<oq3::frontend::ForStatement>(
                        &statement.data)) {
-          if (!preflightStatements(loop->body, expansionCost)) {
+          SmallVector<bool> loopScalars(resolvableScalars.begin(),
+                                        resolvableScalars.end());
+          loopScalars[loop->inductionVariable] =
+              expressionIsCompileTimeResolvable(loop->start,
+                                                resolvableScalars) &&
+              expressionIsCompileTimeResolvable(loop->step,
+                                                resolvableScalars) &&
+              expressionIsCompileTimeResolvable(loop->stop, resolvableScalars);
+          if (!preflightStatements(loop->body, expansionCost, loopScalars)) {
             return false;
           }
+          invalidateMutatedScalars(loop->body, resolvableScalars);
         } else if (const auto* loop =
                        std::get_if<oq3::frontend::WhileStatement>(
                            &statement.data)) {
-          if (!preflightStatements(loop->body, expansionCost)) {
+          SmallVector<bool> loopScalars(resolvableScalars.begin(),
+                                        resolvableScalars.end());
+          invalidateMutatedScalars(loop->body, loopScalars);
+          if (!conditionIndicesAreResolvable(loop->condition, loopScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+          if (!preflightStatements(loop->body, expansionCost, loopScalars)) {
             return false;
+          }
+          invalidateMutatedScalars(loop->body, resolvableScalars);
+        } else if (const auto* declaration =
+                       std::get_if<frontend::ScalarDeclarationStatement>(
+                           &statement.data)) {
+          if (declaration->conditionInitializer &&
+              !conditionIndicesAreResolvable(*declaration->conditionInitializer,
+                                             resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+          resolvableScalars[declaration->scalar] =
+              declaration->initializer &&
+              expressionIsCompileTimeResolvable(*declaration->initializer,
+                                                resolvableScalars);
+        } else if (const auto* assignment =
+                       std::get_if<frontend::ScalarAssignmentStatement>(
+                           &statement.data)) {
+          if (assignment->condition &&
+              !conditionIndicesAreResolvable(*assignment->condition,
+                                             resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+          resolvableScalars[assignment->scalar] =
+              assignment->value && expressionIsCompileTimeResolvable(
+                                       *assignment->value, resolvableScalars);
+        } else if (const auto* assignment =
+                       std::get_if<frontend::BitAssignmentStatement>(
+                           &statement.data)) {
+          if (!dynamicIndexIsResolvable(assignment->target,
+                                        resolvableScalars) ||
+              !conditionIndicesAreResolvable(assignment->value,
+                                             resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+        } else if (const auto* measurement =
+                       std::get_if<frontend::MeasurementStatement>(
+                           &statement.data)) {
+          if (!dynamicIndicesAreResolvable(
+                  ArrayRef<frontend::BitReference>(measurement->targets),
+                  resolvableScalars) ||
+              !dynamicIndicesAreResolvable(
+                  ArrayRef<frontend::QubitReference>(measurement->qubits),
+                  resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+        } else if (const auto* reset =
+                       std::get_if<frontend::ResetStatement>(&statement.data)) {
+          if (!dynamicIndicesAreResolvable(
+                  ArrayRef<frontend::QubitReference>(reset->qubits),
+                  resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
+          }
+        } else if (const auto* barrier =
+                       std::get_if<frontend::BarrierStatement>(
+                           &statement.data)) {
+          if (!dynamicIndicesAreResolvable(
+                  ArrayRef<frontend::QubitReference>(barrier->qubits),
+                  resolvableScalars)) {
+            return reportRuntimeDynamicIndex(statement.location);
           }
         }
         continue;
+      }
+      if (!dynamicIndicesAreResolvable(
+              ArrayRef<frontend::QubitReference>(application->qubits),
+              resolvableScalars)) {
+        return reportRuntimeDynamicIndex(statement.location);
       }
       for (const auto& modifier : application->modifiers) {
         if (modifier.kind == oq3::frontend::ModifierKind::Pow) {
@@ -189,7 +406,7 @@ private:
         continue;
       }
       if (!application->modifiers.empty() &&
-          gateContainsStructuredControlFlow(*gate)) {
+          gateRequiresStructuredControlFlow(*gate)) {
         const auto& source = statement.location;
         llvm::errs() << source.filename << ':' << source.line << ':'
                      << source.column
@@ -198,7 +415,9 @@ private:
                         "by the QC dialect.\n";
         return false;
       }
-      if (!preflightStatements(gate->body, expansionCost)) {
+      SmallVector<bool> gateScalars(resolvableScalars.begin(),
+                                    resolvableScalars.end());
+      if (!preflightStatements(gate->body, expansionCost, gateScalars)) {
         return false;
       }
     }
@@ -216,7 +435,8 @@ private:
 
   [[nodiscard]] bool preflight() {
     std::size_t expansionCost = 0;
-    return preflightStatements(program.body, expansionCost);
+    SmallVector<bool> resolvableScalars(program.scalars.size(), false);
+    return preflightStatements(program.body, expansionCost, resolvableScalars);
   }
 
   [[nodiscard]] Value emitCheckedSignedResult(OpBuilder& opBuilder,
