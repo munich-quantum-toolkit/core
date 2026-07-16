@@ -114,10 +114,12 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       `mlir/include/mlir/Target/OpenQASM/Detail`. The owning containers remain
       standard vectors, while local bounded working sets continue to use LLVM
       small vectors.
-- [ ] (2026-07-16) Remove Jeff-derived QC-emission rejection of runtime indices,
-      varying induction indices, and non-folded integer expressions. Implement
-      faithful runtime integer arithmetic and comparison-driven inclusive ranges
-      before deleting those guards.
+- [x] (2026-07-16) Removed Jeff-derived QC-emission rejection of runtime
+      indices, varying induction indices, and non-folded integer expressions.
+      Implemented faithful runtime signed and unsigned integer arithmetic,
+      retained dynamic index bounds assertions, and replaced division-based
+      range trip counts with constant structured bounds or comparison-driven
+      inclusive loops.
 - [ ] (2026-07-16) Split compiler contracts into a broad standard
       QC-to-QCO-to-QC-to-QIR corpus, a smaller Jeff-compatible round-trip
       corpus, and explicit Jeff-boundary failure tests.
