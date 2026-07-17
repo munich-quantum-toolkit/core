@@ -35,6 +35,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -185,12 +186,9 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
 
   Operation* op = unitary.getOperation();
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = utils::valueToDouble(gphase.getTheta());
-    if (!theta) {
-      return failure();
-    }
+    const double theta = *utils::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
-    id.w = dd.cn.lookup(std::cos(*theta), std::sin(*theta));
+    id.w = dd.cn.lookup(std::cos(theta), std::sin(theta));
     state = dd.applyOperation(id, state);
     return success();
   }
@@ -226,9 +224,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   DynamicMatrix embedded;
   if (wires.size() == 2) {
     Matrix4x4 gate;
-    if (!gate.assignFrom(local)) {
-      return op->emitError() << "expected a 4x4 unitary matrix";
-    }
+    assert(gate.assignFrom(local) && "2-qubit unitary matrix must be 4x4");
     embedded = gate.embedInNqubit(qubits.numQubits, wires[0], wires[1]);
   } else if (wires.size() == qubits.numQubits &&
              llvm::all_of(llvm::enumerate(wires), [](const auto& it) {

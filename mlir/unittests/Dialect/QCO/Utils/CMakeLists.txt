@@ -9,7 +9,7 @@
 set(qco_utils_target mqt-core-mlir-unittest-qco-utils)
 add_executable(${qco_utils_target} test_dd_functionality.cpp test_drivers.cpp
                                    test_unitary_matrix.cpp test_wireiterator.cpp)
-target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRQCOUtils
+target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRParser MLIRQCOUtils
                                                   MLIRQCOProgramBuilder MLIRQCOMatrix MQT::CoreDD)
 mqt_mlir_configure_unittest_target(${qco_utils_target})
 
