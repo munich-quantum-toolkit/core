@@ -578,7 +578,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
         if (it != elseArgs.end()) {
           const unsigned int pos = std::distance(elseArgs.begin(), it);
           if (!thenArgs.empty()) {
-            implicitSwap |= order.at(i) == pos;
+            implicitSwap |= order.at(i) != pos;
           } else {
             order.push_back(pos);
           }

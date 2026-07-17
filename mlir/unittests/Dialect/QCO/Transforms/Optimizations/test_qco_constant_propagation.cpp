@@ -243,7 +243,10 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   auto [q01, b0] = programBuilder.measure(q0);
   const auto qRange01 = programBuilder.qcoIf(
       b0, {q01, q1},
-      [&](const ValueRange args) { return SmallVector{args[0], args[1]}; },
+      [&](const ValueRange args) {
+        const auto [qi1, qi0] = programBuilder.ch(args[1], args[0]);
+        return SmallVector{qi0, qi1};
+      },
       [&](const ValueRange args) {
         const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
         return SmallVector{qi0, qi1};
@@ -808,8 +811,8 @@ TEST_F(QCOConstantPropagationTest, testDoNotRemoveMultiQubitPhaseGate) {
 }
 
 /**
- * @brief Test: This test checks that a quantum conditional is replaced by a
- * classical if a qubit and a classical bit are equivalent.
+ * @brief Test: This test checks that a measurement is moved to front and the
+ * measurement result is afterward used as conditional.
  */
 TEST_F(QCOConstantPropagationTest, testMoveMeasurementToFront) {
   auto q = programBuilder.allocQubitRegister(3);
@@ -829,6 +832,34 @@ TEST_F(QCOConstantPropagationTest, testMoveMeasurementToFront) {
     return SmallVector{qi0};
   });
   referenceBuilder.h(qRef1);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that two measurements are moved to front.
+ */
+TEST_F(QCOConstantPropagationTest, testMoveTwoMeasurementToFront) {
+  auto q = programBuilder.allocQubitRegister(4);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  auto [q2, q3] = programBuilder.cx(q[2], q[3]);
+  programBuilder.h(q3);
+  programBuilder.measure(q0);
+  programBuilder.measure(q1);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(4);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  referenceBuilder.measure(qRef0);
+  referenceBuilder.measure(qRef1);
+  auto [qRef2, qRef3] = referenceBuilder.cx(qRef[2], qRef[3]);
+  referenceBuilder.h(qRef3);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
