@@ -463,6 +463,11 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
   }
   const auto targetIndex = qubitsToGlobalIndices.at(target);
   const auto targetUte = valuesToEntries.at(target);
+
+  if (targetUte->top) {
+    return {};
+  }
+
   bool alwaysOne = true;
   bool alwaysZero = true;
 
@@ -537,7 +542,7 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
     return {std::numbers::pi / 4};
   }
   // Tdg Op
-  return {-std::numbers::pi / 2};
+  return {-std::numbers::pi / 4};
 }
 
 SuperfluousResult

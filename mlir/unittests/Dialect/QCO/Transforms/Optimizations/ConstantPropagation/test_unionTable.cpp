@@ -384,6 +384,7 @@ protected:
   mlir::Value v5;
   mlir::Value v6;
   mlir::Value i0;
+  mlir::Value i1;
 
   std::vector<mlir::Value> q0;
   std::vector<mlir::Value> q1;
@@ -406,7 +407,7 @@ protected:
     programBuilder.initialize();
     referenceBuilder.initialize();
 
-    auto q = programBuilder.allocQubitRegister(7);
+    auto q = programBuilder.allocQubitRegister(9);
     hOp = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
@@ -431,6 +432,8 @@ protected:
 
     i0 = mlir::arith::ConstantOp::create(programBuilder,
                                          programBuilder.getLoc(), iAttr);
+    i1 = mlir::arith::ConstantOp::create(programBuilder,
+                                         programBuilder.getLoc(), iAttr);
   }
 
   void TearDown() override {}
@@ -447,6 +450,18 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, propagateQubitAlloc) {
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
                   "Qubits: 1, HybridStates: {{|0> -> 1.00}: p = 1.00;}"));
+}
+
+TEST_F(UnionTableWithoutSetupAllocationsTest, applyGateAndGetToTop) {
+  auto ut = UnionTable(2, 1);
+  ut.propagateQubitAlloc(v0);
+  ut.propagateQubitAlloc(v1);
+  ut.propagateGate(hOp, q0, q2);
+  ut.propagateGate(hOp, q1, q3);
+  ut.propagateGate(xOp, q2, q4, q3, q5);
+
+  EXPECT_THAT(ut.toString(),
+              testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
 }
 
 TEST_F(UnionTableWithoutSetupAllocationsTest, doMeasurementsAndGetToTop) {
@@ -502,6 +517,55 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, unifyTooLargeHybridStates) {
               testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
 }
 
+TEST_F(UnionTableWithoutSetupAllocationsTest, globalPhaseClassicallyDependend) {
+  const auto sOp =
+      SOp::create(programBuilder, programBuilder.getLoc(), v0.getType(), v0);
+  std::vector classicalIndexVecZero = {i0};
+  std::vector classicalIndexVecOne = {i1};
+  auto ut = UnionTable(4, 4);
+  ut.propagateQubitAlloc(v0);
+  ut.propagateGate(xOp, q0, q1);
+  ut.propagateDoubleAlloc(i0, 0.0);
+  ut.propagateDoubleAlloc(i1, 1.0);
+
+  const auto globalPhaseCondsFalse = ut.globalPhaseThatIsAdded(
+      sOp, v1, {}, classicalIndexVecZero, classicalIndexVecOne);
+  const auto globalPhaseCondsTrue = ut.globalPhaseThatIsAdded(
+      sOp, v1, {}, classicalIndexVecOne, classicalIndexVecZero);
+
+  ASSERT_FALSE(globalPhaseCondsFalse.has_value());
+  ASSERT_TRUE(globalPhaseCondsTrue.has_value());
+  ASSERT_EQ(std::numbers::pi / 2, globalPhaseCondsTrue);
+}
+
+TEST_F(UnionTableWithoutSetupAllocationsTest, globalPhaseVariousGates) {
+  const auto idOp =
+      IdOp::create(programBuilder, programBuilder.getLoc(), v0.getType(), v0);
+  const auto sdgOp =
+      SdgOp::create(programBuilder, programBuilder.getLoc(), v0.getType(), v0);
+  const auto tOp =
+      TOp::create(programBuilder, programBuilder.getLoc(), v0.getType(), v0);
+  const auto tdgOp =
+      TdgOp::create(programBuilder, programBuilder.getLoc(), v0.getType(), v0);
+  auto ut = UnionTable(2, 1);
+  ut.propagateQubitAlloc(v0);
+  ut.propagateGate(xOp, q0, q1);
+
+  const auto globalPhaseId = ut.globalPhaseThatIsAdded(idOp, v1);
+  const auto globalPhaseSdg = ut.globalPhaseThatIsAdded(sdgOp, v1);
+  const auto globalPhaseT = ut.globalPhaseThatIsAdded(tOp, v1);
+  const auto globalPhaseTdg = ut.globalPhaseThatIsAdded(tdgOp, v1);
+
+  ASSERT_TRUE(globalPhaseId.has_value());
+  ASSERT_TRUE(globalPhaseSdg.has_value());
+  ASSERT_TRUE(globalPhaseT.has_value());
+  ASSERT_TRUE(globalPhaseTdg.has_value());
+  ASSERT_EQ(0.0, globalPhaseId);
+  ASSERT_EQ(3.0 * std::numbers::pi / 2, globalPhaseSdg);
+  ASSERT_EQ(std::numbers::pi / 4, globalPhaseT);
+  ASSERT_EQ(-std::numbers::pi / 4, globalPhaseTdg);
+}
+
 class UnionTablePropertiesTest : public testing::Test {
 protected:
   mlir::MLIRContext context;
@@ -511,6 +575,7 @@ protected:
   HOp hOp;
   XOp xOp;
   ZOp zOp;
+  SOp sOp;
   SWAPOp swapOp;
 
   mlir::Value v0;
@@ -564,6 +629,8 @@ protected:
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     zOp = ZOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
+                      q[0]);
+    sOp = SOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     swapOp = SWAPOp::create(programBuilder, programBuilder.getLoc(),
                             {q[0].getType(), q[1].getType()}, {q[0], q[1]});
@@ -727,6 +794,22 @@ TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
   EXPECT_FALSE(emptyGlobalPhase.has_value());
   EXPECT_TRUE(globalPhase.has_value());
   EXPECT_EQ(0.0, globalPhase.value());
+}
+
+TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValueOnZeroQubit) {
+  const llvm::DenseMap<mlir::Value, bool> result =
+      ut.getValueThatIsEquivalentToQubit(v0);
+  ASSERT_FALSE(result.empty());
+  ASSERT_TRUE(result.at(i0));
+}
+
+TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValueOnOneQubit) {
+  ut.propagateGate(xOp, q0, q4);
+  ut.propagateIntAlloc(i1, 10);
+  const llvm::DenseMap<mlir::Value, bool> result =
+      ut.getValueThatIsEquivalentToQubit(v4);
+  ASSERT_FALSE(result.empty());
+  ASSERT_TRUE(result.at(i1));
 }
 
 TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValue) {
