@@ -153,8 +153,7 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
       if (finalOrder != initialHardwareOrder) {
         llvm::dbgs()
             << "The hardware indices of the yielded terminator qubit values "
-               "must "
-               "be in the same order as parent's op input qubit values!\n";
+               "must be in the same order as parent's op input qubit values!\n";
         return false;
       }
     }

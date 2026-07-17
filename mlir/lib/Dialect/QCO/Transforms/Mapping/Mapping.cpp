@@ -135,7 +135,7 @@ private:
 
     /// Bidirectionally map a wire index to a program index.
     /// Overwrites existing mappings.
-    void map(const size_t index, const size_t prog) {
+    void insertOrUpdate(const size_t index, const size_t prog) {
       if (index >= indexToProgram_.size()) {
         indexToProgram_.resize(index + 1);
       }
@@ -153,6 +153,9 @@ private:
       std::swap(programToIndex_[prog0], programToIndex_[prog1]);
       std::swap(indexToProgram_[i0], indexToProgram_[i1]);
     }
+
+    /// Return the number of index-wire mappings.
+    [[nodiscard]] size_t size() const { return indexToProgram_.size(); }
 
   private:
     /// Maps the i-th wire index to a program index.
@@ -177,6 +180,12 @@ private:
     Wires wires;
     WireInfos infos;
     Layout layout;
+  };
+
+  /// A routing trial used for parallelization.
+  struct Trial : RoutingBundle {
+    Statistics stats{};
+    bool success{false};
   };
 
   /// Describes a node in the A* search graph.
@@ -552,7 +561,7 @@ private:
           const auto index = wires.size();
 
           wires.emplace_back(qubit);
-          infos.map(index, index);
+          infos.insertOrUpdate(index, index);
 
           continue;
         }
@@ -610,7 +619,7 @@ private:
               rewriter.eraseOp(op);
 
               wires.emplace_back(qubit);
-              infos.map(prog, prog);
+              infos.insertOrUpdate(prog, prog);
             })
             .Case<InsertOp>([&](auto op) {
               rewriter.setInsertionPointAfter(op);
@@ -632,7 +641,7 @@ private:
       const auto qubit = staticOps[hw].getQubit();
 
       wires.emplace_back(qubit);
-      infos.map(prog, prog);
+      infos.insertOrUpdate(prog, prog);
 
       SinkOp::create(rewriter, body.getLoc(), qubit);
     }
@@ -744,12 +753,6 @@ private:
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
     std::mt19937_64 rng{seed};
 
-    struct Trial {
-      RoutingBundle bundle;
-      Statistics stats{};
-      bool success{false};
-    };
-
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
     for (size_t i = 0; i < ntrials; ++i) {
@@ -761,11 +764,11 @@ private:
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       for (size_t i = 0; i < niterations; ++i) {
-        if (route<WireDirection::Forward>(t.bundle, t.stats).failed()) {
+        if (route<WireDirection::Forward>(t, t.stats).failed()) {
           return;
         }
         t.stats.nswaps = 0;
-        if (route<WireDirection::Backward>(t.bundle, t.stats).failed()) {
+        if (route<WireDirection::Backward>(t, t.stats).failed()) {
           return;
         }
       }
@@ -785,7 +788,7 @@ private:
       return failure();
     }
 
-    return best->bundle.layout;
+    return best->layout;
   }
 
   /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
@@ -1175,264 +1178,207 @@ private:
                          IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = item;
 
-    const LogicalResult res =
-        TypeSwitch<Operation*, LogicalResult>(op)
-            .template Case<scf::ForOp>([&](scf::ForOp forOp) {
-              RoutingBundle child{.layout = parent.layout};
-
-              // Construct child bundle. Particularly, find the iteration
-              // argument (block-argument, forward) or yielded result (backward)
-              // for each result qubit the selected (via indices) iterators
-              // point at.
-
-              for (size_t i : indices) {
-                const auto prog = parent.infos.lookupProgram(i);
-                const auto res = cast<OpResult>(parent.wires[i].qubit());
-                const auto arg = forOp.getTiedLoopRegionIterArg(res);
-                const auto index = child.wires.size();
-
-                if constexpr (Direction == WireDirection::Forward) {
-                  child.wires.emplace_back(arg);
-                } else {
-                  const auto yield = forOp.getTiedLoopYieldedValue(arg)->get();
-                  child.wires.emplace_back(yield);
-                }
-                child.infos.map(index, prog);
-              }
-
-              // Route the child body and prepare the wire iterators for
-              // epilogue SWAP insertion, i.e., point each iterator at the final
-              // qubit op (note: might be a measurement) before the yield:
-              // Because "route" moves each iterator to the default sentinel,
-              // decrement twice: sentinel → yield → unitary/block arg.
-
-              if (failed(route<Direction, Mode>(child, stats, rewriter))) {
-                return failure();
-              }
-
-              if constexpr (Mode == RoutingMode::Hot) {
-                for_each(child.wires, [](auto& it) { std::advance(it, -2); });
-              }
-
-              // Find (insert) the epilogue SWAP sequence for (into) the child
-              // body using the "restore" strategy. Because this restores the
-              // parent's layout, we don't have to update the infos.
-
-              const auto swaps = restore(child.layout, parent.layout);
-              insertSWAPs<Mode>(swaps, child, stats, rewriter);
-
-              // Sort topologically to fix any occurring SSA dominance errors.
-
-              if constexpr (Mode == RoutingMode::Hot) {
-                sortTopologically(forOp.getBody());
-              }
-
-              return success();
+    SmallVector<size_t> permutation(indices.size());
+    SmallVector<RoutingBundle, 2> children =
+        TypeSwitch<Operation*, SmallVector<RoutingBundle, 2>>(op)
+            .template Case<scf::ForOp, scf::WhileOp>([&](auto) {
+              return SmallVector<RoutingBundle, 2>{
+                  RoutingBundle{.layout = parent.layout}};
             })
-            .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+            .template Case<IfOp>([&](IfOp) {
+              return SmallVector<RoutingBundle, 2>{
+                  RoutingBundle{.layout = parent.layout},
+                  RoutingBundle{.layout = parent.layout}};
+            });
+
+    for (size_t i : indices) {
+      const auto prog = parent.infos.lookupProgram(i);
+      const auto hw = parent.layout.getHardwareIndex(prog);
+      const auto res = cast<OpResult>(parent.wires[i].qubit());
+      const auto resNum = res.getResultNumber();
+
+      TypeSwitch<Operation*>(op)
+          .template Case<scf::ForOp>([&](scf::ForOp forOp) {
+            children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
+            children[0].wires.emplace_back([&] -> Value {
+              const auto arg = forOp.getTiedLoopRegionIterArg(res);
+              if constexpr (Direction == WireDirection::Forward) {
+                return arg;
+              } else {
+                return forOp.getTiedLoopYieldedValue(arg)->get();
+              }
+            }());
+          })
+          .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+            children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
+            children[0].wires.emplace_back([&] -> Value {
               auto condOp = cast<scf::ConditionOp>(
                   whileOp.getBeforeBody()->getTerminator());
-              auto yieldOp =
-                  cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator());
+              const auto arg = whileOp.getBeforeArguments()[resNum];
+              if constexpr (Direction == WireDirection::Forward) {
+                return arg;
+              } else {
+                return condOp.getArgs()[resNum];
+              }
+            }());
+          })
+          .template Case<IfOp>([&](IfOp ifOp) {
+            assert(ifOp.getNumRegions() == 2);
 
-              // Construct "before" child bundle. Particularly, find the
-              // block-argument (forward) or condition-yielded value (backward)
-              // for each result qubit the selected (via indices) iterators
-              // point at.
+            OpOperand* const qubit = ifOp.getTiedQubit(res);
+            for (size_t i = 0; i < 2; ++i) {
+              Region& region = ifOp.getRegion(i);
 
-              SmallVector<size_t> perm(indices.size());
-              RoutingBundle befChild{.layout = parent.layout};
-
-              for (size_t i : indices) {
-                const auto prog = parent.infos.lookupProgram(i);
-                const auto res = cast<OpResult>(parent.wires[i].qubit());
-                const auto resNum = res.getResultNumber();
-                const auto arg = whileOp.getBeforeArguments()[resNum];
-                const auto index = befChild.wires.size();
-
-                perm[res.getResultNumber()] =
-                    parent.layout.getHardwareIndex(prog);
-
+              const auto arg = region.getRegionNumber() == 0
+                                   ? ifOp.getTiedThenBlockArgument(qubit)
+                                   : ifOp.getTiedElseBlockArgument(qubit);
+              children[i].infos.insertOrUpdate(children[i].infos.size(), prog);
+              children[i].wires.emplace_back([&] -> Value {
                 if constexpr (Direction == WireDirection::Forward) {
-                  befChild.wires.emplace_back(arg);
+                  return arg;
                 } else {
-                  befChild.wires.emplace_back(condOp.getArgs()[resNum]);
+                  return region.getRegionNumber() == 0
+                             ? ifOp.getTiedThenYieldedValue(arg)->get()
+                             : ifOp.getTiedElseYieldedValue(arg)->get();
                 }
+              }());
+            }
+          });
 
-                befChild.infos.map(index, prog);
-              }
+      permutation[resNum] = hw;
+    }
 
-              if (failed(route<Direction, Mode>(befChild, stats, rewriter))) {
-                return failure();
-              }
+    // Route each child branch and prepare the wire iterators for
+    // epilogue SWAP insertion, i.e., point each iterator at the final
+    // qubit op (note: might be a measurement) before the yield.
+    // TODO: Parallelize multiple children, if possible.
 
-              if constexpr (Mode == RoutingMode::Hot) {
-                for_each(befChild.wires,
-                         [](auto& it) { std::advance(it, -2); });
+    for (auto& child : children) {
+      if (failed(route<Direction, Mode>(child, stats, rewriter))) {
+        return failure();
+      }
 
-                realignTerminator<scf::ConditionOp>(
-                    whileOp.getBeforeBody()->getTerminator(), perm, befChild,
-                    *rewriter, condOp.getCondition());
-                sortTopologically(whileOp.getBeforeBody());
-              }
+      if constexpr (Mode == RoutingMode::Hot) {
+        for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+      }
+    }
 
-              RoutingBundle aftChild{.layout = befChild.layout};
+    // Exception: The layout of the "after" region depends on the final layout
+    // of the before region. Thus, create / route the second child region /
+    // bundle here.
 
-              const auto rng = [&] -> ValueRange {
-                if constexpr (Direction == WireDirection::Forward) {
-                  return whileOp.getAfterArguments();
-                }
+    if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
+      children.emplace_back(RoutingBundle{.layout = children[0].layout});
+      assert(children.size() == 2);
 
-                return yieldOp.getResults();
-              }();
+      const auto rng = [&] -> ValueRange {
+        if constexpr (Direction == WireDirection::Forward) {
+          return whileOp.getAfterArguments();
+        }
+        return cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator())
+            .getResults();
+      }();
 
-              for (const auto& [i, arg] : llvm::enumerate(rng)) {
-                const auto hw = perm[i];
-                const auto prog = befChild.layout.getProgramIndex(hw);
-                aftChild.wires.emplace_back(arg);
-                aftChild.infos.map(i, prog);
-              }
+      for (const auto& [i, arg] : llvm::enumerate(rng)) {
+        const auto hw = permutation[i];
+        const auto prog = children[0].layout.getProgramIndex(hw);
+        children[1].wires.emplace_back(arg);
+        children[1].infos.insertOrUpdate(i, prog);
+      }
 
-              if (failed(route<Direction, Mode>(aftChild, stats, rewriter))) {
-                return failure();
-              }
+      if (failed(route<Direction, Mode>(children[1], stats, rewriter))) {
+        return failure();
+      }
 
-              if constexpr (Mode == RoutingMode::Hot) {
-                for_each(aftChild.wires,
-                         [](auto& it) { std::advance(it, -2); });
-              }
+      if constexpr (Mode == RoutingMode::Hot) {
+        for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
+      }
+    }
 
-              const auto swaps = restore(aftChild.layout, parent.layout);
-              insertSWAPs<Mode>(swaps, aftChild, stats, rewriter);
+    const Layout exit =
+        TypeSwitch<Operation*, Layout>(op)
+            .Case<scf::ForOp>([&](scf::ForOp) {
+              // Find (insert) the epilogue SWAP sequence for (into) the child
+              // region using the restore strategy.
 
-              // Re-order the targets of the yield operation, to match the input
-              // order of hardware indices and ensure qubits[i] = yield[i] and
-              // sort topologically to fix any occurring SSA dominance errors.
-
-              if constexpr (Mode == RoutingMode::Hot) {
-                realignTerminator<scf::YieldOp>(
-                    whileOp.getAfterBody()->getTerminator(), perm, aftChild,
-                    *rewriter);
-                sortTopologically(whileOp.getAfterBody());
-              }
-
-              // Propagate the correct layout and index-to-program mapping to
-              // the parent.
-
-              WireInfos realigendInfos;
-              for (size_t i = 0; i < parent.wires.size(); ++i) {
-                const auto oldProg = parent.infos.lookupProgram(i);
-                const auto oldHw = parent.layout.getHardwareIndex(oldProg);
-                const auto newProg = befChild.layout.getProgramIndex(oldHw);
-                realigendInfos.map(i, newProg);
-              }
-
-              parent.layout = befChild.layout;
-              parent.infos = std::move(realigendInfos);
-
-              return success();
+              const auto swaps = restore(children[0].layout, parent.layout);
+              insertSWAPs<Mode>(swaps, children[0], stats, rewriter);
+              return parent.layout;
             })
-            .template Case<IfOp>([&](IfOp ifOp) {
-              const std::array bodies{
-                  &ifOp.getThenRegion().getBlocks().front(),
-                  &ifOp.getElseRegion().getBlocks().front(),
-              };
+            .template Case<scf::WhileOp>([&](scf::WhileOp) {
+              // Find (insert) the epilogue SWAP sequence for (into) the after
+              // region using the restore strategy.
 
-              // Construct child bundles for each branch. Particularly, find the
-              // block-argument (forward) or yielded result (backward) for each
-              // result qubit the selected (via indices) iterators point at.
+              const auto swaps = restore(children[1].layout, parent.layout);
+              insertSWAPs<Mode>(swaps, children[1], stats, rewriter);
 
-              SmallVector<size_t> perm(indices.size());
-              std::array children{RoutingBundle{.layout = parent.layout},
-                                  RoutingBundle{.layout = parent.layout}};
-
-              for (size_t i : indices) {
-                const auto prog = parent.infos.lookupProgram(i);
-                const auto res = cast<OpResult>(parent.wires[i].qubit());
-                const auto index = children[0].wires.size();
-
-                OpOperand* qubit = ifOp.getTiedQubit(res);
-                const std::array args{ifOp.getTiedThenBlockArgument(qubit),
-                                      ifOp.getTiedElseBlockArgument(qubit)};
-
-                perm[res.getResultNumber()] =
-                    parent.layout.getHardwareIndex(prog);
-
-                if constexpr (Direction == WireDirection::Forward) {
-                  for (size_t j = 0; j < children.size(); ++j) {
-                    children[j].wires.emplace_back(args[j]);
-                    children[j].infos.map(index, prog);
-                  }
-                } else {
-                  const std::array yields{
-                      ifOp.getTiedThenYieldedValue(args[0])->get(),
-                      ifOp.getTiedElseYieldedValue(args[1])->get()};
-                  for (size_t j = 0; j < children.size(); ++j) {
-                    children[j].wires.emplace_back(yields[j]);
-                    children[j].infos.map(index, prog);
-                  }
-                }
-              }
-
-              // Route each child branch and prepare the wire iterators for
-              // epilogue SWAP insertion, i.e., point each iterator at the final
-              // qubit op (note: might be a measurement) before the yield.
-
-              for (auto& child : children) {
-                if (failed(route<Direction, Mode>(child, stats, rewriter))) {
-                  return failure();
-                }
-
-                if constexpr (Mode == RoutingMode::Hot) {
-                  for_each(child.wires, [](auto& it) { std::advance(it, -2); });
-                }
-              }
-
+              // The scf::YieldOp is the terminator in the before region and
+              // thus determines the final output layout.
+              return children[0].layout;
+            })
+            .template Case<IfOp>([&](IfOp) {
               // Find (insert) the epilogue SWAP sequence for (into) each child
               // branch using the "converge" strategy.
 
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
-
               insertSWAPs<Mode>(fst, children[0], stats, rewriter);
               insertSWAPs<Mode>(snd, children[1], stats, rewriter);
+              return convergedLayout;
+            });
 
-              // Re-order the targets of a yield operation to match the input
-              // order of hardware indices and ensure qubits[i] = yield[i] and
-              // sort topologically to fix any occurring SSA dominance errors.
+    if constexpr (Mode == RoutingMode::Hot) {
 
-              if constexpr (Mode == RoutingMode::Hot) {
+      // Realign terminator values to ensure that i-th input qubit and the i-th
+      // output qubit represent the equivalent hardware qubit. Note: Because
+      // we restore the layout at the end of the scf::ForOp, we don't require
+      // this procedure.
 
-                for (const auto& [child, body] :
-                     llvm::zip_equal(children, bodies)) {
+      TypeSwitch<Operation*>(op)
+          .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+            auto condOp = cast<scf::ConditionOp>(
+                whileOp.getBeforeBody()->getTerminator());
+            realignTerminator<scf::ConditionOp>(condOp, permutation,
+                                                children[0], *rewriter,
+                                                condOp.getCondition());
+            realignTerminator<scf::YieldOp>(
+                whileOp.getAfterBody()->getTerminator(), permutation,
+                children[1], *rewriter);
+          })
+          .template Case<IfOp>([&](IfOp ifOp) {
+            realignTerminator<YieldOp>(
+                ifOp.getThenRegion().front().getTerminator(), permutation,
+                children[0], *rewriter);
+            realignTerminator<YieldOp>(
+                ifOp.getElseRegion().front().getTerminator(), permutation,
+                children[1], *rewriter);
+          });
 
-                  assert(all_of(child.wires, [&](auto& it) {
-                    return isa<qco::YieldOp>(std::next(it).operation());
-                  }));
+      // Sort topologically to fix any occurring SSA dominance errors.
 
-                  realignTerminator<YieldOp>(body->getTerminator(), perm, child,
-                                             *rewriter);
+      for (Region& region : op->getRegions()) {
+        assert(region.hasOneBlock());
+        sortTopologically(&region.front());
+      }
+    }
 
-                  sortTopologically(body);
-                }
-              }
+    // If the operation is a scf::ForOp, where the parent.layout = child.layout,
+    // we are done. Otherwise, propagate the final layout and index-to-program
+    // mapping to the parent.
 
-              // Propagate the correct layout and index-to-program mapping to
-              // the parent.
+    if (!isa<scf::ForOp>(op)) {
 
-              WireInfos realigendInfos;
-              for (size_t i = 0; i < parent.wires.size(); ++i) {
-                const auto oldProg = parent.infos.lookupProgram(i);
-                const auto oldHw = parent.layout.getHardwareIndex(oldProg);
-                const auto newProg = convergedLayout.getProgramIndex(oldHw);
-                realigendInfos.map(i, newProg);
-              }
+      WireInfos realigendInfos;
+      for (size_t i = 0; i < parent.wires.size(); ++i) {
+        const auto oldProg = parent.infos.lookupProgram(i);
+        const auto oldHw = parent.layout.getHardwareIndex(oldProg);
+        const auto newProg = exit.getProgramIndex(oldHw);
+        realigendInfos.insertOrUpdate(i, newProg);
+      }
 
-              parent.layout = convergedLayout;
-              parent.infos = std::move(realigendInfos);
-              return success();
-            })
-            .Default([](Operation*) { return failure(); });
+      parent.layout = exit;
+      parent.infos = std::move(realigendInfos);
+    }
 
     // Finally, move past the operation with nested regions by
     // incrementing the respective global wires.
@@ -1441,7 +1387,7 @@ private:
       std::advance(parent.wires[i], WireTraversalTraits<Direction>::stride());
     });
 
-    return res;
+    return success();
   }
 
   /// Iterates over a dynamically computed window of layers and uses A* search
