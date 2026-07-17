@@ -110,7 +110,8 @@ bool HybridState::operator==(const HybridState& that) const {
 
   return std::ranges::all_of(doubleValues, [&](const auto& p) {
     auto it = that.doubleValues.find(p.first);
-    return it != that.doubleValues.end() && std::fabs(it->second) <= 1e-4;
+    return it != that.doubleValues.end() &&
+           std::fabs(it->second - p.second) <= 1e-4;
   });
 }
 

@@ -812,6 +812,24 @@ TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValueOnOneQubit) {
   ASSERT_TRUE(result.at(i1));
 }
 
+TEST_F(UnionTablePropertiesTest, FindInverseClassicalDoubleValueOnOneQubit) {
+  ut.propagateGate(xOp, q0, q4);
+  ut.propagateDoubleAlloc(i1, 0.0);
+  const llvm::DenseMap<mlir::Value, bool> result =
+      ut.getValueThatIsEquivalentToQubit(v4);
+  ASSERT_FALSE(result.empty());
+  ASSERT_FALSE(result.at(i1));
+}
+
+TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalDoubleValueOnOneQubit) {
+  ut.propagateGate(xOp, q0, q4);
+  ut.propagateDoubleAlloc(i1, 10.0);
+  const llvm::DenseMap<mlir::Value, bool> result =
+      ut.getValueThatIsEquivalentToQubit(v4);
+  ASSERT_FALSE(result.empty());
+  ASSERT_TRUE(result.at(i1));
+}
+
 TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValue) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5, q4, q6);

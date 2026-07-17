@@ -578,4 +578,138 @@ TEST_F(HybridStateTest, doubleOpTwoValueOperation) {
               testing::AnyOf(testing::HasSubstr("doubleValue0 = -3.25"),
                              testing::HasSubstr("doubleValue1 = -3.25")));
 }
+
+TEST_F(HybridStateTest, isDoubleValueTrue) {
+  auto hState = HybridState(fourQubits, 3);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.5);
+  const auto i2 = programBuilder.getF64FloatAttr(0.0);
+
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState.addDoubleValue(val1, -2.5);
+  hState.addDoubleValue(val2, 0.0);
+
+  EXPECT_TRUE(hState.isValueTrue(val1));
+  EXPECT_FALSE(hState.isValueTrue(val2));
+}
+
+TEST_F(HybridStateTest, hybridStatesEqual) {
+  auto hState1 = HybridState(vectorZeroTwoFour, 3);
+  auto hState2 = HybridState(vectorZeroTwoFour, 3);
+  const auto i0 = programBuilder.getI64IntegerAttr(0);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.5);
+  const auto i2 = programBuilder.getF64FloatAttr(0.0);
+
+  const mlir::Value val0 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i0);
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState1.addIntegerValue(val0, 9);
+  hState1.addDoubleValue(val1, -2.5);
+  hState1.addDoubleValue(val2, 0.0);
+  hState1.propagateGate(hOp.getOperation(), vectorFour);
+  hState1.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  hState2.addIntegerValue(val0, 9);
+  hState2.addDoubleValue(val1, -2.5);
+  hState2.addDoubleValue(val2, 0.0);
+  hState2.propagateGate(hOp.getOperation(), vectorFour);
+  hState2.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  EXPECT_TRUE(hState1 == hState2);
+}
+
+TEST_F(HybridStateTest, hybridStatesNotEqualQuantumStates) {
+  auto hState1 = HybridState(vectorZeroTwoFour, 3);
+  auto hState2 = HybridState(vectorZeroTwoFour, 3);
+  const auto i0 = programBuilder.getI64IntegerAttr(0);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.5);
+  const auto i2 = programBuilder.getF64FloatAttr(0.0);
+
+  const mlir::Value val0 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i0);
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState1.addIntegerValue(val0, 9);
+  hState1.addDoubleValue(val1, -2.5);
+  hState1.addDoubleValue(val2, 0.0);
+  hState1.propagateGate(hOp.getOperation(), vectorFour);
+  hState1.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  hState2.addIntegerValue(val0, 9);
+  hState2.addDoubleValue(val1, -2.5);
+  hState2.addDoubleValue(val2, 0.0);
+  hState2.propagateGate(hOp.getOperation(), vectorFour);
+  hState2.propagateGate(xOp.getOperation(), vectorTwo);
+
+  EXPECT_TRUE(hState1 != hState2);
+}
+
+TEST_F(HybridStateTest, hybridStatesNotEqualInteger) {
+  auto hState1 = HybridState(vectorZeroTwoFour, 3);
+  auto hState2 = HybridState(vectorZeroTwoFour, 3);
+  const auto i0 = programBuilder.getI64IntegerAttr(0);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.5);
+  const auto i2 = programBuilder.getF64FloatAttr(0.0);
+
+  const mlir::Value val0 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i0);
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState1.addIntegerValue(val0, 9);
+  hState1.addDoubleValue(val1, -2.5);
+  hState1.addDoubleValue(val2, 0.0);
+  hState1.propagateGate(hOp.getOperation(), vectorFour);
+  hState1.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  hState2.addIntegerValue(val0, 10);
+  hState2.addDoubleValue(val1, -2.5);
+  hState2.addDoubleValue(val2, 0.0);
+  hState2.propagateGate(hOp.getOperation(), vectorFour);
+  hState2.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  EXPECT_TRUE(hState1 != hState2);
+}
+
+TEST_F(HybridStateTest, hybridStatesNotEqualDouble) {
+  auto hState1 = HybridState(vectorZeroTwoFour, 3);
+  auto hState2 = HybridState(vectorZeroTwoFour, 3);
+  const auto i0 = programBuilder.getI64IntegerAttr(0);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.5);
+  const auto i2 = programBuilder.getF64FloatAttr(0.0);
+
+  const mlir::Value val0 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i0);
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState1.addIntegerValue(val0, 9);
+  hState1.addDoubleValue(val1, -2.5);
+  hState1.addDoubleValue(val2, 0.0);
+  hState1.propagateGate(hOp.getOperation(), vectorFour);
+  hState1.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  hState2.addIntegerValue(val0, 9);
+  hState2.addDoubleValue(val1, -2.5);
+  hState2.addDoubleValue(val2, 0.5);
+  hState2.propagateGate(hOp.getOperation(), vectorFour);
+  hState2.propagateGate(xOp.getOperation(), vectorTwo, vectorFour);
+
+  EXPECT_TRUE(hState1 != hState2);
+}
+
 } // namespace
