@@ -394,6 +394,50 @@ TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionals) {
 }
 
 /**
+ * @brief Test: This test checks if classical integer and float operations are
+ * applied correctly.
+ */
+TEST_F(QCOConstantPropagationTest, testApplyClassicalOperations) {
+  auto q = programBuilder.allocQubitRegister(1);
+  const auto floatSeven = programBuilder.floatConstant(7.2);
+  const auto floatZero = programBuilder.floatConstant(0.0);
+  auto floatRes = arith::MulFOp::create(programBuilder, floatSeven.getType(),
+                                        floatSeven, floatZero)
+                      .getResult();
+  const auto intTwo = programBuilder.intConstant(2);
+  const auto intTen = programBuilder.intConstant(10);
+  auto intRes =
+      arith::AddIOp::create(programBuilder, intTwo.getType(), intTwo, intTen)
+          .getResult();
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.qcoIf(intRes, {q[0]}, [&](const ValueRange args) {
+    const auto q0 = programBuilder.t(args[0]);
+    return SmallVector{q0};
+  });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  const auto floatSevenRef = referenceBuilder.floatConstant(7.2);
+  const auto floatZeroRef = referenceBuilder.floatConstant(0.0);
+  arith::MulFOp::create(referenceBuilder, floatSevenRef.getType(),
+                        floatSevenRef, floatZeroRef)
+      .getResult();
+  const auto intTwoRef = referenceBuilder.intConstant(2);
+  const auto intTenRef = referenceBuilder.intConstant(10);
+  arith::AddIOp::create(referenceBuilder, intTwoRef.getType(), intTwoRef,
+                        intTenRef)
+      .getResult();
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  referenceBuilder.t(qRef[0]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: This test checks that conditionals are not changed if we cannot
  * tell the bits value.
  */
