@@ -183,10 +183,10 @@ getQubitMappingOfGates(mlir::Operation* gate, const std::span<double>& params) {
       .Case<mlir::qco::RZXOp>([&](auto) {
         const double c = cos(0.5 * params[0]);
         const double s = sin(0.5 * params[0]);
-        return ResultMap{{{0, {{0, Complex(c, 0)}, {1, Complex(0, -s)}}},
-                          {1, {{0, Complex(0, -s)}, {1, Complex(c, 0)}}},
-                          {2, {{2, Complex(c, 0)}, {3, Complex(0, s)}}},
-                          {3, {{2, Complex(0, s)}, {3, Complex(c, 0)}}}}};
+        return ResultMap{{{0, {{0, Complex(c, 0)}, {2, Complex(0, -s)}}},
+                          {1, {{1, Complex(c, 0)}, {3, Complex(0, s)}}},
+                          {2, {{0, Complex(0, -s)}, {2, Complex(c, 0)}}},
+                          {3, {{1, Complex(0, s)}, {3, Complex(c, 0)}}}}};
       })
       .Case<mlir::qco::RZZOp>([&](auto) {
         const double halfParam = 0.5 * params[0];
