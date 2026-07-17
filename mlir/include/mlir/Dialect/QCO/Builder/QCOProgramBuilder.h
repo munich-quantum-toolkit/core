@@ -228,48 +228,22 @@ public:
   QubitRegister allocQubitRegister(int64_t size);
 
   /**
-   * @brief A small structure representing a single classical bit within a
-   * classical register.
-   */
-  struct Bit {
-    /// Name of the register containing this bit
-    std::string registerName;
-    /// Size of the register containing this bit
-    int64_t registerSize{};
-    /// Index of this bit within the register
-    int64_t registerIndex{};
-  };
-
-  /**
-   * @brief A small structure representing a classical bit register.
-   */
-  struct ClassicalRegister {
-    /// Name of the classical register
-    std::string name;
-    /// Size of the classical register
-    int64_t size;
-
-    /**
-     * @brief Access a specific bit in the classical register
-     * @param index The index of the bit to access (must be less than size)
-     * @return A Bit structure representing the specified bit
-     */
-    Bit operator[](int64_t index) const;
-  };
-
-  /**
    * @brief Allocate a classical bit register
-   * @param size Number of bits
-   * @param name Register name (default: "c")
-   * @return A `ClassicalRegister` structure
+   * @param size Number of bits (must be positive)
+   * @return The MemRef value representing the classical register
+   *
+   * @details The register is backed by a `memref` of `i1` elements. It is not
+   * deallocated automatically so that it can be returned from the program.
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(3, "c");
+   * auto c = builder.allocClassicalBitRegister(3);
+   * ```
+   * ```mlir
+   * %c = memref.alloc() : memref<3xi1>
    * ```
    */
-  [[nodiscard]] ClassicalRegister
-  allocClassicalBitRegister(int64_t size, std::string name = "c") const;
+  [[nodiscard]] Value allocClassicalBitRegister(int64_t size);
 
   //===--------------------------------------------------------------------===//
   // QTensor operations
@@ -416,21 +390,27 @@ public:
   std::pair<Value, Value> measure(Value qubit);
 
   /**
-   * @brief Measure a qubit and record the result in a bit of a register
+   * @brief Measure a qubit and store the result in a classical bit register
+   *
+   * @details Measures the qubit and stores the classical result in the given
+   * classical register at the given index, in addition to returning it.
    *
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @param bit The classical bit to record the result
+   * @param classicalRegister The MemRef representing the classical register
+   * @param index The index within the register to store the result
    * @return Pair of (output_qubit, measurement_result)
    *
    * @par Example:
    * ```c++
-   * q0 = builder.measure(q0, c[0]);
+   * auto [q0_out, r0] = builder.measure(q0, c, 0);
    * ```
    * ```mlir
-   * %q0_out, %r0 = qco.measure("c", 3, 0) %q0 : !qco.qubit
+   * %q0_out, %r0 = qco.measure %q0 : !qco.qubit
+   * memref.store %r0, %c[%c0] : memref<3xi1>
    * ```
    */
-  std::pair<Value, Value> measure(Value qubit, const Bit& bit);
+  std::pair<Value, Value> measure(Value qubit, Value classicalRegister,
+                                  const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1468,6 +1448,25 @@ public:
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   /**
+   * @brief Construct an scf.if operation conditioned on a classical bit
+   *
+   * @details Loads the classical bit from the given classical register at the
+   * given index and uses it as the condition of the if operation.
+   *
+   * @param classicalRegister The MemRef representing the classical register
+   * @param index The index within the register to load the condition from
+   * @param initArgs Initial arguments threaded through the if operation
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return ValueRange of the results
+   */
+  ValueRange
+  qcoIf(Value classicalRegister, const std::variant<int64_t, Value>& index,
+        ValueRange initArgs,
+        function_ref<SmallVector<Value>(ValueRange)> thenBody,
+        function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
+
+  /**
    * @brief Construct an scf.for operation
    *
    * @details
@@ -1567,6 +1566,21 @@ public:
    * ```
    */
   QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
+
+  /**
+   * @brief Construct an scf.condition operation conditioned on a classical bit
+   *
+   * @details Loads the classical bit from the given classical register at the
+   * given index and uses it as the condition of the condition operation.
+   *
+   * @param classicalRegister The MemRef representing the classical register
+   * @param index The index within the register to load the condition from
+   * @param yieldedValues ValueRange of the yielded values
+   * @return Reference to this builder for method chaining
+   */
+  QCOProgramBuilder& scfCondition(Value classicalRegister,
+                                  const std::variant<int64_t, Value>& index,
+                                  ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
   // Finalization

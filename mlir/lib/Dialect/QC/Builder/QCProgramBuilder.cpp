@@ -87,13 +87,6 @@ Value QCProgramBuilder::intConstant(const int64_t value) {
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
-Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
-  if (index >= qubits.size()) {
-    llvm::reportFatalUsageError("Qubit index out of bounds");
-  }
-  return qubits[index];
-}
-
 Value QCProgramBuilder::allocQubit() {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
@@ -116,6 +109,13 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
   return staticOp.getQubit();
 }
 
+Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
+  if (index >= qubits.size()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return qubits[index];
+}
+
 QCProgramBuilder::QubitRegister
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
@@ -127,7 +127,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
   auto memref = memref::AllocOp::create(*this, memrefType);
-  allocatedMemrefs.insert(memref);
+  allocatedQregs.insert(memref);
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
@@ -141,17 +141,6 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
-}
-
-QCProgramBuilder::Bit
-QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + name +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerName = name, .registerSize = size, .registerIndex = index};
 }
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
@@ -175,16 +164,18 @@ Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
   return loadOp.getResult();
 }
 
-QCProgramBuilder::ClassicalRegister
-QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                            std::string name) const {
+Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = std::move(name), .size = size};
+  // Classical registers are backed by a memref of i1 elements. They are not
+  // tracked for automatic deallocation so that they can be returned from the
+  // program.
+  auto memrefType = MemRefType::get({size}, getI1Type());
+  return memref::AllocOp::create(*this, memrefType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -197,14 +188,14 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-Value QCProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QCProgramBuilder::measure(Value qubit, Value classicalRegister,
+                                const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  auto nameAttr = getStringAttr(bit.registerName);
-  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  auto measureOp =
-      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  return measureOp.getResult();
+  auto measureOp = MeasureOp::create(*this, qubit);
+  auto result = measureOp.getResult();
+  auto idx = variantToValue(*this, getLoc(), index);
+  memref::StoreOp::create(*this, result, classicalRegister, idx);
+  return result;
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
@@ -625,10 +616,32 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::scfIf(Value classicalRegister,
+                        const std::variant<int64_t, Value>& index,
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
+  checkFinalized();
+  auto idx = variantToValue(*this, getLoc(), index);
+  auto condition =
+      memref::LoadOp::create(*this, classicalRegister, idx).getResult();
+  return scfIf(condition, thenBody, elseBody);
+}
+
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   checkFinalized();
   scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfCondition(Value classicalRegister,
+                               const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  auto idx = variantToValue(*this, getLoc(), index);
+  auto condition =
+      memref::LoadOp::create(*this, classicalRegister, idx).getResult();
+  return scfCondition(condition);
 }
 
 //===----------------------------------------------------------------------===//
@@ -722,10 +735,10 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   }
   allocatedQubits.clear();
 
-  for (auto memref : allocatedMemrefs) {
+  for (auto memref : allocatedQregs) {
     memref::DeallocOp::create(*this, memref);
   }
-  allocatedMemrefs.clear();
+  allocatedQregs.clear();
 
   // Add return statement with the given return values to the main function
   func::ReturnOp::create(*this, returnValues);

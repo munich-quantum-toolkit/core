@@ -176,38 +176,38 @@ SmallVector<Value> mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
 
 Value singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(1);
-  const auto outcome = b.measure(q[0], c[0]);
-  return outcome;
+  auto c = b.allocClassicalBitRegister(1);
+  b.measure(q[0], c, 0);
+  return c;
 }
 
 Value repeatedMeasurementToSameBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
-  auto c3 = b.measure(q[0], c[0]);
-  return c3;
+  auto c = b.allocClassicalBitRegister(1);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
+  return c;
 }
 
 SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(3);
-  auto c1 = b.measure(q[0], c[0]);
-  auto c2 = b.measure(q[0], c[1]);
-  auto c3 = b.measure(q[0], c[2]);
-  return {c1, c2, c3};
+  auto c = b.allocClassicalBitRegister(3);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 1);
+  b.measure(q[0], c, 2);
+  return {c};
 }
 
 SmallVector<Value>
 multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  const auto b1 = b.measure(q[0], c0[0]);
-  const auto b2 = b.measure(q[1], c1[0]);
-  const auto b3 = b.measure(q[2], c1[1]);
-  return {b1, b2, b3};
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c0, 0);
+  b.measure(q[1], c1, 0);
+  b.measure(q[2], c1, 1);
+  return {c0, c1};
 }
 
 Value measurementWithoutRegisters(QCProgramBuilder& b) {
