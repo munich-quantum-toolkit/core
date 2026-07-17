@@ -21,7 +21,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -37,7 +36,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
