@@ -1353,4 +1353,131 @@ def IfOp
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// Index Switch Operation
+//===----------------------------------------------------------------------===//
+
+def IndexSwitchOp
+    : QCOOp<
+          "index_switch",
+          traits = [DeclareOpInterfaceMethods<
+                        RegionBranchOpInterface, ["getRegionInvocationBounds",
+                                                  "getEntrySuccessorRegions"]>,
+                    SingleBlockImplicitTerminator<"YieldOp">,
+                    Pure,
+                    RecursiveMemoryEffects]> {
+
+  let summary = "Index-based switch operation for linear (qubit) types";
+  let description = [{
+        The `qco.index_switch` operation provides multi-way branching based on an index
+        value, analogous to `scf.index_switch`. In addition to the index, the operation
+        takes a variadic number of qubits and qtensors as inputs that are required in all
+        case branches. These values are passed down to each case region as block arguments.
+        The number of results and the type of the results must be equivalent to the number
+        and types of the input qubit and qtensor values.
+
+        The operation has one region for each case value plus a default region. Each region
+        must terminate with a `qco.yield` operation that yields values matching the operation's
+        result types.
+
+        The case values are stored as a `DenseI64ArrayAttr`, matching the SCF dialect's
+        `scf.index_switch` operation for seamless interoperability.
+
+        Example:
+        ```mlir
+        %result = qco.index_switch %index : index -> !qco.qubit
+        case 0 args(%arg0 = %q0) {
+          %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q1 : !qco.qubit
+        }
+        case 1 args(%arg0 = %q0) {
+          %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q1 : !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        ```
+    }];
+
+  let arguments = (ins Index:$arg, DenseI64ArrayAttr:$cases,
+                         Variadic<LinearType>:$targets);
+  let results = (outs Variadic<LinearType>:$results);
+  let regions = (region SizedRegion<1>:$defaultRegion,
+                        VariadicRegion<SizedRegion<1>>:$caseRegions);
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+        /// Return the number of case regions
+        size_t getNumCases();
+
+        /// Return the block for a specific case
+        Block* getCaseBlock(size_t index);
+
+        /// Return the yield operation for a specific case
+        YieldOp getCaseYield(size_t index);
+
+        /// Return the default block
+        Block* getDefaultBlock();
+
+        /// Return the default yield operation
+        YieldOp getDefaultYield();
+
+        /// Return the result that corresponds to the given target operand,
+        /// or "empty" OpResult on failure.
+        OpResult getTiedResult(OpOperand* target);
+        
+        /// Return the target operand that corresponds to the given result,
+        /// or `nullptr` on failure.
+        OpOperand* getTiedTarget(OpResult result);
+
+        /// Return the argument that corresponds to the given target operand
+        /// for the i-th case, or "empty" BlockArgument on failure.
+        BlockArgument getTiedCaseBlockArgument(OpOperand* target, size_t i);
+        
+        /// Return the yielded value that corresponds to the given argument
+        /// for the i-th case, or `nullptr` on failure.
+        OpOperand* getTiedCaseYieldedValue(BlockArgument bbArg, size_t i);
+
+        /// Return the argument that corresponds to the given target operand
+        /// for the default case, or "empty" BlockArgument on failure.
+        BlockArgument getTiedDefaultBlockArgument(OpOperand* target);
+        
+        /// Return the yielded value that corresponds to the given argument
+        /// for the default case, or `nullptr` on failure.
+        OpOperand* getTiedDefaultYieldedValue(BlockArgument bbArg);
+
+        /// Append the specified additional linear operands: replace this
+        /// index_switch with a new index_switch that has the additional linear operands.
+        /// The operands can be of qubit or qtensor type.
+        /// The branch bodies of this index_switch are moved over to the new index_switch.
+        /// The newly added qubits are yielded from each branch.
+        IndexSwitchOp replaceWithAdditionalTargets(RewriterBase& rewriter, ValueRange addons);
+    }];
+
+  let extraClassDefinition = [{
+        size_t $cppClass::getNumCases() {
+          return getCaseRegions().size();
+        }
+        
+        Block* $cppClass::getCaseBlock(size_t index) {
+          return &getCaseRegions()[index].front();
+        }
+        
+        YieldOp $cppClass::getCaseYield(size_t index) {
+          return cast<YieldOp>(getCaseBlock(index)->getTerminator());
+        }
+        
+        Block* $cppClass::getDefaultBlock() {
+          return &getDefaultRegion().front();
+        }
+        
+        YieldOp $cppClass::getDefaultYield() {
+          return cast<YieldOp>(getDefaultBlock()->getTerminator());
+        }
+    }];
+
+  let hasVerifier = 1;
+}
+
 #endif // MLIR_DIALECT_QCO_IR_QCOOPS_TD

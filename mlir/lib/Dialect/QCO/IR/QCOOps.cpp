@@ -169,6 +169,157 @@ void IfOp::print(OpAsmPrinter& p) {
   p.printOptionalAttrDict((*this)->getAttrs());
 }
 
+ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
+                                 ::mlir::OperationState& result) {
+  auto& builder = parser.getBuilder();
+  OpAsmParser::UnresolvedOperand index;
+
+  // Parse the index operand
+  if (parser.parseOperand(index) ||
+      parser.resolveOperand(index, builder.getIndexType(), result.operands)) {
+    return failure();
+  }
+
+  // Parse optional result type list
+  if (parser.parseOptionalArrowTypeList(result.types)) {
+    return failure();
+  }
+
+  // Parse optional attributes
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
+
+  // Parse the case regions and default region
+  SmallVector<int64_t> caseValues;
+  SmallVector<OpAsmParser::Argument> regionArgs;
+  SmallVector<OpAsmParser::UnresolvedOperand> regionOperands;
+
+  // Parse case regions
+  while (succeeded(parser.parseOptionalKeyword("case"))) {
+    int64_t caseValue = 0;
+    if (parser.parseInteger(caseValue)) {
+      return failure();
+    }
+
+    caseValues.push_back(caseValue);
+
+    if (parser.parseKeyword("args")) {
+      return failure();
+    }
+
+    regionArgs.clear();
+    regionOperands.clear();
+
+    // Parse assignment list for this case
+    if (parser.parseAssignmentList(regionArgs, regionOperands)) {
+      return failure();
+    }
+
+    // Set argument types
+    for (auto [iterArg, type] : llvm::zip_equal(regionArgs, result.types)) {
+      iterArg.type = type;
+    }
+
+    // Add case region
+    Region* caseRegion = result.addRegion();
+    if (parser.parseRegion(*caseRegion, regionArgs)) {
+      return failure();
+    }
+  }
+
+  // Parse default region
+  if (parser.parseKeyword("default")) {
+    return failure();
+  }
+
+  if (parser.parseKeyword("args")) {
+    return failure();
+  }
+
+  regionArgs.clear();
+  regionOperands.clear();
+
+  // Parse assignment list for default
+  if (parser.parseAssignmentList(regionArgs, regionOperands)) {
+    return failure();
+  }
+
+  // Set argument types
+  for (auto [iterArg, type] : llvm::zip_equal(regionArgs, result.types)) {
+    iterArg.type = type;
+  }
+
+  // Add default region
+  Region* defaultRegion = result.addRegion();
+  if (parser.parseRegion(*defaultRegion, regionArgs)) {
+    return failure();
+  }
+
+  // Set the cases attribute
+  auto casesAttr = DenseI64ArrayAttr::get(parser.getContext(), caseValues);
+  result.addAttribute("cases", casesAttr);
+
+  return success();
+}
+
+void IndexSwitchOp::print(OpAsmPrinter& p) {
+  p << " ";
+  p.printOperand(getArg());
+
+  // Print result types if present
+  if (!getResults().empty()) {
+    p << " -> ";
+    llvm::interleaveComma(getResultTypes(), p);
+  }
+
+  // Print attributes (excluding cases which we handle specially)
+  p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
+                                     /*elidedAttrs=*/{"cases"});
+
+  // Print case regions
+  for (size_t i = 0; i < getNumCases(); ++i) {
+    p << "\ncase ";
+    p << getCases()[i];
+    p << " args(";
+
+    auto& region = getCaseRegions()[i];
+    auto& block = region.front();
+
+    // Print block arguments with their corresponding target operands
+    for (size_t j = 0; j < block.getNumArguments(); ++j) {
+      if (j > 0)
+        p << ", ";
+      p.printOperand(block.getArgument(j));
+      p << " = ";
+      p.printOperand(getTargets()[j]);
+    }
+    p << ") {";
+    p.printRegion(region, /*printEntryBlockArgs=*/false,
+                  /*printBlockTerminators=*/true);
+    p << "}";
+  }
+
+  // Print default region
+  p << "\ndefault args(";
+  auto& defaultRegion = getDefaultRegion();
+  auto& defaultBlock = defaultRegion.front();
+
+  // Print block arguments with their corresponding target operands
+  for (size_t j = 0; j < defaultBlock.getNumArguments(); ++j) {
+    if (j > 0) {
+      p << ", ";
+    }
+    p.printOperand(defaultBlock.getArgument(j));
+    p << " = ";
+    p.printOperand(getTargets()[j]);
+  }
+  p << ") {";
+  p.printRegion(defaultRegion, /*printEntryBlockArgs=*/false,
+                /*printBlockTerminators=*/true);
+  p << "}";
+}
+
 //===----------------------------------------------------------------------===//
 // Dialect
 //===----------------------------------------------------------------------===//
