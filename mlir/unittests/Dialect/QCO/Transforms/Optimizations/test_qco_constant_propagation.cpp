@@ -401,9 +401,9 @@ TEST_F(QCOConstantPropagationTest, testApplyClassicalOperations) {
   auto q = programBuilder.allocQubitRegister(1);
   const auto floatSeven = programBuilder.floatConstant(7.2);
   const auto floatZero = programBuilder.floatConstant(0.0);
-  auto floatRes = arith::MulFOp::create(programBuilder, floatSeven.getType(),
-                                        floatSeven, floatZero)
-                      .getResult();
+  arith::MulFOp::create(programBuilder, floatSeven.getType(), floatSeven,
+                        floatZero)
+      .getResult();
   const auto intTwo = programBuilder.intConstant(2);
   const auto intTen = programBuilder.intConstant(10);
   auto intRes =
@@ -546,6 +546,44 @@ TEST_F(QCOConstantPropagationTest, testEquivalentClassicalAndQuantumControl) {
   referenceBuilder.x(qRef01);
   referenceBuilder.y(qRef[1]);
   referenceBuilder.h(qRange21[0]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that one of multiple quantum controls are
+ * replaced by a classical control.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveSomeQuantumControl) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.h(q[1]);
+  auto [q0, b0] = programBuilder.measure(q[0]);
+  auto [q01, q2] =
+      programBuilder.ctrl({q0, q[1]}, {q[2]}, [&](const ValueRange target) {
+        return SmallVector{programBuilder.x(target[0])};
+      });
+  programBuilder.x(q01[0]);
+  programBuilder.y(q01[1]);
+  programBuilder.z(q2[0]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.h(qRef[1]);
+  auto [qRef01, bRef0] = referenceBuilder.measure(qRef[0]);
+  const auto qRangeRef = referenceBuilder.qcoIf(
+      bRef0, {qRef[1], qRef[2]}, [&](const ValueRange args) {
+        const auto [qi0, qi1] = referenceBuilder.cx(args[0], args[1]);
+        return SmallVector{qi0, qi1};
+      });
+  referenceBuilder.x(qRef01);
+  referenceBuilder.y(qRangeRef[0]);
+  referenceBuilder.z(qRangeRef[1]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
