@@ -208,10 +208,9 @@ protected:
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);
-    patterns.add<LiftMeasurementsAboveControlsPattern>(patterns.getContext());
-    patterns.add<LiftMeasurementsAboveInvertingGatesPattern>(
-        patterns.getContext());
-    patterns.add<LiftMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
+    patterns.add<LiftMeasurementsAboveControlsPattern,
+                 LiftMeasurementsAboveInvertingGatesPattern,
+                 LiftMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
 
     // Apply patterns in an iterative and greedy manner.
     if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
