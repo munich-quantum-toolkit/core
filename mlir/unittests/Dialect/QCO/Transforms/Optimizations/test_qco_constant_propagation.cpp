@@ -846,6 +846,7 @@ TEST_F(QCOConstantPropagationTest, testMoveMeasurementToFront) {
 TEST_F(QCOConstantPropagationTest, testMoveTwoMeasurementToFront) {
   auto q = programBuilder.allocQubitRegister(4);
   q[0] = programBuilder.h(q[0]);
+  q[2] = programBuilder.h(q[2]);
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
   auto [q2, q3] = programBuilder.cx(q[2], q[3]);
   programBuilder.h(q3);
@@ -855,6 +856,7 @@ TEST_F(QCOConstantPropagationTest, testMoveTwoMeasurementToFront) {
 
   auto qRef = referenceBuilder.allocQubitRegister(4);
   qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[2] = referenceBuilder.h(qRef[2]);
   auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
   referenceBuilder.measure(qRef0);
   referenceBuilder.measure(qRef1);
