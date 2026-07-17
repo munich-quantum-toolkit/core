@@ -127,18 +127,6 @@ public:
     });
   }
 
-  // Multi-controlled X of arbitrary width, left as a single CtrlOp for the
-  // greedy driver to decompose recursively (used by the v24 phase recursion).
-  void mcx(ArrayRef<std::size_t> controls, std::size_t target) {
-    if (controls.size() == 1) {
-      cx(controls[0], target);
-      return;
-    }
-    emitCtrl(controls, target, [](OpBuilder& builder, Location loc, Value arg) {
-      return XOp::create(builder, loc, arg).getOutputQubit(0);
-    });
-  }
-
   void emitThreeControlledX(std::size_t c0, std::size_t c1, std::size_t c2,
                             std::size_t target) {
     emitCtrl({c0, c1, c2}, target,
@@ -715,55 +703,19 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
 // Multi-controlled phase synthesis
 //===----------------------------------------------------------------------===//
 
-// Number of controls at which the linear-depth SP22 synthesis becomes more
-// CX-efficient than the recursive v24 synthesis: v24 uses fewer CX gates for
-// two to four controls, SP22 for five or more.
+// Number of controls at which SP22 becomes more CX-efficient than Qiskit's
+// mcrz-based v24 (v24 for 2..4, SP22 for >= 5).
 constexpr std::size_t K_MCP_SP22_MIN_CONTROLS = 5;
 
-// Recursive multi-controlled phase synthesis (referred to as "v24"), using the
-// textbook cp + mcx recursion (see Barenco et al., "Elementary gates for
-// quantum computation", Phys. Rev. A 52, 3457 (1995)).
-// Wires: controls 0..numControls-1, target numControls.
-static void emitMcpV24(GateEmitter& emitter, double phi,
-                       std::size_t numControls) {
-  if (numControls == 1) {
-    emitter.cp(0, 1, phi);
-    return;
-  }
-
-  const std::size_t lastControl = numControls - 1;
-  const std::size_t target = numControls;
-
-  SmallVector<std::size_t, 16> innerControls;
-  innerControls.reserve(lastControl);
-  for (std::size_t c = 0; c < lastControl; ++c) {
-    innerControls.push_back(c);
-  }
-
-  emitter.cp(lastControl, target, phi / 2.0);
-  emitter.mcx(innerControls, lastControl);
-  emitter.cp(lastControl, target, -phi / 2.0);
-  emitter.mcx(innerControls, lastControl);
-
-  // Recurse on the reduced control set with the same target. Remap so the
-  // sub-emitter's target index (numControls - 1) refers to the real target.
-  SmallVector<std::size_t, 16> recurseMap(innerControls.begin(),
-                                          innerControls.end());
-  recurseMap.push_back(target);
-  emitter.compose(recurseMap, [&](GateEmitter& sub) {
-    emitMcpV24(sub, phi / 2.0, numControls - 1);
-  });
-}
-
-/// One of the four ordered passes of the SP22 linear-depth multi-controlled
-/// phase synthesis.
+/// Qiskit-style "v24" multi-controlled phase helpers.
 ///
-/// Implements the multi-controlled phase construction of A. J. da Silva and
-/// D. K. Park, "Linear-depth quantum circuits for multiqubit controlled gates",
-/// Phys. Rev. A 106, 042602 (2022).
+/// `emitMcrz` is the RZ special case of `_mcsu2_real_diagonal` (Vale et al.,
+/// arXiv:2302.06377), borrowing dirty ancillae from unused controls.
+/// `emitMcpV24` is the peel-control `mcrz` loop with halved angles and a final
+/// `p` (wires: controls 0..numControls-1, target numControls).
 ///
-/// @note Adapted from the `MCPhaseGate` synthesis in the IBM Qiskit framework.
-///       (C) Copyright IBM 2026
+/// @note Adapted from `MCPhaseGate._define` and `_mcsu2_real_diagonal` in the
+///       IBM Qiskit framework. (C) Copyright IBM 2017, 2018, 2024.
 ///
 ///       This code is licensed under the Apache License, Version 2.0. You may
 ///       obtain a copy of this license in the LICENSE.txt file in the root
@@ -773,6 +725,84 @@ static void emitMcpV24(GateEmitter& emitter, double phi,
 ///       Any modifications or derivative works of this code must retain this
 ///       copyright notice, and modified files need to carry a notice
 ///       indicating that they have been altered from the originals.
+static void emitMcrz(GateEmitter& emitter, double lam,
+                     ArrayRef<std::size_t> controls, std::size_t target) {
+  if (controls.size() == 1) {
+    emitter.crz(controls[0], target, lam);
+    return;
+  }
+
+  const std::size_t numControls = controls.size();
+  const std::size_t k1 = (numControls + 1) / 2; // ceil
+  const std::size_t k2 = numControls / 2;       // floor
+  // Dirty-ancilla count for synthMcxNDirtyI15: 0 for k <= 3, else k - 2.
+  const std::size_t a1 = k1 <= 3 ? 0 : k1 - 2;
+  const std::size_t a2 = k2 <= 3 ? 0 : k2 - 2;
+  // RZ(-lam/4) ≡ P(-lam/4) up to a global phase.
+  const double sAngle = -lam / 4.0;
+
+  const auto applyDirtyMcx = [&](ArrayRef<std::size_t> mcxControls,
+                                 ArrayRef<std::size_t> ancillae) {
+    SmallVector<std::size_t, 16> map;
+    map.reserve(mcxControls.size() + 1 + ancillae.size());
+    map.append(mcxControls.begin(), mcxControls.end());
+    map.push_back(target);
+    map.append(ancillae.begin(), ancillae.end());
+    emitter.compose(map, [&](GateEmitter& sub) {
+      synthMcxNDirtyI15(sub, mcxControls.size());
+    });
+  };
+
+  applyDirtyMcx(controls.take_front(k1), controls.slice(k1, a1));
+  emitter.p(target, sAngle);
+  applyDirtyMcx(controls.slice(k1, k2), controls.slice(k1 - a2, a2));
+  emitter.p(target, -sAngle);
+  applyDirtyMcx(controls.take_front(k1), controls.slice(k1, a1));
+  emitter.p(target, sAngle);
+  applyDirtyMcx(controls.slice(k1, k2), controls.slice(k1 - a2, a2));
+  emitter.p(target, -sAngle);
+}
+
+static void emitMcpV24(GateEmitter& emitter, double phi,
+                       std::size_t numControls) {
+  SmallVector<std::size_t, 16> qControls(numControls);
+  std::iota(qControls.begin(), qControls.end(), 0U);
+  std::size_t newTarget = numControls;
+  double angle = phi;
+
+  for (std::size_t k = 0; k < numControls; ++k) {
+    emitMcrz(emitter, angle, qControls, newTarget);
+    newTarget = qControls.back();
+    qControls.pop_back();
+    angle *= 0.5;
+  }
+  emitter.p(newTarget, angle);
+}
+
+/// One of the four ordered passes of the SP22 linear-depth multi-controlled
+/// phase synthesis.
+///
+/// Implements the multi-controlled phase construction of A. J. da Silva and
+/// D. K. Park, "Linear-depth quantum circuits for multiqubit controlled gates",
+/// Phys. Rev. A 106, 042602 (2022).
+///
+/// @note Adapted from `Ldmcu._c1c2` in qclib (`qclib/gates/ldmcu.py`),
+///       specialized to multi-controlled phase (controlled-P / CRX).
+///       Copyright 2021 qclib project.
+///
+///       Licensed under the Apache License, Version 2.0 (the "License");
+///       you may not use this file except in compliance with the License.
+///       You may obtain a copy of the License at
+///
+///           http://www.apache.org/licenses/LICENSE-2.0
+///
+///       Unless required by applicable law or agreed to in writing, software
+///       distributed under the License is distributed on an "AS IS" BASIS,
+///       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+///       implied. See the License for the specific language governing
+///       permissions and limitations under the License.
+///
+///       This is a modified / derivative work of the original qclib source.
 static void emitMcpSp22Step(GateEmitter& emitter, double phi,
                             std::size_t numQubits, int step) {
   const bool reverse = step == 1 || step == 3;
@@ -791,30 +821,21 @@ static void emitMcpSp22Step(GateEmitter& emitter, double phi,
   });
 
   for (const auto& [control, target] : pairs) {
-    std::int64_t exponent =
-        static_cast<std::int64_t>(target) - static_cast<std::int64_t>(control);
-    if (control == 0) {
-      exponent -= 1;
-    }
-    const double param = std::pow(2.0, static_cast<double>(exponent));
+    // Exponent is always non-negative for the pairs generated above.
+    const int exponent =
+        static_cast<int>(target - control - (control == 0 ? 1 : 0));
+    const double param = std::ldexp(1.0, exponent);
 
-    if (target == numQubits - 1 && (step == 1 || step == 2)) {
-      const double sign = step == 1 ? 1.0 : -1.0;
+    // Steps 1–2: sign from step. Steps 3–4: flip when control == 0 vs not.
+    const double sign = step <= 2
+                            ? (step == 1 ? 1.0 : -1.0)
+                            : ((step == 4) == (control == 0) ? 1.0 : -1.0);
+
+    if (target == numQubits - 1 && step <= 2) {
       emitter.cp(control, target, sign * phi / param);
-      continue;
-    }
-
-    double sign = 1.0;
-    if (step == 1) {
-      sign = 1.0;
-    } else if (step == 2) {
-      sign = -1.0;
-    } else if (step == 3) {
-      sign = control == 0 ? -1.0 : 1.0;
     } else {
-      sign = control == 0 ? 1.0 : -1.0;
+      emitter.crx(control, target, sign * K_PI / param);
     }
-    emitter.crx(control, target, sign * K_PI / param);
   }
 }
 

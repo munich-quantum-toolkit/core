@@ -224,9 +224,11 @@ def DecomposeMultiControlled
       `qco.rccx` is expanded when `min-controls` is at most 2.
 
     Multi-controlled phase gates with three or more controls are synthesized
-    with a size-based chooser: the recursive "v24" method for up to four
+    with a size-based chooser: Qiskit's mcrz-based "v24" method for up to four
     controls and the linear-depth da Silva-Park 2022 (SP22) method for five or
-    more controls, matching the CX-count crossover of the two methods.
+    more controls, matching the CX-count crossover of the two methods. A
+    compile-time phase of `+/- pi` equals `Z` and is routed through the more
+    efficient multi-controlled-Z (HP24) path.
 
     The greedy rewriter applies these patterns in one pass, so HP24 leftovers
     are lowered further when `min-controls` allows (e.g. default `2` fully
