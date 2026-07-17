@@ -182,12 +182,6 @@ private:
     Layout layout;
   };
 
-  /// A routing trial used for parallelization.
-  struct Trial : RoutingBundle {
-    Statistics stats{};
-    bool success{false};
-  };
-
   /// Describes a node in the A* search graph.
   struct Node {
     struct ComparePointer {
@@ -753,6 +747,12 @@ private:
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
     std::mt19937_64 rng{seed};
 
+    struct Trial {
+      RoutingBundle bundle;
+      Statistics stats{};
+      bool success{false};
+    };
+
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
     for (size_t i = 0; i < ntrials; ++i) {
@@ -764,11 +764,11 @@ private:
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       for (size_t i = 0; i < niterations; ++i) {
-        if (route<WireDirection::Forward>(t, t.stats).failed()) {
+        if (route<WireDirection::Forward>(t.bundle, t.stats).failed()) {
           return;
         }
         t.stats.nswaps = 0;
-        if (route<WireDirection::Backward>(t, t.stats).failed()) {
+        if (route<WireDirection::Backward>(t.bundle, t.stats).failed()) {
           return;
         }
       }
@@ -788,7 +788,7 @@ private:
       return failure();
     }
 
-    return best->layout;
+    return best->bundle.layout;
   }
 
   /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
