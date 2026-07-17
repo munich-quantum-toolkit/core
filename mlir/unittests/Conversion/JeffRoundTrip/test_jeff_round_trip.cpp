@@ -23,6 +23,7 @@
 #include <jeff/Translation/Serialize.hpp>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -67,7 +68,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                    qco::QCODialect, scf::SCFDialect>();
+                    memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
