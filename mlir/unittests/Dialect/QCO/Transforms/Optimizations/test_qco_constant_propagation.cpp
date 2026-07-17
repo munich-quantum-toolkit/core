@@ -314,6 +314,60 @@ TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsOne) {
 }
 
 /**
+ * @brief Test: This test checks for various gates if they are removed if the
+ * classical conditional is true.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionals) {
+  auto q = programBuilder.allocQubitRegister(1);
+  const auto bTrue = arith::ConstantOp::create(programBuilder,
+                                               programBuilder.getBoolAttr(true))
+                         .getResult();
+  const auto bFalse = arith::ConstantOp::create(
+                          programBuilder, programBuilder.getBoolAttr(false))
+                          .getResult();
+  auto b = arith::OrIOp::create(programBuilder, bTrue.getType(), bTrue, bFalse)
+               .getResult();
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.qcoIf(b, {q[0]}, [&](const ValueRange args) {
+    const auto qi0 = programBuilder.u2(1.4, 2.7, args[0]);
+    const auto qi1 = programBuilder.sdg(qi0);
+    const auto qi2 = programBuilder.t(qi1);
+    const auto qi3 = programBuilder.sx(qi2);
+    const auto qi4 = programBuilder.tdg(qi3);
+    const auto qi5 = programBuilder.sxdg(qi4);
+    const auto qi6 = programBuilder.r(0.2, 0.4, qi5);
+    return SmallVector{qi6};
+  });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  const auto bTrueRef =
+      arith::ConstantOp::create(referenceBuilder,
+                                referenceBuilder.getBoolAttr(true))
+          .getResult();
+  const auto bFalseRef =
+      arith::ConstantOp::create(referenceBuilder,
+                                referenceBuilder.getBoolAttr(false))
+          .getResult();
+  arith::OrIOp::create(referenceBuilder, bTrue.getType(), bTrueRef, bFalseRef)
+      .getResult();
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[0] = referenceBuilder.u2(1.4, 2.7, qRef[0]);
+  qRef[0] = referenceBuilder.sdg(qRef[0]);
+  qRef[0] = referenceBuilder.t(qRef[0]);
+  qRef[0] = referenceBuilder.sx(qRef[0]);
+  qRef[0] = referenceBuilder.tdg(qRef[0]);
+  qRef[0] = referenceBuilder.sxdg(qRef[0]);
+  qRef[0] = referenceBuilder.r(0.2, 0.4, qRef[0]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: This test checks that conditionals are not changed if we cannot
  * tell the bits value.
  */
