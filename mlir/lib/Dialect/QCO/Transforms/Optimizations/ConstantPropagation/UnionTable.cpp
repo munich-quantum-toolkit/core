@@ -193,7 +193,7 @@ void UnionTable::propagateClassicalOperation(
   const Value operand3 = targets.size() > 2 ? targets[2] : nullptr;
 
   const auto ute = valuesToEntries.at(*targets.begin());
-  for (auto hs : ute->states) {
+  for (auto& hs : ute->states) {
     hs.propagateClassicalOperation(op, result, operand1, operand2, operand3,
                                    posCtrlsClassical, negCtrlsClassical);
     if (hs.isHybridStateTop()) {
