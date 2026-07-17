@@ -42,7 +42,7 @@ class OutputFormat(enum.Enum):
     """QC after the optimized QCO round trip."""
 
     JEFF = 4
-    """Serializable Jeff MLIR."""
+    """Serializable ``jeff`` MLIR."""
 
     QIR_BASE = 5
     """QIR for the Base Profile."""
@@ -74,11 +74,11 @@ class QCProgram(Program):
 
     @staticmethod
     def from_mlir_str(source: str) -> QCProgram:
-        """Parse a QC-dialect MLIR source string."""
+        """Parse a QC MLIR source string."""
 
     @staticmethod
     def from_mlir_file(path: str | os.PathLike) -> QCProgram:
-        """Parse QC-dialect MLIR from a file."""
+        """Parse QC MLIR from a file."""
 
     @staticmethod
     def from_qasm_str(source: str) -> QCProgram:
@@ -90,11 +90,11 @@ class QCProgram(Program):
 
     @staticmethod
     def from_quantum_computation(computation: mqt.core.ir.QuantumComputation) -> QCProgram:
-        """Translate an MQT QuantumComputation to QC MLIR."""
+        """Translate an MQT {py:class}`~mqt.core.ir.QuantumComputation` to QC MLIR."""
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
-        """Translate a Qiskit QuantumCircuit to QC MLIR."""
+        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR."""
 
     def copy(self) -> QCProgram:
         """Return an independent copy of this program."""
@@ -103,10 +103,16 @@ class QCProgram(Program):
         """Run the standard QC cleanup pipeline in place."""
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
-        """Convert this program to QCO. Set ``copy=True`` to preserve it."""
+        """Convert this program to QCO.
+
+        Set ``copy=True`` to preserve it.
+        """
 
     def to_qir(self, profile: QIRProfile, *, copy: bool = False) -> QIRProgram:
-        """Lower this program to QIR for the requested profile."""
+        """Lower this program to QIR for the requested profile.
+
+        Set ``copy=True`` to preserve it.
+        """
 
 class QCOProgram(Program):
     """A compiler program in the QCO dialect.
@@ -117,11 +123,11 @@ class QCOProgram(Program):
 
     @staticmethod
     def from_mlir_str(source: str) -> QCOProgram:
-        """Parse a QCO-dialect MLIR source string."""
+        """Parse a QCO MLIR source string."""
 
     @staticmethod
     def from_mlir_file(path: str | os.PathLike) -> QCOProgram:
-        """Parse QCO-dialect MLIR from a file."""
+        """Parse QCO MLIR from a file."""
 
     def copy(self) -> QCOProgram:
         """Return an independent copy of this program."""
@@ -158,43 +164,52 @@ class QCOProgram(Program):
         """Place and route the program for a coupling graph."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
-        """Convert this program to QC. Set ``copy=True`` to preserve it."""
+        """Convert this program to QC.
+
+        Set ``copy=True`` to preserve it.
+        """
 
     def to_jeff(self, *, copy: bool = False) -> JeffProgram:
-        """Serialize this program as Jeff. Set ``copy=True`` to preserve it."""
+        """Serialize this program as ``jeff``.
+
+        Set ``copy=True`` to preserve it.
+        """
 
 class JeffProgram(Program):
-    """A serialized Jeff compiler program.
+    """A serialized ``jeff`` compiler program.
 
-    Jeff programs can be stored as bytes or files and converted back to QCO for
+    ``jeff`` programs can be stored as bytes or files and converted back to QCO for
     further compilation.
     """
 
     @staticmethod
     def from_file(path: str | os.PathLike) -> JeffProgram:
-        """Read a Jeff program from a file."""
+        """Read a ``jeff`` program from a file."""
 
     @staticmethod
     def from_bytes(data: bytes) -> JeffProgram:
-        """Deserialize a Jeff program from bytes."""
+        """Deserialize a ``jeff`` program from bytes."""
 
     def copy(self) -> JeffProgram:
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard Jeff cleanup pipeline in place."""
+        """Run the standard ``jeff`` cleanup pipeline in place."""
 
     def to_bytes(self) -> bytes:
-        """Serialize this program to its Jeff byte representation."""
+        """Serialize this program to its ``jeff`` byte representation."""
 
     def write(self, path: str | os.PathLike) -> None:
-        """Write this program to a Jeff file."""
+        """Write this program to a ``jeff`` file."""
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
-        """Deserialize this program to QCO. Set ``copy=True`` to preserve it."""
+        """Deserialize this program to QCO.
+
+        Set ``copy=True`` to preserve it.
+        """
 
 class QIRProgram(Program):
-    """A compiler program lowered to Quantum IR.
+    """A compiler program lowered to QIR.
 
     QIR programs retain their target profile and can be emitted as LLVM IR or
     LLVM bitcode.
@@ -302,9 +317,10 @@ def compile_program(
 ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
-    Input source strings, files, MQT `QuantumComputation` objects, Qiskit circuits,
-    and typed compiler programs can be combined with any supported output format.
-    Typed program inputs are copied by default; set `inplace=True` to consume them.
+    Input source strings, files, MQT {py:class}`~mqt.core.ir.QuantumComputation`
+    objects, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed
+    compiler programs can be combined with any supported output format. Typed
+    program inputs are copied by default; set ``inplace=True`` to consume them.
     Use the typed programs directly to construct a custom pipeline stage by stage.
 
     Args:
