@@ -179,16 +179,15 @@ template <typename StateDD>
 static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
                                         QubitMap& qubits, dd::Package& dd,
                                         StateDD& state) {
-  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
-    return unitary.emitError()
-           << "unitary must have a compile-time constant matrix";
-  }
-
   Operation* op = unitary.getOperation();
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const double theta = *utils::valueToDouble(gphase.getTheta());
+    const auto theta = utils::valueToDouble(gphase.getTheta());
+    if (!theta) {
+      return unitary.emitError()
+             << "unitary must have a compile-time constant matrix";
+    }
     auto id = dd::Package::makeIdent();
-    id.w = dd.cn.lookup(std::cos(theta), std::sin(theta));
+    id.w = dd.cn.lookup(std::cos(*theta), std::sin(*theta));
     state = dd.applyOperation(id, state);
     return success();
   }
@@ -198,7 +197,8 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
 
   DynamicMatrix local;
   if (!unitary.getUnitaryMatrixDynamic(local)) {
-    return unitary.emitError() << "failed to obtain unitary matrix";
+    return unitary.emitError()
+           << "unitary must have a compile-time constant matrix";
   }
 
   auto wiresOr = qubits.lookupRange(unitary.getInputQubits(), op);
