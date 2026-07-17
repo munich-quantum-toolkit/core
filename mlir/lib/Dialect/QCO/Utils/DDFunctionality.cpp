@@ -13,8 +13,10 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -22,13 +24,13 @@
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/MathExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -91,9 +93,11 @@ struct DecodedGate {
   std::vector<dd::fp> params;
 };
 
+} // namespace
+
 /// `std::nullopt` if @p op is not a standard gate; failure on non-constant
 /// parameters.
-FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
+static FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
   const qc::OpType type =
       TypeSwitch<Operation*, qc::OpType>(op)
           .Case<IdOp>([](auto) { return qc::OpType::I; })
@@ -129,7 +133,7 @@ FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
     return std::optional<DecodedGate>{std::nullopt};
   }
 
-  DecodedGate decoded{type, {}};
+  DecodedGate decoded{.type = type, .params = {}};
   auto unitary = cast<UnitaryOpInterface>(op);
   for (Value param : unitary.getParameters()) {
     const auto value = utils::valueToDouble(param);
@@ -144,8 +148,9 @@ FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
 
 /// Sparse DD path via internal `getStandardOperationDD`.
 template <typename StateDD>
-void applyStandard(dd::Package& dd, StateDD& state, const DecodedGate& gate,
-                   const qc::Controls& controls, ArrayRef<qc::Qubit> targets) {
+static void applyStandard(dd::Package& dd, StateDD& state,
+                          const DecodedGate& gate, const qc::Controls& controls,
+                          ArrayRef<qc::Qubit> targets) {
   state = dd.applyOperation(
       getStandardOperationDD(dd, gate.type, gate.params, controls,
                              {targets.begin(), targets.end()}),
@@ -153,8 +158,8 @@ void applyStandard(dd::Package& dd, StateDD& state, const DecodedGate& gate,
 }
 
 /// QCO matrices are MSB-first (operand 0 = high bit); DD is LSB-first.
-[[nodiscard]] dd::CMat toCMatInDdBasis(const DynamicMatrix& qcoMatrix,
-                                       size_t numQubits) {
+[[nodiscard]] static dd::CMat toCMatInDdBasis(const DynamicMatrix& qcoMatrix,
+                                              size_t numQubits) {
   const auto dim = static_cast<size_t>(qcoMatrix.rows());
   const auto shift = static_cast<unsigned>(64 - numQubits);
   dd::CMat out(dim, dd::CVec(dim));
@@ -170,8 +175,9 @@ void applyStandard(dd::Package& dd, StateDD& state, const DecodedGate& gate,
 }
 
 template <typename StateDD>
-LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary, QubitMap& qubits,
-                                 dd::Package& dd, StateDD& state) {
+static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
+                                        QubitMap& qubits, dd::Package& dd,
+                                        StateDD& state) {
   if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
     return unitary.emitError()
            << "unitary must have a compile-time constant matrix";
@@ -241,7 +247,7 @@ LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary, QubitMap& qubits,
 }
 
 template <typename StateDD>
-LogicalResult
+static LogicalResult
 applyDecodedStandard(UnitaryOpInterface unitary, const DecodedGate& gate,
                      const qc::Controls& controls, QubitMap& qubits,
                      dd::Package& dd, StateDD& state) {
@@ -258,8 +264,8 @@ applyDecodedStandard(UnitaryOpInterface unitary, const DecodedGate& gate,
 }
 
 template <typename StateDD>
-LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
-                      StateDD& state) {
+static LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
+                             StateDD& state) {
   if (isa<StaticOp, SinkOp, func::ReturnOp, arith::ConstantOp>(op)) {
     return success();
   }
@@ -303,8 +309,8 @@ LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
 }
 
 template <typename StateDD>
-LogicalResult walk(func::FuncOp func, QubitMap& qubits, dd::Package& dd,
-                   StateDD& state) {
+static LogicalResult walk(func::FuncOp func, QubitMap& qubits, dd::Package& dd,
+                          StateDD& state) {
   for (Operation& op : func.getBody().front()) {
     if (failed(applyOp(op, qubits, dd, state))) {
       return failure();
@@ -313,7 +319,7 @@ LogicalResult walk(func::FuncOp func, QubitMap& qubits, dd::Package& dd,
   return success();
 }
 
-FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
+static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
@@ -344,8 +350,6 @@ FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
   }
   return qubits;
 }
-
-} // namespace
 
 FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
   auto qubitsOr = prepare(func, dd);
