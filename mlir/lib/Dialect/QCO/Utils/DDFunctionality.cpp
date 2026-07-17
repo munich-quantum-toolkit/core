@@ -47,14 +47,14 @@ namespace mlir::qco {
 namespace {
 
 struct QubitMap {
-  DenseMap<Value, qc::Qubit> index;
+  DenseMap<Value, qc::Qubit> qubits;
   size_t numQubits = 0;
 
-  void bind(Value value, qc::Qubit q) { index[value] = q; }
+  void bind(Value value, qc::Qubit q) { qubits[value] = q; }
 
   [[nodiscard]] std::optional<qc::Qubit> lookup(Value value) const {
-    const auto it = index.find(value);
-    if (it == index.end()) {
+    const auto it = qubits.find(value);
+    if (it == qubits.end()) {
       return std::nullopt;
     }
     return it->second;
@@ -73,9 +73,9 @@ struct QubitMap {
     return success();
   }
 
-  FailureOr<SmallVector<qc::Qubit, 4>> lookupRange(ValueRange values,
-                                                   Operation* op) const {
-    SmallVector<qc::Qubit, 4> out;
+  FailureOr<SmallVector<qc::Qubit>> lookupRange(ValueRange values,
+                                                Operation* op) const {
+    SmallVector<qc::Qubit> out;
     out.reserve(values.size());
     for (Value value : values) {
       const auto q = lookup(value);
@@ -145,17 +145,6 @@ static FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
     decoded.params.push_back(static_cast<dd::fp>(*value));
   }
   return std::optional{std::move(decoded)};
-}
-
-/// Sparse DD path via internal `getStandardOperationDD`.
-template <typename StateDD>
-static void applyStandard(dd::Package& dd, StateDD& state,
-                          const DecodedGate& gate, const qc::Controls& controls,
-                          ArrayRef<qc::Qubit> targets) {
-  state = dd.applyOperation(
-      getStandardOperationDD(dd, gate.type, gate.params, controls,
-                             {targets.begin(), targets.end()}),
-      state);
 }
 
 /// QCO matrices are MSB-first (operand 0 = high bit); DD is LSB-first.
@@ -247,7 +236,7 @@ static LogicalResult
 applyDecodedStandard(UnitaryOpInterface unitary, const DecodedGate& gate,
                      const qc::Controls& controls, QubitMap& qubits,
                      dd::Package& dd, StateDD& state) {
-  SmallVector<Value, 4> targetVals;
+  SmallVector<Value> targetVals;
   for (size_t i = 0; i < unitary.getNumTargets(); ++i) {
     targetVals.push_back(unitary.getInputTarget(i));
   }
@@ -255,53 +244,59 @@ applyDecodedStandard(UnitaryOpInterface unitary, const DecodedGate& gate,
   if (failed(targets)) {
     return failure();
   }
-  applyStandard(dd, state, gate, controls, *targets);
+  state = dd.applyOperation(
+      getStandardOperationDD(dd, gate.type, gate.params, controls,
+                             {targets->begin(), targets->end()}),
+      state);
   return qubits.remapUnitary(unitary);
 }
 
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
                              StateDD& state) {
-  if (isa<StaticOp, SinkOp, func::ReturnOp, arith::ConstantOp>(op)) {
-    return success();
-  }
-
-  if (auto ctrlOp = dyn_cast<CtrlOp>(op)) {
-    if (auto inner =
-            utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody())) {
-      auto decoded = decodeStandardGate(inner.getOperation());
-      if (failed(decoded)) {
-        return failure();
-      }
-      if (*decoded) {
-        auto controlQubits = qubits.lookupRange(ctrlOp.getControlsIn(), ctrlOp);
-        if (failed(controlQubits)) {
-          return failure();
+  return TypeSwitch<Operation*, LogicalResult>(&op)
+      .template Case<StaticOp, SinkOp, func::ReturnOp, arith::ConstantOp>(
+          [](auto) { return success(); })
+      .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
+        if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
+                *ctrlOp.getBody())) {
+          auto decoded = decodeStandardGate(inner.getOperation());
+          if (failed(decoded)) {
+            return failure();
+          }
+          if (*decoded) {
+            auto controlQubits =
+                qubits.lookupRange(ctrlOp.getControlsIn(), ctrlOp);
+            if (failed(controlQubits)) {
+              return failure();
+            }
+            qc::Controls controls;
+            for (qc::Qubit q : *controlQubits) {
+              controls.emplace(q);
+            }
+            return applyDecodedStandard(ctrlOp, **decoded, controls, qubits, dd,
+                                        state);
+          }
         }
-        qc::Controls controls;
-        for (qc::Qubit q : *controlQubits) {
-          controls.emplace(q);
-        }
-        return applyDecodedStandard(ctrlOp, **decoded, controls, qubits, dd,
-                                    state);
-      }
-    }
-    return applyUnitaryMatrix(ctrlOp, qubits, dd, state);
-  }
-
-  if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-    auto decoded = decodeStandardGate(&op);
-    if (failed(decoded)) {
-      return failure();
-    }
-    if (*decoded) {
-      return applyDecodedStandard(unitary, **decoded, {}, qubits, dd, state);
-    }
-    return applyUnitaryMatrix(unitary, qubits, dd, state);
-  }
-
-  return op.emitError() << "unsupported op for QCO DD construction: "
-                        << op.getName().getStringRef();
+        return applyUnitaryMatrix(ctrlOp, qubits, dd, state);
+      })
+      .template Case<UnitaryOpInterface>(
+          [&](UnitaryOpInterface unitary) -> LogicalResult {
+            auto decoded = decodeStandardGate(&op);
+            if (failed(decoded)) {
+              return failure();
+            }
+            if (*decoded) {
+              return applyDecodedStandard(unitary, **decoded, {}, qubits, dd,
+                                          state);
+            }
+            return applyUnitaryMatrix(unitary, qubits, dd, state);
+          })
+      .Default([](Operation* unsupported) {
+        return unsupported->emitError()
+               << "unsupported op for QCO DD construction: "
+               << unsupported->getName().getStringRef();
+      });
 }
 
 template <typename StateDD>

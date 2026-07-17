@@ -56,8 +56,8 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  [[nodiscard]] static func::FuncOp mainFunc(ModuleOp module) {
-    return *module.getBody()->getOps<func::FuncOp>().begin();
+  [[nodiscard]] static func::FuncOp mainFunc(ModuleOp mod) {
+    return *mod.getBody()->getOps<func::FuncOp>().begin();
   }
 
   template <typename BuildFn>
@@ -99,10 +99,10 @@ protected:
 
   template <typename BuildFn>
   void expectBuiltFails(size_t numQubits, BuildFn&& buildFn) {
-    auto module = buildModule(std::forward<BuildFn>(buildFn));
-    ASSERT_TRUE(module);
+    auto mod = buildModule(std::forward<BuildFn>(buildFn));
+    ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(numQubits);
-    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*module), *dd)));
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 };
 
@@ -114,7 +114,7 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
   constexpr double lambda = 0.53;
   constexpr double beta = 0.64;
 
-  auto module = buildModule([&](QCOProgramBuilder& b) {
+  auto mod = buildModule([&](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);
     auto q1 = b.staticQubit(1);
     auto q2 = b.staticQubit(2);
@@ -154,10 +154,12 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
     q1 = controls[1];
     q2 = target;
     q2 = b.inv(q2, [&](Value q) { return b.s(q); });
+    b.sink(q0);
+    b.sink(q1);
     b.sink(q2);
     return b.intConstant(0);
   });
-  ASSERT_TRUE(module);
+  ASSERT_TRUE(mod);
 
   qc::QuantumComputation qc(3);
   qc.i(0);
@@ -192,59 +194,64 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
   qc.cp(std::numbers::pi / 5.0, 1, 2);
   qc.mcx({0, 1}, 2);
   qc.sdg(2);
-  expectEqualToQc(mainFunc(*module), qc);
+  expectEqualToQc(mainFunc(*mod), qc);
 }
 
 TEST_F(QCODDFunctionalityTest, DensePaths) {
   // Compound `ctrl` (dense) with sparse gates, 2-qubit `inv` embed, full-width
   // `inv`.
   {
-    auto module = buildModule([](QCOProgramBuilder& b) {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
       auto q1 = b.staticQubit(1);
       auto q2 = b.staticQubit(2);
       q1 = b.x(q1);
       std::tie(q0, q1) = b.ctrl(q0, q1, [&](Value t) { return b.h(b.t(t)); });
-      (void)q2;
+      b.sink(q0);
+      b.sink(q1);
+      b.sink(q2);
       return b.intConstant(0);
     });
-    ASSERT_TRUE(module);
+    ASSERT_TRUE(mod);
     qc::QuantumComputation qc(3);
     qc.x(1);
     qc.ct(0, 1);
     qc.ch(0, 1);
-    expectEqualToQc(mainFunc(*module), qc);
+    expectEqualToQc(mainFunc(*mod), qc);
   }
   {
-    auto module = buildModule([](QCOProgramBuilder& b) {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
       auto q1 = b.staticQubit(1);
       auto outs = b.inv({q0, q1}, [&](ValueRange qs) -> SmallVector<Value> {
         auto [a, c] = b.swap(qs[0], qs[1]);
         return {a, c};
       });
-      (void)outs;
+      b.sink(outs[0]);
+      b.sink(outs[1]);
       return b.intConstant(0);
     });
-    ASSERT_TRUE(module);
+    ASSERT_TRUE(mod);
     qc::QuantumComputation qc(2);
     qc.swap(0, 1);
-    expectEqualToQc(mainFunc(*module), qc);
+    expectEqualToQc(mainFunc(*mod), qc);
   }
   {
-    auto module = buildModule([](QCOProgramBuilder& b) {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
       auto q1 = b.staticQubit(1);
       auto q2 = b.staticQubit(2);
       auto outs = b.inv({q0, q1, q2}, [&](ValueRange t) -> SmallVector<Value> {
         return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2])};
       });
-      (void)outs;
+      b.sink(outs[0]);
+      b.sink(outs[1]);
+      b.sink(outs[2]);
       return b.intConstant(0);
     });
-    ASSERT_TRUE(module);
+    ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(3);
-    const auto u = buildFunctionality(mainFunc(*module), *dd);
+    const auto u = buildFunctionality(mainFunc(*mod), *dd);
     ASSERT_TRUE(succeeded(u));
     dd->decRef(*u);
   }
@@ -254,12 +261,14 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
   auto without = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);
     q0 = b.h(q0);
+    b.sink(q0);
     return b.intConstant(0);
   });
   auto with = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);
     q0 = b.h(q0);
     b.gphase(0.25);
+    b.sink(q0);
     return b.intConstant(0);
   });
   auto zeroQubit = buildModule([](QCOProgramBuilder& b) {
@@ -295,51 +304,51 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
 
 TEST_F(QCODDFunctionalityTest, FuncArgs) {
   // Qubit block args (no `qco.static`); non-qubit args are skipped.
-  OwningOpRef<ModuleOp> module =
-      ModuleOp::create(UnknownLoc::get(context.get()));
-  OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(module->getBody());
-  const auto qubitTy = QubitType::get(context.get());
-  auto func = func::FuncOp::create(
-      builder, module->getLoc(), "main",
-      builder.getFunctionType({builder.getI32Type(), qubitTy}, {qubitTy}));
-  auto* entry = func.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  Value out = HOp::create(builder, func.getLoc(), entry->getArgument(1));
-  func::ReturnOp::create(builder, func.getLoc(), out);
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%c: i32, %q: !qco.qubit) -> !qco.qubit {
+        %q1 = qco.h %q : !qco.qubit -> !qco.qubit
+        return %q1 : !qco.qubit
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
 
   qc::QuantumComputation qc(1);
   qc.h(0);
-  expectEqualToQc(func, qc);
+  expectEqualToQc(mainFunc(*mod), qc);
 }
 
 TEST_F(QCODDFunctionalityTest, Rejects) {
   {
-    auto module = buildModule([](QCOProgramBuilder& b) {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
       std::tie(q0, std::ignore) = b.measure(q0);
+      b.sink(q0);
       return b.intConstant(0);
     });
-    ASSERT_TRUE(module);
+    ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(1);
-    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*module), *dd)));
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
     EXPECT_TRUE(
-        failed(simulate(mainFunc(*module), dd::makeZeroState(1, *dd), *dd)));
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
 
   {
-    auto module = buildModule([](QCOProgramBuilder& b) {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
       auto q1 = b.staticQubit(1);
       q0 = b.h(q0);
-      (void)q1;
+      b.sink(q0);
+      b.sink(q1);
       return b.intConstant(0);
     });
-    ASSERT_TRUE(module);
+    ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(1);
-    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*module), *dd)));
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
     EXPECT_TRUE(
-        failed(simulate(mainFunc(*module), dd::makeZeroState(1, *dd), *dd)));
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
 
   expectBuiltFails(13, [](QCOProgramBuilder& b) {
@@ -349,6 +358,9 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     }
     std::tie(qs[0], qs[1]) =
         b.ctrl(qs[0], qs[1], [&](Value t) { return b.h(b.t(t)); });
+    for (Value q : qs) {
+      b.sink(q);
+    }
     return b.intConstant(0);
   });
 
@@ -360,8 +372,10 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     auto outs = b.inv({q0, q1, q2}, [&](ValueRange t) -> SmallVector<Value> {
       return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2])};
     });
-    (void)outs;
-    (void)q3;
+    b.sink(outs[0]);
+    b.sink(outs[1]);
+    b.sink(outs[2]);
+    b.sink(q3);
     return b.intConstant(0);
   });
 
