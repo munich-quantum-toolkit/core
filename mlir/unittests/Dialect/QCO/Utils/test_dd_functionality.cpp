@@ -107,15 +107,47 @@ protected:
 };
 
 TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
-  auto module = buildModule([](QCOProgramBuilder& b) {
+  // Every `decodeStandardGate` branch once (distinct angles catch param-order
+  // bugs), plus barrier / sparse ctrl / inv / sink.
+  constexpr double theta = 0.31;
+  constexpr double phi = 0.42;
+  constexpr double lambda = 0.53;
+  constexpr double beta = 0.64;
+
+  auto module = buildModule([&](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);
     auto q1 = b.staticQubit(1);
     auto q2 = b.staticQubit(2);
+    q0 = b.id(q0);
+    q0 = b.x(q0);
+    q0 = b.y(q0);
+    q0 = b.z(q0);
     q0 = b.h(q0);
-    q0 = b.barrier({q0})[0];
-    q0 = b.rz(0.25, q0);
-    std::tie(q0, q1) = b.cx(q0, q1);
+    q0 = b.s(q0);
+    q0 = b.sdg(q0);
+    q0 = b.t(q0);
+    q0 = b.tdg(q0);
+    q0 = b.sx(q0);
+    q0 = b.sxdg(q0);
+    q0 = b.rx(theta, q0);
+    q0 = b.ry(theta, q0);
+    q0 = b.rz(theta, q0);
+    q0 = b.p(theta, q0);
+    q0 = b.r(theta, phi, q0);
+    q0 = b.u2(phi, lambda, q0);
+    q0 = b.u(theta, phi, lambda, q0);
     std::tie(q0, q1) = b.swap(q0, q1);
+    std::tie(q0, q1) = b.iswap(q0, q1);
+    std::tie(q0, q1) = b.dcx(q0, q1);
+    std::tie(q0, q1) = b.ecr(q0, q1);
+    std::tie(q0, q1) = b.rxx(theta, q0, q1);
+    std::tie(q0, q1) = b.ryy(theta, q0, q1);
+    std::tie(q0, q1) = b.rzz(theta, q0, q1);
+    std::tie(q0, q1) = b.rzx(theta, q0, q1);
+    std::tie(q0, q1) = b.xx_plus_yy(theta, beta, q0, q1);
+    std::tie(q0, q1) = b.xx_minus_yy(theta, beta, q0, q1);
+    q0 = b.barrier({q0})[0];
+    std::tie(q0, q1) = b.cx(q0, q1);
     std::tie(q1, q2) = b.cp(std::numbers::pi / 5.0, q1, q2);
     auto [controls, target] = b.mcx({q0, q1}, q2);
     q0 = controls[0];
@@ -128,10 +160,35 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
   ASSERT_TRUE(module);
 
   qc::QuantumComputation qc(3);
+  qc.i(0);
+  qc.x(0);
+  qc.y(0);
+  qc.z(0);
   qc.h(0);
-  qc.rz(0.25, 0);
-  qc.cx(0, 1);
+  qc.s(0);
+  qc.sdg(0);
+  qc.t(0);
+  qc.tdg(0);
+  qc.sx(0);
+  qc.sxdg(0);
+  qc.rx(theta, 0);
+  qc.ry(theta, 0);
+  qc.rz(theta, 0);
+  qc.p(theta, 0);
+  qc.r(theta, phi, 0);
+  qc.u2(phi, lambda, 0);
+  qc.u(theta, phi, lambda, 0);
   qc.swap(0, 1);
+  qc.iswap(0, 1);
+  qc.dcx(0, 1);
+  qc.ecr(0, 1);
+  qc.rxx(theta, 0, 1);
+  qc.ryy(theta, 0, 1);
+  qc.rzz(theta, 0, 1);
+  qc.rzx(theta, 0, 1);
+  qc.xx_plus_yy(theta, beta, 0, 1);
+  qc.xx_minus_yy(theta, beta, 0, 1);
+  qc.cx(0, 1);
   qc.cp(std::numbers::pi / 5.0, 1, 2);
   qc.mcx({0, 1}, 2);
   qc.sdg(2);
