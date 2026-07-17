@@ -91,10 +91,10 @@ protected:
   }
 
   void expectMlirFails(size_t numQubits, StringRef mlirCode) const {
-    auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
-    ASSERT_TRUE(module);
+    auto mod = parseSourceString<ModuleOp>(mlirCode, context.get());
+    ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(numQubits);
-    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*module), *dd)));
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 
   template <typename BuildFn>

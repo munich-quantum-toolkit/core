@@ -30,7 +30,7 @@ namespace mlir::qco {
  *   (sparse DD path)
  * - `ctrl` with a sole standard-gate body (same sparse path)
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
- *   compound `ctrl`, …), including `gphase` and `barrier`
+ *   compound `ctrl`, ...), including `gphase` and `barrier`
  * - Skips: `static`, `sink`, `func.return`, `arith.constant`
  *
  * The dense matrix fallback embeds 2-qubit unitaries with the QCO matrix
