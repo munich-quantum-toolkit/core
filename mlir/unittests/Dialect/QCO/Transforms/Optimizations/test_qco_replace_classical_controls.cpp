@@ -29,6 +29,8 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <tuple>
+
 namespace {
 
 using namespace mlir;
@@ -85,32 +87,35 @@ protected:
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q0S2, q1S1] = programBuilder.cx(q0S1, q1S0);
-  auto [q1S2, c1] = programBuilder.measure(q1S1);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q0, q1) = programBuilder.cx(q0, q1);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  programBuilder.sink(q0S2);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  auto r1S1 = referenceBuilder.qcoIf(
-      cr0, {r1S0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto q1Then = referenceBuilder.x(qubits[0]);
-        return SmallVector<Value>{q1Then};
+  r1 = referenceBuilder.qcoIf(
+      cr0, {r1}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return SmallVector<Value>{referenceBuilder.x(qubits[0])};
       })[0];
-  auto [r1S2, cr1] = referenceBuilder.measure(r1S1);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S2);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
 
   reference = referenceBuilder.finalize({cr0, cr1});
 
@@ -126,46 +131,54 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
 
-  auto [q01S1, q2S1] =
-      programBuilder.ctrl({q0S1, q1S0}, {q2S0},
-                          [&](const ValueRange targets) -> SmallVector<Value> {
-                            auto q = programBuilder.x(targets[0]);
-                            return SmallVector<Value>{q};
-                          });
+  SmallVector<Value> q01;
+  SmallVector<Value> q2Vec;
+  std::tie(q01, q2Vec) = programBuilder.ctrl(
+      {q0, q1}, {q2}, [&](const ValueRange targets) -> SmallVector<Value> {
+        return SmallVector<Value>{programBuilder.x(targets[0])};
+      });
 
-  auto [q1S2, c1] = programBuilder.measure(q01S1[1]);
-  auto [q2S2, c2] = programBuilder.measure(q2S1[0]);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q01[1]);
+  Value c2;
+  std::tie(q2, c2) = programBuilder.measure(q2Vec[0]);
 
-  programBuilder.sink(q01S1[0]);
-  programBuilder.sink(q1S2);
-  programBuilder.sink(q2S2);
+  programBuilder.sink(q01[0]);
+  programBuilder.sink(q1);
+  programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  auto r12 = referenceBuilder.qcoIf(
-      cr0, {r1S0, r2S0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto [r1, r2] = referenceBuilder.cx(qubits[0], qubits[1]);
-        return SmallVector<Value>{r1, r2};
+  SmallVector<Value> r12 = referenceBuilder.qcoIf(
+      cr0, {r1, r2}, [&](ValueRange qubits) -> SmallVector<Value> {
+        Value t1 = qubits[0];
+        Value t2 = qubits[1];
+        std::tie(t1, t2) = referenceBuilder.cx(t1, t2);
+        return SmallVector<Value>{t1, t2};
       });
-  auto [r1S2, cr1] = referenceBuilder.measure(r12[0]);
-  auto [r2S2, cr2] = referenceBuilder.measure(r12[1]);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S2);
-  referenceBuilder.sink(r2S2);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r12[0]);
+  Value cr2;
+  std::tie(r2, cr2) = referenceBuilder.measure(r12[1]);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
+  referenceBuilder.sink(r2);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
@@ -181,48 +194,53 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q1S1, c1] = programBuilder.measure(q1S0);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  auto [q01S1, q2S1] =
-      programBuilder.ctrl({q0S1, q1S1}, {q2S0},
-                          [&](const ValueRange targets) -> SmallVector<Value> {
-                            auto q = programBuilder.x(targets[0]);
-                            return SmallVector<Value>{q};
-                          });
+  SmallVector<Value> q01;
+  SmallVector<Value> q2Vec;
+  std::tie(q01, q2Vec) = programBuilder.ctrl(
+      {q0, q1}, {q2}, [&](const ValueRange targets) -> SmallVector<Value> {
+        return SmallVector<Value>{programBuilder.x(targets[0])};
+      });
 
-  auto [q2S2, c2] = programBuilder.measure(q2S1[0]);
+  Value c2;
+  std::tie(q2, c2) = programBuilder.measure(q2Vec[0]);
 
-  programBuilder.sink(q01S1[0]);
-  programBuilder.sink(q01S1[1]);
-  programBuilder.sink(q2S2);
+  programBuilder.sink(q01[0]);
+  programBuilder.sink(q01[1]);
+  programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
   auto andOp = arith::AndIOp::create(referenceBuilder, cr0, cr1);
 
-  auto r2S1 = referenceBuilder.qcoIf(
-      andOp.getResult(), {r2S0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto r = referenceBuilder.x(qubits[0]);
-        return SmallVector<Value>{r};
+  r2 = referenceBuilder.qcoIf(
+      andOp.getResult(), {r2}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return SmallVector<Value>{referenceBuilder.x(qubits[0])};
       })[0];
-  auto [r2S2, cr2] = referenceBuilder.measure(r2S1);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S1);
-  referenceBuilder.sink(r2S2);
+  Value cr2;
+  std::tie(r2, cr2) = referenceBuilder.measure(r2);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
+  referenceBuilder.sink(r2);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
@@ -238,56 +256,65 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type(),
        programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
-  auto q3S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
+  auto q3 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q1S1, c1] = programBuilder.measure(q1S0);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  auto [q012S1, q3S1] =
-      programBuilder.ctrl({q0S1, q1S1, q2S0}, {q3S0},
-                          [&](const ValueRange targets) -> SmallVector<Value> {
-                            auto q = programBuilder.x(targets[0]);
-                            return SmallVector<Value>{q};
-                          });
+  SmallVector<Value> q012;
+  SmallVector<Value> q3Vec;
+  std::tie(q012, q3Vec) = programBuilder.ctrl(
+      {q0, q1, q2}, {q3}, [&](const ValueRange targets) -> SmallVector<Value> {
+        return SmallVector<Value>{programBuilder.x(targets[0])};
+      });
 
-  auto [q2S2, c2] = programBuilder.measure(q012S1[2]);
-  auto [q3S2, c3] = programBuilder.measure(q3S1[0]);
+  Value c2;
+  std::tie(q2, c2) = programBuilder.measure(q012[2]);
+  Value c3;
+  std::tie(q3, c3) = programBuilder.measure(q3Vec[0]);
 
-  programBuilder.sink(q012S1[0]);
-  programBuilder.sink(q012S1[1]);
-  programBuilder.sink(q2S2);
-  programBuilder.sink(q3S2);
+  programBuilder.sink(q012[0]);
+  programBuilder.sink(q012[1]);
+  programBuilder.sink(q2);
+  programBuilder.sink(q3);
   module = programBuilder.finalize({c0, c1, c2, c3});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
        referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
-  auto r3S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
+  auto r3 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
   auto andOp = arith::AndIOp::create(referenceBuilder, cr0, cr1);
 
-  auto r23S1 =
-      referenceBuilder.qcoIf(andOp.getResult(), {r2S0, r3S0},
+  SmallVector<Value> r23 =
+      referenceBuilder.qcoIf(andOp.getResult(), {r2, r3},
                              [&](ValueRange qubits) -> SmallVector<Value> {
-                               auto [r2, r3] =
-                                   referenceBuilder.cx(qubits[0], qubits[1]);
-                               return SmallVector<Value>{r2, r3};
+                               Value t2 = qubits[0];
+                               Value t3 = qubits[1];
+                               std::tie(t2, t3) = referenceBuilder.cx(t2, t3);
+                               return SmallVector<Value>{t2, t3};
                              });
-  auto [r2S2, cr2] = referenceBuilder.measure(r23S1[0]);
-  auto [r3S2, cr3] = referenceBuilder.measure(r23S1[1]);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S1);
-  referenceBuilder.sink(r2S2);
-  referenceBuilder.sink(r3S2);
+  Value cr2;
+  std::tie(r2, cr2) = referenceBuilder.measure(r23[0]);
+  Value cr3;
+  std::tie(r3, cr3) = referenceBuilder.measure(r23[1]);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
+  referenceBuilder.sink(r2);
+  referenceBuilder.sink(r3);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2, cr3});
 
@@ -301,32 +328,35 @@ TEST_F(QCOReplaceClassicalControlsTest,
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q1S1, q0S2] = programBuilder.cz(q1S0, q0S1);
-  auto [q1S2, c1] = programBuilder.measure(q1S1);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, q0) = programBuilder.cz(q1, q0);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q1);
 
-  programBuilder.sink(q0S2);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  auto r1S1 = referenceBuilder.qcoIf(
-      cr0, {r1S0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto q1Then = referenceBuilder.z(qubits[0]);
-        return SmallVector<Value>{q1Then};
+  r1 = referenceBuilder.qcoIf(
+      cr0, {r1}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return SmallVector<Value>{referenceBuilder.z(qubits[0])};
       })[0];
-  auto [r1S2, cr1] = referenceBuilder.measure(r1S1);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S2);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
 
   reference = referenceBuilder.finalize({cr0, cr1});
 
@@ -342,35 +372,40 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q1S1, c1] = programBuilder.measure(q1S0);
-  auto [q1S2, q0S2] = programBuilder.cz(q1S1, q0S1);
-  auto [q0S3, c0_] = programBuilder.measure(q0S2);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q1);
+  std::tie(q1, q0) = programBuilder.cz(q1, q0);
+  Value c0_;
+  std::tie(q0, c0_) = programBuilder.measure(q0);
 
-  programBuilder.sink(q0S3);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1, c0_});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
                                programBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  auto r0S2 = referenceBuilder.qcoIf(
-      cr1, {r0S1}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto r0Then = referenceBuilder.z(qubits[0]);
-        return SmallVector<Value>{r0Then};
+  r0 = referenceBuilder.qcoIf(
+      cr1, {r0}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return SmallVector<Value>{referenceBuilder.z(qubits[0])};
       })[0];
-  auto [r0S3, cr0_] = referenceBuilder.measure(r0S2);
-  referenceBuilder.sink(r0S3);
-  referenceBuilder.sink(r1S1);
+  Value cr0_;
+  std::tie(r0, cr0_) = referenceBuilder.measure(r0);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr0_});
 
@@ -385,40 +420,46 @@ TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOneOfTwoDiagonal) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q12, q0S2] =
-      programBuilder.ctrl({q1S0, q2S0}, {q0S1},
-                          [&](const ValueRange targets) -> SmallVector<Value> {
-                            auto q = programBuilder.z(targets[0]);
-                            return SmallVector<Value>{q};
-                          });
-  auto [q1S2, c1] = programBuilder.measure(q12[0]);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  SmallVector<Value> q12;
+  SmallVector<Value> q0Vec;
+  std::tie(q12, q0Vec) = programBuilder.ctrl(
+      {q1, q2}, {q0}, [&](const ValueRange targets) -> SmallVector<Value> {
+        return SmallVector<Value>{programBuilder.z(targets[0])};
+      });
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q12[0]);
 
-  programBuilder.sink(q0S2[0]);
-  programBuilder.sink(q1S2);
+  programBuilder.sink(q0Vec[0]);
+  programBuilder.sink(q1);
   programBuilder.sink(q12[1]);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
-  auto r21 = referenceBuilder.qcoIf(
-      cr0, {r2S0, r1S0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto [r2, r1] = referenceBuilder.cz(qubits[0], qubits[1]);
-        return SmallVector<Value>{r2, r1};
+  SmallVector<Value> r21 = referenceBuilder.qcoIf(
+      cr0, {r2, r1}, [&](ValueRange qubits) -> SmallVector<Value> {
+        Value t2 = qubits[0];
+        Value t1 = qubits[1];
+        std::tie(t2, t1) = referenceBuilder.cz(t2, t1);
+        return SmallVector<Value>{t2, t1};
       });
-  auto [r1S2, cr1] = referenceBuilder.measure(r21[1]);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S2);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r21[1]);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
   referenceBuilder.sink(r21[0]);
 
   reference = referenceBuilder.finalize({cr0, cr1});
@@ -435,46 +476,51 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
-  auto q0S0 = programBuilder.allocQubit();
-  auto q1S0 = programBuilder.allocQubit();
-  auto q2S0 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
 
-  auto [q0S1, c0] = programBuilder.measure(q0S0);
-  auto [q1S1, c1] = programBuilder.measure(q1S0);
-  auto [q12, q0S2] =
-      programBuilder.ctrl({q1S1, q2S0}, {q0S1},
-                          [&](const ValueRange targets) -> SmallVector<Value> {
-                            auto q = programBuilder.z(targets[0]);
-                            return SmallVector<Value>{q};
-                          });
-  auto [q2S2, c2] = programBuilder.measure(q12[1]);
+  Value c0;
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  Value c1;
+  std::tie(q1, c1) = programBuilder.measure(q1);
+  SmallVector<Value> q12;
+  SmallVector<Value> q0Vec;
+  std::tie(q12, q0Vec) = programBuilder.ctrl(
+      {q1, q2}, {q0}, [&](const ValueRange targets) -> SmallVector<Value> {
+        return SmallVector<Value>{programBuilder.z(targets[0])};
+      });
+  Value c2;
+  std::tie(q2, c2) = programBuilder.measure(q12[1]);
 
-  programBuilder.sink(q0S2[0]);
+  programBuilder.sink(q0Vec[0]);
   programBuilder.sink(q12[0]);
-  programBuilder.sink(q2S2);
+  programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type()});
-  auto r0S0 = referenceBuilder.allocQubit();
-  auto r1S0 = referenceBuilder.allocQubit();
-  auto r2S0 = referenceBuilder.allocQubit();
+  auto r0 = referenceBuilder.allocQubit();
+  auto r1 = referenceBuilder.allocQubit();
+  auto r2 = referenceBuilder.allocQubit();
 
-  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
-  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  Value cr0;
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  Value cr1;
+  std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
   auto andOp = arith::AndIOp::create(referenceBuilder, cr1, cr0);
 
-  auto r2S1 = referenceBuilder.qcoIf(
-      andOp.getResult(), {r2S0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto r = referenceBuilder.z(qubits[0]);
-        return SmallVector<Value>{r};
+  r2 = referenceBuilder.qcoIf(
+      andOp.getResult(), {r2}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return SmallVector<Value>{referenceBuilder.z(qubits[0])};
       })[0];
-  auto [r2S2, cr2] = referenceBuilder.measure(r2S1);
-  referenceBuilder.sink(r0S1);
-  referenceBuilder.sink(r1S1);
-  referenceBuilder.sink(r2S2);
+  Value cr2;
+  std::tie(r2, cr2) = referenceBuilder.measure(r2);
+  referenceBuilder.sink(r0);
+  referenceBuilder.sink(r1);
+  referenceBuilder.sink(r2);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
