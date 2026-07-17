@@ -733,7 +733,11 @@ TEST_P(MappingPassTest, MapDoUntil) {
         builder.scfCondition(beforeBits[size - 1], beforeArgs);
         return beforeArgs;
       },
-      [&](ValueRange args) { return args; });
+      [&](ValueRange args) {
+        SmallVector<Value> afterArgs(args);
+        flatGHZ(builder, afterArgs);
+        return afterArgs;
+      });
 
   flatGHZ(builder, qubits);
 
