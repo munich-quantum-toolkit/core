@@ -15,6 +15,7 @@ target_link_libraries(
           MLIRQCOProgramBuilder
           MLIRQCOTransforms
           MLIRQCOUtils
+          MQT::CoreDD
           MLIRPass
           MLIRFuncDialect
           MLIRArithDialect

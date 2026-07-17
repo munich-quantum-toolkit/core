@@ -28,7 +28,9 @@ add_mlir_dialect_library(
   LINK_LIBS
   PUBLIC
   MLIRQCODialect
-  MLIRSCFDialect)
+  MLIRQCOMatrix
+  MLIRSCFDialect
+  MQT::CoreDD)
 
 mqt_mlir_target_use_project_options(MLIRQCOUtils)
 
