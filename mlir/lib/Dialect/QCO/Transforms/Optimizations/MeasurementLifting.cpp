@@ -141,8 +141,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
       return mlir::failure();
     }
 
-    if (isInverting(predecessor) &&
-        predecessorUnitary.getInputQubits().size() == 1) {
+    if (isInverting(predecessor)) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       rewriter.setInsertionPointAfter(op);
       const mlir::Value trueConstant = rewriter.create<mlir::arith::ConstantOp>(
