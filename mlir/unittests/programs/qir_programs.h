@@ -100,6 +100,11 @@ Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b);
 template <bool IntoRegister = false>
 Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
 
+/// Measures one bit of a two-bit register, leaving the second bit unmeasured
+/// but still output-recorded.
+template <bool IntoRegister = false>
+Value partialMeasurementToRegister(QIRProgramBuilder& b);
+
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
 template <bool IntoRegister = false>

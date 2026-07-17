@@ -610,7 +610,11 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<>)}));
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<>)},
+        QCToQIRBaseTestCase{
+            "PartialMeasurementToRegister",
+            MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister<>)}));
 /// @}
 
 /// \name QCToQIRBase/QubitManagement/QubitManagement.cpp

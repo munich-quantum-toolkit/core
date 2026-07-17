@@ -315,6 +315,14 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   if (resultArrays.contains(name)) {
     llvm::reportFatalUsageError("Classical register already exists");
   }
+
+  // Track the register (in allocation order) for grouped output recording.
+  const auto regIdx = static_cast<unsigned>(recordedRegisters.size());
+  registerIndexByName.try_emplace(name, regIdx);
+  auto& reg = recordedRegisters.emplace_back();
+  reg.size = size;
+  reg.resultPtrs.assign(size, Value{});
+
   // Save current insertion point
   const InsertionGuard guard(*this);
 
@@ -338,17 +346,18 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 
     resultArrays.try_emplace(name, array.getResult());
 
+    // Load a result pointer per bit; every bit is output-recorded, so this is
+    // where the register's results are established (not at measurement time).
     for (int64_t i = 0; i < size; ++i) {
       auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
                                      ValueRange{intConstant(i)});
       auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-      loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
+      reg.resultPtrs[i] = load.getResult();
     }
   } else {
     // Use static results in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
-      auto result = staticResult(static_cast<int64_t>(numResults));
-      loadedResults.try_emplace({stringSaver.save(name), i}, result);
+      reg.resultPtrs[i] = staticResult(static_cast<int64_t>(numResults));
     }
   }
 
@@ -392,15 +401,17 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
   return result;
 }
 
-Value QIRProgramBuilder::measure(Value qubit, const Bit& bit, bool record) {
+Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
   const InsertionGuard guard(*this);
 
-  auto it = loadedResults.find({bit.registerName, bit.registerIndex});
-  if (it == loadedResults.end()) {
+  const auto regIt = registerIndexByName.find(bit.registerName);
+  if (regIt == registerIndexByName.end()) {
     llvm::reportFatalUsageError("Bit does not belong to a result pointer");
   }
-  auto result = it->second;
+  // The bit's result pointer was allocated with the register; the measurement
+  // writes into it. Recording of every bit happens at finalization.
+  auto result = recordedRegisters[regIt->second].resultPtrs[bit.registerIndex];
   if (profile != Profile::Adaptive) {
     setInsertionPoint(measurementsBlock->getTerminator());
   }
@@ -410,21 +421,6 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit, bool record) {
   auto fnDec =
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, fnSig);
   LLVM::CallOp::create(*this, fnDec, ValueRange{qubit, result});
-
-  if (record) {
-    if (profile == Profile::Adaptive) {
-      recordedArrays.insert(stringSaver.save(bit.registerName));
-    } else {
-      // In the base profile we don't have recorded arrays, so we need to
-      // find the index of the result and record that instead.
-      for (const auto& [index, ptr] : resultPtrs) {
-        if (ptr == result) {
-          recordedIndices.insert(index);
-          break;
-        }
-      }
-    }
-  }
 
   return result;
 }
@@ -987,47 +983,10 @@ void QIRProgramBuilder::ensureAllocationMode(
 }
 
 void QIRProgramBuilder::generateOutputRecording() {
-  if (resultArrays.empty() && resultPtrs.empty()) {
-    return; // No measurements to record
-  }
-
-  // Save current insertion point
   const InsertionGuard guard(*this);
-
-  // Insert in output block (before return)
   setInsertionPoint(outputBlock->getTerminator());
-
-  if (!resultPtrs.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-    auto fnDec =
-        getOrCreateFunctionDeclaration(*this, module, QIR_RECORD_OUTPUT, fnSig);
-    // Create output recording for each result pointer
-    for (const auto& [index, ptr] : resultPtrs) {
-      if (!recordedIndices.contains(index)) {
-        continue;
-      }
-      auto label = createResultLabel(*this, module,
-                                     "__unnamed__" + std::to_string(index))
-                       .getResult();
-      LLVM::CallOp::create(*this, fnDec, ValueRange{ptr, label});
-    }
-  }
-
-  if (!resultArrays.empty()) {
-    auto fnSig =
-        LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
-    auto fnDec = getOrCreateFunctionDeclaration(*this, module,
-                                                QIR_ARRAY_RECORD_OUTPUT, fnSig);
-    // Create output recording for each register
-    for (const auto& [name, results] : resultArrays) {
-      if (!recordedArrays.contains(name)) {
-        continue;
-      }
-      auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-      auto label = createResultLabel(*this, module, name).getResult();
-      LLVM::CallOp::create(*this, fnDec, ValueRange{size, results, label});
-    }
-  }
+  emitOutputRecording(*this, module, recordedRegisters, resultPtrs,
+                      recordedIndices);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {

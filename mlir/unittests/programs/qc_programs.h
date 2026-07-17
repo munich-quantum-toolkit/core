@@ -101,6 +101,10 @@ SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b);
 SmallVector<Value>
 multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b);
 
+/// Measures one bit of a two-bit register, returning the register with its
+/// second (unmeasured) bit still part of the output.
+Value partialMeasurementToRegister(QCProgramBuilder& b);
+
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
 Value measurementWithoutRegisters(QCProgramBuilder& b);

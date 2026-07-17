@@ -53,7 +53,12 @@ using namespace qir;
 namespace {
 
 /**
- * @brief Erases memref.alloc during the QIR Base Profile conversion
+ * @brief Lowers memref.alloc during the QIR Base Profile conversion
+ *
+ * @details A qubit register carries no allocation in the Base Profile and is
+ * simply erased. A returned classical-bit register instead allocates a static
+ * result pointer for each of its bits (so every bit is output-recorded, even
+ * ones that are never measured).
  */
 struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
@@ -62,6 +67,23 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    if (const auto it = state.registerAllocIndex.find(op.getOperation());
+        it != state.registerAllocIndex.end()) {
+      auto& reg = state.recordedRegisters[it->second];
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+      // Register bits take the next consecutive result indices; registers are
+      // allocated before any measurement, so the running result count is the
+      // register's base index.
+      const auto base = static_cast<int64_t>(state.resultPtrs.size());
+      for (int64_t i = 0; i < reg.size; ++i) {
+        const auto index = base + i;
+        auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
+        reg.resultPtrs[i] = result;
+        state.resultPtrs.try_emplace(index, result);
+      }
+    }
     rewriter.eraseOp(op);
     return success();
   }
@@ -121,6 +143,25 @@ struct ConvertMemRefDeallocOp final
 
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Erases memref.store during the QIR Base Profile conversion
+ *
+ * @details Stores into a classical-bit register carry the bit-to-result
+ * mapping, which is captured before the conversion; the store itself is
+ * dropped.
+ */
+struct ConvertMemRefStoreOp final
+    : StatefulOpConversionPattern<memref::StoreOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.eraseOp(op);
     return success();
@@ -209,59 +250,24 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto& resultPtrs = state.resultPtrs;
 
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
-    // Get result pointer
-    Value result;
-    int64_t resultIndex = 0;
-    const bool shouldRecord =
-        state.returnedMeasurements.contains(op.getOperation());
+    auto result = resolveMeasurementResult(state, op.getOperation(), rewriter);
 
-    const auto nresults = resultPtrs.size();
-    if (op.getRegisterIndex() && op.getRegisterName() && op.getRegisterSize()) {
-      const auto registerName = op.getRegisterName().value();
-      const auto registerIndex = op.getRegisterIndex().value();
-
-      // Assign a base offset to this register if not yet seen
-      const auto [it, _] =
-          state.registerOffsets.try_emplace(registerName, nresults);
-      resultIndex = it->second + static_cast<int64_t>(registerIndex);
-    } else {
-      resultIndex = static_cast<int64_t>(nresults);
-    }
-
-    if (shouldRecord) {
-      state.recordedIndices.insert(resultIndex);
-    }
-
-    if (resultPtrs.contains(resultIndex)) {
-      result = resultPtrs.at(resultIndex);
-    } else {
-      // Insert allocations and constants in entry block
-      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-      result = createPointerFromIndex(rewriter, op.getLoc(), resultIndex);
-      resultPtrs.try_emplace(resultIndex, result);
-    }
-
-    // Switch to measurements block
+    // Emit the measurement in the measurements block.
     rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
-
-    // Create measure call
     auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                              {ptrType, ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
-
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
                          ValueRange{adaptor.getQubit(), result});
 
-    rewriter.replaceOp(op, result);
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -276,10 +282,10 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                         MLIRContext* ctx,
                                         LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns
-      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
-           ConvertQCAllocOp, ConvertQCMeasureOp, ConvertQCDeallocOp>(
-          typeConverter, ctx, &state);
+  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+               ConvertMemRefDeallocOp, ConvertMemRefStoreOp, ConvertQCAllocOp,
+               ConvertQCMeasureOp, ConvertQCDeallocOp>(typeConverter, ctx,
+                                                       &state);
 }
 
 namespace {

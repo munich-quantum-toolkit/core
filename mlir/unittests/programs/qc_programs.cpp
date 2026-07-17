@@ -210,6 +210,14 @@ multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   return {c0, c1};
 }
 
+Value partialMeasurementToRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(2);
+  // Only the first bit is measured; the second is returned unmeasured.
+  b.measure(q[0], c, 0);
+  return c;
+}
+
 Value measurementWithoutRegisters(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   auto c = b.measure(q);

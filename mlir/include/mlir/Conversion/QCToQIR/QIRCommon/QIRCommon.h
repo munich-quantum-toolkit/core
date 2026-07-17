@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -45,12 +47,6 @@ struct LoweringState {
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
 
-  /// Map from (register name, index) to loaded result
-  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
-
-  // Map from register name to its offset
-  DenseMap<StringRef, int64_t> registerOffsets;
-
   /// Map from index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
 
@@ -70,8 +66,17 @@ struct LoweringState {
   /// Set of MeasureOps whose results should be recorded in the output.
   DenseSet<Operation*> returnedMeasurements;
 
-  /// Set of array register names that should be recorded in the output.
-  DenseSet<StringRef> recordedArrays;
+  /// Classical registers to be recorded, in the order they are returned. Each
+  /// register's result pointers are filled in when its `memref.alloc` is
+  /// lowered.
+  SmallVector<qir::RecordedRegister> recordedRegisters;
+
+  /// Maps a returned register's `memref.alloc` to its index in
+  /// `recordedRegisters`; the alloc lowering sets up its result pointers.
+  DenseMap<Operation*, unsigned> registerAllocIndex;
+
+  /// Maps a MeasureOp to the (register, bit) position it feeds.
+  DenseMap<Operation*, std::pair<unsigned, int64_t>> measureRegisterBit;
 
   /// Set of unnamed result indices that should be recorded in the output.
   DenseSet<int64_t> recordedIndices;
@@ -184,5 +189,23 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  * @param state The lowering state; `returnedMeasurements` is populated
  */
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state);
+
+/**
+ * @brief Resolves the QIR result pointer a measurement should write to.
+ *
+ * @details A measurement into a returned classical register writes to the
+ * bit's pre-allocated result pointer (established when the register's alloc was
+ * lowered). Any other measurement gets a fresh result pointer, which is
+ * recorded individually when the measurement's result is returned. This is the
+ * profile-independent part of measurement lowering; the caller emits the
+ * `mz` call. The rewriter's insertion point is left unchanged.
+ *
+ * @param state The lowering state
+ * @param op The measurement operation being lowered
+ * @param rewriter The pattern rewriter
+ * @return The result pointer for the measurement
+ */
+Value resolveMeasurementResult(LoweringState& state, Operation* op,
+                               ConversionPatternRewriter& rewriter);
 
 } // namespace mlir

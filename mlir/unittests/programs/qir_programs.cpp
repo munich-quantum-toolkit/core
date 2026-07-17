@@ -216,6 +216,15 @@ Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
 }
 
 template <bool IntoRegister>
+Value partialMeasurementToRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto c = b.allocClassicalBitRegister(2);
+  // Only the first bit is measured; the second is still output-recorded.
+  b.measure(q[0], c[0]);
+  return b.intConstant(0);
+}
+
+template <bool IntoRegister>
 Value measurementWithoutRegisters(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   auto bit = b.measure(q, 0);
@@ -988,6 +997,7 @@ template Value repeatedMeasurementToSameBit<false>(QIRProgramBuilder& b);
 template Value repeatedMeasurementToDifferentBits<false>(QIRProgramBuilder& b);
 template Value
 multipleClassicalRegistersAndMeasurements<false>(QIRProgramBuilder& b);
+template Value partialMeasurementToRegister<false>(QIRProgramBuilder& b);
 template Value measurementWithoutRegisters<false>(QIRProgramBuilder& b);
 template Value resetQubitWithoutOp<false>(QIRProgramBuilder& b);
 template Value resetMultipleQubitsWithoutOp<false>(QIRProgramBuilder& b);
@@ -1116,6 +1126,7 @@ template Value repeatedMeasurementToSameBit<true>(QIRProgramBuilder& b);
 template Value repeatedMeasurementToDifferentBits<true>(QIRProgramBuilder& b);
 template Value
 multipleClassicalRegistersAndMeasurements<true>(QIRProgramBuilder& b);
+template Value partialMeasurementToRegister<true>(QIRProgramBuilder& b);
 template Value measurementWithoutRegisters<true>(QIRProgramBuilder& b);
 template Value resetQubitWithoutOp<true>(QIRProgramBuilder& b);
 template Value resetMultipleQubitsWithoutOp<true>(QIRProgramBuilder& b);

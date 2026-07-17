@@ -10,6 +10,10 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
@@ -52,7 +56,7 @@ inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
-    "__quantum__rt__result_array_record_output";
+    "__quantum__rt__array_record_output";
 inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
@@ -261,5 +265,36 @@ createResultLabel(OpBuilder& builder, Operation* op, StringRef label,
  * @return The pointer value
  */
 Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
+
+/**
+ * @brief A classical-bit register whose bits are recorded in the program
+ * output.
+ */
+struct RecordedRegister {
+  /// Number of bits in the register.
+  int64_t size = 0;
+  /// Result pointer for each bit.
+  SmallVector<Value> resultPtrs;
+};
+
+/**
+ * @brief Emits the QIR output-recording calls at the current insertion point.
+ *
+ * @details Each classical register produces an `array_record_output` marker
+ * followed by one `result_record_output` per bit (positional labels `cN` and
+ * `cN_i`). Individually recorded results follow as `__unnamed__` results. This
+ * is shared by the QC-to-QIR conversion and the QIR program builder so both
+ * emit identical recording.
+ *
+ * @param builder The builder to use; its insertion point is used as-is
+ * @param anchor An operation used to locate the enclosing module
+ * @param registers The classical registers to record, in order
+ * @param resultPtrs Result pointers for individually recorded results
+ * @param recordedIndices Which of `resultPtrs` should be recorded
+ */
+void emitOutputRecording(OpBuilder& builder, Operation* anchor,
+                         ArrayRef<RecordedRegister> registers,
+                         const DenseMap<int64_t, Value>& resultPtrs,
+                         const DenseSet<int64_t>& recordedIndices);
 
 } // namespace mlir::qir

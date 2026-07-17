@@ -627,7 +627,11 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRAdaptiveTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<>)}));
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<>)},
+        QCToQIRAdaptiveTestCase{
+            "PartialMeasurementToRegister",
+            MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister<>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/ResetOp.cpp

@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -348,14 +350,12 @@ public:
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
-   *
-   * The output is recorded via `__quantum__rt__result_array_record_output`
-   * during `finalize()`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`, writing to
+   * the bit's result pointer (allocated with the register). Every bit of the
+   * register is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
-   * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
@@ -379,7 +379,7 @@ public:
    * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const Bit& bit, bool record = true);
+  Value measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1235,17 +1235,18 @@ private:
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
 
-  /// Map from (register name, index) to loaded result
-  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
-
   /// Map from result index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
 
-  /// Set of array register names that should be recorded in the output.
-  DenseSet<StringRef> recordedArrays;
-
   /// Set of unnamed result indices that should be recorded in the output.
   DenseSet<int64_t> recordedIndices;
+
+  /// Classical registers to be recorded, in allocation order. Each register's
+  /// result pointers are established when it is allocated.
+  SmallVector<RecordedRegister> recordedRegisters;
+
+  /// Map from classical register name to its index in `recordedRegisters`.
+  llvm::StringMap<unsigned> registerIndexByName;
 
   /// Map from register to their loaded indices
   DenseMap<Value, DenseSet<Value>> loadedQubits;

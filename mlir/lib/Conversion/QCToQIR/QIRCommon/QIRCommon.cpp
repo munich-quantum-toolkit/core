@@ -28,6 +28,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -410,51 +411,10 @@ void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
-  auto& resultArrays = state.resultArrays;
-  auto& resultPtrs = state.resultPtrs;
-
-  if (resultArrays.empty() && resultPtrs.empty()) {
-    return;
-  }
-
   OpBuilder builder(ctx);
-  auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  auto voidType = LLVM::LLVMVoidType::get(ctx);
-
-  auto& outputBlock = main.getBlocks().back();
-  builder.setInsertionPoint(&outputBlock.back());
-
-  if (!resultPtrs.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-    auto fnDec =
-        getOrCreateFunctionDeclaration(builder, main, QIR_RECORD_OUTPUT, fnSig);
-    for (const auto& [index, ptr] : resultPtrs) {
-      if (!state.recordedIndices.contains(index)) {
-        continue;
-      }
-      auto label = createResultLabel(builder, main,
-                                     "__unnamed__" + std::to_string(index))
-                       .getResult();
-      LLVM::CallOp::create(builder, main->getLoc(), fnDec,
-                           ValueRange{ptr, label});
-    }
-  }
-
-  if (!resultArrays.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(
-        voidType, {builder.getI64Type(), ptrType, ptrType});
-    auto fnDec = getOrCreateFunctionDeclaration(builder, main,
-                                                QIR_ARRAY_RECORD_OUTPUT, fnSig);
-    for (const auto& [name, results] : resultArrays) {
-      if (!state.recordedArrays.contains(name)) {
-        continue;
-      }
-      auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-      auto label = createResultLabel(builder, main, name).getResult();
-      LLVM::CallOp::create(builder, main->getLoc(), fnDec,
-                           ValueRange{size, results, label});
-    }
-  }
+  builder.setInsertionPoint(&main.getBlocks().back().back());
+  emitOutputRecording(builder, main, state.recordedRegisters, state.resultPtrs,
+                      state.recordedIndices);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
@@ -470,6 +430,29 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
   patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp,
                ConvertQCStaticOp, ConvertQCGPhaseOp>(typeConverter, ctx,
                                                      &state);
+}
+
+Value resolveMeasurementResult(LoweringState& state, Operation* op,
+                               ConversionPatternRewriter& rewriter) {
+  // A measurement into a returned register writes to the bit's pre-allocated
+  // result pointer (set up when the register's alloc was lowered).
+  if (const auto it = state.measureRegisterBit.find(op);
+      it != state.measureRegisterBit.end()) {
+    const auto [regIdx, bitIdx] = it->second;
+    return state.recordedRegisters[regIdx].resultPtrs[bitIdx];
+  }
+
+  // Otherwise it gets a fresh result, recorded individually when it is
+  // returned.
+  const OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+  const auto index = static_cast<int64_t>(state.resultPtrs.size());
+  if (state.returnedMeasurements.contains(op)) {
+    state.recordedIndices.insert(index);
+  }
+  auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
+  state.resultPtrs.try_emplace(index, result);
+  return result;
 }
 
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
@@ -490,10 +473,42 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
     funcOp.walk([&](func::ReturnOp returnOp) {
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
+      // Classical-register memrefs (and their stores) are removed here so that
+      // the register measurements have no remaining uses during conversion.
+      SmallVector<Operation*> toErase;
 
       for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
+          // A measurement result returned directly is recorded as an
+          // individual (unnamed) result.
           state.returnedMeasurements.insert(measureOp.getOperation());
+        } else if (auto alloc = operand.getDefiningOp<memref::AllocOp>()) {
+          // A returned classical-bit register (memref<Nxi1>) is recorded as a
+          // group. Its result pointers and recording are set up when the
+          // `memref.alloc` is lowered; here we only note that this register is
+          // returned and recover, from its stores, which measurement feeds
+          // which bit. The stores are dropped so the register measurements have
+          // no remaining uses during conversion.
+          const auto regIdx =
+              static_cast<unsigned>(state.recordedRegisters.size());
+          const auto size = alloc.getType().getShape()[0];
+          auto& reg = state.recordedRegisters.emplace_back();
+          reg.size = size;
+          reg.resultPtrs.assign(size, Value{});
+          state.registerAllocIndex.try_emplace(alloc.getOperation(), regIdx);
+          for (auto* user : alloc.getResult().getUsers()) {
+            auto store = dyn_cast<memref::StoreOp>(user);
+            if (!store) {
+              continue;
+            }
+            auto bit = getConstantIntValue(store.getIndices()[0]);
+            auto measureOp = store.getValueToStore().getDefiningOp<MeasureOp>();
+            if (bit && measureOp) {
+              state.measureRegisterBit.try_emplace(measureOp.getOperation(),
+                                                   regIdx, *bit);
+            }
+            toErase.emplace_back(store);
+          }
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());
@@ -513,6 +528,11 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
       funcOp.setFunctionType(FunctionType::get(
           funcOp.getContext(), funcOp.getFunctionType().getInputs(),
           keptReturnTypes));
+
+      // Erase stores before their allocs (stores use the alloc result).
+      for (auto* op : toErase) {
+        op->erase();
+      }
     });
   });
 }
