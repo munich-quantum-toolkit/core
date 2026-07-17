@@ -270,13 +270,20 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
         failed(simulate(mainFunc(*module), dd::makeZeroState(1, *dd), *dd)));
   }
 
-  expectBuiltFails(1, [](QCOProgramBuilder& b) {
-    auto q0 = b.staticQubit(0);
-    auto q1 = b.staticQubit(1);
-    q0 = b.h(q0);
-    (void)q1;
-    return b.intConstant(0);
-  });
+  {
+    auto module = buildModule([](QCOProgramBuilder& b) {
+      auto q0 = b.staticQubit(0);
+      auto q1 = b.staticQubit(1);
+      q0 = b.h(q0);
+      (void)q1;
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(module);
+    auto dd = std::make_unique<dd::Package>(1);
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*module), *dd)));
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*module), dd::makeZeroState(1, *dd), *dd)));
+  }
 
   expectBuiltFails(13, [](QCOProgramBuilder& b) {
     SmallVector<Value, 13> qs;
