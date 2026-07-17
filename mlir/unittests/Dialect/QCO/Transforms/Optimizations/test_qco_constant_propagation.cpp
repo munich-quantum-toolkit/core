@@ -128,6 +128,32 @@ TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
 }
 
 /**
+ * @brief Test: This test checks that CNOTs are not changed if a reset is
+ * between to Hadamards, i.e. the qubits are in a superposition after the second
+ * Hadamard.
+ */
+TEST_F(QCOConstantPropagationTest, testApplyReset) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.h(q[0]);
+  q[0] = programBuilder.reset(q[0]);
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.cx(q[0], q[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[0] = referenceBuilder.reset(qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  referenceBuilder.cx(qRef[0], qRef[1]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: This test checks that implied Qubits are removed from a
  * controlled gate.
  */
