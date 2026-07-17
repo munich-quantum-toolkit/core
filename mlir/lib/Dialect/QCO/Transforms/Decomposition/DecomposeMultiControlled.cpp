@@ -827,9 +827,11 @@ static void emitMcpSp22Step(GateEmitter& emitter, double phi,
     const double param = std::ldexp(1.0, exponent);
 
     // Steps 1–2: sign from step. Steps 3–4: flip when control == 0 vs not.
-    const double sign = step <= 2
-                            ? (step == 1 ? 1.0 : -1.0)
-                            : ((step == 4) == (control == 0) ? 1.0 : -1.0);
+    double sign = 1.0;
+    if (step == 2 || (step == 3 && control == 0) ||
+        (step == 4 && control != 0)) {
+      sign = -1.0;
+    }
 
     if (target == numQubits - 1 && step <= 2) {
       emitter.cp(control, target, sign * phi / param);
