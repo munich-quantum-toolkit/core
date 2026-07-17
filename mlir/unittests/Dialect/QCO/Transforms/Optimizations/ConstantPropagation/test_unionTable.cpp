@@ -517,7 +517,7 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, unifyTooLargeHybridStates) {
               testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
 }
 
-TEST_F(UnionTableWithoutSetupAllocationsTest, globalPhaseClassicallyDependend) {
+TEST_F(UnionTableWithoutSetupAllocationsTest, globalPhaseClassicallyDependent) {
   const auto sOp =
       SOp::create(programBuilder, programBuilder.getLoc(), v0.getType(), v0);
   std::vector classicalIndexVecZero = {i0};
