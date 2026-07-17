@@ -11,6 +11,7 @@
 #include "mlir/Support/Passes.h"
 
 #include "mlir/Dialect/QC/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
 
@@ -18,62 +19,110 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Pass/PassRegistry.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
 using namespace mlir;
 
-static void addSimplificationPasses(PassManager& pm) {
+static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 }
 
 LogicalResult
-runWithPassManager(ModuleOp module,
-                   const function_ref<void(PassManager&)> populatePasses,
+runWithPassManager(ModuleOp mod,
+                   const function_ref<void(OpPassManager&)> populatePasses,
                    const StringRef errorMessage) {
-  PassManager pm(module.getContext());
+  PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(module).failed()) {
+  if (pm.run(mod).failed()) {
     llvm::errs() << errorMessage << "\n";
     return failure();
   }
   return success();
 }
 
-void populateQCCleanupPipeline(PassManager& pm) {
+void registerMQTCompilerPasses() {
+  static const auto REGISTERED = [] {
+    qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerHadamardLifting();
+    qco::registerMergeSingleQubitRotationGates();
+    qco::registerQuantumLoopUnroll();
+    PassPipelineRegistration<>("mqt-qco-default",
+                               "Run the default MQT QCO optimization pipeline.",
+                               populateDefaultQCOOptimizationPipeline);
+    return true;
+  }();
+  static_cast<void>(REGISTERED);
+}
+
+void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
+  pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
+                              const bool enableTiming,
+                              const bool enableStatistics) {
+  registerMQTCompilerPasses();
+  registerTransformsPasses();
+  PassManager pm(mod.getContext());
+  if (enableTiming) {
+    pm.enableTiming();
+  }
+  if (enableStatistics) {
+    pm.enableStatistics();
+  }
+  if (failed(parsePassPipeline(pipeline, pm))) {
+    return mod.emitError() << "failed to parse pass pipeline '" << pipeline
+                           << "'";
+  }
+  return pm.run(mod);
+}
+
+void populateQCCleanupPipeline(OpPassManager& pm) {
   addSimplificationPasses(pm);
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(PassManager& pm) {
+void populateQCOCleanupPipeline(OpPassManager& pm) {
   addSimplificationPasses(pm);
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQIRCleanupPipeline(PassManager& pm, bool useAdaptive) {
+void populateQIRCleanupPipeline(OpPassManager& pm, bool useAdaptive) {
   addSimplificationPasses(pm);
   pm.addPass(qir::createQIRCleanupPass());
   pm.addPass(createRemoveDeadValuesPass());
   pm.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
 }
 
-[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQCCleanupPipeline,
-                            "Failed to run QC cleanup pipeline.");
+void populateJeffCleanupPipeline(OpPassManager& pm) {
+  addSimplificationPasses(pm);
+  pm.addPass(createRemoveDeadValuesPass());
 }
 
-[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQCOCleanupPipeline,
-                            "Failed to run QCO cleanup pipeline.");
+[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp mod) {
+  return runWithPassManager(mod, populateQCCleanupPipeline,
+                            "Failed to run the QC cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module,
+[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
+  return runWithPassManager(mod, populateQCOCleanupPipeline,
+                            "Failed to run the QCO cleanup pipeline.");
+}
+
+[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,
                                                   bool useAdaptive) {
   return runWithPassManager(
-      module,
-      [&](PassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
-      "Failed to run QIR cleanup pipeline.");
+      mod,
+      [&](OpPassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
+      "Failed to run the QIR cleanup pipeline.");
+}
+
+[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp module) {
+  return runWithPassManager(module, populateJeffCleanupPipeline,
+                            "Failed to run the jeff cleanup pipeline.");
 }

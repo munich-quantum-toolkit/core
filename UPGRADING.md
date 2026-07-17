@@ -6,15 +6,7 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### QDMI child devices
-
-The QDMI driver now translates device-library-specific `QDMI_Child_Device`
-handles into client-facing `QDMI_Device` handles backed by dedicated child
-sessions. Direct child devices can be queried through
-`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
-Python. Devices without child-device support continue to behave unchanged.
-
-### MLIR enabled by default for C++ builds
+### MLIR enabled by default for C++ and Python package builds
 
 The MLIR-based functionality within MQT Core has long been experimental and
 opt-in. Starting with this release, MLIR is enabled by default for C++ library
@@ -28,11 +20,16 @@ Please follow the instructions there to install the distribution for your
 platform. You can then point CMake to the installation directory using the
 `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
 
+As of this release, MLIR is also enabled for Python package builds, since the
+package now exposes an MLIR-based compiler entry point in `mqt.core.mlir`.
+
+For local development, you can configure `MLIR_DIR` once in a repository-local
+`.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
+Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
+otherwise provided.
+
 The MLIR components can still be manually disabled by passing
-`-DBUILD_MQT_CORE_MLIR=OFF` to CMake. MLIR is also not enabled for the Python
-package builds because no functionality depends on it yet. This is expected to
-change in the future, when we expose the MLIR-based functionality via the Python
-package.
+`-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
 
 Known limitations:
 
@@ -42,9 +39,6 @@ Known limitations:
 - AppleClang 17+ is required to build MQT Core with MLIR enabled due to some
   C++20 features being used that are not yet properly supported by older
   versions.
-- Our pre-built distributions are compiled in Release mode. On Windows, this
-  leads to ABI incompatibilities with debug builds. Either build in Release mode
-  or build LLVM from source in Debug mode to resolve this.
 
 ### Removal of the density matrix support from the DD package
 
@@ -70,6 +64,14 @@ a consistent local development environment. Common IDEs like
 and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
+
+### QDMI child devices
+
+The QDMI driver now translates device-library-specific `QDMI_Child_Device`
+handles into client-facing `QDMI_Device` handles backed by dedicated child
+sessions. Direct child devices can be queried through
+`fomac::Device::getChildDevices()` in C++ and `Device.child_devices()` in
+Python. Devices without child-device support continue to behave unchanged.
 
 ## [3.7.0]
 

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Gate.hpp
+ * @brief OpenQASM 3 gate declarations and definitions.
+ */
+
 #pragma once
 
 #include "Statement_fwd.hpp"

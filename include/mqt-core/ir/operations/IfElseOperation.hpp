@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file IfElseOperation.hpp
+ * @brief Classically controlled if-else quantum operations.
+ */
+
 #pragma once
 
 #include "ir/Definitions.hpp"

@@ -340,11 +340,12 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
 
   auto newIfOp = create(rewriter, getLoc(), getCondition(), allQubits);
 
-  const auto rewriteRegion = [&rewriter, &allQubitTypes,
-                              &addons](Region& oldRegion, Region& newRegion) {
+  const auto rewriteRegion = [&](Region& oldRegion, Region& newRegion) {
     auto* oldBlock = &oldRegion.front();
     const auto numOldArgs = oldBlock->getNumArguments();
-    auto* newBlock = rewriter.createBlock(&newRegion, {}, allQubitTypes);
+    auto* newBlock =
+        rewriter.createBlock(&newRegion, {}, allQubitTypes,
+                             SmallVector<Location>(allQubits.size(), getLoc()));
     const auto oldArgs = newBlock->getArguments().take_front(numOldArgs);
     const auto addonArgs = newBlock->getArguments().drop_front(numOldArgs);
 
@@ -361,7 +362,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
   rewriteRegion(getThenRegion(), newIfOp.getThenRegion());
   rewriteRegion(getElseRegion(), newIfOp.getElseRegion());
 
-  rewriter.eraseOp(*this);
+  rewriter.replaceOp(*this, newIfOp.getResults().take_front(getNumResults()));
 
   return newIfOp;
 }

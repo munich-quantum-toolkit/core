@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Types_fwd.hpp
+ * @brief Forward declarations for OpenQASM 3 type-system classes.
+ */
+
 #pragma once
 
 #include <cstdint>

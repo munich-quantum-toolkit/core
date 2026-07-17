@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Edge.hpp
+ * @brief Decision-diagram edges and edge traversal helpers.
+ */
+
 #pragma once
 
 #include "dd/Complex.hpp"

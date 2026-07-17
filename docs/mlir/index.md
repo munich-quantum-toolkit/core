@@ -1,11 +1,12 @@
-# The MQT Compiler Collection
+# MQT Compiler Collection
 
 The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof
 quantum-classical compilation framework built on the Multi-Level Intermediate
 Representation (MLIR). For an overview, see {cite:p}`MQTCompilerCollection2026`.
 
-This page gives a technical introduction. It links to the API documentation for
-the MLIR infrastructure.
+The {doc}`Python compiler guide <python_compiler_collection>` describes how to
+compile and inspect quantum programs from Python. The remaining pages are the
+technical reference for the underlying MLIR infrastructure.
 
 We define multiple dialects, each with its dedicated purpose:
 
@@ -25,6 +26,7 @@ interoperability, we provide {doc}`conversions <Conversions>` between dialects.
 ```{toctree}
 :maxdepth: 2
 
+python_compiler_collection
 QC
 QCO
 QTensor

@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file ZXDiagram.hpp
+ * @brief ZX-diagram representation and graph operations.
+ */
+
 #pragma once
 
 #include "Utils.hpp"

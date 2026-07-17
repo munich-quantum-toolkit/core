@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -44,17 +45,12 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  * @return True if the operation is a diagonal gate, false otherwise.
  */
 static bool isDiagonal(Operation* op) {
-  if (auto c = dyn_cast<CtrlOp>(op)) {
-    if (c.getNumBodyUnitaries() != 1) {
-      return false;
-    }
-    return isDiagonal(c.getBodyUnitary(0));
+  if (op == nullptr) {
+    return false;
   }
-  if (auto i = dyn_cast<InvOp>(op)) {
-    if (i.getNumBodyUnitaries() != 1) {
-      return false;
-    }
-    return isDiagonal(i.getBodyUnitary(0));
+  if (isa<CtrlOp, InvOp>(op)) {
+    return isDiagonal(utils::getSoleBodyUnitary<UnitaryOpInterface>(
+        *op->getRegion(0).getBlocks().begin()));
   }
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
@@ -146,8 +142,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
       return mlir::failure();
     }
 
-    if (isInverting(predecessor) &&
-        predecessorUnitary.getInputQubits().size() == 1) {
+    if (isInverting(predecessor)) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       rewriter.setInsertionPointAfter(op);
       const mlir::Value trueConstant = rewriter.create<mlir::arith::ConstantOp>(
@@ -214,10 +209,9 @@ protected:
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);
-    patterns.add<LiftMeasurementsAboveControlsPattern>(patterns.getContext());
-    patterns.add<LiftMeasurementsAboveInvertingGatesPattern>(
-        patterns.getContext());
-    patterns.add<LiftMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
+    patterns.add<LiftMeasurementsAboveControlsPattern,
+                 LiftMeasurementsAboveInvertingGatesPattern,
+                 LiftMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
 
     // Apply patterns in an iterative and greedy manner.
     if (failed(applyPatternsGreedily(op, std::move(patterns)))) {

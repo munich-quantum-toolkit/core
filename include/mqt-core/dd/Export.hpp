@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Export.hpp
+ * @brief Export decision diagrams to vector and matrix representations.
+ */
+
 #pragma once
 
 #include "dd/Complex.hpp"
