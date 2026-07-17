@@ -141,7 +141,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> q01;
   SmallVector<Value> q2Vec;
   std::tie(q01, q2Vec) = programBuilder.ctrl(
-      {q0, q1}, {q2}, [&](const ValueRange targets) -> SmallVector<Value> {
+      {q0, q1}, {q2}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.x(targets[0])};
       });
 
@@ -206,7 +206,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> q01;
   SmallVector<Value> q2Vec;
   std::tie(q01, q2Vec) = programBuilder.ctrl(
-      {q0, q1}, {q2}, [&](const ValueRange targets) -> SmallVector<Value> {
+      {q0, q1}, {q2}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.x(targets[0])};
       });
 
@@ -269,7 +269,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> q012;
   SmallVector<Value> q3Vec;
   std::tie(q012, q3Vec) = programBuilder.ctrl(
-      {q0, q1, q2}, {q3}, [&](const ValueRange targets) -> SmallVector<Value> {
+      {q0, q1, q2}, {q3}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.x(targets[0])};
       });
 
@@ -380,12 +380,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value c1;
   std::tie(q1, c1) = programBuilder.measure(q1);
   std::tie(q1, q0) = programBuilder.cz(q1, q0);
-  Value c0_;
-  std::tie(q0, c0_) = programBuilder.measure(q0);
+  Value c2;
+  std::tie(q0, c2) = programBuilder.measure(q0);
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1, c0_});
+  module = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
@@ -402,12 +402,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
       cr1, {r0}, [&](ValueRange qubits) -> SmallVector<Value> {
         return SmallVector<Value>{referenceBuilder.z(qubits[0])};
       })[0];
-  Value cr0_;
-  std::tie(r0, cr0_) = referenceBuilder.measure(r0);
+  Value cr2;
+  std::tie(r0, cr2) = referenceBuilder.measure(r0);
   referenceBuilder.sink(r0);
   referenceBuilder.sink(r1);
 
-  reference = referenceBuilder.finalize({cr0, cr1, cr0_});
+  reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -429,7 +429,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> q12;
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) = programBuilder.ctrl(
-      {q1, q2}, {q0}, [&](const ValueRange targets) -> SmallVector<Value> {
+      {q1, q2}, {q0}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.z(targets[0])};
       });
   Value c1;
@@ -487,7 +487,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> q12;
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) = programBuilder.ctrl(
-      {q1, q2}, {q0}, [&](const ValueRange targets) -> SmallVector<Value> {
+      {q1, q2}, {q0}, [&](ValueRange targets) -> SmallVector<Value> {
         return SmallVector<Value>{programBuilder.z(targets[0])};
       });
   Value c2;
