@@ -12,8 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add DD `buildFunctionality` / `simulate` for static unitary QCO `func.func`
-  programs ([#1915]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
