@@ -1163,9 +1163,8 @@ SmallVector<Value> negPowInvIswapRef(QCProgramBuilder& b);
 /// so the pow survives canonicalization and reaches ConvertQCPowOp.
 SmallVector<Value> ctrlPowSx(QCProgramBuilder& b);
 
-/// pow(2) with a two-unitary body (x; rxx) — a multi-unitary pow body (newly
-/// legal). The optimizer leaves such bodies untouched; used to check
-/// verification and the QC↔QCO round-trip.
+/// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
+/// pow bodies untouched; checks verification and the QC↔QCO round-trip.
 SmallVector<Value> powTwo(QCProgramBuilder& b);
 
 /// pow(0) with a two-unitary body (x; rxx) — folds to identity (erased at top

@@ -282,11 +282,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
                                                 newLambda);
               return success();
             })
-            .Case<DCXOp>([&](auto g) {
-              rewriter.replaceOpWithNewOp<DCXOp>(g, g.getInputTarget(1),
-                                                 g.getInputTarget(0));
-              return success();
-            })
             .Case<RXXOp>([&](auto g) {
               rewriter.replaceOpWithNewOp<RXXOp>(
                   g, g.getInputTarget(0), g.getInputTarget(1), negTheta(g));

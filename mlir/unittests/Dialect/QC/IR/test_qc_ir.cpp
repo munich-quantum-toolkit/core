@@ -191,7 +191,7 @@ TEST_F(QCTest, PowRxxFold) {
   EXPECT_EQ(powCount, 0) << "PowOp around rxx should be folded away";
 }
 
-/// Regression: pow(-0.5) { h } cannot fold a negative fractional exponent
+/// pow(-0.5) { h } cannot fold a negative fractional exponent
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCTest, NegPowHNoFold) {
   auto program =
@@ -206,11 +206,8 @@ TEST_F(QCTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// pow(sx) expands inside a ctrl modifier. The fold emits a separate GPhase
-/// alongside the rotation; keeping both inside the ctrl body preserves the
-/// controlled global phase (under a control the GPhase is an observable
-/// controlled phase). The controlled GPhase is later pulled out and resolved
-/// once the multi-op modifier is unrolled (see #1758). Verify the CtrlOp
+/// pow(sx) inside a ctrl modifier expands into a GPhase + RX kept within the
+/// ctrl body, so the controlled global phase is preserved. Verify the CtrlOp
 /// survives and the nested PowOp is expanded into a GPhase + RX.
 TEST_F(QCTest, CtrlPowSxExpands) {
   auto program =
@@ -234,10 +231,8 @@ TEST_F(QCTest, CtrlPowSxExpands) {
   EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
 }
 
-/// A multi-unitary pow body (pow(2){x; rxx}) is now legal and the optimizer
-/// leaves it untouched. Verify the pow and both body unitaries survive the
-/// cleanup pipeline. (Round-trip coverage lives in the QC↔QCO suites via
-/// powTwo.)
+/// A multi-unitary pow body (pow(2){x; rxx}) is left untouched by the cleanup
+/// pipeline. Verify the pow and both body unitaries survive.
 TEST_F(QCTest, PowTwoSurvives) {
   auto program =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powTwo));

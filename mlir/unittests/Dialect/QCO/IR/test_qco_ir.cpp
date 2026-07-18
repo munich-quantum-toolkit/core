@@ -315,7 +315,7 @@ TEST_F(QCOTest, PowRxxFold) {
   EXPECT_EQ(powCount, 0) << "PowOp around rxx should be folded away";
 }
 
-/// Regression: pow(-0.5) { h } cannot fold a negative fractional exponent
+/// pow(-0.5) { h } cannot fold a negative fractional exponent
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCOTest, NegPowHNoFold) {
   auto program =
@@ -330,11 +330,8 @@ TEST_F(QCOTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// pow(sx) expands inside a ctrl modifier. The fold emits a separate GPhase
-/// alongside the rotation; keeping both inside the ctrl body preserves the
-/// controlled global phase (under a control the GPhase is an observable
-/// controlled phase). The controlled GPhase is later pulled out and resolved
-/// once the multi-op modifier is unrolled (see #1758). Verify the CtrlOp
+/// pow(sx) inside a ctrl modifier expands into a GPhase + RX kept within the
+/// ctrl body, so the controlled global phase is preserved. Verify the CtrlOp
 /// survives and the nested PowOp is expanded into a GPhase + RX.
 TEST_F(QCOTest, CtrlPowSxExpands) {
   auto program =
