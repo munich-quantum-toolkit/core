@@ -3680,7 +3680,11 @@ SmallVector<Value> invPowReorderedRef(QCOProgramBuilder& b) {
     auto res = b.swap(powArgs[0], powArgs[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
-  return measureAndReturn(b, powOut);
+  // The pow operates on {q[1], q[0]}, so its outputs follow that order; write
+  // them back to their register slots before measuring in natural order.
+  q[1] = powOut[0];
+  q[0] = powOut[1];
+  return measureAndReturn(b, q.qubits);
 }
 
 SmallVector<Value> mergeNestedPowReordered(QCOProgramBuilder& b) {
@@ -3702,7 +3706,11 @@ SmallVector<Value> mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
     auto res = b.swap(powArgs[0], powArgs[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
-  return measureAndReturn(b, powOut);
+  // The pow operates on {q[1], q[0]}, so its outputs follow that order; write
+  // them back to their register slots before measuring in natural order.
+  q[1] = powOut[0];
+  q[0] = powOut[1];
+  return measureAndReturn(b, q.qubits);
 }
 
 Value powRxNeg(QCOProgramBuilder& b) {

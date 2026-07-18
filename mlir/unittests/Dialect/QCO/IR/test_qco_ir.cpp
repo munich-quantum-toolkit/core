@@ -517,7 +517,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledIdentity),
                     MQT_NAMED_BUILDER(alloc3QubitRegister)},
         QCOTestCase{"PowId", MQT_NAMED_BUILDER(powId),
-                    MQT_NAMED_BUILDER(identity)}));
+                    MQT_NAMED_BUILDER(alloc1QubitRegister)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/IswapOp.cpp
