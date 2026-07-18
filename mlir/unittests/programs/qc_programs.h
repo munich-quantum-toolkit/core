@@ -934,6 +934,9 @@ SmallVector<Value> ifElse(QCProgramBuilder& b);
 /// Creates a circuit with an if operation with two qubits.
 SmallVector<Value> ifTwoQubits(QCProgramBuilder& b);
 
+/// Creates a circuit that measures a qubit inside an if operation's branch.
+SmallVector<Value> measureInIf(QCProgramBuilder& b);
+
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
 Value nestedIfOpForLoop(QCProgramBuilder& b);

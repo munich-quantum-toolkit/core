@@ -69,13 +69,27 @@ protected:
 
 } // namespace
 
+static Value measureToRegister(qc::QCProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, q] : llvm::enumerate(qubits)) {
+    b.measure(q, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
+
+static SmallVector<Value> allocMultipleQubitRegisters(qc::QCProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  auto c0 = measureToRegister(b, {q0[0], q0[1]});
+  auto c1 = measureToRegister(b, {q1[0], q1[1], q1[2]});
+  return {c0, c1};
+}
+
 static SmallVector<Value> twoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.x(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  return {c0, c1};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> singleNegControlledX(qc::QCProgramBuilder& b) {
@@ -83,19 +97,13 @@ static SmallVector<Value> singleNegControlledX(qc::QCProgramBuilder& b) {
   b.x(q[0]);
   b.cx(q[0], q[1]);
   b.x(q[0]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  return {c0, c1};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> tripleControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcx({q[0], q[1], q[2]}, q[3]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto c2 = b.measure(q[2]);
-  auto c3 = b.measure(q[3]);
-  return {c0, c1, c2, c3};
+  return {measureToRegister(b, {q[0], q[1], q[2], q[3]})};
 }
 
 static SmallVector<Value> mixedControlledX(qc::QCProgramBuilder& b) {
@@ -103,10 +111,7 @@ static SmallVector<Value> mixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q[1]);
   b.mcx({q[0], q[1]}, q[2]);
   b.x(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto c2 = b.measure(q[2]);
-  return {c0, c1, c2};
+  return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
 static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
@@ -119,23 +124,23 @@ static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q2[1]);
   b.mcx({q1[1], q2[1]}, q3[1]);
   b.x(q2[1]);
-  auto c0 = b.measure(q1[0]);
-  auto c1 = b.measure(q1[1]);
-  auto c2 = b.measure(q2[0]);
-  auto c3 = b.measure(q2[1]);
-  auto c4 = b.measure(q3[0]);
-  auto c5 = b.measure(q3[1]);
-  return {c0, c1, c2, c3, c4, c5};
+  auto c1 = measureToRegister(b, {q1[0], q1[1]});
+  auto c2 = measureToRegister(b, {q2[0], q2[1]});
+  auto c3 = measureToRegister(b, {q3[0], q3[1]});
+  return {c1, c2, c3};
 }
 
 static Value ifNot(qc::QCProgramBuilder& b) {
+  // Only `out` is declared `output` in the QASM source, so the non-output
+  // condition bit `c` is measured bare and not returned.
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
+  auto out = b.allocClassicalBitRegister(1);
   b.h(q[0]);
   auto c = b.measure(q[0]);
   auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
-  auto out = b.measure(q[0]);
+  b.measure(q[0], out, 0);
   return out;
 }
 
@@ -177,7 +182,7 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::allocQubitRegister)},
         QASM3TranslationTestCase{
             "AllocMultipleQubitRegisters", qasm::allocMultipleQubitRegisters,
-            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters)},
+            MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
         QASM3TranslationTestCase{"AllocLargeRegister", qasm::allocLargeRegister,
                                  MQT_NAMED_BUILDER(qc::allocLargeRegister)},
         QASM3TranslationTestCase{
@@ -449,4 +454,6 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"IfEmptyThen", qasm::ifEmptyThen,
                                  MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
-                                 MQT_NAMED_BUILDER(qc::ifElse)}));
+                                 MQT_NAMED_BUILDER(qc::ifElse)},
+        QASM3TranslationTestCase{"MeasureInIf", qasm::measureInIf,
+                                 MQT_NAMED_BUILDER(qc::measureInIf)}));

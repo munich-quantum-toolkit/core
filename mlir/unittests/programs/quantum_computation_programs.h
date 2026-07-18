@@ -416,4 +416,7 @@ void ifTwoQubits(QuantumComputation& comp);
 /// Creates a circuit with an if operation with an else branch.
 void ifElse(QuantumComputation& comp);
 
+/// Creates a circuit that measures a qubit inside an if operation's branch.
+void measureInIf(QuantumComputation& comp);
+
 } // namespace qc

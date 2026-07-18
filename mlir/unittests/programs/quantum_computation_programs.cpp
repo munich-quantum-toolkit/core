@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
@@ -717,6 +718,17 @@ void ifElse(QuantumComputation& comp) {
   comp.ifElse(std::make_unique<StandardOperation>(q[0], X),
               std::make_unique<StandardOperation>(q[0], Z), c[0]);
   comp.measureAll(true, false);
+}
+
+void measureInIf(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  const auto& meas = comp.addClassicalRegister(1, "meas");
+  comp.h(q[0]);
+  comp.measure(q[0], c[0]);
+  // The `then` branch measures the qubit into a separate register.
+  comp.emplace_back<IfElseOperation>(
+      std::make_unique<NonUnitaryOperation>(q[0], meas[0]), nullptr, c[0]);
 }
 
 } // namespace qc

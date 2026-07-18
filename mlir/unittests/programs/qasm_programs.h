@@ -379,5 +379,8 @@ extern const std::string ifEmptyThen;
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
 
+/// Creates a circuit that measures a qubit inside an if operation's branch.
+extern const std::string measureInIf;
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

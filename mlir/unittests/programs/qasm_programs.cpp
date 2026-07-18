@@ -901,5 +901,17 @@ if (c) {
 bit[1] out = measure q;
 )qasm";
 
+const std::string measureInIf = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[1] q;
+bit c;
+bit meas;
+h q[0];
+c = measure q[0];
+if (c) {
+  meas = measure q[0];
+}
+)qasm";
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)
