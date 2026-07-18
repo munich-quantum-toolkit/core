@@ -117,15 +117,17 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {
-  // Test If construction directly
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type(), builder.getI1Type()});
-  auto c0 = arith::ConstantIndexOp::create(builder, 0);
-  auto c1 = arith::ConstantIndexOp::create(builder, 1);
-  auto r0 = qtensor::AllocOp::create(builder, c1);
-  auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
+  builder.initialize();
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  auto one = arith::ConstantIndexOp::create(builder, 1);
+  auto r0 = qtensor::AllocOp::create(builder, one);
+  auto extractOp = qtensor::ExtractOp::create(builder, r0, zero);
   auto q1 = HOp::create(builder, extractOp.getResult());
+  auto c0 = builder.allocClassicalBitRegister(1);
+  auto c1 = builder.allocClassicalBitRegister(1);
   auto measureOp = MeasureOp::create(builder, q1);
+  memref::StoreOp::create(builder, measureOp.getResult(), c0, ValueRange{zero});
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
                    [&](ValueRange qubits) -> SmallVector<Value> {
@@ -133,12 +135,14 @@ TEST_F(QCOTest, DirectIfBuilder) {
                      return SmallVector<Value>{innerQubit};
                    });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
+  memref::StoreOp::create(builder, finalMeasureOp.getResult(), c1,
+                          ValueRange{zero});
   auto r2 = qtensor::InsertOp::create(builder, finalMeasureOp.getQubitOut(),
-                                      extractOp.getOutTensor(), c0);
+                                      extractOp.getOutTensor(), zero);
   qtensor::DeallocOp::create(builder, r2);
 
-  auto directBuilder =
-      builder.finalize({measureOp.getResult(), finalMeasureOp.getResult()});
+  builder.retype({c0.getType(), c1.getType()});
+  auto directBuilder = builder.finalize({c0, c1});
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
