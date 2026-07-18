@@ -63,6 +63,9 @@ static Value measureToRegister(QCOProgramBuilder& b, Value qubit) {
 
 static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
                                            ValueRange qubits) {
+  if (qubits.empty()) {
+    return {};
+  }
   return {measureToRegister(b, qubits)};
 }
 
