@@ -314,14 +314,20 @@ Value powGphaseScaled(QCProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-Value powGphaseScaledRef(QCProgramBuilder& b) { b.gphase(3.0 * 0.123); return b.intConstant(0); }
+Value powGphaseScaledRef(QCProgramBuilder& b) {
+  b.gphase(3.0 * 0.123);
+  return b.intConstant(0);
+}
 
 Value negPowGphase(QCProgramBuilder& b) {
   b.pow(-3.0, {}, [&](ValueRange) { b.gphase(0.123); });
   return b.intConstant(0);
 }
 
-Value negPowGphaseRef(QCProgramBuilder& b) { b.gphase(-3.0 * 0.123); return b.intConstant(0); }
+Value negPowGphaseRef(QCProgramBuilder& b) {
+  b.gphase(-3.0 * 0.123);
+  return b.intConstant(0);
+}
 
 Value identity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);

@@ -370,7 +370,10 @@ Value powGphaseScaled(QCOProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-Value powGphaseScaledRef(QCOProgramBuilder& b) { b.gphase(3.0 * 0.123); return b.intConstant(0); }
+Value powGphaseScaledRef(QCOProgramBuilder& b) {
+  b.gphase(3.0 * 0.123);
+  return b.intConstant(0);
+}
 
 Value negPowGphase(QCOProgramBuilder& b) {
   b.pow(-3.0, {}, [&](mlir::ValueRange /*qubits*/) {
@@ -380,7 +383,10 @@ Value negPowGphase(QCOProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-Value negPowGphaseRef(QCOProgramBuilder& b) { b.gphase(-3.0 * 0.123); return b.intConstant(0); }
+Value negPowGphaseRef(QCOProgramBuilder& b) {
+  b.gphase(-3.0 * 0.123);
+  return b.intConstant(0);
+}
 
 Value identity(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
@@ -3409,7 +3415,8 @@ SmallVector<Value> emptyInv(QCOProgramBuilder& b) {
 SmallVector<Value> emptyPow(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
-  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) { return qubits; });
+  const auto powOut =
+      b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) { return qubits; });
   return measureAndReturn(b, powOut);
 }
 
@@ -3721,15 +3728,16 @@ SmallVector<Value> powCtrlRx(QCOProgramBuilder& b) {
 
 SmallVector<Value> ctrlPowRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto& [controlsOut, targetsOut] = b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
-    auto inner = b.pow(2.0, {targets[0]}, [&](mlir::ValueRange powArgs) {
-      auto q0 = b.rx(0.123, powArgs[0]);
-      return llvm::SmallVector<mlir::Value>{q0};
-    });
-    return llvm::SmallVector<mlir::Value>{inner};
-  });
-  return measureAndReturn(b,
-      llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut)));
+  const auto& [controlsOut, targetsOut] =
+      b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
+        auto inner = b.pow(2.0, {targets[0]}, [&](mlir::ValueRange powArgs) {
+          auto q0 = b.rx(0.123, powArgs[0]);
+          return llvm::SmallVector<mlir::Value>{q0};
+        });
+        return llvm::SmallVector<mlir::Value>{inner};
+      });
+  return measureAndReturn(
+      b, llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut)));
 }
 
 SmallVector<Value> negPowInvIswap(QCOProgramBuilder& b) {
@@ -3751,15 +3759,17 @@ SmallVector<Value> negPowInvIswapRef(QCOProgramBuilder& b) {
 
 SmallVector<Value> ctrlPowSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto& [controlsOut, targetsOut] = b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
-    auto inner = b.pow(1.0 / 3.0, {targets[0]}, [&](mlir::ValueRange powArgs) {
-      auto q0 = b.sx(powArgs[0]);
-      return llvm::SmallVector<mlir::Value>{q0};
-    });
-    return llvm::SmallVector<mlir::Value>{inner};
-  });
-  return measureAndReturn(b,
-      llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut)));
+  const auto& [controlsOut, targetsOut] =
+      b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
+        auto inner =
+            b.pow(1.0 / 3.0, {targets[0]}, [&](mlir::ValueRange powArgs) {
+              auto q0 = b.sx(powArgs[0]);
+              return llvm::SmallVector<mlir::Value>{q0};
+            });
+        return llvm::SmallVector<mlir::Value>{inner};
+      });
+  return measureAndReturn(
+      b, llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut)));
 }
 
 SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
