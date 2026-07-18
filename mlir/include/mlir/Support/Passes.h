@@ -26,13 +26,13 @@ mlir::LogicalResult runWithPassManager(
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
     mlir::StringRef errorMessage);
 
-/** @brief Register the QCO passes and named compiler pipelines. */
+/// Register the QCO passes and named compiler pipelines.
 void registerMQTCompilerPasses();
 
-/** @brief Populate the default QCO optimization pipeline. */
+/// Populate the default QCO optimization pipeline.
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 
-/** @brief Parse and run a module-level MLIR textual pass pipeline. */
+/// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult
 runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
                 bool enableTiming = false, bool enableStatistics = false);
