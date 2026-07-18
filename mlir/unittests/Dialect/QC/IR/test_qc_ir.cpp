@@ -146,9 +146,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
                    MQT_NAMED_BUILDER(rx)},
         QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCTestCase{"Pow0Two", MQT_NAMED_BUILDER(pow0Two),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(allocQubitRegister)},
         QCTestCase{"EmptyPow", MQT_NAMED_BUILDER(emptyPow),
                    MQT_NAMED_BUILDER(rxx)},
         QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
@@ -169,18 +169,18 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InvPowHFrac", MQT_NAMED_BUILDER(invPowHFrac),
                    MQT_NAMED_BUILDER(powHFracNeg)},
         QCTestCase{"InvPowEvenH", MQT_NAMED_BUILDER(invPowEvenH),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCTestCase{"InvPowEvenSwap", MQT_NAMED_BUILDER(invPowEvenSwap),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(allocQubitRegister)},
         QCTestCase{"InvPowSquaredZ", MQT_NAMED_BUILDER(invPowSquaredZ),
-                   MQT_NAMED_BUILDER(emptyQC)}));
+                   MQT_NAMED_BUILDER(alloc1QubitRegister)}));
 /// @}
 
 /// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
 /// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
 TEST_F(QCTest, PowRxxFold) {
   auto program =
-      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powRxx).fn);
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
@@ -195,7 +195,7 @@ TEST_F(QCTest, PowRxxFold) {
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCTest, NegPowHNoFold) {
   auto program =
-      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(negPowH).fn);
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
@@ -214,7 +214,7 @@ TEST_F(QCTest, NegPowHNoFold) {
 /// survives and the nested PowOp is expanded into a GPhase + RX.
 TEST_F(QCTest, CtrlPowSxExpands) {
   auto program =
-      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(ctrlPowSx).fn);
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
@@ -240,7 +240,7 @@ TEST_F(QCTest, CtrlPowSxExpands) {
 /// powTwo.)
 TEST_F(QCTest, PowTwoSurvives) {
   auto program =
-      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powTwo).fn);
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powTwo));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
@@ -390,7 +390,7 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(inverseMultipleControlledEcr),
                                MQT_NAMED_BUILDER(multipleControlledEcr)},
                     QCTestCase{"PowEvenECR", MQT_NAMED_BUILDER(powEvenEcr),
-                               MQT_NAMED_BUILDER(emptyQC)},
+                               MQT_NAMED_BUILDER(allocQubitRegister)},
                     QCTestCase{"PowOddECR", MQT_NAMED_BUILDER(powOddEcr),
                                MQT_NAMED_BUILDER(ecr)}));
 /// @}
@@ -446,7 +446,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(inverseMultipleControlledH),
                    MQT_NAMED_BUILDER(multipleControlledH)},
         QCTestCase{"PowEvenH", MQT_NAMED_BUILDER(powEvenH),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCTestCase{"PowOddH", MQT_NAMED_BUILDER(powOddH),
                    MQT_NAMED_BUILDER(h)}));
 /// @}
@@ -745,7 +745,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledSdg)},
         QCTestCase{"PowTwoS", MQT_NAMED_BUILDER(powTwoS), MQT_NAMED_BUILDER(z)},
         QCTestCase{"PowFourSErase", MQT_NAMED_BUILDER(powFourS),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCTestCase{"PowHalfSToT", MQT_NAMED_BUILDER(powHalfS),
                    MQT_NAMED_BUILDER(t_)},
         QCTestCase{"PowThirdSToP", MQT_NAMED_BUILDER(powThirdS),
@@ -807,7 +807,7 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(inverseMultipleControlledSwap),
                                MQT_NAMED_BUILDER(multipleControlledSwap)},
                     QCTestCase{"PowEvenSWAP", MQT_NAMED_BUILDER(powEvenSwap),
-                               MQT_NAMED_BUILDER(emptyQC)},
+                               MQT_NAMED_BUILDER(allocQubitRegister)},
                     QCTestCase{"PowOddSWAP", MQT_NAMED_BUILDER(powOddSwap),
                                MQT_NAMED_BUILDER(swap)}));
 /// @}
