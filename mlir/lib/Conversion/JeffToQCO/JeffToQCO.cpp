@@ -1189,9 +1189,6 @@ public:
 };
 
 /**
- * @brief Pass for converting jeff operations to QCO operations
- */
-/**
  * @brief Turns value-threaded classical-register tensors back into
  * reference-semantic memrefs.
  *
@@ -1215,7 +1212,7 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
       if (auto empty = dyn_cast<tensor::EmptyOp>(op)) {
         auto tensorType = empty.getType();
         if (tensorType.getRank() != 1 ||
-            !isa<IntegerType>(tensorType.getElementType())) {
+            !tensorType.getElementType().isInteger(1)) {
           return;
         }
         builder.setInsertionPoint(empty);
@@ -1294,6 +1291,9 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
   return result.wasInterrupted() ? failure() : success();
 }
 
+/**
+ * @brief Pass for converting jeff operations to QCO operations
+ */
 struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
   using JeffToQCOBase::JeffToQCOBase;
 

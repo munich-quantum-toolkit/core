@@ -90,7 +90,9 @@ struct LoweringState {
   /// Maps each classical-register memref to its latest jeff int-array tensor
   /// value. A `memref.store` produces a new tensor (value semantics), so the
   /// mapping is advanced as stores are lowered and read back when the register
-  /// is returned.
+  /// is returned. The tensor is threaded through this side map rather than SSA
+  /// def-use, so it relies on the driver lowering the alloc before its stores
+  /// and the stores in program order.
   DenseMap<Value, Value> registerTensors;
 
   /// The qubit allocation mode used in the module

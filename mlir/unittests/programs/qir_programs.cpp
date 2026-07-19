@@ -176,7 +176,6 @@ Value mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
   return measureAndRecord(b, {q0[0], q0[1], q1}, true);
 }
 
-template <bool IntoRegister>
 Value singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
@@ -184,7 +183,6 @@ Value singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
@@ -194,7 +192,6 @@ Value repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(3);
@@ -204,7 +201,6 @@ Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1, "c0");
@@ -215,7 +211,6 @@ Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value partialMeasurementToRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(2);
@@ -224,7 +219,6 @@ Value partialMeasurementToRegister(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value measurementWithoutRegisters(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   auto bit = b.measure(q, 0);
@@ -392,7 +386,7 @@ template <bool IntoRegister> Value multipleControlledH(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
-template <bool IntoRegister> Value hWithoutRegister(QIRProgramBuilder& b) {
+Value hWithoutRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
   return measureAndRecord(b, {q}, false);
@@ -845,7 +839,7 @@ Value multipleControlledRccx(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
-template <bool IntoRegister> Value simpleIf(QIRProgramBuilder& b) {
+Value simpleIf(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c0 = b.allocClassicalBitRegister(1, "c0");
   const auto c1 = b.allocClassicalBitRegister(1, "c1");
@@ -856,7 +850,7 @@ template <bool IntoRegister> Value simpleIf(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister> Value ifElse(QIRProgramBuilder& b) {
+Value ifElse(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c0 = b.allocClassicalBitRegister(1, "c0");
   const auto c1 = b.allocClassicalBitRegister(1, "c1");
@@ -867,7 +861,7 @@ template <bool IntoRegister> Value ifElse(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-template <bool IntoRegister> Value ifTwoQubits(QIRProgramBuilder& b) {
+Value ifTwoQubits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto c0 = b.allocClassicalBitRegister(1, "c0");
   const auto c1 = b.allocClassicalBitRegister(2, "c1");
@@ -1002,13 +996,6 @@ template Value alloc3QubitRegister<false>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegisters<false>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegistersWithOps<false>(QIRProgramBuilder& b);
 template Value allocLargeRegister<false>(QIRProgramBuilder& b);
-template Value singleMeasurementToSingleBit<false>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToSameBit<false>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToDifferentBits<false>(QIRProgramBuilder& b);
-template Value
-multipleClassicalRegistersAndMeasurements<false>(QIRProgramBuilder& b);
-template Value partialMeasurementToRegister<false>(QIRProgramBuilder& b);
-template Value measurementWithoutRegisters<false>(QIRProgramBuilder& b);
 template Value resetQubitWithoutOp<false>(QIRProgramBuilder& b);
 template Value resetMultipleQubitsWithoutOp<false>(QIRProgramBuilder& b);
 template Value repeatedResetWithoutOp<false>(QIRProgramBuilder& b);
@@ -1033,7 +1020,6 @@ template Value multipleControlledZ<false>(QIRProgramBuilder& b);
 template Value h<false>(QIRProgramBuilder& b);
 template Value singleControlledH<false>(QIRProgramBuilder& b);
 template Value multipleControlledH<false>(QIRProgramBuilder& b);
-template Value hWithoutRegister<false>(QIRProgramBuilder& b);
 template Value s<false>(QIRProgramBuilder& b);
 template Value singleControlledS<false>(QIRProgramBuilder& b);
 template Value multipleControlledS<false>(QIRProgramBuilder& b);
@@ -1107,9 +1093,6 @@ template Value multipleControlledXxMinusYY<false>(QIRProgramBuilder& b);
 template Value rccx<false>(QIRProgramBuilder& b);
 template Value singleControlledRccx<false>(QIRProgramBuilder& b);
 template Value multipleControlledRccx<false>(QIRProgramBuilder& b);
-template Value simpleIf<false>(QIRProgramBuilder& b);
-template Value ifElse<false>(QIRProgramBuilder& b);
-template Value ifTwoQubits<false>(QIRProgramBuilder& b);
 template Value nestedIfOpForLoop<false>(QIRProgramBuilder& b);
 template Value simpleWhileReset<false>(QIRProgramBuilder& b);
 template Value simpleDoWhileReset<false>(QIRProgramBuilder& b);
@@ -1131,13 +1114,6 @@ template Value alloc3QubitRegister<true>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegisters<true>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegistersWithOps<true>(QIRProgramBuilder& b);
 template Value allocLargeRegister<true>(QIRProgramBuilder& b);
-template Value singleMeasurementToSingleBit<true>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToSameBit<true>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToDifferentBits<true>(QIRProgramBuilder& b);
-template Value
-multipleClassicalRegistersAndMeasurements<true>(QIRProgramBuilder& b);
-template Value partialMeasurementToRegister<true>(QIRProgramBuilder& b);
-template Value measurementWithoutRegisters<true>(QIRProgramBuilder& b);
 template Value resetQubitWithoutOp<true>(QIRProgramBuilder& b);
 template Value resetMultipleQubitsWithoutOp<true>(QIRProgramBuilder& b);
 template Value repeatedResetWithoutOp<true>(QIRProgramBuilder& b);
@@ -1162,7 +1138,6 @@ template Value multipleControlledZ<true>(QIRProgramBuilder& b);
 template Value h<true>(QIRProgramBuilder& b);
 template Value singleControlledH<true>(QIRProgramBuilder& b);
 template Value multipleControlledH<true>(QIRProgramBuilder& b);
-template Value hWithoutRegister<true>(QIRProgramBuilder& b);
 template Value s<true>(QIRProgramBuilder& b);
 template Value singleControlledS<true>(QIRProgramBuilder& b);
 template Value multipleControlledS<true>(QIRProgramBuilder& b);
@@ -1236,9 +1211,6 @@ template Value multipleControlledXxMinusYY<true>(QIRProgramBuilder& b);
 template Value rccx<true>(QIRProgramBuilder& b);
 template Value singleControlledRccx<true>(QIRProgramBuilder& b);
 template Value multipleControlledRccx<true>(QIRProgramBuilder& b);
-template Value simpleIf<true>(QIRProgramBuilder& b);
-template Value ifElse<true>(QIRProgramBuilder& b);
-template Value ifTwoQubits<true>(QIRProgramBuilder& b);
 template Value nestedIfOpForLoop<true>(QIRProgramBuilder& b);
 template Value simpleWhileReset<true>(QIRProgramBuilder& b);
 template Value simpleDoWhileReset<true>(QIRProgramBuilder& b);

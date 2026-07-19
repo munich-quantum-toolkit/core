@@ -946,9 +946,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
     auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create qco.measure (returns both output qubit and bit result)
-    auto qcoOp = qco::MeasureOp::create(
-        rewriter, op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
-        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
+    auto qcoOp = qco::MeasureOp::create(rewriter, op.getLoc(), qcoQubit);
 
     // Update mapping: the QC qubit now corresponds to the output qubit
     assignMappedQubit(state, operation, qcQubit, qcoOp.getQubitOut());

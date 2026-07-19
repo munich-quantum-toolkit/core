@@ -194,9 +194,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRAdaptiveTestCase{
             "MultipleControlledH", MQT_NAMED_BUILDER(qc::multipleControlledH),
             MQT_NAMED_BUILDER(qir::multipleControlledH<true>)},
-        QCToQIRAdaptiveTestCase{
-            "HWithoutRegister", MQT_NAMED_BUILDER(qc::hWithoutRegister),
-            MQT_NAMED_BUILDER(qir::hWithoutRegister<false>)}));
+        QCToQIRAdaptiveTestCase{"HWithoutRegister",
+                                MQT_NAMED_BUILDER(qc::hWithoutRegister),
+                                MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/IdOp.cpp
@@ -627,28 +627,27 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRAdaptiveTestCase{
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
-            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit<true>)},
+            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
         QCToQIRAdaptiveTestCase{
             "RepeatedMeasurementToSameBit",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit<true>)},
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
         QCToQIRAdaptiveTestCase{
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits<true>)},
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
         QCToQIRAdaptiveTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qir::multipleClassicalRegistersAndMeasurements<false>)},
+            MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
         QCToQIRAdaptiveTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<false>)},
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)},
         QCToQIRAdaptiveTestCase{
             "PartialMeasurementToRegister",
             MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
-            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister<true>)}));
+            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/ResetOp.cpp
@@ -733,12 +732,12 @@ INSTANTIATE_TEST_SUITE_P(
     SCFIfOpTest, QCToQIRAdaptiveTest,
     testing::Values(
         QCToQIRAdaptiveTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
-                                MQT_NAMED_BUILDER(qir::simpleIf<false>)},
+                                MQT_NAMED_BUILDER(qir::simpleIf)},
         QCToQIRAdaptiveTestCase{"IfTwoQubits",
                                 MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                                MQT_NAMED_BUILDER(qir::ifTwoQubits<false>)},
+                                MQT_NAMED_BUILDER(qir::ifTwoQubits)},
         QCToQIRAdaptiveTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
-                                MQT_NAMED_BUILDER(qir::ifElse<false>)},
+                                MQT_NAMED_BUILDER(qir::ifElse)},
         QCToQIRAdaptiveTestCase{
             "NestedIfOpForLoop", MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
             MQT_NAMED_BUILDER(qir::nestedIfOpForLoop<true>)}));

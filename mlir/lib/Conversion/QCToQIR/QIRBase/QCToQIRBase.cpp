@@ -57,8 +57,9 @@ namespace {
  *
  * @details A qubit register carries no allocation in the Base Profile and is
  * simply erased. A returned classical-bit register instead allocates a static
- * result pointer for each of its bits (so every bit is output-recorded, even
- * ones that are never measured).
+ * result pointer for each of its bits, so every bit is output-recorded even if
+ * it is never measured. This is intentional (the whole register is reported);
+ * the recorded value of an unmeasured bit is left undefined.
  */
 struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {

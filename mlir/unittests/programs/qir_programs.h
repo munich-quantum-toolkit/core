@@ -85,29 +85,23 @@ Value mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
-template <bool IntoRegister = false>
 Value singleMeasurementToSingleBit(QIRProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into the same classical bit.
-template <bool IntoRegister = false>
 Value repeatedMeasurementToSameBit(QIRProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into different classical bits.
-template <bool IntoRegister = false>
 Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
-template <bool IntoRegister = false>
 Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
 
 /// Measures one bit of a two-bit register, leaving the second bit unmeasured
 /// but still output-recorded.
-template <bool IntoRegister = false>
 Value partialMeasurementToRegister(QIRProgramBuilder& b);
 
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
-template <bool IntoRegister = false>
 Value measurementWithoutRegisters(QIRProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
@@ -215,7 +209,6 @@ template <bool IntoRegister = false>
 Value multipleControlledH(QIRProgramBuilder& b);
 
 /// Creates a circuit with just an H gate and no qubit register.
-template <bool IntoRegister = false>
 Value hWithoutRegister(QIRProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
@@ -538,13 +531,13 @@ Value multipleControlledRccx(QIRProgramBuilder& b);
 // --- IfOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
-template <bool IntoRegister = false> Value simpleIf(QIRProgramBuilder& b);
+Value simpleIf(QIRProgramBuilder& b);
 
 /// Creates a circuit with an if operation with an else branch.
-template <bool IntoRegister = false> Value ifElse(QIRProgramBuilder& b);
+Value ifElse(QIRProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
-template <bool IntoRegister = false> Value ifTwoQubits(QIRProgramBuilder& b);
+Value ifTwoQubits(QIRProgramBuilder& b);
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.

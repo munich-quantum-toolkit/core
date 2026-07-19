@@ -190,7 +190,7 @@ INSTANTIATE_TEST_SUITE_P(
                             MQT_NAMED_BUILDER(qir::multipleControlledH<true>)},
         QCToQIRBaseTestCase{"HWithoutRegister",
                             MQT_NAMED_BUILDER(qc::hWithoutRegister),
-                            MQT_NAMED_BUILDER(qir::hWithoutRegister<false>)}));
+                            MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/IdOp.cpp
@@ -607,28 +607,27 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
-            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit<true>)},
+            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
         QCToQIRBaseTestCase{
             "RepeatedMeasurementToSameBit",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit<true>)},
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
         QCToQIRBaseTestCase{
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits<true>)},
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
         QCToQIRBaseTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qir::multipleClassicalRegistersAndMeasurements<false>)},
+            MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
         QCToQIRBaseTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters<false>)},
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)},
         QCToQIRBaseTestCase{
             "PartialMeasurementToRegister",
             MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
-            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister<true>)}));
+            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister)}));
 /// @}
 
 /// \name QCToQIRBase/QubitManagement/QubitManagement.cpp

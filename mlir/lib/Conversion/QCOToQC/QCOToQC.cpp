@@ -504,10 +504,7 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
     auto qcQubit = adaptor.getQubitIn();
 
     // Create qc.measure (in-place operation, returns only bit)
-    // Preserve register metadata for output recording
-    auto qcOp = qc::MeasureOp::create(
-        rewriter, op.getLoc(), qcQubit, op.getRegisterNameAttr(),
-        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
+    auto qcOp = qc::MeasureOp::create(rewriter, op.getLoc(), qcQubit);
 
     auto measureBit = qcOp.getResult();
 
