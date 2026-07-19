@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `constant propagation` pass for reducing superfluous quantum
+  resources by propagating the quantum machine state ([#1845]) ([**@lirem101])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -650,6 +652,7 @@ changelogs._
 [#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
+[#1845]: https://github.com/munich-quantum-toolkit/core/pull/1845
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1836]: https://github.com/munich-quantum-toolkit/core/pull/1836
@@ -660,6 +663,7 @@ changelogs._
 [#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
+
 [#1815]: https://github.com/munich-quantum-toolkit/core/pull/1815
 [#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809

@@ -173,7 +173,6 @@ nitpick_ignore_regex = [
     ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
 ]
 
-
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
 qdmi_api_tagfile = (
     "_build/qdmi.tag",

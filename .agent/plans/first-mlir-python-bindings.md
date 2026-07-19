@@ -21,8 +21,8 @@ Jeff serialization, QIR output, and Qiskit subclass support.
 ## Progress
 
 - [x] (2026-06-26 to 2026-07-15) Implemented typed compiler programs, the Python
-      binding module, package integration, documentation, and tests; merged
-      through pull request #1815.
+  binding module, package integration, documentation, and tests; merged
+  through pull request #1815.
 - [x] (2026-07-15) Reviewed CodeRabbit feedback and incorporated valid input,
   type-validation, CLI, pass-registration, typing, and documentation fixes.
 - [x] (2026-07-15) Added binding-owned Python docstrings and regenerated stubs.

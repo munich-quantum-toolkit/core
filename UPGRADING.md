@@ -407,6 +407,7 @@ It also requires the `uv` library version 0.5.20 or higher.
 <!-- Version links -->
 
 [unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
