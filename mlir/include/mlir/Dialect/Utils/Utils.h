@@ -334,7 +334,7 @@ inline void inlineModifierBody(Operation* op, Block& body,
  * splices a body into the block being constructed and hands back the yielded
  * values. In dialects whose bodies yield nothing, the returned vector is empty.
  */
-[[nodiscard]] inline SmallVector<Value>
+inline SmallVector<Value>
 inlineBodyReturningYields(Block& source, ValueRange blockArgReplacements,
                           RewriterBase& rewriter) {
   auto* dest = rewriter.getInsertionBlock();
