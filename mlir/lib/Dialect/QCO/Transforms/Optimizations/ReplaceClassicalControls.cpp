@@ -14,6 +14,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -55,11 +56,12 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
  * @return true if the operation is a diagonal gate, false otherwise
  */
 static bool isPhaseGate(Operation* op) {
+  if (op == nullptr) {
+    return false;
+  }
   if (auto i = dyn_cast<InvOp>(op)) {
-    if (i.getNumBodyUnitaries() != 1) {
-      return false;
-    }
-    return isPhaseGate(i.getBodyUnitary(0));
+    return isPhaseGate(utils::getSoleBodyUnitary<UnitaryOpInterface>(
+        *op->getRegion(0).getBlocks().begin()));
   }
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
