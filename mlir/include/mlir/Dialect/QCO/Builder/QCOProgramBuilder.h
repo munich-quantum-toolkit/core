@@ -138,6 +138,21 @@ public:
    */
   Value floatConstant(double value);
 
+  /**
+   * @brief Create a constant boolean value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.boolConstant(true);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i1
+   * ```
+   */
+  Value boolConstant(bool value);
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
