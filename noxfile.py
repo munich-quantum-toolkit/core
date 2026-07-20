@@ -201,6 +201,7 @@ def stubs(session: nox.Session) -> None:
     session.run(
         "uv",
         "sync",
+        "--no-editable",
         "--no-dev",
         "--group",
         "build",
