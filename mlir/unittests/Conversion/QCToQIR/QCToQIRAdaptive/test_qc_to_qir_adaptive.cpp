@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -32,6 +33,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -81,6 +83,25 @@ static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(module);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  cf::AssertOp::create(builder, builder.boolConstant(true),
+                       "runtime precondition");
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  std::size_t assertions = 0;
+  module->walk([&](cf::AssertOp) { ++assertions; });
+  EXPECT_EQ(assertions, 0);
 }
 
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
