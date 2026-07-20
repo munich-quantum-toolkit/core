@@ -672,6 +672,15 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
 /// @}
 
+/// \name QCToQCO/Operations/IndexSwitchOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(QCOIndexSwitchOpTest, QCToQCOTest,
+                         testing::Values(QCToQCOTestCase{
+                             "SimpleIndexSwitchOp",
+                             MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
+                             MQT_NAMED_BUILDER(qco::simpleIndexSwitch)}));
+/// @}
+
 /// \name QCToQCO/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

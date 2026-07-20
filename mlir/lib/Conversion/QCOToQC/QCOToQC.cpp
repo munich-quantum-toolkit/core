@@ -698,7 +698,7 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
 
 /**
  * @brief Converts qco.yield to qc.yield or to scf.yield if the parent is a
- * scf::IfOp
+ * scf::IfOp or scf::IndexSwitchOp.
  *
  * @par Example:
  * ```mlir
@@ -715,7 +715,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   LogicalResult
   matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<scf::IfOp>(op->getParentOp())) {
+    if (isa<scf::IfOp, scf::IndexSwitchOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
     } else {
       rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
@@ -869,6 +869,45 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
 };
 
 /**
+ * @brief Converts qco.index_switch to scf.index_switch
+ *
+ * @par Example:
+ * ```mlir
+ * TODO
+ * ```
+ * is converted to
+ * ```mlir
+ * TODO
+ * ```
+ */
+struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(IndexSwitchOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newOp =
+        scf::IndexSwitchOp::create(rewriter, op.getLoc(), {}, op.getArg(),
+                                   op.getCases(), op.getNumCases());
+
+    const auto oldRegions = op.getCaseRegions();
+    const auto newCaseRegions = newOp.getCaseRegions();
+    for (size_t i = 0; i < op.getNumCases(); ++i) {
+      inlineRegion(oldRegions[i], newCaseRegions[i], 0,
+                   adaptor.getOperands().drop_front(1), rewriter);
+    }
+
+    inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(), 0,
+                 adaptor.getOperands().drop_front(1), rewriter);
+
+    // Replace the qco results with the input qc values except the condition
+    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts scf.yield with value semantics to scf.yield with memory
  * semantics for qubit values. This currently assumes no mixed types as yielded
  * values.
@@ -996,9 +1035,10 @@ protected:
 #undef MQT_ADD_QCO_TO_QC_GATE
 
     patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOSCFWhileOp,
-                 ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp,
-                 ConvertQCOSCFForOp>(typeConverter, context);
+                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOIndexSwitchOp,
+                 ConvertQCOSCFWhileOp, ConvertQCOSCFConditionOp,
+                 ConvertQCOSCFYieldOp, ConvertQCOSCFForOp>(typeConverter,
+                                                           context);
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
