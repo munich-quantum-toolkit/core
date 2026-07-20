@@ -599,6 +599,40 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                 ArrayRef<int64_t> cases,
+                                 ArrayRef<function_ref<void()>> caseBodies,
+                                 const function_ref<void()>& defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp =
+      scf::IndexSwitchOp::create(*this, {}, argValue, cases, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
+    Block* block = createBlock(&region); // Implicitly sets the insertion point.
+    f();
+    scf::YieldOp::create(*this, getLoc());
+  };
+
+  for (auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), defaultBody);
+
+  return *this;
+}
+
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   checkFinalized();
   scf::ConditionOp::create(*this, condition, ValueRange{});

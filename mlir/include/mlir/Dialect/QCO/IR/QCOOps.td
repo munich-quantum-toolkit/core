@@ -1380,9 +1380,6 @@ def IndexSwitchOp
         must terminate with a `qco.yield` operation that yields values matching the operation's
         result types.
 
-        The case values are stored as a `DenseI64ArrayAttr`, matching the SCF dialect's
-        `scf.index_switch` operation for seamless interoperability.
-
         Example:
         ```mlir
         %result = qco.index_switch %index : index -> !qco.qubit

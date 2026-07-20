@@ -14,6 +14,8 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -1870,6 +1872,18 @@ Value nestedIfOpForLoop(QCProgramBuilder& b) {
         });
       });
   return b.measure(q0);
+}
+
+SmallVector<Value> simpleIndexSwitch(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(1);
+  b.h(reg[0]);
+  auto bit0 = b.measure(reg[0]);
+  auto i0 = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
+  b.scfIndexSwitch(i0, SmallVector<int64_t>{0},
+                   SmallVector<function_ref<void()>>{[&] { b.x(reg[0]); }},
+                   [&] { b.z(reg[0]); });
+  auto bit1 = b.measure(reg[0]);
+  return {bit0, bit1};
 }
 
 Value simpleWhileReset(QCProgramBuilder& b) {

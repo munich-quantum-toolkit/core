@@ -1130,6 +1130,27 @@ public:
                           const function_ref<void()>& elseBody = nullptr);
 
   /**
+   * @brief Construct an scf.index_switch operation
+   *
+   * @param arg Index argument for the index switch operation
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * TODO
+   * ```
+   * ```mlir
+   * TODO
+   * ```
+   */
+  QCProgramBuilder& scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                   ArrayRef<int64_t> cases,
+                                   ArrayRef<function_ref<void()>> caseBodies,
+                                   const function_ref<void()>& defaultBody);
+
+  /**
    * @brief Construct an scf.condition operation
    *
    * @param condition Condition for the condition operation

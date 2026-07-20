@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -3180,6 +3181,34 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b) {
       });
   auto [q1, c] = b.measure(ifRes[0]);
   return {measureResult, c};
+}
+
+SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b) {
+  Value q;
+  Value bit0;
+  Value c0;
+  Value bit1;
+
+  auto reg = b.allocQubitRegister(1);
+
+  q = b.h(reg[0]);
+  std::tie(q, bit0) = b.measure(q);
+  c0 = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
+  q = b.qcoIndexSwitch(
+      c0, {q}, SmallVector<int64_t>{0},
+      SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+          [&](ValueRange args) {
+            auto innerQubit = b.x(args[0]);
+            return SmallVector{innerQubit};
+          }},
+      [&](ValueRange args) {
+        auto innerQubit = b.z(args[0]);
+        return SmallVector{innerQubit};
+      })[0];
+
+  std::tie(q, bit1) = b.measure(q);
+
+  return {bit0, bit1};
 }
 
 SmallVector<Value> qtensorAlloc(QCOProgramBuilder& b) {

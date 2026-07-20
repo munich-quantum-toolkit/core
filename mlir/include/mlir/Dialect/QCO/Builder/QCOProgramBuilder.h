@@ -1353,6 +1353,38 @@ public:
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   /**
+   * @brief Construct an index switch operation for qubits or tensors of qubits
+   * with linear typing.
+   *
+   * @details
+   * Constructs an index switch operation that takes an index Value and a range
+   * of qubit and qtensor values that are used in the case regions of this
+   * operation. The values are passed down as block arguments to each region.
+   * Qubits that were extracted from a tensor that is used as an argument for
+   * this operation are automatically inserted before the operation is
+   * constructed.
+   *
+   * @param arg Bool condition.
+   * @param targets Initial arguments for the index switch branches.
+   * @param caseBodies An array of functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return ValueRange of the results
+   *
+   * @par Example:
+   * ```c++
+   * TODO
+   * ```
+   * ```mlir
+   * TODO
+   * ```
+   */
+  ValueRange qcoIndexSwitch(
+      const std::variant<int64_t, Value>& arg, ValueRange targets,
+      ArrayRef<int64_t> cases,
+      ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
+      function_ref<SmallVector<Value>(ValueRange)> defaultBody);
+
+  /**
    * @brief Construct an scf.for operation
    *
    * @details

@@ -910,6 +910,11 @@ SmallVector<Value> ifTwoQubits(QCProgramBuilder& b);
 /// a register.
 Value nestedIfOpForLoop(QCProgramBuilder& b);
 
+// --- IndexSwitchOp -------------------------------------------------------- //
+
+/// Creates a circuit with an index switch operation with one qubit.
+SmallVector<Value> simpleIndexSwitch(QCProgramBuilder& b);
+
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.

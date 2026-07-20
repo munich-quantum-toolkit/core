@@ -278,9 +278,11 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
                                      /*elidedAttrs=*/{"cases"});
 
   // Print case regions
+  const auto cases = getCases();
   for (size_t i = 0; i < getNumCases(); ++i) {
-    p << "\ncase ";
-    p << getCases()[i];
+    p.printNewline();
+    p << "case ";
+    p << cases[i];
     p << " args(";
 
     auto& region = getCaseRegions()[i];
@@ -288,20 +290,20 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
 
     // Print block arguments with their corresponding target operands
     for (size_t j = 0; j < block.getNumArguments(); ++j) {
-      if (j > 0)
+      if (j > 0) {
         p << ", ";
+      }
       p.printOperand(block.getArgument(j));
       p << " = ";
       p.printOperand(getTargets()[j]);
     }
-    p << ") {";
+    p << ") ";
     p.printRegion(region, /*printEntryBlockArgs=*/false,
                   /*printBlockTerminators=*/true);
-    p << "}";
   }
 
-  // Print default region
-  p << "\ndefault args(";
+  p.printNewline();
+  p << "default args(";
   auto& defaultRegion = getDefaultRegion();
   auto& defaultBlock = defaultRegion.front();
 
@@ -314,10 +316,9 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
     p << " = ";
     p.printOperand(getTargets()[j]);
   }
-  p << ") {";
+  p << ") ";
   p.printRegion(defaultRegion, /*printEntryBlockArgs=*/false,
                 /*printBlockTerminators=*/true);
-  p << "}";
 }
 
 //===----------------------------------------------------------------------===//
