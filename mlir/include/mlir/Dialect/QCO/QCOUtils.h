@@ -337,7 +337,7 @@ inline LogicalResult tryEliminateDeadGateValue(Value qubit,
     currentOp = qubit.getDefiningOp();
     success = true;
   }
-  return llvm::success(success);
+  return mlir::success(success);
 }
 
 } // namespace mlir::qco
