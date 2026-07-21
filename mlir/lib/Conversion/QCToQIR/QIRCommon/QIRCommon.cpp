@@ -413,8 +413,9 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
   OpBuilder builder(ctx);
   builder.setInsertionPoint(&main.getBlocks().back().back());
-  emitOutputRecording(builder, main, state.recordedRegisters, state.resultPtrs,
-                      state.recordedIndices);
+  emitOutputRecording(builder, main,
+                      llvm::to_vector(llvm::make_second_range(state.cregs)),
+                      state.staticResults);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
@@ -438,20 +439,20 @@ Value resolveMeasurementResult(LoweringState& state, Operation* op,
   // result pointer (set up when the register's alloc was lowered).
   if (const auto it = state.measureRegisterBit.find(op);
       it != state.measureRegisterBit.end()) {
-    const auto [regIdx, bitIdx] = it->second;
-    return state.recordedRegisters[regIdx].resultPtrs[bitIdx];
+    const auto [allocOp, index] = it->second;
+    auto bit = getConstantIntValue(index);
+    return state.cregs[allocOp].results[*bit];
   }
 
   // Otherwise it gets a fresh result, recorded individually when it is
   // returned.
   const OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-  const auto index = static_cast<int64_t>(state.resultPtrs.size());
-  if (state.returnedMeasurements.contains(op)) {
-    state.recordedIndices.insert(index);
-  }
+  const auto index = static_cast<int64_t>(state.staticResults.size());
+  const auto record = state.returnedMeasurements.contains(op);
   auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
-  state.resultPtrs.try_emplace(index, result);
+  state.staticResults.try_emplace(
+      index, qir::StaticResult{.pointer = result, .record = record});
   return result;
 }
 
@@ -482,32 +483,34 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
           // A measurement result returned directly is recorded as an
           // individual (unnamed) result.
           state.returnedMeasurements.insert(measureOp.getOperation());
-        } else if (auto alloc = operand.getDefiningOp<memref::AllocOp>()) {
+        } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>()) {
           // A returned classical-bit register (memref<Nxi1>) is recorded as a
           // group. Its result pointers and recording are set up when the
           // `memref.alloc` is lowered; here we only note that this register is
           // returned and recover, from its stores, which measurement feeds
           // which bit. The stores are dropped so the register measurements have
           // no remaining uses during conversion.
-          const auto regIdx =
-              static_cast<unsigned>(state.recordedRegisters.size());
-          const auto size = alloc.getType().getShape()[0];
-          auto& reg = state.recordedRegisters.emplace_back();
+          const std::string label = "c" + std::to_string(state.cregs.size());
+          const auto size = allocOp.getType().getShape()[0];
+          auto& reg =
+              state.cregs.try_emplace(allocOp.getOperation()).first->second;
+          reg.label = label;
           reg.size = size;
-          reg.resultPtrs.assign(size, Value{});
-          state.registerAllocIndex.try_emplace(alloc.getOperation(), regIdx);
-          for (auto* user : alloc.getResult().getUsers()) {
-            auto store = dyn_cast<memref::StoreOp>(user);
-            if (!store) {
+          reg.results.assign(size, Value{});
+          for (auto* user : allocOp.getResult().getUsers()) {
+            auto storeOp = dyn_cast<memref::StoreOp>(user);
+            if (!storeOp) {
               continue;
             }
-            auto bit = getConstantIntValue(store.getIndices()[0]);
-            auto measureOp = store.getValueToStore().getDefiningOp<MeasureOp>();
-            if (bit && measureOp) {
-              state.measureRegisterBit.try_emplace(measureOp.getOperation(),
-                                                   regIdx, *bit);
+            auto measureOp =
+                storeOp.getValueToStore().getDefiningOp<MeasureOp>();
+            if (!measureOp) {
+              continue;
             }
-            toErase.emplace_back(store);
+            state.measureRegisterBit.try_emplace(measureOp.getOperation(),
+                                                 allocOp.getOperation(),
+                                                 storeOp.getIndices()[0]);
+            toErase.emplace_back(storeOp);
           }
         } else {
           keptOperands.push_back(operand);

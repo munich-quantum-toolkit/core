@@ -150,7 +150,7 @@ Value QIRProgramBuilder::allocQubit() {
     qubit = staticQubit(static_cast<int64_t>(numQubits));
   }
 
-  qubits.insert(qubit);
+  qubitPtrs.insert(qubit);
 
   return qubit;
 }
@@ -184,7 +184,7 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-Value QIRProgramBuilder::staticResult(const int64_t index) {
+Value QIRProgramBuilder::staticResult(const int64_t index, const bool record) {
   checkFinalized();
 
   const InsertionGuard guard(*this);
@@ -197,12 +197,16 @@ Value QIRProgramBuilder::staticResult(const int64_t index) {
   }
 
   Value result;
-  if (const auto it = resultPtrs.find(index); it != resultPtrs.end()) {
-    result = it->second;
+  if (const auto it = staticResults.find(index); it != staticResults.end()) {
+    result = it->second.pointer;
+    if (record) {
+      it->second.record = true;
+    }
   } else {
     result = createPointerFromIndex(*this, getLoc(), index);
-    // Cache for reuse
-    resultPtrs[index] = result;
+    staticResults.try_emplace(
+        index, qir::StaticResult{.pointer = result, .record = record});
+    resultPtrs.insert(result);
   }
 
   // Update result count
@@ -288,40 +292,21 @@ Value QIRProgramBuilder::load(Value reg, Value index) {
   return load.getResult();
 }
 
-QIRProgramBuilder::Bit
-QIRProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + name +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerName = name, .registerSize = size, .registerIndex = index};
-}
-
-QIRProgramBuilder::ClassicalRegister
+ClassicalRegister
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                             const std::string& name) {
+                                             const bool record) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  if (name.starts_with("__unnamed__")) {
-    llvm::reportFatalUsageError(
-        "Classical register names starting with '__unnamed__' are reserved");
-  }
-  if (resultArrays.contains(name)) {
-    llvm::reportFatalUsageError("Classical register already exists");
-  }
-
-  // Track the register (in allocation order) for grouped output recording.
-  const auto regIdx = static_cast<unsigned>(recordedRegisters.size());
-  registerIndexByName.try_emplace(name, regIdx);
-  auto& reg = recordedRegisters.emplace_back();
+  const std::string label = "c" + std::to_string(cregs.size());
+  auto& reg = cregs.try_emplace(label).first->second;
+  reg.label = label;
   reg.size = size;
-  reg.resultPtrs.assign(size, Value{});
+  reg.results.assign(size, Value{});
+  reg.record = record;
 
   // Save current insertion point
   const InsertionGuard guard(*this);
@@ -329,9 +314,9 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  if (profile == Profile::Adaptive) {
+  switch (profile) {
+  case Profile::Adaptive: {
     // Create a dynamic result array for the Adaptive Profile
-
     auto fnSig =
         LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(*this, module,
@@ -344,7 +329,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
         *this, fnDec,
         ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
-    resultArrays.try_emplace(name, array.getResult());
+    resultArrays.insert(array.getResult());
 
     // Load a result pointer per bit; every bit is output-recorded, so this is
     // where the register's results are established (not at measurement time).
@@ -352,16 +337,20 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
       auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
                                      ValueRange{intConstant(i)});
       auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-      reg.resultPtrs[i] = load.getResult();
+      reg.results[i] = load.getResult();
     }
-  } else {
+    break;
+  }
+  case Profile::Base: {
     // Use static results in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
-      reg.resultPtrs[i] = staticResult(static_cast<int64_t>(numResults));
+      reg.results[i] = staticResult(static_cast<int64_t>(numResults), false);
     }
+    break;
+  }
   }
 
-  return {.name = name, .size = size};
+  return {.label = label, .size = size};
 }
 
 Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
@@ -379,7 +368,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
   setInsertionPoint(entryBlock->getTerminator());
 
   // Get or create result pointer
-  auto result = staticResult(resultIndex);
+  auto result = staticResult(resultIndex, record);
 
   // Only set the insertionpoint if the Base Profile is used
   if (profile == Profile::Base) {
@@ -394,10 +383,6 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, mzSig);
   LLVM::CallOp::create(*this, mzDec, ValueRange{qubit, result});
 
-  if (record) {
-    recordedIndices.insert(resultIndex);
-  }
-
   return result;
 }
 
@@ -405,14 +390,13 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
   const InsertionGuard guard(*this);
 
-  const auto regIt = registerIndexByName.find(bit.registerName);
-  if (regIt == registerIndexByName.end()) {
+  const auto it = cregs.find(bit.registerLabel);
+  if (it == cregs.end()) {
     llvm::reportFatalUsageError("Bit does not belong to a result pointer");
   }
-  // The bit's result pointer was allocated with the register; the measurement
-  // writes into it. Recording of every bit happens at finalization.
-  auto result = recordedRegisters[regIt->second].resultPtrs[bit.registerIndex];
-  if (profile != Profile::Adaptive) {
+  auto result = it->second.results[bit.registerIndex];
+
+  if (profile == Profile::Base) {
     setInsertionPoint(measurementsBlock->getTerminator());
   }
 
@@ -985,8 +969,9 @@ void QIRProgramBuilder::ensureAllocationMode(
 void QIRProgramBuilder::generateOutputRecording() {
   const InsertionGuard guard(*this);
   setInsertionPoint(outputBlock->getTerminator());
-  emitOutputRecording(*this, module, recordedRegisters, resultPtrs,
-                      recordedIndices);
+  emitOutputRecording(*this, module,
+                      llvm::to_vector(llvm::make_second_range(cregs)),
+                      staticResults);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
@@ -1011,7 +996,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   setInsertionPoint(outputBlock->getTerminator());
 
   if (isAdaptive) {
-    for (auto qubit : qubits) {
+    for (auto qubit : qubitPtrs) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec =
           getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_RELEASE, sig);
@@ -1031,14 +1016,14 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   generateOutputRecording();
 
   if (isAdaptive) {
-    for (auto& [_, ptr] : resultPtrs) {
+    for (auto result : resultPtrs) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, module,
                                                 QIR_RESULT_RELEASE, sig);
-      LLVM::CallOp::create(*this, dec, ptr);
+      LLVM::CallOp::create(*this, dec, result);
     }
 
-    for (auto& [_, array] : resultArrays) {
+    for (auto array : resultArrays) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, module,
                                                 QIR_RESULT_ARRAY_RELEASE, sig);

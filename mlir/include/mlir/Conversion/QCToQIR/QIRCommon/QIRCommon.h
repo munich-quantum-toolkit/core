@@ -41,14 +41,23 @@ struct LoweringState {
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
-  /// Cache MemRef sizes for reuse
-  DenseMap<Value, Value> memrefSizes;
+  /// Cache qubit register sizes for reuse
+  DenseMap<Value, Value> qregSizes;
 
-  /// Map from register name to result-array pointer
-  llvm::StringMap<Value> resultArrays;
+  /// Set of allocated result-array pointers
+  DenseSet<Value> resultArrays;
 
-  /// Map from index to result pointer for non-register results
-  DenseMap<int64_t, Value> resultPtrs;
+  /// Map of classical registers
+  DenseMap<Operation*, qir::ClassicalRegister> cregs;
+
+  /// Map from `MeasureOp` to the (register, bit) position it feeds
+  DenseMap<Operation*, std::pair<Operation*, Value>> measureRegisterBit;
+
+  /// Map of non-register results
+  DenseMap<int64_t, qir::StaticResult> staticResults;
+
+  /// Set of `MeasureOp`s whose results should be recorded in the output
+  DenseSet<Operation*> returnedMeasurements;
 
   /// Modifier information
   size_t inCtrlOp = 0;
@@ -62,24 +71,6 @@ struct LoweringState {
   Block* entryBlock{};
   Block* measurementsBlock{};
   Block* outputBlock{};
-
-  /// Set of MeasureOps whose results should be recorded in the output.
-  DenseSet<Operation*> returnedMeasurements;
-
-  /// Classical registers to be recorded, in the order they are returned. Each
-  /// register's result pointers are filled in when its `memref.alloc` is
-  /// lowered.
-  SmallVector<qir::RecordedRegister> recordedRegisters;
-
-  /// Maps a returned register's `memref.alloc` to its index in
-  /// `recordedRegisters`; the alloc lowering sets up its result pointers.
-  DenseMap<Operation*, unsigned> registerAllocIndex;
-
-  /// Maps a MeasureOp to the (register, bit) position it feeds.
-  DenseMap<Operation*, std::pair<unsigned, int64_t>> measureRegisterBit;
-
-  /// Set of unnamed result indices that should be recorded in the output.
-  DenseSet<int64_t> recordedIndices;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -191,19 +182,12 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state);
 
 /**
- * @brief Resolves the QIR result pointer a measurement should write to.
+ * @brief Returns the result pointer a measurement should write to.
  *
- * @details A measurement into a returned classical register writes to the
- * bit's pre-allocated result pointer (established when the register's alloc was
- * lowered). Any other measurement gets a fresh result pointer, which is
- * recorded individually when the measurement's result is returned. This is the
- * profile-independent part of measurement lowering; the caller emits the
- * `mz` call. The rewriter's insertion point is left unchanged.
- *
- * @param state The lowering state
- * @param op The measurement operation being lowered
- * @param rewriter The pattern rewriter
- * @return The result pointer for the measurement
+ * @details A measurement into a classical register writes to the bit's
+ * pre-allocated result pointer. Any other measurement gets a fresh result
+ * pointer, which is recorded individually when the measurement's result is
+ * returned.
  */
 Value resolveMeasurementResult(LoweringState& state, Operation* op,
                                ConversionPatternRewriter& rewriter);

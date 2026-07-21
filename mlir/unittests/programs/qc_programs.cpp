@@ -1950,7 +1950,7 @@ Value nestedIfOpForLoop(QCProgramBuilder& b) {
       cond, [&] { b.h(q0); },
       [&] {
         b.scfFor(0, 3, 1, [&](Value iv) {
-          auto q1 = b.memrefLoad(reg.value, iv);
+          auto q1 = b.loadQubit(reg.value, iv);
           b.h(q1);
         });
       });
@@ -1984,7 +1984,7 @@ Value simpleDoWhileReset(QCProgramBuilder& b) {
 SmallVector<Value> simpleForLoop(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
   return measureAndReturn(b, reg.qubits);
@@ -1997,7 +1997,7 @@ Value nestedForLoopIfOp(QCProgramBuilder& b) {
     b.h(qCond);
     auto cond = b.measure(qCond);
     b.scfIf(cond, [&] {
-      auto q = b.memrefLoad(reg.value, iv);
+      auto q = b.loadQubit(reg.value, iv);
       b.h(q);
     });
   });
@@ -2007,11 +2007,11 @@ Value nestedForLoopIfOp(QCProgramBuilder& b) {
 SmallVector<Value> nestedForLoopWhileOp(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q);
@@ -2027,7 +2027,7 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {
   auto control = b.allocQubit();
   b.h(control);
   b.scfFor(0, 3, 1, [&](Value iv) {
-    auto q0 = b.memrefLoad(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(control, q0);
   });
@@ -2038,7 +2038,7 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.h(reg[0]);
   b.scfFor(1, 4, 1, [&](Value iv) {
-    auto q0 = b.memrefLoad(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(reg[0], q0);
   });

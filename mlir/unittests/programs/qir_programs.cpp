@@ -31,15 +31,16 @@ namespace mlir::qir {
  * @return The result value.
  */
 static Value measureAndRecord(QIRProgramBuilder& b, ValueRange qubits,
-                              bool inRegister, int64_t startIndex = 0) {
-
+                              const bool inRegister,
+                              const int64_t startIndex = 0) {
   if (qubits.empty()) {
     return b.intConstant(0);
   }
-  QIRProgramBuilder::ClassicalRegister resultArray;
+
+  ClassicalRegister resultArray;
   if (inRegister) {
     resultArray =
-        b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), "c");
+        b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
   }
 
   for (auto i = 0L; i < qubits.size(); ++i) {
@@ -203,8 +204,8 @@ Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
 
 Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
+  const auto& c0 = b.allocClassicalBitRegister(1);
+  const auto& c1 = b.allocClassicalBitRegister(2);
   b.measure(q[0], c0[0]);
   b.measure(q[1], c1[0]);
   b.measure(q[2], c1[1]);
@@ -841,8 +842,8 @@ Value multipleControlledRccx(QIRProgramBuilder& b) {
 
 Value simpleIf(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto c1 = b.allocClassicalBitRegister(1, "c1");
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
   auto cond = b.measure(q[0], c0[0]);
   b.scfIf(cond, [&] { b.x(q[0]); });
@@ -852,8 +853,8 @@ Value simpleIf(QIRProgramBuilder& b) {
 
 Value ifElse(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto c1 = b.allocClassicalBitRegister(1, "c1");
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
   auto cond = b.measure(q[0], c0[0]);
   b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
@@ -863,8 +864,8 @@ Value ifElse(QIRProgramBuilder& b) {
 
 Value ifTwoQubits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto c1 = b.allocClassicalBitRegister(2, "c1");
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(2);
   b.h(q[0]);
   auto cond = b.measure(q[0], c0[0]);
   b.scfIf(cond, [&] {

@@ -29,6 +29,16 @@
 
 namespace mlir::qir {
 
+Bit ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + label +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+  }
+  return {.registerLabel = label, .registerSize = size, .registerIndex = index};
+}
+
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
@@ -145,10 +155,9 @@ Value createPointerFromIndex(OpBuilder& builder, const Location loc,
 }
 
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
-                         ArrayRef<RecordedRegister> registers,
-                         const DenseMap<int64_t, Value>& resultPtrs,
-                         const DenseSet<int64_t>& recordedIndices) {
-  if (registers.empty() && resultPtrs.empty()) {
+                         ArrayRef<ClassicalRegister> registers,
+                         const DenseMap<int64_t, StaticResult>& results) {
+  if (registers.empty() && results.empty()) {
     return;
   }
 
@@ -161,39 +170,42 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
   auto resultDec = getOrCreateFunctionDeclaration(builder, anchor,
                                                   QIR_RECORD_OUTPUT, resultSig);
 
-  // Classical registers: an array marker followed by one result per bit. This
-  // groups the results into their registers (see the labeled output schema).
+  // Classical registers
   if (!registers.empty()) {
     auto arraySig =
         LLVM::LLVMFunctionType::get(voidType, {builder.getI64Type(), ptrType});
     auto arrayDec = getOrCreateFunctionDeclaration(
         builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
 
-    for (const auto& [regIdx, reg] : llvm::enumerate(registers)) {
-      const auto name = "c" + std::to_string(regIdx);
+    for (const auto& reg : registers) {
+      if (!reg.record) {
+        continue;
+      }
       auto size = LLVM::ConstantOp::create(builder, loc, builder.getI64Type(),
                                            builder.getI64IntegerAttr(reg.size));
-      auto arrayLabel = createResultLabel(builder, anchor, name).getResult();
+      auto arrayLabel =
+          createResultLabel(builder, anchor, reg.label).getResult();
       LLVM::CallOp::create(builder, loc, arrayDec,
                            ValueRange{size.getResult(), arrayLabel});
-      for (const auto& [bitIdx, ptr] : llvm::enumerate(reg.resultPtrs)) {
+      for (const auto& [index, ptr] : llvm::enumerate(reg.results)) {
         auto label = createResultLabel(builder, anchor,
-                                       name + "_" + std::to_string(bitIdx))
+                                       reg.label + "_" + std::to_string(index))
                          .getResult();
         LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, label});
       }
     }
   }
 
-  // Individual (unnamed) results.
-  for (const auto& [index, ptr] : resultPtrs) {
-    if (!recordedIndices.contains(index)) {
+  // Static results
+  for (const auto& [index, result] : results) {
+    if (!result.record) {
       continue;
     }
     auto label = createResultLabel(builder, anchor,
                                    "__unnamed__" + std::to_string(index))
                      .getResult();
-    LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, label});
+    LLVM::CallOp::create(builder, loc, resultDec,
+                         ValueRange{result.pointer, label});
   }
 }
 

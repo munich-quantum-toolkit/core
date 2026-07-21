@@ -69,20 +69,21 @@ struct ConvertMemRefAllocOp final
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (const auto it = state.registerAllocIndex.find(op.getOperation());
-        it != state.registerAllocIndex.end()) {
-      auto& reg = state.recordedRegisters[it->second];
+    if (const auto it = state.cregs.find(op.getOperation());
+        it != state.cregs.end()) {
+      auto& reg = it->second;
       const OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
       // Register bits take the next consecutive result indices; registers are
       // allocated before any measurement, so the running result count is the
       // register's base index.
-      const auto base = static_cast<int64_t>(state.resultPtrs.size());
+      const auto base = static_cast<int64_t>(state.staticResults.size());
       for (int64_t i = 0; i < reg.size; ++i) {
         const auto index = base + i;
         auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
-        reg.resultPtrs[i] = result;
-        state.resultPtrs.try_emplace(index, result);
+        reg.results[i] = result;
+        state.staticResults.try_emplace(
+            index, qir::StaticResult{.pointer = result, .record = false});
       }
     }
     rewriter.eraseOp(op);

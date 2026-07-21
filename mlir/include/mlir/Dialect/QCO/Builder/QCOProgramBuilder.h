@@ -229,11 +229,12 @@ public:
 
   /**
    * @brief Allocate a classical bit register
-   * @param size Number of bits (must be positive)
-   * @return The MemRef value representing the classical register
    *
    * @details The register is backed by a `memref` of `i1` elements. It is not
    * deallocated automatically so that it can be returned from the program.
+   *
+   * @param size Number of bits (must be positive)
+   * @return The memref value representing the classical register
    *
    * @par Example:
    * ```c++
@@ -243,7 +244,7 @@ public:
    * %c = memref.alloc() : memref<3xi1>
    * ```
    */
-  [[nodiscard]] Value allocClassicalBitRegister(int64_t size);
+  Value allocClassicalBitRegister(int64_t size);
 
   //===--------------------------------------------------------------------===//
   // QTensor operations
@@ -392,11 +393,12 @@ public:
   /**
    * @brief Measure a qubit and store the result in a classical bit register
    *
-   * @details Measures the qubit and stores the classical result in the given
-   * classical register at the given index, in addition to returning it.
+   * @details
+   * Measures the qubit and stores the classical result in the given classical
+   * register at the given index, in addition to returning it.
    *
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @param classicalRegister The MemRef representing the classical register
+   * @param classicalRegister The memref representing the classical register
    * @param index The index within the register to store the result
    * @return Pair of (output_qubit, measurement_result)
    *
@@ -1453,7 +1455,7 @@ public:
    * @details Loads the classical bit from the given classical register at the
    * given index and uses it as the condition of the if operation.
    *
-   * @param classicalRegister The MemRef representing the classical register
+   * @param classicalRegister The memref representing the classical register
    * @param index The index within the register to load the condition from
    * @param initArgs Initial arguments threaded through the if operation
    * @param thenBody Function that builds the then body of the if operation
@@ -1573,7 +1575,7 @@ public:
    * @details Loads the classical bit from the given classical register at the
    * given index and uses it as the condition of the condition operation.
    *
-   * @param classicalRegister The MemRef representing the classical register
+   * @param classicalRegister The memref representing the classical register
    * @param index The index within the register to load the condition from
    * @param yieldedValues ValueRange of the yielded values
    * @return Reference to this builder for method chaining

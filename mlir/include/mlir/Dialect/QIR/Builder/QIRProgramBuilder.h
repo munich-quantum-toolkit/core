@@ -71,7 +71,7 @@ namespace qir {
  * builder.h(q0).cx(q0, q1);
  *
  * // Measure with register info for proper output recording
- * auto c = builder.allocClassicalBitRegister(2, "c");
+ * auto c = builder.allocClassicalBitRegister(2);
  * builder.measure(q0, c[0]);
  * builder.measure(q1, c[1]);
  *
@@ -192,12 +192,13 @@ public:
   /**
    * @brief Get a static result by index
    * @param index The result index (must be non-negative)
+   * @param record Whether the result should be recorded in the output
    * @return An LLVM pointer representing the result
    *
    * @par Example:
    *
    */
-  Value staticResult(int64_t index);
+  Value staticResult(int64_t index, bool record = true);
 
   /**
    * @brief Represents a qubit register with its qubits.
@@ -265,55 +266,24 @@ public:
   Value load(Value reg, Value index);
 
   /**
-   * @brief A small structure representing a single classical bit within a
-   * classical register.
-   */
-  struct Bit {
-    /// Name of the register containing this bit
-    StringRef registerName;
-    /// Size of the register containing this bit
-    int64_t registerSize{};
-    /// Index of this bit within the register
-    int64_t registerIndex{};
-  };
-
-  /**
-   * @brief A small structure representing a classical bit register.
-   */
-  struct ClassicalRegister {
-    /// Name of the classical register
-    std::string name;
-    /// Size of the classical register
-    int64_t size;
-
-    /**
-     * @brief Access a specific bit in the classical register
-     * @param index The index of the bit to access (must be less than size)
-     * @return A Bit structure representing the specified bit
-     */
-    Bit operator[](const int64_t index) const;
-  };
-
-  /**
    * @brief Allocate a classical bit register
    * @param size Number of bits
-   * @param name Register name (default: "c")
-   * @return A ClassicalRegister structure
+   * @param record Whether the register should be recorded in the output
+   * @return A `ClassicalRegister` structure
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(3, "c");
+   * auto c = builder.allocClassicalBitRegister(3);
    * ```
    */
-  ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              const std::string& name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size, bool record = true);
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Measure a qubit and record the result (simple version)
+   * @brief Measure a qubit and record the result
    *
    * @details
    * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
@@ -350,9 +320,10 @@ public:
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`, writing to
-   * the bit's result pointer (allocated with the register). Every bit of the
-   * register is recorded during `finalize()`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
+   *
+   * The output is recorded via `__quantum__rt__result_record_output` during
+   * `finalize()`.
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
@@ -360,7 +331,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(2, "c");
+   * auto c = builder.allocClassicalBitRegister(2);
    * builder.measure(q0, c[0]);
    * ```
    * ```mlir
@@ -1223,33 +1194,29 @@ private:
   /// Exit code constant (created in entry block, used in output block)
   Value exitCode;
 
+  /// Qubit pointers to be deallocated at the end of the program
+  DenseSet<Value> qubitPtrs;
+
+  /// Qubit-array pointers to be deallocated at the end of the program
+  DenseSet<Value> qubitArrays;
+
+  /// Result pointers to be deallocated at the end of the program
+  DenseSet<Value> resultPtrs;
+
+  /// Result-array pointers to be deallocated at the end of the program
+  DenseSet<Value> resultArrays;
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
-  /// Set of qubit pointers
-  DenseSet<Value> qubits;
-
-  /// Set of qubit-array pointers
-  DenseSet<Value> qubitArrays;
-
-  /// Map from register name to result-array pointer
-  llvm::StringMap<Value> resultArrays;
-
-  /// Map from result index to result pointer for non-register results
-  DenseMap<int64_t, Value> resultPtrs;
-
-  /// Set of unnamed result indices that should be recorded in the output.
-  DenseSet<int64_t> recordedIndices;
-
-  /// Classical registers to be recorded, in allocation order. Each register's
-  /// result pointers are established when it is allocated.
-  SmallVector<RecordedRegister> recordedRegisters;
-
-  /// Map from classical register name to its index in `recordedRegisters`.
-  llvm::StringMap<unsigned> registerIndexByName;
-
-  /// Map from register to their loaded indices
+  /// Cache loaded qubit pointers for reuse
   DenseMap<Value, DenseSet<Value>> loadedQubits;
+
+  /// Map of classical registers
+  llvm::StringMap<ClassicalRegister> cregs;
+
+  /// Map of non-register results
+  DenseMap<int64_t, StaticResult> staticResults;
 
   /// Helper variable for storing the LLVM pointer type
   Type ptrType;

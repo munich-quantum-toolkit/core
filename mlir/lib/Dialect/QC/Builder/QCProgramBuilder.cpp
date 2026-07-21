@@ -143,7 +143,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = memref, .qubits = std::move(qubits)};
 }
 
-Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+Value QCProgramBuilder::loadQubit(Value memref, Value index) {
   checkFinalized();
 
   auto* region = getInsertionBlock()->getParent();

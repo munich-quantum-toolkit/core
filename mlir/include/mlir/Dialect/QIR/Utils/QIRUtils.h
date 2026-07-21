@@ -14,6 +14,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
@@ -21,6 +22,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace mlir {
 class OpBuilder;
@@ -267,34 +269,64 @@ createResultLabel(OpBuilder& builder, Operation* op, StringRef label,
 Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
 
 /**
- * @brief A classical-bit register whose bits are recorded in the program
- * output.
+ * @brief A single classical bit within a classical register.
  */
-struct RecordedRegister {
-  /// Number of bits in the register.
-  int64_t size = 0;
-  /// Result pointer for each bit.
-  SmallVector<Value> resultPtrs;
+struct Bit {
+  /// Label of the register containing this bit.
+  StringRef registerLabel;
+  /// Size of the register containing this bit.
+  int64_t registerSize = 0;
+  /// Index of this bit within the register.
+  int64_t registerIndex = 0;
 };
 
 /**
- * @brief Emits the QIR output-recording calls at the current insertion point.
+ * @brief A classical-bit register.
+ */
+struct ClassicalRegister {
+  /// Label of the register (e.g., "c0").
+  std::string label;
+  /// Number of bits in the register.
+  int64_t size = 0;
+  /// Result pointer for each bit.
+  SmallVector<Value> results;
+  /// Whether the register should be recorded in the output.
+  bool record = true;
+
+  /**
+   * @brief Access a specific bit in the register.
+   * @param index The index of the bit to access
+   * @return A `Bit` structure representing the specified bit
+   */
+  Bit operator[](int64_t index) const;
+};
+
+/**
+ * @brief A non-register result.
+ */
+struct StaticResult {
+  /// The result pointer.
+  Value pointer;
+  /// Whether the result is recorded as an individual (`__unnamed__`) output.
+  bool record = false;
+};
+
+/**
+ * @brief Emit the output-recording calls.
  *
- * @details Each classical register produces an `array_record_output` marker
- * followed by one `result_record_output` per bit (positional labels `cN` and
- * `cN_i`). Individually recorded results follow as `__unnamed__` results. This
- * is shared by the QC-to-QIR conversion and the QIR program builder so both
- * emit identical recording.
+ * @details Each classical register with `record` set produces an
+ * `array_record_output` marker followed by one `result_record_output` per bit;
+ * registers with `record` unset are skipped. Individually recorded results
+ * follow as `__unnamed__` results.
  *
- * @param builder The builder to use; its insertion point is used as-is
+ * @param builder The builder to use
  * @param anchor An operation used to locate the enclosing module
  * @param registers The classical registers to record, in order
- * @param resultPtrs Result pointers for individually recorded results
- * @param recordedIndices Which of `resultPtrs` should be recorded
+ * @param results Result pointers indexed by result index; those with `record`
+ * set are recorded individually
  */
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
-                         ArrayRef<RecordedRegister> registers,
-                         const DenseMap<int64_t, Value>& resultPtrs,
-                         const DenseSet<int64_t>& recordedIndices);
+                         ArrayRef<ClassicalRegister> registers,
+                         const DenseMap<int64_t, StaticResult>& results);
 
 } // namespace mlir::qir
