@@ -80,6 +80,10 @@ protected:
 
 } // namespace
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where there is
+ * only one control.
+ */
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -122,6 +126,10 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where only one of
+ * two controls can be replaced.
+ */
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsOneOfTwoControls) {
   programBuilder.initialize({programBuilder.getI1Type(),
@@ -185,6 +193,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where both of the
+ * two controls can be replaced.
+ */
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsTwoOfTwoControls) {
   programBuilder.initialize({programBuilder.getI1Type(),
@@ -247,6 +259,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where two out of
+ * three controls can be replaced.
+ */
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsTwoOfThreeControls) {
   programBuilder.initialize(
@@ -321,6 +337,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where a diagonal
+ * target gate needs to be swapped with to achieve a replaceable control.
+ */
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -363,6 +383,10 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests that a diagonal target gate is not swapped with a
+ * classical control if it's not necessary.
+ */
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsDontSwapDiagonalIfNotNecessary) {
   programBuilder.initialize({programBuilder.getI1Type(),
@@ -412,6 +436,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where one of two
+ * control qubits of a diagonal gate is swapped with the target qubit.
+ */
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOneOfTwoDiagonal) {
   programBuilder.initialize(
@@ -467,6 +495,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+/**
+ * @brief Test: Tests replacing a classically controlled gate where only one of
+ * two controls can possibly be swapped with the target qubit of a diagonal
+ * operation.
+ */
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOnlyPossibleDiagonal) {
   programBuilder.initialize({programBuilder.getI1Type(),
