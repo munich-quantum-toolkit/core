@@ -53,13 +53,6 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
  * @return true if the operation is a diagonal gate, false otherwise
  */
 static bool isPhaseGate(Operation* op) {
-  if (op == nullptr) {
-    return false;
-  }
-  if (auto i = dyn_cast<InvOp>(op)) {
-    return isPhaseGate(utils::getSoleBodyUnitary<UnitaryOpInterface>(
-        *op->getRegion(0).getBlocks().begin()));
-  }
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
 
