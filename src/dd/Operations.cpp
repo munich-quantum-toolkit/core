@@ -43,6 +43,9 @@ namespace {
 
 MatrixDD getRccxDD(Package& dd, const qc::Controls& controls,
                    const std::vector<qc::Qubit>& targets) {
+  // Builds the RCCX DD by multiplying the relative-phase Toffoli
+  // decomposition. Could be improved to a direct bottom-up DD construction
+  // like makeGateDD / makeTwoQubitGateDD.
   const auto q0 = targets[0];
   const auto q1 = targets[1];
   const auto q2 = targets[2];
