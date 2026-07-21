@@ -647,7 +647,11 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRAdaptiveTestCase{
             "PartialMeasurementToRegister",
             MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
-            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister)}));
+            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister)},
+        QCToQIRAdaptiveTestCase{
+            "DynamicallyIndexedMeasurement",
+            MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(qir::dynamicallyIndexedMeasurement)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/ResetOp.cpp

@@ -105,6 +105,10 @@ multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b);
 /// second (unmeasured) bit still part of the output.
 Value partialMeasurementToRegister(QCProgramBuilder& b);
 
+/// Measures qubits into a classical register at a runtime (dynamic) bit index,
+/// namely a loop induction variable.
+Value dynamicallyIndexedMeasurement(QCProgramBuilder& b);
+
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
 Value measurementWithoutRegisters(QCProgramBuilder& b);

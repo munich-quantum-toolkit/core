@@ -29,16 +29,6 @@
 
 namespace mlir::qir {
 
-Bit ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + label +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerLabel = label, .registerSize = size, .registerIndex = index};
-}
-
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
@@ -171,28 +161,37 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
                                                   QIR_RECORD_OUTPUT, resultSig);
 
   // Classical registers
-  if (!registers.empty()) {
+  for (const auto& reg : registers) {
+    if (!reg.record) {
+      continue;
+    }
+    auto size = LLVM::ConstantOp::create(builder, loc, builder.getI64Type(),
+                                         builder.getI64IntegerAttr(reg.size));
+    auto label = createResultLabel(builder, anchor, reg.label).getResult();
+
+    if (reg.array) {
+      // Adaptive Profile: record the whole result array in one call.
+      auto arraySig = LLVM::LLVMFunctionType::get(
+          voidType, {builder.getI64Type(), ptrType, ptrType});
+      auto arrayDec = getOrCreateFunctionDeclaration(
+          builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
+      LLVM::CallOp::create(builder, loc, arrayDec,
+                           ValueRange{size.getResult(), reg.array, label});
+      continue;
+    }
+
+    // Base Profile: an array-count marker followed by one result per bit.
     auto arraySig =
         LLVM::LLVMFunctionType::get(voidType, {builder.getI64Type(), ptrType});
     auto arrayDec = getOrCreateFunctionDeclaration(
         builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
-
-    for (const auto& reg : registers) {
-      if (!reg.record) {
-        continue;
-      }
-      auto size = LLVM::ConstantOp::create(builder, loc, builder.getI64Type(),
-                                           builder.getI64IntegerAttr(reg.size));
-      auto arrayLabel =
-          createResultLabel(builder, anchor, reg.label).getResult();
-      LLVM::CallOp::create(builder, loc, arrayDec,
-                           ValueRange{size.getResult(), arrayLabel});
-      for (const auto& [index, ptr] : llvm::enumerate(reg.results)) {
-        auto label = createResultLabel(builder, anchor,
-                                       reg.label + "_" + std::to_string(index))
-                         .getResult();
-        LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, label});
-      }
+    LLVM::CallOp::create(builder, loc, arrayDec,
+                         ValueRange{size.getResult(), label});
+    for (const auto& [index, ptr] : llvm::enumerate(reg.results)) {
+      auto bitLabel = createResultLabel(builder, anchor,
+                                        reg.label + "_" + std::to_string(index))
+                          .getResult();
+      LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, bitLabel});
     }
   }
 

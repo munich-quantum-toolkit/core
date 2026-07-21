@@ -28,6 +28,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpDefinition.h>
@@ -49,21 +50,6 @@ using namespace qir;
 #define GEN_PASS_DEF_QCTOQIRADAPTIVE
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
 
-/**
- * @brief Converts memref.alloc to QIR qubit-array allocation
- *
- * @par Example:
- * ```mlir
- * %memref = memref.alloc() : memref<3x!qc.qubit>
- * ```
- * is converted to
- * ```mlir
- * %zero = llvm.mlir.zero : !llvm.ptr
- * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
- * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
- * (i64, !llvm.ptr, !llvm.ptr) -> ()
- * ```
- */
 /**
  * @brief Lowers a classical-bit register `memref.alloc`.
  *
@@ -95,20 +81,56 @@ convertClassicalRegisterAlloc(memref::AllocOp op, LoweringState& state,
                      .getResult();
     auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
     LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
-    // Track the array so it is released at the end of the program.
+    // Track the array so it is released at the end of the program, and record
+    // it on the register: the whole array is recorded/released at once.
     state.resultArrays.insert(array);
+    reg.array = array;
+    // Load a result pointer per bit for constant-index measurements to write
+    // into. Dynamic-index measurements load their slot on demand instead.
     for (int64_t i = 0; i < reg.size; ++i) {
-      auto index =
+      auto offset =
           LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64IntegerAttr(i))
               .getResult();
       auto gep = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType, array,
-                                     ValueRange{index});
-      auto load = LLVM::LoadOp::create(rewriter, loc, ptrType, gep.getResult());
-      reg.results[i] = load.getResult();
+                                     ValueRange{offset});
+      reg.results[i] =
+          LLVM::LoadOp::create(rewriter, loc, ptrType, gep.getResult())
+              .getResult();
     }
   }
   rewriter.eraseOp(op);
   return success();
+}
+
+/**
+ * @brief Resolves the result pointer for a measurement into a classical
+ * register at a runtime (dynamic) bit index.
+ *
+ * @details Unlike constant indices (handled by `resolveMeasurementResult`), a
+ * dynamic index must be addressed at runtime, which only the Adaptive Profile's
+ * result array supports. The bit's result pointer is loaded from the array at
+ * the index. Returns a null value if the measurement does not write to a
+ * register or the index is constant.
+ */
+static Value resolveDynamicRegisterResult(LoweringState& state, Operation* op,
+                                          ConversionPatternRewriter& rewriter) {
+  const auto it = state.measureRegisterBit.find(op);
+  if (it == state.measureRegisterBit.end()) {
+    return {};
+  }
+  const auto [allocOp, index] = it->second;
+  if (getConstantIntValue(index)) {
+    return {};
+  }
+  auto& reg = state.cregs[allocOp];
+  assert(reg.array && "dynamic classical-register index requires a result "
+                      "array");
+  auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+  auto i64Index = rewriter.getRemappedValue(index);
+  auto gep = LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType, ptrType,
+                                 reg.array, ValueRange{i64Index});
+  return LLVM::LoadOp::create(rewriter, op->getLoc(), ptrType, gep.getResult())
+      .getResult();
 }
 
 /**
@@ -440,7 +462,11 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    auto result = resolveMeasurementResult(state, op.getOperation(), rewriter);
+    auto result =
+        resolveDynamicRegisterResult(state, op.getOperation(), rewriter);
+    if (!result) {
+      result = resolveMeasurementResult(state, op.getOperation(), rewriter);
+    }
 
     // Create measure call
     auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),

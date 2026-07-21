@@ -100,6 +100,10 @@ Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
 /// but still output-recorded.
 Value partialMeasurementToRegister(QIRProgramBuilder& b);
 
+/// Measures qubits into a classical register at a runtime (dynamic) bit index,
+/// namely a loop induction variable.
+Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b);
+
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
 Value measurementWithoutRegisters(QIRProgramBuilder& b);

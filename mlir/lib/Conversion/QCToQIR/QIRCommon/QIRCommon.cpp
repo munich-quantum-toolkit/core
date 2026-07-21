@@ -435,13 +435,20 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 
 Value resolveMeasurementResult(LoweringState& state, Operation* op,
                                ConversionPatternRewriter& rewriter) {
-  // A measurement into a returned register writes to the bit's pre-allocated
-  // result pointer (set up when the register's alloc was lowered).
+  // A measurement into a returned register writes to that register's result
+  // pointer for the bit being measured. The bit index is a constant here: it is
+  // resolved to the result pointer that was loaded once when the register was
+  // allocated, which keeps the emitted IR canonical regardless of the order in
+  // which the bits are measured. Runtime (dynamic) indices only occur in the
+  // Adaptive Profile and are resolved by its measurement lowering before this
+  // is reached.
   if (const auto it = state.measureRegisterBit.find(op);
       it != state.measureRegisterBit.end()) {
     const auto [allocOp, index] = it->second;
-    auto bit = getConstantIntValue(index);
-    return state.cregs[allocOp].results[*bit];
+    auto& reg = state.cregs[allocOp];
+    const auto bit = getConstantIntValue(index);
+    assert(bit && "classical-register bit index must be constant here");
+    return reg.results[*bit];
   }
 
   // Otherwise it gets a fresh result, recorded individually when it is

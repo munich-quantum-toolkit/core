@@ -330,9 +330,10 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
         ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
     resultArrays.insert(array.getResult());
+    // The whole array is recorded/released at once in the Adaptive Profile.
+    reg.array = array.getResult();
 
-    // Load a result pointer per bit; every bit is output-recorded, so this is
-    // where the register's results are established (not at measurement time).
+    // Load a result pointer per bit for measurements to write into.
     for (int64_t i = 0; i < size; ++i) {
       auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
                                      ValueRange{intConstant(i)});
@@ -350,7 +351,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   }
   }
 
-  return {.label = label, .size = size};
+  return {.label = label, .size = size, .array = reg.array};
 }
 
 Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
@@ -386,18 +387,36 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
   return result;
 }
 
-Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QIRProgramBuilder::measure(Value qubit, const ClassicalRegister& reg,
+                                 const std::variant<int64_t, Value>& index) {
   checkFinalized();
   const InsertionGuard guard(*this);
 
-  const auto it = cregs.find(bit.registerLabel);
+  const auto it = cregs.find(reg.label);
   if (it == cregs.end()) {
-    llvm::reportFatalUsageError("Bit does not belong to a result pointer");
+    llvm::reportFatalUsageError("Register does not belong to this builder");
   }
-  auto result = it->second.results[bit.registerIndex];
+  auto& live = it->second;
 
-  if (profile == Profile::Base) {
-    setInsertionPoint(measurementsBlock->getTerminator());
+  Value result;
+  if (const auto* constIndex = std::get_if<int64_t>(&index)) {
+    // Constant index: use the result pointer that was loaded once when the
+    // register was allocated.
+    result = live.results[*constIndex];
+    if (profile == Profile::Base) {
+      // Base Profile: measurements are emitted in the measurements block.
+      setInsertionPoint(measurementsBlock->getTerminator());
+    }
+  } else {
+    // Dynamic index: only the Adaptive Profile's result array can be addressed
+    // at runtime, so load the bit's result pointer on demand.
+    if (profile != Profile::Adaptive) {
+      llvm::reportFatalUsageError("A dynamic classical-register index requires "
+                                  "the Adaptive Profile.");
+    }
+    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, live.array,
+                                   std::get<Value>(index));
+    result = LLVM::LoadOp::create(*this, ptrType, gep.getResult()).getResult();
   }
 
   // Create measure call

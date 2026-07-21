@@ -232,6 +232,18 @@ Value partialMeasurementToRegister(QCProgramBuilder& b) {
   return c;
 }
 
+Value dynamicallyIndexedMeasurement(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c = b.allocClassicalBitRegister(2);
+  // The classical-register bit index is the loop induction variable, i.e. it is
+  // only known at runtime.
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto qubit = b.loadQubit(q.value, iv);
+    b.measure(qubit, c, iv);
+  });
+  return c;
+}
+
 Value measurementWithoutRegisters(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   auto c = b.measure(q);

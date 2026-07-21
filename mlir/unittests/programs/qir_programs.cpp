@@ -44,7 +44,7 @@ static Value measureAndRecord(QIRProgramBuilder& b, ValueRange qubits,
   }
 
   for (auto i = 0L; i < qubits.size(); ++i) {
-    inRegister ? b.measure(qubits[i], resultArray[i])
+    inRegister ? b.measure(qubits[i], resultArray, i)
                : b.measure(qubits[i], startIndex + i);
   }
 
@@ -180,25 +180,25 @@ Value mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
 Value singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
+  b.measure(q[0], c, 0);
   return b.intConstant(0);
 }
 
 Value repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
   return b.intConstant(0);
 }
 
 Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(3);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[1]);
-  b.measure(q[0], c[2]);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 1);
+  b.measure(q[0], c, 2);
   return b.intConstant(0);
 }
 
@@ -206,9 +206,9 @@ Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1);
   const auto& c1 = b.allocClassicalBitRegister(2);
-  b.measure(q[0], c0[0]);
-  b.measure(q[1], c1[0]);
-  b.measure(q[2], c1[1]);
+  b.measure(q[0], c0, 0);
+  b.measure(q[1], c1, 0);
+  b.measure(q[2], c1, 1);
   return b.intConstant(0);
 }
 
@@ -216,7 +216,18 @@ Value partialMeasurementToRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(2);
   // Only the first bit is measured; the second is still output-recorded.
-  b.measure(q[0], c[0]);
+  b.measure(q[0], c, 0);
+  return b.intConstant(0);
+}
+
+Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto c = b.allocClassicalBitRegister(2);
+  // The bit index is the loop induction variable, i.e. only known at runtime.
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto qubit = b.load(q.value, iv);
+    b.measure(qubit, c, iv);
+  });
   return b.intConstant(0);
 }
 
@@ -845,9 +856,9 @@ Value simpleIf(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0[0]);
+  auto cond = b.measure(q[0], c0, 0);
   b.scfIf(cond, [&] { b.x(q[0]); });
-  b.measure(q[0], c1[0]);
+  b.measure(q[0], c1, 0);
   return b.intConstant(0);
 }
 
@@ -856,9 +867,9 @@ Value ifElse(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0[0]);
+  auto cond = b.measure(q[0], c0, 0);
   b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
-  b.measure(q[0], c1[0]);
+  b.measure(q[0], c1, 0);
   return b.intConstant(0);
 }
 
@@ -867,13 +878,13 @@ Value ifTwoQubits(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(2);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0[0]);
+  auto cond = b.measure(q[0], c0, 0);
   b.scfIf(cond, [&] {
     b.x(q[0]);
     b.x(q[1]);
   });
-  b.measure(q[0], c1[0]);
-  b.measure(q[1], c1[1]);
+  b.measure(q[0], c1, 0);
+  b.measure(q[1], c1, 1);
   return b.intConstant(0);
 }
 

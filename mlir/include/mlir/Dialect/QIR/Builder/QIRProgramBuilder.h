@@ -72,8 +72,8 @@ namespace qir {
  *
  * // Measure with register info for proper output recording
  * auto c = builder.allocClassicalBitRegister(2);
- * builder.measure(q0, c[0]);
- * builder.measure(q1, c[1]);
+ * builder.measure(q0, c, 0);
+ * builder.measure(q1, c, 1);
  *
  * auto module = builder.finalize();
  * ```
@@ -320,37 +320,33 @@ public:
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`, storing
+   * the result at the given bit index of the register. The index may be a
+   * constant or, in the Adaptive Profile, computed at runtime (e.g. a loop
+   * induction variable); a runtime index loads its result pointer from the
+   * register's result array on demand.
    *
-   * The output is recorded via `__quantum__rt__result_record_output` during
-   * `finalize()`.
+   * The register is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
-   * @param bit The classical bit to store the result
+   * @param reg The classical register to measure into
+   * @param index The bit index within the register
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(2);
-   * builder.measure(q0, c[0]);
+   * builder.measure(q0, c, 0);
+   * builder.scfFor(0, 2, 1, [&](Value iv) { builder.measure(q, c, iv); });
    * ```
    * ```mlir
-   * // In entry block:
-   * %zero = llvm.mlir.zero : !llvm.ptr
-   * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
-   * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
-   * (i64, !llvm.ptr, !llvm.ptr) -> ()
-   * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
-   *
-   * // In measurements block:
+   * %gep = llvm.getelementptr %alloca[%iv] : (!llvm.ptr, i64) -> !llvm.ptr
+   * %r = llvm.load %gep : !llvm.ptr -> !llvm.ptr
    * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
-   *
-   * // In output block:
-   * llvm.call @__quantum__rt__result_array_record_output(%c2, %alloca, %label)
-   * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, const ClassicalRegister& reg,
+                const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Reset a qubit to |0⟩ state

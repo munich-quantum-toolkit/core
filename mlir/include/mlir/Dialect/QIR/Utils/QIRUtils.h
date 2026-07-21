@@ -59,6 +59,10 @@ inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
+// Adaptive-Profile-only (requires the "arrays" module flag): records an entire
+// result array in a single call.
+inline constexpr auto QIR_RESULT_ARRAY_RECORD_OUTPUT =
+    "__quantum__rt__result_array_record_output";
 inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
@@ -269,18 +273,6 @@ createResultLabel(OpBuilder& builder, Operation* op, StringRef label,
 Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
 
 /**
- * @brief A single classical bit within a classical register.
- */
-struct Bit {
-  /// Label of the register containing this bit.
-  StringRef registerLabel;
-  /// Size of the register containing this bit.
-  int64_t registerSize = 0;
-  /// Index of this bit within the register.
-  int64_t registerIndex = 0;
-};
-
-/**
  * @brief A classical-bit register.
  */
 struct ClassicalRegister {
@@ -288,17 +280,14 @@ struct ClassicalRegister {
   std::string label;
   /// Number of bits in the register.
   int64_t size = 0;
-  /// Result pointer for each bit.
+  /// Result pointer for each bit. In the Base Profile these are static result
+  /// pointers; in the Adaptive Profile they are loaded from `array`.
   SmallVector<Value> results;
+  /// The backing result array (Adaptive Profile). When set, the register is
+  /// recorded and released at the array level.
+  Value array;
   /// Whether the register should be recorded in the output.
   bool record = true;
-
-  /**
-   * @brief Access a specific bit in the register.
-   * @param index The index of the bit to access
-   * @return A `Bit` structure representing the specified bit
-   */
-  Bit operator[](int64_t index) const;
 };
 
 /**
