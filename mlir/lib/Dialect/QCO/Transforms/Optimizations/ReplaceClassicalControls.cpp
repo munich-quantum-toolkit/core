@@ -72,20 +72,29 @@ static void trySwapControlsOfDiagonalGate(CtrlOp op,
     // No advantage gained from swapping.
     return;
   }
+
+  size_t controlIndex = 0;
   for (auto control : op.getControlsIn()) {
     auto controlOutcome = getPredecessorMeasurementOutcome(control);
     if (controlOutcome) {
+      controlIndex++;
       continue;
     }
-    rewriter.replaceAllUsesWith(control, target);
-    rewriter.modifyOpInPlace(
-        op, [&]() { op.getTargetsInMutable()[0].set(control); });
-    auto dummyTarget = AllocOp::create(rewriter, op->getLoc());
-    rewriter.replaceAllUsesWith(op.getOutputForInput(target), dummyTarget);
-    rewriter.replaceAllUsesWith(op.getOutputForInput(control),
-                                op.getOutputForInput(target));
-    rewriter.replaceAllUsesWith(dummyTarget, op.getOutputForInput(control));
-    rewriter.eraseOp(dummyTarget);
+
+    Value controlOut = op.getOutputForInput(control);
+    Value targetOut = op.getOutputForInput(target);
+
+    rewriter.modifyOpInPlace(op, [&]() {
+      op.getTargetsInMutable()[0].set(control);
+      op.getControlsInMutable()[controlIndex].set(target);
+    });
+
+    // This works because each qubit is only ever used once.
+    auto controlUse = controlOut.getUses().begin();
+    auto targetUse = targetOut.getUses().begin();
+    controlUse->set(targetOut);
+    targetUse->set(controlOut);
+
     break;
   }
 }
