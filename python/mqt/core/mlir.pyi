@@ -138,6 +138,9 @@ class QCOProgram(Program):
     def fuse_single_qubit_unitary_runs(self, *, basis: str = "zyz") -> None:
         """Fuse single-qubit unitary runs into the chosen decomposition basis."""
 
+    def fuse_two_qubit_unitary_runs(self, *, native_gates: str = "") -> None:
+        """Lower unitaries to a native gate menu via two-qubit run fusion."""
+
     def unroll_quantum_loops(self, *, unroll_factor: int = -1) -> None:
         """Unroll quantum loops, optionally using a maximum unroll factor."""
 
