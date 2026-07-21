@@ -169,6 +169,18 @@ SmallVector<Value> deadGatesProgram(QCOProgramBuilder& b) {
   return {m0, m1};
 }
 
+SmallVector<Value> deadGatesResetProgram(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  Value c;
+
+  q0 = b.h(q0);
+  q0 = b.reset(q0);
+  std::tie(q0, c) = b.measure(q0);
+  q0 = b.reset(q0);
+
+  return {c};
+}
+
 Value deadGatesWithIfOpProgram(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.allocQubit();
