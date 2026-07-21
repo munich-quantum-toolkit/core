@@ -399,7 +399,7 @@ public:
    *
    * @param qubit Input qubit (must be valid/unconsumed)
    * @param classicalRegister The memref representing the classical register
-   * @param index The index within the register to store the result
+   * @param index The index within the classical register
    * @return Pair of (output_qubit, measurement_result)
    *
    * @par Example:

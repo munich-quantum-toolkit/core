@@ -58,16 +58,9 @@ struct QregInfo {
   SmallVector<Value> qubits;
 };
 
-// (register memref, localIdx)
+// (memref, internal index)
 using BitMemInfo = std::pair<Value, size_t>;
 using BitIndexVec = SmallVector<BitMemInfo>;
-
-/// Classical registers allocated for a translation: the flat bit-to-register
-/// mapping and the register memrefs in return order.
-struct ClassicalRegisterInfo {
-  BitIndexVec bitMap;
-  SmallVector<Value> memrefs;
-};
 
 /**
  * @brief Structure to maintain state during translation
@@ -76,7 +69,7 @@ struct TranslationState {
   /// Flat vector of qubit values indexed by physical qubit index
   SmallVector<Value> qubits;
 
-  /// Mapping from global bit index to (register, local_index)
+  /// Mapping from global bit index to (memref, internal index)
   BitIndexVec bitMap;
 
   /// Flat vector of measurement results
@@ -185,18 +178,17 @@ buildQubitMap(const ::qc::QuantumComputation& quantumComputation,
 }
 
 /**
- * @brief Allocates classical registers using the QCProgramBuilder
+ * @brief Allocates classical registers using the `QCProgramBuilder`
  *
  * @details
- * Creates classical bit registers and builds a mapping from global classical
- * bit indices to (register, local_index) pairs. This is used for measurement
- * result storage.
+ * Creates classical bit registers and builds a mapping from global bit index to
+ * (memref, internal index) pairs. This is used for measurement result storage.
  *
- * @param builder The QCProgramBuilder used to create operations
- * @param quantumComputation The quantum computation to translate
- * @return Vector mapping global bit indices to register and local indices
+ * @param builder The `QCProgramBuilder` used to create operations
+ * @param quantumComputation The `QuantumComputation` to translate
+ * @return A pair containing all allocated memrefs and the mapping
  */
-static ClassicalRegisterInfo
+static std::pair<SmallVector<Value>, BitIndexVec>
 allocateClassicalRegisters(QCProgramBuilder& builder,
                            const ::qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
@@ -213,20 +205,22 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
     return a->getStartIndex() < b->getStartIndex();
   });
 
-  // Allocate one memref per register and build the global-bit-to-register map.
-  ClassicalRegisterInfo info;
-  info.bitMap.resize(quantumComputation.getNcbits());
+  // Allocate one memref per register and build the mapping
+  SmallVector<Value> memrefs;
+  memrefs.reserve(cregPtrs.size());
+  BitIndexVec bitMap;
+  bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    auto mem =
+    auto memref =
         builder.allocClassicalBitRegister(static_cast<int64_t>(reg->getSize()));
-    info.memrefs.emplace_back(mem);
+    memrefs.emplace_back(memref);
     for (size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
-      info.bitMap[globalIdx] = {mem, i};
+      bitMap[globalIdx] = {memref, i};
     }
   }
 
-  return info;
+  return {std::move(memrefs), std::move(bitMap)};
 }
 
 /**
@@ -251,11 +245,9 @@ static void addMeasureOp(QCProgramBuilder& builder,
   for (size_t i = 0; i < targets.size(); ++i) {
     const auto& qubit = state.getQubit(targets[i]);
     const auto bitIdx = static_cast<size_t>(classics[i]);
-    const auto& [mem, localIdx] = state.bitMap[bitIdx];
-    // Measuring stores the result into the register memref (which lives in the
-    // entry block), so this works from inside modifier or if/else regions too.
+    const auto& [memref, localIdx] = state.bitMap[bitIdx];
     state.results[bitIdx] =
-        builder.measure(qubit, mem, static_cast<int64_t>(localIdx));
+        builder.measure(qubit, memref, static_cast<int64_t>(localIdx));
   }
 }
 
@@ -880,8 +872,6 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
   QCProgramBuilder builder(context);
-  // Without classical registers the program returns an exit code 0; otherwise
-  // the return type is set to the register memrefs before finalizing.
   builder.initialize();
 
   // Allocate quantum registers using the builder
@@ -891,13 +881,14 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   const auto qubits = buildQubitMap(quantumComputation, qregs);
 
   // Allocate classical registers using the builder
-  const auto cregs = allocateClassicalRegisters(builder, quantumComputation);
+  const auto [memrefs, bitMap] =
+      allocateClassicalRegisters(builder, quantumComputation);
 
   // Allocate result map
   SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
 
   TranslationState state{.qubits = qubits,
-                         .bitMap = cregs.bitMap,
+                         .bitMap = bitMap,
                          .results = std::move(results),
                          .targetArgs = DenseMap<size_t, Value>{}};
 
@@ -907,12 +898,10 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
         "Failed to translate QuantumComputation to QC");
   }
 
-  // Finalize and return the module (adds return statement and transfers
-  // ownership). The classical registers are returned so their bits can be
-  // recorded downstream; unmeasured bits stay part of the register.
-  if (!cregs.memrefs.empty()) {
-    builder.retype(ValueRange(cregs.memrefs).getTypes());
-    return builder.finalize(cregs.memrefs);
+  // Finalize and return the module
+  if (!memrefs.empty()) {
+    builder.retype(ValueRange(memrefs).getTypes());
+    return builder.finalize(memrefs);
   }
   return builder.finalize();
 }

@@ -198,7 +198,7 @@ const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 /// Map of qubits in the current scope.
 using QubitScope = llvm::StringMap<SmallVector<Value>>;
 
-/// A classical-bit register: its backing memref and its number of bits.
+/// A classical bit register: its backing memref and its number of bits.
 struct RegisterInfo {
   Value memref;
   int64_t size = 0;
@@ -271,10 +271,10 @@ private:
   /// Map from qubit-register name to allocated qubit values.
   QubitScope qubitRegisters;
 
-  /// Map from classical-register name to its memref and size.
+  /// Map from classical-bit-register name to its memref and size.
   llvm::StringMap<RegisterInfo> classicalRegisters;
 
-  /// Map from classical-register name to measurement results.
+  /// Map from classical-bit-register name to measurement results.
   llvm::StringMap<SmallVector<Value>> bitValues;
 
   /// Names of all bit registers, in declaration order.

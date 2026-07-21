@@ -286,66 +286,60 @@ public:
    * @brief Measure a qubit and record the result
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
-   *
-   * The output is recorded via `__quantum__rt__result_record_output` during
-   * `finalize()`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`. The result
+   * is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
-   * @param resultIndex The classical bit index for result pointer
+   * @param index The index for result pointer
    * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
-   * auto result = builder.measure(q0, 0);
+   * auto result = builder.measure(q, 0);
    * ```
    * ```mlir
    * // In entry block:
    * %zero = llvm.mlir.zero : !llvm.ptr
-   * %r = llvm.call @"@__quantum__rt__result_allocate"(%zero) : !llvm.ptr ->
+   * %b = llvm.call @__quantum__rt__result_allocate(%zero) : !llvm.ptr ->
    * !llvm.ptr
    *
    * // In measurements block:
-   * llvm.call @__quantum__qis__mz__body(%q0, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+   * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
    *
    * // In output block:
-   * llvm.call @__quantum__rt__result_record_output(%r, %label) : (!llvm.ptr,
+   * llvm.call @__quantum__rt__result_record_output(%b, %label) : (!llvm.ptr,
    * !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, int64_t resultIndex, bool record = true);
+  Value measure(Value qubit, int64_t index, bool record = true);
 
   /**
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`, storing
-   * the result at the given bit index of the register. The index may be a
-   * constant or, in the Adaptive Profile, computed at runtime (e.g. a loop
-   * induction variable); a runtime index loads its result pointer from the
-   * register's result array on demand.
-   *
-   * The register is recorded during `finalize()`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`. The result
+   * is stored in the specified classical register at the given bit index. The
+   * index may be a constant or, in the Adaptive Profile, computed at runtime.
+   * The result is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
-   * @param reg The classical register to measure into
-   * @param index The bit index within the register
+   * @param classicalRegister The memref representing the classical register
+   * @param index The index within the classical register
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(2);
-   * builder.measure(q0, c, 0);
-   * builder.scfFor(0, 2, 1, [&](Value iv) { builder.measure(q, c, iv); });
+   * builder.measure(q, c, 0);
    * ```
    * ```mlir
-   * %gep = llvm.getelementptr %alloca[%iv] : (!llvm.ptr, i64) -> !llvm.ptr
-   * %r = llvm.load %gep : !llvm.ptr -> !llvm.ptr
-   * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+   * %gep = llvm.getelementptr %c[%zero] : (!llvm.ptr, i64) -> !llvm.ptr
+   * %b = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const ClassicalRegister& reg,
+  Value measure(Value qubit, const ClassicalRegister& classicalRegister,
                 const std::variant<int64_t, Value>& index);
 
   /**
@@ -1208,10 +1202,10 @@ private:
   /// Cache loaded qubit pointers for reuse
   DenseMap<Value, DenseSet<Value>> loadedQubits;
 
-  /// Map of classical registers
+  /// Map from register name to `ClassicalRegister`
   llvm::StringMap<ClassicalRegister> cregs;
 
-  /// Map of non-register results
+  /// Map from index to `StaticResult`
   DenseMap<int64_t, StaticResult> staticResults;
 
   /// Helper variable for storing the LLVM pointer type

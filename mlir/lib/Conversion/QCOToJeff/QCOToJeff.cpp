@@ -30,6 +30,8 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
@@ -83,17 +85,12 @@ struct LoweringState {
 
   [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
 
+  /// Map from classical-bit-register memref to latest tensor value
+  DenseMap<Value, Value> registerTensors;
+
   // Module information
   SmallVector<std::string> strings;
   std::string entryPointName;
-
-  /// Maps each classical-register memref to its latest jeff int-array tensor
-  /// value. A `memref.store` produces a new tensor (value semantics), so the
-  /// mapping is advanced as stores are lowered and read back when the register
-  /// is returned. The tensor is threaded through this side map rather than SSA
-  /// def-use, so it relies on the driver lowering the alloc before its stores
-  /// and the stores in program order.
-  DenseMap<Value, Value> registerTensors;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -393,6 +390,121 @@ static LogicalResult moveRegion(Region& source, Region& dest,
 namespace {
 
 /**
+ * @brief Converts a classical-bit-register `memref.alloc` to
+ * `jeff.int_array_zero`
+ *
+ * @par Example:
+ * ```mlir
+ * %c = memref.alloc() : memref<2xi1>
+ * ```
+ * is converted to
+ * ```mlir
+ * %size = jeff.int_const32(2) : i32
+ * %c = jeff.int_array_zero(%size) : tensor<2xi1>
+ * ```
+ */
+struct ConvertMemRefAllocOpToJeff final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto memrefType = op.getType();
+    auto elementType = memrefType.getElementType();
+    if (memrefType.getRank() != 1 || !elementType.isInteger(1)) {
+      return rewriter.notifyMatchFailure(op, "unsupported memref type");
+    }
+    auto loc = op.getLoc();
+    auto dynamicSizes = op.getDynamicSizes();
+    RankedTensorType tensorType;
+    Value size;
+    if (dynamicSizes.empty()) {
+      auto sizeValue = memrefType.getShape()[0];
+      tensorType =
+          RankedTensorType::get({memrefType.getShape()[0]}, elementType);
+      size = jeff::IntConst32Op::create(
+          rewriter, loc,
+          rewriter.getI32IntegerAttr(static_cast<int32_t>(sizeValue)));
+    } else {
+      tensorType = RankedTensorType::get({ShapedType::kDynamic}, elementType);
+      size = dynamicSizes[0];
+    }
+    auto creg = jeff::IntArrayZeroOp::create(rewriter, loc, tensorType, size)
+                    .getResult();
+    getState().registerTensors[op.getResult()] = creg;
+    rewriter.replaceOp(op, creg);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a classical-bit-register `memref.store` to
+ * `jeff.int_array_set_index`
+ *
+ * @par Example:
+ * ```mlir
+ * memref.store %bit, %c[%index] : memref<2xi1>
+ * ```
+ * is converted to
+ * ```mlir
+ * %reg_out = jeff.int_array_set_index(%index) %c %bit : i32, tensor<2xi1>, i1
+ * -> tensor<2xi1>
+ * ```
+ */
+struct ConvertMemRefStoreOpToJeff final
+    : StatefulOpConversionPattern<memref::StoreOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& registerTensors = getState().registerTensors;
+    auto it = registerTensors.find(op.getMemref());
+    if (it == registerTensors.end()) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    auto newCreg = jeff::IntArraySetIndexOp::create(
+                       rewriter, op.getLoc(), it->second.getType(), it->second,
+                       adaptor.getIndices()[0], adaptor.getValue())
+                       .getResult();
+    it->second = newCreg;
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a classical-bit-register `memref.load` to
+ * `jeff.int_array_get_index`
+ *
+ * @par Example:
+ * ```mlir
+ * %bit = memref.load %c[%index] : memref<2xi1>
+ * ```
+ * is converted to
+ * ```mlir
+ * %bit = jeff.int_array_get_index(%index) %c : i32, tensor<2xi1> -> i1
+ * ```
+ */
+struct ConvertMemRefLoadOpToJeff final
+    : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto it = getState().registerTensors.find(op.getMemref());
+    if (it == getState().registerTensors.end()) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
+        op, op.getType(), it->second, adaptor.getIndices()[0]);
+    return success();
+  }
+};
+
+/**
  * @brief Converts qtensor.alloc to jeff.qureg_alloc
  *
  * @par Example:
@@ -603,150 +715,6 @@ struct ConvertQCOMeasureOpToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.replaceOpWithNewOp<jeff::QubitMeasureNDOp>(op,
                                                         adaptor.getQubitIn());
-    return success();
-  }
-};
-
-/**
- * @brief Converts a classical-register `memref.alloc` to jeff.int_array_zero
- *
- * @details Records the resulting int-array tensor as the register's latest
- * value so later stores can thread it.
- *
- * @par Example:
- * ```mlir
- * %reg = memref.alloc() : memref<2xi1>
- * ```
- * is converted to
- * ```mlir
- * %len = jeff.int_const32(2) : i32
- * %reg = jeff.int_array_zero(%len) : tensor<?xi1>
- * ```
- */
-struct ConvertMemRefAllocOpToJeff final
-    : StatefulOpConversionPattern<memref::AllocOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto memrefType = op.getType();
-    if (!memrefType.hasStaticShape() || memrefType.getRank() != 1) {
-      return rewriter.notifyMatchFailure(op, "unsupported classical register");
-    }
-    auto loc = op.getLoc();
-    auto tensorType = RankedTensorType::get({ShapedType::kDynamic},
-                                            memrefType.getElementType());
-    auto length = jeff::IntConst32Op::create(
-        rewriter, loc,
-        rewriter.getI32IntegerAttr(
-            static_cast<int32_t>(memrefType.getShape()[0])));
-    auto zero = jeff::IntArrayZeroOp::create(rewriter, loc, tensorType, length);
-    getState().registerTensors[op.getResult()] = zero.getResult();
-    rewriter.replaceOp(op, zero.getResult());
-    return success();
-  }
-};
-
-/**
- * @brief Converts a classical-register `memref.store` to
- * jeff.int_array_set_index
- *
- * @details Threads the register's latest int-array tensor: reads the current
- * value, produces an updated one, and records it as the new latest value.
- *
- * @par Example:
- * ```mlir
- * memref.store %bit, %reg[%c0] : memref<2xi1>
- * ```
- * is converted to
- * ```mlir
- * %reg_out = jeff.int_array_set_index(%c0) %reg_in %bit
- *     : i32, tensor<?xi1>, i1 -> tensor<?xi1>
- * ```
- */
-struct ConvertMemRefStoreOpToJeff final
-    : StatefulOpConversionPattern<memref::StoreOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& registerTensors = getState().registerTensors;
-    auto it = registerTensors.find(op.getMemref());
-    if (it == registerTensors.end()) {
-      return rewriter.notifyMatchFailure(op, "unknown classical register");
-    }
-    if (adaptor.getIndices().size() != 1) {
-      return rewriter.notifyMatchFailure(op, "unsupported classical register");
-    }
-    auto setIndex = jeff::IntArraySetIndexOp::create(
-        rewriter, op.getLoc(), it->second.getType(), it->second,
-        adaptor.getIndices()[0], adaptor.getValue());
-    it->second = setIndex.getResult();
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-/**
- * @brief Converts a classical-register `memref.load` to
- * jeff.int_array_get_index
- *
- * @par Example:
- * ```mlir
- * %bit = memref.load %reg[%c0] : memref<2xi1>
- * ```
- * is converted to
- * ```mlir
- * %bit = jeff.int_array_get_index(%c0) %reg : i32, tensor<?xi1> -> i1
- * ```
- */
-struct ConvertMemRefLoadOpToJeff final
-    : StatefulOpConversionPattern<memref::LoadOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto it = getState().registerTensors.find(op.getMemref());
-    if (it == getState().registerTensors.end()) {
-      return rewriter.notifyMatchFailure(op, "unknown classical register");
-    }
-    if (adaptor.getIndices().size() != 1) {
-      return rewriter.notifyMatchFailure(op, "unsupported classical register");
-    }
-    rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
-        op, op.getType(), it->second, adaptor.getIndices()[0]);
-    return success();
-  }
-};
-
-/**
- * @brief Rewrites func.return so returned classical registers use their latest
- * int-array tensor value.
- *
- * @details The lowering of `memref.store` advances the register's tensor in the
- * lowering state rather than through the op's SSA results, so the returned
- * operand has to be looked up here.
- */
-struct ConvertFuncReturnOpToJeff final
-    : StatefulOpConversionPattern<func::ReturnOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& registerTensors = getState().registerTensors;
-    SmallVector<Value> returnValues;
-    returnValues.reserve(op.getNumOperands());
-    for (auto [operand, adapted] :
-         llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      auto it = registerTensors.find(operand);
-      returnValues.emplace_back(it != registerTensors.end() ? it->second
-                                                            : adapted);
-    }
-    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
   }
 };
@@ -1414,7 +1382,7 @@ struct ConvertSCFWhileOpToJeff final
 };
 
 /**
- * @brief Converts the QCO-style main function to a jeff-style main function
+ * @brief Converts the QCO-style main function to a `jeff`-style main function
  *
  * @par Example:
  * ```mlir
@@ -1455,19 +1423,43 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 
     getState().entryPointName = op.getSymName();
 
-    // Convert the result types (a returned classical register becomes an
-    // int-array tensor) and remove the passthrough attribute.
     auto funcType = op.getFunctionType();
-    SmallVector<Type> resultTypes;
+    SmallVector<Type> newResults;
     if (failed(getTypeConverter()->convertTypes(funcType.getResults(),
-                                                resultTypes))) {
+                                                newResults))) {
       return failure();
     }
+
     rewriter.startOpModification(op);
-    op.setType(rewriter.getFunctionType(funcType.getInputs(), resultTypes));
+    op.setType(rewriter.getFunctionType(funcType.getInputs(), newResults));
     op->removeAttr("passthrough");
     rewriter.finalizeOpModification(op);
 
+    return success();
+  }
+};
+
+/**
+ * @brief Updates `func.return` by replacing classical-bit-register memrefs with
+ * their latest tensor value
+ */
+struct ConvertFuncReturnOpToJeff final
+    : StatefulOpConversionPattern<func::ReturnOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& registerTensors = getState().registerTensors;
+    SmallVector<Value> returnValues;
+    returnValues.reserve(op.getNumOperands());
+    for (auto [operand, adapted] :
+         llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
+      auto it = registerTensors.find(operand);
+      returnValues.emplace_back(it != registerTensors.end() ? it->second
+                                                            : adapted);
+    }
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
   }
 };
@@ -1496,11 +1488,8 @@ public:
       return type;
     });
 
-    // A classical-bit register is lowered to a value-semantic jeff int-array,
-    // which is a 1-D tensor of integers.
     addConversion([](MemRefType type) -> Type {
-      return RankedTensorType::get({ShapedType::kDynamic},
-                                   type.getElementType());
+      return RankedTensorType::get(type.getShape(), type.getElementType());
     });
   }
 };
@@ -1625,8 +1614,6 @@ protected:
 
     target.addDynamicallyLegalOp<func::FuncOp>(
         [](func::FuncOp op) { return !op->hasAttr("passthrough"); });
-    // A return is only rewritten when it returns a classical register, whose
-    // memref value must be replaced by its latest int-array tensor.
     target.addDynamicallyLegalOp<func::ReturnOp>([](func::ReturnOp op) {
       return llvm::none_of(op.getOperandTypes(),
                            [](Type type) { return isa<MemRefType>(type); });
@@ -1634,14 +1621,13 @@ protected:
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
-    patterns.add<ConvertQTensorAllocOp, ConvertQTensorExtractOp,
-                 ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
-                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
-                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff,
-                 ConvertMemRefAllocOpToJeff, ConvertMemRefStoreOpToJeff,
-                 ConvertMemRefLoadOpToJeff, ConvertFuncReturnOpToJeff>(
-        typeConverter, context, &state);
+    patterns.add<ConvertMemRefAllocOpToJeff, ConvertMemRefStoreOpToJeff,
+                 ConvertMemRefLoadOpToJeff, ConvertQTensorAllocOp,
+                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+                 ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
+                 ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
+                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
+                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
@@ -1708,8 +1694,8 @@ protected:
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
                  ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
-                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff>(
-        typeConverter, context, &state);
+                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff,
+                 ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {

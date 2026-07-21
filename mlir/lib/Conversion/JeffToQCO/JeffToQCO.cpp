@@ -20,6 +20,7 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -202,6 +203,102 @@ static StringRef getEntryPointName(Operation* op) {
   }
 
   return cast<StringAttr>(strings[entryPoint]).getValue();
+}
+
+/**
+ * @brief Converts tensors representing classical registers to memrefs.
+ */
+static LogicalResult
+rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
+  OpBuilder builder(module->getContext());
+  const auto result = module->walk([&](func::FuncOp funcOp) -> WalkResult {
+    DenseMap<Value, Value> memrefs;
+    SmallVector<Operation*> toErase;
+    funcOp.walk([&](Operation* op) {
+      TypeSwitch<Operation*>(op)
+          .Case<tensor::EmptyOp>([&](auto emptyOp) {
+            auto tensorType = emptyOp.getType();
+            if (tensorType.getRank() != 1 ||
+                !tensorType.getElementType().isInteger(1)) {
+              return;
+            }
+            builder.setInsertionPoint(emptyOp);
+            auto loc = emptyOp.getLoc();
+            auto elementType = tensorType.getElementType();
+            auto dynamicSizes = emptyOp.getDynamicSizes();
+            std::optional<int64_t> size;
+            if (dynamicSizes.empty()) {
+              size = tensorType.getShape()[0];
+            } else if (auto castOp =
+                           dynamicSizes[0]
+                               .template getDefiningOp<arith::IndexCastOp>()) {
+              size = getConstantIntValue(castOp.getIn());
+            } else {
+              size = getConstantIntValue(dynamicSizes[0]);
+            }
+            Value memref;
+            if (size) {
+              memref = memref::AllocOp::create(
+                  builder, loc, MemRefType::get({*size}, elementType));
+            } else {
+              memref = memref::AllocOp::create(
+                  builder, loc,
+                  MemRefType::get({ShapedType::kDynamic}, elementType),
+                  ValueRange{dynamicSizes[0]});
+            }
+            memrefs[emptyOp.getResult()] = memref;
+            toErase.emplace_back(emptyOp);
+          })
+          .Case<tensor::InsertOp>([&](auto insertOp) {
+            auto it = memrefs.find(insertOp.getDest());
+            if (it == memrefs.end()) {
+              return;
+            }
+            builder.setInsertionPoint(insertOp);
+            memref::StoreOp::create(builder, insertOp.getLoc(),
+                                    insertOp.getScalar(), it->second,
+                                    insertOp.getIndices());
+            memrefs[insertOp.getResult()] = it->second;
+            toErase.emplace_back(insertOp);
+          })
+          .Case<tensor::ExtractOp>([&](auto extractOp) {
+            auto it = memrefs.find(extractOp.getTensor());
+            if (it == memrefs.end()) {
+              return;
+            }
+            builder.setInsertionPoint(extractOp);
+            auto newResult =
+                memref::LoadOp::create(builder, extractOp.getLoc(), it->second,
+                                       extractOp.getIndices())
+                    .getResult();
+            extractOp.getResult().replaceAllUsesWith(newResult);
+            toErase.emplace_back(extractOp);
+          });
+    });
+
+    // Update terminator operands
+    auto* terminator = funcOp.getBlocks().front().getTerminator();
+    for (auto& operand : terminator->getOpOperands()) {
+      auto it = memrefs.find(operand.get());
+      if (it == memrefs.end()) {
+        continue;
+      }
+      operand.set(it->second);
+    }
+
+    // Update function signature
+    if (!memrefs.empty()) {
+      funcOp.setType(builder.getFunctionType(funcOp.getArgumentTypes(),
+                                             terminator->getOperandTypes()));
+    }
+
+    for (Operation* op : llvm::reverse(toErase)) {
+      op->erase();
+    }
+
+    return WalkResult::advance();
+  });
+  return result.wasInterrupted() ? failure() : success();
 }
 
 /**
@@ -1189,109 +1286,6 @@ public:
 };
 
 /**
- * @brief Turns value-threaded classical-register tensors back into
- * reference-semantic memrefs.
- *
- * @details Inverse of the tensor threading done in the QCO-to-jeff conversion.
- * A classical register arrives as a `tensor<?xi1>` produced by `tensor.empty`
- * and updated by `tensor.insert`. Each such register is backed by a single
- * `memref`: `tensor.empty` becomes `memref.alloc`, each `tensor.insert` becomes
- * an in-place `memref.store` (all threaded tensor values share the one memref),
- * and each `tensor.extract` becomes a `memref.load`. Only `i1` element tensors
- * are affected; qubit registers use the `qtensor` dialect and are left alone.
- */
-static LogicalResult
-rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
-  OpBuilder builder(module->getContext());
-  const auto result = module->walk([&](func::FuncOp func) -> WalkResult {
-    // Maps each register tensor value to its backing memref.
-    DenseMap<Value, Value> memrefFor;
-    SmallVector<Operation*> toErase;
-
-    func.walk([&](Operation* op) {
-      if (auto empty = dyn_cast<tensor::EmptyOp>(op)) {
-        auto tensorType = empty.getType();
-        if (tensorType.getRank() != 1 ||
-            !tensorType.getElementType().isInteger(1)) {
-          return;
-        }
-        builder.setInsertionPoint(empty);
-        auto loc = empty.getLoc();
-        auto elementType = tensorType.getElementType();
-        auto dynamicSizes = empty.getDynamicSizes();
-        // Recover a constant length, peeling an index_cast if present (the
-        // jeff length arrives as `index_cast` of an `i32` constant).
-        std::optional<int64_t> length;
-        if (!dynamicSizes.empty()) {
-          length = getConstantIntValue(dynamicSizes[0]);
-          if (!length) {
-            if (auto cast =
-                    dynamicSizes[0].getDefiningOp<arith::IndexCastOp>()) {
-              length = getConstantIntValue(cast.getIn());
-            }
-          }
-        }
-        Value memref;
-        if (dynamicSizes.empty()) {
-          memref = memref::AllocOp::create(
-              builder, loc,
-              MemRefType::get(tensorType.getShape(), elementType));
-        } else if (length) {
-          memref = memref::AllocOp::create(
-              builder, loc, MemRefType::get({*length}, elementType));
-        } else {
-          memref = memref::AllocOp::create(
-              builder, loc,
-              MemRefType::get({ShapedType::kDynamic}, elementType),
-              ValueRange{dynamicSizes[0]});
-        }
-        memrefFor[empty.getResult()] = memref;
-        toErase.emplace_back(empty);
-      } else if (auto insert = dyn_cast<tensor::InsertOp>(op)) {
-        auto it = memrefFor.find(insert.getDest());
-        if (it == memrefFor.end()) {
-          return;
-        }
-        builder.setInsertionPoint(insert);
-        memref::StoreOp::create(builder, insert.getLoc(), insert.getScalar(),
-                                it->second, insert.getIndices());
-        memrefFor[insert.getResult()] = it->second;
-        toErase.emplace_back(insert);
-      } else if (auto extract = dyn_cast<tensor::ExtractOp>(op)) {
-        auto it = memrefFor.find(extract.getTensor());
-        if (it == memrefFor.end()) {
-          return;
-        }
-        builder.setInsertionPoint(extract);
-        auto loaded = memref::LoadOp::create(builder, extract.getLoc(),
-                                             it->second, extract.getIndices());
-        extract.getResult().replaceAllUsesWith(loaded);
-        toErase.emplace_back(extract);
-      }
-    });
-
-    // Redirect remaining uses (e.g. func.return) to the backing memref.
-    auto* terminator = func.getBlocks().front().getTerminator();
-    for (auto& operand : terminator->getOpOperands()) {
-      auto it = memrefFor.find(operand.get());
-      if (it != memrefFor.end()) {
-        operand.set(it->second);
-      }
-    }
-    for (Operation* op : llvm::reverse(toErase)) {
-      op->erase();
-    }
-
-    if (!memrefFor.empty()) {
-      func.setType(builder.getFunctionType(func.getArgumentTypes(),
-                                           terminator->getOperandTypes()));
-    }
-    return WalkResult::advance();
-  });
-  return result.wasInterrupted() ? failure() : success();
-}
-
-/**
  * @brief Pass for converting jeff operations to QCO operations
  */
 struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
@@ -1349,7 +1343,6 @@ protected:
       return;
     }
 
-    // Turn value-threaded classical-register tensors back into memrefs.
     if (rewriteClassicalRegisterTensorsToMemrefs(module).failed()) {
       signalPassFailure();
       return;

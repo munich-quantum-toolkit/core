@@ -47,6 +47,8 @@ inline constexpr auto QIR_QUBIT_RELEASE = "__quantum__rt__qubit_release";
 
 inline constexpr auto QIR_RESULT_ARRAY_ALLOC =
     "__quantum__rt__result_array_allocate";
+inline constexpr auto QIR_RESULT_ARRAY_RECORD_OUTPUT =
+    "__quantum__rt__result_array_record_output";
 inline constexpr auto QIR_RESULT_ARRAY_RELEASE =
     "__quantum__rt__result_array_release";
 
@@ -59,10 +61,6 @@ inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
-// Adaptive-Profile-only (requires the "arrays" module flag): records an entire
-// result array in a single call.
-inline constexpr auto QIR_RESULT_ARRAY_RECORD_OUTPUT =
-    "__quantum__rt__result_array_record_output";
 inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
@@ -272,50 +270,40 @@ createResultLabel(OpBuilder& builder, Operation* op, StringRef label,
  */
 Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
 
-/**
- * @brief A classical-bit register.
- */
+/// A classical bit register.
 struct ClassicalRegister {
   /// Label of the register (e.g., "c0").
   std::string label;
   /// Number of bits in the register.
   int64_t size = 0;
-  /// Result pointer for each bit. In the Base Profile these are static result
-  /// pointers; in the Adaptive Profile they are loaded from `array`.
+  /// Pre-allocated result pointer for each bit.
   SmallVector<Value> results;
-  /// The backing result array (Adaptive Profile). When set, the register is
-  /// recorded and released at the array level.
+  /// Adaptive Profile: The backing result array.
   Value array;
   /// Whether the register should be recorded in the output.
   bool record = true;
 };
 
-/**
- * @brief A non-register result.
- */
+/// A static result (i.e., a result that is not part of a classical register).
 struct StaticResult {
   /// The result pointer.
   Value pointer;
-  /// Whether the result is recorded as an individual (`__unnamed__`) output.
+  /// Whether the result should be recorded in the output.
   bool record = false;
 };
 
 /**
  * @brief Emit the output-recording calls.
  *
- * @details Each classical register with `record` set produces an
- * `array_record_output` marker followed by one `result_record_output` per bit;
- * registers with `record` unset are skipped. Individually recorded results
- * follow as `__unnamed__` results.
- *
  * @param builder The builder to use
  * @param anchor An operation used to locate the enclosing module
- * @param registers The classical registers to record, in order
- * @param results Result pointers indexed by result index; those with `record`
- * set are recorded individually
+ * @param classicalRegisters The classical registers to record. If `record` is
+ * not set, the register is skipped.
+ * @param staticResults The static results to record. If `record` is not set,
+ * the result is skipped.
  */
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
-                         ArrayRef<ClassicalRegister> registers,
-                         const DenseMap<int64_t, StaticResult>& results);
+                         ArrayRef<ClassicalRegister> classicalRegisters,
+                         const DenseMap<int64_t, StaticResult>& staticResults);
 
 } // namespace mlir::qir

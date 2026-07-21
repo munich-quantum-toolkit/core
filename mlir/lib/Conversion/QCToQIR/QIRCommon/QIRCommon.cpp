@@ -435,28 +435,20 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 
 Value resolveMeasurementResult(LoweringState& state, Operation* op,
                                ConversionPatternRewriter& rewriter) {
-  // A measurement into a returned register writes to that register's result
-  // pointer for the bit being measured. The bit index is a constant here: it is
-  // resolved to the result pointer that was loaded once when the register was
-  // allocated, which keeps the emitted IR canonical regardless of the order in
-  // which the bits are measured. Runtime (dynamic) indices only occur in the
-  // Adaptive Profile and are resolved by its measurement lowering before this
-  // is reached.
-  if (const auto it = state.measureRegisterBit.find(op);
-      it != state.measureRegisterBit.end()) {
+  if (const auto it = state.returnedCregs.find(op);
+      it != state.returnedCregs.end()) {
     const auto [allocOp, index] = it->second;
     auto& reg = state.cregs[allocOp];
+    // Dynamic indices are handled by `resolveDynamicMeasurementResult`
     const auto bit = getConstantIntValue(index);
-    assert(bit && "classical-register bit index must be constant here");
+    assert(bit && "index must be a constant");
     return reg.results[*bit];
   }
 
-  // Otherwise it gets a fresh result, recorded individually when it is
-  // returned.
-  const OpBuilder::InsertionGuard guard(rewriter);
+  OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(state.entryBlock->getTerminator());
   const auto index = static_cast<int64_t>(state.staticResults.size());
-  const auto record = state.returnedMeasurements.contains(op);
+  const auto record = state.returnedStaticResults.contains(op);
   auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
   state.staticResults.try_emplace(
       index, qir::StaticResult{.pointer = result, .record = record});
@@ -465,7 +457,7 @@ Value resolveMeasurementResult(LoweringState& state, Operation* op,
 
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
   moduleOp->walk([&](func::FuncOp funcOp) {
-    // First, check if the given function is the main entrypoint or not.
+    // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
     bool isEntryPoint = false;
     if (passthrough) {
@@ -481,22 +473,11 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
     funcOp.walk([&](func::ReturnOp returnOp) {
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
-      // Classical-register memrefs (and their stores) are removed here so that
-      // the register measurements have no remaining uses during conversion.
-      SmallVector<Operation*> toErase;
 
       for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
-          // A measurement result returned directly is recorded as an
-          // individual (unnamed) result.
-          state.returnedMeasurements.insert(measureOp.getOperation());
+          state.returnedStaticResults.insert(measureOp.getOperation());
         } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>()) {
-          // A returned classical-bit register (memref<Nxi1>) is recorded as a
-          // group. Its result pointers and recording are set up when the
-          // `memref.alloc` is lowered; here we only note that this register is
-          // returned and recover, from its stores, which measurement feeds
-          // which bit. The stores are dropped so the register measurements have
-          // no remaining uses during conversion.
           const std::string label = "c" + std::to_string(state.cregs.size());
           const auto size = allocOp.getType().getShape()[0];
           auto& reg =
@@ -514,10 +495,9 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
             if (!measureOp) {
               continue;
             }
-            state.measureRegisterBit.try_emplace(measureOp.getOperation(),
-                                                 allocOp.getOperation(),
-                                                 storeOp.getIndices()[0]);
-            toErase.emplace_back(storeOp);
+            state.returnedCregs.try_emplace(measureOp.getOperation(),
+                                            allocOp.getOperation(),
+                                            storeOp.getIndices()[0]);
           }
         } else {
           keptOperands.push_back(operand);
@@ -538,11 +518,6 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
       funcOp.setFunctionType(FunctionType::get(
           funcOp.getContext(), funcOp.getFunctionType().getInputs(),
           keptReturnTypes));
-
-      // Erase stores before their allocs (stores use the alloc result).
-      for (auto* op : toErase) {
-        op->erase();
-      }
     });
   });
 }

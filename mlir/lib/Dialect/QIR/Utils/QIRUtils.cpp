@@ -145,13 +145,14 @@ Value createPointerFromIndex(OpBuilder& builder, const Location loc,
 }
 
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
-                         ArrayRef<ClassicalRegister> registers,
-                         const DenseMap<int64_t, StaticResult>& results) {
-  if (registers.empty() && results.empty()) {
+                         ArrayRef<ClassicalRegister> classicalRegisters,
+                         const DenseMap<int64_t, StaticResult>& staticResults) {
+  if (classicalRegisters.empty() && staticResults.empty()) {
     return;
   }
 
   auto* ctx = builder.getContext();
+  auto i64Type = builder.getI64Type();
   auto ptrType = LLVM::LLVMPointerType::get(ctx);
   auto voidType = LLVM::LLVMVoidType::get(ctx);
   auto loc = anchor->getLoc();
@@ -161,32 +162,33 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
                                                   QIR_RECORD_OUTPUT, resultSig);
 
   // Classical registers
-  for (const auto& reg : registers) {
+  for (const auto& reg : classicalRegisters) {
     if (!reg.record) {
       continue;
     }
-    auto size = LLVM::ConstantOp::create(builder, loc, builder.getI64Type(),
-                                         builder.getI64IntegerAttr(reg.size));
+    auto size = LLVM::ConstantOp::create(builder, loc, i64Type,
+                                         builder.getI64IntegerAttr(reg.size))
+                    .getResult();
     auto label = createResultLabel(builder, anchor, reg.label).getResult();
 
+    // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
     if (reg.array) {
-      // Adaptive Profile: record the whole result array in one call.
-      auto arraySig = LLVM::LLVMFunctionType::get(
-          voidType, {builder.getI64Type(), ptrType, ptrType});
+      auto arraySig =
+          LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
       auto arrayDec = getOrCreateFunctionDeclaration(
           builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
       LLVM::CallOp::create(builder, loc, arrayDec,
-                           ValueRange{size.getResult(), reg.array, label});
+                           ValueRange{size, reg.array, label});
       continue;
     }
 
-    // Base Profile: an array-count marker followed by one result per bit.
+    // Base Profile: emit `__quantum__rt__array_record_output` followed by
+    // `__quantum__rt__result_record_output` for each bit
     auto arraySig =
         LLVM::LLVMFunctionType::get(voidType, {builder.getI64Type(), ptrType});
     auto arrayDec = getOrCreateFunctionDeclaration(
         builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
-    LLVM::CallOp::create(builder, loc, arrayDec,
-                         ValueRange{size.getResult(), label});
+    LLVM::CallOp::create(builder, loc, arrayDec, ValueRange{size, label});
     for (const auto& [index, ptr] : llvm::enumerate(reg.results)) {
       auto bitLabel = createResultLabel(builder, anchor,
                                         reg.label + "_" + std::to_string(index))
@@ -196,7 +198,7 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
   }
 
   // Static results
-  for (const auto& [index, result] : results) {
+  for (const auto& [index, result] : staticResults) {
     if (!result.record) {
       continue;
     }

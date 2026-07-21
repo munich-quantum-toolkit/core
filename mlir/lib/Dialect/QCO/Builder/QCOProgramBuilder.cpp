@@ -160,11 +160,9 @@ Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  // Classical registers are backed by a memref of i1 elements. They are not
-  // tracked for automatic deallocation so that they can be returned from the
-  // program.
   auto memrefType = MemRefType::get({size}, getI1Type());
-  return memref::AllocOp::create(*this, memrefType);
+  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
+  return memref;
 }
 
 //===----------------------------------------------------------------------===//
@@ -423,8 +421,8 @@ QCOProgramBuilder::measure(Value qubit, Value classicalRegister,
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  auto idx = variantToValue(*this, getLoc(), index);
-  memref::StoreOp::create(*this, result, classicalRegister, idx);
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  memref::StoreOp::create(*this, result, classicalRegister, indexValue);
 
   return {qubitOut, result};
 }
@@ -1153,9 +1151,9 @@ ValueRange QCOProgramBuilder::qcoIf(
     ValueRange initArgs, function_ref<SmallVector<Value>(ValueRange)> thenBody,
     function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
-  auto idx = variantToValue(*this, getLoc(), index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition =
-      memref::LoadOp::create(*this, classicalRegister, idx).getResult();
+      memref::LoadOp::create(*this, classicalRegister, indexValue).getResult();
   return qcoIf(condition, initArgs, thenBody, elseBody);
 }
 
@@ -1183,9 +1181,9 @@ QCOProgramBuilder::scfCondition(Value classicalRegister,
                                 const std::variant<int64_t, Value>& index,
                                 ValueRange yieldedValues) {
   checkFinalized();
-  auto idx = variantToValue(*this, getLoc(), index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition =
-      memref::LoadOp::create(*this, classicalRegister, idx).getResult();
+      memref::LoadOp::create(*this, classicalRegister, indexValue).getResult();
   return scfCondition(condition, yieldedValues);
 }
 

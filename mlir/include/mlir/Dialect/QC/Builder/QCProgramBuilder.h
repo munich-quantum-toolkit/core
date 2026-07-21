@@ -276,7 +276,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param classicalRegister The memref representing the classical register
-   * @param index The index within the register to store the result
+   * @param index The index within the classical register
    * @return Classical measurement result (`i1`)
    *
    * @par Example:
