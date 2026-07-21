@@ -123,13 +123,13 @@ SmallVector<Value> resetMultipleQubitsWithoutOp(QCOProgramBuilder& b);
 Value repeatedResetWithoutOp(QCOProgramBuilder& b);
 
 /// Resets a single qubit after a single operation.
-Value resetQubitAfterSingleOp(QCOProgramBuilder& b);
+SmallVector<Value> resetQubitAfterSingleOp(QCOProgramBuilder& b);
 
 /// Resets multiple qubits after a single operation.
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
-Value repeatedResetAfterSingleOp(QCOProgramBuilder& b);
+SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b);
 
 // --- GPhaseOp ------------------------------------------------------------- //
 

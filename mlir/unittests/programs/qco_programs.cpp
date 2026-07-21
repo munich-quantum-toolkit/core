@@ -314,29 +314,38 @@ Value repeatedResetWithoutOp(QCOProgramBuilder& b) {
   return b.measure(q).second;
 }
 
-Value resetQubitAfterSingleOp(QCOProgramBuilder& b) {
+SmallVector<Value> resetQubitAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
+  Value c0;
+  std::tie(q[0], c0) = b.measure(q[0]);
   q[0] = b.reset(q[0]);
-  return b.measure(q[0]).second;
+  return {c0, b.measure(q[0]).second};
 }
 
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
+  Value c0, c1, c2, c3;
   q[0] = b.h(q[0]);
+  std::tie(q[0], c0) = b.measure(q[0]);
   q[0] = b.reset(q[0]);
+  std::tie(q[0], c1) = b.measure(q[0]);
   q[1] = b.h(q[1]);
+  std::tie(q[1], c2) = b.measure(q[1]);
   q[1] = b.reset(q[1]);
-  return measureAndReturn(b, q.qubits);
+  std::tie(q[1], c3) = b.measure(q[1]);
+  return {c0, c1, c2, c3};
 }
 
-Value repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
+SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
+  Value c0;
   q[0] = b.h(q[0]);
+  std::tie(q[0], c0) = b.measure(q[0]);
   q[0] = b.reset(q[0]);
   q[0] = b.reset(q[0]);
   q[0] = b.reset(q[0]);
-  return b.measure(q[0]).second;
+  return {c0, b.measure(q[0]).second};
 }
 
 Value globalPhase(QCOProgramBuilder& b) {
