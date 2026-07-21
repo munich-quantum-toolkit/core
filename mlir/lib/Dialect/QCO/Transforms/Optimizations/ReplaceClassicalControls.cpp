@@ -103,13 +103,20 @@ namespace {
  * with `if` constructs.
  */
 struct ReplaceBasisStateControlsWithIfPattern final
-    : mlir::OpRewritePattern<CtrlOp> {
+    : mlir::OpRewritePattern<MeasureOp> {
 
   explicit ReplaceBasisStateControlsWithIfPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   mlir::LogicalResult
-  matchAndRewrite(CtrlOp op, mlir::PatternRewriter& rewriter) const override {
+  matchAndRewrite(MeasureOp measure,
+                  mlir::PatternRewriter& rewriter) const override {
+    auto op = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
+    if (!op) {
+      return mlir::failure();
+    }
+    rewriter.setInsertionPointAfter(op);
+
     if (op.getNumBodyUnitaries() == 1 && isPhaseGate(op.getBodyUnitary(0))) {
       trySwapControlsOfDiagonalGate(op, rewriter);
     }
