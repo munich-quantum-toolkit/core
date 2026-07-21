@@ -237,29 +237,37 @@ Value repeatedResetWithoutOp(QCProgramBuilder& b) {
   return b.measure(q[0]);
 }
 
-Value resetQubitAfterSingleOp(QCProgramBuilder& b) {
+SmallVector<Value> resetQubitAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
+  auto c0 = b.measure(q[0]);
   b.reset(q[0]);
-  return b.measure(q[0]);
+  auto c1 = b.measure(q[0]);
+  return {c0, c1};
 }
 
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
+  auto c0 = b.measure(q[0]);
   b.reset(q[0]);
+  auto c1 = b.measure(q[0]);
   b.h(q[1]);
+  auto c2 = b.measure(q[1]);
   b.reset(q[1]);
-  return measureAndReturn(b, q.qubits);
+  auto c3 = b.measure(q[1]);
+  return {c0, c1, c2, c3};
 }
 
-Value repeatedResetAfterSingleOp(QCProgramBuilder& b) {
+SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
+  auto c0 = b.measure(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
-  return b.measure(q[0]);
+  auto c1 = b.measure(q[0]);
+  return {c0, c1};
 }
 
 Value globalPhase(QCProgramBuilder& b) {

@@ -620,7 +620,7 @@ INSTANTIATE_TEST_SUITE_P(
             "ResetQubitAfterSingleOp",
             MQT_NAMED_BUILDER(::qc::resetQubitAfterSingleOp), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::resetQubitAfterSingleOp),
-            MQT_NAMED_BUILDER(mlir::qir::resetQubitAfterSingleOp<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::resetQubitAfterSingleOp<false>)},
         CompilerPipelineTestCase{
             "ResetMultipleQubitsAfterSingleOp",
             MQT_NAMED_BUILDER(::qc::resetMultipleQubitsAfterSingleOp), nullptr,
