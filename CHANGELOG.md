@@ -48,8 +48,8 @@ releases may include breaking changes.
   [#1676], [#1706], [#1776], [#1836]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904], [#1911])
-  ([**@MatthiasReumann**], [**@burgholzer**])
+  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
+  [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755]) ([**@DRovara**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
