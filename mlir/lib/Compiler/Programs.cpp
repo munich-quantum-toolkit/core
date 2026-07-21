@@ -343,6 +343,17 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
       "failed to fuse single-qubit unitary runs"));
 }
 
+bool QCOProgram::fuseTwoQubitUnitaryRuns(const std::string_view nativeGates) {
+  qco::FuseTwoQubitUnitaryRunsOptions options;
+  options.nativeGates = nativeGates;
+  return succeeded(runPasses(
+      module(),
+      [&options](OpPassManager& pm) {
+        pm.addPass(qco::createFuseTwoQubitUnitaryRuns(options));
+      },
+      "failed to fuse two-qubit unitary runs"));
+}
+
 bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
