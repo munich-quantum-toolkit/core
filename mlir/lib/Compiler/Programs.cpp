@@ -31,8 +31,6 @@
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -95,12 +93,12 @@ namespace mlir {
 
 [[nodiscard]] static FailureOr<OwningOpRef<ModuleOp>>
 parseMLIRString(MLIRContext* context, const StringRef source) {
-  auto module = parseSourceString<ModuleOp>(source, context);
-  if (!module) {
+  auto mod = parseSourceString<ModuleOp>(source, context);
+  if (!mod) {
     return emitError(UnknownLoc::get(context),
                      "failed to parse MLIR source string");
   }
-  return std::move(module);
+  return std::move(mod);
 }
 
 [[nodiscard]] static LogicalResult
@@ -123,21 +121,21 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
   if (failed(openSourceMgr(path, context, sourceMgr))) {
     return failure();
   }
-  auto module = parseSourceFile<ModuleOp>(sourceMgr, context);
-  if (!module) {
+  auto mod = parseSourceFile<ModuleOp>(sourceMgr, context);
+  if (!mod) {
     return emitError(UnknownLoc::get(context))
            << "failed to parse MLIR file '" << path.string() << "'";
   }
-  return std::move(module);
+  return std::move(mod);
 }
 
 /**
  * @brief Check whether a module contains an operation from a dialect.
  */
-[[nodiscard]] static bool moduleUsesDialect(const ModuleOp module,
+[[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
   auto found = false;
-  module->walk([&](Operation* operation) {
+  mod->walk([&](Operation* operation) {
     found |= operation->getDialect()->getNamespace() == dialect;
   });
   return found;
@@ -147,59 +145,66 @@ template <class ProgramType, class Parse>
 [[nodiscard]] static std::optional<ProgramType>
 parseTypedProgram(const StringRef dialect, Parse&& parse) {
   auto context = createCompilerContext();
-  auto module = std::forward<Parse>(parse)(context.get());
-  if (failed(module)) {
+  auto mod = std::forward<Parse>(parse)(context.get());
+  if (failed(mod)) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(**module, dialect)) {
-    (**module).emitError() << "expected a module using the '" << dialect
-                           << "' dialect";
+  if (!moduleUsesDialect(**mod, dialect)) {
+    (**mod)->emitError() << "expected a module using the '" << dialect
+                         << "' dialect";
     return std::nullopt;
   }
-  return ProgramType(
-      {.context = std::move(context), .module = std::move(*module)});
+  return ProgramType({.context = std::move(context), .mod = std::move(*mod)});
 }
 
 template <class PopulatePasses>
-[[nodiscard]] static LogicalResult runPasses(ModuleOp module,
+[[nodiscard]] static LogicalResult runPasses(ModuleOp mod,
                                              PopulatePasses&& populatePasses,
                                              const StringRef failureMessage) {
-  PassManager pm(module.getContext());
+  PassManager pm(mod.getContext());
   std::forward<PopulatePasses>(populatePasses)(pm);
-  if (failed(pm.run(module))) {
-    return module.emitError(failureMessage);
+  if (failed(pm.run(mod))) {
+    return mod.emitError(failureMessage);
   }
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// Program
+//===----------------------------------------------------------------------===//
+
 Program::Program(Storage storage) : storage_(std::move(storage)) {}
 
 bool Program::isValid() const noexcept {
-  return static_cast<bool>(storage_.module);
+  return static_cast<bool>(storage_.mod);
 }
 
-ModuleOp Program::module() const {
-  assert(storage_.module && "cannot use a consumed compiler program");
-  return *storage_.module;
+ModuleOp Program::mod() const {
+  assert(storage_.mod && "cannot use a consumed compiler program");
+  return *storage_.mod;
 }
 
 std::string Program::str() const {
   std::string result;
   llvm::raw_string_ostream stream(result);
-  module().print(stream);
+  mod().print(stream);
   return result;
 }
 
 Program::Storage Program::cloneStorage() const {
-  const auto cloned = cast<ModuleOp>(module()->clone());
-  return {.context = storage_.context, .module = OwningOpRef<ModuleOp>(cloned)};
+  const auto cloned = cast<ModuleOp>(mod()->clone());
+  return {.context = storage_.context, .mod = OwningOpRef<ModuleOp>(cloned)};
 }
 
 Program::Storage Program::releaseStorage() && {
-  assert(storage_.module && "compiler program was already consumed");
+  assert(storage_.mod && "compiler program was already consumed");
   return {.context = std::move(storage_.context),
-          .module = std::move(storage_.module)};
+          .mod = std::move(storage_.mod)};
 }
+
+//===----------------------------------------------------------------------===//
+// QCProgram
+//===----------------------------------------------------------------------===//
 
 std::optional<QCProgram>
 QCProgram::fromMLIRString(const std::string_view source) {
@@ -218,14 +223,13 @@ QCProgram::fromMLIRFile(const std::filesystem::path& path) {
 std::optional<QCProgram>
 QCProgram::fromQASMString(const std::string_view source) {
   auto context = createCompilerContext();
-  auto module = qc::translateQASM3ToQC(source, context.get());
-  if (!module) {
+  auto mod = qc::translateQASM3ToQC(source, context.get());
+  if (!mod) {
     emitError(UnknownLoc::get(context.get()),
               "failed to translate OpenQASM 3 source to QC");
     return std::nullopt;
   }
-  return QCProgram(
-      {.context = std::move(context), .module = std::move(module)});
+  return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
 std::optional<QCProgram>
@@ -235,40 +239,38 @@ QCProgram::fromQASMFile(const std::filesystem::path& path) {
   if (failed(openSourceMgr(path, context.get(), sourceMgr))) {
     return std::nullopt;
   }
-  auto module = qc::translateQASM3ToQC(sourceMgr, context.get());
-  if (!module) {
+  auto mod = qc::translateQASM3ToQC(sourceMgr, context.get());
+  if (!mod) {
     emitError(UnknownLoc::get(context.get()))
         << "failed to translate OpenQASM 3 file '" << path.string()
         << "' to QC";
     return std::nullopt;
   }
-  return QCProgram(
-      {.context = std::move(context), .module = std::move(module)});
+  return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
 std::optional<QCProgram>
 QCProgram::fromQuantumComputation(const ::qc::QuantumComputation& computation) {
   auto context = createCompilerContext();
-  auto module = translateQuantumComputationToQC(context.get(), computation);
-  if (!module) {
+  auto mod = translateQuantumComputationToQC(context.get(), computation);
+  if (!mod) {
     emitError(UnknownLoc::get(context.get()),
               "failed to translate QuantumComputation to QC");
     return std::nullopt;
   }
-  return QCProgram(
-      {.context = std::move(context), .module = std::move(module)});
+  return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
 
 bool QCProgram::cleanup() {
-  return succeeded(runPasses(module(), populateQCCleanupPipeline,
+  return succeeded(runPasses(mod(), populateQCCleanupPipeline,
                              "failed to run the QC cleanup pipeline"));
 }
 
 std::optional<QCOProgram> QCProgram::intoQCO() && {
   if (failed(runPasses(
-          module(), [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
+          mod(), [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
           "failed to convert QC to QCO"))) {
     return std::nullopt;
   }
@@ -277,7 +279,7 @@ std::optional<QCOProgram> QCProgram::intoQCO() && {
 
 std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   if (failed(runPasses(
-          module(),
+          mod(),
           [profile](OpPassManager& pm) {
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
@@ -294,6 +296,10 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   }
   return result;
 }
+
+//===----------------------------------------------------------------------===//
+// QCOProgram
+//===----------------------------------------------------------------------===//
 
 std::optional<QCOProgram>
 QCOProgram::fromMLIRString(const std::string_view source) {
@@ -312,7 +318,7 @@ QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
 
 bool QCOProgram::cleanup() {
-  return succeeded(runPasses(module(), populateQCOCleanupPipeline,
+  return succeeded(runPasses(mod(), populateQCOCleanupPipeline,
                              "failed to run the QCO cleanup pipeline"));
 }
 
@@ -320,12 +326,12 @@ bool QCOProgram::runPassPipeline(const std::string_view pipeline,
                                  const bool enableTiming,
                                  const bool enableStatistics) {
   return succeeded(
-      ::runPassPipeline(module(), pipeline, enableTiming, enableStatistics));
+      ::runPassPipeline(mod(), pipeline, enableTiming, enableStatistics));
 }
 
 bool QCOProgram::mergeSingleQubitRotationGates() {
   return succeeded(runPasses(
-      module(),
+      mod(),
       [](OpPassManager& pm) {
         pm.addPass(qco::createMergeSingleQubitRotationGates());
       },
@@ -336,7 +342,7 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
   qco::FuseSingleQubitUnitaryRunsOptions options;
   options.basis = basis;
   return succeeded(runPasses(
-      module(),
+      mod(),
       [&options](OpPassManager& pm) {
         pm.addPass(qco::createFuseSingleQubitUnitaryRuns(options));
       },
@@ -347,7 +353,7 @@ bool QCOProgram::fuseTwoQubitUnitaryRuns(const std::string_view nativeGates) {
   qco::FuseTwoQubitUnitaryRunsOptions options;
   options.nativeGates = nativeGates;
   return succeeded(runPasses(
-      module(),
+      mod(),
       [&options](OpPassManager& pm) {
         pm.addPass(qco::createFuseTwoQubitUnitaryRuns(options));
       },
@@ -358,7 +364,7 @@ bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
   return succeeded(runPasses(
-      module(),
+      mod(),
       [&options](OpPassManager& pm) {
         pm.addNestedPass<func::FuncOp>(qco::createQuantumLoopUnroll(options));
       },
@@ -367,7 +373,7 @@ bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
 
 bool QCOProgram::liftHadamards() {
   return succeeded(runPasses(
-      module(),
+      mod(),
       [](OpPassManager& pm) { pm.addPass(qco::createHadamardLifting()); },
       "failed to lift Hadamard gates"));
 }
@@ -377,7 +383,7 @@ bool QCOProgram::placeAndRoute(
     const std::size_t nlookahead, const float alpha, const float lambda,
     const std::size_t niterations, const std::size_t ntrials,
     const std::size_t seed) {
-  llvm::DenseSet<std::pair<std::size_t, std::size_t>> couplingSet;
+  DenseSet<std::pair<std::size_t, std::size_t>> couplingSet;
   couplingSet.insert(coupling.begin(), coupling.end());
   qco::MappingPassOptions options;
   options.nlookahead = nlookahead;
@@ -387,7 +393,7 @@ bool QCOProgram::placeAndRoute(
   options.ntrials = ntrials;
   options.seed = seed;
   return succeeded(runPasses(
-      module(),
+      mod(),
       [&couplingSet, &options](OpPassManager& pm) {
         pm.addPass(qco::createMappingPass(couplingSet, options));
       },
@@ -396,7 +402,7 @@ bool QCOProgram::placeAndRoute(
 
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runPasses(
-          module(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
+          mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
           "failed to convert QCO to QC"))) {
     return std::nullopt;
   }
@@ -405,32 +411,23 @@ std::optional<QCProgram> QCOProgram::intoQC() && {
 
 std::optional<JeffProgram> QCOProgram::intoJeff() && {
   if (failed(runPasses(
-          module(), [](OpPassManager& pm) { pm.addPass(createQCOToJeff()); },
-          "failed to convert QCO to Jeff"))) {
+          mod(), [](OpPassManager& pm) { pm.addPass(createQCOToJeff()); },
+          "failed to convert QCO to jeff"))) {
     return std::nullopt;
   }
   return JeffProgram(std::move(*this).releaseStorage());
 }
 
-std::optional<JeffProgram>
-JeffProgram::fromFile(const std::filesystem::path& path) {
-  auto context = createCompilerContext();
-  auto module = deserializeFromFile(context.get(), path.string());
-  if (!module) {
-    emitError(UnknownLoc::get(context.get()))
-        << "failed to deserialize Jeff file '" << path.string() << "'";
-    return std::nullopt;
-  }
-  return JeffProgram(
-      {.context = std::move(context), .module = std::move(module)});
-}
+//===----------------------------------------------------------------------===//
+// JeffProgram
+//===----------------------------------------------------------------------===//
 
 std::optional<JeffProgram>
 JeffProgram::fromBytes(const std::span<const std::byte> bytes) {
   if (bytes.size() % sizeof(capnp::word) != 0U) {
     auto context = createCompilerContext();
     emitError(UnknownLoc::get(context.get()),
-              "Jeff data size must be a multiple of the Cap'n Proto word size");
+              "jeff data size must be a multiple of the Cap'n Proto word size");
     return std::nullopt;
   }
 
@@ -438,25 +435,36 @@ JeffProgram::fromBytes(const std::span<const std::byte> bytes) {
   std::memcpy(words.begin(), bytes.data(), bytes.size());
 
   auto context = createCompilerContext();
-  auto module = deserialize(context.get(), words.asPtr());
-  if (!module) {
+  auto mod = deserialize(context.get(), words.asPtr());
+  if (!mod) {
     emitError(UnknownLoc::get(context.get()),
-              "failed to deserialize Jeff bytes");
+              "failed to deserialize jeff bytes");
     return std::nullopt;
   }
-  return JeffProgram(
-      {.context = std::move(context), .module = std::move(module)});
+  return JeffProgram({.context = std::move(context), .mod = std::move(mod)});
+}
+
+std::optional<JeffProgram>
+JeffProgram::fromFile(const std::filesystem::path& path) {
+  auto context = createCompilerContext();
+  auto mod = deserializeFromFile(context.get(), path.string());
+  if (!mod) {
+    emitError(UnknownLoc::get(context.get()))
+        << "failed to deserialize jeff file '" << path.string() << "'";
+    return std::nullopt;
+  }
+  return JeffProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
 JeffProgram JeffProgram::copy() const { return JeffProgram(cloneStorage()); }
 
 bool JeffProgram::cleanup() {
-  return succeeded(runPasses(module(), populateJeffCleanupPipeline,
-                             "failed to run the Jeff cleanup pipeline"));
+  return succeeded(runPasses(mod(), populateJeffCleanupPipeline,
+                             "failed to run the jeff cleanup pipeline"));
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {
-  const auto serialized = serialize(module());
+  const auto serialized = serialize(mod());
   const auto bytes = serialized.asBytes();
   std::vector<std::byte> result(bytes.size());
   std::memcpy(result.data(), bytes.begin(), bytes.size());
@@ -467,15 +475,14 @@ bool JeffProgram::write(const std::filesystem::path& path) const {
   const auto bytes = toBytes();
   std::ofstream output(path, std::ios::binary);
   if (!output) {
-    module().emitError() << "failed to open output file '" << path.string()
-                         << "'";
+    mod().emitError() << "failed to open output file '" << path.string() << "'";
     return false;
   }
   output.write(reinterpret_cast<const char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));
   if (!output) {
-    module().emitError() << "failed to write output file '" << path.string()
-                         << "'";
+    mod().emitError() << "failed to write output file '" << path.string()
+                      << "'";
     return false;
   }
   return true;
@@ -483,12 +490,16 @@ bool JeffProgram::write(const std::filesystem::path& path) const {
 
 std::optional<QCOProgram> JeffProgram::intoQCO() && {
   if (failed(runPasses(
-          module(), [](OpPassManager& pm) { pm.addPass(createJeffToQCO()); },
-          "failed to convert Jeff to QCO"))) {
+          mod(), [](OpPassManager& pm) { pm.addPass(createJeffToQCO()); },
+          "failed to convert jeff to QCO"))) {
     return std::nullopt;
   }
   return QCOProgram(std::move(*this).releaseStorage());
 }
+
+//===----------------------------------------------------------------------===//
+// QIRProgram
+//===----------------------------------------------------------------------===//
 
 QIRProgram::QIRProgram(Storage storage, const QIRProfile profile)
     : Program(std::move(storage)), profile_(profile) {}
@@ -497,7 +508,7 @@ QIRProgram QIRProgram::copy() const { return {cloneStorage(), profile_}; }
 
 bool QIRProgram::cleanup() {
   return succeeded(runPasses(
-      module(),
+      mod(),
       [this](OpPassManager& pm) {
         populateQIRCleanupPipeline(pm, profile_ == QIRProfile::Adaptive);
       },
@@ -507,17 +518,17 @@ bool QIRProgram::cleanup() {
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
-translateToLLVM(ModuleOp module, llvm::LLVMContext& context) {
-  auto llvmModule = translateModuleToLLVMIR(module, context);
+translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
+  auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
-    module.emitError("failed to translate QIR MLIR to LLVM IR");
+    mod.emitError("failed to translate QIR MLIR to LLVM IR");
   }
   return llvmModule;
 }
 
 std::optional<std::string> QIRProgram::llvmIR() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(module(), context);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -529,12 +540,12 @@ std::optional<std::string> QIRProgram::llvmIR() const {
 
 std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(module(), context);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return std::nullopt;
   }
 
-  llvm::SmallVector<char> storage;
+  SmallVector<char> storage;
   llvm::raw_svector_ostream stream(storage);
   llvm::WriteBitcodeToFile(*llvmModule, stream);
   std::vector<std::byte> result(storage.size());
@@ -544,7 +555,7 @@ std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
 
 bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(module(), context);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return false;
   }
@@ -552,19 +563,23 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   std::error_code error;
   llvm::raw_fd_ostream stream(path.string(), error, llvm::sys::fs::OF_None);
   if (error) {
-    module().emitError() << "failed to open bitcode output file '"
-                         << path.string() << "': " << error.message();
+    mod().emitError() << "failed to open bitcode output file '" << path.string()
+                      << "': " << error.message();
     return false;
   }
   llvm::WriteBitcodeToFile(*llvmModule, stream);
   stream.flush();
   if (stream.has_error()) {
-    module().emitError() << "failed to write bitcode output file '"
-                         << path.string() << "'";
+    mod().emitError() << "failed to write bitcode output file '"
+                      << path.string() << "'";
     return false;
   }
   return true;
 }
+
+//===----------------------------------------------------------------------===//
+// Pipeline
+//===----------------------------------------------------------------------===//
 
 std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
@@ -597,7 +612,6 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
   if (!qco) {
     return std::nullopt;
   }
-
   if (output == ProgramFormat::QCO) {
     return CompilerProgram(std::move(*qco));
   }
@@ -607,10 +621,10 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
       !qco->cleanup()) {
     return std::nullopt;
   }
-
   if (output == ProgramFormat::QCOOptimized) {
     return CompilerProgram(std::move(*qco));
   }
+
   if (output == ProgramFormat::Jeff) {
     auto jeff = std::move(*qco).intoJeff();
     if (!jeff || !jeff->cleanup()) {
