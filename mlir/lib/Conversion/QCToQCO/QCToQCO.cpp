@@ -21,6 +21,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -1405,7 +1406,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     // Create the new IfOp
     auto newIfOp =
-        IfOp::create(rewriter, op->getLoc(), op.getCondition(), qcoTargets);
+        IfOp::create(rewriter, op.getLoc(), op.getCondition(), qcoTargets);
     assignMappedTensors(state, op.getOperation(), registerMap,
                         newIfOp.getResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
@@ -1458,8 +1459,83 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 };
 
 /**
+ * @brief Converts scf.index_switch to qco.index_switch
+ *
+ * @par Example:
+ * ```mlir
+ * TODO
+ * ```
+ * is converted to
+ * ```mlir
+ * TODO
+ * ```
+ */
+struct ConvertSCFIndexSwitchOp final
+    : StatefulOpConversionPattern<scf::IndexSwitchOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::IndexSwitchOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    auto& registerMap = state.regionRegisterMap[op];
+    auto& qubitMap = state.regionQubitMap[op];
+
+    const auto qubits = qubitMap.getArrayRef();
+    const auto nqubits = qubits.size();
+    const auto registers = registerMap.getArrayRef();
+    const auto nregisters = registers.size();
+
+    insertQubitsBeforeOp(state, operation, rewriter);
+
+    const auto targets = resolveAllValues(state, operation);
+    const auto types = ValueRange(targets).getTypes();
+    const SmallVector locs(targets.size(), op->getLoc());
+    llvm::dbgs() << targets.size() << '\n';
+    auto newOp =
+        IndexSwitchOp::create(rewriter, op.getLoc(), types, op.getArg(),
+                              op.getCases(), targets, op.getNumCases());
+
+    assignMappedTensors(state, op.getOperation(), registerMap,
+                        newOp.getResults().take_front(nregisters));
+    assignMappedQubits(state, op.getOperation(), qubitMap,
+                       newOp.getResults().take_back(nqubits));
+
+    // Extract all the previously inserted qubits again
+    extractQubitsAfterOp(state, operation, rewriter);
+
+    const auto newCaseRegions = newOp.getCaseRegions();
+    const auto oldCaseRegions = op.getCaseRegions();
+    const auto buildRegion = [&](Region& oldRegion, Region& newRegion) {
+      Block* oldBlock = &(*oldRegion.begin());
+      Block* newBlock =
+          rewriter.createBlock(&newRegion, {}, newOp.getResultTypes(), locs);
+
+      rewriter.inlineBlockBefore(&oldRegion.getBlocks().front(), newBlock,
+                                 newBlock->begin());
+
+      pushModifierFrameWithRegisters(
+          state, qubits, registers, newBlock->getArguments().take_back(nqubits),
+          newBlock->getArguments().take_front(nregisters));
+    };
+
+    rewriter.setInsertionPointAfter(newOp);
+    for (size_t i = 0; i < op.getNumCases(); ++i) {
+      buildRegion(oldCaseRegions[i], newCaseRegions[i]);
+    }
+
+    buildRegion(op.getDefaultRegion(), newOp.getDefaultRegion());
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
  * @brief Converts scf.yield with memory semantics to scf.yield with value
- * semantics for qubit values or to qco.scf if the parentOp is a qco::IfOp
+ * semantics for qubit values or to qco.yield if the parentOp is a qco::IfOp or
+ * qco::IndexSwitchOp.
  *
  * @par Example:
  * ```mlir
@@ -1482,7 +1558,7 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     insertQubitsBeforeOp(state, op.getOperation(), rewriter);
     SmallVector<Value> targets = resolveAllValues(state, operation);
 
-    if (isa<IfOp>(op->getParentOp())) {
+    if (isa<IfOp, IndexSwitchOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
     } else {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
@@ -1603,13 +1679,14 @@ protected:
         });
 
     // Register operation conversion patterns with state tracking.
-    patterns.add<ConvertSCFForOp, ConvertSCFYieldOp, ConvertSCFWhileOp,
-                 ConvertSCFIfOp, ConvertSCFConditionOp, ConvertMemRefAllocOp,
-                 ConvertMemRefLoadOp, ConvertMemRefDeallocOp, ConvertQCAllocOp,
-                 ConvertQCDeallocOp, ConvertQCStaticOp, ConvertQCMeasureOp,
-                 ConvertQCResetOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCInvOp, ConvertQCYieldOp>(typeConverter, context,
-                                                   &state);
+    patterns
+        .add<ConvertSCFForOp, ConvertSCFYieldOp, ConvertSCFWhileOp,
+             ConvertSCFIfOp, ConvertSCFIndexSwitchOp, ConvertSCFConditionOp,
+             ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
+             ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
+             ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
+             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+            typeConverter, context, &state);
 
     // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
