@@ -43,9 +43,6 @@ namespace {
 
 MatrixDD getRccxDD(Package& dd, const qc::Controls& controls,
                    const std::vector<qc::Qubit>& targets) {
-  if (targets.size() != 3) {
-    throw std::invalid_argument("RCCX expects exactly three target qubits");
-  }
   const auto q0 = targets[0];
   const auto q1 = targets[1];
   const auto q2 = targets[2];
