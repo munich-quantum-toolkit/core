@@ -286,6 +286,16 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
   return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, true);
 }
 
+/**
+ * @brief Search for and remove gates when their outputs are no longer used
+ * before the next `ResetOp` or `SinkOp`.
+ *
+ *
+ * @tparam qubit The value that was an input to a `ResetOp` or `SinkOp` from
+ * which the search is started.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the elimination.
+ */
 inline LogicalResult tryEliminateDeadGateValue(Value qubit,
                                                PatternRewriter& rewriter) {
   auto* currentOp = qubit.getDefiningOp();
