@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -22,6 +20,7 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 #include <numeric>
 #include <utility>
@@ -53,13 +52,6 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
  * @return true if the operation is a diagonal gate, false otherwise
  */
 static bool isPhaseGate(Operation* op) {
-  if (op == nullptr) {
-    return false;
-  }
-  if (auto i = dyn_cast<InvOp>(op)) {
-    return isPhaseGate(utils::getSoleBodyUnitary<UnitaryOpInterface>(
-        *op->getRegion(0).getBlocks().begin()));
-  }
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
 
@@ -79,20 +71,29 @@ static void trySwapControlsOfDiagonalGate(CtrlOp op,
     // No advantage gained from swapping.
     return;
   }
+
+  size_t controlIndex = 0;
   for (auto control : op.getControlsIn()) {
     auto controlOutcome = getPredecessorMeasurementOutcome(control);
     if (controlOutcome) {
+      controlIndex++;
       continue;
     }
-    rewriter.replaceAllUsesWith(control, target);
-    rewriter.modifyOpInPlace(
-        op, [&]() { op.getTargetsInMutable()[0].set(control); });
-    auto dummyTarget = AllocOp::create(rewriter, op->getLoc());
-    rewriter.replaceAllUsesWith(op.getOutputForInput(target), dummyTarget);
-    rewriter.replaceAllUsesWith(op.getOutputForInput(control),
-                                op.getOutputForInput(target));
-    rewriter.replaceAllUsesWith(dummyTarget, op.getOutputForInput(control));
-    rewriter.eraseOp(dummyTarget);
+
+    Value controlOut = op.getOutputForInput(control);
+    Value targetOut = op.getOutputForInput(target);
+
+    rewriter.modifyOpInPlace(op, [&]() {
+      op.getTargetsInMutable()[0].set(control);
+      op.getControlsInMutable()[controlIndex].set(target);
+    });
+
+    // This works because each qubit is only ever used once.
+    auto controlUse = controlOut.getUses().begin();
+    auto targetUse = targetOut.getUses().begin();
+    controlUse->set(targetOut);
+    targetUse->set(controlOut);
+
     break;
   }
 }
@@ -103,13 +104,20 @@ namespace {
  * with `if` constructs.
  */
 struct ReplaceBasisStateControlsWithIfPattern final
-    : mlir::OpRewritePattern<CtrlOp> {
+    : mlir::OpRewritePattern<MeasureOp> {
 
   explicit ReplaceBasisStateControlsWithIfPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   mlir::LogicalResult
-  matchAndRewrite(CtrlOp op, mlir::PatternRewriter& rewriter) const override {
+  matchAndRewrite(MeasureOp measure,
+                  mlir::PatternRewriter& rewriter) const override {
+    auto op = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
+    if (!op) {
+      return mlir::failure();
+    }
+    rewriter.setInsertionPointAfter(op);
+
     if (op.getNumBodyUnitaries() == 1 && isPhaseGate(op.getBodyUnitary(0))) {
       trySwapControlsOfDiagonalGate(op, rewriter);
     }
