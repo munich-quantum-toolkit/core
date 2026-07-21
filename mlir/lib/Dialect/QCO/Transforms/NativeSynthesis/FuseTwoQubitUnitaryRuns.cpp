@@ -348,6 +348,9 @@ struct LowerTwoQubitOpPattern final
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
+    if (!op.isTwoQubit()) {
+      return failure();
+    }
     Operation* raw = op.getOperation();
     if (!isWalkableUnitaryShell(raw) || spec.allowsOp(raw)) {
       return failure();
