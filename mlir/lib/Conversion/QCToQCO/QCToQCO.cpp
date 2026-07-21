@@ -1463,11 +1463,25 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
  *
  * @par Example:
  * ```mlir
- * TODO
+ * scf.index_switch %condition
+ * case 0 {
+ *   qc.x %q0 : !qc.qubit
+ * }
+ * default {
+ *   qc.z %q0 : !qc.qubit
+ * }
  * ```
  * is converted to
  * ```mlir
- * TODO
+ * %result = qco.index_switch %condition -> !qco.qubit
+ * case 0 args(%arg0 = %q0) {
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q1 : !qco.qubit
+ * }
+ * default args(%arg0 = %q0) {
+ *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q2 : !qco.qubit
+ * }
  * ```
  */
 struct ConvertSCFIndexSwitchOp final

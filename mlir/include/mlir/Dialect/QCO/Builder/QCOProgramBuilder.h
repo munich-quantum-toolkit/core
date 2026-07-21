@@ -1372,10 +1372,29 @@ public:
    *
    * @par Example:
    * ```c++
-   * TODO
+   * result = b.qcoIndexSwitch(condition, initTargets,
+   *   SmallVector<int64_t>{0},
+   *   SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+   *     [&](ValueRange args) {
+   *       auto q1 = builder.x(args[0]);
+   *       return {q1};
+   *     }
+   *   },
+   *   [&](ValueRange args) {
+   *     auto q2 = builder.x(args[0]);
+   *     return {q2};
+   *   });
    * ```
    * ```mlir
-   * TODO
+   * %result = qco.index_switch %condition -> !qco.qubit
+   * case 0 args(%arg0 = %q0) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * }
+   * default args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
    * ```
    */
   ValueRange qcoIndexSwitch(

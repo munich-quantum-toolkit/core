@@ -1139,10 +1139,19 @@ public:
    *
    * @par Example:
    * ```c++
-   * TODO
+   * builder.scfIndexSwitch(index,
+   *   SmallVector<int64_t>{0},
+   *   SmallVector<function_ref<void()>>{[&] { b.x(q0); }},
+   *   [&] { b.z(q0); });
    * ```
    * ```mlir
-   * TODO
+   * scf.index_switch %condition
+   * case 0 {
+   *   qc.x %q0 : !qc.qubit
+   * }
+   * default {
+   *   qc.z %q0 : !qc.qubit
+   * }
    * ```
    */
   QCProgramBuilder& scfIndexSwitch(const std::variant<int64_t, Value>& arg,
