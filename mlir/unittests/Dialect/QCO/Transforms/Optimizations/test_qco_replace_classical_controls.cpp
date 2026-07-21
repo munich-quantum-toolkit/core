@@ -8,10 +8,6 @@
  * Licensed under the MIT License
  */
 
-//
-// Created by damian on 5/21/26.
-//
-
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
