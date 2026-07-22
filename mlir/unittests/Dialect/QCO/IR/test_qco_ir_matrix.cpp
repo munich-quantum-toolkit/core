@@ -91,6 +91,13 @@ static void makePowExponentDynamic(ModuleOp module) {
   firstPowOp(module)->setOperand(0, funcOp.getArgument(0));
 }
 
+static void makePowBodyParameterDynamic(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  funcOp.insertArgument(0, Float64Type::get(module.getContext()), {},
+                        funcOp.getLoc());
+  firstPowOp(module).getBodyUnitary(0)->setOperand(1, funcOp.getArgument(0));
+}
+
 static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
@@ -408,15 +415,22 @@ TEST_F(QCOMatrixTest, PowMatrixAvailabilityContract) {
   auto emptyModule = QCOProgramBuilder::build(context.get(), emptyPow);
   ASSERT_TRUE(emptyModule);
   auto empty = firstPowOp(*emptyModule);
-  EXPECT_FALSE(empty.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_TRUE(empty.hasCompileTimeKnownUnitaryMatrix());
   EXPECT_FALSE(empty.getUnitaryMatrix().has_value());
 
   auto unsupportedModule =
       QCOProgramBuilder::build(context.get(), powUnsupportedThreeQubitBody);
   ASSERT_TRUE(unsupportedModule);
   auto unsupported = firstPowOp(*unsupportedModule);
-  EXPECT_FALSE(unsupported.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_TRUE(unsupported.hasCompileTimeKnownUnitaryMatrix());
   EXPECT_FALSE(unsupported.getUnitaryMatrix().has_value());
+
+  auto dynamicBodyModule = QCOProgramBuilder::build(context.get(), powRxScaled);
+  ASSERT_TRUE(dynamicBodyModule);
+  auto dynamicBody = firstPowOp(*dynamicBodyModule);
+  makePowBodyParameterDynamic(*dynamicBodyModule);
+  EXPECT_FALSE(dynamicBody.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_FALSE(dynamicBody.getUnitaryMatrix().has_value());
 }
 
 TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {

@@ -706,8 +706,16 @@ void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
               MoveCtrlOutside, NegPowToInvPow, EraseEmptyPow>(context);
 }
 
+// This structural query deliberately avoids constructing the body matrix or
+// running the eigensolver. A true result means all inputs needed to attempt the
+// computation are known; getUnitaryMatrix() can still fail for unsupported
+// bodies or numerical reasons.
 bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
-  return getUnitaryMatrix().has_value();
+  return getExponentValue().has_value() &&
+         all_of(getBody()->getOps<UnitaryOpInterface>(),
+                [](UnitaryOpInterface op) {
+                  return op.hasCompileTimeKnownUnitaryMatrix();
+                });
 }
 
 /**
