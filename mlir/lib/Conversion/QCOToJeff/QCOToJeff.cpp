@@ -1526,6 +1526,8 @@ protected:
         patterns, typeConverter, context, state, "xx_plus_yy");
     addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_minus_yy");
+    addQCOToJeffGatePattern<JK::Custom, 3, 0, RCCXOp, void, false>(
+        patterns, typeConverter, context, state, "rccx");
 
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,

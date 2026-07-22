@@ -2770,6 +2770,97 @@ SmallVector<Value> twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+SmallVector<Value> rccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> twoRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
+  std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> singleControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  auto [c, t] = b.crccx(q[0], q[1], q[2], q[3]);
+  const auto& [q0, q1, q2] = t;
+  q[0] = c;
+  q[1] = q0;
+  q[2] = q1;
+  q[3] = q2;
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> multipleControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  auto [c, t] = b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
+  const auto& [q0, q1, q2] = t;
+  q[0] = c[0];
+  q[1] = c[1];
+  q[2] = q0;
+  q[3] = q1;
+  q[4] = q2;
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> nestedControlledRccx(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(5);
+  auto [c, t] = b.ctrl(
+      {reg[0]}, {reg[1], reg[2], reg[3], reg[4]}, [&](ValueRange targets) {
+        const auto& [controlOut, targetsOut] =
+            b.crccx(targets[0], targets[1], targets[2], targets[3]);
+        const auto& [q0, q1, q2] = targetsOut;
+        return SmallVector<Value>{controlOut, q0, q1, q2};
+      });
+  reg[0] = c[0];
+  reg[1] = t[0];
+  reg[2] = t[1];
+  reg[3] = t[2];
+  reg[4] = t[3];
+  return measureAndReturn(b, reg.qubits);
+}
+
+SmallVector<Value> trivialControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto [c, t] = b.mcrccx({}, q[0], q[1], q[2]);
+  const auto& [q0, q1, q2] = t;
+  q[0] = q0;
+  q[1] = q1;
+  q[2] = q2;
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> inverseRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
+    const auto [q0, q1, q2] = b.rccx(qubits[0], qubits[1], qubits[2]);
+    return SmallVector<Value>{q0, q1, q2};
+  });
+  q[0] = res[0];
+  q[1] = res[1];
+  q[2] = res[2];
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> inverseMultipleControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  auto res = b.inv({q[0], q[1], q[2], q[3], q[4]}, [&](ValueRange qubits) {
+    const auto& [controlsOut, targetsOut] =
+        b.mcrccx({qubits[0], qubits[1]}, qubits[2], qubits[3], qubits[4]);
+    const auto& [q0, q1, q2] = targetsOut;
+    return SmallVector<Value>{controlsOut[0], controlsOut[1], q0, q1, q2};
+  });
+  q[0] = res[0];
+  q[1] = res[1];
+  q[2] = res[2];
+  q[3] = res[3];
+  q[4] = res[4];
+  return measureAndReturn(b, q.qubits);
+}
+
 Value barrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.barrier(q[0])[0];
