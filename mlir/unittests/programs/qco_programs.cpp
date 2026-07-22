@@ -3457,33 +3457,32 @@ SmallVector<Value> nestedForLoopSwitchOp(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(1);
   auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
 
-  reg.value =
-      b.scfFor(0, n, 1, reg.value, [&](Value iv, ValueRange iterArgs) {
-        auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
-        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-        q0 = b.qcoIndexSwitch(
-            rem, {q0}, SmallVector<int64_t>{1, 2, 3},
-            SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
-                [&](ValueRange args) {
-                  SmallVector<Value> qs(args);
-                  qs[0] = b.x(qs[0]);
-                  return qs;
-                },
-                [&](ValueRange args) {
-                  SmallVector<Value> qs(args);
-                  qs[0] = b.y(qs[0]);
-                  return qs;
-                },
-                [&](ValueRange args) {
-                  SmallVector<Value> qs(args);
-                  qs[0] = b.x(qs[0]);
-                  qs[0] = b.y(qs[0]);
-                  return qs;
-                }},
-            [&](ValueRange args) { return args; })[0];
-        auto insert = b.qtensorInsert(q0, t0, iv);
-        return SmallVector{insert};
-      })[0];
+  reg.value = b.scfFor(0, n, 1, reg.value, [&](Value iv, ValueRange iterArgs) {
+    auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    q0 = b.qcoIndexSwitch(
+        rem, {q0}, SmallVector<int64_t>{1, 2, 3},
+        SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+            [&](ValueRange args) {
+              SmallVector<Value> qs(args);
+              qs[0] = b.x(qs[0]);
+              return qs;
+            },
+            [&](ValueRange args) {
+              SmallVector<Value> qs(args);
+              qs[0] = b.y(qs[0]);
+              return qs;
+            },
+            [&](ValueRange args) {
+              SmallVector<Value> qs(args);
+              qs[0] = b.x(qs[0]);
+              qs[0] = b.y(qs[0]);
+              return qs;
+            }},
+        [&](ValueRange args) { return args; })[0];
+    auto insert = b.qtensorInsert(q0, t0, iv);
+    return SmallVector{insert};
+  })[0];
 
   return measureAndReturnQTensor(b, reg.value, 1);
 }

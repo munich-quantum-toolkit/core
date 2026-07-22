@@ -1154,7 +1154,7 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
 
   buildRegion(switchOp.getDefaultRegion(), prev, defaultBody);
   updateQubitValueTracking(prev, switchOp.getResults());
-  
+
   return switchOp.getResults();
 }
 

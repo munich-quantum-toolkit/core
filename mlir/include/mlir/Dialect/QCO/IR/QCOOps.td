@@ -1363,8 +1363,7 @@ def IndexSwitchOp
           traits = [DeclareOpInterfaceMethods<
                         RegionBranchOpInterface, ["getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions"]>,
-                    SingleBlockImplicitTerminator<"YieldOp">,
-                    Pure,
+                    SingleBlockImplicitTerminator<"YieldOp">, Pure,
                     RecursiveMemoryEffects]> {
 
   let summary = "Index-based switch operation for linear (qubit) types";
@@ -1398,10 +1397,10 @@ def IndexSwitchOp
     }];
 
   let arguments = (ins Index:$arg, DenseI64ArrayAttr:$cases,
-                         Variadic<LinearType>:$targets);
+      Variadic<LinearType>:$targets);
   let results = (outs Variadic<LinearType>:$results);
   let regions = (region SizedRegion<1>:$defaultRegion,
-                        VariadicRegion<SizedRegion<1>>:$caseRegions);
+      VariadicRegion<SizedRegion<1>>:$caseRegions);
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
@@ -1423,7 +1422,7 @@ def IndexSwitchOp
         /// Return the result that corresponds to the given target operand,
         /// or "empty" OpResult on failure.
         OpResult getTiedResult(OpOperand* target);
-        
+
         /// Return the target operand that corresponds to the given result,
         /// or `nullptr` on failure.
         OpOperand* getTiedTarget(OpResult result);
@@ -1431,7 +1430,7 @@ def IndexSwitchOp
         /// Return the argument that corresponds to the given target operand
         /// for the i-th case, or "empty" BlockArgument on failure.
         BlockArgument getTiedCaseBlockArgument(OpOperand* target, size_t i);
-        
+
         /// Return the yielded value that corresponds to the given argument
         /// for the i-th case, or `nullptr` on failure.
         OpOperand* getTiedCaseYieldedValue(BlockArgument bbArg, size_t i);
@@ -1439,7 +1438,7 @@ def IndexSwitchOp
         /// Return the argument that corresponds to the given target operand
         /// for the default case, or "empty" BlockArgument on failure.
         BlockArgument getTiedDefaultBlockArgument(OpOperand* target);
-        
+
         /// Return the yielded value that corresponds to the given argument
         /// for the default case, or `nullptr` on failure.
         OpOperand* getTiedDefaultYieldedValue(BlockArgument bbArg);
@@ -1456,19 +1455,19 @@ def IndexSwitchOp
         size_t $cppClass::getNumCases() {
           return getCaseRegions().size();
         }
-        
+
         Block* $cppClass::getCaseBlock(size_t index) {
           return &getCaseRegions()[index].front();
         }
-        
+
         YieldOp $cppClass::getCaseYield(size_t index) {
           return cast<YieldOp>(getCaseBlock(index)->getTerminator());
         }
-        
+
         Block* $cppClass::getDefaultBlock() {
           return &getDefaultRegion().front();
         }
-        
+
         YieldOp $cppClass::getDefaultYield() {
           return cast<YieldOp>(getDefaultBlock()->getTerminator());
         }
