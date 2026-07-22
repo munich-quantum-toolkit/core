@@ -228,19 +228,8 @@ TEST(QASM3TranslationErrors, RejectsNonIntegerPowerExponent) {
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  constexpr StringLiteral floatingSource = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-pow(0.5) @ x q;
-)";
-  EXPECT_FALSE(qc::translateQASM3ToQC(floatingSource, &context));
-
-  constexpr StringLiteral booleanSource = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-pow(true) @ x q;
-)";
-  EXPECT_FALSE(qc::translateQASM3ToQC(booleanSource, &context));
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::floatingPowX, &context));
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::booleanPowX, &context));
 }
 
 TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
@@ -250,12 +239,7 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  constexpr StringLiteral exactSource = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-pow(9007199254740992) @ x q;
-)";
-  auto translated = qc::translateQASM3ToQC(exactSource, &context);
+  auto translated = qc::translateQASM3ToQC(qasm::exactLargePowX, &context);
   ASSERT_TRUE(translated);
   SmallVector<qc::PowOp> powers;
   translated->walk([&](qc::PowOp op) { powers.push_back(op); });
@@ -264,19 +248,8 @@ pow(9007199254740992) @ x q;
   ASSERT_TRUE(exponent.has_value());
   EXPECT_DOUBLE_EQ(*exponent, 9007199254740992.0);
 
-  constexpr StringLiteral inexactSource = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-pow(9007199254740993) @ x q;
-)";
-  EXPECT_FALSE(qc::translateQASM3ToQC(inexactSource, &context));
-
-  constexpr StringLiteral overflowSource = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-pow(4294967296) @ pow(4294967296) @ x q;
-)";
-  EXPECT_FALSE(qc::translateQASM3ToQC(overflowSource, &context));
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::inexactLargePowX, &context));
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::overflowingNestedPowX, &context));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -543,41 +516,21 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::multipleControlledRccx)},
         QASM3TranslationTestCase{"Barrier", qasm::barrier,
                                  MQT_NAMED_BUILDER(qc::barrier)},
-        QASM3TranslationTestCase{
-            "PowTwoX",
-            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
-            "pow(2) @ x q; c = measure q;",
-            MQT_NAMED_BUILDER(powTwoX)},
-        QASM3TranslationTestCase{
-            "PowZeroX",
-            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
-            "pow(0) @ x q; c = measure q;",
-            MQT_NAMED_BUILDER(powZeroX)},
-        QASM3TranslationTestCase{
-            "NegativePowS",
-            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
-            "pow(-2) @ s q; c = measure q;",
-            MQT_NAMED_BUILDER(negativePowS)},
-        QASM3TranslationTestCase{
-            "ControlledInversePowS",
-            "OPENQASM 3.0; include \"stdgates.inc\"; qubit[2] q; bit[2] c; "
-            "ctrl @ pow(2) @ inv @ s q[0], q[1]; c = measure q;",
-            MQT_NAMED_BUILDER(controlledInversePowS)},
-        QASM3TranslationTestCase{
-            "NestedPowX",
-            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
-            "pow(2) @ pow(3) @ x q; c = measure q;",
-            MQT_NAMED_BUILDER(nestedPowX)},
-        QASM3TranslationTestCase{
-            "CustomPowHS",
-            "OPENQASM 3.0; include \"stdgates.inc\"; gate hs q0 { h q0; s "
-            "q0; } qubit q; bit c; pow(2) @ hs q; c = measure q;",
-            MQT_NAMED_BUILDER(customPowHS)},
-        QASM3TranslationTestCase{
-            "BroadcastPowX",
-            "OPENQASM 3.0; include \"stdgates.inc\"; qubit[2] q; bit[2] c; "
-            "pow(2) @ x q; c = measure q;",
-            MQT_NAMED_BUILDER(broadcastPowX)},
+        QASM3TranslationTestCase{"PowTwoX", qasm::powTwoX,
+                                 MQT_NAMED_BUILDER(powTwoX)},
+        QASM3TranslationTestCase{"PowZeroX", qasm::powZeroX,
+                                 MQT_NAMED_BUILDER(powZeroX)},
+        QASM3TranslationTestCase{"NegativePowS", qasm::negativePowS,
+                                 MQT_NAMED_BUILDER(negativePowS)},
+        QASM3TranslationTestCase{"ControlledInversePowS",
+                                 qasm::controlledInversePowS,
+                                 MQT_NAMED_BUILDER(controlledInversePowS)},
+        QASM3TranslationTestCase{"NestedPowX", qasm::nestedPowX,
+                                 MQT_NAMED_BUILDER(nestedPowX)},
+        QASM3TranslationTestCase{"CustomPowHS", qasm::customPowHS,
+                                 MQT_NAMED_BUILDER(customPowHS)},
+        QASM3TranslationTestCase{"BroadcastPowX", qasm::broadcastPowX,
+                                 MQT_NAMED_BUILDER(broadcastPowX)},
         QASM3TranslationTestCase{"BarrierTwoQubits", qasm::barrierTwoQubits,
                                  MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
         QASM3TranslationTestCase{"BarrierMultipleQubits",

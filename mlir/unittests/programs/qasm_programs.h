@@ -95,6 +95,43 @@ extern const std::string inverseX;
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 extern const std::string inverseMultipleControlledX;
 
+/// Creates a circuit with a power of two applied to an X gate.
+extern const std::string powTwoX;
+
+/// Creates a circuit with a power of zero applied to an X gate.
+extern const std::string powZeroX;
+
+/// Creates a circuit with a negative power applied to an S gate.
+extern const std::string negativePowS;
+
+/// Creates a circuit with controlled, power, and inverse modifiers applied to
+/// an S gate.
+extern const std::string controlledInversePowS;
+
+/// Creates a circuit with nested power modifiers applied to an X gate.
+extern const std::string nestedPowX;
+
+/// Creates a circuit with a power modifier applied to a custom gate.
+extern const std::string customPowHS;
+
+/// Creates a circuit with a power modifier broadcast over an X gate.
+extern const std::string broadcastPowX;
+
+/// Creates a circuit with a floating-point power modifier exponent.
+extern const std::string floatingPowX;
+
+/// Creates a circuit with a Boolean power modifier exponent.
+extern const std::string booleanPowX;
+
+/// Creates a circuit with an exactly representable large power exponent.
+extern const std::string exactLargePowX;
+
+/// Creates a circuit with an inexact large power exponent.
+extern const std::string inexactLargePowX;
+
+/// Creates a circuit with nested power modifiers whose exponents overflow.
+extern const std::string overflowingNestedPowX;
+
 /// Creates a circuit with just a Y gate.
 extern const std::string y;
 
