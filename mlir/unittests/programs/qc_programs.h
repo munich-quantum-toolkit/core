@@ -823,6 +823,30 @@ SmallVector<Value> inverseXxMinusYY(QCProgramBuilder& b);
 /// gate.
 SmallVector<Value> inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
 
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+SmallVector<Value> rccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+SmallVector<Value> singleControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+SmallVector<Value> multipleControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a nested controlled RCCX gate.
+SmallVector<Value> nestedControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a trivial controlled RCCX gate.
+SmallVector<Value> trivialControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to an RCCX gate.
+SmallVector<Value> inverseRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a multi-controlled
+/// RCCX gate.
+SmallVector<Value> inverseMultipleControlledRccx(QCProgramBuilder& b);
+
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.

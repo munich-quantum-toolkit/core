@@ -461,6 +461,33 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(allocQubit)}));
 /// @}
 
+/// \name QCO/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORCCXOpTest, QCOTest,
+    testing::Values(
+        QCOTestCase{"RCCX", MQT_NAMED_BUILDER(rccx), MQT_NAMED_BUILDER(rccx)},
+        QCOTestCase{"SingleControlledRCCX",
+                    MQT_NAMED_BUILDER(singleControlledRccx),
+                    MQT_NAMED_BUILDER(singleControlledRccx)},
+        QCOTestCase{"MultipleControlledRCCX",
+                    MQT_NAMED_BUILDER(multipleControlledRccx),
+                    MQT_NAMED_BUILDER(multipleControlledRccx)},
+        QCOTestCase{"NestedControlledRCCX",
+                    MQT_NAMED_BUILDER(nestedControlledRccx),
+                    MQT_NAMED_BUILDER(multipleControlledRccx)},
+        QCOTestCase{"TrivialControlledRCCX",
+                    MQT_NAMED_BUILDER(trivialControlledRccx),
+                    MQT_NAMED_BUILDER(rccx)},
+        QCOTestCase{"InverseRCCX", MQT_NAMED_BUILDER(inverseRccx),
+                    MQT_NAMED_BUILDER(rccx)},
+        QCOTestCase{"InverseMultipleControlledRCCX",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledRccx),
+                    MQT_NAMED_BUILDER(multipleControlledRccx)},
+        QCOTestCase{"TwoRCCX", MQT_NAMED_BUILDER(twoRccx),
+                    MQT_NAMED_BUILDER(alloc3QubitRegister)}));
+/// @}
+
 /// \name QCO/Operations/StandardGates/ROp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

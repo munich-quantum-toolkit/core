@@ -175,6 +175,7 @@ def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
+def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
@@ -1010,6 +1011,37 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
       "const std::variant<double, Value>&":$beta)>];
 
   let hasFolder = 1;
+  let hasCanonicalizer = 1;
+}
+
+def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
+                                     ThreeTargetZeroParameter, Pure]> {
+  let summary = "Apply a relative-phase CCX gate to three qubits";
+  let description = [{
+        Applies a relative-phase CCX (`RCCX`) gate to three qubits and returns the
+        transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out, %q2_out = qco.rccx %q0_in, %q1_in, %q2_in : !qco.qubit, !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit, !qco.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<QubitType, "the third target qubit">:$qubit2_in);
+  let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out,
+      QubitType:$qubit2_out);
+  let assemblyFormat =
+      "$qubit0_in `,` $qubit1_in `,` $qubit2_in attr-dict `:` type($qubit0_in) "
+      "`,` type($qubit1_in) `,` type($qubit2_in) `->` type($qubit0_out) `,` "
+      "type($qubit1_out) `,` type($qubit2_out)";
+
+  let extraClassDeclaration = [{
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
+        [[nodiscard]] static DynamicMatrix getUnitaryMatrix();
+    }];
+
   let hasCanonicalizer = 1;
 }
 
