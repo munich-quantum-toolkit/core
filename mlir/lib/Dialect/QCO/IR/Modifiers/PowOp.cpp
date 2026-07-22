@@ -319,13 +319,14 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     auto loc = op.getLoc();
 
     // Pre-check: only proceed for gate types we can fold.
-    // HOp, ECROp, SWAPOp additionally require an integer exponent.
-    if (isa<HOp, ECROp, SWAPOp>(innerOp) && !utils::isIntegerExponent(r)) {
+    // HOp, ECROp, RCCXOp, and SWAPOp additionally require an integer exponent.
+    if (isa<HOp, ECROp, RCCXOp, SWAPOp>(innerOp) &&
+        !utils::isIntegerExponent(r)) {
       return failure();
     }
     if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
-             ECROp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp, RZXOp,
-             RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, IdOp, BarrierOp>(
+             ECROp, RCCXOp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp,
+             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, IdOp, BarrierOp>(
             innerOp)) {
       return failure();
     }
@@ -517,8 +518,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               }
               return success();
             })
-            // pow(n) { ecr/swap } => id (n even) | ecr/swap (n odd)
-            .Case<ECROp, SWAPOp>([&](auto gate) {
+            // pow(n) { ecr/rccx/swap } => id (n even) | gate (n odd)
+            .Case<ECROp, RCCXOp, SWAPOp>([&](auto gate) {
               if (utils::isEvenExponent(r)) {
                 rewriter.replaceOp(op, op.getQubitsIn());
               } else {

@@ -1978,6 +1978,20 @@ SmallVector<Value> rccx(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+SmallVector<Value> powEvenRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.pow(2.0, q.qubits,
+        [&](ValueRange args) { b.rccx(args[0], args[1], args[2]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> powOddRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.pow(3.0, q.qubits,
+        [&](ValueRange args) { b.rccx(args[0], args[1], args[2]); });
+  return measureAndReturn(b, q.qubits);
+}
+
 SmallVector<Value> singleControlledRccx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.crccx(q[0], q[1], q[2], q[3]);

@@ -3189,6 +3189,24 @@ SmallVector<Value> rccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+SmallVector<Value> powEvenRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
+    auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
+    return SmallVector<Value>{q0, q1, q2};
+  });
+  return measureAndReturn(b, powOut);
+}
+
+SmallVector<Value> powOddRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto powOut = b.pow(3.0, q.qubits, [&](ValueRange args) {
+    auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
+    return SmallVector<Value>{q0, q1, q2};
+  });
+  return measureAndReturn(b, powOut);
+}
+
 SmallVector<Value> twoRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);

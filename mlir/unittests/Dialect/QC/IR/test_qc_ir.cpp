@@ -571,6 +571,10 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(rccx)},
                     QCTestCase{"InverseRCCX", MQT_NAMED_BUILDER(inverseRccx),
                                MQT_NAMED_BUILDER(rccx)},
+                    QCTestCase{"PowEvenRCCX", MQT_NAMED_BUILDER(powEvenRccx),
+                               MQT_NAMED_BUILDER(alloc3QubitRegister)},
+                    QCTestCase{"PowOddRCCX", MQT_NAMED_BUILDER(powOddRccx),
+                               MQT_NAMED_BUILDER(rccx)},
                     QCTestCase{"InverseMultipleControlledRCCX",
                                MQT_NAMED_BUILDER(inverseMultipleControlledRccx),
                                MQT_NAMED_BUILDER(multipleControlledRccx)}));

@@ -999,6 +999,12 @@ SmallVector<Value> powXxMinusYYScaledRef(QCProgramBuilder& b);
 /// Creates a circuit with just an RCCX gate.
 SmallVector<Value> rccx(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2.0) wrapping an RCCX gate.
+SmallVector<Value> powEvenRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping an RCCX gate.
+SmallVector<Value> powOddRccx(QCProgramBuilder& b);
+
 /// Creates a circuit with a single controlled RCCX gate.
 SmallVector<Value> singleControlledRccx(QCProgramBuilder& b);
 

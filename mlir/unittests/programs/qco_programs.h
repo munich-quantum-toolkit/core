@@ -1168,6 +1168,12 @@ SmallVector<Value> twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 /// Creates a circuit with just an RCCX gate.
 SmallVector<Value> rccx(QCOProgramBuilder& b);
 
+/// Creates a circuit with pow(2.0) wrapping an RCCX gate.
+SmallVector<Value> powEvenRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping an RCCX gate.
+SmallVector<Value> powOddRccx(QCOProgramBuilder& b);
+
 /// Creates a circuit with two RCCX gates in a row.
 SmallVector<Value> twoRccx(QCOProgramBuilder& b);
 
