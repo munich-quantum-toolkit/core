@@ -124,13 +124,13 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       while (Traits::isActive(it)) {
 
         // For source-like (AllocOp, StaticOp, qtensor::ExtractOp),
-        // sink-like (SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp), and
-        // one-qubit non-unitary (ResetOp, MeasureOp) operations, simply advance
-        // the iterator.
+        // sink-like (SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp,
+        // scf::ConditionOp), and one-qubit non-unitary (ResetOp, MeasureOp)
+        // operations, simply advance the iterator.
 
         if (isa<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp, YieldOp,
-                qtensor::ExtractOp, qtensor::InsertOp, scf::YieldOp>(
-                it.operation())) {
+                qtensor::ExtractOp, qtensor::InsertOp, scf::YieldOp,
+                scf::ConditionOp>(it.operation())) {
           std::ranges::advance(it, Traits::stride());
           continue;
         }
