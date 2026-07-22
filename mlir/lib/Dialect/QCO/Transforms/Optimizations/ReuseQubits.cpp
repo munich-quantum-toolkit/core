@@ -8,13 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -23,7 +20,6 @@
 
 #include <cassert>
 #include <iterator>
-#include <numeric>
 #include <utility>
 
 namespace mlir::qco {
