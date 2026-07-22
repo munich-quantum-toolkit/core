@@ -301,7 +301,7 @@ void StandardOperation::dumpOpenQASM2(
                  "work with this library.\n";
   }
 
-  // safe the numbers of controls as a prefix to the operation name
+  // save the numbers of controls as a prefix to the operation name
   op << std::string(controls.size(), 'c');
 
   const bool isSpecialGate = type == Peres || type == Peresdg;
@@ -447,6 +447,9 @@ void StandardOperation::dumpGateType(
     break;
   case XXplusYY:
     op << "xx_plus_yy(" << parameter[0] << "," << parameter[1] << ")";
+    break;
+  case RCCX:
+    op << "rccx";
     break;
   case SWAP:
     op << "swap";
@@ -595,6 +598,7 @@ void StandardOperation::invert() {
   case H:
   case SWAP:
   case ECR:
+  case RCCX:
   case Barrier:
     break;
   // gates where we just update parameters
