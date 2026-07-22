@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <iterator>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -65,7 +66,7 @@ void IndexSwitchOp::getRegionInvocationBounds(
                              : 0; // Default region.
 
   for (size_t i = 0; i < nregions; ++i) {
-    bounds.emplace_back(/*lb=*/0, /*ub=*/i == liveIndex ? 1 : 0);
+    bounds.emplace_back(/*lb=*/0, /*ub=*/std::cmp_equal(i, liveIndex) ? 1 : 0);
   }
 }
 

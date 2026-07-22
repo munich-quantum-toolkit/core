@@ -94,9 +94,10 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
 
     if (auto op = dyn_cast<qco::IfOp>(it.operation())) {
       const auto prev = std::prev(it);
-      const auto qIt = llvm::find(op.getQubits(), prev.tensor());
+      const auto qubits = op.getQubits();
+      const auto qIt = llvm::find(qubits, prev.tensor());
       assert(qIt != op.getQubits().end());
-      const auto idx = std::distance(op.getQubits().begin(), qIt);
+      const auto idx = std::distance(qubits.begin(), qIt);
 
       auto& thenRegion = op.getThenRegion();
       auto& elseRegion = op.getElseRegion();
@@ -160,12 +161,16 @@ static SmallVector<size_t>
 getPermutation(const LhsRange& lhs, const RhsRange& rhs, const IRMapping& m,
                const TensorMapping& tm) {
   SmallVector<size_t> permutation(lhs.size());
-  for (const auto& [i, trgt] : llvm::enumerate(lhs)) {
-    const auto it =
-        hasTypeQubitTensor(trgt)
-            ? llvm::find_if(rhs,
-                            [&](const auto v) { return tm.equals(trgt, v); })
-            : llvm::find(rhs, m.lookup(trgt));
+  for (const auto& [i, lhsValue] : llvm::enumerate(lhs)) {
+    const auto it = hasTypeQubitTensor(lhsValue)
+                        ? llvm::find_if(rhs,
+                                        [&](const auto rhsValue) {
+                                          if (!hasTypeQubitTensor(rhsValue)) {
+                                            return false;
+                                          }
+                                          return tm.equals(lhsValue, rhsValue);
+                                        })
+                        : llvm::find(rhs, m.lookup(lhsValue));
     const auto j = std::distance(rhs.begin(), it);
     permutation[i] = j;
   }
@@ -178,11 +183,15 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
                               const IRMapping& m, const TensorMapping& tm) {
   DenseSet<Value> workset;
   workset.insert_range(rhs);
+
   for (const auto lhsValue : lhs) {
     const auto mapped =
         hasTypeQubitTensor(lhsValue)
             ? *llvm::find_if(rhs,
                              [&](const auto rhsValue) {
+                               if (!hasTypeQubitTensor(rhsValue)) {
+                                 return false;
+                               }
                                return tm.equals(lhsValue, rhsValue);
                              })
             : m.lookup(lhsValue);
@@ -191,6 +200,7 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
     }
     workset.erase(mapped);
   }
+
   return workset.empty();
 }
 
