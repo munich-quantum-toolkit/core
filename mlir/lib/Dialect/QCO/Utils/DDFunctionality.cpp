@@ -206,12 +206,12 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     dd::TwoQubitGateMatrix mat{};
     for (size_t row = 0; row < mat.size(); ++row) {
       for (size_t col = 0; col < mat[row].size(); ++col) {
-        mat[row][col] = local(static_cast<int64_t>(row),
-                              static_cast<int64_t>(col));
+        mat[row][col] =
+            local(static_cast<int64_t>(row), static_cast<int64_t>(col));
       }
     }
-    state = dd.applyOperation(
-        dd.makeTwoQubitGateDD(mat, wires[0], wires[1]), state);
+    state = dd.applyOperation(dd.makeTwoQubitGateDD(mat, wires[0], wires[1]),
+                              state);
     return qubits.remapUnitary(unitary);
   }
 
@@ -223,9 +223,8 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   }
 
   if (wires.size() != qubits.numQubits ||
-      !llvm::all_of(llvm::enumerate(wires), [](const auto& it) {
-        return it.value() == it.index();
-      })) {
+      !llvm::all_of(llvm::enumerate(wires),
+                    [](const auto& it) { return it.value() == it.index(); })) {
     return op->emitError()
            << "QCO DD matrix fallback supports full-width unitaries on qubits "
               "0..n-1";
@@ -287,10 +286,9 @@ static LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .template Case<StaticOp, SinkOp, arith::ConstantOp>(
           [](auto) { return success(); })
-      .template Case<func::ReturnOp>(
-          [&](func::ReturnOp returnOp) {
-            return validateReturn(returnOp, qubits);
-          })
+      .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
+        return validateReturn(returnOp, qubits);
+      })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
         if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {

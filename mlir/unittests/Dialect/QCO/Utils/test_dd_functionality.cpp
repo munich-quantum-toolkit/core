@@ -351,7 +351,7 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
       }
     }
   )mlir",
-                                                    context.get());
+                                               context.get());
   auto swapped = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main(%q0: !qco.qubit, %q1: !qco.qubit)
@@ -362,7 +362,7 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
       }
     }
   )mlir",
-                                                  context.get());
+                                             context.get());
   ASSERT_TRUE(canonical);
   ASSERT_TRUE(swapped);
 
@@ -377,8 +377,8 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
   dd->decRef(*canonicalSimulation);
 
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*swapped), *dd)));
-  EXPECT_TRUE(failed(
-      simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
