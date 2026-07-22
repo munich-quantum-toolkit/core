@@ -1339,9 +1339,14 @@ def PowOp
         static ResultRange getOutputControls() { return {nullptr, 0}; }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return 0; }
-        Value getParameter(size_t i) { llvm::reportFatalUsageError("PowOp does not have parameters"); }
-        OperandRange getParameters() { return {nullptr, 0}; }
+        static size_t getNumParams() { return 1; }
+        Value getParameter(size_t i) {
+          if (i != 0) {
+            llvm::reportFatalUsageError("Parameter index out of bounds");
+          }
+          return getExponent();
+        }
+        OperandRange getParameters() { return getOperation()->getOperands().slice(0, 1); }
         std::optional<double> getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();

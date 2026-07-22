@@ -300,6 +300,20 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(alloc1QubitRegister)}));
 /// @}
 
+TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
+  auto program =
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
+  ASSERT_TRUE(program);
+
+  auto funcOp = cast<func::FuncOp>(program->getBody()->front());
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto unitary = cast<UnitaryOpInterface>(powOp.getOperation());
+  EXPECT_EQ(unitary.getNumParams(), 1);
+  EXPECT_EQ(unitary.getParameter(0), powOp.getExponent());
+  ASSERT_EQ(unitary.getParameters().size(), 1);
+  EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
+}
+
 /// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
 /// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
 TEST_F(QCOTest, PowRxxFold) {
