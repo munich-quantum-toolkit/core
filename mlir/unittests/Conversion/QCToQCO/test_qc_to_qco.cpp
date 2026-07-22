@@ -678,7 +678,10 @@ INSTANTIATE_TEST_SUITE_P(QCOIndexSwitchOpTest, QCToQCOTest,
                          testing::Values(QCToQCOTestCase{
                              "SimpleIndexSwitchOp",
                              MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
-                             MQT_NAMED_BUILDER(qco::simpleIndexSwitch)}));
+                             MQT_NAMED_BUILDER(qco::simpleIndexSwitch)},QCToQCOTestCase{
+                             "IndexSwitchMultiCase",
+                             MQT_NAMED_BUILDER(qc::indexSwitchMultiCase),
+                             MQT_NAMED_BUILDER(qco::indexSwitchMultiCase)}));
 /// @}
 
 /// \name QCToQCO/Operations/WhileOp.cpp

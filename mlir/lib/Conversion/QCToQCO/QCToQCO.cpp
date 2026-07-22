@@ -1410,7 +1410,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     assignMappedTensors(state, op.getOperation(), registerMap,
                         newIfOp.getResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
-                       newIfOp->getResults().take_back(numQubits));
+                       newIfOp.getResults().take_back(numQubits));
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newIfOp);
@@ -1504,11 +1504,11 @@ struct ConvertSCFIndexSwitchOp final
     insertQubitsBeforeOp(state, operation, rewriter);
 
     const auto targets = resolveAllValues(state, operation);
-    const auto types = ValueRange(targets).getTypes();
-    const SmallVector locs(targets.size(), op->getLoc());
-    llvm::dbgs() << targets.size() << '\n';
+    const auto results = ValueRange(targets).getTypes();
+    const SmallVector locs(targets.size(), op.getLoc());
+
     auto newOp =
-        IndexSwitchOp::create(rewriter, op.getLoc(), types, op.getArg(),
+        IndexSwitchOp::create(rewriter, op.getLoc(), results, op.getArg(),
                               op.getCases(), targets, op.getNumCases());
 
     assignMappedTensors(state, op.getOperation(), registerMap,
@@ -1516,32 +1516,36 @@ struct ConvertSCFIndexSwitchOp final
     assignMappedQubits(state, op.getOperation(), qubitMap,
                        newOp.getResults().take_back(nqubits));
 
-    // Extract all the previously inserted qubits again
+    rewriter.setInsertionPointAfter(newOp);
     extractQubitsAfterOp(state, operation, rewriter);
 
     const auto newCaseRegions = newOp.getCaseRegions();
     const auto oldCaseRegions = op.getCaseRegions();
     const auto buildRegion = [&](Region& oldRegion, Region& newRegion) {
-      Block* oldBlock = &(*oldRegion.begin());
-      Block* newBlock =
+      Block* const oldBlock = &(*oldRegion.begin());
+      Block* const newBlock =
           rewriter.createBlock(&newRegion, {}, newOp.getResultTypes(), locs);
+      const auto args = newBlock->getArguments();
 
-      rewriter.inlineBlockBefore(&oldRegion.getBlocks().front(), newBlock,
-                                 newBlock->begin());
-
-      pushModifierFrameWithRegisters(
-          state, qubits, registers, newBlock->getArguments().take_back(nqubits),
-          newBlock->getArguments().take_front(nregisters));
+      // rewriter.inlineBlockBefore(oldBlock, newBlock, newBlock->begin());
+      newBlock->getOperations().splice(newBlock->end(),
+                                       oldBlock->getOperations());
+      pushModifierFrameWithRegisters(state, qubits, registers,
+                                     args.take_back(nqubits),
+                                     args.take_front(nregisters));
     };
 
-    rewriter.setInsertionPointAfter(newOp);
-    for (size_t i = 0; i < op.getNumCases(); ++i) {
-      buildRegion(oldCaseRegions[i], newCaseRegions[i]);
-    }
+    // Process regions and push frames in the correct order. The top-most stack
+    // element must be the default region (0th index) followed by the case
+    // regions.
 
+    for (size_t i = op.getNumCases(); i > 0; --i) {
+      buildRegion(oldCaseRegions[i - 1], newCaseRegions[i - 1]);
+    }
     buildRegion(op.getDefaultRegion(), newOp.getDefaultRegion());
 
     rewriter.eraseOp(op);
+
     return success();
   }
 };

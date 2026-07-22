@@ -58,7 +58,7 @@ void IndexSwitchOp::getRegionInvocationBounds(
   const auto* it = llvm::find(getCases(), arg.getInt());
   const auto liveIndex = it != getCases().end()
                              ? std::distance(getCases().begin(), it)
-                             : nregions - 1; // Default region.
+                             : 0; // Default region.
 
   for (size_t i = 0; i < nregions; ++i) {
     bounds.emplace_back(/*lb=*/0, /*ub=*/i == liveIndex ? 1 : 0);
@@ -83,7 +83,7 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   const auto* it = llvm::find(getCases(), arg.getInt());
   const auto liveIndex = it != getCases().end()
                              ? std::distance(getCases().begin(), it)
-                             : nregions - 1; // Default region.
+                             : 0; // Default region.
 
   regions.emplace_back(&getRegion(liveIndex));
 }

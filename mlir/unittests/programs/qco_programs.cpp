@@ -3211,6 +3211,55 @@ SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b) {
   return {bit0, bit1};
 }
 
+SmallVector<Value> indexSwitchMultiCase(QCOProgramBuilder& b) {
+  constexpr int64_t size = 2;
+
+  auto reg = b.allocQubitRegister(size);
+  auto c1 = arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(1))
+                .getResult();
+  auto condition =
+      arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(0))
+          .getResult();
+  for (int64_t i = 0; i < size; ++i) {
+    Value bit;
+
+    reg[i] = b.h(reg[i]);
+    std::tie(reg[i], bit) = b.measure(reg[i]);
+    const auto index =
+        arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
+    condition = arith::OrIOp::create(b, {condition, index}).getResult();
+    condition = arith::ShLIOp::create(b, {condition, c1});
+  }
+
+  reg.qubits = b.qcoIndexSwitch(
+      condition, reg.qubits, SmallVector<int64_t>{1, 2, 3},
+      SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+          [&](ValueRange args) {
+            SmallVector<Value> qs(args);
+            qs[1] = b.x(qs[1]);
+            return qs;
+          },
+          [&](ValueRange args) {
+            SmallVector<Value> qs(args);
+            qs[0] = b.x(qs[0]);
+            return qs;
+          },
+          [&](ValueRange args) {
+            SmallVector<Value> qs(args);
+            qs[0] = b.x(qs[0]);
+            qs[1] = b.x(qs[1]);
+            return qs;
+          }},
+      [&](ValueRange args) { return args; });
+
+  SmallVector<Value> bits(size);
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(reg[i], bits[i]) = b.measure(reg[i]);
+  }
+
+  return bits;
+}
+
 SmallVector<Value> qtensorAlloc(QCOProgramBuilder& b) {
   (void)b.qtensorAlloc(3);
   return measureAndReturn(b, {});

@@ -1886,6 +1886,41 @@ SmallVector<Value> simpleIndexSwitch(QCProgramBuilder& b) {
   return {bit0, bit1};
 }
 
+SmallVector<Value> indexSwitchMultiCase(QCProgramBuilder& b) {
+  constexpr int64_t size = 2;
+
+  auto reg = b.allocQubitRegister(size);
+  auto c1 = arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(1))
+                .getResult();
+  auto condition =
+      arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(0))
+          .getResult();
+  for (int64_t i = 0; i < size; ++i) {
+    b.h(reg[i]);
+    const auto bit = b.measure(reg[i]);
+    const auto index =
+        arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
+    condition = arith::OrIOp::create(b, {condition, index}).getResult();
+    condition = arith::ShLIOp::create(b, {condition, c1});
+  }
+
+  b.scfIndexSwitch(condition, SmallVector<int64_t>{1, 2, 3},
+                   SmallVector<function_ref<void()>>{[&] { b.x(reg[1]); },
+                                                     [&] { b.x(reg[0]); },
+                                                     [&] {
+                                                       b.x(reg[0]);
+                                                       b.x(reg[1]);
+                                                     }},
+                   [&] { /* no-op */ });
+
+  SmallVector<Value> bits(size);
+  for (int64_t i = 0; i < size; ++i) {
+    bits[i] = b.measure(reg[i]);
+  }
+
+  return bits;
+}
+
 Value simpleWhileReset(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
