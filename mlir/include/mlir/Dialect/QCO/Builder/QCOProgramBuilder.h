@@ -1486,7 +1486,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * result = builder.qcoIf(condition, initArgs, [&](Value arg)
+   * result = builder.qcoIf(condition, initArg, [&](Value arg)
    * -> Value {
    *   auto q1 = builder.x(arg);
    *   return q1;
@@ -1505,7 +1505,7 @@ public:
    * }
    * ```
    */
-  Value qcoIf(const std::variant<bool, Value>& condition, Value initArgs,
+  Value qcoIf(const std::variant<bool, Value>& condition, Value initArg,
               function_ref<Value(Value)> thenBody,
               function_ref<Value(Value)> elseBody = nullptr);
 
@@ -1747,6 +1747,23 @@ private:
    * @return SmallVector of the updated values of the initial values.
    */
   SmallVector<Value> prepareInitArgs(ValueRange initArgs);
+
+  /**
+   * @brief Prepare one initial argument by re-inserting extracted qubits into
+   * its tensor, if necessary.
+   * @param initArg Initial value
+   * @return Updated initial value
+   */
+  Value prepareInitArg(Value initArg);
+
+  Value prepareInitArg(Value initArg, const DenseSet<Value>* initQubits);
+
+  /**
+   * @brief Update linear-value tracking for one replaced value
+   * @param oldValue The old value to be replaced
+   * @param newValue The new value to be tracked
+   */
+  void updateQubitValueTracking(Value oldValue, Value newValue);
 
   /**
    * @brief Update the qubit tracking of the old values with the new values

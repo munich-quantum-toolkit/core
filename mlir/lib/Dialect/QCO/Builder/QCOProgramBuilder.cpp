@@ -237,10 +237,39 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.try_emplace(outputTensor, info);
 }
 
+Value QCOProgramBuilder::prepareInitArg(Value initArg,
+                                        const DenseSet<Value>* initQubits) {
+  if (isa<QubitType>(initArg.getType())) {
+    return initArg;
+  }
+
+  const auto regId = validTensors[initArg].regId;
+  auto currentTensor = initArg;
+  for (auto it = validQubits.begin(); it != validQubits.end();) {
+    auto& [qubit, qubitInfo] = *it;
+    if (qubitInfo.regId == regId &&
+        (initQubits == nullptr || !initQubits->contains(qubit))) {
+      auto newTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
+                                                 qubitInfo.regIndex)
+                           .getResult();
+      updateTensorTracking(currentTensor, newTensor);
+      currentTensor = newTensor;
+      validQubits.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+  return currentTensor;
+}
+
+Value QCOProgramBuilder::prepareInitArg(Value initArg) {
+  checkQubitType(ValueRange{initArg});
+  return prepareInitArg(initArg, nullptr);
+}
+
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
 
-  // Gather all initial qubits first
   DenseSet<Value> initQubits;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
@@ -250,54 +279,28 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
 
   SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
-
-  // Iterate through the initial values and add the latest value to the updated
-  // arguments
   for (auto initArg : initArgs) {
-    if (isa<QubitType>(initArg.getType())) {
-      // Directly insert qubits
-      updatedArgs.emplace_back(initArg);
-    } else {
-      // For tensors check if you have to insert qubits first
-      const auto regId = validTensors[initArg].regId;
-      auto currentTensor = initArg;
-      // Iterate through the validQubits and find the qubits that were extracted
-      // from this tensor
-      for (auto it = validQubits.begin(); it != validQubits.end();) {
-        auto& [qubit, qubitInfo] = *it;
-        // Ignore qubits that are also used as initArgs
-        if (qubitInfo.regId == regId && !initQubits.contains(qubit)) {
-          // Create an InsertOp for the qubit
-          auto newTensor = qtensor::InsertOp::create(
-                               *this, qubit, currentTensor, qubitInfo.regIndex)
-                               .getResult();
-          // Update the tensor tracking
-          updateTensorTracking(currentTensor, newTensor);
-          currentTensor = newTensor;
-          validQubits.erase(it++);
-        } else {
-          ++it;
-        }
-      }
-      // Add the tensor after all qubits are inserted and the tensor tracking is
-      // updated
-      updatedArgs.emplace_back(currentTensor);
-    }
+    updatedArgs.emplace_back(prepareInitArg(initArg, &initQubits));
   }
   return updatedArgs;
+}
+
+void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
+                                                 Value newValue) {
+  if (oldValue.getType() != newValue.getType()) {
+    llvm::reportFatalUsageError("Result types must match input types");
+  }
+  if (isa<QubitType>(oldValue.getType())) {
+    updateQubitTracking(oldValue, newValue);
+  } else {
+    updateTensorTracking(oldValue, newValue);
+  }
 }
 
 void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
                                                  ValueRange newValues) {
   for (auto [oldValue, newValue] : llvm::zip_equal(oldValues, newValues)) {
-    if (oldValue.getType() != newValue.getType()) {
-      llvm::reportFatalUsageError("Result types must match input types");
-    }
-    if (isa<QubitType>(oldValue.getType())) {
-      updateQubitTracking(oldValue, newValue);
-    } else {
-      updateTensorTracking(oldValue, newValue);
-    }
+    updateQubitValueTracking(oldValue, newValue);
   }
 }
 
@@ -1156,24 +1159,34 @@ ValueRange QCOProgramBuilder::qcoIf(
 }
 
 Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
-                               Value initArgs,
+                               Value initArg,
                                function_ref<Value(Value)> thenBody,
                                function_ref<Value(Value)> elseBody) {
-  auto thenWrapper = [&](ValueRange args) -> SmallVector<Value> {
-    return {thenBody(args.front())};
-  };
+  checkFinalized();
 
-  ValueRange results;
+  const auto conditionValue = variantToValue(*this, getLoc(), condition);
+  const auto updatedArg = prepareInitArg(initArg);
+  Value thenResult;
+  const auto trackedThenBody = [&](Value arg) {
+    updateQubitValueTracking(updatedArg, arg);
+    thenResult = thenBody(arg);
+    return thenResult;
+  };
   if (elseBody) {
-    auto elseWrapper = [&](ValueRange args) -> SmallVector<Value> {
-      return {elseBody(args.front())};
-    };
-    results = qcoIf(condition, ValueRange{initArgs}, thenWrapper, elseWrapper);
-  } else {
-    results = qcoIf(condition, ValueRange{initArgs}, thenWrapper);
+    Value elseResult;
+    auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody,
+                             [&](Value arg) {
+                               updateQubitValueTracking(thenResult, arg);
+                               elseResult = elseBody(arg);
+                               return elseResult;
+                             });
+    updateQubitValueTracking(elseResult, ifOp.getResult(0));
+    return ifOp.getResult(0);
   }
-  assert(results.size() == 1);
-  return results[0];
+
+  auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody);
+  updateQubitValueTracking(thenResult, ifOp.getResult(0));
+  return ifOp.getResult(0);
 }
 
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
