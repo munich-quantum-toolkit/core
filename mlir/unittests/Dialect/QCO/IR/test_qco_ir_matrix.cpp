@@ -368,6 +368,17 @@ TEST_F(QCOMatrixTest, PowThirdXOpMatrix) {
   const DynamicMatrix cubed = *matrix * *matrix * *matrix;
   ASSERT_TRUE(cubed.isApprox(XOp::getUnitaryMatrix(), 1e-10));
 }
+
+TEST_F(QCOMatrixTest, NestedPowAcrossBranchCutMatrixIsIdentity) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), nestedPowBranchCut);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  const auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+  EXPECT_TRUE(matrix->isApprox(DynamicMatrix::identity(2), 1e-10));
+}
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp

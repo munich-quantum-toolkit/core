@@ -3655,6 +3655,17 @@ Value powSingleExponent(QCOProgramBuilder& b) {
   return b.measure(powOut[0]).second;
 }
 
+Value nestedPowBranchCut(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut = b.pow(0.5, {q[0]}, [&](ValueRange outer) {
+    auto inner = b.pow(2.0, {outer[0]}, [&](ValueRange innerArgs) {
+      return SmallVector<Value>{b.x(innerArgs[0])};
+    });
+    return SmallVector<Value>{inner};
+  });
+  return b.measure(powOut[0]).second;
+}
+
 SmallVector<Value> powRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
@@ -3780,7 +3791,7 @@ SmallVector<Value> invPowReorderedRef(QCOProgramBuilder& b) {
 
 SmallVector<Value> mergeNestedPowReordered(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut = b.pow(0.5, {q[0], q[1]}, [&](mlir::ValueRange outerArgs) {
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange outerArgs) {
     auto inner =
         b.pow(0.5, {outerArgs[1], outerArgs[0]}, [&](mlir::ValueRange powArgs) {
           auto res = b.swap(powArgs[0], powArgs[1]);
@@ -3793,7 +3804,7 @@ SmallVector<Value> mergeNestedPowReordered(QCOProgramBuilder& b) {
 
 SmallVector<Value> mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut = b.pow(0.25, {q[1], q[0]}, [&](mlir::ValueRange powArgs) {
+  const auto powOut = b.pow(1.0, {q[1], q[0]}, [&](mlir::ValueRange powArgs) {
     auto res = b.swap(powArgs[0], powArgs[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });

@@ -1292,6 +1292,10 @@ Value nestedPow(QCOProgramBuilder& b);
 /// Creates a circuit with pow(6.0) as the merged reference for nestedPow.
 Value powSingleExponent(QCOProgramBuilder& b);
 
+/// Creates pow(0.5){pow(2){X}}, which is identity under principal-branch
+/// matrix-power semantics and must not be flattened to pow(1){X}.
+Value nestedPowBranchCut(QCOProgramBuilder& b);
+
 /// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
 SmallVector<Value> powRxx(QCOProgramBuilder& b);
 
@@ -1340,12 +1344,12 @@ SmallVector<Value> invPowReordered(QCOProgramBuilder& b);
 /// qubits.
 SmallVector<Value> invPowReorderedRef(QCOProgramBuilder& b);
 
-/// Creates a nested pow whose inner pow aliases the outer pow's qubits in
-/// swapped order.
+/// Creates a nested pow with an integral outer exponent whose inner pow aliases
+/// the outer pow's qubits in swapped order.
 SmallVector<Value> mergeNestedPowReordered(QCOProgramBuilder& b);
 
-/// Creates the reference for mergeNestedPowReordered: pow(0.25) over the
-/// swapped qubits.
+/// Creates the reference for mergeNestedPowReordered: pow(1.0) over the swapped
+/// qubits.
 SmallVector<Value> mergeNestedPowReorderedRef(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow wrapping ctrl wrapping RX (should move ctrl

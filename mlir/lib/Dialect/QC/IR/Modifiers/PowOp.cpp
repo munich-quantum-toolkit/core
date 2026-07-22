@@ -176,6 +176,13 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
+    const auto outerExponent = op.getExponentValue();
+    // Principal matrix powers do not generally satisfy (U^b)^a = U^(a*b)
+    // across branch cuts. The rewrite is valid for integral outer powers,
+    // where any branch phase is raised to an integer and cancels.
+    if (!outerExponent || !utils::isIntegerExponent(*outerExponent)) {
+      return failure();
+    }
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();

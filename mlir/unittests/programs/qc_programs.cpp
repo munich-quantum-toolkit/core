@@ -2249,6 +2249,14 @@ Value powSingleExponent(QCProgramBuilder& b) {
   return b.measure(q[0]);
 }
 
+Value nestedPowBranchCut(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](ValueRange outer) {
+    b.pow(2.0, outer[0], [&](ValueRange inner) { b.x(inner[0]); });
+  });
+  return b.measure(q[0]);
+}
+
 SmallVector<Value> powRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.pow(2.0, {q[0], q[1]},
@@ -2336,7 +2344,7 @@ SmallVector<Value> invPowReorderedRef(QCProgramBuilder& b) {
 
 SmallVector<Value> mergeNestedPowReordered(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow(0.5, {q[0], q[1]}, [&](ValueRange o) {
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange o) {
     b.pow(0.5, {o[1], o[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
   });
   return measureAndReturn(b, q.qubits);
@@ -2344,7 +2352,7 @@ SmallVector<Value> mergeNestedPowReordered(QCProgramBuilder& b) {
 
 SmallVector<Value> mergeNestedPowReorderedRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow(0.25, {q[1], q[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  b.pow(1.0, {q[1], q[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
   return measureAndReturn(b, q.qubits);
 }
 

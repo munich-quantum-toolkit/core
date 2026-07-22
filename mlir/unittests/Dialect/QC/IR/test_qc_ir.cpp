@@ -190,6 +190,20 @@ TEST_F(QCTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
 }
 
+TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
+  auto program = mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+
+  std::size_t powCount = 0;
+  std::size_t xCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  program->walk([&](XOp) { ++xCount; });
+  EXPECT_EQ(powCount, 1);
+  EXPECT_EQ(xCount, 0);
+}
+
 /// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
 /// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
 TEST_F(QCTest, PowRxxFold) {
