@@ -198,6 +198,11 @@ See Also:
 See Also:
     :meth:`mqt.core.ir.QuantumComputation.xx_plus_yy`)pb")
 
+      .value("rccx", qc::OpType::RCCX, R"pb(A relative-phase CCX gate.
+
+See Also:
+    :meth:`mqt.core.ir.QuantumComputation.rccx`)pb")
+
       .value("compound", qc::OpType::Compound, R"pb(A compound operation.
 
 It is used to group multiple operations into a single operation.

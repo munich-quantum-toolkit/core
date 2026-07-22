@@ -200,6 +200,20 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledP<>)}));
 /// @}
 
+/// \name QIR/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QIRRCCXOpTest, QIRTest,
+    testing::Values(QIRTestCase{"RCCX", MQT_NAMED_BUILDER(rccx<>),
+                                MQT_NAMED_BUILDER(rccx<>)},
+                    QIRTestCase{"SingleControlledRCCX",
+                                MQT_NAMED_BUILDER(singleControlledRccx<>),
+                                MQT_NAMED_BUILDER(singleControlledRccx<>)},
+                    QIRTestCase{"MultipleControlledRCCX",
+                                MQT_NAMED_BUILDER(multipleControlledRccx<>),
+                                MQT_NAMED_BUILDER(multipleControlledRccx<>)}));
+/// @}
+
 /// \name QIR/Operations/StandardGates/ROp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

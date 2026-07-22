@@ -739,6 +739,32 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMINUSYY, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL)         \
+  QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
+      Value target0, Value target1, Value target2) {                           \
+    createCallOp({}, {}, {target0, target1, target2},                          \
+                 getFnName##OP_NAME_BIG(0));                                   \
+    return *this;                                                              \
+  }                                                                            \
+  QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
+      Value control, Value target0, Value target1, Value target2) {            \
+    createCallOp({}, {control}, {target0, target1, target2},                   \
+                 getFnName##OP_NAME_BIG(1));                                   \
+    return *this;                                                              \
+  }                                                                            \
+  QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
+      ValueRange controls, Value target0, Value target1, Value target2) {      \
+    createCallOp({}, controls, {target0, target1, target2},                    \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
+    return *this;                                                              \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCX, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
+
 //===----------------------------------------------------------------------===//
 // SCF Operations
 //===----------------------------------------------------------------------===//

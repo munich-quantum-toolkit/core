@@ -296,6 +296,14 @@ class OpType(enum.Enum):
         :meth:`mqt.core.ir.QuantumComputation.xx_plus_yy`
     """
 
+    rccx = 132
+    """
+    A relative-phase CCX gate.
+
+    See Also:
+        :meth:`mqt.core.ir.QuantumComputation.rccx`
+    """
+
     compound = 116
     """
     A compound operation.

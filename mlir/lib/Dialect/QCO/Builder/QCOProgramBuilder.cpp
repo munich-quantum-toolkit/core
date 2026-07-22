@@ -39,6 +39,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 
@@ -799,6 +800,52 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
 DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
+
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                  \
+  std::tuple<Value, Value, Value> QCOProgramBuilder::OP_NAME(                  \
+      Value qubit0, Value qubit1, Value qubit2) {                              \
+    checkFinalized();                                                          \
+    auto op = OP_CLASS::create(*this, qubit0, qubit1, qubit2);                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
+    auto qubit2Out = op.getQubit2Out();                                        \
+    updateQubitTracking(qubit0, qubit0Out);                                    \
+    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit2, qubit2Out);                                    \
+    return {qubit0Out, qubit1Out, qubit2Out};                                  \
+  }                                                                            \
+  std::pair<Value, std::tuple<Value, Value, Value>>                            \
+      QCOProgramBuilder::c##OP_NAME(Value control, Value qubit0, Value qubit1, \
+                                    Value qubit2) {                            \
+    checkFinalized();                                                          \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, {qubit0, qubit1, qubit2},                                \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
+               auto [q0, q1, q2] =                                             \
+                   OP_NAME(targets[0], targets[1], targets[2]);                \
+               return {q0, q1, q2};                                            \
+             });                                                               \
+    return {controlsOut[0], {targetsOut[0], targetsOut[1], targetsOut[2]}};    \
+  }                                                                            \
+  std::pair<ValueRange, std::tuple<Value, Value, Value>>                       \
+      QCOProgramBuilder::mc##OP_NAME(ValueRange controls, Value qubit0,        \
+                                     Value qubit1, Value qubit2) {             \
+    checkFinalized();                                                          \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(controls, {qubit0, qubit1, qubit2},                               \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
+               auto [q0, q1, q2] =                                             \
+                   OP_NAME(targets[0], targets[1], targets[2]);                \
+               return {q0, q1, q2};                                            \
+             });                                                               \
+    return {controlsOut, {targetsOut[0], targetsOut[1], targetsOut[2]}};       \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
 
 // BarrierOp
 

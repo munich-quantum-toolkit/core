@@ -170,6 +170,7 @@ def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
+def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
@@ -868,6 +869,32 @@ def XXMinusYYOp : QCOp<"xx_minus_yy",
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$beta)>];
+}
+
+def RCCXOp
+    : QCOp<"rccx", traits = [UnitaryOpInterface, ThreeTargetZeroParameter]> {
+  let summary = "Apply a relative-phase CCX gate to three qubits";
+  let description = [{
+        Applies a relative-phase CCX (`RCCX`) gate to three qubits, modifying
+        them in place.
+
+        Example:
+        ```mlir
+        qc.rccx %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<QubitType, "the first target qubit",
+                           [MemRead, MemWrite]>:$qubit0_in,
+      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+      Arg<QubitType, "the third target qubit", [MemRead, MemWrite]>:$qubit2_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in `,` $qubit2_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in) `,` "
+                       "type($qubit2_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rccx"; }
+    }];
 }
 
 def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
