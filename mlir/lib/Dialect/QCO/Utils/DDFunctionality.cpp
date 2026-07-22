@@ -375,7 +375,6 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
   }
   QubitMap qubits = std::move(*qubitsOr);
 
-  dd.incRef(in);
   dd::VectorDD state = in;
   if (failed(walk(func, qubits, dd, state))) {
     dd.decRef(state);

@@ -339,6 +339,27 @@ TEST_F(QCODDFunctionalityTest, FuncArgs) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.x(b.staticQubit(0));
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto& roots = dd->getRootSet<dd::vNode>();
+  for (size_t i = 0; i < 3; ++i) {
+    const auto output =
+        simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd);
+    ASSERT_TRUE(succeeded(output));
+    EXPECT_EQ(roots.size(), 1U);
+    EXPECT_EQ(roots.at(*output), 1U);
+    dd->decRef(*output);
+    EXPECT_TRUE(roots.empty());
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, Rejects) {
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
