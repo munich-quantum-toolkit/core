@@ -127,7 +127,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp = IfOp::create(
       builder, measureOp.getResult(), measureOp.getQubitOut(),
-      [&](Value qubit) -> Value { return XOp::create(builder, qubit); });
+      [&](Value qubit) -> Value { return {XOp::create(builder, qubit)}; });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
   auto r2 = qtensor::InsertOp::create(builder, finalMeasureOp.getQubitOut(),
                                       extractOp.getOutTensor(), c0);
