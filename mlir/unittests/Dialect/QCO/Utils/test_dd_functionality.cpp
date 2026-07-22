@@ -197,15 +197,14 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
 }
 
 TEST_F(QCODDFunctionalityTest, DensePaths) {
-  // Compound `ctrl` (dense) with sparse gates, 2-qubit `inv` embed, full-width
-  // `inv`.
+  // Compound `ctrl` (dense) with sparse gates, 2-qubit `inv`, full-width `inv`.
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
       auto q1 = b.staticQubit(1);
       auto q2 = b.staticQubit(2);
       q1 = b.x(q1);
-      std::tie(q0, q1) = b.ctrl(q0, q1, [&](Value t) { return b.h(b.t(t)); });
+      std::tie(q2, q0) = b.ctrl(q2, q0, [&](Value t) { return b.h(b.t(t)); });
       b.sink(q0);
       b.sink(q1);
       b.sink(q2);
@@ -214,8 +213,8 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     ASSERT_TRUE(mod);
     qc::QuantumComputation qc(3);
     qc.x(1);
-    qc.ct(0, 1);
-    qc.ch(0, 1);
+    qc.ct(2, 0);
+    qc.ch(2, 0);
     expectEqualToQc(mainFunc(*mod), qc);
   }
   {
@@ -254,6 +253,27 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     ASSERT_TRUE(succeeded(u));
     dd->decRef(*u);
   }
+}
+
+TEST_F(QCODDFunctionalityTest, TwoQubitDensePathBeyondFallbackLimit) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    SmallVector<Value, 13> qs;
+    for (int i = 0; i < 13; ++i) {
+      qs.push_back(b.staticQubit(static_cast<std::int64_t>(i)));
+    }
+    std::tie(qs[12], qs[0]) =
+        b.ctrl(qs[12], qs[0], [&](Value t) { return b.h(b.t(t)); });
+    for (Value q : qs) {
+      b.sink(q);
+    }
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(13);
+  const auto functionality = buildFunctionality(mainFunc(*mod), *dd);
+  ASSERT_TRUE(succeeded(functionality));
+  dd->decRef(*functionality);
 }
 
 TEST_F(QCODDFunctionalityTest, Gphase) {
@@ -349,19 +369,6 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     EXPECT_TRUE(
         failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
-
-  expectBuiltFails(13, [](QCOProgramBuilder& b) {
-    SmallVector<Value, 13> qs;
-    for (int i = 0; i < 13; ++i) {
-      qs.push_back(b.staticQubit(static_cast<std::int64_t>(i)));
-    }
-    std::tie(qs[0], qs[1]) =
-        b.ctrl(qs[0], qs[1], [&](Value t) { return b.h(b.t(t)); });
-    for (Value q : qs) {
-      b.sink(q);
-    }
-    return b.intConstant(0);
-  });
 
   expectBuiltFails(4, [](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);

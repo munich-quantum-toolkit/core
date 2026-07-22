@@ -35,7 +35,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -203,31 +202,37 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return qubits.remapUnitary(unitary);
   }
 
-  // Embed in QCO/MSB order (ctrl: first control = top-left), then map to
-  // DD/LSB. Cap at 12 qubits (~256 MiB dense `CMat`).
+  if (wires.size() == 2) {
+    dd::TwoQubitGateMatrix mat{};
+    for (size_t row = 0; row < mat.size(); ++row) {
+      for (size_t col = 0; col < mat[row].size(); ++col) {
+        mat[row][col] = local(static_cast<int64_t>(row),
+                              static_cast<int64_t>(col));
+      }
+    }
+    state = dd.applyOperation(
+        dd.makeTwoQubitGateDD(mat, wires[0], wires[1]), state);
+    return qubits.remapUnitary(unitary);
+  }
+
+  // Map full-width matrices from QCO/MSB order to DD/LSB. Cap at 12 qubits
+  // (~256 MiB dense `CMat`).
   if (qubits.numQubits > 12) {
     return unitary.emitError()
            << "QCO DD matrix fallback supports at most 12 qubits";
   }
 
-  DynamicMatrix embedded;
-  if (wires.size() == 2) {
-    Matrix4x4 gate;
-    assert(gate.assignFrom(local) && "2-qubit unitary matrix must be 4x4");
-    embedded = gate.embedInNqubit(qubits.numQubits, wires[0], wires[1]);
-  } else if (wires.size() == qubits.numQubits &&
-             llvm::all_of(llvm::enumerate(wires), [](const auto& it) {
-               return it.value() == it.index();
-             })) {
-    embedded = std::move(local);
-  } else {
+  if (wires.size() != qubits.numQubits ||
+      !llvm::all_of(llvm::enumerate(wires), [](const auto& it) {
+        return it.value() == it.index();
+      })) {
     return op->emitError()
-           << "QCO DD matrix fallback supports 2-qubit ops or full-width "
-              "unitaries on qubits 0..n-1";
+           << "QCO DD matrix fallback supports full-width unitaries on qubits "
+              "0..n-1";
   }
 
   state = dd.applyOperation(
-      dd.makeDDFromMatrix(toCMatInDdBasis(embedded, qubits.numQubits)), state);
+      dd.makeDDFromMatrix(toCMatInDdBasis(local, qubits.numQubits)), state);
   return qubits.remapUnitary(unitary);
 }
 

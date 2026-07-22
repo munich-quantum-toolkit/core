@@ -33,12 +33,12 @@ namespace mlir::qco {
  *   compound `ctrl`, ...), including `gphase` and `barrier`
  * - Skips: `static`, `sink`, `func.return`, `arith.constant`
  *
- * The dense matrix fallback embeds 2-qubit unitaries with the QCO matrix
- * library (`getUnitaryMatrix` operand order: operand 0 = high bit, so `ctrl`
- * puts the first control in the top-left) and accepts full-width unitaries on
- * wires `0..n-1`, then rewrites the basis into the DD package's LSB-first
- * indexing. Limited to 12 qubits (dense `2^n × 2^n` storage). Measurements,
- * resets, symbolic parameters, and control-flow ops are not supported.
+ * Known one- and two-qubit matrices are constructed directly as DD gates. The
+ * dense matrix fallback accepts full-width unitaries on wires `0..n-1` and
+ * rewrites the QCO/MSB-first basis into the DD package's LSB-first indexing.
+ * Only this full-width fallback is limited to 12 qubits (dense `2^n × 2^n`
+ * storage). Measurements, resets, symbolic parameters, and control-flow ops
+ * are not supported.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
