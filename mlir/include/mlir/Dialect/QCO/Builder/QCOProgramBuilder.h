@@ -1368,6 +1368,48 @@ public:
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   /**
+   * @brief Construct an if operation for qubits with a single target qubit or
+   * tensor.
+   *
+   * @details
+   * Constructs an if operation that takes a bool Value and a single qubit
+   * or qtensor value that is used in the then/else region of this operation.
+   * The value is passed down as block arguments to each region. Qubits that
+   * were extracted from a tensor that is used as an argument for this operation
+   * are automatically inserted before the operation is constructed.
+   *
+   * @param condition Bool condition
+   * @param initArg Initial argument for the if branches
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Value as a result
+   *
+   * @par Example:
+   * ```c++
+   * result = builder.qcoIf(condition, initArgs, [&](Value arg)
+   * -> Value {
+   *   auto q1 = builder.x(arg);
+   *   return q1;
+   * }, [&](Value arg) -> Value {
+   *   auto q2 = builder.z(arg);
+   *   return q2;
+   * });
+   * ```
+   * ```mlir
+   * %q3 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * } else args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
+   * ```
+   */
+  Value qcoIf(const std::variant<bool, Value>& condition, Value initArgs,
+              function_ref<Value(Value)> thenBody,
+              function_ref<Value(Value)> elseBody = nullptr);
+
+  /**
    * @brief Construct an scf.for operation
    *
    * @details

@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -62,7 +63,7 @@ static bool isPhaseGate(Operation* op) {
  * @param rewriter The pattern rewriter used to perform the transformation
  */
 static void trySwapControlsOfDiagonalGate(CtrlOp op,
-                                          mlir::PatternRewriter& rewriter) {
+                                          PatternRewriter& rewriter) {
   assert(op.getNumTargets() == 1 &&
          "Only single-qubit gates can be swapped around controls");
   auto target = op.getTargetsIn()[0];
@@ -80,8 +81,8 @@ static void trySwapControlsOfDiagonalGate(CtrlOp op,
       continue;
     }
 
-    Value controlOut = op.getOutputForInput(control);
-    Value targetOut = op.getOutputForInput(target);
+    Value controlOut = op.getControlsOut()[controlIndex];
+    Value targetOut = op.getTargetsOut()[0];
 
     rewriter.modifyOpInPlace(op, [&]() {
       op.getTargetsInMutable()[0].set(control);
@@ -104,26 +105,25 @@ namespace {
  * with `if` constructs.
  */
 struct ReplaceBasisStateControlsWithIfPattern final
-    : mlir::OpRewritePattern<MeasureOp> {
+    : OpRewritePattern<MeasureOp> {
 
-  explicit ReplaceBasisStateControlsWithIfPattern(mlir::MLIRContext* context)
+  explicit ReplaceBasisStateControlsWithIfPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
 
-  mlir::LogicalResult
-  matchAndRewrite(MeasureOp measure,
-                  mlir::PatternRewriter& rewriter) const override {
+  LogicalResult matchAndRewrite(MeasureOp measure,
+                                PatternRewriter& rewriter) const override {
     auto op = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
     if (!op) {
-      return mlir::failure();
+      return failure();
     }
     rewriter.setInsertionPointAfter(op);
 
-    if (op.getNumBodyUnitaries() == 1 && isPhaseGate(op.getBodyUnitary(0))) {
+    if (utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
       trySwapControlsOfDiagonalGate(op, rewriter);
     }
 
-    SmallVector<std::pair<mlir::Value, mlir::Value>> toReplace;
-    SmallVector<mlir::Value> toKeep;
+    SmallVector<std::pair<Value, Value>> toReplace;
+    SmallVector<Value> toKeep;
 
     for (const auto& operand : op.getControlsIn()) {
       auto outcome = getPredecessorMeasurementOutcome(operand);
@@ -135,7 +135,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
     }
 
     if (toReplace.empty()) {
-      return mlir::failure();
+      return failure();
     }
 
     auto condition = std::accumulate(
@@ -172,7 +172,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
     }
     rewriter.eraseOp(op);
 
-    return mlir::success();
+    return success();
   }
 };
 
