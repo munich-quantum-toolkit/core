@@ -9,6 +9,7 @@
  */
 
 #include "dd/FunctionalityConstruction.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
