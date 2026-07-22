@@ -692,10 +692,7 @@ void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
-  return all_of(getBody()->getOps<UnitaryOpInterface>(),
-                [](UnitaryOpInterface op) {
-                  return op.hasCompileTimeKnownUnitaryMatrix();
-                });
+  return getUnitaryMatrix().has_value();
 }
 
 /**
