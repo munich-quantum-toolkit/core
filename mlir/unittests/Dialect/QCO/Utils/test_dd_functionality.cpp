@@ -196,6 +196,33 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, Rccx) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.staticQubit(0);
+    auto q1 = b.staticQubit(1);
+    auto q2 = b.staticQubit(2);
+    auto q3 = b.staticQubit(3);
+    std::tie(q2, q0, q3) = b.rccx(q2, q0, q3);
+    auto [control, targets] = b.crccx(q1, q2, q0, q3);
+    const auto& [q2Out, q0Out, q3Out] = targets;
+    q1 = control;
+    q2 = q2Out;
+    q0 = q0Out;
+    q3 = q3Out;
+    b.sink(q0);
+    b.sink(q1);
+    b.sink(q2);
+    b.sink(q3);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(4);
+  qc.rccx(2, 0, 3);
+  qc.crccx(1, 2, 0, 3);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
 TEST_F(QCODDFunctionalityTest, DensePaths) {
   // Compound `ctrl` (dense) with sparse gates, 2-qubit `inv`, full-width `inv`.
   {

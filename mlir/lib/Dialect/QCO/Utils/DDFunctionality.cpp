@@ -124,6 +124,7 @@ decodeStandardGate(UnitaryOpInterface unitary) {
           .Case<iSWAPOp>([](auto) { return qc::OpType::iSWAP; })
           .Case<DCXOp>([](auto) { return qc::OpType::DCX; })
           .Case<ECROp>([](auto) { return qc::OpType::ECR; })
+          .Case<RCCXOp>([](auto) { return qc::OpType::RCCX; })
           .Case<RXXOp>([](auto) { return qc::OpType::RXX; })
           .Case<RYYOp>([](auto) { return qc::OpType::RYY; })
           .Case<RZZOp>([](auto) { return qc::OpType::RZZ; })
