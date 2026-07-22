@@ -398,7 +398,7 @@ public:
    * register at the given index, in addition to returning it.
    *
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the classical register
    * @return Pair of (output_qubit, measurement_result)
    *
@@ -411,7 +411,7 @@ public:
    * memref.store %r0, %c[%c0] : memref<3xi1>
    * ```
    */
-  std::pair<Value, Value> measure(Value qubit, Value classicalRegister,
+  std::pair<Value, Value> measure(Value qubit, Value reg,
                                   const std::variant<int64_t, Value>& index);
 
   /**
@@ -1455,7 +1455,7 @@ public:
    * @details Loads the classical bit from the given classical register at the
    * given index and uses it as the condition of the if operation.
    *
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the register to load the condition from
    * @param initArgs Initial arguments threaded through the if operation
    * @param thenBody Function that builds the then body of the if operation
@@ -1463,7 +1463,7 @@ public:
    * @return ValueRange of the results
    */
   ValueRange
-  qcoIf(Value classicalRegister, const std::variant<int64_t, Value>& index,
+  qcoIf(Value reg, const std::variant<int64_t, Value>& index,
         ValueRange initArgs,
         function_ref<SmallVector<Value>(ValueRange)> thenBody,
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
@@ -1575,12 +1575,12 @@ public:
    * @details Loads the classical bit from the given classical register at the
    * given index and uses it as the condition of the condition operation.
    *
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the register to load the condition from
    * @param yieldedValues ValueRange of the yielded values
    * @return Reference to this builder for method chaining
    */
-  QCOProgramBuilder& scfCondition(Value classicalRegister,
+  QCOProgramBuilder& scfCondition(Value reg,
                                   const std::variant<int64_t, Value>& index,
                                   ValueRange yieldedValues);
 

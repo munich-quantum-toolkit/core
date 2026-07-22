@@ -19,10 +19,12 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <variant>
 
 namespace mlir {
 class OpBuilder;
@@ -274,14 +276,14 @@ Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
 struct ClassicalRegister {
   /// Label of the register (e.g., "c0").
   std::string label;
+  /// Whether the register should be recorded in the output.
+  bool record = true;
   /// Number of bits in the register.
-  int64_t size = 0;
-  /// Pre-allocated result pointer for each bit.
+  std::variant<int64_t, Value> size = int64_t{0};
+  /// Base Profile: Pre-allocated result pointer for each bit.
   SmallVector<Value> results;
   /// Adaptive Profile: The backing result array.
   Value array;
-  /// Whether the register should be recorded in the output.
-  bool record = true;
 };
 
 /// A static result (i.e., a result that is not part of a classical register).
@@ -305,5 +307,18 @@ struct StaticResult {
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
                          ArrayRef<ClassicalRegister> classicalRegisters,
                          const DenseMap<int64_t, StaticResult>& staticResults);
+
+/**
+ * @brief Helper to resolve a variant of either `int64_t` type or `Value` type
+ * to a `Value`
+ *
+ * @details
+ * Helper function to resolve a given variant to a `Value`. Creates an
+ * `LLVM::ConstantOp` from the `int64_t` value. If the variant holds a `Value`,
+ * return it directly.
+ */
+[[nodiscard]] Value
+resolveIntVariant(OpBuilder& builder, Location loc,
+                  const std::variant<int64_t, Value>& variant);
 
 } // namespace mlir::qir

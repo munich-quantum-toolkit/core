@@ -162,9 +162,9 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  *
  * @details
  * Walks all `func::ReturnOp` operations in the module to identify operands
- * that are directly defined by a `qc::MeasureOp`. For each such operand:
- * - The defining `MeasureOp` is added to `state.returnedStaticResults` so that
- *   it will be included in the QIR output recording.
+ * that correspond to measurement results. For each such operand:
+ * - The defining operations are added to the `state` so that they are included
+ * in the output recording.
  * - The operand is removed from the return statement.
  *
  * Non-measurement return values are preserved. After stripping, the enclosing
@@ -182,13 +182,10 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state);
 
 /**
- * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to.
- *
- * @details
- * A measurement into a classical register writes to the corresponding
- * pre-allocated result pointer. Static measurements get a fresh result pointer.
+ * @brief Returns a result pointer for a measurement that does not write into a
+ * returned classical bit register
  */
-Value resolveMeasurementResult(LoweringState& state, Operation* op,
-                               ConversionPatternRewriter& rewriter);
+Value getResultPtr(LoweringState& state, Operation* op,
+                   ConversionPatternRewriter& rewriter);
 
 } // namespace mlir

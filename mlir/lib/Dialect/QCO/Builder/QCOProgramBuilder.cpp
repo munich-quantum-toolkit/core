@@ -410,7 +410,7 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
 }
 
 std::pair<Value, Value>
-QCOProgramBuilder::measure(Value qubit, Value classicalRegister,
+QCOProgramBuilder::measure(Value qubit, Value reg,
                            const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
@@ -422,7 +422,7 @@ QCOProgramBuilder::measure(Value qubit, Value classicalRegister,
   updateQubitTracking(qubit, qubitOut);
 
   auto indexValue = variantToValue(*this, getLoc(), index);
-  memref::StoreOp::create(*this, result, classicalRegister, indexValue);
+  memref::StoreOp::create(*this, result, reg, indexValue);
 
   return {qubitOut, result};
 }
@@ -1147,13 +1147,12 @@ ValueRange QCOProgramBuilder::qcoIf(
 }
 
 ValueRange QCOProgramBuilder::qcoIf(
-    Value classicalRegister, const std::variant<int64_t, Value>& index,
-    ValueRange initArgs, function_ref<SmallVector<Value>(ValueRange)> thenBody,
+    Value reg, const std::variant<int64_t, Value>& index, ValueRange initArgs,
+    function_ref<SmallVector<Value>(ValueRange)> thenBody,
     function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
   auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition =
-      memref::LoadOp::create(*this, classicalRegister, indexValue).getResult();
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return qcoIf(condition, initArgs, thenBody, elseBody);
 }
 
@@ -1177,13 +1176,12 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
 }
 
 QCOProgramBuilder&
-QCOProgramBuilder::scfCondition(Value classicalRegister,
+QCOProgramBuilder::scfCondition(Value reg,
                                 const std::variant<int64_t, Value>& index,
                                 ValueRange yieldedValues) {
   checkFinalized();
   auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition =
-      memref::LoadOp::create(*this, classicalRegister, indexValue).getResult();
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfCondition(condition, yieldedValues);
 }
 

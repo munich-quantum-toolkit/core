@@ -275,7 +275,7 @@ public:
    * classical register at the given index, in addition to returning it.
    *
    * @param qubit The qubit to measure
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the classical register
    * @return Classical measurement result (`i1`)
    *
@@ -288,7 +288,7 @@ public:
    * memref.store %r0, %c[%c0] : memref<3xi1>
    * ```
    */
-  Value measure(Value qubit, Value classicalRegister,
+  Value measure(Value qubit, Value reg,
                 const std::variant<int64_t, Value>& index);
 
   /**
@@ -1183,14 +1183,13 @@ public:
    * @details Loads the classical bit from the given classical register at the
    * given index and uses it as the condition of the if operation.
    *
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the register to load the condition from
    * @param thenBody Function that builds the then body of the if operation
    * @param elseBody Function that builds the else body of the if operation
    * @return Reference to this builder for method chaining
    */
-  QCProgramBuilder& scfIf(Value classicalRegister,
-                          const std::variant<int64_t, Value>& index,
+  QCProgramBuilder& scfIf(Value reg, const std::variant<int64_t, Value>& index,
                           const function_ref<void()>& thenBody,
                           const function_ref<void()>& elseBody = nullptr);
 
@@ -1216,11 +1215,11 @@ public:
    * @details Loads the classical bit from the given classical register at the
    * given index and uses it as the condition of the condition operation.
    *
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the register to load the condition from
    * @return Reference to this builder for method chaining
    */
-  QCProgramBuilder& scfCondition(Value classicalRegister,
+  QCProgramBuilder& scfCondition(Value reg,
                                  const std::variant<int64_t, Value>& index);
 
   //===--------------------------------------------------------------------===//

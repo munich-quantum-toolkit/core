@@ -226,7 +226,7 @@ Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b) {
   const auto c = b.allocClassicalBitRegister(2);
   // The bit index is the loop induction variable, i.e. only known at runtime.
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto qubit = b.load(q.value, iv);
+    auto qubit = b.loadQubit(q.value, iv);
     b.measure(qubit, c, iv);
   });
   return b.intConstant(0);
@@ -898,7 +898,7 @@ template <bool IntoRegister> Value nestedIfOpForLoop(QIRProgramBuilder& b) {
       cond, [&] { b.h(q0); },
       [&] {
         b.scfFor(0, 3, 1, [&](Value iv) {
-          auto q1 = b.load(reg.value, iv);
+          auto q1 = b.loadQubit(reg.value, iv);
           b.h(q1);
         });
       });
@@ -930,7 +930,7 @@ template <bool IntoRegister> Value simpleDoWhileReset(QIRProgramBuilder& b) {
 template <bool IntoRegister> Value simpleForLoop(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.load(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
   return measureAndRecord(b, reg.qubits, IntoRegister);
@@ -943,7 +943,7 @@ template <bool IntoRegister> Value nestedForLoopIfOp(QIRProgramBuilder& b) {
     b.h(qCond);
     auto cond = b.measure(qCond, 0, false);
     b.scfIf(cond, [&] {
-      auto q = b.load(reg.value, iv);
+      auto q = b.loadQubit(reg.value, iv);
       b.h(q);
     });
   });
@@ -953,11 +953,11 @@ template <bool IntoRegister> Value nestedForLoopIfOp(QIRProgramBuilder& b) {
 template <bool IntoRegister> Value nestedForLoopWhileOp(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.load(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.load(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q, 0, false);
@@ -974,7 +974,7 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b) {
   auto control = b.allocQubit();
   b.h(control);
   b.scfFor(0, 3, 1, [&](Value iv) {
-    auto q0 = b.load(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(control, q0);
   });
@@ -986,7 +986,7 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.h(reg[0]);
   b.scfFor(1, 4, 1, [&](Value iv) {
-    auto q0 = b.load(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(reg[0], q0);
   });

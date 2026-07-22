@@ -27,6 +27,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -39,8 +40,10 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cassert>
 #include <cstdint>
 #include <utility>
+#include <variant>
 
 namespace mlir {
 
@@ -49,6 +52,21 @@ using namespace qir;
 
 #define GEN_PASS_DEF_QCTOQIRBASE
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h.inc"
+
+/**
+ * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
+ * `nullptr` if it does not write into a returned classical register.
+ */
+static Value resolveRegisterMeasurement(LoweringState& state, Operation* op) {
+  const auto it = state.returnedCregs.find(op);
+  if (it == state.returnedCregs.end()) {
+    return nullptr;
+  }
+  const auto [allocOp, index] = it->second;
+  const auto indexValue = getConstantIntValue(index);
+  assert(indexValue && "index must be constant");
+  return state.cregs[allocOp].results[*indexValue];
+}
 
 namespace {
 
@@ -77,7 +95,8 @@ struct ConvertMemRefAllocOp final
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
     const auto base = static_cast<int64_t>(state.staticResults.size());
-    for (int64_t i = 0; i < reg.size; ++i) {
+    const auto size = std::get<int64_t>(reg.size);
+    for (int64_t i = 0; i < size; ++i) {
       const auto index = base + i;
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
       reg.results[i] = result;
@@ -255,7 +274,10 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
     OpBuilder::InsertionGuard guard(rewriter);
 
-    auto result = resolveMeasurementResult(state, op.getOperation(), rewriter);
+    auto result = resolveRegisterMeasurement(state, op.getOperation());
+    if (!result) {
+      result = getResultPtr(state, op.getOperation(), rewriter);
+    }
 
     // Emit the measurement in the measurements block
     rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());

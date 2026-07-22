@@ -114,16 +114,6 @@ void QIRProgramBuilder::retype(Type returnType) {
   mainFn.setType(funcType);
 }
 
-Value QIRProgramBuilder::resolveIntVariant(
-    const std::variant<int64_t, Value>& variant) {
-  if (std::holds_alternative<int64_t>(variant)) {
-    return LLVM::ConstantOp::create(*this, getI64Type(),
-                                    getIndexAttr(std::get<int64_t>(variant)))
-        .getResult();
-  }
-  return std::get<Value>(variant);
-}
-
 Value QIRProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return LLVM::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
@@ -238,11 +228,10 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 
   Value array;
   SmallVector<Value> qubits;
-
   qubits.reserve(size);
 
   if (profile == Profile::Adaptive) {
-    // Create a dynamic qubit array and load the qubits in the Adaptive Profile
+    // Adaptive Profile: Create a dynamic qubit array
     ensureAllocationMode(AllocationMode::Dynamic);
 
     auto allocFnSignature =
@@ -253,10 +242,9 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 
     array = LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size))
                 .getResult();
-    auto zero = LLVM::ZeroOp::create(*this, ptrType);
-    LLVM::CallOp::create(
-        *this, allocFnDecl,
-        ValueRange{intConstant(size), array, zero.getResult()});
+    auto zero = LLVM::ZeroOp::create(*this, ptrType).getResult();
+    LLVM::CallOp::create(*this, allocFnDecl,
+                         ValueRange{intConstant(size), array, zero});
 
     qubitArrays.insert(array);
 
@@ -270,7 +258,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
       qubits.push_back(qubit);
     }
   } else {
-    // Create static qubits in the Base Profile
+    // Base Profile: Create static qubits
     for (int64_t i = 0; i < size; ++i) {
       auto qubit = staticQubit(static_cast<int64_t>(numQubits));
       qubits.push_back(qubit);
@@ -280,7 +268,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = array, .qubits = std::move(qubits)};
 }
 
-Value QIRProgramBuilder::load(Value reg, Value index) {
+Value QIRProgramBuilder::loadQubit(Value reg, Value index) {
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("Arrays cannot be used in the Base Profile");
   }
@@ -319,8 +307,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  switch (profile) {
-  case Profile::Adaptive: {
+  if (profile == Profile::Adaptive) {
+    // Adaptive Profile: Create a dynamic result array
     auto fnSig =
         LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(*this, module,
@@ -335,25 +323,12 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 
     resultArrays.insert(array);
     reg.array = array;
-
-    // Load a result pointer for each bit
-    for (int64_t i = 0; i < size; ++i) {
-      auto elementptr = LLVM::GEPOp::create(*this, ptrType, ptrType, array,
-                                            ValueRange{intConstant(i)})
-                            .getResult();
-      auto result =
-          LLVM::LoadOp::create(*this, ptrType, elementptr).getResult();
-      reg.results[i] = result;
-    }
-    break;
-  }
-  case Profile::Base: {
+  } else {
+    // Base Profile: Create static result pointers
     for (int64_t i = 0; i < size; ++i) {
       // The results are recorded as part of the register
       reg.results[i] = staticResult(static_cast<int64_t>(numResults), false);
     }
-    break;
-  }
   }
 
   return {.label = label, .size = size, .array = reg.array};
@@ -377,7 +352,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
   // Get or create result pointer
   auto result = staticResult(index, record);
 
-  // Only set the insertionpoint if the Base Profile is used
+  // Only set the insertion point if the Base Profile is used
   if (profile == Profile::Base) {
     setInsertionPoint(measurementsBlock->getTerminator());
   } else {
@@ -393,33 +368,31 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
   return result;
 }
 
-Value QIRProgramBuilder::measure(Value qubit,
-                                 const ClassicalRegister& classicalRegister,
+Value QIRProgramBuilder::measure(Value qubit, const ClassicalRegister& reg,
                                  const std::variant<int64_t, Value>& index) {
   checkFinalized();
   InsertionGuard guard(*this);
 
-  const auto it = cregs.find(classicalRegister.label);
+  const auto it = cregs.find(reg.label);
   if (it == cregs.end()) {
     llvm::reportFatalUsageError("Register does not belong to this builder");
   }
   auto& live = it->second;
 
   Value result;
-  if (const auto* indexValue = std::get_if<int64_t>(&index)) {
-    result = live.results[*indexValue];
+  if (profile == Profile::Adaptive) {
+    auto indexValue = resolveIntVariant(*this, getLoc(), index);
+    auto elementptr =
+        LLVM::GEPOp::create(*this, ptrType, ptrType, live.array, indexValue)
+            .getResult();
+    result = LLVM::LoadOp::create(*this, ptrType, elementptr).getResult();
   } else {
-    if (profile == Profile::Base) {
+    const auto* indexValue = std::get_if<int64_t>(&index);
+    if (indexValue == nullptr) {
       llvm::reportFatalUsageError(
           "Dynamic indices cannot be used in the Base Profile");
     }
-    auto elementptr = LLVM::GEPOp::create(*this, ptrType, ptrType, live.array,
-                                          std::get<Value>(index))
-                          .getResult();
-    result = LLVM::LoadOp::create(*this, ptrType, elementptr).getResult();
-  }
-
-  if (profile == Profile::Base) {
+    result = live.results[*indexValue];
     setInsertionPoint(measurementsBlock->getTerminator());
   }
 
@@ -784,9 +757,9 @@ QIRProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
   }
 
   auto loc = getLoc();
-  auto lb = resolveIntVariant(lowerbound);
-  auto ub = resolveIntVariant(upperbound);
-  auto stepSize = resolveIntVariant(step);
+  auto lb = resolveIntVariant(*this, loc, lowerbound);
+  auto ub = resolveIntVariant(*this, loc, upperbound);
+  auto stepSize = resolveIntVariant(*this, loc, step);
   auto i64Type = getI64Type();
   auto* currentBlock = getInsertionBlock();
 

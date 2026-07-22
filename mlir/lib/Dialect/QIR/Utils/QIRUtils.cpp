@@ -26,6 +26,7 @@
 
 #include <cstdint>
 #include <string>
+#include <variant>
 
 namespace mlir::qir {
 
@@ -166,9 +167,8 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     if (!reg.record) {
       continue;
     }
-    auto size = LLVM::ConstantOp::create(builder, loc, i64Type,
-                                         builder.getI64IntegerAttr(reg.size))
-                    .getResult();
+
+    auto size = resolveIntVariant(builder, loc, reg.size);
     auto label = createResultLabel(builder, anchor, reg.label).getResult();
 
     // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
@@ -208,6 +208,18 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     LLVM::CallOp::create(builder, loc, resultDec,
                          ValueRange{result.pointer, label});
   }
+}
+
+[[nodiscard]] Value
+resolveIntVariant(OpBuilder& builder, Location loc,
+                  const std::variant<int64_t, Value>& variant) {
+  if (const auto* value = std::get_if<Value>(&variant)) {
+    return *value;
+  }
+  return LLVM::ConstantOp::create(
+             builder, loc, builder.getI64Type(),
+             builder.getIndexAttr(std::get<int64_t>(variant)))
+      .getResult();
 }
 
 } // namespace mlir::qir

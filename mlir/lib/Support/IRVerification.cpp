@@ -282,10 +282,14 @@ static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
   return absDiff <= absTol + (relTol * scale);
 }
 
-/// Compare two attributes for equivality.
-/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
-/// and `FlatSymbolRefAttr`. For any other type, the function simply returns
-/// true.
+/**
+ * @brief Compare two attributes for equivalence.
+ *
+ * @details
+ * Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
+ * `FlatSymbolRefAttr`, and `DenseArrayAttr`. For any other type, the function
+ * simply returns true.
+ */
 static bool compareAttributes(Attribute lhs, Attribute rhs) {
   if (dyn_cast<UnitAttr>(lhs)) {
     if (!dyn_cast<UnitAttr>(rhs)) {
@@ -317,20 +321,17 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
     if (arrayAttrA.size() != arrayAttrB.size()) {
       return false;
     }
-
     for (const auto& [subAttrA, subAttrB] :
          llvm::zip_equal(arrayAttrA, arrayAttrB)) {
       if (!compareAttributes(subAttrA, subAttrB)) {
         return false;
       }
     }
-
   } else if (auto symbolRefAttrA = dyn_cast<FlatSymbolRefAttr>(lhs)) {
     auto symbolRefAttrB = dyn_cast<FlatSymbolRefAttr>(rhs);
     if (!symbolRefAttrB) {
       return false;
     }
-
     if (symbolRefAttrA.getValue() != symbolRefAttrB.getValue()) {
       return false;
     }
@@ -339,7 +340,6 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
     if (!tailCallAttrB) {
       return false;
     }
-
     if (tailCallAttrA.getTailCallKind() != tailCallAttrB.getTailCallKind()) {
       return false;
     }
@@ -348,7 +348,6 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
     if (!fastMathAttrB) {
       return false;
     }
-
     if (fastMathAttrA.getValue() != fastMathAttrB.getValue()) {
       return false;
     }
@@ -357,7 +356,6 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
     if (!cconvAttrB) {
       return false;
     }
-
     if (cconvAttrA.getCallingConv() != cconvAttrB.getCallingConv()) {
       return false;
     }
@@ -366,14 +364,20 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
     if (!modFlagAttrB) {
       return false;
     }
-
     if (modFlagAttrA.getBehavior() != modFlagAttrB.getBehavior() ||
         modFlagAttrA.getKey() != modFlagAttrB.getKey() ||
         modFlagAttrA.getValue() != modFlagAttrB.getValue()) {
       return false;
     }
+  } else if (auto denseArrayAttrA = dyn_cast<DenseArrayAttr>(lhs)) {
+    auto denseArrayAttrB = dyn_cast<DenseArrayAttr>(rhs);
+    if (!denseArrayAttrB) {
+      return false;
+    }
+    if (denseArrayAttrA != denseArrayAttrB) {
+      return false;
+    }
   }
-
   return true;
 }
 

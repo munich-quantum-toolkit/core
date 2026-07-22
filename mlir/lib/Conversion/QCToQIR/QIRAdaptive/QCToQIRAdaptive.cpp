@@ -38,7 +38,6 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
-#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -50,40 +49,33 @@ using namespace qir;
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
 
 /**
- * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to.
- *
- * @details
- * Unlike `resolveMeasurementResult`, this function loads the result pointer for
- * a dynamic index.
+ * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
+ * `nullptr` if it does not write into a returned classical register.
  */
-static Value
-resolveDynamicMeasurementResult(LoweringState& state, Operation* op,
-                                ConversionPatternRewriter& rewriter) {
+static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
+                                        ConversionPatternRewriter& rewriter) {
   const auto it = state.returnedCregs.find(op);
   if (it == state.returnedCregs.end()) {
     return nullptr;
   }
   const auto [allocOp, index] = it->second;
-  if (getConstantIntValue(index)) {
-    return nullptr;
-  }
   auto& reg = state.cregs[allocOp];
-  assert(reg.array && "dynamic index requires a result array");
+  assert(reg.array && "result array must be allocated");
   auto loc = op->getLoc();
   auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
   auto remappedIndex = rewriter.getRemappedValue(index);
-  auto gep = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType, reg.array,
-                                 ValueRange{remappedIndex});
-  return LLVM::LoadOp::create(rewriter, loc, ptrType, gep.getResult())
-      .getResult();
+  auto elementptr = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType,
+                                        reg.array, ValueRange{remappedIndex})
+                        .getResult();
+  return LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
 }
 
 /**
  * @brief Converts classical-bit-register `memref.alloc` to `llvm.alloca`
  */
-static LogicalResult
-convertClassicalBitMemRefAllocOp(memref::AllocOp op, LoweringState& state,
-                                 ConversionPatternRewriter& rewriter) {
+static LogicalResult convertClassicalBitMemRefAllocOp(
+    memref::AllocOp op, memref::AllocOp::Adaptor adaptor, LoweringState& state,
+    ConversionPatternRewriter& rewriter) {
   const auto it = state.cregs.find(op.getOperation());
   if (it == state.cregs.end()) {
     rewriter.eraseOp(op);
@@ -103,9 +95,17 @@ convertClassicalBitMemRefAllocOp(memref::AllocOp op, LoweringState& state,
       voidType, {rewriter.getI64Type(), ptrType, ptrType});
   auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                               QIR_RESULT_ARRAY_ALLOC, fnSig);
-  auto size = LLVM::ConstantOp::create(rewriter, loc,
-                                       rewriter.getI64IntegerAttr(reg.size))
-                  .getResult();
+
+  Value size;
+  if (op.getType().getShape()[0] == ShapedType::kDynamic) {
+    size = adaptor.getDynamicSizes()[0];
+    reg.size = size;
+  } else {
+    size = LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
+                                    op.getType().getShape()[0])
+               .getResult();
+  }
+
   auto array =
       LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size).getResult();
   auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
@@ -113,16 +113,6 @@ convertClassicalBitMemRefAllocOp(memref::AllocOp op, LoweringState& state,
 
   state.resultArrays.insert(array);
   reg.array = array;
-
-  for (int64_t i = 0; i < reg.size; ++i) {
-    auto index =
-        LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64IntegerAttr(i))
-            .getResult();
-    auto gep = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType, array,
-                                   ValueRange{index});
-    auto load = LLVM::LoadOp::create(rewriter, loc, ptrType, gep.getResult());
-    reg.results[i] = load.getResult();
-  }
 
   rewriter.eraseOp(op);
   return success();
@@ -188,7 +178,8 @@ struct ConvertMemRefAllocOp final
           op, "Only one-dimensional registers are supported");
     }
     if (isa<IntegerType>(op.getType().getElementType())) {
-      return convertClassicalBitMemRefAllocOp(op, getState(), rewriter);
+      return convertClassicalBitMemRefAllocOp(op, adaptor, getState(),
+                                              rewriter);
     }
     return convertQubitMemRefAllocOp(op, adaptor, getState(), rewriter);
   }
@@ -455,9 +446,9 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     auto voidType = LLVM::LLVMVoidType::get(ctx);
 
     auto result =
-        resolveDynamicMeasurementResult(state, op.getOperation(), rewriter);
+        resolveRegisterMeasurement(state, op.getOperation(), rewriter);
     if (!result) {
-      result = resolveMeasurementResult(state, op.getOperation(), rewriter);
+      result = getResultPtr(state, op.getOperation(), rewriter);
     }
 
     // Create measure call

@@ -56,8 +56,8 @@ inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
 template <typename T>
 [[nodiscard]] Value variantToValue(OpBuilder& builder, Location loc,
                                    const std::variant<T, Value>& parameter) {
-  if (std::holds_alternative<Value>(parameter)) {
-    return std::get<Value>(parameter);
+  if (const auto* value = std::get_if<Value>(&parameter)) {
+    return *value;
   }
   return constantFromScalar(builder, loc, std::get<T>(parameter));
 }

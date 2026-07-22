@@ -432,18 +432,8 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
                                                      &state);
 }
 
-Value resolveMeasurementResult(LoweringState& state, Operation* op,
-                               ConversionPatternRewriter& rewriter) {
-  if (const auto it = state.returnedCregs.find(op);
-      it != state.returnedCregs.end()) {
-    const auto [allocOp, index] = it->second;
-    auto& reg = state.cregs[allocOp];
-    // Dynamic indices are handled by `resolveDynamicMeasurementResult`
-    const auto bit = getConstantIntValue(index);
-    assert(bit && "index must be a constant");
-    return reg.results[*bit];
-  }
-
+Value getResultPtr(LoweringState& state, Operation* op,
+                   ConversionPatternRewriter& rewriter) {
   OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(state.entryBlock->getTerminator());
   const auto index = static_cast<int64_t>(state.staticResults.size());
@@ -478,12 +468,14 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
           state.returnedStaticResults.insert(measureOp.getOperation());
         } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>()) {
           const std::string label = "c" + std::to_string(state.cregs.size());
-          const auto size = allocOp.getType().getShape()[0];
           auto& reg =
               state.cregs.try_emplace(allocOp.getOperation()).first->second;
           reg.label = label;
-          reg.size = size;
-          reg.results.assign(size, Value{});
+          const auto size = allocOp.getType().getShape()[0];
+          if (size != ShapedType::kDynamic) {
+            reg.size = size;
+            reg.results.assign(size, Value{});
+          }
           for (auto* user : allocOp.getResult().getUsers()) {
             auto storeOp = dyn_cast<memref::StoreOp>(user);
             if (!storeOp) {

@@ -188,13 +188,13 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-Value QCProgramBuilder::measure(Value qubit, Value classicalRegister,
+Value QCProgramBuilder::measure(Value qubit, Value reg,
                                 const std::variant<int64_t, Value>& index) {
   checkFinalized();
   auto measureOp = MeasureOp::create(*this, qubit);
   auto result = measureOp.getResult();
   auto indexValue = variantToValue(*this, getLoc(), index);
-  memref::StoreOp::create(*this, result, classicalRegister, indexValue);
+  memref::StoreOp::create(*this, result, reg, indexValue);
   return result;
 }
 
@@ -617,14 +617,12 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfIf(Value classicalRegister,
-                        const std::variant<int64_t, Value>& index,
+QCProgramBuilder::scfIf(Value reg, const std::variant<int64_t, Value>& index,
                         const function_ref<void()>& thenBody,
                         const function_ref<void()>& elseBody) {
   checkFinalized();
   auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition =
-      memref::LoadOp::create(*this, classicalRegister, indexValue).getResult();
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfIf(condition, thenBody, elseBody);
 }
 
@@ -635,12 +633,11 @@ QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfCondition(Value classicalRegister,
+QCProgramBuilder::scfCondition(Value reg,
                                const std::variant<int64_t, Value>& index) {
   checkFinalized();
   auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition =
-      memref::LoadOp::create(*this, classicalRegister, indexValue).getResult();
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfCondition(condition);
 }
 

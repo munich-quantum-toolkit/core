@@ -255,15 +255,14 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto q0 = builder.load(register, index);
+   * auto q = builder.loadQubit(register, index);
    * ```
    * ```mlir
-   * %gep = llvm.getelementptr %alloc[%index] : (!llvm.ptr, i64) -> !llvm.ptr,
-   * !llvm.ptr
-   * %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * %elementptr = llvm.getelementptr %register[%index] : (!llvm.ptr, i64) ->
+   * !llvm.ptr, !llvm.ptr %q0 = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
    * ```
    */
-  Value load(Value reg, Value index);
+  Value loadQubit(Value reg, Value index);
 
   /**
    * @brief Allocate a classical bit register
@@ -324,7 +323,7 @@ public:
    * The result is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
-   * @param classicalRegister The memref representing the classical register
+   * @param reg The memref representing the classical register
    * @param index The index within the classical register
    * @return An LLVM pointer to the measurement result
    *
@@ -339,7 +338,7 @@ public:
    * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const ClassicalRegister& classicalRegister,
+  Value measure(Value qubit, const ClassicalRegister& reg,
                 const std::variant<int64_t, Value>& index);
 
   /**
@@ -1254,20 +1253,6 @@ private:
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
-
-  /**
-   * @brief Helper to resolve a variant of either int64_t type or Value Type to
-   * a Value
-   *
-   * @details Helper function to resolve a given variant to a Value. Creates a
-   * LLVM ConstantOp from the int value. The created LLVM Constant is of type
-   * I64 and has an IndexAttr as its value. If the variant holds a Value, return
-   * it directly.
-   *
-   * @param variant The variant to resolve
-   * @return The resolved Value
-   */
-  Value resolveIntVariant(const std::variant<int64_t, Value>& variant);
 };
 
 } // namespace qir
