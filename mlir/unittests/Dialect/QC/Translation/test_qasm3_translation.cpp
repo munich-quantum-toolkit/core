@@ -139,6 +139,36 @@ static Value ifNot(qc::QCProgramBuilder& b) {
   return out;
 }
 
+static Value powTwoX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  return b.measure(q[0]);
+}
+
+static Value powZeroX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.0, q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  return b.measure(q[0]);
+}
+
+static Value negativePowS(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](ValueRange powQubits) {
+    b.inv(powQubits, [&](ValueRange invQubits) { b.s(invQubits[0]); });
+  });
+  return b.measure(q[0]);
+}
+
+static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) {
+    b.pow(2.0, target, [&](ValueRange powQubits) {
+      b.inv(powQubits, [&](ValueRange invQubits) { b.s(invQubits[0]); });
+    });
+  });
+  return {b.measure(q[0]), b.measure(q[1])};
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -165,6 +195,28 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
+}
+
+TEST(QASM3TranslationErrors, RejectsNonIntegerPowerExponent) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr StringLiteral floatingSource = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(0.5) @ x q;
+)";
+  EXPECT_FALSE(qc::translateQASM3ToQC(floatingSource, &context));
+
+  constexpr StringLiteral booleanSource = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(true) @ x q;
+)";
+  EXPECT_FALSE(qc::translateQASM3ToQC(booleanSource, &context));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -431,6 +483,26 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::multipleControlledRccx)},
         QASM3TranslationTestCase{"Barrier", qasm::barrier,
                                  MQT_NAMED_BUILDER(qc::barrier)},
+        QASM3TranslationTestCase{
+            "PowTwoX",
+            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
+            "pow(2) @ x q; c = measure q;",
+            MQT_NAMED_BUILDER(powTwoX)},
+        QASM3TranslationTestCase{
+            "PowZeroX",
+            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
+            "pow(0) @ x q; c = measure q;",
+            MQT_NAMED_BUILDER(powZeroX)},
+        QASM3TranslationTestCase{
+            "NegativePowS",
+            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
+            "pow(-2) @ s q; c = measure q;",
+            MQT_NAMED_BUILDER(negativePowS)},
+        QASM3TranslationTestCase{
+            "ControlledInversePowS",
+            "OPENQASM 3.0; include \"stdgates.inc\"; qubit[2] q; bit[2] c; "
+            "ctrl @ pow(2) @ inv @ s q[0], q[1]; c = measure q;",
+            MQT_NAMED_BUILDER(controlledInversePowS)},
         QASM3TranslationTestCase{"BarrierTwoQubits", qasm::barrierTwoQubits,
                                  MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
         QASM3TranslationTestCase{"BarrierMultipleQubits",
