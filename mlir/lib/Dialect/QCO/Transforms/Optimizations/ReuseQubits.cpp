@@ -61,6 +61,13 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
         continue;
       }
 
+      if (auto yieldOp = mlir::dyn_cast<qco::YieldOp>(current)) {
+        // If we reach a yield operation, we continue from the corresponding
+        // `parent` (e.g. `scf.if`).
+        toVisit.push_back(yieldOp->getParentOp());
+        continue;
+      }
+
       // Add all users of the current operation to the visit list.
       for (auto result : current->getResults()) {
         for (auto* user : result.getUsers()) {

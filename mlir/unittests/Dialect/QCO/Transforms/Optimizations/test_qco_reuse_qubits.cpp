@@ -58,11 +58,11 @@ protected:
   static LogicalResult runQubitReusePass(ModuleOp module,
                                          bool liftMeasurements = false) {
     PassManager pm(module.getContext());
-    pm.addPass(createReuseQubits());
     if (liftMeasurements) {
       pm.addPass(createMeasurementLifting());
       pm.addPass(createReplaceClassicalControls());
     }
+    pm.addPass(createReuseQubits());
     pm.addPass(createCanonicalizerPass());
     return pm.run(module);
   }
@@ -391,6 +391,7 @@ TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
   auto xorOp = arith::XOrIOp::create(
       referenceBuilder, referenceBuilder.getLoc(), cr0, trueConstant);
+  cr0 = xorOp.getResult();
   r0 = referenceBuilder.reset(r0);
   r0 = referenceBuilder.h(r0);
   std::tie(r0, cr1) = referenceBuilder.measure(r0);
@@ -452,15 +453,178 @@ TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
 
   std::tie(r1, cr2) = referenceBuilder.measure(r1);
 
-  r0 = referenceBuilder.qcoIf(cr2, r0, [&](ValueRange qubits) {
-    return SmallVector{referenceBuilder.x(qubits[0])};
-  })[0];
+  r0 = referenceBuilder.qcoIf(
+      cr2, r0, [&](Value qubit) { return referenceBuilder.x(qubit); });
   r0 = referenceBuilder.h(r0);
 
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
   referenceBuilder.sink(r0);
   referenceBuilder.sink(r1);
+
+  reference = referenceBuilder.finalize({cr0, cr1, cr2});
+
+  ASSERT_TRUE(runQubitReusePass(module.get(), true).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test that qubit reuse can be applied with the help of measurement
+ * lifting.
+ */
+TEST_F(QCOQubitReuseTest, singleReuseThroughLift) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+
+  Value c0;
+  Value c1;
+
+  q0 = programBuilder.h(q0);
+  std::tie(q0, q1) = programBuilder.cx(q0, q1);
+
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, c1) = programBuilder.measure(q1);
+
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
+  module = programBuilder.finalize({c0, c1});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto r0 = referenceBuilder.allocQubit();
+
+  Value cr0;
+  Value cr1;
+
+  r0 = referenceBuilder.h(r0);
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+
+  r0 = referenceBuilder.reset(r0);
+  r0 = referenceBuilder.qcoIf(
+      cr0, r0, [&](Value qubit) { return referenceBuilder.x(qubit); });
+  std::tie(r0, cr1) = referenceBuilder.measure(r0);
+  referenceBuilder.sink(r0);
+
+  reference = referenceBuilder.finalize({cr0, cr1});
+
+  ASSERT_TRUE(runQubitReusePass(module.get(), true).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test that qubit reuse can be applied with the help of multi-step
+ * measurement lifting.
+ */
+TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+
+  Value c0;
+  Value c1;
+
+  q0 = programBuilder.h(q0);
+  std::tie(q0, q1) = programBuilder.cx(q0, q1);
+  q0 = programBuilder.x(q0);
+
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, c1) = programBuilder.measure(q1);
+
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
+  module = programBuilder.finalize({c0, c1});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto r0 = referenceBuilder.allocQubit();
+
+  Value cr0;
+  Value cr1;
+  auto trueConstant = referenceBuilder.boolConstant(true);
+
+  r0 = referenceBuilder.h(r0);
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  auto xorOp = arith::XOrIOp::create(
+      referenceBuilder, referenceBuilder.getLoc(), cr0, trueConstant);
+
+  r0 = referenceBuilder.reset(r0);
+  r0 = referenceBuilder.qcoIf(
+      cr0, r0, [&](Value qubit) { return referenceBuilder.x(qubit); });
+  std::tie(r0, cr1) = referenceBuilder.measure(r0);
+  referenceBuilder.sink(r0);
+
+  cr0 = xorOp.getResult();
+  reference = referenceBuilder.finalize({cr0, cr1});
+
+  ASSERT_TRUE(runQubitReusePass(module.get(), true).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test that qubit reuse can be applied after lifting measurements over
+ * controlled gates if the qubit for which reuse should be applied was pulled
+ * into an if/else block.
+ */
+TEST_F(QCOQubitReuseTest, multiReuseLiftOutOfIf) {
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  // As qubit reuse is built on a heuristic, the order of qubit allocations
+  // matters. For this test, we need q0 to be allocated last.
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
+  auto q0 = programBuilder.allocQubit();
+
+  Value c0;
+  Value c1;
+  Value c2;
+
+  q0 = programBuilder.h(q0);
+  std::tie(q1, q0) = programBuilder.cx(q1, q0);
+  std::tie(q0, q2) = programBuilder.cx(q0, q2);
+
+  std::tie(q0, c0) = programBuilder.measure(q0);
+  std::tie(q1, c1) = programBuilder.measure(q1);
+  std::tie(q2, c2) = programBuilder.measure(q2);
+
+  programBuilder.sink(q0);
+  programBuilder.sink(q1);
+  programBuilder.sink(q2);
+  module = programBuilder.finalize({c0, c1, c2});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto r0 = referenceBuilder.allocQubit();
+
+  Value cr0;
+  Value cr1;
+  Value cr2;
+
+  std::tie(r0, cr1) = referenceBuilder.measure(r0);
+  r0 = referenceBuilder.reset(r0);
+  r0 = referenceBuilder.h(r0);
+  r0 = referenceBuilder.qcoIf(
+      cr1, r0, [&](Value qubit) { return referenceBuilder.x(qubit); });
+  std::tie(r0, cr0) = referenceBuilder.measure(r0);
+  r0 = referenceBuilder.reset(r0);
+  r0 = referenceBuilder.qcoIf(
+      cr0, r0, [&](Value qubit) { return referenceBuilder.x(qubit); });
+  std::tie(r0, cr2) = referenceBuilder.measure(r0);
+
+  referenceBuilder.sink(r0);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
