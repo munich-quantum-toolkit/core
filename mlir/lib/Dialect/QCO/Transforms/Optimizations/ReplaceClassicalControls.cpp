@@ -113,65 +113,61 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
   LogicalResult matchAndRewrite(MeasureOp measure,
                                 PatternRewriter& rewriter) const override {
-    auto op = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
-    if (!op) {
+    auto ctrlOp = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
+    if (!ctrlOp) {
       return failure();
     }
-    rewriter.setInsertionPointAfter(op);
+    rewriter.setInsertionPointAfter(ctrlOp);
 
-    if (utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
-      trySwapControlsOfDiagonalGate(op, rewriter);
+    if (utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody())) {
+      trySwapControlsOfDiagonalGate(ctrlOp, rewriter);
     }
 
-    SmallVector<std::pair<Value, Value>> toReplace;
-    SmallVector<Value> toKeep;
+    ValueRange controlsIn = ctrlOp.getControlsIn();
+    ValueRange controlResults = ctrlOp.getControlsOut();
 
-    for (const auto& operand : op.getControlsIn()) {
-      auto outcome = getPredecessorMeasurementOutcome(operand);
-      if (outcome) {
-        toReplace.emplace_back(operand, outcome);
+    SmallVector<Value> remainingControls;
+    SmallVector<Value> oldOutputs;
+    Value condition;
+    for (auto [control, oldOutput] :
+         llvm::zip_equal(controlsIn, controlResults)) {
+      if (Value outcome = getPredecessorMeasurementOutcome(control)) {
+        rewriter.replaceAllUsesWith(oldOutput, control);
+        condition = condition ? arith::AndIOp::create(rewriter, ctrlOp.getLoc(),
+                                                      condition, outcome)
+                                    .getResult()
+                              : outcome;
       } else {
-        toKeep.push_back(operand);
+        remainingControls.push_back(control);
+        oldOutputs.push_back(oldOutput);
       }
     }
 
-    if (toReplace.empty()) {
+    if (!condition) {
       return failure();
     }
 
-    auto condition = std::accumulate(
-        std::next(toReplace.begin()), toReplace.end(),
-        toReplace.begin()->second, [&](const auto& acc, const auto& pair) {
-          auto conjunction =
-              arith::AndIOp::create(rewriter, op.getLoc(), acc, pair.second);
-          return conjunction.getResult();
-        });
-
-    auto allQubits = toKeep;
-    llvm::append_range(allQubits, op.getTargetsIn());
+    size_t numRemaining = remainingControls.size();
+    SmallVector<Value> ifOperands = remainingControls;
+    llvm::append_range(ifOperands, ctrlOp.getTargetsIn());
+    llvm::append_range(oldOutputs, ctrlOp.getTargetsOut());
 
     auto ifOp = IfOp::create(
-        rewriter, op->getLoc(), condition, allQubits,
+        rewriter, ctrlOp.getLoc(), condition, ifOperands,
         [&](ValueRange qubits) -> SmallVector<Value> {
-          auto newControls = qubits.slice(0, toKeep.size());
-          auto newTargets =
-              qubits.slice(toKeep.size(), qubits.size() - toKeep.size());
-
-          auto newCtrl =
-              CtrlOp::create(rewriter, op->getLoc(), newControls, newTargets);
-          rewriter.inlineRegionBefore(op.getRegion(), newCtrl.getRegion(),
+          auto newCtrl = CtrlOp::create(rewriter, ctrlOp.getLoc(),
+                                        qubits.take_front(numRemaining),
+                                        qubits.drop_front(numRemaining));
+          rewriter.inlineRegionBefore(ctrlOp.getRegion(), newCtrl.getRegion(),
                                       newCtrl.getRegion().begin());
           return newCtrl.getOutputQubits();
         });
 
-    for (auto replace : toReplace) {
-      rewriter.replaceAllUsesWith(op.getOutputForInput(replace.first),
-                                  replace.first);
+    for (auto [oldOutput, result] :
+         llvm::zip_equal(oldOutputs, ifOp.getResults())) {
+      rewriter.replaceAllUsesWith(oldOutput, result);
     }
-    for (auto [oldInput, result] : llvm::zip(allQubits, ifOp.getResults())) {
-      rewriter.replaceAllUsesWith(op.getOutputForInput(oldInput), result);
-    }
-    rewriter.eraseOp(op);
+    rewriter.eraseOp(ctrlOp);
 
     return success();
   }
