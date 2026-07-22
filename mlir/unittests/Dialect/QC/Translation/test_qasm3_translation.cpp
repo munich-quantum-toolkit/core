@@ -18,6 +18,7 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -28,6 +29,7 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>

@@ -17,16 +17,11 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <numbers>
 
 namespace mlir::qc {
 
-/**
- * @brief Measures the given qubits and returns the measurement outcomes.
- * @param b The `ProgramBuilder` used to perform the measurements.
- * @param qubits The qubits to be measured.
- * @return The result values.
- */
 static Value measureToRegister(QCProgramBuilder& b, ValueRange qubits) {
   auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
   for (auto [i, q] : llvm::enumerate(qubits)) {

@@ -13,7 +13,6 @@
 #include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Gate.hpp"
 #include "qasm3/InstVisitor.hpp"
@@ -405,7 +404,8 @@ public:
     case qasm3::Bit:
     case qasm3::Int:
     case qasm3::Uint: {
-      classicalRegisters[id] = {builder.allocClassicalBitRegister(size), size};
+      classicalRegisters[id] = {
+          .memref = builder.allocClassicalBitRegister(size), .size = size};
       if (sizedType->type == qasm3::Bit) {
         allBitRegisters.push_back(id);
         if (stmt->isOutput || openQASM2CompatMode) {
@@ -1041,7 +1041,8 @@ public:
 
     if (operand->indices.empty()) {
       for (int64_t i = 0; i < creg.size; ++i) {
-        bits.push_back({it->first(), creg.memref, i});
+        bits.push_back(
+            {.registerName = it->first(), .memref = creg.memref, .index = i});
       }
       return bits;
     }
@@ -1057,7 +1058,9 @@ public:
       throw qasm3::CompilerError("Classical bit index out of bounds.",
                                  debugInfo);
     }
-    bits.push_back({it->first(), creg.memref, static_cast<int64_t>(index)});
+    bits.push_back({.registerName = it->first(),
+                    .memref = creg.memref,
+                    .index = static_cast<int64_t>(index)});
     return bits;
   }
 

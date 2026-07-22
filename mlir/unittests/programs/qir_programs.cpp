@@ -11,6 +11,7 @@
 #include "qir_programs.h"
 
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <mlir/IR/Value.h>
 
@@ -233,7 +234,7 @@ Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b) {
 
 Value measurementWithoutRegisters(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
-  auto bit = b.measure(q, 0);
+  b.measure(q, 0);
   return b.intConstant(0);
 }
 
