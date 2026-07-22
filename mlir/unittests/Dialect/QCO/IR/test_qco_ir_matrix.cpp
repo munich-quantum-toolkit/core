@@ -101,6 +101,17 @@ static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
   return b.measure(powOut[0]).second;
 }
 
+static Value composedBodyWithNestedPow(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut = b.pow(2.0, {q[0]}, [&](ValueRange args) {
+    auto nested = b.pow(0.5, {args[0]}, [&](ValueRange nestedArgs) {
+      return SmallVector<Value>{b.x(nestedArgs[0])};
+    });
+    return SmallVector<Value>{b.z(nested[0])};
+  });
+  return b.measure(powOut[0]).second;
+}
+
 [[nodiscard]] static std::optional<DynamicMatrix> invMatrix(ModuleOp module) {
   return firstInvOp(module).getUnitaryMatrix();
 }
@@ -328,6 +339,39 @@ TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeGphase) {
   ASSERT_TRUE(moduleOp);
   EXPECT_FALSE(
       composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1).has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeUnitaryMatrix) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test(%theta: f64) -> !qco.qubit {
+        %q_in = qco.alloc : !qco.qubit
+        %q_out = qco.inv (%q = %q_in) {
+          %q_1 = qco.rx(%theta) %q : !qco.qubit -> !qco.qubit
+          qco.yield %q_1 : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %q_out : !qco.qubit
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(
+      composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1).has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeBodyMatrixHandlesNestedPower) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), composedBodyWithNestedPow);
+  ASSERT_TRUE(moduleOp);
+
+  auto outerPow = firstPowOp(*moduleOp);
+  const auto body = composeBodyMatrix(*outerPow.getBody(), 1);
+  ASSERT_TRUE(body);
+  const DynamicMatrix expected(ZOp::getUnitaryMatrix() *
+                               SXOp::getUnitaryMatrix());
+  EXPECT_TRUE(body->isApprox(expected, 1e-10));
 }
 /// @}
 
