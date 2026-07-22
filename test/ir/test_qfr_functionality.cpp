@@ -326,6 +326,9 @@ TEST_F(QFRFunctionality, gateShortCutsAndCloning) {
   qc.xx_plus_yy(PI, PI, 0, 1);
   qc.cxx_plus_yy(PI, PI, 2, 0, 1);
   qc.mcxx_plus_yy(PI, PI, {2, 3_nc}, 0, 1);
+  qc.rccx(0, 1, 2);
+  qc.crccx(3_nc, 0, 1, 2);
+  qc.mcrccx({3_nc, 4}, 0, 1, 2);
   qc.measure(0, 0);
   qc.measure({1, 2}, {1, 2});
   qc.barrier(0);
@@ -889,6 +892,11 @@ TEST_F(QFRFunctionality, invertStandardOpParamChange) {
   op.invert();
   const auto expectedTargets = Targets{1U, 0U};
   ASSERT_EQ(op.getTargets(), expectedTargets);
+
+  auto rccxOp = StandardOperation(Targets{0U, 1U, 2U}, OpType::RCCX);
+  rccxOp.invert();
+  ASSERT_EQ(rccxOp.getType(), OpType::RCCX);
+  ASSERT_EQ(rccxOp.getTargets(), (Targets{0U, 1U, 2U}));
 }
 
 TEST_F(QFRFunctionality, invertCompoundOperation) {

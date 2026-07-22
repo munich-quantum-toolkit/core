@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
+  ([**@simon1hofmann**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
   ([#1897], [#1952]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
@@ -583,6 +586,7 @@ changelogs._
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
+[#1886]: https://github.com/munich-quantum-toolkit/core/pull/1886
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
@@ -748,6 +752,7 @@ changelogs._
 <!-- Contributor -->
 
 [**@burgholzer**]: https://github.com/burgholzer
+[**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@ystade**]: https://github.com/ystade
 [**@DRovara**]: https://github.com/DRovara
 [**@flowerthrower**]: https://github.com/flowerthrower

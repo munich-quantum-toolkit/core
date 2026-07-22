@@ -242,7 +242,7 @@ including:
   `swap`, `iswap`, `dcx`, `ecr`
 - **Two-qubit parametric gates**: `cp`, `cu1`, `cu3`, `crx`, `cry`, `crz`,
   `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
-- **Three-qubit gates**: `ccx`, `ccz`, `cswap`
+- **Three-qubit gates**: `ccx`, `ccz`, `cswap`, `rccx`
 - **Multi-controlled gates**: `mcx`, `mcz`, `mcp`, `mcrx`, `mcry`, `mcrz`
 - **Non-unitary operations**: `reset`, `measure`
 

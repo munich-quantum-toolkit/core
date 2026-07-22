@@ -257,6 +257,74 @@ void FunctionalityConstruction::addDcx(ZXDiagram& diag, const Qubit qubit1,
   addCnot(diag, qubit2, qubit1, qubits);
 }
 
+void FunctionalityConstruction::addRccx(ZXDiagram& diag, const Qubit qubit0,
+                                        const Qubit qubit1, const Qubit qubit2,
+                                        std::vector<Vertex>& qubits) {
+  addZSpider(diag, qubit2, qubits, PiExpression(), EdgeType::Hadamard);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, qubit1, qubit2, qubits);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(-1, 4)));
+  addCnot(diag, qubit0, qubit2, qubits);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, qubit1, qubit2, qubits);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(-1, 4)));
+  addZSpider(diag, qubit2, qubits, PiExpression(), EdgeType::Hadamard);
+}
+
+void FunctionalityConstruction::addCrccx(ZXDiagram& diag, const Qubit control,
+                                         const Qubit qubit0, const Qubit qubit1,
+                                         const Qubit qubit2,
+                                         std::vector<Vertex>& qubits) {
+  const std::vector<Qubit> controls{control};
+  addRz(diag, PiExpression(PiRational(1, 2)), qubit2, qubits);
+  addRx(diag, PiExpression(PiRational(1, 2)), qubit2, qubits);
+  addCphase(diag, PiExpression(PiRational(1, 1)), control, qubit2, qubits);
+  addRx(diag, PiExpression(-PiRational(1, 2)), qubit2, qubits);
+  addRz(diag, PiExpression(-PiRational(1, 2)), qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(1, 4)), controls, qubit2, qubits);
+  addMcx(diag, {control, qubit1}, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(-1, 4)), controls, qubit2, qubits);
+  addMcx(diag, {control, qubit0}, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(1, 4)), controls, qubit2, qubits);
+  addMcx(diag, {control, qubit1}, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(-1, 4)), controls, qubit2, qubits);
+  addRz(diag, PiExpression(PiRational(1, 2)), qubit2, qubits);
+  addRx(diag, PiExpression(PiRational(1, 2)), qubit2, qubits);
+  addCphase(diag, PiExpression(PiRational(1, 1)), control, qubit2, qubits);
+  addRx(diag, PiExpression(-PiRational(1, 2)), qubit2, qubits);
+  addRz(diag, PiExpression(-PiRational(1, 2)), qubit2, qubits);
+}
+
+void FunctionalityConstruction::addMcrccx(
+    ZXDiagram& diag, const std::vector<Qubit>& controls, const Qubit qubit0,
+    const Qubit qubit1, const Qubit qubit2, std::vector<Vertex>& qubits) {
+  if (controls.size() == 1) {
+    addCrccx(diag, controls.front(), qubit0, qubit1, qubit2, qubits);
+    return;
+  }
+  addMcrz(diag, PiExpression(PiRational(1, 2)), controls, qubit2, qubits);
+  addMcrx(diag, PiExpression(PiRational(1, 2)), controls, qubit2, qubits);
+  addMcz(diag, controls, qubit2, qubits);
+  addMcrx(diag, PiExpression(-PiRational(1, 2)), controls, qubit2, qubits);
+  addMcrz(diag, PiExpression(-PiRational(1, 2)), controls, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(1, 4)), controls, qubit2, qubits);
+  auto mergedControls = controls;
+  mergedControls.emplace_back(qubit1);
+  addMcx(diag, mergedControls, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(-1, 4)), controls, qubit2, qubits);
+  mergedControls.back() = qubit0;
+  addMcx(diag, mergedControls, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(1, 4)), controls, qubit2, qubits);
+  mergedControls.back() = qubit1;
+  addMcx(diag, mergedControls, qubit2, qubits);
+  addMcphase(diag, PiExpression(PiRational(-1, 4)), controls, qubit2, qubits);
+  addMcrz(diag, PiExpression(PiRational(1, 2)), controls, qubit2, qubits);
+  addMcrx(diag, PiExpression(PiRational(1, 2)), controls, qubit2, qubits);
+  addMcz(diag, controls, qubit2, qubits);
+  addMcrx(diag, PiExpression(-PiRational(1, 2)), controls, qubit2, qubits);
+  addMcrz(diag, PiExpression(-PiRational(1, 2)), controls, qubit2, qubits);
+}
+
 void FunctionalityConstruction::addXXplusYY(
     ZXDiagram& diag, const PiExpression& theta, const PiExpression& beta,
     const Qubit qubit0, const Qubit qubit1, std::vector<Vertex>& qubits,
@@ -483,6 +551,27 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
   const auto& op = *it;
   // barrier statements are ignored
   if (op->getType() == qc::OpType::Barrier) {
+    return it + 1;
+  }
+
+  if (op->getType() == qc::OpType::RCCX) {
+    const auto qubit0 = static_cast<Qubit>(p.at(op->getTargets()[0]));
+    const auto qubit1 = static_cast<Qubit>(p.at(op->getTargets()[1]));
+    const auto qubit2 = static_cast<Qubit>(p.at(op->getTargets()[2]));
+    if (!op->isControlled()) {
+      addRccx(diag, qubit0, qubit1, qubit2, qubits);
+    } else if (op->getNcontrols() == 1) {
+      const auto control =
+          static_cast<Qubit>(p.at(op->getControls().begin()->qubit));
+      addCrccx(diag, control, qubit0, qubit1, qubit2, qubits);
+    } else {
+      std::vector<Qubit> controls;
+      controls.reserve(op->getNcontrols());
+      for (const auto& ctrl : op->getControls()) {
+        controls.emplace_back(static_cast<Qubit>(p.at(ctrl.qubit)));
+      }
+      addMcrccx(diag, controls, qubit0, qubit1, qubit2, qubits);
+    }
     return it + 1;
   }
 
@@ -982,10 +1071,13 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::ECR:
     case qc::OpType::XXplusYY:
     case qc::OpType::XXminusYY:
+    case qc::OpType::RCCX:
       return true;
     default:
       return false;
     }
+  } else if (op->getType() == qc::OpType::RCCX) {
+    return true;
   } else if (op->getNcontrols() == 1 && op->getNtargets() == 1) {
     switch (op->getType()) { // TODO: any gate can be controlled
     case qc::OpType::X:

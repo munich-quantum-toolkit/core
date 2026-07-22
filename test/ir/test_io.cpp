@@ -11,6 +11,7 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -31,9 +32,12 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
+
+using namespace qc::literals;
 
 class IO : public testing::Test {
 protected:
@@ -60,6 +64,41 @@ void compareFiles(const std::string& file1, const std::string& file2) {
   std::erase_if(str1, isspace);
   std::erase_if(str2, isspace);
   ASSERT_EQ(str1, str2);
+}
+
+void expectRccxSourceRoundTrip(const std::string& source,
+                               const bool openQASM3) {
+  const auto imported = qasm3::Importer::imports(source);
+  ASSERT_EQ(imported.getNops(), 1U);
+  ASSERT_EQ(imported.front()->getType(), qc::RCCX);
+  EXPECT_EQ(imported.front()->getNcontrols(), 0U);
+
+  std::ostringstream oss;
+  imported.dumpOpenQASM(oss, openQASM3);
+  EXPECT_EQ(oss.str(), source);
+}
+
+void expectRccxExport(const qc::QuantumComputation& circuit,
+                      const bool openQASM3, const std::string_view snippet,
+                      const std::size_t expectedNops,
+                      const std::size_t expectedNcontrols,
+                      const std::size_t opIndex = 0,
+                      const std::string_view extraSnippet = {},
+                      const bool expectNegControl = false) {
+  const auto qasm = circuit.toQASM(openQASM3);
+  EXPECT_NE(qasm.find(snippet), std::string::npos);
+  if (!extraSnippet.empty()) {
+    EXPECT_NE(qasm.find(extraSnippet), std::string::npos);
+  }
+
+  const auto roundTrip = qasm3::Importer::imports(qasm);
+  ASSERT_EQ(roundTrip.getNops(), expectedNops);
+  const auto& op = roundTrip.at(opIndex);
+  EXPECT_EQ(op->getType(), qc::RCCX);
+  EXPECT_EQ(op->getNcontrols(), expectedNcontrols);
+  if (expectNegControl) {
+    EXPECT_EQ(op->getControls().begin()->type, qc::Control::Type::Neg);
+  }
 }
 
 } // namespace
@@ -489,17 +528,58 @@ TEST_F(IO, NativeTwoQubitGateImportAndExport) {
   }
 }
 
-TEST_F(IO, UseQelib1Gate) {
-  qc = qasm3::Importer::imports("include \"qelib1.inc\";"
-                                "qreg q[3];"
-                                "rccx q[0], q[1], q[2];");
-  std::cout << qc << "\n";
-  EXPECT_EQ(qc.getNqubits(), 3U);
-  EXPECT_EQ(qc.getNops(), 1U);
+TEST_F(IO, RccxUncontrolledOpenQASMRoundTrip) {
+  expectRccxSourceRoundTrip("// i 0 1 2\n"
+                            "// o 0 1 2\n"
+                            "OPENQASM 2.0;\n"
+                            "include \"qelib1.inc\";\n"
+                            "qreg q[3];\n"
+                            "rccx q[0], q[1], q[2];\n",
+                            false);
+  expectRccxSourceRoundTrip("// i 0 1 2\n"
+                            "// o 0 1 2\n"
+                            "OPENQASM 3.0;\n"
+                            "include \"stdgates.inc\";\n"
+                            "qubit[3] q;\n"
+                            "rccx q[0], q[1], q[2];\n",
+                            true);
+}
+
+TEST_F(IO, RccxControlledOpenQASMRoundTrip) {
+  qc.addQubitRegister(4);
+  qc.crccx(0, 1, 2, 3);
+  expectRccxExport(qc, false, "crccx q[0], q[1], q[2], q[3];", 1, 1);
+  expectRccxExport(qc, true, "ctrl @ rccx q[0], q[1], q[2], q[3];", 1, 1);
+
+  qc.reset();
+  qc.addQubitRegister(4);
+  qc.crccx(0_nc, 1, 2, 3);
+  // OpenQASM 2 encodes negative controls via X conjugation around crccx.
+  expectRccxExport(qc, false, "crccx q[0], q[1], q[2], q[3];", 3, 1, 1,
+                   "x q[0];\n");
+  expectRccxExport(qc, true, "negctrl @ rccx q[0], q[1], q[2], q[3];", 1, 1, 0,
+                   {}, true);
+
+  qc.reset();
+  qc.addQubitRegister(5);
+  qc.mcrccx({0, 1}, 2, 3, 4);
+  expectRccxExport(qc, false, "ccrccx q[0], q[1], q[2], q[3], q[4];", 1, 2);
+  expectRccxExport(qc, true, "ctrl(2) @ rccx q[0], q[1], q[2], q[3], q[4];", 1,
+                   2);
+}
+
+TEST_F(IO, Rc3xFromQelib1IsCompoundNotControlledRccx) {
+  qc = qasm3::Importer::imports("OPENQASM 2.0;\n"
+                                "include \"qelib1.inc\";\n"
+                                "qreg q[4];\n"
+                                "rc3x q[0], q[1], q[2], q[3];\n");
+  ASSERT_EQ(qc.getNops(), 1U);
   EXPECT_EQ(qc.front()->getType(), qc::Compound);
-  const auto& op = dynamic_cast<const qc::CompoundOperation*>(qc.front().get());
-  ASSERT_NE(op, nullptr);
-  EXPECT_EQ(op->size(), 9U);
+  EXPECT_EQ(qc.front()->getNcontrols(), 0U);
+  const auto* compound =
+      dynamic_cast<const qc::CompoundOperation*>(qc.front().get());
+  ASSERT_NE(compound, nullptr);
+  EXPECT_GT(compound->size(), 1U);
 }
 
 TEST_F(IO, ParameterizedGateDefinition) {
