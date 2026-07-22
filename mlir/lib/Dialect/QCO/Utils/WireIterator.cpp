@@ -28,7 +28,8 @@
 namespace mlir::qco {
 
 bool WireIterator::isSinkLikeOperation(Operation* op) {
-  return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op);
+  return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::ConditionOp,
+             scf::YieldOp>(op);
 }
 
 bool WireIterator::isSourceLikeOperation(Operation* op) {
@@ -72,8 +73,16 @@ void WireIterator::forward() {
         })
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
-        .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
-          qubit_ = op.getTiedLoopResult(&*(qubit_.use_begin()));
+        .Case<scf::ForOp>([&](scf::ForOp op) {
+          qubit_ = op.getTiedLoopResult(qubit_.use_begin().getOperand());
+        })
+        .Case<scf::WhileOp>([&](scf::WhileOp op) {
+          // Because the scf::WhileOp doesn't implement "getLoopResults", we
+          // have to fallback to the following instead of using
+          // "getTiedLoopResult".
+
+          OpOperand* operand = qubit_.use_begin().getOperand();
+          qubit_ = op->getResult(operand->getOperandNumber());
         })
         .Case<IfOp>(
             [&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
@@ -117,11 +126,23 @@ void WireIterator::backward() {
           [&](UnitaryOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
-      .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
+      .Case<scf::ForOp>([&](scf::ForOp op) {
         if (auto result = dyn_cast<OpResult>(qubit_)) {
           qubit_ = op.getTiedLoopInit(result)->get();
           return;
         }
+        llvm::reportFatalInternalError("expected result lookup");
+      })
+      .Case<scf::WhileOp>([&](scf::WhileOp op) {
+        // Because the scf::WhileOp doesn't implement "getLoopResults", we
+        // have to fallback to the following instead of using
+        // "getTiedLoopInit".
+
+        if (auto result = dyn_cast<OpResult>(qubit_)) {
+          qubit_ = op.getInits()[result.getResultNumber()];
+          return;
+        }
+
         llvm::reportFatalInternalError("expected result lookup");
       })
       .Case<IfOp>([&](IfOp op) {

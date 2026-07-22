@@ -48,17 +48,19 @@ releases may include breaking changes.
   [#1676], [#1706], [#1776], [#1836]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904])
-  ([**@MatthiasReumann**], [**@burgholzer**])
+  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
+  [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add a pass for qubit reuse in quantum programs, as well as related
+  auxiliary passes and patterns ([#1705], [#1755]) ([**@DRovara**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
   [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
   [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624],
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
-  [#1717], [#1728], [#1730], [#1749], [#1751], [#1755], [#1762], [#1765],
-  [#1780], [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808],
-  [#1823], [#1824], [#1830], [#1869], [#1872], [#1914]) ([**@burgholzer**],
+  [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780],
+  [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808], [#1823],
+  [#1824], [#1830], [#1869], [#1872], [#1914]) ([**@burgholzer**],
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
   [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
@@ -638,6 +640,7 @@ changelogs._
 <!-- PR links -->
 
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
+[#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
@@ -694,6 +697,7 @@ changelogs._
 [#1710]: https://github.com/munich-quantum-toolkit/core/pull/1710
 [#1709]: https://github.com/munich-quantum-toolkit/core/pull/1709
 [#1706]: https://github.com/munich-quantum-toolkit/core/pull/1706
+[#1705]: https://github.com/munich-quantum-toolkit/core/pull/1705
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
