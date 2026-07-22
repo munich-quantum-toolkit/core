@@ -24,6 +24,8 @@
 #include <cstddef>
 #include <optional>
 
+namespace mlir::qco {
+
 /**
  * @brief Check if given quantum operation is unused (i.e., only used by
  * sinks and no memory effects).
@@ -31,18 +33,16 @@
  * @param op The operation to check.
  * @return bool True if the operation is unused, false otherwise.
  */
-static bool checkDeadGate(mlir::Operation* op) {
+inline bool checkDeadGate(Operation* op) {
   if (!isMemoryEffectFree(op)) {
     // This ignores operations and regions that have children with memory
     // effects, which should never be considered dead.
     return false;
   }
-  return llvm::all_of(op->getUsers(), [](mlir::Operation* user) {
-    return isa<mlir::qco::SinkOp, mlir::qco::ResetOp>(user);
+  return llvm::all_of(op->getUsers(), [](Operation* user) {
+    return isa<SinkOp, ResetOp>(user);
   });
 }
-
-namespace mlir::qco {
 
 /// Maximum number of modifier targets supported by @ref
 /// composeBodyMatrix.
@@ -313,8 +313,7 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
  * @brief Search for and remove gates when their outputs are no longer used
  * before the next `ResetOp` or `SinkOp`.
  *
- *
- * @tparam qubit The value that was an input to a `ResetOp` or `SinkOp` from
+ * @param qubit The value that was an input to a `ResetOp` or `SinkOp` from
  * which the search is started.
  * @param rewriter The pattern rewriter.
  * @return LogicalResult Success or failure of the elimination.
