@@ -382,24 +382,42 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
 }
 
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
-  auto mod = buildModule([](QCOProgramBuilder& b) {
+  auto valid = buildModule([](QCOProgramBuilder& b) {
     auto q = b.x(b.staticQubit(0));
     b.sink(q);
     return b.intConstant(0);
   });
-  ASSERT_TRUE(mod);
+  auto tooWide = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.staticQubit(0);
+    auto q1 = b.staticQubit(1);
+    b.sink(q0);
+    b.sink(q1);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(valid);
+  ASSERT_TRUE(tooWide);
 
   auto dd = std::make_unique<dd::Package>(1);
   auto& roots = dd->getRootSet<dd::vNode>();
   for (size_t i = 0; i < 3; ++i) {
     const auto output =
-        simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd);
+        simulate(mainFunc(*valid), dd::makeZeroState(1, *dd), *dd);
     ASSERT_TRUE(succeeded(output));
     EXPECT_EQ(roots.size(), 1U);
     EXPECT_EQ(roots.at(*output), 1U);
     dd->decRef(*output);
     EXPECT_TRUE(roots.empty());
   }
+  for (size_t i = 0; i < 3; ++i) {
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*tooWide), dd::makeZeroState(1, *dd), *dd)));
+    EXPECT_TRUE(roots.empty());
+  }
+
+  auto zeroQubitDd = std::make_unique<dd::Package>(0);
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*valid), dd::VectorDD::one(), *zeroQubitDd)));
+  EXPECT_TRUE(zeroQubitDd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest, Rejects) {

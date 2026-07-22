@@ -398,6 +398,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  dd::Package& dd) {
   auto qubitsOr = prepare(func, dd);
   if (failed(qubitsOr)) {
+    dd.decRef(in);
     return failure();
   }
   QubitMap qubits = std::move(*qubitsOr);

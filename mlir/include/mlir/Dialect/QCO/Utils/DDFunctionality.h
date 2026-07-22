@@ -53,10 +53,12 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * @details Same supported op set and limitations as @ref buildFunctionality.
  * Mirrors @ref dd::simulate: sequentially applies unitaries to @p in via
  * decision-diagram multiplication. Only purely quantum, measurement-free
- * programs are supported.
+ * programs are supported. Consumes one reference to @p in regardless of
+ * whether simulation succeeds or fails.
  *
  * @param func The QCO function to simulate
- * @param in The input state, represented as a vector DD
+ * @param in The input state, represented as a vector DD; one reference is
+ * consumed
  * @param dd The DD package to use (must hold at least the function's qubits)
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
