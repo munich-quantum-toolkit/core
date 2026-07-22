@@ -8,39 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qco;
-
-/**
- * @brief Check if given quantum operation is unused (i.e., only used by
- * sinks and no memory effects).
- *
- * @param op The operation to check.
- * @return bool True if the operation is unused, false otherwise.
- */
-static bool checkDeadGate(Operation* op) {
-  if (!isMemoryEffectFree(op)) {
-    // This ignores operations and regions that have children with memory
-    // effects, which should never be considered dead.
-    return false;
-  }
-  return llvm::all_of(op->getUsers(),
-                      [](Operation* user) { return isa<SinkOp>(user); });
-}
 
 namespace {
 
@@ -74,49 +52,7 @@ struct DeadGateElimination final : OpRewritePattern<SinkOp> {
 
   LogicalResult matchAndRewrite(SinkOp op,
                                 PatternRewriter& rewriter) const override {
-    Value currentValue = op.getQubit();
-    auto* currentOp = currentValue.getDefiningOp();
-    auto success = false;
-    while (currentOp != nullptr) {
-      if (!checkDeadGate(currentOp)) {
-        break;
-      }
-
-      currentValue =
-          TypeSwitch<Operation*, Value>(currentOp)
-              .Case<MeasureOp>([&](auto measureOp) {
-                auto newValue = measureOp.getQubitIn();
-                rewriter.replaceAllUsesWith(measureOp.getQubitOut(), newValue);
-                rewriter.eraseOp(measureOp);
-                return newValue;
-              })
-              .Case<IfOp>([&](auto ifOp) {
-                auto* tiedQubit =
-                    ifOp.getTiedQubit(cast<OpResult>(currentValue));
-                auto newValue = tiedQubit->get();
-                rewriter.replaceOp(ifOp, ifOp.getQubits());
-                return newValue;
-              })
-              .Case<ResetOp>([&](auto resetOp) {
-                auto newValue = resetOp.getQubitIn();
-                rewriter.replaceOp(resetOp, resetOp->getOperands());
-                return newValue;
-              })
-              .Case<UnitaryOpInterface>([&](auto unitaryOp) {
-                auto newValue = unitaryOp.getInputForOutput(currentValue);
-                rewriter.replaceOp(unitaryOp, unitaryOp.getInputQubits());
-                return newValue;
-              })
-              .Default([&](auto) { return nullptr; });
-
-      if (currentValue == nullptr) {
-        break;
-      }
-      currentOp = currentValue.getDefiningOp();
-      success = true;
-    }
-
-    return llvm::success(success);
+    return tryEliminateDeadGateValue(op.getQubit(), rewriter);
   }
 };
 

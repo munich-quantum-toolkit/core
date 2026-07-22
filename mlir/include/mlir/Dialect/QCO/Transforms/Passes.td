@@ -234,4 +234,40 @@ def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
   }];
 }
 
+def ReplaceClassicalControls
+    : Pass<"replace-classical-controls", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+  ];
+  let summary =
+      "This pass attempts to replace controlled gates that are controlled by "
+      "values that are in a computational basis state and available as "
+      "measurement outcome by a classical "
+      "`qco.if` instruction. This is done to enable qubit reuse and other "
+      "optimizations.";
+  let description = [{
+    This pass searches for control operations that immediately follow measurements and replaces them
+    with classically controlled operations, represented by `qco.if` operations.
+    This reduces quantum interactions and allows for more optimizations, e.g., by enabling qubit reuse.
+  }];
+}
+
+def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+  ];
+  let summary =
+      "This pass attempts to utilize qubit reuse to reduce the number of "
+      "resources required for a quantum program. "
+      "It does so by looking for qubits that do not interact with each other "
+      "directly or indirectly and attempting to reset and reuse one of them "
+      "for the other. "
+      "By combining this pass with the `measurement-lifting` and "
+      "`replace-classical-controls` passes, it is possible to reduce the "
+      "number of qubits required for a quantum program significantly.";
+  let description = [{
+    This pass searches for qubits that do not interact with each other directly or indirectly and attempts to reset and reuse one of them for the other.
+  }];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
