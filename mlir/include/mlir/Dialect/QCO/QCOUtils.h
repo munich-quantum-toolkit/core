@@ -27,8 +27,8 @@
 namespace mlir::qco {
 
 /**
- * @brief Check if given quantum operation is unused (i.e., only used by
- * sinks and no memory effects).
+ * @brief Check if given quantum operation is unused (i.e., only used by sinks
+ * or resets and has no memory effects).
  *
  * @param op The operation to check.
  * @return bool True if the operation is unused, false otherwise.
