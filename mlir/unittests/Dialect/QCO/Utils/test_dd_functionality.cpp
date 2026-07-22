@@ -248,10 +248,11 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(3);
-    const auto u = buildFunctionality(mainFunc(*mod), *dd);
-    ASSERT_TRUE(succeeded(u));
-    dd->decRef(*u);
+    qc::QuantumComputation qc(3);
+    qc.rx(-0.2, 0);
+    qc.ry(-0.3, 1);
+    qc.rz(-0.4, 2);
+    expectEqualToQc(mainFunc(*mod), qc);
   }
 }
 
