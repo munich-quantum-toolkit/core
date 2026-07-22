@@ -175,6 +175,7 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
     "rzz",
     "xx_minus_yy",
     "xx_plus_yy",
+    "rccx",
     "if_else",
     "reset",
     "barrier",
@@ -316,6 +317,10 @@ def _emplace_operation(
 
     if name == "xx_plus_yy":
         return _add_two_target_operation(qc, OpType.xx_plus_yy, qargs, params, qubit_map)
+
+    if name == "rccx":
+        qc.append(StandardOperation(qubits, OpType.rccx))
+        return []
 
     if name == "if_else":
         return _add_if_else_operation(qc, cast("IfElseOp", instr), qargs, cargs, qubit_map, clbit_map, cregs)

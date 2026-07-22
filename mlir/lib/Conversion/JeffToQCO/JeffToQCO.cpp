@@ -808,6 +808,14 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
       return createGateFromJeffArity<XXMinusYYOp, jeff::CustomOp, 2, 2>(
           op, rewriter, controls, targets, params);
     }
+    if (name == "rccx") {
+      if (targets.size() != 3 || !params.empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom rccx expects three targets and no parameters");
+      }
+      return createGateFromJeffArity<RCCXOp, jeff::CustomOp, 3, 0>(
+          op, rewriter, controls, targets, params);
+    }
     return rewriter.notifyMatchFailure(op,
                                        "Unsupported custom operation: " + name);
   }

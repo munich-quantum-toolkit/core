@@ -467,6 +467,32 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                  \
+  QCProgramBuilder& QCProgramBuilder::OP_NAME(Value qubit0, Value qubit1,      \
+                                              Value qubit2) {                  \
+    checkFinalized();                                                          \
+    OP_CLASS::create(*this, qubit0, qubit1, qubit2);                           \
+    return *this;                                                              \
+  }                                                                            \
+  QCProgramBuilder& QCProgramBuilder::c##OP_NAME(Value control, Value qubit0,  \
+                                                 Value qubit1, Value qubit2) { \
+    return mc##OP_NAME({control}, qubit0, qubit1, qubit2);                     \
+  }                                                                            \
+  QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
+      ValueRange controls, Value qubit0, Value qubit1, Value qubit2) {         \
+    ctrl(controls, ValueRange{qubit0, qubit1, qubit2},                         \
+         [&](ValueRange targets) {                                             \
+           OP_CLASS::create(*this, targets[0], targets[1], targets[2]);        \
+         });                                                                   \
+    return *this;                                                              \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
+
 // BarrierOp
 
 QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {

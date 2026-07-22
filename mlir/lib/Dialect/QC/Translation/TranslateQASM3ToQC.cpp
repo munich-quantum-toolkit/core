@@ -133,6 +133,9 @@ static llvm::StringMap<GateFn> buildGateDispatch() {
     b.xx_minus_yy(p[0], p[1], q[0], q[1]);
   };
 
+  // ThreeTargetZeroParameter
+  d["rccx"] = [](auto& b, auto q, auto) { b.rccx(q[0], q[1], q[2]); };
+
   // Controlled OneTargetZeroParameter
   d["cx"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); };
   d["cnot"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); }; // alias
