@@ -10,6 +10,8 @@
 
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
+#include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
@@ -22,6 +24,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -43,6 +46,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -88,6 +92,9 @@ class LargeMcxTest : public McxDecompositionTest,
 
 class LargeMczTest : public McxDecompositionTest,
                      public testing::WithParamInterface<std::size_t> {};
+
+class LargeMcxDdTest : public McxDecompositionTest,
+                       public testing::WithParamInterface<std::size_t> {};
 
 class McpDdTest : public McxDecompositionTest,
                   public testing::WithParamInterface<std::size_t> {};
@@ -165,6 +172,60 @@ static void appendRCCXElementaryOnQubits(qc::QuantumComputation& qc,
   qc.cx(control1, target);
   qc.tdg(target);
   qc.h(target);
+}
+
+static void appendInvertedGadget(qc::QuantumComputation& qc, InvOp invOp,
+                                 DenseMap<Value, std::size_t>& qubitIndex) {
+  DenseMap<Value, std::size_t> bodyQubitIndex;
+  auto& body = *invOp.getBody();
+  for (auto [yielded, input] : llvm::zip_equal(
+           body.getTerminator()->getOperands(), invOp.getInputQubits())) {
+    bodyQubitIndex[yielded] = qubitIndex.at(input);
+  }
+
+  const auto mapInverseQubit = [&bodyQubitIndex](Value input, Value output) {
+    const std::size_t q = bodyQubitIndex.at(output);
+    bodyQubitIndex[input] = q;
+    return static_cast<qc::Qubit>(q);
+  };
+
+  for (Operation& op : llvm::reverse(body.without_terminator())) {
+    if (auto hOp = dyn_cast<HOp>(op)) {
+      qc.h(mapInverseQubit(hOp.getInputQubit(0), hOp.getOutputQubit(0)));
+      continue;
+    }
+    if (auto tOp = dyn_cast<TOp>(op)) {
+      qc.tdg(mapInverseQubit(tOp.getInputQubit(0), tOp.getOutputQubit(0)));
+      continue;
+    }
+    if (auto tdgOp = dyn_cast<TdgOp>(op)) {
+      qc.t(mapInverseQubit(tdgOp.getInputQubit(0), tdgOp.getOutputQubit(0)));
+      continue;
+    }
+    if (auto ctrlOp = dyn_cast<CtrlOp>(op)) {
+      EXPECT_EQ(ctrlOp.getNumControls(), 1U);
+      EXPECT_EQ(ctrlOp.getNumTargets(), 1U);
+      const qc::Qubit target =
+          mapInverseQubit(ctrlOp.getInputTarget(0), ctrlOp.getTargetsOut()[0]);
+      const qc::Qubit control = mapInverseQubit(ctrlOp.getControlsIn()[0],
+                                                ctrlOp.getControlsOut()[0]);
+      auto inner =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody());
+      if (!inner || !isa<XOp>(inner.getOperation())) {
+        ADD_FAILURE() << "unexpected controlled gate in inverted gadget";
+        continue;
+      }
+      qc.cx(control, target);
+      continue;
+    }
+    ADD_FAILURE() << "unexpected op in inverted gadget: "
+                  << op.getName().getStringRef().str();
+  }
+
+  for (auto [output, blockArg] :
+       llvm::zip_equal(invOp.getOutputQubits(), body.getArguments())) {
+    qubitIndex[output] = bodyQubitIndex.at(blockArg);
+  }
 }
 
 [[nodiscard]] static qc::QuantumComputation
@@ -261,6 +322,10 @@ funcOpToQuantumComputation(func::FuncOp funcOp, std::size_t& numQubits) {
       appendRCCXElementaryOnQubits(qc, control0, control1, target);
       continue;
     }
+    if (auto invOp = dyn_cast<InvOp>(op)) {
+      appendInvertedGadget(qc, invOp, qubitIndex);
+      continue;
+    }
     ADD_FAILURE() << "unexpected op in decomposed circuit: "
                   << op.getName().getStringRef().str();
   }
@@ -296,6 +361,42 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
 
 static void expectImplementsMcx(func::FuncOp funcOp, std::size_t numControls) {
   expectImplementsControlledPauli(funcOp, numControls, ControlledPauli::X);
+}
+
+static void expectMcxMatchesReferenceOnBasisStates(func::FuncOp funcOp,
+                                                   std::size_t numControls) {
+  std::size_t numQubits = 0;
+  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  ASSERT_EQ(numQubits, numControls + 1);
+
+  qc::QuantumComputation referenceQc(numQubits);
+  qc::Controls controls;
+  for (std::size_t i = 0; i < numControls; ++i) {
+    controls.emplace(static_cast<qc::Qubit>(i));
+  }
+  referenceQc.mcx(controls, static_cast<qc::Qubit>(numControls));
+
+  std::vector<std::vector<bool>> basisStates;
+  basisStates.emplace_back(numQubits, true);
+  basisStates.back()[numControls] = false;
+  basisStates.emplace_back(numQubits, true);
+  for (const std::size_t inactiveControl :
+       std::array<std::size_t, 3>{0U, numControls / 2U, numControls - 1U}) {
+    basisStates.emplace_back(numQubits, true);
+    basisStates.back()[inactiveControl] = false;
+    basisStates.back()[numControls] = false;
+  }
+
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+  for (const auto& basisState : basisStates) {
+    const auto decomposedOutput = dd::simulate(
+        decomposedQc, dd::makeBasisState(numQubits, basisState, *dd), *dd);
+    dd->incRef(decomposedOutput);
+    const auto referenceOutput = dd::simulate(
+        referenceQc, dd::makeBasisState(numQubits, basisState, *dd), *dd);
+    EXPECT_EQ(decomposedOutput, referenceOutput);
+    dd->decRef(decomposedOutput);
+  }
 }
 
 static void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
@@ -445,6 +546,32 @@ INSTANTIATE_TEST_SUITE_P(LargeMcz, LargeMczTest,
                          [](const testing::TestParamInfo<std::size_t>& info) {
                            return "controls" + std::to_string(info.param);
                          });
+
+TEST_P(LargeMcxDdTest, ImplementsMcx) {
+  const std::size_t numControls = GetParam();
+  auto moduleOp = buildMcxModule(context(), numControls);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcx(funcOp, numControls);
+}
+
+INSTANTIATE_TEST_SUITE_P(Hp24InvertedGadget, LargeMcxDdTest,
+                         testing::Values(10),
+                         [](const testing::TestParamInfo<std::size_t>& info) {
+                           return "controls" + std::to_string(info.param);
+                         });
+
+TEST_F(McxDecompositionTest, ImplementsMcxAtOneDirtyAncillaBoundary) {
+  constexpr std::size_t numControls = 23;
+  auto moduleOp = buildMcxModule(context(), numControls);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectMcxMatchesReferenceOnBasisStates(funcOp, numControls);
+}
 
 TEST_F(McxDecompositionTest, LeavesSingleControlledXUntouched) {
   auto moduleOp =
