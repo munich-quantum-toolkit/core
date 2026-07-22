@@ -380,6 +380,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
                            rhsCtrl.getInputControls(), m, tm) ||
         !compareValueLists(lhsCtrl.getInputTargets(), rhsCtrl.getInputTargets(),
                            m, tm)) {
+      return false;
     }
   } else if (isa<qco::IfOp>(lhs)) {
     assert(isa<qco::IfOp>(rhs));

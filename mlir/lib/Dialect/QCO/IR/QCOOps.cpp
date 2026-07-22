@@ -175,31 +175,29 @@ void IfOp::print(OpAsmPrinter& p) {
 
 ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
                                  ::mlir::OperationState& result) {
-  auto& builder = parser.getBuilder();
   OpAsmParser::UnresolvedOperand index;
-
-  // Parse the index operand
   if (parser.parseOperand(index) ||
-      parser.resolveOperand(index, builder.getIndexType(), result.operands)) {
+      parser.resolveOperand(index, parser.getBuilder().getIndexType(),
+                            result.operands)) {
     return failure();
   }
 
-  // Parse optional result type list
   if (parser.parseOptionalArrowTypeList(result.types)) {
     return failure();
   }
 
-  // Parse optional attributes
   if (parser.parseOptionalAttrDict(result.attributes)) {
     return failure();
   }
 
-  // Parse the case regions and default region
+  // Create default region here to ensure regions(0) = default.
+  Region* defaultRegion = result.addRegion();
+
+  SmallVector<Value> operands;
   SmallVector<int64_t> caseValues;
   SmallVector<OpAsmParser::Argument> regionArgs;
   SmallVector<OpAsmParser::UnresolvedOperand> regionOperands;
 
-  // Parse case regions
   while (succeeded(parser.parseOptionalKeyword("case"))) {
     int64_t caseValue = 0;
     if (parser.parseInteger(caseValue)) {
@@ -212,27 +210,59 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
       return failure();
     }
 
-    regionArgs.clear();
-    regionOperands.clear();
-
-    // Parse assignment list for this case
     if (parser.parseAssignmentList(regionArgs, regionOperands)) {
       return failure();
     }
 
-    // Set argument types
-    for (auto [iterArg, type] : llvm::zip_equal(regionArgs, result.types)) {
-      iterArg.type = type;
+    if (caseValues.size() == 1) {
+
+      // Resolve the operands into the result for the very first case.
+
+      if (parser.resolveOperands(regionOperands, result.types,
+                                 parser.getCurrentLocation(),
+                                 result.operands)) {
+        return failure();
+      }
+    } else {
+
+      // Otherwise, verify if the other cases use the equivalent operands (minus
+      // the case-value) as the first one.
+
+      SmallVector<Value> operands;
+      if (parser.resolveOperands(regionOperands, result.types,
+                                 parser.getCurrentLocation(), operands)) {
+        return failure();
+      }
+
+      for (auto [v0, v1] :
+           llvm::zip_equal(operands, llvm::drop_begin(result.operands, 1))) {
+        if (v0 != v1) {
+          return parser.emitError(
+              parser.getCurrentLocation(),
+              "else qubits must reference the same SSA values as then qubits");
+        }
+      }
     }
 
-    // Add case region
-    Region* caseRegion = result.addRegion();
-    if (parser.parseRegion(*caseRegion, regionArgs)) {
+    for (auto [arg, type] : llvm::zip_equal(regionArgs, result.types)) {
+      arg.type = type;
+    }
+
+    if (parser.parseRegion(*result.addRegion(), regionArgs)) {
       return failure();
     }
+
+    operands.clear();
+    regionArgs.clear();
+    regionOperands.clear();
   }
 
-  // Parse default region
+  result.addAttribute("cases",
+                      DenseI64ArrayAttr::get(parser.getContext(), caseValues));
+
+  // Parse the default regions and again verify if the default case uses the
+  // equivalent operands (minus the case-value) as all other cases.
+
   if (parser.parseKeyword("default")) {
     return failure();
   }
@@ -241,28 +271,34 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
     return failure();
   }
 
-  regionArgs.clear();
-  regionOperands.clear();
-
-  // Parse assignment list for default
   if (parser.parseAssignmentList(regionArgs, regionOperands)) {
     return failure();
   }
 
-  // Set argument types
-  for (auto [iterArg, type] : llvm::zip_equal(regionArgs, result.types)) {
-    iterArg.type = type;
-  }
+  // Otherwise, verify if the other cases use the equivalent operands (minus
+  // the case-value) for all other cases.
 
-  // Add default region
-  Region* defaultRegion = result.addRegion();
-  if (parser.parseRegion(*defaultRegion, regionArgs)) {
+  if (parser.resolveOperands(regionOperands, result.types,
+                             parser.getCurrentLocation(), operands)) {
     return failure();
   }
 
-  // Set the cases attribute
-  auto casesAttr = DenseI64ArrayAttr::get(parser.getContext(), caseValues);
-  result.addAttribute("cases", casesAttr);
+  for (auto [v0, v1] :
+       llvm::zip_equal(operands, llvm::drop_begin(result.operands, 1))) {
+    if (v0 != v1) {
+      return parser.emitError(
+          parser.getCurrentLocation(),
+          "else qubits must reference the same SSA values as then qubits");
+    }
+  }
+
+  for (auto [args, type] : llvm::zip_equal(regionArgs, result.types)) {
+    args.type = type;
+  }
+
+  if (parser.parseRegion(*defaultRegion, regionArgs)) {
+    return failure();
+  }
 
   return success();
 }

@@ -1379,15 +1379,16 @@ public:
    * this operation are automatically inserted before the operation is
    * constructed.
    *
-   * @param arg Bool condition.
+   * @param arg Index argument.
    * @param targets Initial arguments for the index switch branches.
+   * @param cases The individual switch cases.
    * @param caseBodies An array of functions that build the case bodies.
    * @param defaultBody Function that builds the default body.
-   * @return ValueRange of the results
+   * @return ValueRange of the results.
    *
    * @par Example:
    * ```c++
-   * result = b.qcoIndexSwitch(condition, initTargets,
+   * result = b.qcoIndexSwitch(arg, initTargets,
    *   SmallVector<int64_t>{0},
    *   SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
    *     [&](ValueRange args) {
@@ -1401,7 +1402,7 @@ public:
    *   });
    * ```
    * ```mlir
-   * %result = qco.index_switch %condition -> !qco.qubit
+   * %result = qco.index_switch %arg -> !qco.qubit
    * case 0 args(%arg0 = %q0) {
    *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
    *   qco.yield %q1 : !qco.qubit

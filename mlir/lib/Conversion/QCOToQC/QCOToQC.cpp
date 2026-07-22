@@ -901,8 +901,8 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   matchAndRewrite(IndexSwitchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto newOp =
-        scf::IndexSwitchOp::create(rewriter, op.getLoc(), {}, op.getArg(),
-                                   op.getCases(), op.getNumCases());
+        scf::IndexSwitchOp::create(rewriter, op.getLoc(), {}, adaptor.getArg(),
+                                   adaptor.getCases(), op.getNumCases());
 
     const auto oldRegions = op.getCaseRegions();
     const auto newCaseRegions = newOp.getCaseRegions();

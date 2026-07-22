@@ -1132,9 +1132,10 @@ public:
   /**
    * @brief Construct an scf.index_switch operation
    *
-   * @param arg Index argument for the index switch operation
-   * @param thenBody Function that builds the then body of the if operation
-   * @param elseBody Function that builds the else body of the if operation
+   * @param arg Index argument.
+   * @param cases The individual switch cases.
+   * @param caseBodies An array of functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
    * @return Reference to this builder for method chaining
    *
    * @par Example:

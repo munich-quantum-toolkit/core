@@ -1982,8 +1982,8 @@ SmallVector<Value> nestedForLoopWhileOp(QCProgramBuilder& b) {
 }
 
 SmallVector<Value> nestedForLoopSwitchOp(QCProgramBuilder& b) {
-  constexpr int64_t n = 32;
-  auto reg = b.allocQubitRegister(1);
+  constexpr int64_t n = 3;
+  auto reg = b.allocQubitRegister(n);
   auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
   b.scfFor(0, n, 1, [&](Value iv) {
     auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();

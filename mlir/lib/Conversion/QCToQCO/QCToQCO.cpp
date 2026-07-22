@@ -1524,11 +1524,9 @@ struct ConvertSCFIndexSwitchOp final
       Block* const oldBlock = &(*oldRegion.begin());
       Block* const newBlock =
           rewriter.createBlock(&newRegion, {}, newOp.getResultTypes(), locs);
-      const auto args = newBlock->getArguments();
+      rewriter.inlineBlockBefore(oldBlock, newBlock, newBlock->begin());
 
-      // rewriter.inlineBlockBefore(oldBlock, newBlock, newBlock->begin());
-      newBlock->getOperations().splice(newBlock->end(),
-                                       oldBlock->getOperations());
+      const auto args = newBlock->getArguments();
       pushModifierFrameWithRegisters(state, qubits, registers,
                                      args.take_back(nqubits),
                                      args.take_front(nregisters));

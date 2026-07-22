@@ -155,7 +155,7 @@ BlockArgument IndexSwitchOp::getTiedCaseBlockArgument(OpOperand* target,
 
 OpOperand* IndexSwitchOp::getTiedCaseYieldedValue(BlockArgument bbArg,
                                                   size_t i) {
-  if (bbArg.getOwner()->getParentOp() != getOperation() || i >= getNumCases()) {
+  if (i >= getNumCases() || bbArg.getOwner() != getCaseBlock(i)) {
     return nullptr;
   }
 
@@ -171,7 +171,7 @@ BlockArgument IndexSwitchOp::getTiedDefaultBlockArgument(OpOperand* target) {
 }
 
 OpOperand* IndexSwitchOp::getTiedDefaultYieldedValue(BlockArgument bbArg) {
-  if (bbArg.getOwner()->getParentOp() != getOperation()) {
+  if (bbArg.getOwner() != getDefaultBlock()) {
     return nullptr;
   }
 

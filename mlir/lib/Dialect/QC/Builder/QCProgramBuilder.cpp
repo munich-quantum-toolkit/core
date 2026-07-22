@@ -620,8 +620,10 @@ QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
   const InsertionGuard guard(*this);
   const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
     Block* block = createBlock(&region); // Implicitly sets the insertion point.
+    regionStack.emplace_back(&region);
     f();
     scf::YieldOp::create(*this, getLoc());
+    regionStack.pop_back();
   };
 
   for (auto [region, f] :

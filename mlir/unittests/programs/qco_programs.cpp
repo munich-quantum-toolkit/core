@@ -3453,15 +3453,15 @@ SmallVector<Value> nestedForLoopWhileOp(QCOProgramBuilder& b) {
 }
 
 SmallVector<Value> nestedForLoopSwitchOp(QCOProgramBuilder& b) {
-  constexpr int64_t n = 32;
-  auto reg = b.allocQubitRegister(1);
+  constexpr int64_t n = 3;
+  auto reg = b.allocQubitRegister(n);
   auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
 
   reg.value = b.scfFor(0, n, 1, reg.value, [&](Value iv, ValueRange iterArgs) {
     auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
-    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-    q0 = b.qcoIndexSwitch(
-        rem, {q0}, SmallVector<int64_t>{1, 2, 3},
+    auto [t, q] = b.qtensorExtract(iterArgs[0], iv);
+    q = b.qcoIndexSwitch(
+        rem, {q}, SmallVector<int64_t>{0, 1, 2},
         SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
             [&](ValueRange args) {
               SmallVector<Value> qs(args);
@@ -3480,11 +3480,11 @@ SmallVector<Value> nestedForLoopSwitchOp(QCOProgramBuilder& b) {
               return qs;
             }},
         [&](ValueRange args) { return args; })[0];
-    auto insert = b.qtensorInsert(q0, t0, iv);
+    auto insert = b.qtensorInsert(q, t, iv);
     return SmallVector{insert};
   })[0];
 
-  return measureAndReturnQTensor(b, reg.value, 1);
+  return measureAndReturnQTensor(b, reg.value, n);
 }
 
 Value nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {

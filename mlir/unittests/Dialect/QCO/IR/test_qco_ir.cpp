@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
@@ -62,7 +63,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    qtensor::QTensorDialect>();
+                    scf::SCFDialect, qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -190,6 +191,71 @@ TEST_F(QCOTest, IfOpParser) {
 
   auto refBuilder = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor));
+  ASSERT_TRUE(refBuilder);
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
+                                                   refBuilder.get()));
+}
+
+TEST_F(QCOTest, IndexSwitchParser) {
+  // Test IndexSwitch parser
+  const char* mlirCode = R"(
+      module {
+        func.func @main() -> (i1, i1, i1) attributes {passthrough = ["entry_point"]} {
+            %c2 = arith.constant 2 : index
+            %c1 = arith.constant 1 : index
+            %c0 = arith.constant 0 : index
+            %c3 = arith.constant 3 : index
+            %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+            %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
+            %5 = arith.remui %arg0, %c3 : index
+            %out_tensor_9, %result_10 = qtensor.extract %arg1[%arg0] : tensor<3x!qco.qubit>
+            %6 = qco.index_switch %5 -> !qco.qubit
+            case 0 args(%arg2 = %result_10) {
+                %8 = qco.x %arg2 : !qco.qubit -> !qco.qubit
+                qco.yield %8 : !qco.qubit
+            }
+            case 1 args(%arg2 = %result_10) {
+                %8 = qco.y %arg2 : !qco.qubit -> !qco.qubit
+                qco.yield %8 : !qco.qubit
+            }
+            case 2 args(%arg2 = %result_10) {
+                %8 = qco.x %arg2 : !qco.qubit -> !qco.qubit
+                %9 = qco.y %8 : !qco.qubit -> !qco.qubit
+                qco.yield %9 : !qco.qubit
+            }
+            default args(%arg2 = %result_10) {
+                qco.yield %arg2 : !qco.qubit
+            }
+            %7 = qtensor.insert %6 into %out_tensor_9[%arg0] : tensor<3x!qco.qubit>
+            scf.yield %7 : tensor<3x!qco.qubit>
+            }
+            %out_tensor, %result = qtensor.extract %1[%c0] : tensor<3x!qco.qubit>
+            %qubit_out, %result_0 = qco.measure %result : !qco.qubit
+            %out_tensor_1, %result_2 = qtensor.extract %out_tensor[%c1] : tensor<3x!qco.qubit>
+            %qubit_out_3, %result_4 = qco.measure %result_2 : !qco.qubit
+            %out_tensor_5, %result_6 = qtensor.extract %out_tensor_1[%c2] : tensor<3x!qco.qubit>
+            %2 = qtensor.insert %qubit_out into %out_tensor_5[%c0] : tensor<3x!qco.qubit>
+            %3 = qtensor.insert %qubit_out_3 into %2[%c1] : tensor<3x!qco.qubit>
+            %qubit_out_7, %result_8 = qco.measure %result_6 : !qco.qubit
+            %4 = qtensor.insert %qubit_out_7 into %3[%c2] : tensor<3x!qco.qubit>
+            qtensor.dealloc %4 : tensor<3x!qco.qubit>
+            return %result_0, %result_4, %result_8 : i1, i1, i1
+        }
+    })";
+
+  auto parsedSourceModule =
+      parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedSourceModule);
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+
+  auto refBuilder = mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(nestedForLoopSwitchOp));
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
