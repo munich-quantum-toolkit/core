@@ -523,6 +523,31 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledP)}));
 /// @}
 
+/// \name QC/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCRCCXOpTest, QCTest,
+    testing::Values(QCTestCase{"RCCX", MQT_NAMED_BUILDER(rccx),
+                               MQT_NAMED_BUILDER(rccx)},
+                    QCTestCase{"SingleControlledRCCX",
+                               MQT_NAMED_BUILDER(singleControlledRccx),
+                               MQT_NAMED_BUILDER(singleControlledRccx)},
+                    QCTestCase{"MultipleControlledRCCX",
+                               MQT_NAMED_BUILDER(multipleControlledRccx),
+                               MQT_NAMED_BUILDER(multipleControlledRccx)},
+                    QCTestCase{"NestedControlledRCCX",
+                               MQT_NAMED_BUILDER(nestedControlledRccx),
+                               MQT_NAMED_BUILDER(multipleControlledRccx)},
+                    QCTestCase{"TrivialControlledRCCX",
+                               MQT_NAMED_BUILDER(trivialControlledRccx),
+                               MQT_NAMED_BUILDER(rccx)},
+                    QCTestCase{"InverseRCCX", MQT_NAMED_BUILDER(inverseRccx),
+                               MQT_NAMED_BUILDER(rccx)},
+                    QCTestCase{"InverseMultipleControlledRCCX",
+                               MQT_NAMED_BUILDER(inverseMultipleControlledRccx),
+                               MQT_NAMED_BUILDER(multipleControlledRccx)}));
+/// @}
+
 /// \name QC/Operations/StandardGates/ROp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

@@ -1163,6 +1163,33 @@ SmallVector<Value> twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 /// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
 SmallVector<Value> twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+SmallVector<Value> rccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RCCX gates in a row.
+SmallVector<Value> twoRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+SmallVector<Value> singleControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+SmallVector<Value> multipleControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a nested controlled RCCX gate.
+SmallVector<Value> nestedControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a trivial controlled RCCX gate.
+SmallVector<Value> trivialControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to an RCCX gate.
+SmallVector<Value> inverseRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a multi-controlled
+/// RCCX gate.
+SmallVector<Value> inverseMultipleControlledRccx(QCOProgramBuilder& b);
+
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.

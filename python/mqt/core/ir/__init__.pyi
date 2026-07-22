@@ -1820,6 +1820,41 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             target2: The second target qubit
         """
 
+    def rccx(self, target1: int, target2: int, target3: int) -> None:
+        """Apply a relative-phase CCX (RCCX) gate.
+
+        Args:
+            target1: The first target qubit
+            target2: The second target qubit
+            target3: The third target qubit
+        """
+
+    def crccx(self, control: operations.Control | int, target1: int, target2: int, target3: int) -> None:
+        """Apply a controlled RCCX gate.
+
+        See Also:
+            :meth:`rccx`
+
+        Args:
+            control: The control qubit
+            target1: The first target qubit
+            target2: The second target qubit
+            target3: The third target qubit
+        """
+
+    def mcrccx(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int, target3: int) -> None:
+        """Apply a multi-controlled RCCX gate.
+
+        See Also:
+            :meth:`rccx`
+
+        Args:
+            controls: The control qubits
+            target1: The first target qubit
+            target2: The second target qubit
+            target3: The third target qubit
+        """
+
     def gphase(self, phase: float) -> None:
         r"""Apply a global phase gate.
 
