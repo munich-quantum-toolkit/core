@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
@@ -20,6 +21,9 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <iterator>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -79,7 +83,6 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   // Otherwise, try to find a case with a matching value. If not, the
   // default region is the only successor.
 
-  const auto nregions = getNumRegions();
   const auto* it = llvm::find(getCases(), arg.getInt());
   const auto liveIndex = it != getCases().end()
                              ? std::distance(getCases().begin(), it)
@@ -185,8 +188,8 @@ IndexSwitchOp::replaceWithAdditionalTargets(RewriterBase& rewriter,
   const auto nregions = getNumRegions();
 
   SmallVector<Value> newTargets;
-  newTargets.reserve(getTargets().size() + addons.size());
-  newTargets.append(getTargets().begin(), getTargets().end());
+  newTargets.reserve(targets.size() + addons.size());
+  newTargets.append(targets.begin(), targets.end());
   newTargets.append(addons.begin(), addons.end());
   const auto newTargetTypes = ValueRange(newTargets).getTypes();
 
