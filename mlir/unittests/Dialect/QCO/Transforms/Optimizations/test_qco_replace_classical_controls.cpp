@@ -359,10 +359,130 @@ TEST_F(QCOReplaceClassicalControlsTest,
 }
 
 /**
- * @brief Test: Tests replacing a classically controlled gate where a diagonal
+ * @brief Test: A measured target of a non-phase gate must not be mistaken for a
+ * replaceable classical control.
+ */
+TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  auto target = programBuilder.h(programBuilder.allocQubit());
+  auto control = programBuilder.h(programBuilder.allocQubit());
+
+  Value initialTargetOutcome;
+  std::tie(target, initialTargetOutcome) = programBuilder.measure(target);
+  std::tie(control, target) = programBuilder.cx(control, target);
+
+  Value controlOutcome;
+  Value targetOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  std::tie(target, targetOutcome) = programBuilder.measure(target);
+  programBuilder.sink(control);
+  programBuilder.sink(target);
+  program = programBuilder.finalize(
+      {initialTargetOutcome, controlOutcome, targetOutcome});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto referenceTarget = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+
+  Value referenceInitialTargetOutcome;
+  std::tie(referenceTarget, referenceInitialTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  std::tie(referenceControl, referenceTarget) =
+      referenceBuilder.cx(referenceControl, referenceTarget);
+
+  Value referenceControlOutcome;
+  Value referenceTargetOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  std::tie(referenceTarget, referenceTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTarget);
+  reference = referenceBuilder.finalize({referenceInitialTargetOutcome,
+                                         referenceControlOutcome,
+                                         referenceTargetOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
+ * @brief Test: A measured control of a multi-target gate can be replaced
+ * without attempting a single-target phase-gate swap.
+ */
+TEST_F(QCOReplaceClassicalControlsTest,
+       replaceMeasuredControlOfMultiTargetGate) {
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target0 = programBuilder.h(programBuilder.allocQubit());
+  auto target1 = programBuilder.h(programBuilder.allocQubit());
+
+  Value controlOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  auto [controlOut, targetsOut] =
+      programBuilder.cswap(control, target0, target1);
+
+  Value target0Outcome;
+  Value target1Outcome;
+  std::tie(target0, target0Outcome) = programBuilder.measure(targetsOut.first);
+  std::tie(target1, target1Outcome) = programBuilder.measure(targetsOut.second);
+  programBuilder.sink(controlOut);
+  programBuilder.sink(target0);
+  programBuilder.sink(target1);
+  program =
+      programBuilder.finalize({controlOutcome, target0Outcome, target1Outcome});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
+
+  Value referenceControlOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  auto referenceTargets = referenceBuilder.qcoIf(
+      referenceControlOutcome, {referenceTarget0, referenceTarget1},
+      [&](ValueRange targets) -> SmallVector<Value> {
+        auto [out0, out1] = referenceBuilder.swap(targets[0], targets[1]);
+        return {out0, out1};
+      });
+
+  Value referenceTarget0Outcome;
+  Value referenceTarget1Outcome;
+  std::tie(referenceTarget0, referenceTarget0Outcome) =
+      referenceBuilder.measure(referenceTargets[0]);
+  std::tie(referenceTarget1, referenceTarget1Outcome) =
+      referenceBuilder.measure(referenceTargets[1]);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTarget0);
+  referenceBuilder.sink(referenceTarget1);
+  reference = referenceBuilder.finalize({referenceControlOutcome,
+                                         referenceTarget0Outcome,
+                                         referenceTarget1Outcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
+ * @brief Test: Tests replacing a classically controlled gate where a phase
  * target gate needs to be swapped with to achieve a replaceable control.
  */
-TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
+TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapPhase) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto q0 = programBuilder.allocQubit();
@@ -407,11 +527,11 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
 }
 
 /**
- * @brief Test: Tests that a diagonal target gate is not swapped with a
+ * @brief Test: Tests that a phase target gate is not swapped with a
  * classical control if it's not necessary.
  */
 TEST_F(QCOReplaceClassicalControlsTest,
-       replaceClassicalControlsDontSwapDiagonalIfNotNecessary) {
+       replaceClassicalControlsDontSwapPhaseIfNotNecessary) {
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
@@ -464,10 +584,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
 /**
  * @brief Test: Tests replacing a classically controlled gate where one of two
- * control qubits of a diagonal gate is swapped with the target qubit.
+ * control qubits of a phase gate is swapped with the target qubit.
  */
 TEST_F(QCOReplaceClassicalControlsTest,
-       replaceClassicalControlsSwapOneOfTwoDiagonal) {
+       replaceClassicalControlsSwapOneOfTwoPhase) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto q0 = programBuilder.allocQubit();
@@ -529,11 +649,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
 /**
  * @brief Test: Tests replacing a classically controlled gate where only one of
- * two controls can possibly be swapped with the target qubit of a diagonal
+ * two controls can possibly be swapped with the target qubit of a phase
  * operation.
  */
 TEST_F(QCOReplaceClassicalControlsTest,
-       replaceClassicalControlsSwapOnlyPossibleDiagonal) {
+       replaceClassicalControlsSwapOnlyPossiblePhase) {
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});

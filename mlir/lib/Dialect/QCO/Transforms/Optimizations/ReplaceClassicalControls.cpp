@@ -50,20 +50,20 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
  * @brief Checks if the given operation is a phase gate, i.e., it only
  * applies a phase to the target qubit(s) in the 1 state.
  * @param op The operation to check
- * @return true if the operation is a diagonal gate, false otherwise
+ * @return true if the operation is a phase gate, false otherwise
  */
 static bool isPhaseGate(Operation* op) {
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
 
 /**
- * @brief For a diagonal gate with a control that has a predecessor measurement,
- * swaps the control with the target.
- * @param op The control operation containing the diagonal gate
+ * @brief For a phase gate whose target has a predecessor measurement, swaps the
+ * target with an eligible control.
+ * @param op The control operation containing the phase gate
  * @param rewriter The pattern rewriter used to perform the transformation
  */
-static void trySwapControlsOfDiagonalGate(CtrlOp op,
-                                          PatternRewriter& rewriter) {
+static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
+                                               PatternRewriter& rewriter) {
   assert(op.getNumTargets() == 1 &&
          "Only single-qubit gates can be swapped around controls");
   auto target = op.getTargetsIn()[0];
@@ -118,8 +118,10 @@ struct ReplaceBasisStateControlsWithIfPattern final
     }
     rewriter.setInsertionPointAfter(ctrlOp);
 
-    if (utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody())) {
-      trySwapControlsOfDiagonalGate(ctrlOp, rewriter);
+    if (auto unitary =
+            utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody());
+        unitary && isPhaseGate(unitary.getOperation())) {
+      trySwapControlAndTargetOfPhaseGate(ctrlOp, rewriter);
     }
 
     ValueRange controlsIn = ctrlOp.getControlsIn();
