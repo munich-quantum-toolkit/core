@@ -946,8 +946,8 @@ QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
 
   // Add block arguments for all qubits
   auto& block = powOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
-  for (const auto qubit : qubits) {
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
     const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(qubit, arg);
   }
