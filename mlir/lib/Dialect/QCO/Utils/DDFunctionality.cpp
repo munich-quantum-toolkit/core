@@ -95,9 +95,11 @@ struct DecodedGate {
 
 } // namespace
 
-/// `std::nullopt` if @p op is not a standard gate; failure on non-constant
-/// parameters.
-static FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
+/// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
+/// matrix is not known at compile time.
+static FailureOr<std::optional<DecodedGate>>
+decodeStandardGate(UnitaryOpInterface unitary) {
+  Operation* op = unitary.getOperation();
   const qc::OpType type =
       TypeSwitch<Operation*, qc::OpType>(op)
           .Case<IdOp>([](auto) { return qc::OpType::I; })
@@ -132,16 +134,14 @@ static FailureOr<std::optional<DecodedGate>> decodeStandardGate(Operation* op) {
   if (type == qc::OpType::None) {
     return std::optional<DecodedGate>{std::nullopt};
   }
+  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
+    return unitary.emitError()
+           << "unitary must have a compile-time constant matrix";
+  }
 
   DecodedGate decoded{.type = type, .params = {}};
-  auto unitary = cast<UnitaryOpInterface>(op);
   for (Value param : unitary.getParameters()) {
-    const auto value = utils::valueToDouble(param);
-    if (!value) {
-      return op->emitError()
-             << "gate parameters must be compile-time constants";
-    }
-    decoded.params.push_back(static_cast<dd::fp>(*value));
+    decoded.params.push_back(static_cast<dd::fp>(*utils::valueToDouble(param)));
   }
   return std::optional{std::move(decoded)};
 }
@@ -168,14 +168,14 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
                                         QubitMap& qubits, dd::Package& dd,
                                         StateDD& state) {
   Operation* op = unitary.getOperation();
+  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
+    return unitary.emitError()
+           << "unitary must have a compile-time constant matrix";
+  }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = utils::valueToDouble(gphase.getTheta());
-    if (!theta) {
-      return unitary.emitError()
-             << "unitary must have a compile-time constant matrix";
-    }
+    const auto theta = *utils::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
-    id.w = dd.cn.lookup(std::cos(*theta), std::sin(*theta));
+    id.w = dd.cn.lookup(std::cos(theta), std::sin(theta));
     state = dd.applyOperation(id, state);
     return success();
   }
@@ -292,7 +292,7 @@ static LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
         if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {
-          auto decoded = decodeStandardGate(inner.getOperation());
+          auto decoded = decodeStandardGate(inner);
           if (failed(decoded)) {
             return failure();
           }
@@ -314,7 +314,7 @@ static LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
       })
       .template Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface unitary) -> LogicalResult {
-            auto decoded = decodeStandardGate(&op);
+            auto decoded = decodeStandardGate(unitary);
             if (failed(decoded)) {
               return failure();
             }
