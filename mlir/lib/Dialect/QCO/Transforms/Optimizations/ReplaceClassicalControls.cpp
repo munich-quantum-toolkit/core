@@ -127,8 +127,10 @@ struct ReplaceBasisStateControlsWithIfPattern final
     ValueRange controlsIn = ctrlOp.getControlsIn();
     ValueRange controlResults = ctrlOp.getControlsOut();
 
-    SmallVector<Value> remainingControls;
+    SmallVector<Value> ifOperands;
+    ifOperands.reserve(ctrlOp.getNumQubits());
     SmallVector<Value> oldOutputs;
+    oldOutputs.reserve(ctrlOp->getNumResults());
     Value condition;
     for (auto [control, oldOutput] :
          llvm::zip_equal(controlsIn, controlResults)) {
@@ -139,7 +141,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
                                     .getResult()
                               : outcome;
       } else {
-        remainingControls.push_back(control);
+        ifOperands.push_back(control);
         oldOutputs.push_back(oldOutput);
       }
     }
@@ -148,8 +150,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
       return failure();
     }
 
-    size_t numRemaining = remainingControls.size();
-    SmallVector<Value> ifOperands = remainingControls;
+    const auto numRemaining = ifOperands.size();
     llvm::append_range(ifOperands, ctrlOp.getTargetsIn());
     llvm::append_range(oldOutputs, ctrlOp.getTargetsOut());
 
@@ -164,10 +165,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
           return newCtrl.getOutputQubits();
         });
 
-    for (auto [oldOutput, result] :
-         llvm::zip_equal(oldOutputs, ifOp.getResults())) {
-      rewriter.replaceAllUsesWith(oldOutput, result);
-    }
+    rewriter.replaceAllUsesWith(oldOutputs, ifOp.getResults());
     rewriter.eraseOp(ctrlOp);
 
     return success();
