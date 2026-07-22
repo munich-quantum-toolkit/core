@@ -256,12 +256,41 @@ applyDecodedStandard(UnitaryOpInterface unitary, const DecodedGate& gate,
   return qubits.remapUnitary(unitary);
 }
 
+static LogicalResult validateReturn(func::ReturnOp returnOp,
+                                    const QubitMap& qubits) {
+  qc::Qubit expected = 0;
+  for (Value value : returnOp.getOperands()) {
+    if (!isa<QubitType>(value.getType())) {
+      continue;
+    }
+    const auto mapped = qubits.lookup(value);
+    if (!mapped) {
+      return returnOp.emitError()
+             << "returned qubit SSA value is not mapped for QCO DD "
+                "construction";
+    }
+    if (*mapped != expected) {
+      return returnOp.emitError()
+             << "returned qubits must preserve canonical wire order; qubit "
+                "result "
+             << static_cast<size_t>(expected) << " maps to wire "
+             << static_cast<size_t>(*mapped);
+    }
+    ++expected;
+  }
+  return success();
+}
+
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, QubitMap& qubits, dd::Package& dd,
                              StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .template Case<StaticOp, SinkOp, func::ReturnOp, arith::ConstantOp>(
+      .template Case<StaticOp, SinkOp, arith::ConstantOp>(
           [](auto) { return success(); })
+      .template Case<func::ReturnOp>(
+          [&](func::ReturnOp returnOp) {
+            return validateReturn(returnOp, qubits);
+          })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
         if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {

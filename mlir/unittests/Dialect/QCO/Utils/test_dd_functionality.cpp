@@ -339,6 +339,47 @@ TEST_F(QCODDFunctionalityTest, FuncArgs) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
+  auto canonical = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%q0: !qco.qubit, %q1: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+        %q0_out = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q1_out = qco.x %q1 : !qco.qubit -> !qco.qubit
+        return %q0_out, %q1_out : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  auto swapped = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%q0: !qco.qubit, %q1: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+        %q0_out = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q1_out = qco.x %q1 : !qco.qubit -> !qco.qubit
+        return %q1_out, %q0_out : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(canonical);
+  ASSERT_TRUE(swapped);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  const auto canonicalFunctionality =
+      buildFunctionality(mainFunc(*canonical), *dd);
+  ASSERT_TRUE(succeeded(canonicalFunctionality));
+  dd->decRef(*canonicalFunctionality);
+  const auto canonicalSimulation =
+      simulate(mainFunc(*canonical), dd::makeZeroState(2, *dd), *dd);
+  ASSERT_TRUE(succeeded(canonicalSimulation));
+  dd->decRef(*canonicalSimulation);
+
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*swapped), *dd)));
+  EXPECT_TRUE(failed(
+      simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd)));
+}
+
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.x(b.staticQubit(0));

@@ -31,7 +31,8 @@ namespace mlir::qco {
  * - `ctrl` with a sole standard-gate body (same sparse path)
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
  *   compound `ctrl`, ...), including `gphase` and `barrier`
- * - Skips: `static`, `sink`, `func.return`, `arith.constant`
+ * - Skips: `static`, `sink`, `arith.constant`; `func.return` accepts qubit
+ *   results only in canonical wire order
  *
  * Known one- and two-qubit matrices are constructed directly as DD gates. The
  * dense matrix fallback accepts full-width unitaries on wires `0..n-1` and
