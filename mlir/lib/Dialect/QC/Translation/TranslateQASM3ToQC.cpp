@@ -41,6 +41,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -67,6 +68,17 @@ namespace {
 /// the controls are part of the range, matching OpenQASM 3 operand order.
 using GateFn =
     std::function<void(QCProgramBuilder&, ValueRange, ArrayRef<double>)>;
+
+[[nodiscard]] bool isExactlyRepresentableAsDouble(const size_t value) {
+  if (value == 0) {
+    return true;
+  }
+  auto significand = value;
+  while ((significand & 1U) == 0) {
+    significand >>= 1U;
+  }
+  return std::bit_width(significand) <= std::numeric_limits<double>::digits;
+}
 
 } // namespace
 
@@ -725,6 +737,13 @@ public:
             "Only ctrl, negctrl, inv, and pow modifiers are supported.",
             stmt->debugInfo);
       }
+    }
+
+    if (repetitions.has_value() &&
+        !isExactlyRepresentableAsDouble(*repetitions)) {
+      throw qasm3::CompilerError(
+          "Power modifier exponent cannot be represented exactly as an f64.",
+          stmt->debugInfo);
     }
 
     // OpenQASM 2 compatibility:

@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -169,6 +170,29 @@ static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
   return {b.measure(q[0]), b.measure(q[1])};
 }
 
+static Value nestedPowX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(6.0, q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  return b.measure(q[0]);
+}
+
+static Value customPowHS(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](ValueRange qubits) {
+    b.h(qubits[0]);
+    b.s(qubits[0]);
+  });
+  return b.measure(q[0]);
+}
+
+static SmallVector<Value> broadcastPowX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  for (auto qubit : q.qubits) {
+    b.pow(2.0, qubit, [&](ValueRange qubits) { b.x(qubits[0]); });
+  }
+  return {b.measure(q[0]), b.measure(q[1])};
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -217,6 +241,42 @@ qubit q;
 pow(true) @ x q;
 )";
   EXPECT_FALSE(qc::translateQASM3ToQC(booleanSource, &context));
+}
+
+TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr StringLiteral exactSource = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(9007199254740992) @ x q;
+)";
+  auto translated = qc::translateQASM3ToQC(exactSource, &context);
+  ASSERT_TRUE(translated);
+  SmallVector<qc::PowOp> powers;
+  translated->walk([&](qc::PowOp op) { powers.push_back(op); });
+  ASSERT_EQ(powers.size(), 1U);
+  const auto exponent = powers.front().getExponentValue();
+  ASSERT_TRUE(exponent.has_value());
+  EXPECT_DOUBLE_EQ(*exponent, 9007199254740992.0);
+
+  constexpr StringLiteral inexactSource = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(9007199254740993) @ x q;
+)";
+  EXPECT_FALSE(qc::translateQASM3ToQC(inexactSource, &context));
+
+  constexpr StringLiteral overflowSource = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(4294967296) @ pow(4294967296) @ x q;
+)";
+  EXPECT_FALSE(qc::translateQASM3ToQC(overflowSource, &context));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -503,6 +563,21 @@ INSTANTIATE_TEST_SUITE_P(
             "OPENQASM 3.0; include \"stdgates.inc\"; qubit[2] q; bit[2] c; "
             "ctrl @ pow(2) @ inv @ s q[0], q[1]; c = measure q;",
             MQT_NAMED_BUILDER(controlledInversePowS)},
+        QASM3TranslationTestCase{
+            "NestedPowX",
+            "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; "
+            "pow(2) @ pow(3) @ x q; c = measure q;",
+            MQT_NAMED_BUILDER(nestedPowX)},
+        QASM3TranslationTestCase{
+            "CustomPowHS",
+            "OPENQASM 3.0; include \"stdgates.inc\"; gate hs q0 { h q0; s "
+            "q0; } qubit q; bit c; pow(2) @ hs q; c = measure q;",
+            MQT_NAMED_BUILDER(customPowHS)},
+        QASM3TranslationTestCase{
+            "BroadcastPowX",
+            "OPENQASM 3.0; include \"stdgates.inc\"; qubit[2] q; bit[2] c; "
+            "pow(2) @ x q; c = measure q;",
+            MQT_NAMED_BUILDER(broadcastPowX)},
         QASM3TranslationTestCase{"BarrierTwoQubits", qasm::barrierTwoQubits,
                                  MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
         QASM3TranslationTestCase{"BarrierMultipleQubits",
