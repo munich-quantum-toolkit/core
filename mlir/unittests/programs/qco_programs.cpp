@@ -325,7 +325,10 @@ SmallVector<Value> resetQubitAfterSingleOp(QCOProgramBuilder& b) {
 
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  Value c0, c1, c2, c3;
+  Value c0;
+  Value c1;
+  Value c2;
+  Value c3;
   q[0] = b.h(q[0]);
   std::tie(q[0], c0) = b.measure(q[0]);
   q[0] = b.reset(q[0]);
