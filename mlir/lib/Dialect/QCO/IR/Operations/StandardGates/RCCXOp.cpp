@@ -9,39 +9,44 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <cstddef>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
 
+using namespace mlir;
 using namespace mlir::qco;
 
-static DynamicMatrix elementaryRCCXUnitary() {
-  constexpr Matrix4x4 cx =
-      Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                              0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+namespace {
 
-  DynamicMatrix unitary = DynamicMatrix::identity(8);
-  const auto apply1 = [&](const Matrix2x2& gate, const std::size_t qubit) {
-    unitary = gate.embedInNqubit(3, qubit) * unitary;
-  };
-  const auto applyCx = [&](const std::size_t control,
-                           const std::size_t target) {
-    unitary = cx.embedInNqubit(3, control, target) * unitary;
-  };
+/**
+ * @brief Remove subsequent RCCX operations on the same qubits.
+ */
+struct RemoveSubsequentRCCX final : OpRewritePattern<RCCXOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  apply1(HOp::getUnitaryMatrix(), 2);
-  apply1(TOp::getUnitaryMatrix(), 2);
-  applyCx(1, 2);
-  apply1(TdgOp::getUnitaryMatrix(), 2);
-  applyCx(0, 2);
-  apply1(TOp::getUnitaryMatrix(), 2);
-  applyCx(1, 2);
-  apply1(TdgOp::getUnitaryMatrix(), 2);
-  apply1(HOp::getUnitaryMatrix(), 2);
-  return unitary;
+  LogicalResult matchAndRewrite(RCCXOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeInversePairThreeTargetZeroParameter<RCCXOp>(op, rewriter);
+  }
+};
+
+} // namespace
+
+void RCCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<RemoveSubsequentRCCX>(context);
 }
 
 DynamicMatrix RCCXOp::getUnitaryMatrix() {
-  static const DynamicMatrix UNITARY = elementaryRCCXUnitary();
-  return UNITARY;
+  DynamicMatrix unitary = DynamicMatrix::identity(8);
+  unitary(3, 3) = 0.0;
+  unitary(5, 5) = -1.0;
+  unitary(7, 7) = 0.0;
+  unitary(3, 7) = {0.0, -1.0};
+  unitary(7, 3) = {0.0, 1.0};
+  return unitary;
 }

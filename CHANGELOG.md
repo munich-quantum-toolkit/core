@@ -15,6 +15,9 @@ releases may include breaking changes.
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   and phase gates with a configurable `min-controls` threshold ([#1810])
   ([**@simon1hofmann**])
+- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
+  ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -51,8 +54,8 @@ releases may include breaking changes.
   [#1676], [#1706], [#1776], [#1836]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904])
-  ([**@MatthiasReumann**], [**@burgholzer**])
+  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
+  [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755]) ([**@DRovara**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
@@ -63,7 +66,7 @@ releases may include breaking changes.
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
   [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780],
   [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808], [#1823],
-  [#1824], [#1830], [#1869], [#1872], [#1914]) ([**@burgholzer**],
+  [#1824], [#1830], [#1869], [#1872], [#1886], [#1914]) ([**@burgholzer**],
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
   [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
@@ -643,10 +646,12 @@ changelogs._
 <!-- PR links -->
 
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
+[#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
+[#1886]: https://github.com/munich-quantum-toolkit/core/pull/1886
 [#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872

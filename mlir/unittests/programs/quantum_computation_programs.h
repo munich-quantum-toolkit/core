@@ -374,6 +374,17 @@ void singleControlledXxMinusYY(QuantumComputation& comp);
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
 void multipleControlledXxMinusYY(QuantumComputation& comp);
 
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+void rccx(QuantumComputation& comp);
+
+/// Creates a circuit with a single controlled RCCX gate.
+void singleControlledRccx(QuantumComputation& comp);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+void multipleControlledRccx(QuantumComputation& comp);
+
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with just a barrier.

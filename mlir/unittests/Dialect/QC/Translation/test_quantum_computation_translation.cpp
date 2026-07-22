@@ -409,6 +409,16 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY)},
         QuantumComputationTranslationTestCase{
+            "RCCX", MQT_NAMED_BUILDER(qc::rccx),
+            MQT_NAMED_BUILDER(mlir::qc::rccx)},
+        QuantumComputationTranslationTestCase{
+            "SingleControlledRCCX", MQT_NAMED_BUILDER(qc::singleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledRccx)},
+        QuantumComputationTranslationTestCase{
+            "MultipleControlledRCCX",
+            MQT_NAMED_BUILDER(qc::multipleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRccx)},
+        QuantumComputationTranslationTestCase{
             "Barrier", MQT_NAMED_BUILDER(qc::barrier),
             MQT_NAMED_BUILDER(mlir::qc::barrier)},
         QuantumComputationTranslationTestCase{

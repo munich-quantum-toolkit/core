@@ -36,6 +36,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -429,40 +430,6 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 }
 /// @}
 
-/// \name QCO/Operations/StandardGates/RCCXOp.cpp
-/// @{
-[[nodiscard]] static DynamicMatrix elementaryRCCXUnitary() {
-  constexpr Matrix4x4 cx =
-      Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                              0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
-
-  DynamicMatrix unitary = DynamicMatrix::identity(8);
-  const auto apply1 = [&](const Matrix2x2& gate, const std::size_t qubit) {
-    unitary = gate.embedInNqubit(3, qubit) * unitary;
-  };
-  const auto applyCx = [&](const std::size_t control,
-                           const std::size_t target) {
-    unitary = cx.embedInNqubit(3, control, target) * unitary;
-  };
-
-  apply1(HOp::getUnitaryMatrix(), 2);
-  apply1(TOp::getUnitaryMatrix(), 2);
-  applyCx(1, 2);
-  apply1(TdgOp::getUnitaryMatrix(), 2);
-  applyCx(0, 2);
-  apply1(TOp::getUnitaryMatrix(), 2);
-  applyCx(1, 2);
-  apply1(TdgOp::getUnitaryMatrix(), 2);
-  apply1(HOp::getUnitaryMatrix(), 2);
-  return unitary;
-}
-
-TEST_F(QCOMatrixTest, RCCXOpMatrix) {
-  const DynamicMatrix matrix = RCCXOp::getUnitaryMatrix();
-  ASSERT_TRUE(matrix.isApprox(elementaryRCCXUnitary()));
-}
-/// @}
-
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, DCXOpMatrix) {
@@ -573,6 +540,38 @@ TEST_F(QCOMatrixTest, POpMatrix) {
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::P, {0.123});
 
   const Matrix2x2 expected = matrix2FromFlat(definition);
+
+  ASSERT_TRUE(matrix.isApprox(expected));
+}
+/// @}
+
+/// \name QCO/Operations/StandardGates/RCCXOp.cpp
+/// @{
+TEST_F(QCOMatrixTest, RCCXOpMatrix) {
+  const auto matrix = RCCXOp::getUnitaryMatrix();
+
+  qc::QuantumComputation comp;
+  comp.addQubitRegister(3, "q");
+  comp.h(2);
+  comp.t(2);
+  comp.cx(1, 2);
+  comp.tdg(2);
+  comp.cx(0, 2);
+  comp.t(2);
+  comp.cx(1, 2);
+  comp.tdg(2);
+  comp.h(2);
+
+  const auto package = std::make_unique<dd::Package>(3);
+  const auto& definition = dd::buildFunctionality(comp, *package).getMatrix(3);
+  const auto dim = static_cast<int64_t>(definition.size());
+  DynamicMatrix expected(dim);
+  for (int64_t row = 0; row < dim; ++row) {
+    for (int64_t col = 0; col < dim; ++col) {
+      expected(row, col) = definition[static_cast<std::size_t>(row)]
+                                     [static_cast<std::size_t>(col)];
+    }
+  }
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }

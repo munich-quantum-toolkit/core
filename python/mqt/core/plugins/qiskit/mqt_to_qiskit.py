@@ -26,6 +26,7 @@ from qiskit.circuit.library import (
     HGate,
     IGate,
     PhaseGate,
+    RCCXGate,
     RGate,
     RXGate,
     RXXGate,
@@ -147,6 +148,7 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
         OpType.ecr: ECRGate(),
         OpType.swap: SwapGate(),
         OpType.iswap: iSwapGate(),
+        OpType.rccx: RCCXGate(),
     }
 
     if op.type_ in gate_map_singleton:

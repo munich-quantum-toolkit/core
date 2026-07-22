@@ -785,41 +785,6 @@ def DCXOp : QCOOp<"dcx",
   let hasCanonicalizer = 1;
 }
 
-def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
-                                     ThreeTargetZeroParameter, Pure]> {
-  let summary = "Apply a relative-phase CCX gate to three qubits";
-  let description = [{
-        Applies a relative-phase Toffoli (`RCCX`) to three qubits and returns the
-        transformed qubits. The gate acts as a controlled @f$X@f$ on @f$q_2@f$
-        when @f$q_0@f$ and @f$q_1@f$ are @f$|1\rangle@f$, but may introduce a
-        non-trivial phase on @f$|111\rangle@f$ relative to a standard `CCX`.
-        This matches the `rccx` gate in OpenQASM 3 `qelib1.inc` and is commonly
-        used as a building block in multi-controlled @f$X@f$ decompositions.
-
-        Example:
-        ```mlir
-        %c0_out, %c1_out, %t_out = qco.rccx %c0_in, %c1_in, %t_in
-            : !qco.qubit, !qco.qubit, !qco.qubit
-            -> !qco.qubit, !qco.qubit, !qco.qubit
-        ```
-    }];
-
-  let arguments = (ins Arg<QubitType, "the first control qubit">:$qubit0_in,
-      Arg<QubitType, "the second control qubit">:$qubit1_in,
-      Arg<QubitType, "the target qubit">:$qubit2_in);
-  let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out,
-      QubitType:$qubit2_out);
-  let assemblyFormat =
-      "$qubit0_in `,` $qubit1_in `,` $qubit2_in attr-dict `:` type($qubit0_in) "
-      "`,` type($qubit1_in) `,` type($qubit2_in) `->` type($qubit0_out) `,` "
-      "type($qubit1_out) `,` type($qubit2_out)";
-
-  let extraClassDeclaration = [{
-        [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
-        [[nodiscard]] static DynamicMatrix getUnitaryMatrix();
-    }];
-}
-
 def ECROp : QCOOp<"ecr",
                   traits = [UnitaryOpInterface, TwoTargetZeroParameter, Pure]> {
   let summary = "Apply an ECR gate to two qubits";
@@ -1046,6 +1011,37 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
       "const std::variant<double, Value>&":$beta)>];
 
   let hasFolder = 1;
+  let hasCanonicalizer = 1;
+}
+
+def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
+                                     ThreeTargetZeroParameter, Pure]> {
+  let summary = "Apply a relative-phase CCX gate to three qubits";
+  let description = [{
+        Applies a relative-phase CCX (`RCCX`) gate to three qubits and returns the
+        transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out, %q2_out = qco.rccx %q0_in, %q1_in, %q2_in : !qco.qubit, !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit, !qco.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<QubitType, "the first target qubit">:$qubit0_in,
+      Arg<QubitType, "the second target qubit">:$qubit1_in,
+      Arg<QubitType, "the third target qubit">:$qubit2_in);
+  let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out,
+      QubitType:$qubit2_out);
+  let assemblyFormat =
+      "$qubit0_in `,` $qubit1_in `,` $qubit2_in attr-dict `:` type($qubit0_in) "
+      "`,` type($qubit1_in) `,` type($qubit2_in) `->` type($qubit0_out) `,` "
+      "type($qubit1_out) `,` type($qubit2_out)";
+
+  let extraClassDeclaration = [{
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
+        [[nodiscard]] static DynamicMatrix getUnitaryMatrix();
+    }];
+
   let hasCanonicalizer = 1;
 }
 
