@@ -1108,6 +1108,27 @@ ValueRange QCOProgramBuilder::qcoIf(
   return ifOp->getResults();
 }
 
+Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
+                               Value initArgs,
+                               function_ref<Value(Value)> thenBody,
+                               function_ref<Value(Value)> elseBody) {
+  auto thenWrapper = [&](ValueRange args) -> SmallVector<Value> {
+    return {thenBody(args.front())};
+  };
+
+  ValueRange results;
+  if (elseBody) {
+    auto elseWrapper = [&](ValueRange args) -> SmallVector<Value> {
+      return {elseBody(args.front())};
+    };
+    results = qcoIf(condition, ValueRange{initArgs}, thenWrapper, elseWrapper);
+  } else {
+    results = qcoIf(condition, ValueRange{initArgs}, thenWrapper);
+  }
+  assert(results.size() == 1);
+  return results[0];
+}
+
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();

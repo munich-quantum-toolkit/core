@@ -38,7 +38,7 @@ protected:
   MLIRContext context;
   QCOProgramBuilder programBuilder;
   QCOProgramBuilder referenceBuilder;
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> program;
   OwningOpRef<ModuleOp> reference;
 
   QCOReplaceClassicalControlsTest()
@@ -57,24 +57,24 @@ protected:
    * runs it.
    */
   static LogicalResult
-  runReplaceClassicalControlsPass(ModuleOp module,
+  runReplaceClassicalControlsPass(ModuleOp program,
                                   bool liftMeasurements = false) {
-    PassManager pm(module.getContext());
+    PassManager pm(program.getContext());
     pm.addPass(createReplaceClassicalControls());
     if (liftMeasurements) {
       pm.addPass(createMeasurementLifting());
     }
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    return pm.run(program);
   }
 
   /**
    * @brief Adds the canonicalizerPass to the current context and runs it.
    */
-  static LogicalResult runCanonicalizerPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runCanonicalizerPass(ModuleOp program) {
+    PassManager pm(program.getContext());
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    return pm.run(program);
   }
 };
 
@@ -89,6 +89,8 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -98,20 +100,20 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
   r1 = referenceBuilder.qcoIf(
-      cr0, {r1}, [&](ValueRange qubits) -> SmallVector<Value> {
-        return SmallVector<Value>{referenceBuilder.x(qubits[0])};
-      })[0];
+      cr0, r1, [&](Value qubit) -> Value { return referenceBuilder.x(qubit); });
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
   referenceBuilder.sink(r0);
@@ -119,11 +121,11 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
 
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -138,6 +140,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
+  q2 = programBuilder.h(q2);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -157,7 +162,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q01[0]);
   programBuilder.sink(q1);
   programBuilder.sink(q2);
-  module = programBuilder.finalize({c0, c1, c2});
+  program = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
@@ -165,6 +170,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
+  r2 = referenceBuilder.h(r2);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
@@ -186,11 +194,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -205,6 +213,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
+  q2 = programBuilder.h(q2);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -224,7 +235,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q01[0]);
   programBuilder.sink(q01[1]);
   programBuilder.sink(q2);
-  module = programBuilder.finalize({c0, c1, c2});
+  program = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
@@ -232,6 +243,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
+  r2 = referenceBuilder.h(r2);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
@@ -240,10 +254,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   auto andOp = arith::AndIOp::create(referenceBuilder, cr0, cr1);
 
-  r2 = referenceBuilder.qcoIf(
-      andOp.getResult(), {r2}, [&](ValueRange qubits) -> SmallVector<Value> {
-        return SmallVector<Value>{referenceBuilder.x(qubits[0])};
-      })[0];
+  r2 = referenceBuilder.qcoIf(andOp.getResult(), r2, [&](Value qubit) -> Value {
+    return referenceBuilder.x(qubit);
+  });
   Value cr2;
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
   referenceBuilder.sink(r0);
@@ -252,11 +265,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -272,6 +285,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
   auto q3 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
+  q2 = programBuilder.h(q2);
+  q3 = programBuilder.h(q3);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -294,7 +311,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q012[1]);
   programBuilder.sink(q2);
   programBuilder.sink(q3);
-  module = programBuilder.finalize({c0, c1, c2, c3});
+  program = programBuilder.finalize({c0, c1, c2, c3});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
@@ -303,6 +320,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
   auto r3 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
+  r2 = referenceBuilder.h(r2);
+  r3 = referenceBuilder.h(r3);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
@@ -330,11 +351,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2, cr3});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -346,6 +367,8 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -355,20 +378,20 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
 
   r1 = referenceBuilder.qcoIf(
-      cr0, {r1}, [&](ValueRange qubits) -> SmallVector<Value> {
-        return SmallVector<Value>{referenceBuilder.z(qubits[0])};
-      })[0];
+      cr0, r1, [&](Value qubit) -> Value { return referenceBuilder.z(qubit); });
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
   referenceBuilder.sink(r0);
@@ -376,11 +399,11 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapDiagonal) {
 
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -394,6 +417,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
                              programBuilder.getI1Type()});
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -405,23 +430,24 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1, c2});
+  program = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
                                programBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  r0 = referenceBuilder.qcoIf(
-      cr1, {r0}, [&](ValueRange qubits) -> SmallVector<Value> {
-        return SmallVector<Value>{referenceBuilder.z(qubits[0])};
-      })[0];
+  r0 = referenceBuilder.qcoIf(cr1, r0, [&](Value qubits) -> Value {
+    return referenceBuilder.z(qubits);
+  });
   Value cr2;
   std::tie(r0, cr2) = referenceBuilder.measure(r0);
   referenceBuilder.sink(r0);
@@ -429,11 +455,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -447,6 +473,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
+  q2 = programBuilder.h(q2);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -462,13 +491,16 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q0Vec[0]);
   programBuilder.sink(q1);
   programBuilder.sink(q12[1]);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
+  r2 = referenceBuilder.h(r2);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
@@ -488,11 +520,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -508,6 +540,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
+  q0 = programBuilder.h(q0);
+  q1 = programBuilder.h(q1);
+  q2 = programBuilder.h(q2);
 
   Value c0;
   std::tie(q0, c0) = programBuilder.measure(q0);
@@ -525,7 +560,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(q0Vec[0]);
   programBuilder.sink(q12[0]);
   programBuilder.sink(q2);
-  module = programBuilder.finalize({c0, c1, c2});
+  program = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
@@ -533,6 +568,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
+  r0 = referenceBuilder.h(r0);
+  r1 = referenceBuilder.h(r1);
+  r2 = referenceBuilder.h(r2);
 
   Value cr0;
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
@@ -541,10 +579,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   auto andOp = arith::AndIOp::create(referenceBuilder, cr1, cr0);
 
-  r2 = referenceBuilder.qcoIf(
-      andOp.getResult(), {r2}, [&](ValueRange qubits) -> SmallVector<Value> {
-        return SmallVector<Value>{referenceBuilder.z(qubits[0])};
-      })[0];
+  r2 = referenceBuilder.qcoIf(andOp.getResult(), r2, [&](Value qubit) -> Value {
+    return referenceBuilder.z(qubit);
+  });
   Value cr2;
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
   referenceBuilder.sink(r0);
@@ -553,9 +590,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
-  ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
+  ASSERT_TRUE(runReplaceClassicalControlsPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
