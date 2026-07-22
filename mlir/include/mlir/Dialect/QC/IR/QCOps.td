@@ -1119,9 +1119,13 @@ def PowOp : QCOp<"pow",
           static StringRef getBaseSymbol() { return "pow"; }
       }];
 
-  let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
-      "ValueRange":$qubits,
-      "const llvm::function_ref<void(mlir::ValueRange)>&":$bodyBuilder)>];
+  let builders =
+      [OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
+           "ValueRange":$qubits,
+           "const llvm::function_ref<void(mlir::ValueRange)>&":$bodyBuilder)>,
+       OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
+           "Value":$qubit,
+           "const llvm::function_ref<void(mlir::Value)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

@@ -103,13 +103,12 @@ static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
 
 static Value composedBodyWithNestedPow(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto powOut = b.pow(2.0, {q[0]}, [&](ValueRange args) {
-    auto nested = b.pow(0.5, {args[0]}, [&](ValueRange nestedArgs) {
-      return SmallVector<Value>{b.x(nestedArgs[0])};
-    });
-    return SmallVector<Value>{b.z(nested[0])};
+  const auto powOut = b.pow(2.0, q[0], [&](Value qubit) {
+    const auto nested =
+        b.pow(0.5, qubit, [&](Value nestedQubit) { return b.x(nestedQubit); });
+    return b.z(nested);
   });
-  return b.measure(powOut[0]).second;
+  return b.measure(powOut).second;
 }
 
 [[nodiscard]] static std::optional<DynamicMatrix> invMatrix(ModuleOp module) {

@@ -1358,7 +1358,10 @@ def PowOp
                   OpBuilder<(ins "ValueRange":$qubits,
                       "const std::variant<double, Value>&":$exponent,
                       "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
-                      ">":$bodyBuilder)>];
+                      ">":$bodyBuilder)>,
+                  OpBuilder<(ins "Value":$qubit,
+                      "const std::variant<double, Value>&":$exponent,
+                      "llvm::function_ref<Value(Value)>":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

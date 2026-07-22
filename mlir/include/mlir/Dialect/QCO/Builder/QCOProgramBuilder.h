@@ -1407,9 +1407,10 @@ public:
    *
    * @par Example:
    * ```c++
-   * qubits_out = builder.pow(2.0, q0_in,
+   * qubits_out = builder.pow(2.0, {q0_in, q1_in},
    *   [&](ValueRange qubits) -> SmallVector<Value> {
-   *     return {builder.s(qubits[0])};
+   *     auto [q0, q1] = builder.swap(qubits[0], qubits[1]);
+   *     return {q0, q1};
    *   }
    * );
    * ```
@@ -1422,6 +1423,25 @@ public:
    */
   ValueRange pow(const std::variant<double, Value>& exponent, ValueRange qubits,
                  function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /**
+   * @brief Apply a power modifier on a single qubit.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubit Input qubit
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto qubit_out = builder.pow(2.0, q0_in, [&](Value qubit) {
+   *   return builder.s(qubit);
+   * });
+   * ```
+   */
+  Value pow(const std::variant<double, Value>& exponent, Value qubit,
+            function_ref<Value(Value)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

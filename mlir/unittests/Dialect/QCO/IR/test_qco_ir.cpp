@@ -115,6 +115,29 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+
+  Value bodyQubit;
+  Value bodyResult;
+  auto pow = PowOp::create(builder, qubit, 2.0, [&](Value argument) -> Value {
+    bodyQubit = argument;
+    bodyResult = XOp::create(builder, argument);
+    return bodyResult;
+  });
+
+  ASSERT_EQ(pow.getQubitsIn().size(), 1);
+  ASSERT_EQ(pow.getQubitsOut().size(), 1);
+  ASSERT_EQ(pow.getBody()->getNumArguments(), 1);
+  ASSERT_EQ(pow.getBody()->getTerminator()->getNumOperands(), 1);
+  EXPECT_EQ(pow.getQubitsIn().front(), qubit);
+  EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
+  EXPECT_EQ(pow.getBody()->getTerminator()->getOperand(0), bodyResult);
+  EXPECT_TRUE(pow.verify().succeeded());
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   QCOProgramBuilder builder(context.get());

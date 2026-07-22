@@ -546,6 +546,14 @@ QCProgramBuilder::pow(const std::variant<double, Value>& exponent,
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent, Value qubit,
+                      const function_ref<void(Value)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubit, body);
+  return *this;
+}
+
 QCProgramBuilder& QCProgramBuilder::inv(Value qubit,
                                         const function_ref<void(Value)>& body) {
   checkFinalized();

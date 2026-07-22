@@ -647,6 +647,20 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   bodyBuilder(block.getArguments()));
 }
 
+void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
+                  const std::variant<double, Value>& exponent,
+                  function_ref<Value(Value)> bodyBuilder) {
+  const auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
+  build(odsBuilder, odsState, qubit.getType(), expValue, qubit);
+  auto& block = odsState.regions.front()->emplaceBlock();
+  block.addArgument(QubitType::get(odsBuilder.getContext()), odsState.location);
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  YieldOp::create(odsBuilder, odsState.location,
+                  bodyBuilder(block.getArgument(0)));
+}
+
 LogicalResult PowOp::verify() {
 
   auto& block = *getBody();

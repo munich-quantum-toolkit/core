@@ -973,6 +973,25 @@ QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
   return targetsOut;
 }
 
+Value QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                             Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto powOp =
+      PowOp::create(*this, qubit, exponent, [&](Value qubitArg) -> Value {
+        updateQubitTracking(qubit, qubitArg);
+        innerQubitOut = body(qubitArg);
+        return innerQubitOut;
+      });
+
+  const auto& qubitsOut = powOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
+}
+
 std::pair<ValueRange, Value>
 QCOProgramBuilder::ctrl(ValueRange controls, Value target,
                         function_ref<Value(Value)> body) {

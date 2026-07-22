@@ -1094,7 +1094,9 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.pow(2.0, q0, [&](ValueRange qubits) { builder.s(qubits[0]); });
+   * builder.pow(2.0, {q0, q1}, [&](ValueRange qubits) {
+   *   builder.swap(qubits[0], qubits[1]);
+   * });
    * ```
    * ```mlir
    * qc.pow(%exponent) (%a0 = %q0) {
@@ -1105,6 +1107,23 @@ public:
   QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
                         ValueRange qubits,
                         const function_ref<void(ValueRange)>& body);
+
+  /**
+   * @brief Apply a power modifier on a single qubit.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubit Qubit involved in the operation
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.pow(2.0, q0, [&](Value qubit) { builder.s(qubit); });
+   * ```
+   */
+  QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
+                        Value qubit, const function_ref<void(Value)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

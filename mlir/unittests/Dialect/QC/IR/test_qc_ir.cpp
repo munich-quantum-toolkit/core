@@ -116,6 +116,24 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCTest, DirectSingleQubitPowBuilder) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+
+  Value bodyQubit;
+  auto pow = PowOp::create(builder, 2.0, qubit, [&](Value argument) {
+    bodyQubit = argument;
+    XOp::create(builder, argument);
+  });
+
+  ASSERT_EQ(pow.getQubits().size(), 1);
+  ASSERT_EQ(pow.getBody()->getNumArguments(), 1);
+  EXPECT_EQ(pow.getQubits().front(), qubit);
+  EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
+  EXPECT_TRUE(pow.verify().succeeded());
+}
+
 /// \name QC/Modifiers/CtrlOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

@@ -905,10 +905,8 @@ static SmallVector<Value> controlledH(QCOProgramBuilder& b) {
 
 static Value dynamicPowX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto powOut = b.pow(0.5, {q[0]}, [&](ValueRange args) {
-    return SmallVector<Value>{b.x(args[0])};
-  });
-  return b.measure(powOut[0]).second;
+  const auto powOut = b.pow(0.5, q[0], [&](Value qubit) { return b.x(qubit); });
+  return b.measure(powOut).second;
 }
 
 static SmallVector<Value> singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
