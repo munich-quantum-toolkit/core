@@ -1913,12 +1913,7 @@ SmallVector<Value> indexSwitchMultiCase(QCProgramBuilder& b) {
                                                      }},
                    [&] { /* no-op */ });
 
-  SmallVector<Value> bits(size);
-  for (int64_t i = 0; i < size; ++i) {
-    bits[i] = b.measure(reg[i]);
-  }
-
-  return bits;
+  return measureAndReturn(b, reg.qubits);
 }
 
 Value simpleWhileReset(QCProgramBuilder& b) {
@@ -1982,6 +1977,25 @@ SmallVector<Value> nestedForLoopWhileOp(QCProgramBuilder& b) {
           b.scfCondition(measureResult);
         },
         [&] { b.h(q); });
+  });
+  return measureAndReturn(b, reg.qubits);
+}
+
+SmallVector<Value> nestedForLoopSwitchOp(QCProgramBuilder& b) {
+  constexpr int64_t n = 32;
+  auto reg = b.allocQubitRegister(1);
+  auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
+  b.scfFor(0, n, 1, [&](Value iv) {
+    auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
+    auto q = b.memrefLoad(reg.value, iv);
+    b.scfIndexSwitch(rem, SmallVector<int64_t>{0, 1, 2},
+                     SmallVector<function_ref<void()>>{[&] { b.x(q); },
+                                                       [&] { b.y(q); },
+                                                       [&] {
+                                                         b.x(q);
+                                                         b.y(q);
+                                                       }},
+                     [&] { /* error */ });
   });
   return measureAndReturn(b, reg.qubits);
 }

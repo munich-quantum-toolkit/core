@@ -939,6 +939,10 @@ Value nestedForLoopIfOp(QCProgramBuilder& b);
 /// operation.
 SmallVector<Value> nestedForLoopWhileOp(QCProgramBuilder& b);
 
+/// Creates a circuit with a for operation with a register and a nested index
+/// switch operation.
+SmallVector<Value> nestedForLoopSwitchOp(QCProgramBuilder& b);
+
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the
 /// register.
