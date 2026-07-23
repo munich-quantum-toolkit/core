@@ -115,9 +115,9 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
       const auto idx = std::distance(targets.begin(), targetIt);
 
       for (Region* region : op.getRegions()) {
-        initEquivGroup(cast<TypedValue<RankedTensorType>>(
-                           region->getArgument(idx)),
-                       id, group);
+        initEquivGroup(
+            cast<TypedValue<RankedTensorType>>(region->getArgument(idx)), id,
+            group);
       }
     } else if (auto forOp = dyn_cast<scf::ForOp>(it.operation())) {
       const auto& arg =
@@ -169,7 +169,7 @@ static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
 /// Return a permutation vector, where permutation[i] maps the i-th value of the
 /// lhs range to the j-th value of the rhs range.
 template <typename LhsRange, typename RhsRange>
-static SmallVector<size_t>
+static FailureOr<SmallVector<size_t>>
 getPermutation(const LhsRange& lhs, const RhsRange& rhs, const IRMapping& m,
                const TensorMapping& tm) {
   SmallVector<size_t> permutation(lhs.size());
@@ -183,6 +183,9 @@ getPermutation(const LhsRange& lhs, const RhsRange& rhs, const IRMapping& m,
                                           return tm.equals(lhsValue, rhsValue);
                                         })
                         : llvm::find(rhs, m.lookup(lhsValue));
+    if (it == rhs.end()) {
+      return failure();
+    }
     const auto j = std::distance(rhs.begin(), it);
     permutation[i] = j;
   }
@@ -197,16 +200,18 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
   workset.insert_range(rhs);
 
   for (const auto lhsValue : lhs) {
-    const auto mapped =
-        hasTypeQubitTensor(lhsValue)
-            ? *llvm::find_if(rhs,
-                             [&](const auto rhsValue) {
-                               if (!hasTypeQubitTensor(rhsValue)) {
-                                 return false;
-                               }
-                               return tm.equals(lhsValue, rhsValue);
-                             })
-            : m.lookup(lhsValue);
+    Value mapped;
+    if (hasTypeQubitTensor(lhsValue)) {
+      const auto it = llvm::find_if(rhs, [&](const auto rhsValue) {
+        return hasTypeQubitTensor(rhsValue) && tm.equals(lhsValue, rhsValue);
+      });
+      if (it == rhs.end()) {
+        return false;
+      }
+      mapped = *it;
+    } else {
+      mapped = m.lookup(lhsValue);
+    }
     if (!workset.contains(mapped)) {
       return false;
     }
@@ -541,30 +546,42 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     assert(isa<qc::CtrlOp>(rhs.getParentOp()));
     auto lhsCtrl = cast<qc::CtrlOp>(lhs.getParentOp());
     auto rhsCtrl = cast<qc::CtrlOp>(rhs.getParentOp());
-    mapArguments(
-        lhs, rhs,
-        getPermutation(lhsCtrl.getTargets(), rhsCtrl.getTargets(), m, tm), m);
+    const auto permutation =
+        getPermutation(lhsCtrl.getTargets(), rhsCtrl.getTargets(), m, tm);
+    if (failed(permutation)) {
+      return false;
+    }
+    mapArguments(lhs, rhs, *permutation, m);
   } else if (isa<qco::CtrlOp>(lhs.getParentOp())) {
     assert(isa<qco::CtrlOp>(rhs.getParentOp()));
     auto lhsCtrl = cast<qco::CtrlOp>(lhs.getParentOp());
     auto rhsCtrl = cast<qco::CtrlOp>(rhs.getParentOp());
     const auto permutation = getPermutation(lhsCtrl.getInputTargets(),
                                             rhsCtrl.getInputTargets(), m, tm);
-    mapArguments(lhs, rhs, permutation, m);
+    if (failed(permutation)) {
+      return false;
+    }
+    mapArguments(lhs, rhs, *permutation, m);
   } else if (isa<qco::IfOp>(lhs.getParentOp())) {
     assert(isa<qco::IfOp>(rhs.getParentOp()));
     auto lhsIf = cast<qco::IfOp>(lhs.getParentOp());
     auto rhsIf = cast<qco::IfOp>(rhs.getParentOp());
     const auto permutation =
         getPermutation(lhsIf.getQubits(), rhsIf.getQubits(), m, tm);
-    mapArguments(lhs, rhs, permutation, m);
+    if (failed(permutation)) {
+      return false;
+    }
+    mapArguments(lhs, rhs, *permutation, m);
   } else if (isa<qco::IndexSwitchOp>(lhs.getParentOp())) {
     assert(isa<qco::IndexSwitchOp>(rhs.getParentOp()));
     auto lhsSwitch = cast<qco::IndexSwitchOp>(lhs.getParentOp());
     auto rhsSwitch = cast<qco::IndexSwitchOp>(rhs.getParentOp());
     const auto permutation =
         getPermutation(lhsSwitch.getTargets(), rhsSwitch.getTargets(), m, tm);
-    mapArguments(lhs, rhs, permutation, m);
+    if (failed(permutation)) {
+      return false;
+    }
+    mapArguments(lhs, rhs, *permutation, m);
   } else {
     SmallVector<size_t> permutation(lhs.getNumArguments());
     std::iota(permutation.begin(), permutation.end(), 0);
@@ -615,13 +632,17 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             auto lhsCtrl = cast<qco::CtrlOp>(lhsOp);
             auto rhsCtrl = cast<qco::CtrlOp>(rhsOp);
 
-            SmallVector<size_t> permutation;
+            const auto controlPermutation = getPermutation(
+                lhsCtrl.getInputControls(), rhsCtrl.getInputControls(), m, tm);
+            const auto targetPermutation = getPermutation(
+                lhsCtrl.getInputTargets(), rhsCtrl.getInputTargets(), m, tm);
+            if (failed(controlPermutation) || failed(targetPermutation)) {
+              return false;
+            }
+
+            SmallVector<size_t> permutation(*controlPermutation);
             permutation.reserve(lhsCtrl.getNumQubits());
-            permutation.append(getPermutation(
-                lhsCtrl.getInputControls(), rhsCtrl.getInputControls(), m, tm));
-            for (const auto i :
-                 getPermutation(lhsCtrl.getInputTargets(),
-                                rhsCtrl.getInputTargets(), m, tm)) {
+            for (const auto i : *targetPermutation) {
               permutation.emplace_back(lhsCtrl.getNumControls() + i);
             }
             mapResults(lhsCtrl, rhsCtrl, permutation, m);
@@ -631,14 +652,20 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             auto rhsIf = cast<qco::IfOp>(rhsOp);
             const auto permutation =
                 getPermutation(lhsIf.getQubits(), rhsIf.getQubits(), m, tm);
-            mapResults(lhsIf, rhsIf, permutation, m);
+            if (failed(permutation)) {
+              return false;
+            }
+            mapResults(lhsIf, rhsIf, *permutation, m);
           } else if (isa<qco::IndexSwitchOp>(lhsOp)) {
             assert(isa<qco::IndexSwitchOp>(rhsOp));
             auto lhsSwitch = cast<qco::IndexSwitchOp>(lhsOp);
             auto rhsSwitch = cast<qco::IndexSwitchOp>(rhsOp);
             const auto permutation = getPermutation(
                 lhsSwitch.getTargets(), rhsSwitch.getTargets(), m, tm);
-            mapResults(lhsSwitch, rhsSwitch, permutation, m);
+            if (failed(permutation)) {
+              return false;
+            }
+            mapResults(lhsSwitch, rhsSwitch, *permutation, m);
           } else if (isa<qtensor::AllocOp>(lhsOp)) {
             assert(isa<qtensor::AllocOp>(rhsOp));
             auto lhsAlloc = cast<qtensor::AllocOp>(lhsOp);

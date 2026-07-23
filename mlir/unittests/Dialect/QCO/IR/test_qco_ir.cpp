@@ -23,8 +23,8 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -298,9 +298,7 @@ TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
     QCOProgramBuilder builder(context.get());
     builder.initialize();
 
-    const auto identity = [](ValueRange args) {
-      return llvm::to_vector(args);
-    };
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
     const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
         identity};
 
@@ -320,19 +318,46 @@ TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
   EXPECT_TRUE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
 }
 
+TEST_F(QCOTest, NonEquivalentTensorIndexSwitches) {
+  const auto build = [&](const bool switchFirstTensor) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+    const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+        identity};
+
+    const auto first = builder.qtensorAlloc(1);
+    const auto second = builder.qtensorAlloc(1);
+    const auto target = switchFirstTensor ? first : second;
+    const auto untouched = switchFirstTensor ? second : first;
+    const auto result = builder.qcoIndexSwitch(
+        0, target, SmallVector<int64_t>{0}, caseBodies, identity);
+    builder.qtensorDealloc(result.front());
+    builder.qtensorDealloc(untouched);
+    return builder.finalize();
+  };
+
+  const auto lhs = build(true);
+  const auto rhs = build(false);
+  ASSERT_TRUE(lhs);
+  ASSERT_TRUE(rhs);
+  EXPECT_TRUE(verify(*lhs).succeeded());
+  EXPECT_TRUE(verify(*rhs).succeeded());
+  EXPECT_FALSE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
+}
+
 TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  const auto identity = [](ValueRange args) {
-    return llvm::to_vector(args);
-  };
+  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity, identity};
 
   const auto q0 = builder.allocQubit();
-  auto result = builder.qcoIndexSwitch(
-      1, q0, SmallVector<int64_t>{0, 1}, caseBodies, identity);
+  auto result = builder.qcoIndexSwitch(1, q0, SmallVector<int64_t>{0, 1},
+                                       caseBodies, identity);
   builder.sink(result.front());
   [[maybe_unused]] auto module = builder.finalize();
 
