@@ -1405,14 +1405,18 @@ def IfOp
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
   let hasCustomAssemblyFormat = 1;
 
-  let builders = [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+  let builders =
+      [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), condition, qubits);
         }]>,
-                  OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
-                      "function_ref<SmallVector<Value>(ValueRange)"
-                      ">":$thenBuilder,
-                      CArg<"function_ref<SmallVector<Value>(ValueRange)>",
-                           "nullptr">:$elseBuilder)>];
+       OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
+           "function_ref<SmallVector<Value>(ValueRange)"
+           ">":$thenBuilder,
+           CArg<"function_ref<SmallVector<Value>(ValueRange)>",
+                "nullptr">:$elseBuilder)>,
+       OpBuilder<(ins "Value":$condition, "Value":$input,
+           "function_ref<Value(Value)>":$thenBuilder,
+           CArg<"function_ref<Value(Value)>", "nullptr">:$elseBuilder)>];
 
   let extraClassDeclaration = [{
         /// Return the then-block.

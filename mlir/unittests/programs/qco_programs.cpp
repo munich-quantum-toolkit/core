@@ -3895,11 +3895,8 @@ SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  auto res = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
-    auto innerQubit = b.x(args[0]);
-    return SmallVector{innerQubit};
-  });
-  q[0] = res[0];
+  q[0] = b.qcoIf(measureResult, measuredQubit,
+                 [&](Value arg) { return b.x(arg); });
   auto [q1, bit] = b.measure(q[0]);
   return {measureResult, bit};
 }
@@ -3925,17 +3922,9 @@ SmallVector<Value> ifElse(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  auto res = b.qcoIf(
-      measureResult, {measuredQubit},
-      [&](ValueRange args) {
-        auto innerQubit = b.x(args[0]);
-        return SmallVector{innerQubit};
-      },
-      [&](ValueRange args) {
-        auto innerQubit = b.z(args[0]);
-        return SmallVector{innerQubit};
-      });
-  q[0] = res[0];
+  q[0] = b.qcoIf(
+      measureResult, measuredQubit, [&](Value arg) { return b.x(arg); },
+      [&](Value arg) { return b.z(arg); });
   auto [q0_, c0] = b.measure(q[0]);
   return {measureResult, c0};
 }
@@ -3954,6 +3943,16 @@ Value ifOneQubitOneTensor(QCOProgramBuilder& b) {
         return SmallVector{innerQubit0, t2};
       });
   return b.measure(ifRes[0]).second;
+}
+
+Value ifOneTensor(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto result = b.qcoIf(true, q.value, [&](Value tensor) {
+    auto [updatedTensor, qubit] = b.qtensorExtract(tensor, 0);
+    qubit = b.x(qubit);
+    return b.qtensorInsert(qubit, updatedTensor, 0);
+  });
+  return measureAndReturnQTensor(b, result, 1).front();
 }
 
 Value constantTrueIf(QCOProgramBuilder& b) {

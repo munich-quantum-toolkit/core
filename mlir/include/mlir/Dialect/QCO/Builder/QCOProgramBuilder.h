@@ -1515,6 +1515,48 @@ public:
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   /**
+   * @brief Construct an if operation for qubits with a single target qubit or
+   * tensor.
+   *
+   * @details
+   * Constructs an if operation that takes a bool Value and a single qubit
+   * or qtensor value that is used in the then/else region of this operation.
+   * The value is passed down as block arguments to each region. Qubits that
+   * were extracted from a tensor that is used as an argument for this operation
+   * are automatically inserted before the operation is constructed.
+   *
+   * @param condition Bool condition
+   * @param initArg Initial argument for the if branches
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Value as a result
+   *
+   * @par Example:
+   * ```c++
+   * result = builder.qcoIf(condition, initArg, [&](Value arg)
+   * -> Value {
+   *   auto q1 = builder.x(arg);
+   *   return q1;
+   * }, [&](Value arg) -> Value {
+   *   auto q2 = builder.z(arg);
+   *   return q2;
+   * });
+   * ```
+   * ```mlir
+   * %q3 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * } else args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
+   * ```
+   */
+  Value qcoIf(const std::variant<bool, Value>& condition, Value initArg,
+              function_ref<Value(Value)> thenBody,
+              function_ref<Value(Value)> elseBody = nullptr);
+
+  /**
    * @brief Construct an scf.for operation
    *
    * @details
@@ -1752,6 +1794,23 @@ private:
    * @return SmallVector of the updated values of the initial values.
    */
   SmallVector<Value> prepareInitArgs(ValueRange initArgs);
+
+  /**
+   * @brief Prepare one initial argument by re-inserting extracted qubits into
+   * its tensor, if necessary.
+   * @param initArg Initial value
+   * @return Updated initial value
+   */
+  Value prepareInitArg(Value initArg);
+
+  Value prepareInitArg(Value initArg, const DenseSet<Value>* initQubits);
+
+  /**
+   * @brief Update linear-value tracking for one replaced value
+   * @param oldValue The old value to be replaced
+   * @param newValue The new value to be tracked
+   */
+  void updateQubitValueTracking(Value oldValue, Value newValue);
 
   /**
    * @brief Update the qubit tracking of the old values with the new values
