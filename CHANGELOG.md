@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add decision diagram-based construction and simulation of static unitary
+  QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
   ([**@simon1hofmann**])
@@ -642,6 +644,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1915]: https://github.com/munich-quantum-toolkit/core/pull/1915
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
