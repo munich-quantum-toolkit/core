@@ -1195,9 +1195,8 @@ SmallVector<Value> negPowInvIswap(QCProgramBuilder& b);
 /// Reference for negPowInvIswap: xx_plus_yy(-2π, 0) (the fully folded form).
 SmallVector<Value> negPowInvIswapRef(QCProgramBuilder& b);
 
-/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. The fold
-/// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
-/// so the pow survives canonicalization and reaches ConvertQCPowOp.
+/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. Canonicalization
+/// expands pow(p){SX} to gphase+rx inside ctrl.
 SmallVector<Value> ctrlPowSx(QCProgramBuilder& b);
 
 /// Creates the reference for ctrlPowSx: controlled gphase(-pi/12) and RX(pi/6).
