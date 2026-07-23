@@ -3284,17 +3284,10 @@ SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b) {
   q = b.h(reg[0]);
   std::tie(q, bit0) = b.measure(q);
   c0 = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
-  q = b.qcoIndexSwitch(
-      c0, {q}, SmallVector<int64_t>{0},
-      SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
-          [&](ValueRange args) {
-            auto innerQubit = b.x(args[0]);
-            return SmallVector{innerQubit};
-          }},
-      [&](ValueRange args) {
-        auto innerQubit = b.z(args[0]);
-        return SmallVector{innerQubit};
-      })[0];
+  q = b.qcoIndexSwitch(c0, q, SmallVector<int64_t>{0},
+                       SmallVector<function_ref<Value(Value)>>{
+                           [&](Value arg) { return b.x(arg); }},
+                       [&](Value arg) { return b.z(arg); });
 
   std::tie(q, bit1) = b.measure(q);
 

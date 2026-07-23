@@ -13,6 +13,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
@@ -29,6 +30,34 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+
+void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                          Value arg, Value target, ArrayRef<int64_t> cases,
+                          ArrayRef<function_ref<Value(Value)>> caseBuilders,
+                          function_ref<Value(Value)> defaultBuilder) {
+  if (cases.size() != caseBuilders.size()) {
+    llvm::reportFatalUsageError(
+        "Each case must have a corresponding case body function");
+  }
+
+  build(odsBuilder, odsState, target.getType(), arg, cases, target,
+        cases.size());
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  const auto buildRegion = [&](Region& region,
+                               function_ref<Value(Value)> bodyBuilder) {
+    auto& block = region.emplaceBlock();
+    const auto blockArgument =
+        block.addArgument(target.getType(), odsState.location);
+    odsBuilder.setInsertionPointToStart(&block);
+    YieldOp::create(odsBuilder, odsState.location, bodyBuilder(blockArgument));
+  };
+
+  for (const auto [index, caseBuilder] : llvm::enumerate(caseBuilders)) {
+    buildRegion(*odsState.regions[index + 1], caseBuilder);
+  }
+  buildRegion(*odsState.regions.front(), defaultBuilder);
+}
 
 // Adapted from
 // https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp

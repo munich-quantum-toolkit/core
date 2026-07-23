@@ -1439,6 +1439,11 @@ def IndexSwitchOp
       VariadicRegion<SizedRegion<1>>:$caseRegions);
   let hasCustomAssemblyFormat = 1;
 
+  let builders = [OpBuilder<(ins "Value":$arg, "Value":$target,
+      "ArrayRef<int64_t>":$cases,
+      "ArrayRef<function_ref<Value(Value)>>":$caseBuilders,
+      "function_ref<Value(Value)>":$defaultBuilder)>];
+
   let extraClassDeclaration = [{
         /// Return the number of case regions
         size_t getNumCases();

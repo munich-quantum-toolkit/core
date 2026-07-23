@@ -1562,6 +1562,35 @@ public:
       function_ref<SmallVector<Value>(ValueRange)> defaultBody);
 
   /**
+   * @brief Construct an index switch operation with a single linear target.
+   *
+   * @details
+   * Constructs an index switch operation for one qubit or qtensor value.
+   * Each branch callback receives and returns a single value, avoiding
+   * one-element ranges and vectors.
+   *
+   * @param arg Index argument.
+   * @param target Initial argument for every index switch branch.
+   * @param cases The individual switch cases.
+   * @param caseBodies Functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return The single result value.
+   *
+   * @par Example:
+   * ```c++
+   * result = builder.qcoIndexSwitch(
+   *     arg, target, SmallVector<int64_t>{0},
+   *     SmallVector<function_ref<Value(Value)>>{
+   *         [&](Value value) { return builder.x(value); }},
+   *     [&](Value value) { return builder.z(value); });
+   * ```
+   */
+  Value qcoIndexSwitch(const std::variant<int64_t, Value>& arg, Value target,
+                       ArrayRef<int64_t> cases,
+                       ArrayRef<function_ref<Value(Value)>> caseBodies,
+                       function_ref<Value(Value)> defaultBody);
+
+  /**
    * @brief Construct an scf.for operation
    *
    * @details

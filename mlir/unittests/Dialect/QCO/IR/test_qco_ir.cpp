@@ -154,6 +154,29 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                                    refBuilder.get()));
 }
 
+TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto target = builder.allocQubit();
+  const auto identity = [](Value value) { return value; };
+  const SmallVector<function_ref<Value(Value)>> caseBuilders{identity};
+
+  auto switchOp =
+      IndexSwitchOp::create(builder, index.getResult(), target,
+                            ArrayRef<int64_t>{0}, caseBuilders, identity);
+
+  ASSERT_EQ(switchOp.getTargets().size(), 1);
+  ASSERT_EQ(switchOp.getResults().size(), 1);
+  ASSERT_EQ(switchOp.getNumCases(), 1);
+  EXPECT_EQ(switchOp.getCaseBlock(0)->getArgument(0).getType(),
+            target.getType());
+  EXPECT_EQ(switchOp.getDefaultBlock()->getArgument(0).getType(),
+            target.getType());
+  EXPECT_TRUE(switchOp.verify().succeeded());
+}
+
 TEST_F(QCOTest, IfOpParser) {
   // Test IfOp parser
   const char* mlirCode = R"(
@@ -323,9 +346,7 @@ TEST_F(QCOTest, IndexSwitchCaseValuesAffectEquivalence) {
     QCOProgramBuilder builder(context.get());
     builder.initialize();
 
-    const auto identity = [](ValueRange args) {
-      return llvm::to_vector(args);
-    };
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
     const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
         identity};
 

@@ -1213,6 +1213,44 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
   return switchOp.getResults();
 }
 
+Value QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, Value target,
+    ArrayRef<int64_t> cases, ArrayRef<function_ref<Value(Value)>> caseBodies,
+    function_ref<Value(Value)> defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    llvm::reportFatalUsageError(
+        "Each case must have a corresponding case body function");
+  }
+
+  const auto updatedTarget = prepareInitArg(target);
+  const auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp = IndexSwitchOp::create(*this, target.getType(), argValue,
+                                        cases, updatedTarget, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, Value previous,
+                               function_ref<Value(Value)> body) -> Value {
+    auto& block = region.emplaceBlock();
+    const auto blockArgument = block.addArgument(target.getType(), getLoc());
+    updateQubitValueTracking(previous, blockArgument);
+    setInsertionPointToStart(&block);
+    const auto result = body(blockArgument);
+    YieldOp::create(*this, result);
+    return result;
+  };
+
+  Value previous = updatedTarget;
+  for (const auto [region, body] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    previous = buildRegion(region, previous, body);
+  }
+  previous = buildRegion(switchOp.getDefaultRegion(), previous, defaultBody);
+  updateQubitValueTracking(previous, switchOp.getResult(0));
+  return switchOp.getResult(0);
+}
+
 Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
                                Value initArg,
                                function_ref<Value(Value)> thenBody,
