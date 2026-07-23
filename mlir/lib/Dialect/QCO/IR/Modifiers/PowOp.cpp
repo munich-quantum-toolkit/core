@@ -662,7 +662,6 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
 }
 
 LogicalResult PowOp::verify() {
-
   auto& block = *getBody();
   if (llvm::any_of(block, [](Operation& op) {
         return isa<AllocOp, SinkOp, MeasureOp, ResetOp, qtensor::ExtractOp,
