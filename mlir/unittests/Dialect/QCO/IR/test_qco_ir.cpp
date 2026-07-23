@@ -318,6 +318,33 @@ TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
   EXPECT_TRUE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
 }
 
+TEST_F(QCOTest, IndexSwitchCaseValuesAffectEquivalence) {
+  const auto build = [&](const int64_t caseValue) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    const auto identity = [](ValueRange args) {
+      return llvm::to_vector(args);
+    };
+    const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+        identity};
+
+    const auto q0 = builder.allocQubit();
+    const auto result = builder.qcoIndexSwitch(
+        0, q0, SmallVector<int64_t>{caseValue}, caseBodies, identity);
+    builder.sink(result.front());
+    return builder.finalize();
+  };
+
+  const auto lhs = build(0);
+  const auto rhs = build(1);
+  ASSERT_TRUE(lhs);
+  ASSERT_TRUE(rhs);
+  EXPECT_TRUE(verify(*lhs).succeeded());
+  EXPECT_TRUE(verify(*rhs).succeeded());
+  EXPECT_FALSE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
+}
+
 TEST_F(QCOTest, NonEquivalentTensorIndexSwitches) {
   const auto build = [&](const bool switchFirstTensor) {
     QCOProgramBuilder builder(context.get());

@@ -407,8 +407,11 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
     }
   } else if (isa<qco::IndexSwitchOp>(lhs)) {
     assert(isa<qco::IndexSwitchOp>(rhs));
-    if (!compareValueLists(cast<qco::IndexSwitchOp>(lhs).getTargets(),
-                           cast<qco::IndexSwitchOp>(rhs).getTargets(), m, tm)) {
+    auto lhsSwitch = cast<qco::IndexSwitchOp>(lhs);
+    auto rhsSwitch = cast<qco::IndexSwitchOp>(rhs);
+    if (lhsSwitch.getCases() != rhsSwitch.getCases() ||
+        !compareValueLists(lhsSwitch.getTargets(), rhsSwitch.getTargets(), m,
+                           tm)) {
       return false;
     }
   } else if (isa<qco::YieldOp>(lhs)) {
