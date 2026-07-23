@@ -1240,6 +1240,37 @@ public:
                           const function_ref<void()>& elseBody = nullptr);
 
   /**
+   * @brief Construct an scf.index_switch operation
+   *
+   * @param arg Index argument.
+   * @param cases The individual switch cases.
+   * @param caseBodies An array of functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfIndexSwitch(index,
+   *   SmallVector<int64_t>{0},
+   *   SmallVector<function_ref<void()>>{[&] { b.x(q0); }},
+   *   [&] { b.z(q0); });
+   * ```
+   * ```mlir
+   * scf.index_switch %condition
+   * case 0 {
+   *   qc.x %q0 : !qc.qubit
+   * }
+   * default {
+   *   qc.z %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                   ArrayRef<int64_t> cases,
+                                   ArrayRef<function_ref<void()>> caseBodies,
+                                   const function_ref<void()>& defaultBody);
+
+  /**
    * @brief Construct an scf.condition operation
    *
    * @param condition Condition for the condition operation

@@ -71,6 +71,10 @@ void TensorIterator::forward() {
           const auto idx = std::distance(op.getQubits().begin(), it);
           tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults()[idx]);
         })
+        .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedResult(&(*tensor_.use_begin())));
+        })
         .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
                              op->getName().getStringRef());
@@ -130,6 +134,16 @@ void TensorIterator::backward() {
 
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
+      })
+      .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+        if (auto result = dyn_cast<OpResult>(tensor_)) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedTarget(result)->get());
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected qco.index_switch result for tied target lookup");
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +

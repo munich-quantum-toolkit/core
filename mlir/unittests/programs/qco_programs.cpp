@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -4049,6 +4050,71 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b) {
   return {measureResult, c};
 }
 
+SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b) {
+  Value q;
+  Value bit0;
+  Value c0;
+  Value bit1;
+
+  auto reg = b.allocQubitRegister(1);
+
+  q = b.h(reg[0]);
+  std::tie(q, bit0) = b.measure(q);
+  c0 = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
+  q = b.qcoIndexSwitch(c0, q, SmallVector<int64_t>{0},
+                       SmallVector<function_ref<Value(Value)>>{
+                           [&](Value arg) { return b.x(arg); }},
+                       [&](Value arg) { return b.z(arg); });
+
+  std::tie(q, bit1) = b.measure(q);
+
+  return {bit0, bit1};
+}
+
+SmallVector<Value> indexSwitchMultiCase(QCOProgramBuilder& b) {
+  constexpr int64_t size = 2;
+
+  auto reg = b.allocQubitRegister(size);
+  auto c1 = arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(1))
+                .getResult();
+  auto condition =
+      arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(0))
+          .getResult();
+  for (int64_t i = 0; i < size; ++i) {
+    Value bit;
+
+    reg[i] = b.h(reg[i]);
+    std::tie(reg[i], bit) = b.measure(reg[i]);
+    const auto index =
+        arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
+    condition = arith::OrIOp::create(b, {condition, index}).getResult();
+    condition = arith::ShLIOp::create(b, {condition, c1});
+  }
+
+  reg.qubits = b.qcoIndexSwitch(
+      condition, reg.qubits, SmallVector<int64_t>{1, 2, 3},
+      SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+          [&](ValueRange args) {
+            SmallVector<Value> qs(args);
+            qs[1] = b.x(qs[1]);
+            return qs;
+          },
+          [&](ValueRange args) {
+            SmallVector<Value> qs(args);
+            qs[0] = b.x(qs[0]);
+            return qs;
+          },
+          [&](ValueRange args) {
+            SmallVector<Value> qs(args);
+            qs[0] = b.x(qs[0]);
+            qs[1] = b.x(qs[1]);
+            return qs;
+          }},
+      [&](ValueRange args) { return args; });
+
+  return measureAndReturn(b, reg.qubits);
+}
+
 SmallVector<Value> qtensorAlloc(QCOProgramBuilder& b) {
   (void)b.qtensorAlloc(3);
   return measureAndReturn(b, {});
@@ -4244,6 +4310,41 @@ SmallVector<Value> nestedForLoopWhileOp(QCOProgramBuilder& b) {
         return SmallVector{insert};
       });
   return measureAndReturnQTensor(b, scfFor[0], 2);
+}
+
+SmallVector<Value> nestedForLoopSwitchOp(QCOProgramBuilder& b) {
+  constexpr int64_t n = 3;
+  auto reg = b.allocQubitRegister(n);
+  auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
+
+  reg.value = b.scfFor(0, n, 1, reg.value, [&](Value iv, ValueRange iterArgs) {
+    auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
+    auto [t, q] = b.qtensorExtract(iterArgs[0], iv);
+    q = b.qcoIndexSwitch(
+        rem, {q}, SmallVector<int64_t>{0, 1, 2},
+        SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+            [&](ValueRange args) {
+              SmallVector<Value> qs(args);
+              qs[0] = b.x(qs[0]);
+              return qs;
+            },
+            [&](ValueRange args) {
+              SmallVector<Value> qs(args);
+              qs[0] = b.y(qs[0]);
+              return qs;
+            },
+            [&](ValueRange args) {
+              SmallVector<Value> qs(args);
+              qs[0] = b.x(qs[0]);
+              qs[0] = b.y(qs[0]);
+              return qs;
+            }},
+        [&](ValueRange args) { return args; })[0];
+    auto insert = b.qtensorInsert(q, t, iv);
+    return SmallVector{insert};
+  })[0];
+
+  return measureAndReturnQTensor(b, reg.value, n);
 }
 
 Value nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {

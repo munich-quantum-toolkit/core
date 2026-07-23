@@ -20,16 +20,26 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -64,7 +74,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    qtensor::QTensorDialect>();
+                    scf::SCFDialect, qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -176,6 +186,115 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                                    refBuilder.get()));
 }
 
+TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto target = builder.allocQubit();
+  const auto identity = [](Value value) { return value; };
+  const SmallVector<function_ref<Value(Value)>> caseBuilders{identity};
+
+  auto switchOp =
+      IndexSwitchOp::create(builder, index.getResult(), target,
+                            ArrayRef<int64_t>{0}, caseBuilders, identity);
+
+  ASSERT_EQ(switchOp.getTargets().size(), 1);
+  ASSERT_EQ(switchOp.getResults().size(), 1);
+  ASSERT_EQ(switchOp.getNumCases(), 1);
+  EXPECT_EQ(switchOp.getCaseBlock(0)->getArgument(0).getType(),
+            target.getType());
+  EXPECT_EQ(switchOp.getDefaultBlock()->getArgument(0).getType(),
+            target.getType());
+  EXPECT_TRUE(switchOp.verify().succeeded());
+}
+
+TEST_F(QCOTest, IndexSwitchBuildersRejectMismatchedCasesAndBodies) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        auto index = arith::ConstantIndexOp::create(builder, 0);
+        const auto target = builder.allocQubit();
+        const auto identity = [](Value value) { return value; };
+        const SmallVector<function_ref<Value(Value)>> noCaseBuilders;
+        IndexSwitchOp::create(builder, index.getResult(), target,
+                              ArrayRef<int64_t>{0}, noCaseBuilders, identity);
+      },
+      "Each case must have a corresponding case body function");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto target = builder.allocQubit();
+        const auto identity = [](Value value) { return value; };
+        const SmallVector<function_ref<Value(Value)>> noCaseBodies;
+        builder.qcoIndexSwitch(0, target, ArrayRef<int64_t>{0}, noCaseBodies,
+                               identity);
+      },
+      "Each case must have a corresponding case body function");
+}
+
+TEST_F(QCOTest, IndexSwitchTiedValuesAndTargetExtension) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto target = builder.allocQubit();
+  const auto addon = builder.allocQubit();
+  const auto identity = [](Value value) { return value; };
+  const SmallVector<function_ref<Value(Value)>> caseBuilders{identity};
+  auto switchOp =
+      IndexSwitchOp::create(builder, index.getResult(), target,
+                            ArrayRef<int64_t>{0}, caseBuilders, identity);
+
+  auto* targetOperand = &switchOp->getOpOperand(1);
+  const auto caseArgument = switchOp.getCaseBlock(0)->getArgument(0);
+  const auto defaultArgument = switchOp.getDefaultBlock()->getArgument(0);
+  auto* caseYieldOperand = &switchOp.getCaseYield(0)->getOpOperand(0);
+  auto* defaultYieldOperand = &switchOp.getDefaultYield()->getOpOperand(0);
+
+  EXPECT_EQ(switchOp.getTiedResult(targetOperand), switchOp.getResult(0));
+  EXPECT_EQ(switchOp.getTiedTarget(cast<OpResult>(switchOp.getResult(0))),
+            targetOperand);
+  EXPECT_EQ(switchOp.getTiedCaseBlockArgument(targetOperand, 0), caseArgument);
+  EXPECT_EQ(switchOp.getTiedCaseYieldedValue(caseArgument, 0),
+            caseYieldOperand);
+  EXPECT_EQ(switchOp.getTiedDefaultBlockArgument(targetOperand),
+            defaultArgument);
+  EXPECT_EQ(switchOp.getTiedDefaultYieldedValue(defaultArgument),
+            defaultYieldOperand);
+
+  EXPECT_FALSE(switchOp.getTiedResult(caseYieldOperand));
+  EXPECT_EQ(switchOp.getTiedTarget(cast<OpResult>(addon)), nullptr);
+  EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(caseYieldOperand, 0));
+  EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(targetOperand, 1));
+  EXPECT_EQ(switchOp.getTiedCaseYieldedValue(defaultArgument, 0), nullptr);
+  EXPECT_EQ(switchOp.getTiedCaseYieldedValue(caseArgument, 1), nullptr);
+  EXPECT_FALSE(switchOp.getTiedDefaultBlockArgument(defaultYieldOperand));
+  EXPECT_EQ(switchOp.getTiedDefaultYieldedValue(caseArgument), nullptr);
+
+  IRRewriter rewriter(context.get());
+  rewriter.setInsertionPoint(switchOp);
+  EXPECT_EQ(switchOp.replaceWithAdditionalTargets(rewriter, ValueRange{}),
+            switchOp);
+
+  auto expanded = switchOp.replaceWithAdditionalTargets(rewriter, addon);
+  ASSERT_EQ(expanded.getTargets().size(), 2);
+  ASSERT_EQ(expanded.getResults().size(), 2);
+  EXPECT_EQ(expanded.getTargets()[0], target);
+  EXPECT_EQ(expanded.getTargets()[1], addon);
+  for (Region* region : expanded.getRegions()) {
+    ASSERT_EQ(region->getNumArguments(), 2);
+    auto yield = cast<YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getTargets().size(), 2);
+    EXPECT_EQ(yield.getTargets()[0], region->getArgument(0));
+    EXPECT_EQ(yield.getTargets()[1], region->getArgument(1));
+  }
+  EXPECT_TRUE(expanded.verify().succeeded());
+}
+
 TEST_F(QCOTest, IfOpParser) {
   // Test IfOp parser
   const char* mlirCode = R"(
@@ -219,6 +338,241 @@ TEST_F(QCOTest, IfOpParser) {
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
+}
+
+TEST_F(QCOTest, IndexSwitchParser) {
+  // Test IndexSwitch parser
+  const char* mlirCode = R"(
+      module {
+        func.func @main() -> (i1, i1, i1) attributes {passthrough = ["entry_point"]} {
+            %c2 = arith.constant 2 : index
+            %c1 = arith.constant 1 : index
+            %c0 = arith.constant 0 : index
+            %c3 = arith.constant 3 : index
+            %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+            %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
+            %5 = arith.remui %arg0, %c3 : index
+            %out_tensor_9, %result_10 = qtensor.extract %arg1[%arg0] : tensor<3x!qco.qubit>
+            %6 = qco.index_switch %5 -> !qco.qubit
+            case 0 args(%arg2 = %result_10) {
+                %8 = qco.x %arg2 : !qco.qubit -> !qco.qubit
+                qco.yield %8 : !qco.qubit
+            }
+            case 1 args(%arg2 = %result_10) {
+                %8 = qco.y %arg2 : !qco.qubit -> !qco.qubit
+                qco.yield %8 : !qco.qubit
+            }
+            case 2 args(%arg2 = %result_10) {
+                %8 = qco.x %arg2 : !qco.qubit -> !qco.qubit
+                %9 = qco.y %8 : !qco.qubit -> !qco.qubit
+                qco.yield %9 : !qco.qubit
+            }
+            default args(%arg2 = %result_10) {
+                qco.yield %arg2 : !qco.qubit
+            }
+            %7 = qtensor.insert %6 into %out_tensor_9[%arg0] : tensor<3x!qco.qubit>
+            scf.yield %7 : tensor<3x!qco.qubit>
+            }
+            %out_tensor, %result = qtensor.extract %1[%c0] : tensor<3x!qco.qubit>
+            %qubit_out, %result_0 = qco.measure %result : !qco.qubit
+            %out_tensor_1, %result_2 = qtensor.extract %out_tensor[%c1] : tensor<3x!qco.qubit>
+            %qubit_out_3, %result_4 = qco.measure %result_2 : !qco.qubit
+            %out_tensor_5, %result_6 = qtensor.extract %out_tensor_1[%c2] : tensor<3x!qco.qubit>
+            %2 = qtensor.insert %qubit_out into %out_tensor_5[%c0] : tensor<3x!qco.qubit>
+            %3 = qtensor.insert %qubit_out_3 into %2[%c1] : tensor<3x!qco.qubit>
+            %qubit_out_7, %result_8 = qco.measure %result_6 : !qco.qubit
+            %4 = qtensor.insert %qubit_out_7 into %3[%c2] : tensor<3x!qco.qubit>
+            qtensor.dealloc %4 : tensor<3x!qco.qubit>
+            return %result_0, %result_4, %result_8 : i1, i1, i1
+        }
+    })";
+
+  auto parsedSourceModule =
+      parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedSourceModule);
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+
+  auto refBuilder = mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(nestedForLoopSwitchOp));
+  ASSERT_TRUE(refBuilder);
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
+                                                   refBuilder.get()));
+}
+
+TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {
+  const char* mlirCode = R"(
+      module {
+        func.func @main(%index: index) -> i1 {
+          %q0 = qco.alloc : !qco.qubit
+          %q1 = qco.index_switch %index -> !qco.qubit
+          default args(%arg0 = %q0) {
+            qco.yield %arg0 : !qco.qubit
+          }
+          %q2, %result = qco.measure %q1 : !qco.qubit
+          qco.sink %q2 : !qco.qubit
+          return %result : i1
+        }
+      })";
+
+  auto parsedModule = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedModule);
+  EXPECT_TRUE(verify(*parsedModule).succeeded());
+
+  std::string printed;
+  llvm::raw_string_ostream stream(printed);
+  parsedModule->print(stream);
+  stream.flush();
+
+  auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
+  ASSERT_TRUE(reparsedModule);
+  EXPECT_TRUE(verify(*reparsedModule).succeeded());
+}
+
+TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
+  const auto build = [&]() {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+    const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+        identity};
+
+    const auto tensor = builder.qtensorAlloc(1);
+    const auto result = builder.qcoIndexSwitch(
+        0, tensor, SmallVector<int64_t>{0}, caseBodies, identity);
+    builder.qtensorDealloc(result.front());
+    return builder.finalize();
+  };
+
+  const auto lhs = build();
+  const auto rhs = build();
+  ASSERT_TRUE(lhs);
+  ASSERT_TRUE(rhs);
+  EXPECT_TRUE(verify(*lhs).succeeded());
+  EXPECT_TRUE(verify(*rhs).succeeded());
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
+}
+
+TEST_F(QCOTest, IndexSwitchCaseValuesAffectEquivalence) {
+  const auto build = [&](const int64_t caseValue) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+    const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+        identity};
+
+    const auto q0 = builder.allocQubit();
+    const auto result = builder.qcoIndexSwitch(
+        0, q0, SmallVector<int64_t>{caseValue}, caseBodies, identity);
+    builder.sink(result.front());
+    return builder.finalize();
+  };
+
+  const auto lhs = build(0);
+  const auto rhs = build(1);
+  ASSERT_TRUE(lhs);
+  ASSERT_TRUE(rhs);
+  EXPECT_TRUE(verify(*lhs).succeeded());
+  EXPECT_TRUE(verify(*rhs).succeeded());
+  EXPECT_FALSE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
+}
+
+TEST_F(QCOTest, NonEquivalentTensorIndexSwitches) {
+  const auto build = [&](const bool switchFirstTensor) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+    const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+        identity};
+
+    const auto first = builder.qtensorAlloc(1);
+    const auto second = builder.qtensorAlloc(1);
+    const auto target = switchFirstTensor ? first : second;
+    const auto untouched = switchFirstTensor ? second : first;
+    const auto result = builder.qcoIndexSwitch(
+        0, target, SmallVector<int64_t>{0}, caseBodies, identity);
+    builder.qtensorDealloc(result.front());
+    builder.qtensorDealloc(untouched);
+    return builder.finalize();
+  };
+
+  const auto lhs = build(true);
+  const auto rhs = build(false);
+  ASSERT_TRUE(lhs);
+  ASSERT_TRUE(rhs);
+  EXPECT_TRUE(verify(*lhs).succeeded());
+  EXPECT_TRUE(verify(*rhs).succeeded());
+  EXPECT_FALSE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
+}
+
+TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+      identity, identity};
+
+  const auto q0 = builder.allocQubit();
+  auto result = builder.qcoIndexSwitch(1, q0, SmallVector<int64_t>{0, 1},
+                                       caseBodies, identity);
+  builder.sink(result.front());
+  [[maybe_unused]] auto module = builder.finalize();
+
+  auto switchOp = result.front().getDefiningOp<IndexSwitchOp>();
+  ASSERT_TRUE(switchOp);
+
+  SmallVector<Attribute> unknownOperands(switchOp->getNumOperands());
+  SmallVector<InvocationBounds> unknownBounds;
+  switchOp.getRegionInvocationBounds(unknownOperands, unknownBounds);
+  ASSERT_EQ(unknownBounds.size(), switchOp->getNumRegions());
+  for (const auto& bound : unknownBounds) {
+    EXPECT_EQ(bound.getLowerBound(), 0);
+    ASSERT_TRUE(bound.getUpperBound().has_value());
+    EXPECT_EQ(*bound.getUpperBound(), 1);
+  }
+
+  const auto checkConstant = [&](const int64_t value, Region* expectedRegion,
+                                 const size_t expectedRegionIndex) {
+    SmallVector<Attribute> operands(switchOp->getNumOperands());
+    operands.front() = builder.getIndexAttr(value);
+
+    SmallVector<RegionSuccessor> successors;
+    switchOp.getEntrySuccessorRegions(operands, successors);
+    ASSERT_EQ(successors.size(), 1);
+    EXPECT_EQ(successors.front().getSuccessor(), expectedRegion);
+
+    SmallVector<InvocationBounds> bounds;
+    switchOp.getRegionInvocationBounds(operands, bounds);
+    ASSERT_EQ(bounds.size(), switchOp->getNumRegions());
+    for (const auto [index, bound] : llvm::enumerate(bounds)) {
+      EXPECT_EQ(bound.getLowerBound(), 0);
+      ASSERT_TRUE(bound.getUpperBound().has_value());
+      EXPECT_EQ(*bound.getUpperBound(), index == expectedRegionIndex ? 1 : 0);
+    }
+  };
+
+  checkConstant(0, switchOp.getCaseRegions().data(), 1);
+  checkConstant(1, &switchOp.getCaseRegions()[1], 2);
+  checkConstant(2, &switchOp.getDefaultRegion(), 0);
+
+  switchOp->setAttr(
+      "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0}));
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(switchOp.verify().failed());
+
+  switchOp->setAttr(
+      "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0, 0}));
+  EXPECT_TRUE(switchOp.verify().failed());
 }
 
 /// \name QCO/SCF/IfOp.cpp

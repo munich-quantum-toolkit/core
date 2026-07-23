@@ -696,6 +696,19 @@ INSTANTIATE_TEST_SUITE_P(
                                     MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
 /// @}
 
+/// \name QCOToQC/Operations/IndexSwitchOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOIndexSwitchOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"SimpleIndexSwitchOp",
+                                    MQT_NAMED_BUILDER(qco::simpleIndexSwitch),
+                                    MQT_NAMED_BUILDER(qc::simpleIndexSwitch)},
+                    QCOToQCTestCase{
+                        "IndexSwitchMultiCase",
+                        MQT_NAMED_BUILDER(qco::indexSwitchMultiCase),
+                        MQT_NAMED_BUILDER(qc::indexSwitchMultiCase)}));
+/// @}
+
 /// \name QCOToQC/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -721,6 +734,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"NestedForLoopWhileOp",
                         MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)},
+        QCOToQCTestCase{"NestedForLoopSwitchOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp)},
         QCOToQCTestCase{
             "nestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),

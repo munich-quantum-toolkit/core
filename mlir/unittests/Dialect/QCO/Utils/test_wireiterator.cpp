@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -20,6 +21,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <tuple>
@@ -80,8 +82,15 @@ TEST_P(WireIteratorTest, Traversal) {
       [&](ValueRange args) { return SmallVector{args[0], args[1]}; });
   const auto q06 = ifOut[0];
   const auto q13 = ifOut[1];
-  builder.sink(q06);
-  builder.sink(q13);
+  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+      identity};
+  const auto switchOut = builder.qcoIndexSwitch(
+      0, {q06, q13}, SmallVector<int64_t>{0}, caseBodies, identity);
+  const auto q07 = switchOut[0];
+  const auto q14 = switchOut[1];
+  builder.sink(q07);
+  builder.sink(q14);
   [[maybe_unused]] auto module = builder.finalize();
 
   // Setup WireIterator.
@@ -119,7 +128,11 @@ TEST_P(WireIteratorTest, Traversal) {
   ASSERT_EQ(it.qubit(), q06);
 
   ++it;
-  ASSERT_EQ(it.operation(), *(q06.getUsers().begin())); // qco.sink
+  ASSERT_EQ(it.operation(), q07.getDefiningOp()); // qco.index_switch
+  ASSERT_EQ(it.qubit(), q07);
+
+  ++it;
+  ASSERT_EQ(it.operation(), *(q07.getUsers().begin())); // qco.sink
   ASSERT_EQ(it.qubit(), nullptr);
 
   ++it;
@@ -133,8 +146,12 @@ TEST_P(WireIteratorTest, Traversal) {
   //
 
   --it;
-  ASSERT_EQ(it.operation(), *(q06.getUsers().begin())); // qco.sink
+  ASSERT_EQ(it.operation(), *(q07.getUsers().begin())); // qco.sink
   ASSERT_EQ(it.qubit(), nullptr);
+
+  --it;
+  ASSERT_EQ(it.operation(), q07.getDefiningOp()); // qco.index_switch
+  ASSERT_EQ(it.qubit(), q07);
 
   --it;
   ASSERT_EQ(it.operation(), q06.getDefiningOp()); // qco.if

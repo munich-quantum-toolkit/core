@@ -1419,6 +1419,14 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b);
 /// a register.
 Value nestedIfOpForLoop(QCOProgramBuilder& b);
 
+// --- IndexSwitchOp ------------------------------------------------------- //
+
+/// Creates a circuit with an index switch operation with one qubit.
+SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b);
+
+/// Creates a circuit with an index switch operation with multiple cases.
+SmallVector<Value> indexSwitchMultiCase(QCOProgramBuilder& b);
+
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
@@ -1439,6 +1447,10 @@ Value nestedForLoopIfOp(QCOProgramBuilder& b);
 /// Creates a circuit with a for operation with a register and a nested while
 /// operation.
 SmallVector<Value> nestedForLoopWhileOp(QCOProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a nested index
+/// switch operation.
+SmallVector<Value> nestedForLoopSwitchOp(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the

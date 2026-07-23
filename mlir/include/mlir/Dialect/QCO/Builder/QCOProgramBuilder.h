@@ -1557,6 +1557,87 @@ public:
               function_ref<Value(Value)> elseBody = nullptr);
 
   /**
+   * @brief Construct an index switch operation for qubits or tensors of qubits
+   * with linear typing.
+   *
+   * @details
+   * Constructs an index switch operation that takes an index Value and a range
+   * of qubit and qtensor values that are used in the case regions of this
+   * operation. The values are passed down as block arguments to each region.
+   * Qubits that were extracted from a tensor that is used as an argument for
+   * this operation are automatically inserted before the operation is
+   * constructed.
+   *
+   * @param arg Index argument.
+   * @param targets Initial arguments for the index switch branches.
+   * @param cases The individual switch cases.
+   * @param caseBodies An array of functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return ValueRange of the results.
+   *
+   * @par Example:
+   * ```c++
+   * result = b.qcoIndexSwitch(arg, initTargets,
+   *   SmallVector<int64_t>{0},
+   *   SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+   *     [&](ValueRange args) {
+   *       auto q1 = builder.x(args[0]);
+   *       return {q1};
+   *     }
+   *   },
+   *   [&](ValueRange args) {
+   *     auto q2 = builder.x(args[0]);
+   *     return {q2};
+   *   });
+   * ```
+   * ```mlir
+   * %result = qco.index_switch %arg -> !qco.qubit
+   * case 0 args(%arg0 = %q0) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * }
+   * default args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
+   * ```
+   */
+  ValueRange qcoIndexSwitch(
+      const std::variant<int64_t, Value>& arg, ValueRange targets,
+      ArrayRef<int64_t> cases,
+      ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
+      function_ref<SmallVector<Value>(ValueRange)> defaultBody);
+
+  /**
+   * @brief Construct an index switch operation with a single linear target.
+   *
+   * @details
+   * Constructs an index switch operation for one qubit or qtensor value.
+   * Each branch callback receives and returns a single value, avoiding
+   * one-element ranges and vectors.
+   *
+   * @param arg Index argument.
+   * @param target Initial argument for every index switch branch.
+   * @param cases The individual switch cases.
+   * @param caseBodies Functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return The single result value.
+   *
+   * @par Example:
+   * ```c++
+   * result = builder.qcoIndexSwitch(
+   *     arg, target, SmallVector<int64_t>{0},
+   *     SmallVector<function_ref<Value(Value)>>{
+   *         [&](Value value) { return builder.x(value); }},
+   *     [&](Value value) { return builder.z(value); });
+   * ```
+   */
+  Value qcoIndexSwitch(const std::variant<int64_t, Value>& arg, Value target,
+                       ArrayRef<int64_t> cases,
+                       ArrayRef<function_ref<Value(Value)>> caseBodies,
+                       function_ref<Value(Value)> defaultBody);
+
+  /**
    * @brief Construct an scf.for operation
    *
    * @details
