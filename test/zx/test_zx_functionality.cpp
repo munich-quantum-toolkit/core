@@ -676,4 +676,83 @@ TEST_F(ZXFunctionalityTest, MCT2) {
 
   checkEquivalence(qc, qcPrime, {0, 1, 2});
 }
+
+TEST_F(ZXFunctionalityTest, RCCX) {
+  qc = qc::QuantumComputation(3);
+  qc.rccx(0, 1, 2);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.h(2);
+  qcPrime.t(2);
+  qcPrime.cx(1, 2);
+  qcPrime.tdg(2);
+  qcPrime.cx(0, 2);
+  qcPrime.t(2);
+  qcPrime.cx(1, 2);
+  qcPrime.tdg(2);
+  qcPrime.h(2);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, RCCXSelfInverse) {
+  qc = qc::QuantumComputation(3);
+  qc.rccx(0, 1, 2);
+  qc.rccx(0, 1, 2);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, CRCCX) {
+  qc = qc::QuantumComputation(4);
+  qc.crccx(0, 1, 2, 3);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  const auto controlledH = [](qc::QuantumComputation& comp,
+                              const qc::Qubit ctrl, const qc::Qubit target) {
+    comp.rz(qc::PI_2, target);
+    comp.rx(qc::PI_2, target);
+    comp.cp(qc::PI, ctrl, target);
+    comp.rx(-qc::PI_2, target);
+    comp.rz(-qc::PI_2, target);
+  };
+  controlledH(qcPrime, 0, 3);
+  qcPrime.mct({0}, 3);
+  qcPrime.mcx({0, 2}, 3);
+  qcPrime.mctdg({0}, 3);
+  qcPrime.mcx({0, 1}, 3);
+  qcPrime.mct({0}, 3);
+  qcPrime.mcx({0, 2}, 3);
+  qcPrime.mctdg({0}, 3);
+  controlledH(qcPrime, 0, 3);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
+TEST_F(ZXFunctionalityTest, MCRCCX) {
+  qc = qc::QuantumComputation(5);
+  qc.mcrccx({0, 1}, 2, 3, 4);
+
+  auto qcPrime = qc::QuantumComputation(5);
+  qcPrime.mcrz(qc::PI_2, {0, 1}, 4);
+  qcPrime.mcrx(qc::PI_2, {0, 1}, 4);
+  qcPrime.mcz({0, 1}, 4);
+  qcPrime.mcrx(-qc::PI_2, {0, 1}, 4);
+  qcPrime.mcrz(-qc::PI_2, {0, 1}, 4);
+  qcPrime.mct({0, 1}, 4);
+  qcPrime.mcx({0, 1, 3}, 4);
+  qcPrime.mctdg({0, 1}, 4);
+  qcPrime.mcx({0, 1, 2}, 4);
+  qcPrime.mct({0, 1}, 4);
+  qcPrime.mcx({0, 1, 3}, 4);
+  qcPrime.mctdg({0, 1}, 4);
+  qcPrime.mcrz(qc::PI_2, {0, 1}, 4);
+  qcPrime.mcrx(qc::PI_2, {0, 1}, 4);
+  qcPrime.mcz({0, 1}, 4);
+  qcPrime.mcrx(-qc::PI_2, {0, 1}, 4);
+  qcPrime.mcrz(-qc::PI_2, {0, 1}, 4);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3, 4});
+}
 } // namespace zx

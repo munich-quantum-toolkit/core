@@ -126,12 +126,9 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
   auto q1 = HOp::create(builder, extractOp.getResult());
   auto measureOp = MeasureOp::create(builder, q1);
-  auto ifOp =
-      IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
-                   [&](ValueRange qubits) -> SmallVector<Value> {
-                     auto innerQubit = XOp::create(builder, qubits[0]);
-                     return SmallVector<Value>{innerQubit};
-                   });
+  auto ifOp = IfOp::create(
+      builder, measureOp.getResult(), measureOp.getQubitOut(),
+      [&](Value qubit) -> Value { return {XOp::create(builder, qubit)}; });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
   auto r2 = qtensor::InsertOp::create(builder, finalMeasureOp.getQubitOut(),
                                       extractOp.getOutTensor(), c0);
@@ -276,6 +273,8 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(ifTwoQubits)},
         QCOTestCase{"IfElse", MQT_NAMED_BUILDER(ifElse),
                     MQT_NAMED_BUILDER(ifElse)},
+        QCOTestCase{"OneTensorIf", MQT_NAMED_BUILDER(ifOneTensor),
+                    MQT_NAMED_BUILDER(x)},
         QCOTestCase{"ConstantTrueIf", MQT_NAMED_BUILDER(constantTrueIf),
                     MQT_NAMED_BUILDER(x)},
         QCOTestCase{"ConstantFalseIf", MQT_NAMED_BUILDER(constantFalseIf),
@@ -525,6 +524,33 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledP)},
         QCOTestCase{"TwoPOppositePhase", MQT_NAMED_BUILDER(twoPOppositePhase),
                     MQT_NAMED_BUILDER(allocQubit)}));
+/// @}
+
+/// \name QCO/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORCCXOpTest, QCOTest,
+    testing::Values(
+        QCOTestCase{"RCCX", MQT_NAMED_BUILDER(rccx), MQT_NAMED_BUILDER(rccx)},
+        QCOTestCase{"SingleControlledRCCX",
+                    MQT_NAMED_BUILDER(singleControlledRccx),
+                    MQT_NAMED_BUILDER(singleControlledRccx)},
+        QCOTestCase{"MultipleControlledRCCX",
+                    MQT_NAMED_BUILDER(multipleControlledRccx),
+                    MQT_NAMED_BUILDER(multipleControlledRccx)},
+        QCOTestCase{"NestedControlledRCCX",
+                    MQT_NAMED_BUILDER(nestedControlledRccx),
+                    MQT_NAMED_BUILDER(multipleControlledRccx)},
+        QCOTestCase{"TrivialControlledRCCX",
+                    MQT_NAMED_BUILDER(trivialControlledRccx),
+                    MQT_NAMED_BUILDER(rccx)},
+        QCOTestCase{"InverseRCCX", MQT_NAMED_BUILDER(inverseRccx),
+                    MQT_NAMED_BUILDER(rccx)},
+        QCOTestCase{"InverseMultipleControlledRCCX",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledRccx),
+                    MQT_NAMED_BUILDER(multipleControlledRccx)},
+        QCOTestCase{"TwoRCCX", MQT_NAMED_BUILDER(twoRccx),
+                    MQT_NAMED_BUILDER(alloc3QubitRegister)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/ROp.cpp

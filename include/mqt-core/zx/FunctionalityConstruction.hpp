@@ -116,6 +116,13 @@ protected:
            const std::optional<double>& unconvertedPhase = std::nullopt);
   static void addDcx(ZXDiagram& diag, Qubit qubit1, Qubit qubit2,
                      std::vector<Vertex>& qubits);
+  static void addRccx(ZXDiagram& diag, Qubit qubit0, Qubit qubit1, Qubit qubit2,
+                      std::vector<Vertex>& qubits);
+  static void addCrccx(ZXDiagram& diag, Qubit control, Qubit qubit0,
+                       Qubit qubit1, Qubit qubit2, std::vector<Vertex>& qubits);
+  static void addMcrccx(ZXDiagram& diag, const std::vector<Qubit>& controls,
+                        Qubit qubit0, Qubit qubit1, Qubit qubit2,
+                        std::vector<Vertex>& qubits);
   static void
   addXXplusYY(ZXDiagram& diag, const PiExpression& theta,
               const PiExpression& beta, Qubit qubit0, Qubit qubit1,
