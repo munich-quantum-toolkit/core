@@ -157,6 +157,27 @@ static LogicalResult convertJeffToQCO(ModuleOp module) {
   return pm.run(module);
 }
 
+TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto program = mqt::test::buildMLIRProgram(
+      &context, MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  auto main = program->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+  ASSERT_TRUE(passthrough);
+  EXPECT_TRUE(llvm::is_contained(passthrough,
+                                 StringAttr::get(&context, "entry_point")));
+  ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
+  EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
+}
+
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
