@@ -34,6 +34,51 @@ TypedValue<RankedTensorType> TensorIterator::tensor() const {
   return tensor_;
 }
 
+[[nodiscard]] static TypedValue<RankedTensorType>
+whileResultForInit(scf::WhileOp op, OpOperand& init) {
+  auto current = cast<TypedValue<RankedTensorType>>(
+      op.getBeforeBody()->getArgument(init.getOperandNumber()));
+  TensorIterator iterator(current);
+  while (true) {
+    assert(current.hasOneUse() && "expected linear typing");
+    auto* user = *current.user_begin();
+    if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
+      const auto result = llvm::find(condition.getArgs(), current);
+      if (result == condition.getArgs().end()) {
+        llvm::reportFatalInternalError(
+            "expected scf.while tensor in condition arguments");
+      }
+      const auto resultNumber = static_cast<size_t>(
+          std::distance(condition.getArgs().begin(), result));
+      return cast<TypedValue<RankedTensorType>>(op.getResult(resultNumber));
+    }
+    ++iterator;
+    if (iterator == std::default_sentinel) {
+      llvm::reportFatalInternalError(
+          "expected scf.while tensor to reach its condition");
+    }
+    current = iterator.tensor();
+  }
+}
+
+[[nodiscard]] static TypedValue<RankedTensorType>
+whileInitForResult(scf::WhileOp op, const OpResult result) {
+  auto condition = cast<scf::ConditionOp>(op.getBeforeBody()->getTerminator());
+  auto current = cast<TypedValue<RankedTensorType>>(
+      condition.getArgs()[result.getResultNumber()]);
+  TensorIterator iterator(current);
+  while (iterator.operation() != nullptr) {
+    --iterator;
+  }
+  auto argument = dyn_cast<BlockArgument>(iterator.tensor());
+  if (!argument || argument.getOwner() != op.getBeforeBody()) {
+    llvm::reportFatalInternalError(
+        "expected scf.while tensor to originate from a before-region argument");
+  }
+  return cast<TypedValue<RankedTensorType>>(
+      op.getInits()[argument.getArgNumber()]);
+}
+
 void TensorIterator::forward() {
   // If the iterator is a sentinel already, there is nothing to do.
   if (isSentinel_) {
@@ -64,6 +109,9 @@ void TensorIterator::forward() {
         .Case<scf::ForOp>([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedLoopResult(&*(tensor_.use_begin())));
+        })
+        .Case<scf::WhileOp>([&](scf::WhileOp op) {
+          tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());
         })
         .Case<qco::IfOp>([&](qco::IfOp op) {
           auto it = llvm::find(op.getQubits(), tensor_);
@@ -122,6 +170,15 @@ void TensorIterator::backward() {
 
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
+      })
+      .Case<scf::WhileOp>([&](scf::WhileOp op) {
+        if (auto result = dyn_cast<OpResult>(tensor_)) {
+          tensor_ = whileInitForResult(op, result);
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected scf.while result for tied init lookup");
       })
       .Case<qco::IfOp>([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
