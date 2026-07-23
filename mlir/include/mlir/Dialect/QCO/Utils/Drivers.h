@@ -33,51 +33,26 @@
 #include <utility>
 
 namespace mlir::qco {
-
-using ReleasedOps = SmallVector<Operation*, 8>;
-using PendingWiresMap = DenseMap<Operation*, SmallVector<size_t>>;
-
-namespace impl {
-
-/// Return the number of qubit arguments of unitary-like operation.
-inline size_t getNumQubitArgs(Operation* op) {
-  return TypeSwitch<Operation*, size_t>(op)
-      .Case<UnitaryOpInterface>(
-          [&](UnitaryOpInterface op) { return op.getNumQubits(); })
-      .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
-        return llvm::count_if(
-            op.getInits(), [](Value v) { return isa<QubitType>(v.getType()); });
-      })
-      .Case<qco::IfOp>([&](qco::IfOp op) {
-        return llvm::count_if(op.getQubits(), [](Value v) {
-          return isa<QubitType>(v.getType());
-        });
-      })
-      .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
-        return llvm::count_if(op.getTargets(), [](Value v) {
-          return isa<QubitType>(v.getType());
-        });
-      })
-      .Default([&](Operation* op) {
-        const auto name = op->getName().getStringRef();
-        reportFatalInternalError("unknown op: " + name);
-        return 0;
-      });
-}
-} // namespace impl
-
-struct IsReady {
-  bool operator()(PendingWiresMap::value_type& kv) const {
-    const auto npending = kv.second.size();
-    return impl::getNumQubitArgs(kv.first) == npending;
+namespace details {
+struct PendingItem {
+  explicit PendingItem(const size_t nrequired) : nrequired(nrequired) {
+    indices.reserve(nrequired);
   }
+
+  /// Return true, if this item is ready to be released.
+  [[nodiscard]] bool ready() const { return indices.size() == nrequired; }
+
+  SmallVector<size_t> indices;
+  size_t nrequired;
 };
 
-using ReadyRange =
-    decltype(make_filter_range(std::declval<PendingWiresMap&>(), IsReady{}));
+using PendingMap = DenseMap<Operation*, PendingItem>;
+} // namespace details
 
+using ReadyVec = SmallVector<std::pair<Operation*, SmallVector<size_t>>, 0>;
+using ReleasedOps = SmallVector<Operation*, 8>;
 using WalkProgramGraphFn =
-    function_ref<WalkResult(const ReadyRange&, ReleasedOps&)>;
+    function_ref<WalkResult(const ReadyVec&, ReleasedOps&)>;
 
 /**
  * @brief Walk the graph-like circuit IR of QCO dialect programs.
@@ -108,9 +83,14 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                                WalkProgramGraphFn fn) {
   using Traits = WireTraversalTraits<Direction>;
 
+  using IterationStep = std::pair</*skip= */ bool, /*nqubits= */ size_t>;
+
   ReleasedOps released;
-  PendingWiresMap pending;
-  pending.reserve(wires.size());
+  details::PendingMap pending;
+  pending.reserve((wires.size() + 1) / 2);
+
+  ReadyVec ready;
+  ready.reserve((wires.size() + 1) / 2);
 
   SmallVector<size_t> curr(wires.size());
   std::iota(curr.begin(), curr.end(), 0UL);
@@ -127,53 +107,78 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       }
 
       while (Traits::isActive(it)) {
+        if (const auto mapIt = pending.find(it.operation());
+            mapIt != pending.end()) {
+          details::PendingItem& item = mapIt->second;
+          item.indices.emplace_back(i);
+          if (item.ready()) {
+            ready.emplace_back(it.operation(), item.indices);
+          }
+        } else {
+          const auto [skip, nqubits] =
+              TypeSwitch<Operation*, IterationStep>(it.operation())
+                  .template Case<UnitaryOpInterface>(
+                      [&](UnitaryOpInterface op) {
+                        return std::make_pair(false, op.getNumQubits());
+                      })
+                  .template Case<scf::ForOp, scf::WhileOp>([&](auto op) {
+                    const auto nqubits =
+                        llvm::count_if(op.getInits(), [](Value v) {
+                          return isa<QubitType>(v.getType());
+                        });
+                    return std::make_pair(false, nqubits);
+                  })
+                  .template Case<qco::IfOp>([&](qco::IfOp op) {
+                    const auto nqubits =
+                        llvm::count_if(op.getQubits(), [](Value v) {
+                          return isa<QubitType>(v.getType());
+                        });
+                    return std::make_pair(false, nqubits);
+                  })
+                  .template Case<qco::IndexSwitchOp>(
+                      [&](qco::IndexSwitchOp op) {
+                        const auto nqubits =
+                            llvm::count_if(op.getTargets(), [](Value v) {
+                              return isa<QubitType>(v.getType());
+                            });
+                        return std::make_pair(false, nqubits);
+                      })
+                  .template Case<ResetOp, MeasureOp>(
+                      [&](auto) { return std::make_pair(false, 1); })
+                  .template Case<AllocOp, StaticOp, SinkOp, YieldOp,
+                                 qtensor::ExtractOp, qtensor::InsertOp,
+                                 scf::YieldOp, scf::ConditionOp>(
+                      [&](auto) { return std::make_pair(true, 0); })
+                  .Default([&](Operation* op) {
+                    const auto name = op->getName().getStringRef();
+                    reportFatalInternalError("unknown op: " + name);
+                    return std::make_pair(false, 0);
+                  });
 
-        // For source-like (AllocOp, StaticOp, qtensor::ExtractOp),
-        // sink-like (SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp,
-        // scf::ConditionOp), and one-qubit non-unitary (ResetOp, MeasureOp)
-        // operations, simply advance the iterator.
+          if (skip || nqubits == 1) {
+            std::ranges::advance(it, Traits::stride());
+            continue;
+          }
 
-        if (isa<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp, YieldOp,
-                qtensor::ExtractOp, qtensor::InsertOp, scf::YieldOp,
-                scf::ConditionOp>(it.operation())) {
-          std::ranges::advance(it, Traits::stride());
-          continue;
+          // If there are fewer wires than the operation requires inputs,
+          // it's impossible to release the operation. Hence, fail.
+
+          if (nqubits > wires.size()) {
+            return failure();
+          }
+
+          // Insert the multi-qubit op to the pending map.
+          // The caller decides if this op should be released.
+          details::PendingItem item(nqubits);
+          item.indices.emplace_back(i);
+          pending.try_emplace(it.operation(), std::move(item));
         }
-
-        const auto nqubits = impl::getNumQubitArgs(it.operation());
-
-        // Advance past one-qubit operations.
-
-        if (nqubits == 1) {
-          std::ranges::advance(it, Traits::stride());
-          continue;
-        }
-
-        // If there are fewer wires than the operation requires inputs,
-        // it's impossible to release the operation. Hence, fail.
-
-        if (nqubits > wires.size()) {
-          return failure();
-        }
-
-        // Insert the unitary to the pending map.
-        // The caller decides if this op should be released.
-
-        const auto [mapIt, inserted] = pending.try_emplace(it.operation());
-        auto& indices = mapIt->second;
-
-        if (inserted) {
-          indices.reserve(nqubits);
-        }
-
-        indices.emplace_back(i);
 
         break; // Stop at multi-qubit unitary.
       }
     }
 
     released.clear();
-    const auto ready = make_filter_range(pending, IsReady{});
     const auto res = std::invoke(fn, ready, released);
     if (res.wasInterrupted()) {
       return failure();
@@ -190,7 +195,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       const auto mapIt = pending.find(op);
       assert(mapIt != pending.end());
 
-      for (size_t i : mapIt->second) {
+      for (size_t i : mapIt->second.indices) {
         std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
@@ -200,6 +205,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
     curr.swap(next);
     next.clear();
+    ready.clear();
   }
 
   return success();
