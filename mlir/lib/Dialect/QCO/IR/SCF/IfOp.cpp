@@ -61,6 +61,27 @@ void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   }
 }
 
+void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                 Value condition, Value input,
+                 function_ref<Value(Value)> thenBuilder,
+                 function_ref<Value(Value)> elseBuilder) {
+  build(odsBuilder, odsState, input.getType(), condition, input);
+
+  auto& thenBlock = odsState.regions.front()->emplaceBlock();
+  auto& elseBlock = odsState.regions.back()->emplaceBlock();
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  const auto location = odsState.location;
+  auto thenArgument = thenBlock.addArgument(input.getType(), location);
+  odsBuilder.setInsertionPointToStart(&thenBlock);
+  YieldOp::create(odsBuilder, location, thenBuilder(thenArgument));
+
+  auto elseArgument = elseBlock.addArgument(input.getType(), location);
+  odsBuilder.setInsertionPointToStart(&elseBlock);
+  YieldOp::create(odsBuilder, location,
+                  elseBuilder ? elseBuilder(elseArgument) : elseArgument);
+}
+
 // Adjusted from
 // https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
@@ -332,20 +353,22 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     return *this;
   }
 
-  SmallVector<Value> allQubits;
-  allQubits.reserve(getQubits().size() + addons.size());
-  allQubits.append(getQubits().begin(), getQubits().end());
-  allQubits.append(addons.begin(), addons.end());
-  const auto allQubitTypes = ValueRange(allQubits).getTypes();
+  const auto qubits = getQubits();
 
-  auto newIfOp = create(rewriter, getLoc(), getCondition(), allQubits);
+  SmallVector<Value> newQubits;
+  newQubits.reserve(qubits.size() + addons.size());
+  newQubits.append(qubits.begin(), qubits.end());
+  newQubits.append(addons.begin(), addons.end());
+  const auto allQubitTypes = ValueRange(newQubits).getTypes();
+
+  auto newIfOp = create(rewriter, getLoc(), getCondition(), newQubits);
 
   const auto rewriteRegion = [&](Region& oldRegion, Region& newRegion) {
     auto* oldBlock = &oldRegion.front();
     const auto numOldArgs = oldBlock->getNumArguments();
     auto* newBlock =
         rewriter.createBlock(&newRegion, {}, allQubitTypes,
-                             SmallVector<Location>(allQubits.size(), getLoc()));
+                             SmallVector<Location>(newQubits.size(), getLoc()));
     const auto oldArgs = newBlock->getArguments().take_front(numOldArgs);
     const auto addonArgs = newBlock->getArguments().drop_front(numOldArgs);
 

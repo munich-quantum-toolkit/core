@@ -1100,10 +1100,10 @@ def CtrlOp : QCOOp<"ctrl",
                              SameOperandsAndResultShape,
                              SingleBlockImplicitTerminator<"YieldOp">, Pure,
                              RecursiveMemoryEffects]> {
-  let summary = "Add control qubits to a unitary operation";
+  let summary = "Apply a control modifier to a collection of gates";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation defined in its body region.
-        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+        A modifier operation that adds control qubits to the gates defined in its body region.
+        The controlled operation applies the controlled gates only when all control qubits are in the $|1\rangle$ state.
 
         The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
         Control qubits are not modified by the operation and simply pass through to the outputs.
@@ -1183,9 +1183,10 @@ def CtrlOp : QCOOp<"ctrl",
 def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
                                    SingleBlockImplicitTerminator<"YieldOp">,
                                    Pure, RecursiveMemoryEffects]> {
-  let summary = "Invert a unitary operation";
+  let summary =
+      "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body region.
+        A modifier operation that inverts the gates defined in its body region.
 
         The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
 
@@ -1254,6 +1255,96 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
   let hasVerifier = 1;
 }
 
+def PowOp
+    : QCOOp<"pow",
+            traits = [UnitaryOpInterface,
+                      SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
+                      RecursiveMemoryEffects]> {
+  let summary = "Raise a unitary operation to a power";
+  let description = [{
+        A modifier operation that raises the gates defined in its body region to a given power.
+
+        The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
+
+        The exponent can be an integer or a floating-point number.
+
+        - r > 0: apply the gate raised to the r-th power.
+        - r = 0: identity (no-op).
+        - r < 0: equivalent to inv @ pow(-r) @ g.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+
+        Example:
+        ```mlir
+        %q_out = qco.pow(%exponent) (%q = %q_in) {
+            %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
+            qco.yield %q_1
+        } : {!qco.qubit} -> {!qco.qubit}
+        ```
+    }];
+
+  let arguments = (ins F64:$exponent,
+      Arg<Variadic<QubitType>,
+          "the qubits involved in the operation", [MemRead]>:$qubits_in);
+  let results = (outs Variadic<QubitType>:$qubits_out);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = [{
+        `(` $exponent `)` custom<TargetAliasing>($region, $qubits_in)
+        attr-dict `:`
+        `{` type($qubits_in) `}`
+        `->`
+        `{` type($qubits_out) `}`
+    }];
+
+  let extraClassDeclaration = [{
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getInputQubit(size_t i);
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getOutputQubit(size_t i);
+        ResultRange getOutputQubits() { return getResults(); }
+        Value getInputTarget(size_t i) { return getInputQubit(i); }
+        OperandRange getInputTargets() { return getInputQubits(); }
+        Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static OperandRange getInputControls() { return {nullptr, 0}; }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static ResultRange getOutputControls() { return {nullptr, 0}; }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        static size_t getNumParams() { return 1; }
+        Value getParameter(size_t i) {
+          if (i != 0) {
+            llvm::reportFatalUsageError("Parameter index out of bounds");
+          }
+          return getExponent();
+        }
+        OperandRange getParameters() { return getOperation()->getOperands().slice(0, 1); }
+        std::optional<double> getExponentValue();
+        [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+                      "const std::variant<double, Value>&":$exponent)>,
+                  OpBuilder<(ins "ValueRange":$qubits,
+                      "const std::variant<double, Value>&":$exponent,
+                      "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
+                      ">":$bodyBuilder)>,
+                  OpBuilder<(ins "Value":$qubit,
+                      "const std::variant<double, Value>&":$exponent,
+                      "llvm::function_ref<Value(Value)>":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // SCF operations
 //===----------------------------------------------------------------------===//
@@ -1292,14 +1383,18 @@ def IfOp
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
   let hasCustomAssemblyFormat = 1;
 
-  let builders = [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+  let builders =
+      [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), condition, qubits);
         }]>,
-                  OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
-                      "function_ref<SmallVector<Value>(ValueRange)"
-                      ">":$thenBuilder,
-                      CArg<"function_ref<SmallVector<Value>(ValueRange)>",
-                           "nullptr">:$elseBuilder)>];
+       OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
+           "function_ref<SmallVector<Value>(ValueRange)"
+           ">":$thenBuilder,
+           CArg<"function_ref<SmallVector<Value>(ValueRange)>",
+                "nullptr">:$elseBuilder)>,
+       OpBuilder<(ins "Value":$condition, "Value":$input,
+           "function_ref<Value(Value)>":$thenBuilder,
+           CArg<"function_ref<Value(Value)>", "nullptr">:$elseBuilder)>];
 
   let extraClassDeclaration = [{
         /// Return the then-block.
@@ -1360,6 +1455,134 @@ def IfOp
     }];
 
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Index Switch Operation
+//===----------------------------------------------------------------------===//
+
+def IndexSwitchOp
+    : QCOOp<
+          "index_switch",
+          traits = [DeclareOpInterfaceMethods<
+                        RegionBranchOpInterface, ["getRegionInvocationBounds",
+                                                  "getEntrySuccessorRegions"]>,
+                    SingleBlockImplicitTerminator<"YieldOp">, Pure,
+                    RecursiveMemoryEffects]> {
+
+  let summary = "Index-based switch operation for linear (qubit) types";
+  let description = [{
+        The `qco.index_switch` operation provides multi-way branching based on an index
+        value, analogous to `scf.index_switch`. In addition to the index, the operation
+        takes a variadic number of qubits and qtensors as inputs that are required in all
+        case branches. These values are passed down to each case region as block arguments.
+        The number of results and the type of the results must be equivalent to the number
+        and types of the input qubit and qtensor values.
+
+        The operation has one region for each case value plus a default region. Each region
+        must terminate with a `qco.yield` operation that yields values matching the operation's
+        result types.
+
+        Example:
+        ```mlir
+        %result = qco.index_switch %index -> !qco.qubit
+        case 0 args(%arg0 = %q0) {
+          %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q1 : !qco.qubit
+        }
+        case 1 args(%arg0 = %q0) {
+          %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q1 : !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        ```
+    }];
+
+  let arguments = (ins Index:$arg, DenseI64ArrayAttr:$cases,
+      Variadic<LinearType>:$targets);
+  let results = (outs Variadic<LinearType>:$results);
+  let regions = (region SizedRegion<1>:$defaultRegion,
+      VariadicRegion<SizedRegion<1>>:$caseRegions);
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [OpBuilder<(ins "Value":$arg, "Value":$target,
+      "ArrayRef<int64_t>":$cases,
+      "ArrayRef<function_ref<Value(Value)>>":$caseBuilders,
+      "function_ref<Value(Value)>":$defaultBuilder)>];
+
+  let extraClassDeclaration = [{
+        /// Return the number of case regions
+        size_t getNumCases();
+
+        /// Return the block for a specific case
+        Block* getCaseBlock(size_t index);
+
+        /// Return the yield operation for a specific case
+        YieldOp getCaseYield(size_t index);
+
+        /// Return the default block
+        Block* getDefaultBlock();
+
+        /// Return the default yield operation
+        YieldOp getDefaultYield();
+
+        /// Return the result that corresponds to the given target operand,
+        /// or "empty" OpResult on failure.
+        OpResult getTiedResult(OpOperand* target);
+
+        /// Return the target operand that corresponds to the given result,
+        /// or `nullptr` on failure.
+        OpOperand* getTiedTarget(OpResult result);
+
+        /// Return the argument that corresponds to the given target operand
+        /// for the i-th case, or "empty" BlockArgument on failure.
+        BlockArgument getTiedCaseBlockArgument(OpOperand* target, size_t i);
+
+        /// Return the yielded value that corresponds to the given argument
+        /// for the i-th case, or `nullptr` on failure.
+        OpOperand* getTiedCaseYieldedValue(BlockArgument bbArg, size_t i);
+
+        /// Return the argument that corresponds to the given target operand
+        /// for the default case, or "empty" BlockArgument on failure.
+        BlockArgument getTiedDefaultBlockArgument(OpOperand* target);
+
+        /// Return the yielded value that corresponds to the given argument
+        /// for the default case, or `nullptr` on failure.
+        OpOperand* getTiedDefaultYieldedValue(BlockArgument bbArg);
+
+        /// Append the specified additional linear operands: replace this
+        /// index_switch with a new index_switch that has the additional linear operands.
+        /// The operands can be of qubit or qtensor type.
+        /// The branch bodies of this index_switch are moved over to the new index_switch.
+        /// The newly added qubits are yielded from each branch.
+        IndexSwitchOp replaceWithAdditionalTargets(RewriterBase& rewriter, ValueRange addons);
+    }];
+
+  let extraClassDefinition = [{
+        size_t $cppClass::getNumCases() {
+          return getCaseRegions().size();
+        }
+
+        Block* $cppClass::getCaseBlock(size_t index) {
+          return &getCaseRegions()[index].front();
+        }
+
+        YieldOp $cppClass::getCaseYield(size_t index) {
+          return cast<YieldOp>(getCaseBlock(index)->getTerminator());
+        }
+
+        Block* $cppClass::getDefaultBlock() {
+          return &getDefaultRegion().front();
+        }
+
+        YieldOp $cppClass::getDefaultYield() {
+          return cast<YieldOp>(getDefaultBlock()->getTerminator());
+        }
+    }];
+
   let hasVerifier = 1;
 }
 

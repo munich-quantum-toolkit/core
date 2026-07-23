@@ -7,6 +7,13 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "MLIR_DIR": "$env{MLIR_DIR}"
+      },
+      "environment": {
+        "CCACHE_DIR": "${sourceDir}/.cache/ccache",
+        "CCACHE_MAXSIZE": "4GiB",
+        "CCACHE_TEMPDIR": "${sourceDir}/.cache/ccache/tmp",
+        "SCCACHE_CACHE_SIZE": "4G",
+        "SCCACHE_DIR": "${sourceDir}/.cache/sccache"
       }
     },
     {
@@ -19,7 +26,10 @@
         "list": ["Linux", "Darwin"]
       },
       "description": "Default configuration for Linux and macOS builds. Uses the Ninja generator",
-      "generator": "Ninja"
+      "generator": "Ninja",
+      "environment": {
+        "SCCACHE_SERVER_UDS": "${sourceDir}/.cache/sccache.sock"
+      }
     },
     {
       "name": "base-windows",

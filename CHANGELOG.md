@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add decision diagram-based construction and simulation of static unitary
+  QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
   ([**@simon1hofmann**])
@@ -54,18 +56,20 @@ releases may include breaking changes.
   [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
   [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
-  auxiliary passes and patterns ([#1705], [#1755]) ([**@DRovara**])
+  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1924])
+  ([**@DRovara**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
   [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
-  [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624],
-  [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
-  [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780],
-  [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808], [#1823],
-  [#1824], [#1830], [#1869], [#1872], [#1886], [#1914]) ([**@burgholzer**],
-  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
-  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+  [#1570], [#1572], [#1573], [#1580], [#1602], [#1603], [#1620], [#1623],
+  [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700],
+  [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765],
+  [#1780], [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808],
+  [#1823], [#1824], [#1830], [#1869], [#1872], [#1886], [#1914], [#1925])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
+  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -642,6 +646,9 @@ changelogs._
 
 <!-- PR links -->
 
+[#1925]: https://github.com/munich-quantum-toolkit/core/pull/1925
+[#1924]: https://github.com/munich-quantum-toolkit/core/pull/1924
+[#1915]: https://github.com/munich-quantum-toolkit/core/pull/1915
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
@@ -686,6 +693,7 @@ changelogs._
 [#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
+[#1756]: https://github.com/munich-quantum-toolkit/core/pull/1756
 [#1755]: https://github.com/munich-quantum-toolkit/core/pull/1755
 [#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
@@ -723,6 +731,7 @@ changelogs._
 [#1623]: https://github.com/munich-quantum-toolkit/core/pull/1623
 [#1620]: https://github.com/munich-quantum-toolkit/core/pull/1620
 [#1605]: https://github.com/munich-quantum-toolkit/core/pull/1605
+[#1603]: https://github.com/munich-quantum-toolkit/core/pull/1603
 [#1602]: https://github.com/munich-quantum-toolkit/core/pull/1602
 [#1600]: https://github.com/munich-quantum-toolkit/core/pull/1600
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
@@ -832,6 +841,7 @@ changelogs._
 [#1164]: https://github.com/munich-quantum-toolkit/core/pull/1164
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
+[#1150]: https://github.com/munich-quantum-toolkit/core/pull/1150
 [#1148]: https://github.com/munich-quantum-toolkit/core/pull/1148
 [#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1140]: https://github.com/munich-quantum-toolkit/core/pull/1140

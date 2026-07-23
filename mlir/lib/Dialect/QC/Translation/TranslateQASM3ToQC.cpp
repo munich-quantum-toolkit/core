@@ -40,14 +40,17 @@
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -56,6 +59,17 @@
 #include <vector>
 
 namespace mlir::qc {
+
+[[nodiscard]] static bool isExactlyRepresentableAsDouble(const size_t value) {
+  if (value == 0) {
+    return true;
+  }
+  auto significand = value;
+  while ((significand & 1U) == 0) {
+    significand >>= 1U;
+  }
+  return std::bit_width(significand) <= std::numeric_limits<double>::digits;
+}
 
 namespace {
 
@@ -648,6 +662,7 @@ public:
     }
 
     auto invert = false;
+    std::optional<size_t> repetitions;
     size_t numControls = 0;
     SmallVector<Value> posControls;
     SmallVector<Value> negControls;
@@ -658,6 +673,32 @@ public:
     for (const auto& mod : stmt->modifiers) {
       if (std::dynamic_pointer_cast<qasm3::InvGateModifier>(mod)) {
         invert = !invert;
+      } else if (const auto* powMod =
+                     dynamic_cast<qasm3::PowGateModifier*>(mod.get())) {
+        const auto exponent =
+            std::dynamic_pointer_cast<qasm3::Constant>(powMod->expression);
+        if (exponent == nullptr || !exponent->isInt() || exponent->isBool()) {
+          throw qasm3::CompilerError(
+              "Only constant integer expressions are supported as power "
+              "modifier exponents.",
+              stmt->debugInfo);
+        }
+
+        uint64_t magnitude = exponent->getUInt();
+        if (exponent->isSInt() && exponent->getSInt() < 0) {
+          const auto signedExponent = exponent->getSInt();
+          magnitude = static_cast<uint64_t>(-(signedExponent + 1)) + 1;
+          invert = !invert;
+        }
+
+        const auto currentRepetitions = repetitions.value_or(1);
+        if (magnitude != 0 &&
+            currentRepetitions >
+                std::numeric_limits<size_t>::max() / magnitude) {
+          throw qasm3::CompilerError("Power modifier exponent is too large.",
+                                     stmt->debugInfo);
+        }
+        repetitions = currentRepetitions * static_cast<size_t>(magnitude);
       } else if (const auto* ctrlMod =
                      dynamic_cast<qasm3::CtrlGateModifier*>(mod.get())) {
         const auto n =
@@ -690,9 +731,16 @@ public:
         }
       } else {
         throw qasm3::CompilerError(
-            "Only ctrl, negctrl, and inv modifiers are supported.",
+            "Only ctrl, negctrl, inv, and pow modifiers are supported.",
             stmt->debugInfo);
       }
+    }
+
+    if (repetitions.has_value() &&
+        !isExactlyRepresentableAsDouble(*repetitions)) {
+      throw qasm3::CompilerError(
+          "Power modifier exponent cannot be represented exactly as an f64.",
+          stmt->debugInfo);
     }
 
     // OpenQASM 2 compatibility:
@@ -723,7 +771,7 @@ public:
             "Broadcasted compound gates are not supported.", stmt->debugInfo);
       }
       applyCompoundGate(*compound, params, targets, posControls, negControls,
-                        invert, stmt->debugInfo);
+                        invert, repetitions, stmt->debugInfo);
       return;
     }
 
@@ -742,7 +790,7 @@ public:
 
     if (!broadcasting) {
       emitGate(dispIt->second, params, targets, posControls, negControls,
-               invert);
+               invert, repetitions);
     } else {
       for (size_t b = 0; b < broadcastWidth; ++b) {
         SmallVector<Value> bTargets;
@@ -761,7 +809,7 @@ public:
           bNegControls.push_back(ctrl[b]);
         }
         emitGate(dispIt->second, params, bTargets, bPosControls, bNegControls,
-                 invert);
+                 invert, repetitions);
       }
     }
   }
@@ -769,12 +817,21 @@ public:
   /// Helper function to build a gate with potential modifiers.
   void buildModifiedGate(function_ref<void(ValueRange)> bodyFn,
                          ValueRange targets, ValueRange posControls,
-                         ValueRange negControls, bool invert) {
-    auto wrappedBodyFn = [&](ValueRange qubits) {
+                         ValueRange negControls, bool invert,
+                         std::optional<size_t> repetitions) {
+    auto invertedBodyFn = [&](ValueRange qubits) {
       if (invert) {
         builder.inv(qubits, function_ref<void(ValueRange)>(bodyFn));
       } else {
         bodyFn(qubits);
+      }
+    };
+    auto wrappedBodyFn = [&](ValueRange qubits) {
+      if (repetitions.has_value()) {
+        builder.pow(static_cast<double>(*repetitions), qubits,
+                    function_ref<void(ValueRange)>(invertedBodyFn));
+      } else {
+        invertedBodyFn(qubits);
       }
     };
 
@@ -800,16 +857,18 @@ public:
   /// Emit a standard gate.
   void emitGate(const GateFn& gateFn, const SmallVector<double>& params,
                 ValueRange targets, ValueRange posControls,
-                ValueRange negControls, bool invert) {
+                ValueRange negControls, bool invert,
+                std::optional<size_t> repetitions) {
     auto bodyFn = [&](ValueRange qubits) { gateFn(builder, qubits, params); };
-    buildModifiedGate(bodyFn, targets, posControls, negControls, invert);
+    buildModifiedGate(bodyFn, targets, posControls, negControls, invert,
+                      repetitions);
   }
 
   /// Inline a compound gate.
   void applyCompoundGate(const qasm3::CompoundGate& gate,
                          const SmallVector<double>& params, ValueRange targets,
                          ValueRange posControls, ValueRange negControls,
-                         bool invert,
+                         bool invert, std::optional<size_t> repetitions,
                          const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     assert(gate.parameterNames.size() == params.size());
     assert(gate.targetNames.size() == targets.size());
@@ -859,7 +918,8 @@ public:
       }
     };
 
-    buildModifiedGate(bodyFn, targets, posControls, negControls, invert);
+    buildModifiedGate(bodyFn, targets, posControls, negControls, invert,
+                      repetitions);
 
     constEvalPass.popEnv();
   }

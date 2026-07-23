@@ -265,28 +265,63 @@ template <bool IntoRegister>
 Value resetQubitAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
-  b.reset(q[0]);
-  return measureAndRecord(b, q.qubits, IntoRegister);
+  if constexpr (IntoRegister) {
+    auto c = b.allocClassicalBitRegister(2);
+    b.measure(q[0], c, 0);
+    b.reset(q[0]);
+    b.measure(q[0], c, 1);
+  } else {
+    b.measure(q[0], 0);
+    b.reset(q[0]);
+    b.measure(q[0], 1);
+  }
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister>
 Value resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
-  b.reset(q[0]);
-  b.h(q[1]);
-  b.reset(q[1]);
-  return measureAndRecord(b, q.qubits, IntoRegister);
+  if constexpr (IntoRegister) {
+    auto c = b.allocClassicalBitRegister(4);
+    b.measure(q[0], c, 0);
+    b.reset(q[0]);
+    b.measure(q[0], c, 1);
+    b.h(q[1]);
+    b.measure(q[1], c, 2);
+    b.reset(q[1]);
+    b.measure(q[1], c, 3);
+  } else {
+    b.measure(q[0], 0);
+    b.reset(q[0]);
+    b.measure(q[0], 1);
+    b.h(q[1]);
+    b.measure(q[1], 2);
+    b.reset(q[1]);
+    b.measure(q[1], 3);
+  }
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister>
 Value repeatedResetAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
-  b.reset(q[0]);
-  b.reset(q[0]);
-  b.reset(q[0]);
-  return measureAndRecord(b, q.qubits, IntoRegister);
+  if constexpr (IntoRegister) {
+    auto c = b.allocClassicalBitRegister(2);
+    b.measure(q[0], c, 0);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.measure(q[0], c, 1);
+  } else {
+    b.measure(q[0], 0);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.measure(q[0], 1);
+  }
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister> Value globalPhase(QIRProgramBuilder& b) {

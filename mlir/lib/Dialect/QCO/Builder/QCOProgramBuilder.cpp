@@ -16,10 +16,10 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/raw_ostream.h>
@@ -27,6 +27,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -227,10 +228,39 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.try_emplace(outputTensor, info);
 }
 
+Value QCOProgramBuilder::prepareInitArg(Value initArg,
+                                        const DenseSet<Value>* initQubits) {
+  if (isa<QubitType>(initArg.getType())) {
+    return initArg;
+  }
+
+  const auto regId = validTensors[initArg].regId;
+  auto currentTensor = initArg;
+  for (auto it = validQubits.begin(); it != validQubits.end();) {
+    auto& [qubit, qubitInfo] = *it;
+    if (qubitInfo.regId == regId &&
+        (initQubits == nullptr || !initQubits->contains(qubit))) {
+      auto newTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
+                                                 qubitInfo.regIndex)
+                           .getResult();
+      updateTensorTracking(currentTensor, newTensor);
+      currentTensor = newTensor;
+      validQubits.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+  return currentTensor;
+}
+
+Value QCOProgramBuilder::prepareInitArg(Value initArg) {
+  checkQubitType(ValueRange{initArg});
+  return prepareInitArg(initArg, nullptr);
+}
+
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
 
-  // Gather all initial qubits first
   DenseSet<Value> initQubits;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
@@ -240,54 +270,28 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
 
   SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
-
-  // Iterate through the initial values and add the latest value to the updated
-  // arguments
   for (auto initArg : initArgs) {
-    if (isa<QubitType>(initArg.getType())) {
-      // Directly insert qubits
-      updatedArgs.emplace_back(initArg);
-    } else {
-      // For tensors check if you have to insert qubits first
-      const auto regId = validTensors[initArg].regId;
-      auto currentTensor = initArg;
-      // Iterate through the validQubits and find the qubits that were extracted
-      // from this tensor
-      for (auto it = validQubits.begin(); it != validQubits.end();) {
-        auto& [qubit, qubitInfo] = *it;
-        // Ignore qubits that are also used as initArgs
-        if (qubitInfo.regId == regId && !initQubits.contains(qubit)) {
-          // Create an InsertOp for the qubit
-          auto newTensor = qtensor::InsertOp::create(
-                               *this, qubit, currentTensor, qubitInfo.regIndex)
-                               .getResult();
-          // Update the tensor tracking
-          updateTensorTracking(currentTensor, newTensor);
-          currentTensor = newTensor;
-          validQubits.erase(it++);
-        } else {
-          ++it;
-        }
-      }
-      // Add the tensor after all qubits are inserted and the tensor tracking is
-      // updated
-      updatedArgs.emplace_back(currentTensor);
-    }
+    updatedArgs.emplace_back(prepareInitArg(initArg, &initQubits));
   }
   return updatedArgs;
+}
+
+void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
+                                                 Value newValue) {
+  if (oldValue.getType() != newValue.getType()) {
+    llvm::reportFatalUsageError("Result types must match input types");
+  }
+  if (isa<QubitType>(oldValue.getType())) {
+    updateQubitTracking(oldValue, newValue);
+  } else {
+    updateTensorTracking(oldValue, newValue);
+  }
 }
 
 void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
                                                  ValueRange newValues) {
   for (auto [oldValue, newValue] : llvm::zip_equal(oldValues, newValues)) {
-    if (oldValue.getType() != newValue.getType()) {
-      llvm::reportFatalUsageError("Result types must match input types");
-    }
-    if (isa<QubitType>(oldValue.getType())) {
-      updateQubitTracking(oldValue, newValue);
-    } else {
-      updateTensorTracking(oldValue, newValue);
-    }
+    updateQubitValueTracking(oldValue, newValue);
   }
 }
 
@@ -928,6 +932,62 @@ QCOProgramBuilder::inv(ValueRange qubits,
   return targetsOut;
 }
 
+ValueRange
+QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                       ValueRange qubits,
+                       function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto powOp = PowOp::create(*this, qubits, exponent);
+
+  // Add block arguments for all qubits
+  auto& block = powOp.getBodyRegion().emplaceBlock();
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
+    const auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Pow body must return exactly one output qubit per target");
+  }
+
+  // Update tracking
+  const auto& targetsOut = powOp.getQubitsOut();
+  for (const auto& [target, targetOut] :
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
+Value QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                             Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto powOp =
+      PowOp::create(*this, qubit, exponent, [&](Value qubitArg) -> Value {
+        updateQubitTracking(qubit, qubitArg);
+        innerQubitOut = body(qubitArg);
+        return innerQubitOut;
+      });
+
+  const auto& qubitsOut = powOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
+}
+
 std::pair<ValueRange, Value>
 QCOProgramBuilder::ctrl(ValueRange controls, Value target,
                         function_ref<Value(Value)> body) {
@@ -1137,13 +1197,135 @@ ValueRange QCOProgramBuilder::qcoIf(
           "Else body must return exactly one value per input value");
     }
     YieldOp::create(*this, elseResult);
-    updateQubitValueTracking(elseResult, ifOp->getResults());
+    updateQubitValueTracking(elseResult, ifOp.getResults());
   } else {
     YieldOp::create(*this, elseArgs);
-    updateQubitValueTracking(thenResult, ifOp->getResults());
+    updateQubitValueTracking(thenResult, ifOp.getResults());
   }
 
-  return ifOp->getResults();
+  return ifOp.getResults();
+}
+
+ValueRange QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, ValueRange targets,
+    ArrayRef<int64_t> cases,
+    ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
+    const function_ref<SmallVector<Value>(ValueRange)> defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  const auto ntargets = targets.size();
+  const auto types = targets.getTypes();
+  const auto updatedTargets = prepareInitArgs(targets);
+  const auto argValue = variantToValue(*this, getLoc(), arg);
+
+  auto switchOp = IndexSwitchOp::create(*this, types, argValue, cases,
+                                        updatedTargets, cases.size());
+
+  const InsertionGuard guard(*this);
+  const SmallVector locs(ntargets, getLoc());
+
+  const auto buildRegion = [&](Region& region, SmallVector<Value>& prev,
+                               function_ref<SmallVector<Value>(ValueRange)> f) {
+    Block* const block = createBlock(&region, {}, types, locs);
+    updateQubitValueTracking(prev, block->getArguments());
+
+    const auto result = f(block->getArguments());
+    if (result.size() != ntargets) {
+      const char* msg =
+          "Case body must return exactly one value per input value";
+      llvm::reportFatalUsageError(msg);
+      llvm_unreachable(msg);
+    }
+
+    YieldOp::create(*this, result);
+    prev = result;
+  };
+
+  SmallVector<Value> prev(updatedTargets);
+  for (const auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, prev, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), prev, defaultBody);
+  updateQubitValueTracking(prev, switchOp.getResults());
+
+  return switchOp.getResults();
+}
+
+Value QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, Value target,
+    ArrayRef<int64_t> cases, ArrayRef<function_ref<Value(Value)>> caseBodies,
+    function_ref<Value(Value)> defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    llvm::reportFatalUsageError(
+        "Each case must have a corresponding case body function");
+  }
+
+  const auto updatedTarget = prepareInitArg(target);
+  const auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp = IndexSwitchOp::create(*this, target.getType(), argValue,
+                                        cases, updatedTarget, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, Value previous,
+                               function_ref<Value(Value)> body) -> Value {
+    auto& block = region.emplaceBlock();
+    const auto blockArgument = block.addArgument(target.getType(), getLoc());
+    updateQubitValueTracking(previous, blockArgument);
+    setInsertionPointToStart(&block);
+    const auto result = body(blockArgument);
+    YieldOp::create(*this, result);
+    return result;
+  };
+
+  Value previous = updatedTarget;
+  for (const auto [region, body] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    previous = buildRegion(region, previous, body);
+  }
+  previous = buildRegion(switchOp.getDefaultRegion(), previous, defaultBody);
+  updateQubitValueTracking(previous, switchOp.getResult(0));
+  return switchOp.getResult(0);
+}
+
+Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
+                               Value initArg,
+                               function_ref<Value(Value)> thenBody,
+                               function_ref<Value(Value)> elseBody) {
+  checkFinalized();
+
+  const auto conditionValue = variantToValue(*this, getLoc(), condition);
+  const auto updatedArg = prepareInitArg(initArg);
+  Value thenResult;
+  const auto trackedThenBody = [&](Value arg) {
+    updateQubitValueTracking(updatedArg, arg);
+    thenResult = thenBody(arg);
+    return thenResult;
+  };
+  if (elseBody) {
+    Value elseResult;
+    auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody,
+                             [&](Value arg) {
+                               updateQubitValueTracking(thenResult, arg);
+                               elseResult = elseBody(arg);
+                               return elseResult;
+                             });
+    updateQubitValueTracking(elseResult, ifOp.getResult(0));
+    return ifOp.getResult(0);
+  }
+
+  auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody);
+  updateQubitValueTracking(thenResult, ifOp.getResult(0));
+  return ifOp.getResult(0);
 }
 
 ValueRange QCOProgramBuilder::qcoIf(

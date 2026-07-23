@@ -548,7 +548,7 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) (%a0 = %q1) {                                                \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
    *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
@@ -967,10 +967,11 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply a controlled operation
+   * @brief Apply a control modifier to a collection of gates
    *
    * @param controls Control qubits
-   * @param body Function that builds the body containing the target operation
+   * @param targets Target qubits the body operates on
+   * @param body Function that builds the body containing the target gates
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -1025,10 +1026,10 @@ public:
                          const function_ref<void(Value)>& body);
 
   /**
-   * @brief Apply an inverse (i.e., adjoint) operation.
+   * @brief Apply an inverse (i.e., adjoint) modifier to a collection of gates
    *
-   * @param body Function that builds the body containing the operation to
-   * invert
+   * @param qubits The qubits the body operates on
+   * @param body Function that builds the body containing the gates to invert
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -1038,8 +1039,8 @@ public:
    * });
    * ```
    * ```mlir
-   * qc.inv {
-   *   qc.s %q0 : !qc.qubit
+   * qc.inv (%a0 = %q0) {
+   *   qc.s %a0 : !qc.qubit
    * }
    * ```
    */
@@ -1062,6 +1063,48 @@ public:
    * ```
    */
   QCProgramBuilder& inv(Value qubit, const function_ref<void(Value)>& body);
+
+  /**
+   * @brief Apply a power modifier to a collection of gates
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubits The qubits the body operates on
+   * @param body Function that builds the body containing the gates to
+   * exponentiate
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.pow(2.0, {q0, q1}, [&](ValueRange qubits) {
+   *   builder.swap(qubits[0], qubits[1]);
+   * });
+   * ```
+   * ```mlir
+   * qc.pow(%exponent) (%a0 = %q0) {
+   *   qc.s %a0 : !qc.qubit
+   * } : !qc.qubit
+   * ```
+   */
+  QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
+                        ValueRange qubits,
+                        const function_ref<void(ValueRange)>& body);
+
+  /**
+   * @brief Apply a power modifier on a single qubit.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubit Qubit involved in the operation
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.pow(2.0, q0, [&](Value qubit) { builder.s(qubit); });
+   * ```
+   */
+  QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
+                        Value qubit, const function_ref<void(Value)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1192,6 +1235,37 @@ public:
   QCProgramBuilder& scfIf(Value reg, const std::variant<int64_t, Value>& index,
                           const function_ref<void()>& thenBody,
                           const function_ref<void()>& elseBody = nullptr);
+
+  /**
+   * @brief Construct an scf.index_switch operation
+   *
+   * @param arg Index argument.
+   * @param cases The individual switch cases.
+   * @param caseBodies An array of functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfIndexSwitch(index,
+   *   SmallVector<int64_t>{0},
+   *   SmallVector<function_ref<void()>>{[&] { b.x(q0); }},
+   *   [&] { b.z(q0); });
+   * ```
+   * ```mlir
+   * scf.index_switch %condition
+   * case 0 {
+   *   qc.x %q0 : !qc.qubit
+   * }
+   * default {
+   *   qc.z %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                   ArrayRef<int64_t> cases,
+                                   ArrayRef<function_ref<void()>> caseBodies,
+                                   const function_ref<void()>& defaultBody);
 
   /**
    * @brief Construct an scf.condition operation

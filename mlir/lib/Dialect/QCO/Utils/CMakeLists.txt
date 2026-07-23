@@ -14,7 +14,7 @@ target_sources(MLIRQCOMatrix PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE
                                     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Utils/Matrix.h)
 
 file(GLOB_RECURSE UTILS_CPP "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
-list(FILTER UTILS_CPP EXCLUDE REGEX "Matrix\\.cpp$")
+list(FILTER UTILS_CPP EXCLUDE REGEX "(DDFunctionality|Matrix)\\.cpp$")
 
 add_mlir_dialect_library(
   MLIRQCOUtils
@@ -34,7 +34,7 @@ mqt_mlir_target_use_project_options(MLIRQCOUtils)
 
 # collect header files
 file(GLOB_RECURSE UTILS_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Utils/*.h")
-list(FILTER UTILS_HEADERS_SOURCE EXCLUDE REGEX "Matrix\\.h$")
+list(FILTER UTILS_HEADERS_SOURCE EXCLUDE REGEX "(DDFunctionality|Matrix)\\.h$")
 file(GLOB_RECURSE UTILS_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/Utils/*.inc")
 
 # add public headers using file sets
@@ -52,3 +52,24 @@ target_sources(
          ${MQT_MLIR_BUILD_INCLUDE_DIR}
          FILES
          ${UTILS_HEADERS_BUILD})
+
+add_mlir_library(
+  MLIRQCODDFunctionality
+  PARTIAL_SOURCES_INTENDED
+  DDFunctionality.cpp
+  DEPENDS
+  MLIRQCOOpsIncGen
+  MLIRQCOInterfacesIncGen
+  LINK_LIBS
+  PUBLIC
+  MLIRQCODialect
+  MLIRQCOMatrix
+  MLIRFuncDialect
+  MQT::CoreDD)
+
+mqt_mlir_target_use_project_options(MLIRQCODDFunctionality)
+
+target_sources(
+  MLIRQCODDFunctionality
+  PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Utils/DDFunctionality.h)

@@ -26,6 +26,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -903,6 +904,12 @@ static SmallVector<Value> controlledH(QCOProgramBuilder& b) {
   return measureAndReturn(b, {res.second});
 }
 
+static Value dynamicPowX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut = b.pow(0.5, q[0], [&](Value qubit) { return b.x(qubit); });
+  return b.measure(powOut).second;
+}
+
 static SmallVector<Value> singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
@@ -928,6 +935,23 @@ TEST(FuseSingleQubitUnitaryRunsTest, InvalidBasisFailsPass) {
       QCOProgramBuilder::build(fx.ctx(), &singleQubitRunWithSingleQubitGate);
   ASSERT_TRUE(owned);
   EXPECT_TRUE(failed(runFuse(*owned, "not-a-basis")));
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
+  TestFixture fx;
+  fx.setUp();
+  auto owned = QCOProgramBuilder::build(fx.ctx(), &dynamicPowX);
+  ASSERT_TRUE(owned);
+  auto funcOp = owned->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(funcOp);
+  funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  powOp->setOperand(0, funcOp.getArgument(0));
+  ASSERT_TRUE(succeeded(verify(*owned)));
+  ASSERT_FALSE(powOp.hasCompileTimeKnownUnitaryMatrix());
+
+  EXPECT_TRUE(succeeded(runFuse(*owned, "zyz")));
+  EXPECT_EQ(countOps<PowOp>(funcOp), 1U);
 }
 
 TEST(FuseSingleQubitUnitaryRunsTest, FusesProgramsAllBases) {

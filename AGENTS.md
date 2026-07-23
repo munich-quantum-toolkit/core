@@ -48,9 +48,9 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 
 ### C++
 
-- Configure a release build with `cmake --preset release`.
-- Build it with `cmake --build --preset release`.
-- Run all configured C++ tests with `ctest --preset release`.
+- Configure a release build with `./.agent/run.sh cmake --preset release`.
+- Build it with `./.agent/run.sh cmake --build --preset release`.
+- Run all configured C++ tests with `./.agent/run.sh ctest --preset release`.
 - Run a component binary directly when iterating, for example
   `./build/release/test/ir/mqt-core-ir-test` or
   `./build/release/test/qdmi/driver/mqt-core-qdmi-driver-test`.
@@ -67,36 +67,65 @@ types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate.
 ### Python and Bindings
 
 - Install build and test dependencies with
-  `uv sync --inexact --only-group build --only-group test`.
+  `./.agent/run.sh uv sync --inexact --only-group build --only-group test`.
 - Install the package for fast local rebuilds with
-  `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`.
-- Run the Python tests with `uv run --no-sync pytest`; pass a file or `-k`
-  expression while iterating.
-- Run the supported test sessions with `uvx nox -s tests` and
-  `uvx nox -s minimums`. Python 3.14 variants are `tests-3.14` and
-  `minimums-3.14`.
+  `./.agent/run.sh uv sync --inexact --no-dev --no-build-isolation-package mqt-core`.
+- Run the Python tests with `./.agent/run.sh uv run --no-sync pytest`; pass a
+  file or `-k` expression while iterating.
+- Run the supported test sessions with `./.agent/run.sh uvx nox -s tests` and
+  `./.agent/run.sh uvx nox -s minimums`. Python 3.14 variants are `tests-3.14`
+  and `minimums-3.14`.
 - If a file in `bindings/` is added or changed, regenerate type stubs with
-  `uvx nox -s stubs`. Never edit generated `.pyi` files in `python/mqt/core/`
-  manually.
+  `./.agent/run.sh uvx nox -s stubs`. Never edit generated `.pyi` files in
+  `python/mqt/core/` manually.
 
 Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
 `ty` over suppressing them; document suppressions that are genuinely required.
 
+### Worktree-Local Tool Caches
+
+- Run cache-producing commands through `.agent/run.sh`. It derives the
+  repository root from its own location, so it works from any directory in the
+  worktree and exports worktree-local cache paths before executing the requested
+  command. In addition to the download cache, this localizes `uv` tool
+  environments, tool binaries, and managed Python installations. It also
+  supplies a local XDG cache root and `PREK_HOME` so other cache-aware
+  development tools stay within the worktree.
+- The wrapper configures `uv` and `uvx` to use `.cache/uv`. The CMake presets
+  configure `ccache` and `sccache` to use `.cache/ccache` and `.cache/sccache`,
+  respectively. These paths are ignored by Git. Outside agent-driven work,
+  contributors remain free to use their preferred cache configuration.
+- Do not redirect these tools to a user-level or shared cache outside the
+  worktree. In particular, do not work around sandbox failures by requesting
+  access to a cache under a home directory.
+- Use the CMake presets for configuration, builds, and tests so the compiler
+  cache environment is applied consistently. The compiler caches are capped at 4
+  GiB per worktree and clean up automatically as they reach that limit.
+- If invoking `ccache` or `sccache` outside a CMake preset, set `CCACHE_DIR` or
+  `SCCACHE_DIR` to the corresponding repository-local path first.
+- After a significant batch of work, and only once no `uv`, build, or compiler
+  cache process is running, run `./.agent/clean-caches.sh`. This clears only the
+  current worktree's local caches. Do not remove cache contents manually while
+  another process may be using them.
+
 ### MLIR and Documentation
 
 - Build the MLIR documentation with
-  `cmake --build --preset release --target mlir-doc`.
+  `./.agent/run.sh cmake --build --preset release --target mlir-doc`.
 - A real focused MLIR test binary is
   `./build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`.
-- Build the complete documentation with `uvx nox --non-interactive -s docs`.
-- Check documentation links with `uvx nox -s docs -- -b linkcheck`.
+- Build the complete documentation with
+  `./.agent/run.sh uvx nox --non-interactive -s docs`.
+- Check documentation links with
+  `./.agent/run.sh uvx nox -s docs -- -b linkcheck`.
 
 ## Generated Files and Validation
 
 - Do not hand-edit generated stubs, rendered documentation, CMake-generated
   files, or template-managed files.
-- Run `uvx nox -s lint` after each completed batch of changes. It runs the full
-  `prek` hook set, including formatting, spelling, type, and metadata checks.
+- Run `./.agent/run.sh uvx nox -s lint` after each completed batch of changes.
+  It runs the full `prek` hook set, including formatting, spelling, type, and
+  metadata checks.
 - Inspect the final diff and working-tree status. Report every check run and
   clearly distinguish passes, failures, and checks that could not be run.
 
@@ -131,7 +160,7 @@ task's decisions and progress.
 
 - The diff is focused and follows neighboring code conventions.
 - Behavioral changes have automated test coverage, and targeted tests pass.
-- `uvx nox -s lint` passes.
+- `./.agent/run.sh uvx nox -s lint` passes.
 - Binding changes have regenerated stubs.
 - User-facing changes update `CHANGELOG.md` and `UPGRADING.md` when appropriate.
 - Generated, template-managed, secret, and unrelated files are absent from the

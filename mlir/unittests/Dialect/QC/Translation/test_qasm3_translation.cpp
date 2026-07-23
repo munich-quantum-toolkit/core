@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -146,6 +147,59 @@ static Value ifNot(qc::QCProgramBuilder& b) {
   return out;
 }
 
+static Value powTwoX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, {q[0]});
+}
+
+static Value powZeroX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.0, q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, {q[0]});
+}
+
+static Value negativePowS(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value powQubit) {
+    b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
+  });
+  return measureToRegister(b, {q[0]});
+}
+
+static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) {
+    b.pow(2.0, target, [&](Value powQubit) {
+      b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
+    });
+  });
+  return {measureToRegister(b, {q[0], q[1]})};
+}
+
+static Value nestedPowX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(6.0, q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, {q[0]});
+}
+
+static Value customPowHS(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubit) {
+    b.h(qubit);
+    b.s(qubit);
+  });
+  return measureToRegister(b, {q[0]});
+}
+
+static SmallVector<Value> broadcastPowX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  for (auto qubit : q.qubits) {
+    b.pow(2.0, qubit, [&](Value argument) { b.x(argument); });
+  }
+  return {measureToRegister(b, {q[0], q[1]})};
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -172,6 +226,37 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
+}
+
+TEST(QASM3TranslationErrors, RejectsNonIntegerPowerExponent) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::floatingPowX, &context));
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::booleanPowX, &context));
+}
+
+TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  auto translated = qc::translateQASM3ToQC(qasm::exactLargePowX, &context);
+  ASSERT_TRUE(translated);
+  SmallVector<qc::PowOp> powers;
+  translated->walk([&](qc::PowOp op) { powers.push_back(op); });
+  ASSERT_EQ(powers.size(), 1U);
+  const auto exponent = powers.front().getExponentValue();
+  ASSERT_TRUE(exponent.has_value());
+  EXPECT_DOUBLE_EQ(*exponent, 9007199254740992.0);
+
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::inexactLargePowX, &context));
+  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::overflowingNestedPowX, &context));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -438,6 +523,21 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::multipleControlledRccx)},
         QASM3TranslationTestCase{"Barrier", qasm::barrier,
                                  MQT_NAMED_BUILDER(qc::barrier)},
+        QASM3TranslationTestCase{"PowTwoX", qasm::powTwoX,
+                                 MQT_NAMED_BUILDER(powTwoX)},
+        QASM3TranslationTestCase{"PowZeroX", qasm::powZeroX,
+                                 MQT_NAMED_BUILDER(powZeroX)},
+        QASM3TranslationTestCase{"NegativePowS", qasm::negativePowS,
+                                 MQT_NAMED_BUILDER(negativePowS)},
+        QASM3TranslationTestCase{"ControlledInversePowS",
+                                 qasm::controlledInversePowS,
+                                 MQT_NAMED_BUILDER(controlledInversePowS)},
+        QASM3TranslationTestCase{"NestedPowX", qasm::nestedPowX,
+                                 MQT_NAMED_BUILDER(nestedPowX)},
+        QASM3TranslationTestCase{"CustomPowHS", qasm::customPowHS,
+                                 MQT_NAMED_BUILDER(customPowHS)},
+        QASM3TranslationTestCase{"BroadcastPowX", qasm::broadcastPowX,
+                                 MQT_NAMED_BUILDER(broadcastPowX)},
         QASM3TranslationTestCase{"BarrierTwoQubits", qasm::barrierTwoQubits,
                                  MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
         QASM3TranslationTestCase{"BarrierMultipleQubits",

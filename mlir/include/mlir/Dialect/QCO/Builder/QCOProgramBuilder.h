@@ -1272,11 +1272,11 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply a controlled operation
+   * @brief Apply a control modifier to a collection of gates
    *
-   * @param controls Control qubits
-   * @param targets Target qubits
-   * @param body Function that builds the body containing the target operation
+   * @param controls Input control qubits
+   * @param targets Input target qubits
+   * @param body Function that builds the body containing the target gates
    * @return Pair of (output_control_qubits, output_target_qubits)
    *
    * @par Example:
@@ -1337,10 +1337,10 @@ public:
                                function_ref<Value(Value)> body);
 
   /**
-   * @brief Apply an inverse operation
+   * @brief Apply an inverse (i.e., adjoint) modifier to a collection of gates
    *
-   * @param qubits Qubits involved in the operation
-   * @param body Function that builds the body containing the target operation
+   * @param qubits Input qubits
+   * @param body Function that builds the body containing the gates to invert
    * @return Output qubits
    *
    * @par Example:
@@ -1377,6 +1377,53 @@ public:
    * ```
    */
   Value inv(Value qubit, function_ref<Value(Value)> body);
+
+  /**
+   * @brief Apply a power modifier to a collection of gates
+   *
+   * @param exponent The exponent to raise the gates to
+   * @param qubits Input qubits
+   * @param body Function that builds the body containing the gates to
+   * exponentiate
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * qubits_out = builder.pow(2.0, {q0_in, q1_in},
+   *   [&](ValueRange qubits) -> SmallVector<Value> {
+   *     auto [q0, q1] = builder.swap(qubits[0], qubits[1]);
+   *     return {q0, q1};
+   *   }
+   * );
+   * ```
+   * ```mlir
+   * %q_out = qco.pow(%exponent) (%q = %q_in) {
+   *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
+   *   qco.yield %q_res
+   * } : {!qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange pow(const std::variant<double, Value>& exponent, ValueRange qubits,
+                 function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /**
+   * @brief Apply a power modifier on a single qubit.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubit Input qubit
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto qubit_out = builder.pow(2.0, q0_in, [&](Value qubit) {
+   *   return builder.s(qubit);
+   * });
+   * ```
+   */
+  Value pow(const std::variant<double, Value>& exponent, Value qubit,
+            function_ref<Value(Value)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1467,6 +1514,129 @@ public:
         ValueRange initArgs,
         function_ref<SmallVector<Value>(ValueRange)> thenBody,
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
+
+  /**
+   * @brief Construct an if operation for qubits with a single target qubit or
+   * tensor.
+   *
+   * @details
+   * Constructs an if operation that takes a bool Value and a single qubit
+   * or qtensor value that is used in the then/else region of this operation.
+   * The value is passed down as block arguments to each region. Qubits that
+   * were extracted from a tensor that is used as an argument for this operation
+   * are automatically inserted before the operation is constructed.
+   *
+   * @param condition Bool condition
+   * @param initArg Initial argument for the if branches
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Value as a result
+   *
+   * @par Example:
+   * ```c++
+   * result = builder.qcoIf(condition, initArg, [&](Value arg)
+   * -> Value {
+   *   auto q1 = builder.x(arg);
+   *   return q1;
+   * }, [&](Value arg) -> Value {
+   *   auto q2 = builder.z(arg);
+   *   return q2;
+   * });
+   * ```
+   * ```mlir
+   * %q3 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * } else args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
+   * ```
+   */
+  Value qcoIf(const std::variant<bool, Value>& condition, Value initArg,
+              function_ref<Value(Value)> thenBody,
+              function_ref<Value(Value)> elseBody = nullptr);
+
+  /**
+   * @brief Construct an index switch operation for qubits or tensors of qubits
+   * with linear typing.
+   *
+   * @details
+   * Constructs an index switch operation that takes an index Value and a range
+   * of qubit and qtensor values that are used in the case regions of this
+   * operation. The values are passed down as block arguments to each region.
+   * Qubits that were extracted from a tensor that is used as an argument for
+   * this operation are automatically inserted before the operation is
+   * constructed.
+   *
+   * @param arg Index argument.
+   * @param targets Initial arguments for the index switch branches.
+   * @param cases The individual switch cases.
+   * @param caseBodies An array of functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return ValueRange of the results.
+   *
+   * @par Example:
+   * ```c++
+   * result = b.qcoIndexSwitch(arg, initTargets,
+   *   SmallVector<int64_t>{0},
+   *   SmallVector<function_ref<SmallVector<Value>(ValueRange)>>{
+   *     [&](ValueRange args) {
+   *       auto q1 = builder.x(args[0]);
+   *       return {q1};
+   *     }
+   *   },
+   *   [&](ValueRange args) {
+   *     auto q2 = builder.x(args[0]);
+   *     return {q2};
+   *   });
+   * ```
+   * ```mlir
+   * %result = qco.index_switch %arg -> !qco.qubit
+   * case 0 args(%arg0 = %q0) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * }
+   * default args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
+   * ```
+   */
+  ValueRange qcoIndexSwitch(
+      const std::variant<int64_t, Value>& arg, ValueRange targets,
+      ArrayRef<int64_t> cases,
+      ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
+      function_ref<SmallVector<Value>(ValueRange)> defaultBody);
+
+  /**
+   * @brief Construct an index switch operation with a single linear target.
+   *
+   * @details
+   * Constructs an index switch operation for one qubit or qtensor value.
+   * Each branch callback receives and returns a single value, avoiding
+   * one-element ranges and vectors.
+   *
+   * @param arg Index argument.
+   * @param target Initial argument for every index switch branch.
+   * @param cases The individual switch cases.
+   * @param caseBodies Functions that build the case bodies.
+   * @param defaultBody Function that builds the default body.
+   * @return The single result value.
+   *
+   * @par Example:
+   * ```c++
+   * result = builder.qcoIndexSwitch(
+   *     arg, target, SmallVector<int64_t>{0},
+   *     SmallVector<function_ref<Value(Value)>>{
+   *         [&](Value value) { return builder.x(value); }},
+   *     [&](Value value) { return builder.z(value); });
+   * ```
+   */
+  Value qcoIndexSwitch(const std::variant<int64_t, Value>& arg, Value target,
+                       ArrayRef<int64_t> cases,
+                       ArrayRef<function_ref<Value(Value)>> caseBodies,
+                       function_ref<Value(Value)> defaultBody);
 
   /**
    * @brief Construct an scf.for operation
@@ -1721,6 +1891,23 @@ private:
    * @return SmallVector of the updated values of the initial values.
    */
   SmallVector<Value> prepareInitArgs(ValueRange initArgs);
+
+  /**
+   * @brief Prepare one initial argument by re-inserting extracted qubits into
+   * its tensor, if necessary.
+   * @param initArg Initial value
+   * @return Updated initial value
+   */
+  Value prepareInitArg(Value initArg);
+
+  Value prepareInitArg(Value initArg, const DenseSet<Value>* initQubits);
+
+  /**
+   * @brief Update linear-value tracking for one replaced value
+   * @param oldValue The old value to be replaced
+   * @param newValue The new value to be tracked
+   */
+  void updateQubitValueTracking(Value oldValue, Value newValue);
 
   /**
    * @brief Update the qubit tracking of the old values with the new values

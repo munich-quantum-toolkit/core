@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -528,6 +529,23 @@ QCProgramBuilder::inv(ValueRange qubits,
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                      ValueRange qubits,
+                      const function_ref<void(ValueRange)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent, Value qubit,
+                      const function_ref<void(Value)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubit, body);
+  return *this;
+}
+
 QCProgramBuilder& QCProgramBuilder::inv(Value qubit,
                                         const function_ref<void(Value)>& body) {
   checkFinalized();
@@ -624,6 +642,42 @@ QCProgramBuilder::scfIf(Value reg, const std::variant<int64_t, Value>& index,
   auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfIf(condition, thenBody, elseBody);
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                 ArrayRef<int64_t> cases,
+                                 ArrayRef<function_ref<void()>> caseBodies,
+                                 const function_ref<void()>& defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp =
+      scf::IndexSwitchOp::create(*this, {}, argValue, cases, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
+    Block* block = createBlock(&region); // Implicitly sets the insertion point.
+    regionStack.emplace_back(&region);
+    f();
+    scf::YieldOp::create(*this, getLoc());
+    regionStack.pop_back();
+  };
+
+  for (auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), defaultBody);
+
+  return *this;
 }
 
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
