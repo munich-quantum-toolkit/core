@@ -171,6 +171,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(rxx)},
         QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
                    MQT_NAMED_BUILDER(powSingleExponent)},
+        QCTestCase{"PowRxxFold", MQT_NAMED_BUILDER(powRxx),
+                   MQT_NAMED_BUILDER(powRxxRef)},
         QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
                    MQT_NAMED_BUILDER(powRxNeg)},
         QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
@@ -191,7 +193,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InvPowEvenSwap", MQT_NAMED_BUILDER(invPowEvenSwap),
                    MQT_NAMED_BUILDER(allocQubitRegister)},
         QCTestCase{"InvPowSquaredZ", MQT_NAMED_BUILDER(invPowSquaredZ),
-                   MQT_NAMED_BUILDER(alloc1QubitRegister)}));
+                   MQT_NAMED_BUILDER(alloc1QubitRegister)},
+        QCTestCase{"CtrlPowSxExpands", MQT_NAMED_BUILDER(ctrlPowSx),
+                   MQT_NAMED_BUILDER(ctrlPowSxRef)}));
 /// @}
 
 TEST_F(QCTest, PowExponentIsUnitaryParameter) {
@@ -222,21 +226,6 @@ TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
   EXPECT_EQ(xCount, 0);
 }
 
-/// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
-/// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
-TEST_F(QCTest, PowRxxFold) {
-  auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
-  ASSERT_TRUE(program);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(verify(*program).succeeded());
-
-  int powCount = 0;
-  program->walk([&](PowOp) { ++powCount; });
-  EXPECT_EQ(powCount, 0) << "PowOp around rxx should be folded away";
-}
-
 /// pow(-0.5) { h } cannot fold a negative fractional exponent
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCTest, NegPowHNoFold) {
@@ -250,31 +239,6 @@ TEST_F(QCTest, NegPowHNoFold) {
   int powCount = 0;
   program->walk([&](PowOp) { ++powCount; });
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
-}
-
-/// pow(sx) inside a ctrl modifier expands into a GPhase + RX kept within the
-/// ctrl body, so the controlled global phase is preserved. Verify the CtrlOp
-/// survives and the nested PowOp is expanded into a GPhase + RX.
-TEST_F(QCTest, CtrlPowSxExpands) {
-  auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
-  ASSERT_TRUE(program);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(verify(*program).succeeded());
-
-  int ctrlCount = 0;
-  int powCount = 0;
-  int gphaseCount = 0;
-  int rxCount = 0;
-  program->walk([&](CtrlOp) { ++ctrlCount; });
-  program->walk([&](PowOp) { ++powCount; });
-  program->walk([&](GPhaseOp) { ++gphaseCount; });
-  program->walk([&](RXOp) { ++rxCount; });
-  EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
-  EXPECT_EQ(powCount, 0) << "PowOp inside ctrl must be expanded";
-  EXPECT_EQ(gphaseCount, 1) << "SX fold must emit a GPhase";
-  EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
 }
 
 /// A multi-unitary pow body (pow(2){x; rxx}) is left untouched by the cleanup

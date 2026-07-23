@@ -1123,6 +1123,9 @@ Value nestedPowBranchCut(QCProgramBuilder& b);
 /// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
 SmallVector<Value> powRxx(QCProgramBuilder& b);
 
+/// Creates the reference for powRxx: RXX with twice the rotation angle.
+SmallVector<Value> powRxxRef(QCProgramBuilder& b);
+
 /// Creates a circuit with pow(-2.0) wrapping an RX gate (negative exponent).
 Value negPowRx(QCProgramBuilder& b);
 
@@ -1196,6 +1199,9 @@ SmallVector<Value> negPowInvIswapRef(QCProgramBuilder& b);
 /// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
 /// so the pow survives canonicalization and reaches ConvertQCPowOp.
 SmallVector<Value> ctrlPowSx(QCProgramBuilder& b);
+
+/// Creates the reference for ctrlPowSx: controlled gphase(-pi/12) and RX(pi/6).
+SmallVector<Value> ctrlPowSxRef(QCProgramBuilder& b);
 
 /// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
 /// pow bodies untouched; checks verification and the QC↔QCO round-trip.

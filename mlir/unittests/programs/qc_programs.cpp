@@ -2278,6 +2278,12 @@ SmallVector<Value> powRxx(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+SmallVector<Value> powRxxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.rxx(0.246, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
 Value negPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.pow(-2.0, q[0], [&](Value qubits) { b.rx(0.123, qubits); });
@@ -2406,6 +2412,15 @@ SmallVector<Value> ctrlPowSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](ValueRange args) {
     b.pow(1.0 / 3.0, args[0], [&](Value p) { b.sx(p); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> ctrlPowSxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) {
+    b.gphase(-std::numbers::pi / 12.0);
+    b.rx(std::numbers::pi / 6.0, target);
   });
   return measureAndReturn(b, q.qubits);
 }
