@@ -47,8 +47,9 @@
 #include <vector>
 
 namespace qasm3 {
+namespace {
 
-static std::unique_ptr<qc::Operation>
+std::unique_ptr<qc::Operation>
 applyPowerModifier(std::unique_ptr<qc::Operation> operation,
                    const std::size_t repetitions) {
   if (operation == nullptr || repetitions == 0) {
@@ -66,6 +67,8 @@ applyPowerModifier(std::unique_ptr<qc::Operation> operation,
   poweredOperation->getOps().emplace_back(std::move(operation));
   return poweredOperation;
 }
+
+} // namespace
 
 auto Importer::importf(const std::string& filename) -> qc::QuantumComputation {
   std::ifstream file(filename);
