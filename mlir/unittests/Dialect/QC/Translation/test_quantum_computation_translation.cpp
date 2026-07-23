@@ -438,11 +438,11 @@ INSTANTIATE_TEST_SUITE_P(
             "SimpleIf", MQT_NAMED_BUILDER(qc::simpleIf),
             MQT_NAMED_BUILDER(mlir::qc::simpleIf)},
         QuantumComputationTranslationTestCase{
-            "IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-            MQT_NAMED_BUILDER(mlir::qc::ifTwoQubits)},
-        QuantumComputationTranslationTestCase{
             "IfElse", MQT_NAMED_BUILDER(qc::ifElse),
             MQT_NAMED_BUILDER(mlir::qc::ifElse)},
+        QuantumComputationTranslationTestCase{
+            "IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
+            MQT_NAMED_BUILDER(mlir::qc::ifTwoQubits)},
         QuantumComputationTranslationTestCase{
             "MeasureInIf", MQT_NAMED_BUILDER(qc::measureInIf),
             MQT_NAMED_BUILDER(mlir::qc::measureInIf)}));

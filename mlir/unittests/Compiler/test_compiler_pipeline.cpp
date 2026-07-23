@@ -610,6 +610,16 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(
                 mlir::qir::multipleClassicalRegistersAndMeasurements)},
         CompilerPipelineTestCase{
+            "PartialMeasurementToRegister", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(mlir::qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(mlir::qir::partialMeasurementToRegister), false},
+        CompilerPipelineTestCase{
+            "DynamicallyIndexedMeasurement", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(mlir::qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(mlir::qir::dynamicallyIndexedMeasurement), false},
+        CompilerPipelineTestCase{
             "MeasurementWithoutRegisters", nullptr,
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),

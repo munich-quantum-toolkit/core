@@ -702,6 +702,10 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
         JeffRoundTripTestCase{
+            "PartialMeasurementToRegister",
+            MQT_NAMED_BUILDER(qco::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(qco::partialMeasurementToRegister)},
+        JeffRoundTripTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
             MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
@@ -728,13 +732,13 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         JeffRoundTripTestCase{"SimpleIf", MQT_NAMED_BUILDER(qco::simpleIf),
                               MQT_NAMED_BUILDER(qco::simpleIf)},
-        JeffRoundTripTestCase{"IfWithAngle", MQT_NAMED_BUILDER(ifWithAngle),
-                              MQT_NAMED_BUILDER(ifWithAngle)},
+        JeffRoundTripTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
+                              MQT_NAMED_BUILDER(qco::ifElse)},
         JeffRoundTripTestCase{"IfTwoQubits",
                               MQT_NAMED_BUILDER(qco::ifTwoQubits),
                               MQT_NAMED_BUILDER(qco::ifTwoQubits)},
-        JeffRoundTripTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
-                              MQT_NAMED_BUILDER(qco::ifElse)},
+        JeffRoundTripTestCase{"IfWithAngle", MQT_NAMED_BUILDER(ifWithAngle),
+                              MQT_NAMED_BUILDER(ifWithAngle)},
         JeffRoundTripTestCase{"NestedIfOpForLoop",
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)},

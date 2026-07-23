@@ -25,31 +25,17 @@
 
 namespace mlir::qco {
 
-/**
- * @brief Measures the given `qtensor` and returns the measurement outcomes.
- * @param b The `ProgramBuilder` used to perform the measurements.
- * @param qTensor The `qtensor` to be measured.
- * @param size The number of qubits in the `qtensor`.
- * @return The result values.
- */
-static SmallVector<Value> measureAndReturnQTensor(QCOProgramBuilder& b,
-                                                  Value qTensor,
-                                                  const int64_t size) {
+static Value measureAndReturnQTensor(QCOProgramBuilder& b, Value qTensor,
+                                     const int64_t size) {
   auto c = b.allocClassicalBitRegister(size);
   for (auto i = 0; i < size; ++i) {
     auto [qTensorOut, qubit] = b.qtensorExtract(qTensor, i);
     auto [q2, bit] = b.measure(qubit, c, i);
     qTensor = b.qtensorInsert(q2, qTensorOut, i);
   }
-  return {c};
+  return c;
 }
 
-/**
- * @brief Measures the given qubits and returns the measurement outcomes.
- * @param b The `ProgramBuilder` used to perform the measurements.
- * @param qubits The qubits to be measured.
- * @return The result values.
- */
 static Value measureToRegister(QCOProgramBuilder& b, ValueRange qubits) {
   auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
   for (auto [i, q] : llvm::enumerate(qubits)) {
@@ -62,12 +48,11 @@ static Value measureToRegister(QCOProgramBuilder& b, Value qubit) {
   return measureToRegister(b, ValueRange(qubit));
 }
 
-static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
-                                           ValueRange qubits) {
+static Value measureAndReturn(QCOProgramBuilder& b, ValueRange qubits) {
   if (qubits.empty()) {
-    return {};
+    return b.intConstant(0);
   }
-  return {measureToRegister(b, qubits)};
+  return measureToRegister(b, qubits);
 }
 
 Value emptyQCO(QCOProgramBuilder& b) { return b.intConstant(0); }
@@ -77,7 +62,7 @@ Value allocQubit(QCOProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-SmallVector<Value> alloc2Qubits(QCOProgramBuilder& b) {
+Value alloc2Qubits(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.allocQubit();
   return measureAndReturn(b, {q0, q1});
@@ -93,17 +78,17 @@ Value alloc1QubitRegister(QCOProgramBuilder& b) {
   return measureToRegister(b, reg[0]);
 }
 
-SmallVector<Value> alloc2QubitRegister(QCOProgramBuilder& b) {
+Value alloc2QubitRegister(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> alloc3QubitRegister(QCOProgramBuilder& b) {
+Value alloc3QubitRegister(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> allocMultipleQubitRegisters(QCOProgramBuilder& b) {
+Value allocMultipleQubitRegisters(QCOProgramBuilder& b) {
   auto r1 = b.allocQubitRegister(2);
   auto r2 = b.allocQubitRegister(3);
   return measureAndReturn(b, {r1[0], r1[1], r2[0], r2[1], r2[2]});
@@ -120,13 +105,13 @@ Value staticQubitsNoMeasure(QCOProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-SmallVector<Value> staticQubits(QCOProgramBuilder& b) {
+Value staticQubits(QCOProgramBuilder& b) {
   auto q1 = b.staticQubit(0);
   auto q2 = b.staticQubit(1);
   return measureAndReturn(b, {q1, q2});
 }
 
-SmallVector<Value> staticQubitsWithOps(QCOProgramBuilder& b) {
+Value staticQubitsWithOps(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   q0 = b.h(q0);
@@ -134,7 +119,7 @@ SmallVector<Value> staticQubitsWithOps(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q0, q1});
 }
 
-SmallVector<Value> staticQubitsWithParametricOps(QCOProgramBuilder& b) {
+Value staticQubitsWithParametricOps(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   q0 = b.rx(std::numbers::pi / 4., q0);
@@ -142,14 +127,14 @@ SmallVector<Value> staticQubitsWithParametricOps(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q0, q1});
 }
 
-SmallVector<Value> staticQubitsWithTwoTargetOps(QCOProgramBuilder& b) {
+Value staticQubitsWithTwoTargetOps(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   std::tie(q0, q1) = b.rzz(0.123, q0, q1);
   return measureAndReturn(b, {q0, q1});
 }
 
-SmallVector<Value> staticQubitsWithCtrl(QCOProgramBuilder& b) {
+Value staticQubitsWithCtrl(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   std::tie(q0, q1) = b.cx(q0, q1);
@@ -254,7 +239,7 @@ Value deadGatesWithIfOpSimplified(QCOProgramBuilder& b) {
   return c0;
 }
 
-SmallVector<Value> mixedStaticThenDynamicQubit(QCOProgramBuilder& b) {
+Value mixedStaticThenDynamicQubit(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.allocQubit();
   return measureAndReturn(b, {q0, q1});
@@ -302,6 +287,25 @@ multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
   return {c0, c1};
 }
 
+Value partialMeasurementToRegister(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c, 0);
+  return c;
+}
+
+Value dynamicallyIndexedMeasurement(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c = b.allocClassicalBitRegister(2);
+  b.scfFor(0, 2, 1, {q.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, qubit] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.measure(qubit, c, iv).first;
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
+  return c;
+}
+
 Value measurementWithoutRegisters(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   auto [q1, c] = b.measure(q);
@@ -314,7 +318,7 @@ Value resetQubitWithoutOp(QCOProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-SmallVector<Value> resetMultipleQubitsWithoutOp(QCOProgramBuilder& b) {
+Value resetMultipleQubitsWithoutOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   q[0] = b.reset(q[0]);
   q[1] = b.reset(q[1]);
@@ -376,7 +380,7 @@ Value singleControlledGlobalPhase(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> multipleControlledGlobalPhase(QCOProgramBuilder& b) {
+Value multipleControlledGlobalPhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto qs = b.mcgphase(0.123, {q[0], q[1], q[2]});
   return measureAndReturn(b, qs);
@@ -390,7 +394,7 @@ Value inverseGlobalPhase(QCOProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-SmallVector<Value> inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
+Value inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto qs = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     SmallVector controls{qubits[0], qubits[1], qubits[2]};
@@ -432,13 +436,13 @@ Value identity(QCOProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-SmallVector<Value> singleControlledIdentity(QCOProgramBuilder& b) {
+Value singleControlledIdentity(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[1], q[0]) = b.cid(q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledIdentity(QCOProgramBuilder& b) {
+Value multipleControlledIdentity(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcid({q[2], q[1]}, q[0]);
   q[2] = res.first[0];
@@ -447,7 +451,7 @@ SmallVector<Value> multipleControlledIdentity(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledIdentity(QCOProgramBuilder& b) {
+Value nestedControlledIdentity(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -473,7 +477,7 @@ Value inverseIdentity(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledIdentity(QCOProgramBuilder& b) {
+Value inverseMultipleControlledIdentity(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -502,13 +506,13 @@ Value x(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledX(QCOProgramBuilder& b) {
+Value singleControlledX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledX(QCOProgramBuilder& b) {
+Value multipleControlledX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcx({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -517,7 +521,7 @@ SmallVector<Value> multipleControlledX(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledX(QCOProgramBuilder& b) {
+Value nestedControlledX(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -537,7 +541,7 @@ Value trivialControlledX(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> repeatedControlledX(QCOProgramBuilder& b) {
+Value repeatedControlledX(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto control = b.h(q0);
   std::vector<Value> targets;
@@ -558,7 +562,7 @@ Value inverseX(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledX(QCOProgramBuilder& b) {
+Value inverseMultipleControlledX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -579,7 +583,7 @@ Value twoX(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> controlledTwoX(QCOProgramBuilder& b) {
+Value controlledTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.ctrl(q[0], q[1], [&](Value target) {
     target = b.x(target);
@@ -670,13 +674,13 @@ Value y(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledY(QCOProgramBuilder& b) {
+Value singleControlledY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cy(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledY(QCOProgramBuilder& b) {
+Value multipleControlledY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcy({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -685,7 +689,7 @@ SmallVector<Value> multipleControlledY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledY(QCOProgramBuilder& b) {
+Value nestedControlledY(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -711,7 +715,7 @@ Value inverseY(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledY(QCOProgramBuilder& b) {
+Value inverseMultipleControlledY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -754,13 +758,13 @@ Value z(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledZ(QCOProgramBuilder& b) {
+Value singleControlledZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cz(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledZ(QCOProgramBuilder& b) {
+Value multipleControlledZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcz({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -769,7 +773,7 @@ SmallVector<Value> multipleControlledZ(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledZ(QCOProgramBuilder& b) {
+Value nestedControlledZ(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -795,7 +799,7 @@ Value inverseZ(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledZ(QCOProgramBuilder& b) {
+Value inverseMultipleControlledZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -855,13 +859,13 @@ Value h(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledH(QCOProgramBuilder& b) {
+Value singleControlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ch(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledH(QCOProgramBuilder& b) {
+Value multipleControlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mch({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -870,7 +874,7 @@ SmallVector<Value> multipleControlledH(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledH(QCOProgramBuilder& b) {
+Value nestedControlledH(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -896,7 +900,7 @@ Value inverseH(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledH(QCOProgramBuilder& b) {
+Value inverseMultipleControlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -947,7 +951,7 @@ Value s(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledS(QCOProgramBuilder& b) {
+Value singleControlledS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.cs(q[0], q[1]);
   q[0] = res.first;
@@ -955,7 +959,7 @@ SmallVector<Value> singleControlledS(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledS(QCOProgramBuilder& b) {
+Value multipleControlledS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcs({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -964,7 +968,7 @@ SmallVector<Value> multipleControlledS(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledS(QCOProgramBuilder& b) {
+Value nestedControlledS(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -990,7 +994,7 @@ Value inverseS(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledS(QCOProgramBuilder& b) {
+Value inverseMultipleControlledS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1066,7 +1070,7 @@ Value sdg(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledSdg(QCOProgramBuilder& b) {
+Value singleControlledSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.csdg(q[0], q[1]);
   q[0] = res.first;
@@ -1074,7 +1078,7 @@ SmallVector<Value> singleControlledSdg(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledSdg(QCOProgramBuilder& b) {
+Value multipleControlledSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcsdg({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1083,7 +1087,7 @@ SmallVector<Value> multipleControlledSdg(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledSdg(QCOProgramBuilder& b) {
+Value nestedControlledSdg(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -1109,7 +1113,7 @@ Value inverseSdg(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledSdg(QCOProgramBuilder& b) {
+Value inverseMultipleControlledSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1176,7 +1180,7 @@ Value t_(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledT(QCOProgramBuilder& b) {
+Value singleControlledT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.ct(q[0], q[1]);
   q[0] = res.first;
@@ -1184,7 +1188,7 @@ SmallVector<Value> singleControlledT(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledT(QCOProgramBuilder& b) {
+Value multipleControlledT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mct({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1193,7 +1197,7 @@ SmallVector<Value> multipleControlledT(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledT(QCOProgramBuilder& b) {
+Value nestedControlledT(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -1219,7 +1223,7 @@ Value inverseT(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledT(QCOProgramBuilder& b) {
+Value inverseMultipleControlledT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1277,7 +1281,7 @@ Value tdg(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledTdg(QCOProgramBuilder& b) {
+Value singleControlledTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.ctdg(q[0], q[1]);
   q[0] = res.first;
@@ -1285,7 +1289,7 @@ SmallVector<Value> singleControlledTdg(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledTdg(QCOProgramBuilder& b) {
+Value multipleControlledTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mctdg({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1294,7 +1298,7 @@ SmallVector<Value> multipleControlledTdg(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledTdg(QCOProgramBuilder& b) {
+Value nestedControlledTdg(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -1320,7 +1324,7 @@ Value inverseTdg(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledTdg(QCOProgramBuilder& b) {
+Value inverseMultipleControlledTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1378,7 +1382,7 @@ Value sx(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledSx(QCOProgramBuilder& b) {
+Value singleControlledSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.csx(q[0], q[1]);
   q[0] = res.first;
@@ -1386,7 +1390,7 @@ SmallVector<Value> singleControlledSx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledSx(QCOProgramBuilder& b) {
+Value multipleControlledSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcsx({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1395,7 +1399,7 @@ SmallVector<Value> multipleControlledSx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledSx(QCOProgramBuilder& b) {
+Value nestedControlledSx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -1421,7 +1425,7 @@ Value inverseSx(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledSx(QCOProgramBuilder& b) {
+Value inverseMultipleControlledSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1486,7 +1490,7 @@ Value sxdg(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledSxdg(QCOProgramBuilder& b) {
+Value singleControlledSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.csxdg(q[0], q[1]);
   q[0] = res.first;
@@ -1494,7 +1498,7 @@ SmallVector<Value> singleControlledSxdg(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledSxdg(QCOProgramBuilder& b) {
+Value multipleControlledSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcsxdg({q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1503,7 +1507,7 @@ SmallVector<Value> multipleControlledSxdg(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledSxdg(QCOProgramBuilder& b) {
+Value nestedControlledSxdg(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -1529,7 +1533,7 @@ Value inverseSxdg(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledSxdg(QCOProgramBuilder& b) {
+Value inverseMultipleControlledSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1594,7 +1598,7 @@ Value rx(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledRx(QCOProgramBuilder& b) {
+Value singleControlledRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.crx(0.123, q[0], q[1]);
   q[0] = res.first;
@@ -1602,7 +1606,7 @@ SmallVector<Value> singleControlledRx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRx(QCOProgramBuilder& b) {
+Value multipleControlledRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcrx(0.123, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1611,7 +1615,7 @@ SmallVector<Value> multipleControlledRx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRx(QCOProgramBuilder& b) {
+Value nestedControlledRx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -1638,7 +1642,7 @@ Value inverseRx(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledRx(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1686,13 +1690,13 @@ Value ry(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledRy(QCOProgramBuilder& b) {
+Value singleControlledRy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cry(0.456, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRy(QCOProgramBuilder& b) {
+Value multipleControlledRy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcry(0.456, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1701,7 +1705,7 @@ SmallVector<Value> multipleControlledRy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRy(QCOProgramBuilder& b) {
+Value nestedControlledRy(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -1728,7 +1732,7 @@ Value inverseRy(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledRy(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1761,13 +1765,13 @@ Value rz(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledRz(QCOProgramBuilder& b) {
+Value singleControlledRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.crz(0.789, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRz(QCOProgramBuilder& b) {
+Value multipleControlledRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcrz(0.789, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1776,7 +1780,7 @@ SmallVector<Value> multipleControlledRz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRz(QCOProgramBuilder& b) {
+Value nestedControlledRz(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -1803,7 +1807,7 @@ Value inverseRz(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledRz(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1830,13 +1834,13 @@ Value p(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledP(QCOProgramBuilder& b) {
+Value singleControlledP(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cp(0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledP(QCOProgramBuilder& b) {
+Value multipleControlledP(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcp(0.123, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1845,7 +1849,7 @@ SmallVector<Value> multipleControlledP(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledP(QCOProgramBuilder& b) {
+Value nestedControlledP(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -1872,7 +1876,7 @@ Value inverseP(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledP(QCOProgramBuilder& b) {
+Value inverseMultipleControlledP(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1899,13 +1903,13 @@ Value r(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledR(QCOProgramBuilder& b) {
+Value singleControlledR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cr(0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledR(QCOProgramBuilder& b) {
+Value multipleControlledR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcr(0.123, 0.456, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -1914,7 +1918,7 @@ SmallVector<Value> multipleControlledR(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledR(QCOProgramBuilder& b) {
+Value nestedControlledR(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -1942,7 +1946,7 @@ Value inverseR(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledR(QCOProgramBuilder& b) {
+Value inverseMultipleControlledR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -1996,13 +2000,13 @@ Value u2(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledU2(QCOProgramBuilder& b) {
+Value singleControlledU2(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cu2(0.234, 0.567, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledU2(QCOProgramBuilder& b) {
+Value multipleControlledU2(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcu2(0.234, 0.567, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -2011,7 +2015,7 @@ SmallVector<Value> multipleControlledU2(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledU2(QCOProgramBuilder& b) {
+Value nestedControlledU2(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -2040,7 +2044,7 @@ Value inverseU2(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledU2(QCOProgramBuilder& b) {
+Value inverseMultipleControlledU2(QCOProgramBuilder& b) {
   constexpr double pi = std::numbers::pi;
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
@@ -2079,13 +2083,13 @@ Value u(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> singleControlledU(QCOProgramBuilder& b) {
+Value singleControlledU(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.cu(0.1, 0.2, 0.3, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledU(QCOProgramBuilder& b) {
+Value multipleControlledU(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.mcu(0.1, 0.2, 0.3, {q[0], q[1]}, q[2]);
   q[0] = res.first[0];
@@ -2094,7 +2098,7 @@ SmallVector<Value> multipleControlledU(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledU(QCOProgramBuilder& b) {
+Value nestedControlledU(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto res = b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
@@ -2122,7 +2126,7 @@ Value inverseU(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseMultipleControlledU(QCOProgramBuilder& b) {
+Value inverseMultipleControlledU(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
@@ -2160,13 +2164,13 @@ Value canonicalizeUToU2(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> swap(QCOProgramBuilder& b) {
+Value swap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledSwap(QCOProgramBuilder& b) {
+Value singleControlledSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.cswap(q[0], q[1], q[2]);
   q[0] = res.first;
@@ -2175,7 +2179,7 @@ SmallVector<Value> singleControlledSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledSwap(QCOProgramBuilder& b) {
+Value multipleControlledSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcswap({q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2185,7 +2189,7 @@ SmallVector<Value> multipleControlledSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledSwap(QCOProgramBuilder& b) {
+Value nestedControlledSwap(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2205,7 +2209,7 @@ SmallVector<Value> nestedControlledSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledSwap(QCOProgramBuilder& b) {
+Value trivialControlledSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcswap({}, q[0], q[1]);
   q[0] = t.first;
@@ -2213,7 +2217,7 @@ SmallVector<Value> trivialControlledSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseSwap(QCOProgramBuilder& b) {
+Value inverseSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.swap(qubits[0], qubits[1]);
@@ -2224,7 +2228,7 @@ SmallVector<Value> inverseSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledSwap(QCOProgramBuilder& b) {
+Value inverseMultipleControlledSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2239,21 +2243,21 @@ SmallVector<Value> inverseMultipleControlledSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoSwap(QCOProgramBuilder& b) {
+Value twoSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoSwapSwappedTargets(QCOProgramBuilder& b) {
+Value twoSwapSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
   std::tie(q[1], q[0]) = b.swap(q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> powEvenSwap(QCOProgramBuilder& b) {
+Value powEvenSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.swap(qubits[0], qubits[1]);
@@ -2262,7 +2266,7 @@ SmallVector<Value> powEvenSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> powOddSwap(QCOProgramBuilder& b) {
+Value powOddSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.swap(qubits[0], qubits[1]);
@@ -2271,13 +2275,13 @@ SmallVector<Value> powOddSwap(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> iswap(QCOProgramBuilder& b) {
+Value iswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.iswap(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledIswap(QCOProgramBuilder& b) {
+Value singleControlledIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.ciswap(q[0], q[1], q[2]);
   q[0] = c;
@@ -2286,7 +2290,7 @@ SmallVector<Value> singleControlledIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledIswap(QCOProgramBuilder& b) {
+Value multipleControlledIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mciswap({q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2296,7 +2300,7 @@ SmallVector<Value> multipleControlledIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledIswap(QCOProgramBuilder& b) {
+Value nestedControlledIswap(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2317,7 +2321,7 @@ SmallVector<Value> nestedControlledIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledIswap(QCOProgramBuilder& b) {
+Value trivialControlledIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mciswap({}, q[0], q[1]);
   q[0] = t.first;
@@ -2325,7 +2329,7 @@ SmallVector<Value> trivialControlledIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseIswap(QCOProgramBuilder& b) {
+Value inverseIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.iswap(qubits[0], qubits[1]);
@@ -2336,7 +2340,7 @@ SmallVector<Value> inverseIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledIswap(QCOProgramBuilder& b) {
+Value inverseMultipleControlledIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2351,7 +2355,7 @@ SmallVector<Value> inverseMultipleControlledIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> powHalfIswap(QCOProgramBuilder& b) {
+Value powHalfIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(0.5, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.iswap(qubits[0], qubits[1]);
@@ -2360,19 +2364,19 @@ SmallVector<Value> powHalfIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> powHalfIswapRef(QCOProgramBuilder& b) {
+Value powHalfIswapRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [rq0, rq1] = b.xx_plus_yy(-std::numbers::pi / 2.0, 0.0, q[0], q[1]);
   return measureAndReturn(b, {rq0, rq1});
 }
 
-SmallVector<Value> dcx(QCOProgramBuilder& b) {
+Value dcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledDcx(QCOProgramBuilder& b) {
+Value singleControlledDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.cdcx(q[0], q[1], q[2]);
   q[0] = c;
@@ -2381,7 +2385,7 @@ SmallVector<Value> singleControlledDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledDcx(QCOProgramBuilder& b) {
+Value multipleControlledDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcdcx({q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2391,7 +2395,7 @@ SmallVector<Value> multipleControlledDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledDcx(QCOProgramBuilder& b) {
+Value nestedControlledDcx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2411,7 +2415,7 @@ SmallVector<Value> nestedControlledDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledDcx(QCOProgramBuilder& b) {
+Value trivialControlledDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcdcx({}, q[0], q[1]);
   q[0] = t.first;
@@ -2419,7 +2423,7 @@ SmallVector<Value> trivialControlledDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseDcx(QCOProgramBuilder& b) {
+Value inverseDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[1], q[0]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.dcx(qubits[0], qubits[1]);
@@ -2430,7 +2434,7 @@ SmallVector<Value> inverseDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledDcx(QCOProgramBuilder& b) {
+Value inverseMultipleControlledDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[3], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2445,27 +2449,27 @@ SmallVector<Value> inverseMultipleControlledDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoDcx(QCOProgramBuilder& b) {
+Value twoDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
   std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoDcxSwappedTargets(QCOProgramBuilder& b) {
+Value twoDcxSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
   std::tie(q[1], q[0]) = b.dcx(q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> ecr(QCOProgramBuilder& b) {
+Value ecr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledEcr(QCOProgramBuilder& b) {
+Value singleControlledEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.cecr(q[0], q[1], q[2]);
   q[0] = c;
@@ -2474,7 +2478,7 @@ SmallVector<Value> singleControlledEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledEcr(QCOProgramBuilder& b) {
+Value multipleControlledEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [fst, snd] = b.mcecr({q[0], q[1]}, q[2], q[3]);
   q[0] = fst[0];
@@ -2484,7 +2488,7 @@ SmallVector<Value> multipleControlledEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledEcr(QCOProgramBuilder& b) {
+Value nestedControlledEcr(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2504,7 +2508,7 @@ SmallVector<Value> nestedControlledEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledEcr(QCOProgramBuilder& b) {
+Value trivialControlledEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcecr({}, q[0], q[1]);
   q[0] = t.first;
@@ -2512,7 +2516,7 @@ SmallVector<Value> trivialControlledEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseEcr(QCOProgramBuilder& b) {
+Value inverseEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.ecr(qubits[0], qubits[1]);
@@ -2523,7 +2527,7 @@ SmallVector<Value> inverseEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledEcr(QCOProgramBuilder& b) {
+Value inverseMultipleControlledEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2538,14 +2542,14 @@ SmallVector<Value> inverseMultipleControlledEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoEcr(QCOProgramBuilder& b) {
+Value twoEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
   std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> powEvenEcr(QCOProgramBuilder& b) {
+Value powEvenEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.ecr(qubits[0], qubits[1]);
@@ -2554,7 +2558,7 @@ SmallVector<Value> powEvenEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> powOddEcr(QCOProgramBuilder& b) {
+Value powOddEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.ecr(qubits[0], qubits[1]);
@@ -2563,13 +2567,13 @@ SmallVector<Value> powOddEcr(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> rxx(QCOProgramBuilder& b) {
+Value rxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledRxx(QCOProgramBuilder& b) {
+Value singleControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.crxx(0.123, q[0], q[1], q[2]);
   q[0] = c;
@@ -2578,7 +2582,7 @@ SmallVector<Value> singleControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRxx(QCOProgramBuilder& b) {
+Value multipleControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcrxx(0.123, {q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2588,7 +2592,7 @@ SmallVector<Value> multipleControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRxx(QCOProgramBuilder& b) {
+Value nestedControlledRxx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2609,7 +2613,7 @@ SmallVector<Value> nestedControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledRxx(QCOProgramBuilder& b) {
+Value trivialControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcrxx(0.123, {}, q[0], q[1]);
   q[0] = t.first;
@@ -2617,7 +2621,7 @@ SmallVector<Value> trivialControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseRxx(QCOProgramBuilder& b) {
+Value inverseRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.rxx(-0.123, qubits[0], qubits[1]);
@@ -2628,7 +2632,7 @@ SmallVector<Value> inverseRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledRxx(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2643,7 +2647,7 @@ SmallVector<Value> inverseMultipleControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> tripleControlledRxx(QCOProgramBuilder& b) {
+Value tripleControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   auto [c, t] = b.mcrxx(0.123, {q[0], q[1], q[2]}, q[3], q[4]);
   q[0] = c[0];
@@ -2654,7 +2658,7 @@ SmallVector<Value> tripleControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> fourControlledRxx(QCOProgramBuilder& b) {
+Value fourControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(6);
   auto [c, t] = b.mcrxx(0.123, {q[0], q[1], q[2], q[3]}, q[4], q[5]);
   q[0] = c[0];
@@ -2666,7 +2670,7 @@ SmallVector<Value> fourControlledRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRxx(QCOProgramBuilder& b) {
+Value twoRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
   std::tie(q[0], q[1]) = b.rxx(0.045, q[0], q[1]);
@@ -2674,7 +2678,7 @@ SmallVector<Value> twoRxx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRxxSwappedTargets(QCOProgramBuilder& b) {
+Value twoRxxSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
   std::tie(q[0], q[1]) = b.rxx(0.045, q[0], q[1]);
@@ -2682,27 +2686,27 @@ SmallVector<Value> twoRxxSwappedTargets(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRxxOppositePhase(QCOProgramBuilder& b) {
+Value twoRxxOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.rxx(-0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRxxOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
+Value twoRxxOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   std::tie(q[1], q[0]) = b.rxx(-0.123, q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> ryy(QCOProgramBuilder& b) {
+Value ryy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledRyy(QCOProgramBuilder& b) {
+Value singleControlledRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.cryy(0.123, q[0], q[1], q[2]);
   q[0] = c;
@@ -2711,7 +2715,7 @@ SmallVector<Value> singleControlledRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRyy(QCOProgramBuilder& b) {
+Value multipleControlledRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcryy(0.123, {q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2721,7 +2725,7 @@ SmallVector<Value> multipleControlledRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRyy(QCOProgramBuilder& b) {
+Value nestedControlledRyy(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2742,7 +2746,7 @@ SmallVector<Value> nestedControlledRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledRyy(QCOProgramBuilder& b) {
+Value trivialControlledRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcryy(0.123, {}, q[0], q[1]);
   q[0] = t.first;
@@ -2750,7 +2754,7 @@ SmallVector<Value> trivialControlledRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseRyy(QCOProgramBuilder& b) {
+Value inverseRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.ryy(-0.123, qubits[0], qubits[1]);
@@ -2761,7 +2765,7 @@ SmallVector<Value> inverseRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledRyy(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2776,7 +2780,7 @@ SmallVector<Value> inverseMultipleControlledRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRyy(QCOProgramBuilder& b) {
+Value twoRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
   std::tie(q[0], q[1]) = b.ryy(0.045, q[0], q[1]);
@@ -2784,21 +2788,21 @@ SmallVector<Value> twoRyy(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRyyOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
+Value twoRyyOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
   std::tie(q[1], q[0]) = b.ryy(-0.123, q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRyyOppositePhase(QCOProgramBuilder& b) {
+Value twoRyyOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.ryy(-0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRyySwappedTargets(QCOProgramBuilder& b) {
+Value twoRyySwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
   std::tie(q[0], q[1]) = b.ryy(0.045, q[0], q[1]);
@@ -2806,13 +2810,13 @@ SmallVector<Value> twoRyySwappedTargets(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> rzx(QCOProgramBuilder& b) {
+Value rzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rzx(0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledRzx(QCOProgramBuilder& b) {
+Value singleControlledRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.crzx(0.123, q[0], q[1], q[2]);
   q[0] = c;
@@ -2821,7 +2825,7 @@ SmallVector<Value> singleControlledRzx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRzx(QCOProgramBuilder& b) {
+Value multipleControlledRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcrzx(0.123, {q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2831,7 +2835,7 @@ SmallVector<Value> multipleControlledRzx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRzx(QCOProgramBuilder& b) {
+Value nestedControlledRzx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2852,7 +2856,7 @@ SmallVector<Value> nestedControlledRzx(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledRzx(QCOProgramBuilder& b) {
+Value trivialControlledRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcrzx(0.123, {}, q[0], q[1]);
   q[0] = t.first;
@@ -2860,7 +2864,7 @@ SmallVector<Value> trivialControlledRzx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseRzx(QCOProgramBuilder& b) {
+Value inverseRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.rzx(-0.123, qubits[0], qubits[1]);
@@ -2871,7 +2875,7 @@ SmallVector<Value> inverseRzx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledRzx(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2886,20 +2890,20 @@ SmallVector<Value> inverseMultipleControlledRzx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRzxOppositePhase(QCOProgramBuilder& b) {
+Value twoRzxOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rzx(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.rzx(-0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> rzz(QCOProgramBuilder& b) {
+Value rzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledRzz(QCOProgramBuilder& b) {
+Value singleControlledRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.crzz(0.123, q[0], q[1], q[2]);
   q[0] = c;
@@ -2908,7 +2912,7 @@ SmallVector<Value> singleControlledRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRzz(QCOProgramBuilder& b) {
+Value multipleControlledRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcrzz(0.123, {q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -2918,7 +2922,7 @@ SmallVector<Value> multipleControlledRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRzz(QCOProgramBuilder& b) {
+Value nestedControlledRzz(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -2939,7 +2943,7 @@ SmallVector<Value> nestedControlledRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledRzz(QCOProgramBuilder& b) {
+Value trivialControlledRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcrzz(0.123, {}, q[0], q[1]);
   q[0] = t.first;
@@ -2947,7 +2951,7 @@ SmallVector<Value> trivialControlledRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseRzz(QCOProgramBuilder& b) {
+Value inverseRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.rzz(-0.123, qubits[0], qubits[1]);
@@ -2958,7 +2962,7 @@ SmallVector<Value> inverseRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledRzz(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -2973,7 +2977,7 @@ SmallVector<Value> inverseMultipleControlledRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRzz(QCOProgramBuilder& b) {
+Value twoRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
   std::tie(q[0], q[1]) = b.rzz(0.045, q[0], q[1]);
@@ -2981,7 +2985,7 @@ SmallVector<Value> twoRzz(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRzzSwappedTargets(QCOProgramBuilder& b) {
+Value twoRzzSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
   std::tie(q[0], q[1]) = b.rzz(0.045, q[0], q[1]);
@@ -2989,27 +2993,27 @@ SmallVector<Value> twoRzzSwappedTargets(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRzzOppositePhase(QCOProgramBuilder& b) {
+Value twoRzzOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.rzz(-0.123, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoRzzOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
+Value twoRzzOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
   std::tie(q[1], q[0]) = b.rzz(-0.123, q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> xxPlusYY(QCOProgramBuilder& b) {
+Value xxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledXxPlusYY(QCOProgramBuilder& b) {
+Value singleControlledXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.cxx_plus_yy(0.123, 0.456, q[0], q[1], q[2]);
   q[0] = c;
@@ -3018,7 +3022,7 @@ SmallVector<Value> singleControlledXxPlusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledXxPlusYY(QCOProgramBuilder& b) {
+Value multipleControlledXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcxx_plus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -3028,7 +3032,7 @@ SmallVector<Value> multipleControlledXxPlusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledXxPlusYY(QCOProgramBuilder& b) {
+Value nestedControlledXxPlusYY(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -3049,7 +3053,7 @@ SmallVector<Value> nestedControlledXxPlusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledXxPlusYY(QCOProgramBuilder& b) {
+Value trivialControlledXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcxx_plus_yy(0.123, 0.456, {}, q[0], q[1]);
   q[0] = t.first;
@@ -3057,7 +3061,7 @@ SmallVector<Value> trivialControlledXxPlusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseXxPlusYY(QCOProgramBuilder& b) {
+Value inverseXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.xx_plus_yy(-0.123, 0.456, qubits[0], qubits[1]);
@@ -3068,7 +3072,7 @@ SmallVector<Value> inverseXxPlusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
+Value inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] = b.mcxx_plus_yy(
@@ -3083,7 +3087,7 @@ SmallVector<Value> inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> powXxPlusYYScaled(QCOProgramBuilder& b) {
+Value powXxPlusYYScaled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto [q0, q1] = b.xx_plus_yy(0.123, 0.456, qubits[0], qubits[1]);
@@ -3092,33 +3096,33 @@ SmallVector<Value> powXxPlusYYScaled(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> powXxPlusYYScaledRef(QCOProgramBuilder& b) {
+Value powXxPlusYYScaledRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [rq0, rq1] = b.xx_plus_yy(3.0 * 0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, {rq0, rq1});
 }
 
-SmallVector<Value> twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
+Value twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
   std::tie(q[0], q[1]) = b.xx_plus_yy(-0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
+Value twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_plus_yy(0.045, 0.456, q[0], q[1]);
   std::tie(q[1], q[0]) = b.xx_plus_yy(0.078, 0.456, q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> xxMinusYY(QCOProgramBuilder& b) {
+Value xxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledXxMinusYY(QCOProgramBuilder& b) {
+Value singleControlledXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.cxx_minus_yy(0.123, 0.456, q[0], q[1], q[2]);
   q[0] = c;
@@ -3127,7 +3131,7 @@ SmallVector<Value> singleControlledXxMinusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledXxMinusYY(QCOProgramBuilder& b) {
+Value multipleControlledXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
   q[0] = c[0];
@@ -3137,7 +3141,7 @@ SmallVector<Value> multipleControlledXxMinusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledXxMinusYY(QCOProgramBuilder& b) {
+Value nestedControlledXxMinusYY(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto [c, t] =
       b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
@@ -3158,7 +3162,7 @@ SmallVector<Value> nestedControlledXxMinusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledXxMinusYY(QCOProgramBuilder& b) {
+Value trivialControlledXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [c, t] = b.mcxx_minus_yy(0.123, 0.456, {}, q[0], q[1]);
   q[0] = t.first;
@@ -3166,7 +3170,7 @@ SmallVector<Value> trivialControlledXxMinusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseXxMinusYY(QCOProgramBuilder& b) {
+Value inverseXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto [fst, snd] = b.xx_minus_yy(-0.123, 0.456, qubits[0], qubits[1]);
@@ -3177,7 +3181,7 @@ SmallVector<Value> inverseXxMinusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
+Value inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] = b.mcxx_minus_yy(
@@ -3192,7 +3196,7 @@ SmallVector<Value> inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> powXxMinusYYScaled(QCOProgramBuilder& b) {
+Value powXxMinusYYScaled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto [q0, q1] = b.xx_minus_yy(0.123, 0.456, qubits[0], qubits[1]);
@@ -3201,33 +3205,33 @@ SmallVector<Value> powXxMinusYYScaled(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> powXxMinusYYScaledRef(QCOProgramBuilder& b) {
+Value powXxMinusYYScaledRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [rq0, rq1] = b.xx_minus_yy(3.0 * 0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, {rq0, rq1});
 }
 
-SmallVector<Value> twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
+Value twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
   std::tie(q[0], q[1]) = b.xx_minus_yy(-0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
+Value twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.045, 0.456, q[0], q[1]);
   std::tie(q[1], q[0]) = b.xx_minus_yy(0.078, 0.456, q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> rccx(QCOProgramBuilder& b) {
+Value rccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> powEvenRccx(QCOProgramBuilder& b) {
+Value powEvenRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
     auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
@@ -3236,7 +3240,7 @@ SmallVector<Value> powEvenRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> powOddRccx(QCOProgramBuilder& b) {
+Value powOddRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto powOut = b.pow(3.0, q.qubits, [&](ValueRange args) {
     auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
@@ -3245,14 +3249,14 @@ SmallVector<Value> powOddRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> twoRccx(QCOProgramBuilder& b) {
+Value twoRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
   std::tie(q[0], q[1], q[2]) = b.rccx(q[0], q[1], q[2]);
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> singleControlledRccx(QCOProgramBuilder& b) {
+Value singleControlledRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto [c, t] = b.crccx(q[0], q[1], q[2], q[3]);
   const auto& [q0, q1, q2] = t;
@@ -3263,7 +3267,7 @@ SmallVector<Value> singleControlledRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> multipleControlledRccx(QCOProgramBuilder& b) {
+Value multipleControlledRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   auto [c, t] = b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
   const auto& [q0, q1, q2] = t;
@@ -3275,7 +3279,7 @@ SmallVector<Value> multipleControlledRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> nestedControlledRccx(QCOProgramBuilder& b) {
+Value nestedControlledRccx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(5);
   auto [c, t] = b.ctrl(
       {reg[0]}, {reg[1], reg[2], reg[3], reg[4]}, [&](ValueRange targets) {
@@ -3292,7 +3296,7 @@ SmallVector<Value> nestedControlledRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> trivialControlledRccx(QCOProgramBuilder& b) {
+Value trivialControlledRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto [c, t] = b.mcrccx({}, q[0], q[1], q[2]);
   const auto& [q0, q1, q2] = t;
@@ -3302,7 +3306,7 @@ SmallVector<Value> trivialControlledRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseRccx(QCOProgramBuilder& b) {
+Value inverseRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto [q0, q1, q2] = b.rccx(qubits[0], qubits[1], qubits[2]);
@@ -3314,7 +3318,7 @@ SmallVector<Value> inverseRccx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> inverseMultipleControlledRccx(QCOProgramBuilder& b) {
+Value inverseMultipleControlledRccx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   auto res = b.inv({q[0], q[1], q[2], q[3], q[4]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -3336,7 +3340,7 @@ Value barrier(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-SmallVector<Value> barrierTwoQubits(QCOProgramBuilder& b) {
+Value barrierTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.barrier({q[0], q[1]});
   q[0] = res[0];
@@ -3344,7 +3348,7 @@ SmallVector<Value> barrierTwoQubits(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> barrierMultipleQubits(QCOProgramBuilder& b) {
+Value barrierMultipleQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.barrier({q[0], q[1], q[2]});
   q[0] = res[0];
@@ -3373,7 +3377,7 @@ Value powBarrier(QCOProgramBuilder& b) {
   return measureToRegister(b, powOut);
 }
 
-SmallVector<Value> twoBarrier(QCOProgramBuilder& b) {
+Value twoBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto b1 = b.barrier({q[0], q[1]});
   q[0] = b1[0];
@@ -3384,7 +3388,7 @@ SmallVector<Value> twoBarrier(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> trivialCtrl(QCOProgramBuilder& b) {
+Value trivialCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [_, q01] = b.ctrl({}, {q[0], q[1]}, [&](ValueRange targets) {
     auto [q0, q1] = b.rxx(0.123, targets[0], targets[1]);
@@ -3393,14 +3397,14 @@ SmallVector<Value> trivialCtrl(QCOProgramBuilder& b) {
   return measureAndReturn(b, q01);
 }
 
-SmallVector<Value> emptyCtrl(QCOProgramBuilder& b) {
+Value emptyCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   auto [res0, res1] = b.ctrl(q[0], q[1], [&](Value target) { return target; });
   return measureAndReturn(b, {res0, res1});
 }
 
-SmallVector<Value> nestedCtrl(QCOProgramBuilder& b) {
+Value nestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -3418,7 +3422,7 @@ SmallVector<Value> nestedCtrl(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> tripleNestedCtrl(QCOProgramBuilder& b) {
+Value tripleNestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   auto res = b.ctrl({q[0]}, {q[1], q[2], q[3], q[4]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
@@ -3445,7 +3449,7 @@ SmallVector<Value> tripleNestedCtrl(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> doubleNestedCtrlTwoQubits(QCOProgramBuilder& b) {
+Value doubleNestedCtrlTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(6);
   auto res =
       b.ctrl({q[0], q[1]}, {q[2], q[3], q[4], q[5]}, [&](ValueRange targets) {
@@ -3468,7 +3472,7 @@ SmallVector<Value> doubleNestedCtrlTwoQubits(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> ctrlInvSandwich(QCOProgramBuilder& b) {
+Value ctrlInvSandwich(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
     auto inner = b.inv(
@@ -3492,7 +3496,7 @@ SmallVector<Value> ctrlInvSandwich(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> ctrlTwo(QCOProgramBuilder& b) {
+Value ctrlTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
     auto i0 = targets[0];
@@ -3505,7 +3509,7 @@ SmallVector<Value> ctrlTwo(QCOProgramBuilder& b) {
       b, {res.first[0], res.first[1], res.second[0], res.second[1]});
 }
 
-SmallVector<Value> ctrlTwoMixed(QCOProgramBuilder& b) {
+Value ctrlTwoMixed(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
     auto i0 = targets[0];
@@ -3518,7 +3522,7 @@ SmallVector<Value> ctrlTwoMixed(QCOProgramBuilder& b) {
       b, {res.first[0], res.first[1], res.second[0], res.second[1]});
 }
 
-SmallVector<Value> nestedCtrlTwo(QCOProgramBuilder& b) {
+Value nestedCtrlTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
     const auto& [controlsOut, targetsOut] = b.ctrl(
@@ -3535,7 +3539,7 @@ SmallVector<Value> nestedCtrlTwo(QCOProgramBuilder& b) {
       b, {res.first[0], res.second[0], res.second[1], res.second[2]});
 }
 
-SmallVector<Value> ctrlInvTwo(QCOProgramBuilder& b) {
+Value ctrlInvTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
     auto inner = b.inv(targets, [&](ValueRange qubits) {
@@ -3550,14 +3554,14 @@ SmallVector<Value> ctrlInvTwo(QCOProgramBuilder& b) {
   return measureAndReturn(b, {res.first[0], res.second[0], res.second[1]});
 }
 
-SmallVector<Value> emptyInv(QCOProgramBuilder& b) {
+Value emptyInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) { return qubits; });
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> emptyPow(QCOProgramBuilder& b) {
+Value emptyPow(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   const auto powOut =
@@ -3565,7 +3569,7 @@ SmallVector<Value> emptyPow(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> nestedInv(QCOProgramBuilder& b) {
+Value nestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange innerQubits) {
@@ -3579,7 +3583,7 @@ SmallVector<Value> nestedInv(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> tripleNestedInv(QCOProgramBuilder& b) {
+Value tripleNestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto inner1 = b.inv({qubits[0], qubits[1]}, [&](ValueRange innerQubits) {
@@ -3598,7 +3602,7 @@ SmallVector<Value> tripleNestedInv(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> invCtrlSandwich(QCOProgramBuilder& b) {
+Value invCtrlSandwich(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -3618,7 +3622,7 @@ SmallVector<Value> invCtrlSandwich(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> invTwo(QCOProgramBuilder& b) {
+Value invTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto i0 = qubits[0];
@@ -3630,7 +3634,7 @@ SmallVector<Value> invTwo(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> powTwo(QCOProgramBuilder& b) {
+Value powTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto i0 = qubits[0];
@@ -3642,7 +3646,7 @@ SmallVector<Value> powTwo(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> invCtrlTwo(QCOProgramBuilder& b) {
+Value invCtrlTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
@@ -3676,7 +3680,7 @@ Value pow0Erase(QCOProgramBuilder& b) {
   return measureToRegister(b, powOut);
 }
 
-SmallVector<Value> pow0Two(QCOProgramBuilder& b) {
+Value pow0Two(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(0.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto i0 = qubits[0];
@@ -3714,7 +3718,7 @@ Value nestedPowBranchCut(QCOProgramBuilder& b) {
   return b.measure(powOut).second;
 }
 
-SmallVector<Value> powRxx(QCOProgramBuilder& b) {
+Value powRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto [q0, q1] = b.rxx(0.123, qubits[0], qubits[1]);
@@ -3774,7 +3778,7 @@ Value invPowEvenH(QCOProgramBuilder& b) {
   return measureToRegister(b, invOut[0]);
 }
 
-SmallVector<Value> invPowEvenSwap(QCOProgramBuilder& b) {
+Value invPowEvenSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto invOut = b.inv({q[0], q[1]}, [&](mlir::ValueRange invArgs) {
     auto inner =
@@ -3811,7 +3815,7 @@ Value invPowRx(QCOProgramBuilder& b) {
   return b.measure(invOut[0]).second;
 }
 
-SmallVector<Value> invPowReordered(QCOProgramBuilder& b) {
+Value invPowReordered(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto invOut = b.inv({q[0], q[1]}, [&](mlir::ValueRange invArgs) {
     auto inner =
@@ -3824,7 +3828,7 @@ SmallVector<Value> invPowReordered(QCOProgramBuilder& b) {
   return measureAndReturn(b, invOut);
 }
 
-SmallVector<Value> invPowReorderedRef(QCOProgramBuilder& b) {
+Value invPowReorderedRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(-0.5, {q[1], q[0]}, [&](mlir::ValueRange powArgs) {
     auto res = b.swap(powArgs[0], powArgs[1]);
@@ -3837,7 +3841,7 @@ SmallVector<Value> invPowReorderedRef(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-SmallVector<Value> mergeNestedPowReordered(QCOProgramBuilder& b) {
+Value mergeNestedPowReordered(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange outerArgs) {
     auto inner =
@@ -3850,7 +3854,7 @@ SmallVector<Value> mergeNestedPowReordered(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
+Value mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(1.0, {q[1], q[0]}, [&](mlir::ValueRange powArgs) {
     auto res = b.swap(powArgs[0], powArgs[1]);
@@ -3872,7 +3876,7 @@ Value powRxNeg(QCOProgramBuilder& b) {
   return b.measure(powOut).second;
 }
 
-SmallVector<Value> powCtrlRx(QCOProgramBuilder& b) {
+Value powCtrlRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange powArgs) {
     const auto& [controlsOut, targetsOut] =
@@ -3884,7 +3888,7 @@ SmallVector<Value> powCtrlRx(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> ctrlPowRx(QCOProgramBuilder& b) {
+Value ctrlPowRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto& [controlsOut, targetsOut] =
       b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
@@ -3898,7 +3902,7 @@ SmallVector<Value> ctrlPowRx(QCOProgramBuilder& b) {
       b, llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut)));
 }
 
-SmallVector<Value> negPowInvIswap(QCOProgramBuilder& b) {
+Value negPowInvIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(-2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     return b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange invArgs) {
@@ -3909,13 +3913,13 @@ SmallVector<Value> negPowInvIswap(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
-SmallVector<Value> negPowInvIswapRef(QCOProgramBuilder& b) {
+Value negPowInvIswapRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [rq0, rq1] = b.xx_plus_yy(-2.0 * std::numbers::pi, 0.0, q[0], q[1]);
   return measureAndReturn(b, {rq0, rq1});
 }
 
-SmallVector<Value> ctrlPowSx(QCOProgramBuilder& b) {
+Value ctrlPowSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto& [controlsOut, targetsOut] =
       b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
@@ -3944,6 +3948,27 @@ SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
   return {c0, c1};
 }
 
+SmallVector<Value> ifElse(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
+  auto res = b.qcoIf(
+      measureResult, {measuredQubit},
+      [&](ValueRange args) {
+        auto innerQubit = b.x(args[0]);
+        return SmallVector{innerQubit};
+      },
+      [&](ValueRange args) {
+        auto innerQubit = b.z(args[0]);
+        return SmallVector{innerQubit};
+      });
+  q[0] = res[0];
+  b.measure(q[0], c1, 0);
+  return {c0, c1};
+}
+
 SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto c0 = b.allocClassicalBitRegister(1);
@@ -3963,24 +3988,17 @@ SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b) {
   return {c0, c1};
 }
 
-SmallVector<Value> ifElse(QCOProgramBuilder& b) {
+SmallVector<Value> measureInIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
-  auto res = b.qcoIf(
-      measureResult, {measuredQubit},
-      [&](ValueRange args) {
-        auto innerQubit = b.x(args[0]);
-        return SmallVector{innerQubit};
-      },
-      [&](ValueRange args) {
-        auto innerQubit = b.z(args[0]);
-        return SmallVector{innerQubit};
-      });
+  auto res = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+    auto innerQubit = b.measure(args[0], c1, 0).first;
+    return SmallVector{innerQubit};
+  });
   q[0] = res[0];
-  b.measure(q[0], c1, 0);
   return {c0, c1};
 }
 
@@ -4007,7 +4025,7 @@ Value ifOneTensor(QCOProgramBuilder& b) {
     qubit = b.x(qubit);
     return b.qtensorInsert(qubit, updatedTensor, 0);
   });
-  return measureAndReturnQTensor(b, result, 1).front();
+  return measureAndReturnQTensor(b, result, 1);
 }
 
 Value constantTrueIf(QCOProgramBuilder& b) {
@@ -4105,7 +4123,7 @@ SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b) {
   return {bit0, bit1};
 }
 
-SmallVector<Value> indexSwitchMultiCase(QCOProgramBuilder& b) {
+Value indexSwitchMultiCase(QCOProgramBuilder& b) {
   constexpr int64_t size = 2;
 
   auto reg = b.allocQubitRegister(size);
@@ -4149,18 +4167,18 @@ SmallVector<Value> indexSwitchMultiCase(QCOProgramBuilder& b) {
   return measureAndReturn(b, reg.qubits);
 }
 
-SmallVector<Value> qtensorAlloc(QCOProgramBuilder& b) {
+Value qtensorAlloc(QCOProgramBuilder& b) {
   (void)b.qtensorAlloc(3);
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorDealloc(QCOProgramBuilder& b) {
+Value qtensorDealloc(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   b.qtensorDealloc(qtensor);
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorFromElements(QCOProgramBuilder& b) {
+Value qtensorFromElements(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
@@ -4174,7 +4192,7 @@ Value qtensorExtract(QCOProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-SmallVector<Value> qtensorInsert(QCOProgramBuilder& b) {
+Value qtensorInsert(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
@@ -4182,21 +4200,21 @@ SmallVector<Value> qtensorInsert(QCOProgramBuilder& b) {
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
+Value qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   (void)b.qtensorInsert(q0, extractOutTensor, 1);
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
+Value qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   (void)b.qtensorInsert(q0, extractOutTensor, 0);
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
+Value qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
@@ -4206,7 +4224,7 @@ SmallVector<Value> qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
+Value qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
@@ -4216,7 +4234,7 @@ SmallVector<Value> qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorChain(QCOProgramBuilder& b) {
+Value qtensorChain(QCOProgramBuilder& b) {
   Value q0;
   Value q1;
   Value q2;
@@ -4236,7 +4254,7 @@ SmallVector<Value> qtensorChain(QCOProgramBuilder& b) {
   return measureAndReturn(b, {});
 }
 
-SmallVector<Value> qtensorAlternativeChain(QCOProgramBuilder& b) {
+Value qtensorAlternativeChain(QCOProgramBuilder& b) {
   Value q0;
   Value q1;
   Value q2;
@@ -4287,7 +4305,7 @@ Value simpleDoWhileReset(QCOProgramBuilder& b) {
   return measureToRegister(b, scfWhile[0]);
 }
 
-SmallVector<Value> simpleForLoop(QCOProgramBuilder& b) {
+Value simpleForLoop(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto scfFor =
       b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
@@ -4317,7 +4335,7 @@ Value nestedForLoopIfOp(QCOProgramBuilder& b) {
   return measureToRegister(b, scfFor[1]);
 }
 
-SmallVector<Value> nestedForLoopWhileOp(QCOProgramBuilder& b) {
+Value nestedForLoopWhileOp(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto loopResult =
       b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
@@ -4346,7 +4364,7 @@ SmallVector<Value> nestedForLoopWhileOp(QCOProgramBuilder& b) {
   return measureAndReturnQTensor(b, scfFor[0], 2);
 }
 
-SmallVector<Value> nestedForLoopSwitchOp(QCOProgramBuilder& b) {
+Value nestedForLoopSwitchOp(QCOProgramBuilder& b) {
   constexpr int64_t n = 3;
   auto reg = b.allocQubitRegister(n);
   auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
@@ -4436,7 +4454,7 @@ Value nestedIfOpForLoop(QCOProgramBuilder& b) {
   return measureToRegister(b, ifRes[1]);
 }
 
-SmallVector<Value> controlledXH(QCOProgramBuilder& b) {
+Value controlledXH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [ctrl, targ] = b.ctrl(q[0], q[1], [&](Value target) {
     target = b.x(target);
@@ -4445,7 +4463,7 @@ SmallVector<Value> controlledXH(QCOProgramBuilder& b) {
   return measureAndReturn(b, {ctrl, targ});
 }
 
-SmallVector<Value> controlledInverseHT(QCOProgramBuilder& b) {
+Value controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto [ctrl, targ] = b.ctrl(q[0], q[1], [&](ValueRange targets) {
     auto wire = b.inv({targets[0]}, [&](ValueRange innerTargets) {
@@ -4458,7 +4476,7 @@ SmallVector<Value> controlledInverseHT(QCOProgramBuilder& b) {
   return measureAndReturn(b, {ctrl[0], targ[0]});
 }
 
-SmallVector<Value> inverseTwoRxRy(QCOProgramBuilder& b) {
+Value inverseTwoRxRy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
     auto w0 = b.rx(0.2, targets[0]);
@@ -4468,7 +4486,7 @@ SmallVector<Value> inverseTwoRxRy(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> inverseCxThenRz(QCOProgramBuilder& b) {
+Value inverseCxThenRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
     auto w0 = targets[0];
@@ -4480,7 +4498,7 @@ SmallVector<Value> inverseCxThenRz(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> inverseDcxThenRz(QCOProgramBuilder& b) {
+Value inverseDcxThenRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
     auto w0 = targets[0];
@@ -4512,7 +4530,7 @@ Value inverseNestedInvHAndT(QCOProgramBuilder& b) {
   return measureToRegister(b, res);
 }
 
-SmallVector<Value> inverseNestedInvHAndX(QCOProgramBuilder& b) {
+Value inverseNestedInvHAndX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
     auto w0 = b.inv(targets[0], [&](Value inner) { return b.h(inner); });
@@ -4522,7 +4540,7 @@ SmallVector<Value> inverseNestedInvHAndX(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> inverseThreeWireRxRyRz(QCOProgramBuilder& b) {
+Value inverseThreeWireRxRyRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
     auto w0 = b.rx(0.2, targets[0]);
@@ -4533,7 +4551,7 @@ SmallVector<Value> inverseThreeWireRxRyRz(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
+Value inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
     auto inner = b.inv({targets[0], targets[1]}, [&](ValueRange innerTargets) {
@@ -4547,7 +4565,7 @@ SmallVector<Value> inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
-SmallVector<Value> inverseWithThreeQubitOpInBody(QCOProgramBuilder& b) {
+Value inverseWithThreeQubitOpInBody(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
     auto [controls, innerTarget] =

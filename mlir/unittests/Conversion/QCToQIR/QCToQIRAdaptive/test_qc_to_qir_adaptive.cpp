@@ -641,17 +641,17 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
         QCToQIRAdaptiveTestCase{
-            "MeasurementWithoutRegisters",
-            MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)},
-        QCToQIRAdaptiveTestCase{
             "PartialMeasurementToRegister",
             MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
             MQT_NAMED_BUILDER(qir::partialMeasurementToRegister)},
         QCToQIRAdaptiveTestCase{
             "DynamicallyIndexedMeasurement",
             MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
-            MQT_NAMED_BUILDER(qir::dynamicallyIndexedMeasurement)}));
+            MQT_NAMED_BUILDER(qir::dynamicallyIndexedMeasurement)},
+        QCToQIRAdaptiveTestCase{
+            "MeasurementWithoutRegisters",
+            MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/ResetOp.cpp

@@ -410,13 +410,13 @@ void ctrlTwoMixed(QuantumComputation& comp);
 /// Creates a circuit with a simple if operation with one qubit.
 void simpleIf(QuantumComputation& comp);
 
-/// Creates a circuit with an if operation with two qubits.
-void ifTwoQubits(QuantumComputation& comp);
-
 /// Creates a circuit with an if operation with an else branch.
 void ifElse(QuantumComputation& comp);
 
-/// Creates a circuit that measures a qubit inside an if operation's branch.
+/// Creates a circuit with an if operation with two qubits.
+void ifTwoQubits(QuantumComputation& comp);
+
+/// Creates a circuit that measures a qubit inside an if operation.
 void measureInIf(QuantumComputation& comp);
 
 } // namespace qc

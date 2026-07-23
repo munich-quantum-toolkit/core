@@ -704,6 +704,16 @@ void simpleIf(QuantumComputation& comp) {
   comp.measure(q[0], c2[0]);
 }
 
+void ifElse(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(q[0], c[0]);
+  comp.ifElse(std::make_unique<StandardOperation>(q[0], X),
+              std::make_unique<StandardOperation>(q[0], Z), c[0]);
+  comp.measureAll(true, false);
+}
+
 void ifTwoQubits(QuantumComputation& comp) {
   const auto& q = comp.addQubitRegister(2, "q");
   const auto& c = comp.addClassicalRegister(1, "c");
@@ -715,16 +725,6 @@ void ifTwoQubits(QuantumComputation& comp) {
   IfElseOperation ifElse(
       std::make_unique<CompoundOperation>(std::move(compound)), nullptr, c[0]);
   comp.emplace_back<IfElseOperation>(std::move(ifElse));
-  comp.measureAll(true, false);
-}
-
-void ifElse(QuantumComputation& comp) {
-  const auto& q = comp.addQubitRegister(1, "q");
-  const auto& c = comp.addClassicalRegister(1, "c");
-  comp.h(q[0]);
-  comp.measure(q[0], c[0]);
-  comp.ifElse(std::make_unique<StandardOperation>(q[0], X),
-              std::make_unique<StandardOperation>(q[0], Z), c[0]);
   comp.measureAll(true, false);
 }
 

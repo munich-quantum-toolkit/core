@@ -154,7 +154,8 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
 
 TEST_F(QCOTest, DirectIfBuilder) {
   QCOProgramBuilder builder(context.get());
-  builder.initialize();
+  auto memrefType = MemRefType::get({1}, builder.getI1Type());
+  builder.initialize({memrefType, memrefType});
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   auto one = arith::ConstantIndexOp::create(builder, 1);
   auto r0 = qtensor::AllocOp::create(builder, one);
@@ -177,22 +178,20 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                       extractOp.getOutTensor(), zero);
   qtensor::DeallocOp::create(builder, r2);
 
-  builder.retype({c0.getType(), c1.getType()});
-  auto directBuilder = builder.finalize({c0, c1});
-  ASSERT_TRUE(directBuilder);
-  EXPECT_TRUE(verify(*directBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*directBuilder).succeeded());
+  auto direct = builder.finalize({c0, c1});
+  ASSERT_TRUE(direct);
+  EXPECT_TRUE(verify(*direct).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(direct.get()).succeeded());
+  EXPECT_TRUE(verify(*direct).succeeded());
 
-  auto refBuilder =
+  auto ref =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
-  ASSERT_TRUE(refBuilder);
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
-                                                   refBuilder.get()));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(direct.get(), ref.get()));
 }
 
 TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
@@ -331,22 +330,20 @@ TEST_F(QCOTest, IfOpParser) {
         }
     })";
 
-  auto parsedSourceModule =
-      parseSourceString<ModuleOp>(mlirCode, context.get());
-  ASSERT_TRUE(parsedSourceModule);
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  auto parsed = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsed);
+  EXPECT_TRUE(verify(*parsed).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
+  EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto refBuilder = mqt::test::buildMLIRProgram(
+  auto ref = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor));
-  ASSERT_TRUE(refBuilder);
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
-                                                   refBuilder.get()));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsed.get(), ref.get()));
 }
 
 TEST_F(QCOTest, IndexSwitchParser) {
@@ -400,22 +397,20 @@ TEST_F(QCOTest, IndexSwitchParser) {
         }
     })";
 
-  auto parsedSourceModule =
-      parseSourceString<ModuleOp>(mlirCode, context.get());
-  ASSERT_TRUE(parsedSourceModule);
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  auto parsed = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsed);
+  EXPECT_TRUE(verify(*parsed).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
+  EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto refBuilder = mqt::test::buildMLIRProgram(
+  auto ref = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedForLoopSwitchOp));
-  ASSERT_TRUE(refBuilder);
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
-                                                   refBuilder.get()));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsed.get(), ref.get()));
 }
 
 TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {

@@ -404,20 +404,20 @@ extern const std::string ctrlTwoMixed;
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
 
-/// Creates a circuit with an if operation with a negated condition.
-extern const std::string ifNot;
+/// Creates a circuit with an if operation with an else branch.
+extern const std::string ifElse;
 
 /// Creates a circuit with an if operation with two qubits.
 extern const std::string ifTwoQubits;
 
+/// Creates a circuit that measures a qubit inside an if operation.
+extern const std::string measureInIf;
+
+/// Creates a circuit with an if operation with a negated condition.
+extern const std::string ifNot;
+
 /// Creates a circuit with an if operation with an empty then branch.
 extern const std::string ifEmptyThen;
-
-/// Creates a circuit with an if operation with an else branch.
-extern const std::string ifElse;
-
-/// Creates a circuit that measures a qubit inside an if operation's branch.
-extern const std::string measureInIf;
 
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)
