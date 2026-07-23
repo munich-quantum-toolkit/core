@@ -61,15 +61,7 @@
 
 namespace mlir::qc {
 
-namespace {
-
-/// Signature: (builder, gate operands, evaluated parameters).
-/// For gates with implicit controls (cx, ccx, ...), all qubits including
-/// the controls are part of the range, matching OpenQASM 3 operand order.
-using GateFn =
-    std::function<void(QCProgramBuilder&, ValueRange, ArrayRef<double>)>;
-
-[[nodiscard]] bool isExactlyRepresentableAsDouble(const size_t value) {
+[[nodiscard]] static bool isExactlyRepresentableAsDouble(const size_t value) {
   if (value == 0) {
     return true;
   }
@@ -79,6 +71,14 @@ using GateFn =
   }
   return std::bit_width(significand) <= std::numeric_limits<double>::digits;
 }
+
+namespace {
+
+/// Signature: (builder, gate operands, evaluated parameters).
+/// For gates with implicit controls (cx, ccx, ...), all qubits including
+/// the controls are part of the range, matching OpenQASM 3 operand order.
+using GateFn =
+    std::function<void(QCProgramBuilder&, ValueRange, ArrayRef<double>)>;
 
 } // namespace
 

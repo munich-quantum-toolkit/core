@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
