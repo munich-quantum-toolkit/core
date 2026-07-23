@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Utils/Layout.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallBitVector.h>
@@ -17,12 +18,12 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <random>
 
 namespace mlir::qco {
+
 Layout Layout::random(const size_t nqubits, const size_t seed) {
   auto mapping = llvm::to_vector(llvm::seq(nqubits));
   llvm::shuffle(mapping.begin(), mapping.end(), std::mt19937_64{seed});
@@ -46,36 +47,47 @@ Layout Layout::fromMapping(ArrayRef<size_t> mapping) {
 }
 
 void Layout::add(const size_t prog, const size_t hw) {
-  assert(prog < programToHardware_.size() && "program index out of bounds");
-  assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");
+  assert(prog < nqubits_ && "program index out of bounds");
+  assert(hw < nqubits_ && "hardware index out of bounds");
+  assert(!programToHardware_.contains(prog) && "program index already mapped");
+  assert(!hardwareToProgram_.contains(hw) && "hardware index already mapped");
   programToHardware_[prog] = hw;
   hardwareToProgram_[hw] = prog;
 }
 
 size_t Layout::getProgramIndex(const size_t hw) const {
-  assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");
-  return hardwareToProgram_[hw];
+  const auto it = hardwareToProgram_.find(hw);
+  assert(it != hardwareToProgram_.end() && "hardware index not mapped");
+  return it->second;
 }
 
 size_t Layout::getHardwareIndex(const size_t prog) const {
-  assert(prog < programToHardware_.size() && "program index out of bounds");
-  return programToHardware_[prog];
+  const auto it = programToHardware_.find(prog);
+  assert(it != programToHardware_.end() && "program index not mapped");
+  return it->second;
 }
 
 void Layout::swap(const size_t hwA, const size_t hwB) {
-  assert(hwA < hardwareToProgram_.size() && "hardware index out of bounds");
-  assert(hwB < hardwareToProgram_.size() && "hardware index out of bounds");
-  const auto progA = hardwareToProgram_[hwA];
-  const auto progB = hardwareToProgram_[hwB];
-
-  std::swap(hardwareToProgram_[hwA], hardwareToProgram_[hwB]);
-  std::swap(programToHardware_[progA], programToHardware_[progB]);
+  const auto itA = hardwareToProgram_.find(hwA);
+  const auto itB = hardwareToProgram_.find(hwB);
+  assert(itA != hardwareToProgram_.end() && "hardware index not mapped");
+  assert(itB != hardwareToProgram_.end() && "hardware index not mapped");
+  const auto progA = itA->second;
+  const auto progB = itB->second;
+  itA->second = progB;
+  itB->second = progA;
+  programToHardware_[progA] = hwB;
+  programToHardware_[progB] = hwA;
 }
 
-size_t Layout::nqubits() const { return programToHardware_.size(); }
+size_t Layout::nqubits() const { return nqubits_; }
 
-ArrayRef<size_t> Layout::getProgramToHardware() const {
-  return programToHardware_;
+SmallVector<size_t> Layout::getProgramToHardware() const {
+  SmallVector<size_t> result(nqubits_);
+  for (size_t prog = 0; prog < nqubits_; ++prog) {
+    result[prog] = getHardwareIndex(prog);
+  }
+  return result;
 }
 
 } // namespace mlir::qco

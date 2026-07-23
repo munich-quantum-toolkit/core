@@ -52,6 +52,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -913,7 +914,19 @@ private:
     frontier.emplace(root);
 
     DenseMap<ArrayRef<size_t>, size_t> bestDepth;
+    // Owns the materialized layout snapshots that `bestDepth` keys point into.
+    // std::deque never invalidates pointers to existing elements on push_back,
+    // so ArrayRefs already in `bestDepth` stay stable as we grow it.
+    std::deque<SmallVector<size_t>> keyStorage;
     SmallVector<IndexPairType, 6> expansionSet;
+
+    const auto materializeKey = [](const Layout& layout) {
+      SmallVector<size_t> key(layout.nqubits());
+      for (size_t prog = 0; prog < layout.nqubits(); ++prog) {
+        key[prog] = layout.getHardwareIndex(prog);
+      }
+      return key;
+    };
 
     size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -925,9 +938,11 @@ private:
       // already at a lower depth don't reexpand the current node (and hence
       // recreate the same child nodes).
 
+      keyStorage.push_back(materializeKey(curr->layout));
       const auto [it, inserted] = bestDepth.try_emplace(
-          curr->layout.getProgramToHardware(), curr->depth);
+          ArrayRef<size_t>(keyStorage.back()), curr->depth);
       if (!inserted) {
+        keyStorage.pop_back();
         if (const auto otherDepth = it->getSecond();
             curr->depth >= otherDepth) {
           ++i;

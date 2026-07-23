@@ -11,6 +11,7 @@
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
 
@@ -29,14 +30,16 @@ namespace mlir::qco {
 /// dynamic) are C++ keywords.
 class Layout {
 public:
-  /// Construct and return a random layout with size `nqubits`.
+  /// Construct and return a random layout that places every program qubit
+  /// index in `[0, nqubits)` on a distinct hardware index in the same range.
   static Layout random(size_t nqubits, size_t seed);
 
   /// Construct a layout from a program-to-hardware mapping,
   /// where mapping[prog] = hw.
   static Layout fromMapping(ArrayRef<size_t> mapping);
 
-  /// Insert program:hardware index mapping.
+  /// Insert a program:hardware index mapping.
+  /// Requires that neither `prog` nor `hw` has been mapped previously.
   void add(size_t prog, size_t hw);
 
   /// Lookup and return program index for a hardware index.
@@ -64,11 +67,13 @@ public:
   /// Swap the mapping to program indices of two hardware indices.
   void swap(size_t hwA, size_t hwB);
 
-  /// Return the number of qubits managed by the layout.
+  /// Return the number of qubits this layout was declared with.
   [[nodiscard]] size_t nqubits() const;
 
-  /// Return the program to hardware mapping.
-  [[nodiscard]] ArrayRef<size_t> getProgramToHardware() const;
+  /// Return the program to hardware mapping as a materialized vector of
+  /// length `nqubits()`, where entry `prog` is the hardware index assigned
+  /// to program qubit `prog`.
+  [[nodiscard]] SmallVector<size_t> getProgramToHardware() const;
 
   /// Compare two layouts for equality.
   [[nodiscard]] bool operator==(const Layout& other) const {
@@ -77,12 +82,13 @@ public:
 
 private:
   /// Construct a layout with `nqubits`.
-  explicit Layout(const size_t nqubits)
-      : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
+  explicit Layout(const size_t nqubits) : nqubits_(nqubits) {}
 
   /// Maps a program qubit index to its hardware index.
-  SmallVector<size_t> programToHardware_;
+  DenseMap<size_t, size_t> programToHardware_;
   /// Maps a hardware qubit index to its program index.
-  SmallVector<size_t> hardwareToProgram_;
+  DenseMap<size_t, size_t> hardwareToProgram_;
+  /// Number of qubits this layout was declared with.
+  size_t nqubits_ = 0;
 };
 } // namespace mlir::qco
