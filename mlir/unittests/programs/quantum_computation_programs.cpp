@@ -78,27 +78,35 @@ void multipleClassicalRegistersAndMeasurements(QuantumComputation& comp) {
 
 void resetQubitAfterSingleOp(QuantumComputation& comp) {
   comp.addQubitRegister(1, "q");
+  comp.addClassicalRegister(2, "c");
   comp.h(0);
+  comp.measure(0, 0);
   comp.reset(0);
-  comp.measureAll(true, false);
+  comp.measure(0, 1);
 }
 
 void resetMultipleQubitsAfterSingleOp(QuantumComputation& comp) {
   comp.addQubitRegister(2, "q");
+  comp.addClassicalRegister(4, "c");
   comp.h(0);
+  comp.measure(0, 0);
   comp.reset(0);
+  comp.measure(0, 1);
   comp.h(1);
+  comp.measure(1, 2);
   comp.reset(1);
-  comp.measureAll(true, false);
+  comp.measure(1, 3);
 }
 
 void repeatedResetAfterSingleOp(QuantumComputation& comp) {
   comp.addQubitRegister(1, "q");
+  comp.addClassicalRegister(2, "c");
   comp.h(0);
+  comp.measure(0, 0);
   comp.reset(0);
   comp.reset(0);
   comp.reset(0);
-  comp.measureAll(true, false);
+  comp.measure(0, 1);
 }
 
 void globalPhase(QuantumComputation& comp) { comp.gphase(0.123); }
