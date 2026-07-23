@@ -101,9 +101,7 @@ TEST_F(TensorIteratorTest, Traversal) {
         tensorElse2 = builder.qtensorInsert(q, tensorElse1, 0);
         return SmallVector{tensorElse2};
       })[0];
-  const auto identity = [](ValueRange args) {
-    return llvm::to_vector(args);
-  };
+  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
   const auto tensor9 = builder.qcoIndexSwitch(

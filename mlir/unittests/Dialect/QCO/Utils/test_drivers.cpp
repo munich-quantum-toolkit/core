@@ -109,13 +109,11 @@ TEST_F(DriversTest, ProgramGraphWalk) {
         return SmallVector<Value>{builder.id(args[0])};
       })[0];
 
-  const auto identity = [](ValueRange args) {
-    return llvm::to_vector(args);
-  };
+  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
-  const auto q06 = builder.qcoIndexSwitch(
-      0, q05, SmallVector<int64_t>{0}, caseBodies, identity)[0];
+  const auto q06 = builder.qcoIndexSwitch(0, q05, SmallVector<int64_t>{0},
+                                          caseBodies, identity)[0];
 
   builder.measure(q06);
   builder.measure(forResults[1]);

@@ -80,9 +80,7 @@ TEST_P(WireIteratorTest, Traversal) {
       [&](ValueRange args) { return SmallVector{args[0], args[1]}; });
   const auto q06 = ifOut[0];
   const auto q13 = ifOut[1];
-  const auto identity = [](ValueRange args) {
-    return llvm::to_vector(args);
-  };
+  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
   const auto switchOut = builder.qcoIndexSwitch(
