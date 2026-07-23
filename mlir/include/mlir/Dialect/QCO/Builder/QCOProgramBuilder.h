@@ -1290,11 +1290,11 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply a controlled operation
+   * @brief Apply a control modifier to a collection of gates
    *
-   * @param controls Control qubits
-   * @param targets Target qubits
-   * @param body Function that builds the body containing the target operation
+   * @param controls Input control qubits
+   * @param targets Input target qubits
+   * @param body Function that builds the body containing the target gates
    * @return Pair of (output_control_qubits, output_target_qubits)
    *
    * @par Example:
@@ -1355,10 +1355,10 @@ public:
                                function_ref<Value(Value)> body);
 
   /**
-   * @brief Apply an inverse operation
+   * @brief Apply an inverse (i.e., adjoint) modifier to a collection of gates
    *
-   * @param qubits Qubits involved in the operation
-   * @param body Function that builds the body containing the target operation
+   * @param qubits Input qubits
+   * @param body Function that builds the body containing the gates to invert
    * @return Output qubits
    *
    * @par Example:
@@ -1395,6 +1395,53 @@ public:
    * ```
    */
   Value inv(Value qubit, function_ref<Value(Value)> body);
+
+  /**
+   * @brief Apply a power modifier to a collection of gates
+   *
+   * @param exponent The exponent to raise the gates to
+   * @param qubits Input qubits
+   * @param body Function that builds the body containing the gates to
+   * exponentiate
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * qubits_out = builder.pow(2.0, {q0_in, q1_in},
+   *   [&](ValueRange qubits) -> SmallVector<Value> {
+   *     auto [q0, q1] = builder.swap(qubits[0], qubits[1]);
+   *     return {q0, q1};
+   *   }
+   * );
+   * ```
+   * ```mlir
+   * %q_out = qco.pow(%exponent) (%q = %q_in) {
+   *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
+   *   qco.yield %q_res
+   * } : {!qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange pow(const std::variant<double, Value>& exponent, ValueRange qubits,
+                 function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /**
+   * @brief Apply a power modifier on a single qubit.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubit Input qubit
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto qubit_out = builder.pow(2.0, q0_in, [&](Value qubit) {
+   *   return builder.s(qubit);
+   * });
+   * ```
+   */
+  Value pow(const std::variant<double, Value>& exponent, Value qubit,
+            function_ref<Value(Value)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

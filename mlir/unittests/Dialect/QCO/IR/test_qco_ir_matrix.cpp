@@ -27,6 +27,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
@@ -40,6 +41,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 
 using namespace mlir;
@@ -77,6 +79,45 @@ expectedMatrixFromComputation(const Fn& build, const size_t numQubits = 2) {
 [[nodiscard]] static CtrlOp firstCtrlOp(ModuleOp module) {
   auto funcOp = cast<func::FuncOp>(module.getBody()->front());
   return *funcOp.getBody().getOps<CtrlOp>().begin();
+}
+
+[[nodiscard]] static PowOp firstPowOp(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  return *funcOp.getBody().getOps<PowOp>().begin();
+}
+
+static void makePowExponentDynamic(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  funcOp.insertArgument(0, Float64Type::get(module.getContext()), {},
+                        funcOp.getLoc());
+  firstPowOp(module)->setOperand(0, funcOp.getArgument(0));
+}
+
+static void makePowBodyParameterDynamic(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  funcOp.insertArgument(0, Float64Type::get(module.getContext()), {},
+                        funcOp.getLoc());
+  firstPowOp(module).getBodyUnitary(0)->setOperand(1, funcOp.getArgument(0));
+}
+
+static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
+    auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
+    std::tie(q0, q1, q2) = b.rccx(q0, q1, q2);
+    return SmallVector<Value>{q0, q1, q2};
+  });
+  return b.measure(powOut[0]).second;
+}
+
+static Value composedBodyWithNestedPow(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut = b.pow(2.0, q[0], [&](Value qubit) {
+    const auto nested =
+        b.pow(0.5, qubit, [&](Value nestedQubit) { return b.x(nestedQubit); });
+    return b.z(nested);
+  });
+  return b.measure(powOut).second;
 }
 
 [[nodiscard]] static std::optional<DynamicMatrix> invMatrix(ModuleOp module) {
@@ -306,6 +347,143 @@ TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeGphase) {
   ASSERT_TRUE(moduleOp);
   EXPECT_FALSE(
       composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1).has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeUnitaryMatrix) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test(%theta: f64) -> !qco.qubit {
+        %q_in = qco.alloc : !qco.qubit
+        %q_out = qco.inv (%q = %q_in) {
+          %q_1 = qco.rx(%theta) %q : !qco.qubit -> !qco.qubit
+          qco.yield %q_1 : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %q_out : !qco.qubit
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(
+      composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1).has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeBodyMatrixHandlesNestedPower) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), composedBodyWithNestedPow);
+  ASSERT_TRUE(moduleOp);
+
+  auto outerPow = firstPowOp(*moduleOp);
+  const auto body = composeBodyMatrix(*outerPow.getBody(), 1);
+  ASSERT_TRUE(body);
+  const DynamicMatrix expected(ZOp::getUnitaryMatrix() *
+                               SXOp::getUnitaryMatrix());
+  EXPECT_TRUE(body->isApprox(expected));
+}
+/// @}
+
+/// \name QCO/Modifiers/PowOp.cpp
+/// @{
+TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powRxx);
+  ASSERT_TRUE(moduleOp);
+
+  // Get the PowOp from the module
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
+
+  // RXX(0.123)^2 == RXX(0.123) * RXX(0.123) (integer power). Compare the
+  // eigendecomposition result against the direct square of the body unitary.
+  const auto body = powOp.getBodyUnitary(0).getUnitaryMatrix<DynamicMatrix>();
+  ASSERT_TRUE(body.has_value());
+  const DynamicMatrix expected = *body * *body;
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, PowMatrixAvailabilityContract) {
+  auto staticModule = QCOProgramBuilder::build(context.get(), powHalfX);
+  ASSERT_TRUE(staticModule);
+  auto staticPow = firstPowOp(*staticModule);
+  EXPECT_TRUE(staticPow.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_TRUE(staticPow.getUnitaryMatrix().has_value());
+
+  makePowExponentDynamic(*staticModule);
+  EXPECT_FALSE(staticPow.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_FALSE(staticPow.getUnitaryMatrix().has_value());
+
+  auto emptyModule = QCOProgramBuilder::build(context.get(), emptyPow);
+  ASSERT_TRUE(emptyModule);
+  auto empty = firstPowOp(*emptyModule);
+  EXPECT_TRUE(empty.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_FALSE(empty.getUnitaryMatrix().has_value());
+
+  auto unsupportedModule =
+      QCOProgramBuilder::build(context.get(), powUnsupportedThreeQubitBody);
+  ASSERT_TRUE(unsupportedModule);
+  auto unsupported = firstPowOp(*unsupportedModule);
+  EXPECT_TRUE(unsupported.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_FALSE(unsupported.getUnitaryMatrix().has_value());
+
+  auto dynamicBodyModule = QCOProgramBuilder::build(context.get(), powRxScaled);
+  ASSERT_TRUE(dynamicBodyModule);
+  auto dynamicBody = firstPowOp(*dynamicBodyModule);
+  makePowBodyParameterDynamic(*dynamicBodyModule);
+  EXPECT_FALSE(dynamicBody.hasCompileTimeKnownUnitaryMatrix());
+  EXPECT_FALSE(dynamicBody.getUnitaryMatrix().has_value());
+}
+
+TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powHalfX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
+
+  // X^0.5 == SX (principal branch: (-1)^0.5 = i).
+  ASSERT_TRUE(matrix->isApprox(SXOp::getUnitaryMatrix()));
+}
+
+TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powNegHalfX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
+
+  // X^-0.5 == SXdg (principal branch: (-1)^-0.5 = -i).
+  ASSERT_TRUE(matrix->isApprox(SXdgOp::getUnitaryMatrix()));
+}
+
+TEST_F(QCOMatrixTest, PowThirdXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powThirdX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
+
+  // Fractional power: (X^(1/3))^3 == X.
+  const DynamicMatrix cubed = *matrix * *matrix * *matrix;
+  ASSERT_TRUE(cubed.isApprox(XOp::getUnitaryMatrix()));
+}
+
+TEST_F(QCOMatrixTest, NestedPowAcrossBranchCutMatrixIsIdentity) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), nestedPowBranchCut);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  const auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+  EXPECT_TRUE(matrix->isApprox(DynamicMatrix::identity(2)));
 }
 /// @}
 

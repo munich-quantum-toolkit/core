@@ -1173,6 +1173,55 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 };
 
 /**
+ * @brief Converts qc.pow to qco.pow
+ *
+ * @par Example:
+ * ```mlir
+ * qc.pow(%exponent) (%a0 = %q0) {
+ *   qc.s %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out = qco.pow(%exponent) (%a0_in = %q0_in) {
+ *   %a0_res = qco.s %a0_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ */
+struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::PowOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    const auto qcTargets = op.getTargets();
+    auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
+
+    // Create qco.pow with exponent.
+    auto qcoOp =
+        qco::PowOp::create(rewriter, op.getLoc(), qcoTargets, op.getExponent());
+
+    assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
+
+    auto qcArgs = op.getRegion().front().getArguments();
+
+    // Inline region and convert the block signature to QCO types.
+    if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
  * @brief Converts qc.yield to qco.yield
  *
  * @par Example:
@@ -1700,7 +1749,7 @@ protected:
              ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
              ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
              ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
-             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp>(
             typeConverter, context, &state);
 
     // Not part of the central gate table.

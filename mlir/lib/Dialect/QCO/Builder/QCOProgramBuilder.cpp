@@ -16,7 +16,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -940,6 +939,62 @@ QCOProgramBuilder::inv(ValueRange qubits,
   }
 
   return targetsOut;
+}
+
+ValueRange
+QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                       ValueRange qubits,
+                       function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto powOp = PowOp::create(*this, qubits, exponent);
+
+  // Add block arguments for all qubits
+  auto& block = powOp.getBodyRegion().emplaceBlock();
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
+    const auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Pow body must return exactly one output qubit per target");
+  }
+
+  // Update tracking
+  const auto& targetsOut = powOp.getQubitsOut();
+  for (const auto& [target, targetOut] :
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
+Value QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                             Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto powOp =
+      PowOp::create(*this, qubit, exponent, [&](Value qubitArg) -> Value {
+        updateQubitTracking(qubit, qubitArg);
+        innerQubitOut = body(qubitArg);
+        return innerQubitOut;
+      });
+
+  const auto& qubitsOut = powOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
 }
 
 std::pair<ValueRange, Value>

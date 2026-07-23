@@ -17,6 +17,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -90,6 +91,62 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
                        llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
                          return newCtrl.getOutputForInput(in);
                        }));
+    return success();
+  }
+};
+
+/**
+ * @brief Eliminate inv by negating the pow exponent, i.e.,
+ * `inv(pow(p){U}) => pow(-p){U}`.
+ *
+ * This is always valid for unitaries: `(U^p)† = U^{-p}`.
+ * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
+ * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
+ */
+struct InvPowToNegPow final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto inner =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
+    if (!innerPow) {
+      return failure();
+    }
+
+    // Move supporting ops (constants, arithmetic) out of the body so their
+    // Values are accessible from outside and survive InvOp erasure.
+    utils::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
+                                    invOp, rewriter);
+    Value negExponent =
+        arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
+    // The inner pow's operands alias the inv's block args; translate them back
+    // to the outer qubits the inv aliases so the new pow is valid in the inv's
+    // parent scope.
+    auto outerQubits = invOp.getQubitsIn();
+    const auto qubits =
+        llvm::map_to_vector(innerPow.getInputQubits(), [&](Value v) {
+          return utils::getValueFromBlockArgument(v, outerQubits);
+        });
+
+    auto newPow =
+        PowOp::create(rewriter, invOp.getLoc(), qubits, negExponent,
+                      [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
+                        return utils::inlineBodyReturningYields(
+                            *innerPow.getBody(), powArgs, rewriter);
+                      });
+
+    // The new pow's operands may be a permutation of the inv's, so map each
+    // original qubit output to the new pow's output for the same input rather
+    // than replacing positionally.
+    rewriter.replaceOp(
+        invOp, llvm::map_to_vector(invOp.getInputQubits(), [&](Value in) {
+          return newPow.getOutputForInput(in);
+        }));
     return success();
   }
 };
@@ -421,8 +478,8 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MoveCtrlOutside, InlineSelfAdjoint, ReplaceWithKnownGates,
-              CancelNestedInv, EraseEmptyInv>(context);
+  results.add<MoveCtrlOutside, InvPowToNegPow, InlineSelfAdjoint,
+              ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv>(context);
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {

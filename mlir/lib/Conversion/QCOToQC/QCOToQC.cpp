@@ -697,6 +697,45 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
 };
 
 /**
+ * @brief Converts qco.pow to qc.pow
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out = qco.pow(%exponent) (%a_in = %q0_in) {
+ *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.pow(%exponent) (%a0 = %q0) {
+ *   qc.s %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ */
+struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::PowOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create qc.pow operation with exponent and qubit operands
+    auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), adaptor.getExponent(),
+                                  adaptor.getQubitsIn());
+
+    if (failed(moveRegion(op.getRegion(), qcOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, adaptor.getQubitsIn());
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts qco.yield to qc.yield or to scf.yield if the parent is a
  * scf::IfOp or scf::IndexSwitchOp.
  *
@@ -1049,10 +1088,10 @@ protected:
 #undef MQT_ADD_QCO_TO_QC_GATE
 
     patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOIndexSwitchOp,
-                 ConvertQCOSCFWhileOp, ConvertQCOSCFConditionOp,
-                 ConvertQCOSCFYieldOp, ConvertQCOSCFForOp>(typeConverter,
-                                                           context);
+                 ConvertQCOPowOp, ConvertQCOYieldOp, ConvertQCOIfOp,
+                 ConvertQCOIndexSwitchOp, ConvertQCOSCFWhileOp,
+                 ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp,
+                 ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
