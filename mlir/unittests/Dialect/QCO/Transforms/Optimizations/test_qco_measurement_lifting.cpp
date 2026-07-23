@@ -39,7 +39,7 @@ protected:
   MLIRContext context;
   QCOProgramBuilder programBuilder;
   QCOProgramBuilder referenceBuilder;
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> program;
   OwningOpRef<ModuleOp> reference;
 
   QCOMeasurementLiftingTest()
@@ -56,20 +56,20 @@ protected:
   /**
    * @brief Adds the measurementLiftingPass to the current context and runs it.
    */
-  static LogicalResult runMeasurementLiftingPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runMeasurementLiftingPass(ModuleOp program) {
+    PassManager pm(program.getContext());
     pm.addPass(createMeasurementLifting());
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    return pm.run(program);
   }
 
   /**
    * @brief Adds the canonicalizerPass to the current context and runs it.
    */
-  static LogicalResult runCanonicalizerPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runCanonicalizerPass(ModuleOp program) {
+    PassManager pm(program.getContext());
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    return pm.run(program);
   }
 };
 
@@ -96,7 +96,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
@@ -116,11 +116,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -165,7 +165,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   programBuilder.sink(q1);
   programBuilder.sink(q2);
 
-  module = programBuilder.finalize({c0, c1, c2});
+  program = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type(),
                                referenceBuilder.getI1Type(),
@@ -206,11 +206,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -241,7 +241,7 @@ TEST_F(QCOMeasurementLiftingTest,
   programBuilder.sink(q0Vec[0]);
   programBuilder.sink(q1);
   programBuilder.sink(q2);
-  module = programBuilder.finalize({c1, c2});
+  program = programBuilder.finalize({c1, c2});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
@@ -266,11 +266,11 @@ TEST_F(QCOMeasurementLiftingTest,
   referenceBuilder.sink(r12[1]);
   reference = referenceBuilder.finalize({cr1, cr2});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -293,7 +293,7 @@ TEST_F(QCOMeasurementLiftingTest,
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
@@ -312,11 +312,11 @@ TEST_F(QCOMeasurementLiftingTest,
   referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -332,7 +332,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
   std::tie(q, c) = programBuilder.measure(q);
   q = programBuilder.h(q);
   programBuilder.sink(q);
-  module = programBuilder.finalize(c);
+  program = programBuilder.finalize(c);
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
@@ -346,11 +346,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize(xorOp.getResult());
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -364,7 +364,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   Value c;
   std::tie(q, c) = programBuilder.measure(q);
   programBuilder.sink(q);
-  module = programBuilder.finalize({c});
+  program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
@@ -376,11 +376,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({xorOp.getResult()});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -400,7 +400,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   Value c;
   std::tie(q, c) = programBuilder.measure(q);
   programBuilder.sink(q);
-  module = programBuilder.finalize({c});
+  program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
@@ -409,11 +409,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -427,7 +427,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   Value c;
   std::tie(q, c) = programBuilder.measure(q);
   programBuilder.sink(q);
-  module = programBuilder.finalize({c});
+  program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
@@ -436,11 +436,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -462,7 +462,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0});
+  program = programBuilder.finalize({c0});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
@@ -479,11 +479,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -504,7 +504,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
 
   programBuilder.sink(q0);
   programBuilder.sink(q1);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -520,11 +520,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -547,7 +547,7 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
 
   programBuilder.sink(q0S2);
   programBuilder.sink(q1S2);
-  module = programBuilder.finalize({c0, c1});
+  program = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
@@ -567,11 +567,11 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
   referenceBuilder.sink(r1S2);
   reference = referenceBuilder.finalize({cr0, cr1});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /**
@@ -587,7 +587,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   Value c;
   std::tie(q, c) = programBuilder.measure(q);
   programBuilder.sink(q);
-  module = programBuilder.finalize({c});
+  program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
@@ -596,9 +596,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
-  ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }

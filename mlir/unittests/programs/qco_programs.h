@@ -1111,6 +1111,9 @@ SmallVector<Value> ifElse(QCOProgramBuilder& b);
 /// Creates a circuit with an if operation with one qubit and one register.
 Value ifOneQubitOneTensor(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with one register.
+Value ifOneTensor(QCOProgramBuilder& b);
+
 /// Creates a circuit with an if operation that uses a constant true as
 /// condition.
 Value constantTrueIf(QCOProgramBuilder& b);
