@@ -393,6 +393,10 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   ScopedDiagnosticHandler handler(context.get(),
                                   [](Diagnostic&) { return success(); });
   EXPECT_TRUE(switchOp.verify().failed());
+
+  switchOp->setAttr(
+      "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0, 0}));
+  EXPECT_TRUE(switchOp.verify().failed());
 }
 
 /// \name QCO/SCF/IfOp.cpp

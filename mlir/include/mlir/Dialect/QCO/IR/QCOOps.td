@@ -1417,7 +1417,7 @@ def IndexSwitchOp
 
         Example:
         ```mlir
-        %result = qco.index_switch %index : index -> !qco.qubit
+        %result = qco.index_switch %index -> !qco.qubit
         case 0 args(%arg0 = %q0) {
           %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
           qco.yield %q1 : !qco.qubit

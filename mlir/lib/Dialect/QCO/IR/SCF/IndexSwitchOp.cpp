@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Attributes.h>
@@ -98,6 +99,13 @@ LogicalResult IndexSwitchOp::verify() {
   if (getCases().size() != getNumCases()) {
     return emitOpError(
         "must have the same number of case values and case regions");
+  }
+
+  llvm::SmallDenseSet<int64_t, 4> uniqueCases;
+  for (const int64_t caseValue : getCases()) {
+    if (!uniqueCases.insert(caseValue).second) {
+      return emitOpError("case values must be unique");
+    }
   }
 
   const auto targets = getTargets();
