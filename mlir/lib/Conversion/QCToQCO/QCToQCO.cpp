@@ -116,6 +116,11 @@ struct LoweringState {
     DenseMap<Value, Value> currentRegisters;
   };
 
+  struct StructuredValues {
+    SmallVector<Value> qubits;
+    SmallVector<Value> memrefs;
+  };
+
   /// Per-region map from original QC qubit reference to its latest QCO SSA
   /// value.
   ///
@@ -138,6 +143,11 @@ struct LoweringState {
 
   /// Map from an operation to its used QC memrefs inside its regions
   DenseMap<Operation*, SetVector<Value>> regionRegisterMap;
+
+  /// Original QC value order for already-converted structured operations.
+  /// Kept separate from the legality maps above so converted SCF operations
+  /// remain legal.
+  DenseMap<Operation*, StructuredValues> structuredValues;
 
   /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
@@ -367,29 +377,34 @@ static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
   }
 }
 
-/** @brief Pushes a new modifier frame seeded with aliased target values with
- * registers */
-static void pushModifierFrameWithRegisters(LoweringState& state,
-                                           ValueRange qcTargets,
-                                           ValueRange memrefs,
-                                           ValueRange qcoTargets,
-                                           ValueRange tensors) {
-  auto& [yieldOrder, registers, currentQubits, currentRegisters] =
-      state.modifierFrames.emplace_back();
-  llvm::append_range(yieldOrder, qcTargets);
-  for (auto [qcTarget, qcoTarget] : llvm::zip_equal(qcTargets, qcoTargets)) {
-    currentQubits.try_emplace(qcTarget, qcoTarget);
-  }
-  llvm::append_range(registers, memrefs);
-  for (auto [memref, tensor] : llvm::zip_equal(memrefs, tensors)) {
-    currentRegisters.try_emplace(memref, tensor);
-  }
-}
-
 /** @brief Pops the active modifier frame after lowering its yield. */
 static void popModifierFrame(LoweringState& state) {
   assert(isInsideModifier(state) && "expected active modifier frame");
   state.modifierFrames.pop_back();
+}
+
+/** @brief Returns the structured parent whose quantum values a terminator
+ * yields. */
+[[nodiscard]] static Operation* structuredValueOwner(Operation* operation) {
+  if (isa<scf::YieldOp, scf::ConditionOp>(operation)) {
+    return operation->getParentOp();
+  }
+  return operation;
+}
+
+/** @brief Seeds region-local QCO mappings for structured-control-flow block
+ * arguments. */
+static void seedRegionMappings(LoweringState& state, Region& region,
+                               ValueRange qcQubits, ValueRange memrefs,
+                               ValueRange qcoQubits, ValueRange tensors) {
+  auto& qubitMap = state.qubitMap[&region];
+  for (auto [qcQubit, qcoQubit] : llvm::zip_equal(qcQubits, qcoQubits)) {
+    qubitMap[qcQubit] = qcoQubit;
+  }
+  auto& tensorMap = state.tensorMap[&region];
+  for (auto [memref, tensor] : llvm::zip_equal(memrefs, tensors)) {
+    tensorMap[memref] = tensor;
+  }
 }
 
 /**
@@ -405,7 +420,13 @@ static void insertQubitsBeforeOp(LoweringState& state, Operation* target,
     memrefs = currentModifierFrame(state).memrefs;
     anchor = target->getParentOp();
   } else {
-    llvm::append_range(memrefs, state.regionRegisterMap[target]);
+    auto* owner = structuredValueOwner(target);
+    if (const auto it = state.structuredValues.find(owner);
+        it != state.structuredValues.end()) {
+      llvm::append_range(memrefs, it->second.memrefs);
+    } else {
+      llvm::append_range(memrefs, state.regionRegisterMap[owner]);
+    }
     anchor = target;
   }
 
@@ -478,8 +499,15 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
     memrefs = frame.memrefs;
     qcQubits = frame.qcQubits;
   } else {
-    llvm::append_range(memrefs, state.regionRegisterMap[anchor]);
-    llvm::append_range(qcQubits, state.regionQubitMap[anchor]);
+    auto* owner = structuredValueOwner(anchor);
+    if (const auto it = state.structuredValues.find(owner);
+        it != state.structuredValues.end()) {
+      llvm::append_range(memrefs, it->second.memrefs);
+      llvm::append_range(qcQubits, it->second.qubits);
+    } else {
+      llvm::append_range(memrefs, state.regionRegisterMap[owner]);
+      llvm::append_range(qcQubits, state.regionQubitMap[owner]);
+    }
   }
 
   SmallVector<Value> qcoTargets;
@@ -487,6 +515,34 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
   llvm::append_range(qcoTargets, resolveMappedTensors(state, anchor, memrefs));
   llvm::append_range(qcoTargets, resolveMappedQubits(state, anchor, qcQubits));
   return qcoTargets;
+}
+
+/**
+ * @brief Creates scalar scratch storage that is allocated once in the enclosing
+ * function.
+ *
+ * Hoisting the allocation outside enclosing loops lets result-bearing
+ * `scf.if` operations communicate classical branch results without growing the
+ * stack on every iteration. Each syntactic conditional gets distinct storage,
+ * and structured control flow executes it sequentially.
+ */
+[[nodiscard]] static FailureOr<SmallVector<Value>>
+createHoistedScratchStorage(Operation* operation, TypeRange elementTypes,
+                            ConversionPatternRewriter& rewriter) {
+  auto function = operation->getParentOfType<func::FuncOp>();
+  if (!function || function.getBody().empty()) {
+    return failure();
+  }
+
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(&function.getBody().front());
+  SmallVector<Value> storage;
+  storage.reserve(elementTypes.size());
+  for (auto type : elementTypes) {
+    storage.push_back(memref::AllocaOp::create(rewriter, operation->getLoc(),
+                                               MemRefType::get({1}, type)));
+  }
+  return storage;
 }
 
 /**
@@ -1288,38 +1344,47 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
     // the ForOp
     insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
+    const auto numOriginalResults = op.getNumResults();
+    SmallVector<Value> initArgs(op.getInitArgs());
+    llvm::append_range(initArgs, qcoTargets);
 
     // Create the new ForOp
     auto newForOp =
         scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
-                           op.getUpperBound(), op.getStep(), qcoTargets);
+                           op.getUpperBound(), op.getStep(), initArgs);
 
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newForOp.getResults().take_front(numRegisters));
+                        newForOp.getResults()
+                            .drop_front(numOriginalResults)
+                            .take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
                        newForOp->getResults().take_back(numQubits));
 
-    // Move the the contents from the old block into the new block
+    // Move the contents from the old block into the new block
     auto& srcBlock = op.getRegion().front();
     auto& dstBlock = newForOp.getRegion().front();
     dstBlock.getOperations().splice(dstBlock.end(), srcBlock.getOperations());
-    rewriter.replaceAllUsesWith(op.getInductionVar(),
-                                newForOp.getInductionVar());
+    for (auto [oldArgument, newArgument] : llvm::zip_equal(
+             srcBlock.getArguments(),
+             dstBlock.getArguments().take_front(srcBlock.getNumArguments()))) {
+      rewriter.replaceAllUsesWith(oldArgument, newArgument);
+    }
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newForOp);
     extractQubitsAfterOp(state, operation, rewriter);
 
-    auto qubits = qubitMap.getArrayRef();
-    auto registers = registerMap.getArrayRef();
+    SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
+    SmallVector<Value> memrefs(registerMap.begin(), registerMap.end());
+    state.structuredValues[newForOp] = {.qubits = qubits, .memrefs = memrefs};
+    seedRegionMappings(state, newForOp.getRegion(), qubits, memrefs,
+                       dstBlock.getArguments().take_back(numQubits),
+                       dstBlock.getArguments()
+                           .drop_front(1 + numOriginalResults)
+                           .take_front(numRegisters));
 
-    // Push a new frame to the stack
-    pushModifierFrameWithRegisters(
-        state, qubits, registers,
-        dstBlock.getArguments().drop_front(1).take_back(numQubits),
-        dstBlock.getArguments().drop_front(1).take_front(numRegisters));
-
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op,
+                       newForOp.getResults().take_front(numOriginalResults));
 
     return success();
   }
@@ -1368,49 +1433,77 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     // the WhileOp
     insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
+    const auto numOriginalInits = op.getInits().size();
+    const auto numOriginalResults = op.getNumResults();
+    SmallVector<Value> initArgs(op.getInits());
+    llvm::append_range(initArgs, qcoTargets);
+    SmallVector<Type> resultTypes(op.getResultTypes());
+    llvm::append_range(resultTypes,
+                       llvm::map_range(qcoTargets, [](Value value) {
+                         return value.getType();
+                       }));
 
     // Create the new WhileOp
-    auto newWhileOp = scf::WhileOp::create(
-        rewriter, op.getLoc(), TypeRange(qcoTargets), ValueRange(qcoTargets));
+    auto newWhileOp =
+        scf::WhileOp::create(rewriter, op.getLoc(), resultTypes, initArgs);
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newWhileOp.getResults().take_front(numRegisters));
+                        newWhileOp.getResults()
+                            .drop_front(numOriginalResults)
+                            .take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
                        newWhileOp->getResults().take_back(numQubits));
 
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
 
-    const SmallVector locs(qcoTargets.size(), op->getLoc());
+    const SmallVector beforeLocs(initArgs.size(), op->getLoc());
+    const SmallVector afterLocs(resultTypes.size(), op->getLoc());
 
     // Create the new blocks and move the contents from the old blocks into the
     // new ones
     auto* newBeforeBlock = rewriter.createBlock(
-        &newBeforeRegion, {}, newWhileOp->getResultTypes(), locs);
+        &newBeforeRegion, {}, ValueRange(initArgs).getTypes(), beforeLocs);
     auto* newAfterBlock = rewriter.createBlock(
-        &newAfterRegion, {}, newWhileOp->getResultTypes(), locs);
+        &newAfterRegion, {}, TypeRange(resultTypes), afterLocs);
+    auto* oldBeforeBlock = op.getBeforeBody();
+    auto* oldAfterBlock = op.getAfterBody();
     newBeforeBlock->getOperations().splice(newBeforeBlock->end(),
-                                           op.getBeforeBody()->getOperations());
+                                           oldBeforeBlock->getOperations());
     newAfterBlock->getOperations().splice(newAfterBlock->end(),
-                                          op.getAfterBody()->getOperations());
+                                          oldAfterBlock->getOperations());
+    for (auto [oldArgument, newArgument] :
+         llvm::zip_equal(oldBeforeBlock->getArguments(),
+                         newBeforeBlock->getArguments().take_front(
+                             oldBeforeBlock->getNumArguments()))) {
+      rewriter.replaceAllUsesWith(oldArgument, newArgument);
+    }
+    for (auto [oldArgument, newArgument] :
+         llvm::zip_equal(oldAfterBlock->getArguments(),
+                         newAfterBlock->getArguments().take_front(
+                             oldAfterBlock->getNumArguments()))) {
+      rewriter.replaceAllUsesWith(oldArgument, newArgument);
+    }
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newWhileOp);
     extractQubitsAfterOp(state, operation, rewriter);
 
-    auto qubits = qubitMap.getArrayRef();
-    auto registers = registerMap.getArrayRef();
+    SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
+    SmallVector<Value> memrefs(registerMap.begin(), registerMap.end());
+    state.structuredValues[newWhileOp] = {.qubits = qubits, .memrefs = memrefs};
+    seedRegionMappings(state, newWhileOp.getBefore(), qubits, memrefs,
+                       newBeforeBlock->getArguments().take_back(numQubits),
+                       newBeforeBlock->getArguments()
+                           .drop_front(numOriginalInits)
+                           .take_front(numRegisters));
+    seedRegionMappings(state, newWhileOp.getAfter(), qubits, memrefs,
+                       newAfterBlock->getArguments().take_back(numQubits),
+                       newAfterBlock->getArguments()
+                           .drop_front(numOriginalResults)
+                           .take_front(numRegisters));
 
-    // Push the frames for the before and after region to the stack
-    pushModifierFrameWithRegisters(
-        state, qubits, registers,
-        newAfterBlock->getArguments().take_back(numQubits),
-        newAfterBlock->getArguments().take_front(numRegisters));
-    pushModifierFrameWithRegisters(
-        state, qubits, registers,
-        newBeforeBlock->getArguments().take_back(numQubits),
-        newBeforeBlock->getArguments().take_front(numRegisters));
-
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op,
+                       newWhileOp.getResults().take_front(numOriginalResults));
     return success();
   }
 };
@@ -1451,6 +1544,12 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     // the IfOp
     insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
+    auto scratch =
+        createHoistedScratchStorage(operation, op.getResultTypes(), rewriter);
+    if (failed(scratch)) {
+      return rewriter.notifyMatchFailure(
+          op, "result-bearing scf.if requires an automatic allocation scope");
+    }
 
     // Create the new IfOp
     auto newIfOp =
@@ -1479,16 +1578,32 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     thenBlock->getOperations().splice(
         thenBlock->end(), op.getThenRegion().front().getOperations());
 
-    auto qubits = qubitMap.getArrayRef();
-    auto registers = registerMap.getArrayRef();
+    const auto spillResults = [&](Block* block) {
+      auto yield = cast<scf::YieldOp>(block->getTerminator());
+      rewriter.setInsertionPoint(yield);
+      if (!scratch->empty()) {
+        auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+        for (auto [value, storage] :
+             llvm::zip_equal(yield.getResults(), *scratch)) {
+          memref::StoreOp::create(rewriter, op.getLoc(), value, storage,
+                                  ValueRange{index});
+        }
+      }
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(yield);
+    };
+    spillResults(thenBlock);
+
+    SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
+    SmallVector<Value> memrefs(registerMap.begin(), registerMap.end());
+    state.structuredValues[newIfOp] = {.qubits = qubits, .memrefs = memrefs};
 
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(
           elseBlock->end(), op.getElseRegion().front().getOperations());
-      pushModifierFrameWithRegisters(
-          state, qubits, registers,
-          elseBlock->getArguments().take_back(numQubits),
-          elseBlock->getArguments().take_front(numRegisters));
+      spillResults(elseBlock);
+      seedRegionMappings(state, newIfOp.getElseRegion(), qubits, memrefs,
+                         elseBlock->getArguments().take_back(numQubits),
+                         elseBlock->getArguments().take_front(numRegisters));
 
     } else {
       // If the else block is empty, just create the new qco::YieldOp
@@ -1496,12 +1611,21 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
       qco::YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
     }
 
-    pushModifierFrameWithRegisters(
-        state, qubits, registers,
-        thenBlock->getArguments().take_back(numQubits),
-        thenBlock->getArguments().take_front(numRegisters));
+    seedRegionMappings(state, newIfOp.getThenRegion(), qubits, memrefs,
+                       thenBlock->getArguments().take_back(numQubits),
+                       thenBlock->getArguments().take_front(numRegisters));
 
-    rewriter.eraseOp(op);
+    rewriter.setInsertionPointAfter(newIfOp);
+    SmallVector<Value> classicalResults;
+    classicalResults.reserve(scratch->size());
+    if (!scratch->empty()) {
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+      for (auto storage : *scratch) {
+        classicalResults.push_back(memref::LoadOp::create(
+            rewriter, op.getLoc(), storage, ValueRange{index}));
+      }
+    }
+    rewriter.replaceOp(op, classicalResults);
     return success();
   }
 };
@@ -1543,55 +1667,80 @@ struct ConvertSCFIndexSwitchOp final
     auto* operation = op.getOperation();
     auto& registerMap = state.regionRegisterMap[op];
     auto& qubitMap = state.regionQubitMap[op];
-
-    const auto qubits = qubitMap.getArrayRef();
-    const auto nqubits = qubits.size();
-    const auto registers = registerMap.getArrayRef();
-    const auto nregisters = registers.size();
+    const auto numRegisters = registerMap.size();
+    const auto numQubits = qubitMap.size();
 
     insertQubitsBeforeOp(state, operation, rewriter);
-
     const auto targets = resolveAllValues(state, operation);
     const auto results = ValueRange(targets).getTypes();
     const SmallVector locs(targets.size(), op.getLoc());
+    auto scratch =
+        createHoistedScratchStorage(operation, op.getResultTypes(), rewriter);
+    if (failed(scratch)) {
+      return rewriter.notifyMatchFailure(
+          op, "result-bearing scf.index_switch requires an automatic "
+              "allocation scope");
+    }
 
     auto newOp =
         IndexSwitchOp::create(rewriter, op.getLoc(), results, op.getArg(),
                               op.getCases(), targets, op.getNumCases());
 
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newOp.getResults().take_front(nregisters));
+                        newOp.getResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
-                       newOp.getResults().take_back(nqubits));
+                       newOp.getResults().take_back(numQubits));
 
     rewriter.setInsertionPointAfter(newOp);
     extractQubitsAfterOp(state, operation, rewriter);
 
+    SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
+    SmallVector<Value> memrefs(registerMap.begin(), registerMap.end());
+    state.structuredValues[newOp] = {.qubits = qubits, .memrefs = memrefs};
+
     const auto newCaseRegions = newOp.getCaseRegions();
     const auto oldCaseRegions = op.getCaseRegions();
     const auto buildRegion = [&](Region& oldRegion, Region& newRegion) {
-      Block* const oldBlock = &(*oldRegion.begin());
-      Block* const newBlock =
+      auto* oldBlock = &oldRegion.front();
+      auto* newBlock =
           rewriter.createBlock(&newRegion, {}, newOp.getResultTypes(), locs);
-      rewriter.inlineBlockBefore(oldBlock, newBlock, newBlock->begin());
+      newBlock->getOperations().splice(newBlock->end(),
+                                       oldBlock->getOperations());
 
-      const auto args = newBlock->getArguments();
-      pushModifierFrameWithRegisters(state, qubits, registers,
-                                     args.take_back(nqubits),
-                                     args.take_front(nregisters));
+      auto yield = cast<scf::YieldOp>(newBlock->getTerminator());
+      rewriter.setInsertionPoint(yield);
+      if (!scratch->empty()) {
+        auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+        for (auto [value, storage] :
+             llvm::zip_equal(yield.getResults(), *scratch)) {
+          memref::StoreOp::create(rewriter, op.getLoc(), value, storage,
+                                  ValueRange{index});
+        }
+      }
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(yield);
+
+      seedRegionMappings(state, newRegion, qubits, memrefs,
+                         newBlock->getArguments().take_back(numQubits),
+                         newBlock->getArguments().take_front(numRegisters));
     };
 
-    // Process regions and push frames in the correct order. The top-most stack
-    // element must be the default region (0th index) followed by the case
-    // regions.
-
-    for (size_t i = op.getNumCases(); i > 0; --i) {
-      buildRegion(oldCaseRegions[i - 1], newCaseRegions[i - 1]);
+    for (auto [oldRegion, newRegion] :
+         llvm::zip_equal(oldCaseRegions, newCaseRegions)) {
+      buildRegion(oldRegion, newRegion);
     }
     buildRegion(op.getDefaultRegion(), newOp.getDefaultRegion());
 
-    rewriter.eraseOp(op);
-
+    rewriter.setInsertionPointAfter(newOp);
+    SmallVector<Value> classicalResults;
+    classicalResults.reserve(scratch->size());
+    if (!scratch->empty()) {
+      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+      for (auto storage : *scratch) {
+        classicalResults.push_back(memref::LoadOp::create(
+            rewriter, op.getLoc(), storage, ValueRange{index}));
+      }
+    }
+    rewriter.replaceOp(op, classicalResults);
     return success();
   }
 };
@@ -1620,15 +1769,14 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     auto* operation = op.getOperation();
 
     insertQubitsBeforeOp(state, op.getOperation(), rewriter);
-    SmallVector<Value> targets = resolveAllValues(state, operation);
+    SmallVector<Value> targets(op.getResults());
+    llvm::append_range(targets, resolveAllValues(state, operation));
 
     if (isa<IfOp, IndexSwitchOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
     } else {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
     }
-
-    popModifierFrame(state);
 
     return success();
   }
@@ -1658,12 +1806,11 @@ struct ConvertSCFConditionOp final
     auto* operation = op.getOperation();
 
     insertQubitsBeforeOp(state, op.getOperation(), rewriter);
-    SmallVector<Value> targets = resolveAllValues(state, operation);
+    SmallVector<Value> targets(op.getArgs());
+    llvm::append_range(targets, resolveAllValues(state, operation));
 
     rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
                                                   targets);
-    popModifierFrame(state);
-
     return success();
   }
 };
@@ -1723,34 +1870,21 @@ protected:
       auto& regionTensorMap = state.regionRegisterMap[op];
       return regionQubitMap.empty() && regionTensorMap.empty();
     });
-    target.addDynamicallyLegalOp<scf::YieldOp, scf::ConditionOp>(
-        [](Operation* op) {
-          auto* parentOp = op->getParentOp();
-          auto isQCOType = [](Type t) {
-            return TypeSwitch<Type, bool>(t)
-                .Case<qco::QubitType>([](auto) { return true; })
-                .Case<RankedTensorType>([](RankedTensorType t) {
-                  return isa<qco::QubitType>(t.getElementType());
-                })
-                .Default([](auto) { return false; });
-          };
-
-          const auto parentHasQubitTypes =
-              llvm::any_of(parentOp->getOperandTypes(), isQCOType);
-          const auto terminatorHasQubitTypes =
-              llvm::any_of(op->getOperandTypes(), isQCOType);
-          return !parentHasQubitTypes || terminatorHasQubitTypes;
-        });
+    // Structured terminators are lowered in a second conversion phase. The
+    // first phase must finish converting every operation in a region so the
+    // region-local maps contain the final QCO values that the terminator has
+    // to yield. Converting terminators in the same worklist would make the
+    // result depend on dialect-conversion traversal order.
+    target.addLegalOp<scf::YieldOp, scf::ConditionOp>();
 
     // Register operation conversion patterns with state tracking.
-    patterns
-        .add<ConvertSCFForOp, ConvertSCFYieldOp, ConvertSCFWhileOp,
-             ConvertSCFIfOp, ConvertSCFIndexSwitchOp, ConvertSCFConditionOp,
-             ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
-             ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
-             ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
-             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp>(
-            typeConverter, context, &state);
+    patterns.add<ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
+                 ConvertSCFIndexSwitchOp, ConvertMemRefAllocOp,
+                 ConvertMemRefLoadOp, ConvertMemRefDeallocOp, ConvertQCAllocOp,
+                 ConvertQCDeallocOp, ConvertQCStaticOp, ConvertQCMeasureOp,
+                 ConvertQCResetOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
+                 ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp>(
+        typeConverter, context, &state);
 
     // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
@@ -1793,8 +1927,38 @@ protected:
     // Conversion of qc types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
-    // Apply the conversion
+    // Convert structured parents and their contents first.
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+      signalPassFailure();
+      return;
+    }
+
+    ConversionTarget terminatorTarget(*context);
+    terminatorTarget.markUnknownOpDynamicallyLegal(
+        [](Operation*) { return true; });
+    terminatorTarget.addDynamicallyLegalOp<scf::YieldOp, scf::ConditionOp>(
+        [&](Operation* op) {
+          auto* parentOp = op->getParentOp();
+          if (!state.structuredValues.contains(parentOp)) {
+            return true;
+          }
+
+          if (auto condition = dyn_cast<scf::ConditionOp>(op)) {
+            return llvm::equal(condition.getArgs().getTypes(),
+                               parentOp->getResultTypes());
+          }
+          if (auto whileOp = dyn_cast<scf::WhileOp>(parentOp)) {
+            return llvm::equal(op->getOperandTypes(),
+                               whileOp.getInits().getTypes());
+          }
+          return llvm::equal(op->getOperandTypes(), parentOp->getResultTypes());
+        });
+
+    RewritePatternSet terminatorPatterns(context);
+    terminatorPatterns.add<ConvertSCFYieldOp, ConvertSCFConditionOp>(
+        typeConverter, context, &state);
+    if (failed(applyPartialConversion(module, terminatorTarget,
+                                      std::move(terminatorPatterns)))) {
       signalPassFailure();
     }
   }
