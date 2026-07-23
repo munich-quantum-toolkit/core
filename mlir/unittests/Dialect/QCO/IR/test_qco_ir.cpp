@@ -23,6 +23,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -260,6 +261,56 @@ TEST_F(QCOTest, IndexSwitchParser) {
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
+}
+
+TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto identity = [](ValueRange args) {
+    return llvm::to_vector(args);
+  };
+  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+      identity, identity};
+
+  const auto q0 = builder.allocQubit();
+  auto result = builder.qcoIndexSwitch(
+      1, q0, SmallVector<int64_t>{0, 1}, caseBodies, identity);
+  builder.sink(result.front());
+  [[maybe_unused]] auto module = builder.finalize();
+
+  auto switchOp = result.front().getDefiningOp<IndexSwitchOp>();
+  ASSERT_TRUE(switchOp);
+
+  const auto checkConstant = [&](const int64_t value, Region* expectedRegion,
+                                 const size_t expectedRegionIndex) {
+    SmallVector<Attribute> operands(switchOp->getNumOperands());
+    operands.front() = builder.getIndexAttr(value);
+
+    SmallVector<RegionSuccessor> successors;
+    switchOp.getEntrySuccessorRegions(operands, successors);
+    ASSERT_EQ(successors.size(), 1);
+    EXPECT_EQ(successors.front().getSuccessor(), expectedRegion);
+
+    SmallVector<InvocationBounds> bounds;
+    switchOp.getRegionInvocationBounds(operands, bounds);
+    ASSERT_EQ(bounds.size(), switchOp->getNumRegions());
+    for (const auto [index, bound] : llvm::enumerate(bounds)) {
+      EXPECT_EQ(bound.getLowerBound(), 0);
+      ASSERT_TRUE(bound.getUpperBound().has_value());
+      EXPECT_EQ(*bound.getUpperBound(), index == expectedRegionIndex ? 1 : 0);
+    }
+  };
+
+  checkConstant(0, &switchOp.getCaseRegions()[0], 1);
+  checkConstant(1, &switchOp.getCaseRegions()[1], 2);
+  checkConstant(2, &switchOp.getDefaultRegion(), 0);
+
+  switchOp->setAttr(
+      "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0}));
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(switchOp.verify().failed());
 }
 
 /// \name QCO/SCF/IfOp.cpp

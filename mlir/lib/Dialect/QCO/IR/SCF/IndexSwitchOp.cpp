@@ -62,7 +62,7 @@ void IndexSwitchOp::getRegionInvocationBounds(
   const auto nregions = getNumRegions();
   const auto* it = llvm::find(getCases(), arg.getInt());
   const auto liveIndex = it != getCases().end()
-                             ? std::distance(getCases().begin(), it)
+                             ? std::distance(getCases().begin(), it) + 1
                              : 0; // Default region.
 
   for (size_t i = 0; i < nregions; ++i) {
@@ -85,14 +85,21 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   // default region is the only successor.
 
   const auto* it = llvm::find(getCases(), arg.getInt());
-  const auto liveIndex = it != getCases().end()
-                             ? std::distance(getCases().begin(), it)
-                             : 0; // Default region.
+  if (it == getCases().end()) {
+    regions.emplace_back(&getDefaultRegion());
+    return;
+  }
 
-  regions.emplace_back(&getRegion(liveIndex));
+  const auto caseIndex = std::distance(getCases().begin(), it);
+  regions.emplace_back(&getCaseRegions()[caseIndex]);
 }
 
 LogicalResult IndexSwitchOp::verify() {
+  if (getCases().size() != getNumCases()) {
+    return emitOpError(
+        "must have the same number of case values and case regions");
+  }
+
   const auto targets = getTargets();
   const auto ntargets = targets.size();
   const auto results = getResults();
