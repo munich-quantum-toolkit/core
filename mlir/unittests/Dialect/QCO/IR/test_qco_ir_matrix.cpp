@@ -377,7 +377,7 @@ TEST_F(QCOMatrixTest, ComposeBodyMatrixHandlesNestedPower) {
   ASSERT_TRUE(body);
   const DynamicMatrix expected(ZOp::getUnitaryMatrix() *
                                SXOp::getUnitaryMatrix());
-  EXPECT_TRUE(body->isApprox(expected, 1e-10));
+  EXPECT_TRUE(body->isApprox(expected));
 }
 /// @}
 
@@ -398,7 +398,7 @@ TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
   const auto body = powOp.getBodyUnitary(0).getUnitaryMatrix<DynamicMatrix>();
   ASSERT_TRUE(body.has_value());
   const DynamicMatrix expected = *body * *body;
-  ASSERT_TRUE(matrix->isApprox(expected, 1e-10));
+  ASSERT_TRUE(matrix->isApprox(expected));
 }
 
 TEST_F(QCOMatrixTest, PowMatrixAvailabilityContract) {
@@ -443,7 +443,7 @@ TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {
   ASSERT_TRUE(matrix.has_value());
 
   // X^0.5 == SX (principal branch: (-1)^0.5 = i).
-  ASSERT_TRUE(matrix->isApprox(SXOp::getUnitaryMatrix(), 1e-10));
+  ASSERT_TRUE(matrix->isApprox(SXOp::getUnitaryMatrix()));
 }
 
 TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
@@ -456,7 +456,7 @@ TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
   ASSERT_TRUE(matrix.has_value());
 
   // X^-0.5 == SXdg (principal branch: (-1)^-0.5 = -i).
-  ASSERT_TRUE(matrix->isApprox(SXdgOp::getUnitaryMatrix(), 1e-10));
+  ASSERT_TRUE(matrix->isApprox(SXdgOp::getUnitaryMatrix()));
 }
 
 TEST_F(QCOMatrixTest, PowThirdXOpMatrix) {
@@ -470,7 +470,7 @@ TEST_F(QCOMatrixTest, PowThirdXOpMatrix) {
 
   // Fractional power: (X^(1/3))^3 == X.
   const DynamicMatrix cubed = *matrix * *matrix * *matrix;
-  ASSERT_TRUE(cubed.isApprox(XOp::getUnitaryMatrix(), 1e-10));
+  ASSERT_TRUE(cubed.isApprox(XOp::getUnitaryMatrix()));
 }
 
 TEST_F(QCOMatrixTest, NestedPowAcrossBranchCutMatrixIsIdentity) {
@@ -481,7 +481,7 @@ TEST_F(QCOMatrixTest, NestedPowAcrossBranchCutMatrixIsIdentity) {
   auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
   const auto matrix = powOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
-  EXPECT_TRUE(matrix->isApprox(DynamicMatrix::identity(2), 1e-10));
+  EXPECT_TRUE(matrix->isApprox(DynamicMatrix::identity(2)));
 }
 /// @}
 
