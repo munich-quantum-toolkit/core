@@ -8,19 +8,18 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Package.hpp"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -50,13 +49,7 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-using ProgramFn = SmallVector<Value> (*)(mlir::qc::QCProgramBuilder&);
-
-static SmallVector<Value> measureAndReturn(mlir::qc::QCProgramBuilder& b,
-                                           ValueRange qubits) {
-  return llvm::to_vector(
-      llvm::map_range(qubits, [&](Value q) { return b.measure(q); }));
-}
+using ProgramFn = Value (*)(mlir::qc::QCProgramBuilder&);
 
 // --- Native-gateset membership check ------------------------------------- //
 
@@ -85,168 +78,31 @@ static bool allOpsNative(OwningOpRef<ModuleOp>& moduleOp,
   return ok;
 }
 
-// --- Reference unitary reconstruction ------------------------------------ //
+// --- DD-based equivalence ------------------------------------------------ //
 
-static std::optional<Value> unitaryQubit(Value v, size_t index,
-                                         size_t numQubits) {
-  if (index >= numQubits || !isa<QubitType>(v.getType())) {
-    return std::nullopt;
-  }
-  return v;
+[[nodiscard]] static func::FuncOp mainFunc(ModuleOp module) {
+  return *module.getBody()->getOps<func::FuncOp>().begin();
 }
 
-static std::optional<Value> unitaryQubitOperand(UnitaryOpInterface op,
-                                                size_t index) {
-  return unitaryQubit(op->getOperand(index), index, op.getNumQubits());
-}
-
-static std::optional<Value> unitaryQubitResult(UnitaryOpInterface op,
-                                               size_t index) {
-  return unitaryQubit(op->getResult(index), index, op.getNumQubits());
-}
-
-static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
-  if (op.getUnitaryMatrix2x2(out)) {
-    return true;
-  }
-  DynamicMatrix dynamic;
-  if (!op.getUnitaryMatrixDynamic(dynamic) || dynamic.rows() != 2 ||
-      dynamic.cols() != 2) {
-    return false;
-  }
-  out = Matrix2x2::fromElements(dynamic(0, 0), dynamic(0, 1), dynamic(1, 0),
-                                dynamic(1, 1));
-  return true;
-}
-
-static bool extractTwoQubitMatrix(UnitaryOpInterface op, Matrix4x4& out) {
-  if (auto ctrl = dyn_cast<CtrlOp>(op.getOperation());
-      ctrl && (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1)) {
-    return false;
-  }
-  return op.getUnitaryMatrix4x4(out);
-}
-
-static std::optional<DynamicMatrix>
-computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
-  ModuleOp module = moduleOp.get();
-  if (!module) {
-    return std::nullopt;
-  }
-
-  DenseMap<Value, size_t> qubitIds;
-  size_t nextQubitId = 0;
+[[nodiscard]] static size_t countStaticQubits(func::FuncOp func) {
   size_t numQubits = 0;
+  for (StaticOp staticOp : func.getOps<StaticOp>()) {
+    numQubits =
+        std::max(numQubits, static_cast<size_t>(staticOp.getIndex()) + 1);
+  }
+  return numQubits;
+}
 
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        if (auto staticOp = dyn_cast<StaticOp>(&rawOp)) {
-          const auto index = static_cast<size_t>(staticOp.getIndex());
-          qubitIds.try_emplace(staticOp.getQubit(), index);
-          numQubits = std::max(numQubits, index + 1);
-        } else if (auto alloc = dyn_cast<AllocOp>(&rawOp)) {
-          qubitIds.try_emplace(alloc.getResult(), nextQubitId++);
-          numQubits = std::max(numQubits, nextQubitId);
-        }
-      }
+[[nodiscard]] static DynamicMatrix matrixFromDD(const dd::CMat& matrix) {
+  const auto dim = static_cast<int64_t>(matrix.size());
+  DynamicMatrix out(dim);
+  for (int64_t row = 0; row < dim; ++row) {
+    for (int64_t col = 0; col < dim; ++col) {
+      out(row, col) =
+          matrix[static_cast<size_t>(row)][static_cast<size_t>(col)];
     }
   }
-
-  if (numQubits == 0) {
-    return std::nullopt;
-  }
-
-  DynamicMatrix unitary =
-      DynamicMatrix::identity(static_cast<int64_t>(1ULL << numQubits));
-  Complex globalPhase{1.0, 0.0};
-
-  auto getQubitId = [&](Value qubit) -> std::optional<size_t> {
-    const auto it = qubitIds.find(qubit);
-    if (it == qubitIds.end()) {
-      return std::nullopt;
-    }
-    return it->second;
-  };
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        auto op = dyn_cast<UnitaryOpInterface>(&rawOp);
-        if (!op) {
-          continue;
-        }
-        if (isa<BarrierOp>(op.getOperation())) {
-          // A barrier is an identity on its wires, but it still threads qubit
-          // values, so carry each input's id over to the matching output.
-          for (size_t i = 0; i < op.getNumQubits(); ++i) {
-            if (const auto id = getQubitId(op->getOperand(i))) {
-              qubitIds[op->getResult(i)] = *id;
-            }
-          }
-          continue;
-        }
-        if (auto gphase = dyn_cast<GPhaseOp>(op.getOperation())) {
-          if (const auto matrix = gphase.getUnitaryMatrix()) {
-            globalPhase *= (*matrix)(0, 0);
-          }
-          continue;
-        }
-
-        if (op.isSingleQubit()) {
-          const auto qIn = unitaryQubitOperand(op, 0);
-          if (!qIn) {
-            return std::nullopt;
-          }
-          const auto qid = getQubitId(*qIn);
-          if (!qid) {
-            return std::nullopt;
-          }
-          Matrix2x2 oneQ;
-          if (!extractSingleQubitMatrix(op, oneQ)) {
-            return std::nullopt;
-          }
-          unitary = oneQ.embedInNqubit(numQubits, *qid) * unitary;
-          const auto qOut = unitaryQubitResult(op, 0);
-          if (!qOut) {
-            return std::nullopt;
-          }
-          qubitIds[*qOut] = *qid;
-          continue;
-        }
-
-        if (op.isTwoQubit()) {
-          const auto q0In = unitaryQubitOperand(op, 0);
-          const auto q1In = unitaryQubitOperand(op, 1);
-          if (!q0In || !q1In) {
-            return std::nullopt;
-          }
-          const auto q0id = getQubitId(*q0In);
-          const auto q1id = getQubitId(*q1In);
-          if (!q0id || !q1id) {
-            return std::nullopt;
-          }
-          Matrix4x4 twoQ;
-          if (!extractTwoQubitMatrix(op, twoQ)) {
-            return std::nullopt;
-          }
-          unitary = twoQ.embedInNqubit(numQubits, *q0id, *q1id) * unitary;
-          const auto q0Out = unitaryQubitResult(op, 0);
-          const auto q1Out = unitaryQubitResult(op, 1);
-          if (!q0Out || !q1Out) {
-            return std::nullopt;
-          }
-          qubitIds[*q0Out] = *q0id;
-          qubitIds[*q1Out] = *q1id;
-          continue;
-        }
-
-        return std::nullopt;
-      }
-    }
-  }
-
-  return globalPhase * unitary;
+  return out;
 }
 
 // --- Expressive circuits -------------------------------------------------- //
@@ -254,17 +110,17 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
 // A handful of circuits, which are crossed with the gateset table below.
 
 /// A bare SWAP (three-entangler class), the canonical two-qubit decomposition.
-static SmallVector<Value> swapTwoQ(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value swapTwoQ(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.swap(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// Rich single-qubit variety on both wires, followed by a two-qubit entangler.
-static SmallVector<Value> broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.x(q0);
   b.y(q1);
   b.h(q0);
@@ -273,73 +129,73 @@ static SmallVector<Value> broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
   b.ry(-0.47, q1);
   b.rz(0.29, q0);
   b.cz(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// Long single-qubit run on one wire, then an entangler (Euler-run fusion).
-static SmallVector<Value> hstycxTwoQ(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value hstycxTwoQ(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.h(q0);
   b.s(q0);
   b.t(q0);
   b.y(q0);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// Zero-angle rotations that must canonicalize away before the entangler.
-static SmallVector<Value> zeroAngleThenCz(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value zeroAngleThenCz(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.rx(0.0, q0);
   b.ry(0.0, q1);
   b.rz(0.0, q0);
   b.p(0.0, q1);
   b.cz(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// Single-qubit gates surrounding an entangler on both sides.
-static SmallVector<Value> hCxSq1(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value hCxSq1(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.h(q0);
   b.cx(q0, q1);
   b.s(q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// Three-qubit program with chained entanglers on overlapping pairs.
-static SmallVector<Value> threeQGhz(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  const auto q2 = b.allocQubit();
+static Value threeQGhz(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
+  const auto q2 = b.staticQubit(2);
   b.h(q0);
   b.cx(q0, q1);
   b.cx(q1, q2);
-  return measureAndReturn(b, {q0, q1, q2});
+  return b.intConstant(0);
 }
 
 /// Single-qubit gates wrapped in an inverse modifier (no entangler).
-static SmallVector<Value> inverseTwoX(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
+static Value inverseTwoX(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
   b.inv(q0, [&](Value qubit) {
     b.x(qubit);
     b.x(qubit);
   });
-  return measureAndReturn(b, {q0});
+  return b.intConstant(0);
 }
 
 /// A controlled two-gate body that must be synthesized as a two-qubit unitary.
-static SmallVector<Value> controlledXH(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value controlledXH(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.ctrl(q0, q1, [&](Value target) {
     b.x(target);
     b.h(target);
   });
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 // --- Fusion-window circuits ---------------------------------------------- //
@@ -347,111 +203,105 @@ static SmallVector<Value> controlledXH(mlir::qc::QCProgramBuilder& b) {
 // These probe window geometry (where fusion starts/stops), so they run on a
 // single fixed gateset rather than the full table.
 
-static SmallVector<Value> fusionCxCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionCxCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value>
-fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.h(q0);
   b.cx(q0, q1);
   b.t(q1);
   b.s(q0);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value> fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  const auto q2 = b.allocQubit();
+static Value fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
+  const auto q2 = b.staticQubit(2);
   b.cx(q0, q1);
   b.cx(q1, q2);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1, q2});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value>
-fusionCxRSharedOtherPair(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  const auto q2 = b.allocQubit();
+static Value fusionCxRSharedOtherPair(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
+  const auto q2 = b.staticQubit(2);
   b.cx(q0, q1);
   b.rz(0.17, q1);
   b.cx(q1, q2);
-  return measureAndReturn(b, {q0, q1, q2});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value> fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
   b.barrier({q0, q1});
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// A single-wire barrier between two entanglers: a non-walkable single-qubit
 /// shell terminates the run scan on wire A (and breaks the run-start chain of
 /// the second entangler), so neither entangler fuses.
-static SmallVector<Value>
-fusionCxSingleWireBarrierCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionCxSingleWireBarrierCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
   b.barrier({q0});
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 /// An entangler followed by a three-qubit gate sharing both run wires: the run
 /// scan must stop at the wider gate (it is neither a single- nor a two-qubit
 /// run member) and leave it untouched, since gates on more than two qubits are
 /// out of scope for this pass rather than a failure.
-static SmallVector<Value>
-fusionCxThenMultiControlledX(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  const auto q2 = b.allocQubit();
+static Value fusionCxThenMultiControlledX(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
+  const auto q2 = b.staticQubit(2);
   b.cx(q0, q1);
   b.mcx({q0, q1}, q2);
-  return measureAndReturn(b, {q0, q1, q2});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value> fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
   b.cx(q1, q0);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value>
-fusionOffMenuGateInWindow(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionOffMenuGateInWindow(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
   b.h(q0);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
-static SmallVector<Value>
-fusionDualWireOneQBetweenCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
+static Value fusionDualWireOneQBetweenCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
   b.rz(0.11, q0);
   b.ry(0.22, q1);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return b.intConstant(0);
 }
 
 static Value determinismSwap(mlir::qc::QCProgramBuilder& b) {
@@ -542,11 +392,23 @@ protected:
 
   static void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
                                          const OwningOpRef<ModuleOp>& rhs) {
-    const auto lhsUnitary = computeUnitaryFromQcoModule(lhs);
-    ASSERT_TRUE(lhsUnitary.has_value());
-    const auto rhsUnitary = computeUnitaryFromQcoModule(rhs);
-    ASSERT_TRUE(rhsUnitary.has_value());
-    EXPECT_TRUE(lhsUnitary->isApprox(*rhsUnitary));
+    const auto lhsFunc = mainFunc(*lhs);
+    const auto rhsFunc = mainFunc(*rhs);
+    const auto numQubits = countStaticQubits(lhsFunc);
+    ASSERT_EQ(numQubits, countStaticQubits(rhsFunc));
+    ASSERT_GT(numQubits, 0U);
+
+    auto dd = std::make_unique<dd::Package>(numQubits);
+    const auto lhsUnitary = buildFunctionality(lhsFunc, *dd);
+    ASSERT_TRUE(succeeded(lhsUnitary));
+    const auto rhsUnitary = buildFunctionality(rhsFunc, *dd);
+    ASSERT_TRUE(succeeded(rhsUnitary));
+
+    const auto lhsMatrix = matrixFromDD(lhsUnitary->getMatrix(numQubits));
+    const auto rhsMatrix = matrixFromDD(rhsUnitary->getMatrix(numQubits));
+    dd->decRef(*lhsUnitary);
+    dd->decRef(*rhsUnitary);
+    EXPECT_TRUE(lhsMatrix.isApprox(rhsMatrix));
   }
 
   void expectEquivalentAndNativeAfterSynthesis(ProgramFn program,
@@ -570,8 +432,9 @@ protected:
     EXPECT_TRUE(failed(pm.run(*moduleOp)));
   }
 
-  void expectSynthesisFailure(Value (*program)(mlir::qc::QCProgramBuilder&),
-                              StringRef nativeGates) {
+  void expectSynthesisFailure(
+      SmallVector<Value> (*program)(mlir::qc::QCProgramBuilder&),
+      StringRef nativeGates) {
     auto moduleOp = mlir::qc::QCProgramBuilder::build(context.get(), program);
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());

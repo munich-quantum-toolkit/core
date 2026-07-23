@@ -61,6 +61,27 @@ void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   }
 }
 
+void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                 Value condition, Value input,
+                 function_ref<Value(Value)> thenBuilder,
+                 function_ref<Value(Value)> elseBuilder) {
+  build(odsBuilder, odsState, input.getType(), condition, input);
+
+  auto& thenBlock = odsState.regions.front()->emplaceBlock();
+  auto& elseBlock = odsState.regions.back()->emplaceBlock();
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  const auto location = odsState.location;
+  auto thenArgument = thenBlock.addArgument(input.getType(), location);
+  odsBuilder.setInsertionPointToStart(&thenBlock);
+  YieldOp::create(odsBuilder, location, thenBuilder(thenArgument));
+
+  auto elseArgument = elseBlock.addArgument(input.getType(), location);
+  odsBuilder.setInsertionPointToStart(&elseBlock);
+  YieldOp::create(odsBuilder, location,
+                  elseBuilder ? elseBuilder(elseArgument) : elseArgument);
+}
+
 // Adjusted from
 // https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
 

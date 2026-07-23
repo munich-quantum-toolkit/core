@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Package.hpp"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -46,8 +47,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-
-using QubitId = std::size_t;
 
 static constexpr Matrix4x4 TWO_QUBIT_CONTROLLED_X01 =
     Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
@@ -439,99 +438,21 @@ struct Synthesized2QCircuit {
 
 } // namespace
 
-[[nodiscard]] static std::optional<QubitId>
-lookupWireId(const llvm::DenseMap<Value, QubitId>& wireIds, Value wire) {
-  if (const auto it = wireIds.find(wire); it != wireIds.end()) {
-    return it->second;
-  }
-  return std::nullopt;
-}
-
-[[nodiscard]] static std::optional<Matrix4x4>
-embeddedStepOnWires(UnitaryOpInterface op, QubitId q0,
-                    std::optional<QubitId> q1) {
-  if (op.isSingleQubit()) {
-    Matrix2x2 matrix;
-    if (!op.getUnitaryMatrix2x2(matrix)) {
-      return std::nullopt;
-    }
-    return matrix.embedInTwoQubit(q0);
-  }
-  if (!q1.has_value()) {
-    return std::nullopt;
-  }
-  Matrix4x4 matrix;
-  if (!op.getUnitaryMatrix4x4(matrix)) {
-    return std::nullopt;
-  }
-  return matrix.reorderForQubits(q0, *q1);
-}
-
-static std::optional<Matrix4x4>
+[[nodiscard]] static FailureOr<Matrix4x4>
 computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
-  Matrix4x4 unitary = Matrix4x4::identity();
-  Complex global{1.0, 0.0};
-  llvm::DenseMap<Value, QubitId> wireIds;
-  wireIds[funcOp.getArgument(0)] = 0;
-  wireIds[funcOp.getArgument(1)] = 1;
-
-  for (Operation& op : funcOp.getBody().front()) {
-    if (isa<arith::ConstantOp>(op)) {
-      continue;
-    }
-
-    if (auto returnOp = dyn_cast<func::ReturnOp>(op)) {
-      if (returnOp.getNumOperands() != 2) {
-        return std::nullopt;
-      }
-      const auto out0 = lookupWireId(wireIds, returnOp.getOperand(0));
-      const auto out1 = lookupWireId(wireIds, returnOp.getOperand(1));
-      if (!out0.has_value() || !out1.has_value() || *out0 != 0 || *out1 != 1) {
-        return std::nullopt;
-      }
-      continue;
-    }
-
-    if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-      if (const auto matrix = gphase.getUnitaryMatrix()) {
-        global *= (*matrix)(0, 0);
-      }
-      continue;
-    }
-
-    auto unitaryOp = dyn_cast<UnitaryOpInterface>(op);
-    if (!unitaryOp) {
-      return std::nullopt;
-    }
-
-    const auto q0 = lookupWireId(wireIds, unitaryOp.getInputQubit(0));
-    if (!q0.has_value()) {
-      return std::nullopt;
-    }
-    std::optional<QubitId> q1;
-    if (unitaryOp.isTwoQubit()) {
-      q1 = lookupWireId(wireIds, unitaryOp.getInputQubit(1));
-      if (!q1.has_value()) {
-        return std::nullopt;
-      }
-    } else if (!unitaryOp.isSingleQubit()) {
-      return std::nullopt;
-    }
-
-    const auto step = embeddedStepOnWires(unitaryOp, *q0, q1);
-    if (!step.has_value()) {
-      return std::nullopt;
-    }
-    unitary.premultiplyBy(*step);
-
-    wireIds[unitaryOp.getOutputQubit(0)] = *q0;
-    if (q1.has_value()) {
-      wireIds[unitaryOp.getOutputQubit(1)] = *q1;
-    }
+  auto dd = std::make_unique<dd::Package>(2);
+  auto u = buildFunctionality(funcOp, *dd);
+  if (failed(u)) {
+    return failure();
   }
-
-  unitary *= global;
-  return unitary;
+  // `getMatrix` is DD/LSB-first; QCO is MSB-first — index `1↔2` swaps the
+  // middle basis states (`|01>` ↔ `|10>`).
+  const auto& m = u->getMatrix(2);
+  const Matrix4x4 matrix = Matrix4x4::fromElements(
+      m[0][0], m[0][2], m[0][1], m[0][3], m[2][0], m[2][2], m[2][1], m[2][3],
+      m[1][0], m[1][2], m[1][1], m[1][3], m[3][0], m[3][2], m[3][1], m[3][3]);
+  dd->decRef(*u);
+  return matrix;
 }
 
 [[nodiscard]] static Synthesized2QCircuit
@@ -565,7 +486,7 @@ static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   const auto circuit = synthesize2QMatrix(ctx, target, spec);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   const auto actual = computeTwoQubitUnitaryFromFunc(circuit.func);
-  ASSERT_TRUE(actual.has_value());
+  ASSERT_TRUE(succeeded(actual));
   EXPECT_TRUE(actual->isApprox(target, WEYL_TOLERANCE));
 }
 
@@ -662,9 +583,9 @@ TEST_F(NativeGatesetMlirTest, ReconstructionRejectsUnhandledOps) {
   builder.setInsertionPointToStart(entry);
   Value q0 = entry->getArgument(0);
   Value q1 = entry->getArgument(1);
-  BarrierOp::create(builder, loc, ValueRange{q0, q1});
-  func::ReturnOp::create(builder, loc, ValueRange{q0, q1});
-  EXPECT_FALSE(computeTwoQubitUnitaryFromFunc(func).has_value());
+  auto meas = MeasureOp::create(builder, loc, q0);
+  func::ReturnOp::create(builder, loc, ValueRange{meas.getQubitOut(), q1});
+  EXPECT_TRUE(failed(computeTwoQubitUnitaryFromFunc(func)));
 }
 
 TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEulerBasis) {
