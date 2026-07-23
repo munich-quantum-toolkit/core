@@ -43,7 +43,6 @@
 #include <cassert>
 #include <cstdint>
 #include <utility>
-#include <variant>
 
 namespace mlir {
 
