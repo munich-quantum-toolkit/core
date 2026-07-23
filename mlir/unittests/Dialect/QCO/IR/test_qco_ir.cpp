@@ -125,12 +125,9 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
   auto q1 = HOp::create(builder, extractOp.getResult());
   auto measureOp = MeasureOp::create(builder, q1);
-  auto ifOp =
-      IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
-                   [&](ValueRange qubits) -> SmallVector<Value> {
-                     auto innerQubit = XOp::create(builder, qubits[0]);
-                     return SmallVector<Value>{innerQubit};
-                   });
+  auto ifOp = IfOp::create(
+      builder, measureOp.getResult(), measureOp.getQubitOut(),
+      [&](Value qubit) -> Value { return {XOp::create(builder, qubit)}; });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
   auto r2 = qtensor::InsertOp::create(builder, finalMeasureOp.getQubitOut(),
                                       extractOp.getOutTensor(), c0);
@@ -210,6 +207,8 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(ifTwoQubits)},
         QCOTestCase{"IfElse", MQT_NAMED_BUILDER(ifElse),
                     MQT_NAMED_BUILDER(ifElse)},
+        QCOTestCase{"OneTensorIf", MQT_NAMED_BUILDER(ifOneTensor),
+                    MQT_NAMED_BUILDER(x)},
         QCOTestCase{"ConstantTrueIf", MQT_NAMED_BUILDER(constantTrueIf),
                     MQT_NAMED_BUILDER(x)},
         QCOTestCase{"ConstantFalseIf", MQT_NAMED_BUILDER(constantFalseIf),
@@ -1190,6 +1189,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithInv)},
         QCOTestCase{"DeadGateElimination", MQT_NAMED_BUILDER(deadGatesProgram),
                     MQT_NAMED_BUILDER(alloc2Qubits)},
+        QCOTestCase{"DeadGateEliminationReset",
+                    MQT_NAMED_BUILDER(deadGatesResetProgram),
+                    MQT_NAMED_BUILDER(allocQubit)},
         QCOTestCase{"DeadGateEliminationIfOp",
                     MQT_NAMED_BUILDER(deadGatesWithIfOpProgram),
                     MQT_NAMED_BUILDER(deadGatesWithIfOpSimplified)},

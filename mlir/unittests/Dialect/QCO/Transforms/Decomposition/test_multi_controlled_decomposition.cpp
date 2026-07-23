@@ -20,6 +20,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
@@ -35,12 +36,12 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -174,6 +175,34 @@ static void appendRCCXElementaryOnQubits(qc::QuantumComputation& qc,
   qc.h(target);
 }
 
+[[nodiscard]] static std::size_t countStaticQubits(func::FuncOp funcOp) {
+  std::size_t numQubits = 0;
+  for (StaticOp staticOp : funcOp.getOps<StaticOp>()) {
+    numQubits =
+        std::max(numQubits, static_cast<std::size_t>(staticOp.getIndex()) + 1);
+  }
+  return numQubits;
+}
+
+/// Asserts the circuit is fully lowered for DD checks: no multi-controlled
+/// shells and no leftover `rccx`.
+static void expectFullyDecomposed(func::FuncOp funcOp) {
+  funcOp.walk([](CtrlOp op) {
+    EXPECT_EQ(op.getNumControls(), 1U)
+        << "full decomposition must not leave multi-controlled gates";
+    EXPECT_EQ(op.getNumTargets(), 1U);
+  });
+  funcOp.walk([](RCCXOp) { ADD_FAILURE() << "unexpected leftover rccx"; });
+}
+
+[[nodiscard]] static bool containsInvOp(func::FuncOp funcOp) {
+  return funcOp.walk([](InvOp) { return WalkResult::interrupt(); })
+      .wasInterrupted();
+}
+
+/// Expand `qco.inv` gadgets into the sparse gate sequence used by the DD
+/// package. Needed because `qco::buildFunctionality`'s dense InvOp fallback
+/// only accepts full-width unitaries and is capped at 12 qubits.
 static void appendInvertedGadget(qc::QuantumComputation& qc, InvOp invOp,
                                  DenseMap<Value, std::size_t>& qubitIndex) {
   DenseMap<Value, std::size_t> bodyQubitIndex;
@@ -333,14 +362,39 @@ funcOpToQuantumComputation(func::FuncOp funcOp, std::size_t& numQubits) {
   return qc;
 }
 
+[[nodiscard]] static FailureOr<dd::MatrixDD>
+functionalityOfDecomposed(func::FuncOp funcOp, dd::Package& dd) {
+  if (!containsInvOp(funcOp)) {
+    return buildFunctionality(funcOp, dd);
+  }
+  // `qco.inv` takes the dense-matrix fallback, which rejects non-full-width
+  // gadgets and circuits above 12 qubits. Expand gadgets into sparse gates.
+  std::size_t numQubits = 0;
+  auto qc = funcOpToQuantumComputation(funcOp, numQubits);
+  return dd::buildFunctionality(qc, dd);
+}
+
+[[nodiscard]] static FailureOr<dd::VectorDD>
+simulateDecomposed(func::FuncOp funcOp, const dd::VectorDD& in,
+                   dd::Package& dd) {
+  if (!containsInvOp(funcOp)) {
+    return simulate(funcOp, in, dd);
+  }
+  std::size_t numQubits = 0;
+  auto qc = funcOpToQuantumComputation(funcOp, numQubits);
+  return dd::simulate(qc, in, dd);
+}
+
 static void expectImplementsControlledPauli(func::FuncOp funcOp,
                                             std::size_t numControls,
                                             ControlledPauli pauli) {
-  std::size_t numQubits = 0;
-  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
+  expectFullyDecomposed(funcOp);
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto decomposedDD = functionalityOfDecomposed(funcOp, *dd);
+  ASSERT_TRUE(succeeded(decomposedDD));
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
@@ -354,9 +408,10 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
     referenceQc.mcz(controls, target);
   }
 
-  const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(decomposedDD, referenceDD);
+  EXPECT_EQ(*decomposedDD, referenceDD);
+  dd->decRef(*decomposedDD);
+  dd->decRef(referenceDD);
 }
 
 static void expectImplementsMcx(func::FuncOp funcOp, std::size_t numControls) {
@@ -365,9 +420,9 @@ static void expectImplementsMcx(func::FuncOp funcOp, std::size_t numControls) {
 
 static void expectMcxMatchesReferenceOnBasisStates(func::FuncOp funcOp,
                                                    std::size_t numControls) {
-  std::size_t numQubits = 0;
-  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
+  expectFullyDecomposed(funcOp);
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
@@ -389,13 +444,15 @@ static void expectMcxMatchesReferenceOnBasisStates(func::FuncOp funcOp,
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
   for (const auto& basisState : basisStates) {
-    const auto decomposedOutput = dd::simulate(
-        decomposedQc, dd::makeBasisState(numQubits, basisState, *dd), *dd);
-    dd->incRef(decomposedOutput);
+    const auto decomposedOutput = simulateDecomposed(
+        funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd);
+    ASSERT_TRUE(succeeded(decomposedOutput));
+    dd->incRef(*decomposedOutput);
     const auto referenceOutput = dd::simulate(
         referenceQc, dd::makeBasisState(numQubits, basisState, *dd), *dd);
-    EXPECT_EQ(decomposedOutput, referenceOutput);
-    dd->decRef(decomposedOutput);
+    EXPECT_EQ(*decomposedOutput, referenceOutput);
+    dd->decRef(*decomposedOutput);
+    dd->decRef(referenceOutput);
   }
 }
 
@@ -404,29 +461,34 @@ static void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
 }
 
 static void expectImplementsRCCX(func::FuncOp funcOp) {
-  std::size_t numQubits = 0;
-  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 3U);
+  expectFullyDecomposed(funcOp);
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto decomposedDD = functionalityOfDecomposed(funcOp, *dd);
+  ASSERT_TRUE(succeeded(decomposedDD));
 
   qc::QuantumComputation referenceQc(numQubits);
   appendRCCXElementaryOnQubits(referenceQc, static_cast<qc::Qubit>(0),
                                static_cast<qc::Qubit>(1),
                                static_cast<qc::Qubit>(2));
 
-  const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(decomposedDD, referenceDD);
+  EXPECT_EQ(*decomposedDD, referenceDD);
+  dd->decRef(*decomposedDD);
+  dd->decRef(referenceDD);
 }
 
 static void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
                                 double theta) {
-  std::size_t numQubits = 0;
-  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
+  expectFullyDecomposed(funcOp);
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto decomposedDD = functionalityOfDecomposed(funcOp, *dd);
+  ASSERT_TRUE(succeeded(decomposedDD));
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
@@ -435,9 +497,10 @@ static void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
   }
   referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
 
-  const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
   const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(decomposedDD, referenceDD);
+  EXPECT_EQ(*decomposedDD, referenceDD);
+  dd->decRef(*decomposedDD);
+  dd->decRef(referenceDD);
 }
 
 static void expectImplementsTwoControlledPhase(func::FuncOp funcOp,
