@@ -86,6 +86,9 @@ void WireIterator::forward() {
         })
         .Case<IfOp>(
             [&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
+        .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
+          qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
+        })
         .Default([&](Operation* op) {
           llvm::reportFatalInternalError("unknown op in def-use chain: " +
                                          op->getName().getStringRef());
@@ -148,6 +151,13 @@ void WireIterator::backward() {
       .Case<IfOp>([&](IfOp op) {
         if (auto result = dyn_cast<OpResult>(qubit_)) {
           qubit_ = op.getTiedQubit(result)->get();
+          return;
+        }
+        llvm::reportFatalInternalError("expected result lookup");
+      })
+      .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
+        if (auto result = dyn_cast<OpResult>(qubit_)) {
+          qubit_ = op.getTiedTarget(result)->get();
           return;
         }
         llvm::reportFatalInternalError("expected result lookup");

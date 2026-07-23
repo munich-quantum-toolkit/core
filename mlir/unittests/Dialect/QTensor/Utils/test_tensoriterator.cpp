@@ -101,7 +101,14 @@ TEST_F(TensorIteratorTest, Traversal) {
         tensorElse2 = builder.qtensorInsert(q, tensorElse1, 0);
         return SmallVector{tensorElse2};
       })[0];
-  builder.qtensorDealloc(tensor8);
+  const auto identity = [](ValueRange args) {
+    return llvm::to_vector(args);
+  };
+  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
+      identity};
+  const auto tensor9 = builder.qcoIndexSwitch(
+      0, tensor8, SmallVector<int64_t>{0}, caseBodies, identity)[0];
+  builder.qtensorDealloc(tensor9);
   [[maybe_unused]] auto m = builder.finalize();
 
   TensorIterator it(cast<TypedValue<RankedTensorType>>(tensor0));
@@ -142,7 +149,11 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(it.tensor(), tensor8);
 
   ++it;
-  ASSERT_EQ(it.operation(), *(tensor8.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.operation(), tensor9.getDefiningOp()); // qco.index_switch
+  ASSERT_EQ(it.tensor(), tensor9);
+
+  ++it;
+  ASSERT_EQ(it.operation(), *(tensor9.user_begin())); // qtensor.dealloc
   ASSERT_EQ(it.tensor(), nullptr);
 
   ++it;
@@ -152,8 +163,12 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(it, std::default_sentinel);
 
   --it;
-  ASSERT_EQ(it.operation(), *(tensor8.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.operation(), *(tensor9.user_begin())); // qtensor.dealloc
   ASSERT_EQ(it.tensor(), nullptr);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor9.getDefiningOp()); // qco.index_switch
+  ASSERT_EQ(it.tensor(), tensor9);
 
   --it;
   ASSERT_EQ(it.operation(), tensor8.getDefiningOp()); // qco.if

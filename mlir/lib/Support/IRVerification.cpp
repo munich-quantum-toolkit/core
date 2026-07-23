@@ -107,6 +107,18 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
 
       initEquivGroup(cast<TypedValue<RankedTensorType>>(thenArg), id, group);
       initEquivGroup(cast<TypedValue<RankedTensorType>>(elseArg), id, group);
+    } else if (auto op = dyn_cast<qco::IndexSwitchOp>(it.operation())) {
+      const auto prev = std::prev(it);
+      const auto targets = op.getTargets();
+      const auto targetIt = llvm::find(targets, prev.tensor());
+      assert(targetIt != targets.end());
+      const auto idx = std::distance(targets.begin(), targetIt);
+
+      for (Region* region : op.getRegions()) {
+        initEquivGroup(cast<TypedValue<RankedTensorType>>(
+                           region->getArgument(idx)),
+                       id, group);
+      }
     } else if (auto forOp = dyn_cast<scf::ForOp>(it.operation())) {
       const auto& arg =
           forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
