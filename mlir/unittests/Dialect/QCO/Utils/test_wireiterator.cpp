@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -20,6 +21,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <tuple>

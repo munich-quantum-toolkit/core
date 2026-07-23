@@ -25,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <utility>
 

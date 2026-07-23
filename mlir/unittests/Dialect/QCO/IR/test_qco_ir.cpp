@@ -19,18 +19,26 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -175,6 +183,92 @@ TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
   EXPECT_EQ(switchOp.getDefaultBlock()->getArgument(0).getType(),
             target.getType());
   EXPECT_TRUE(switchOp.verify().succeeded());
+}
+
+TEST_F(QCOTest, IndexSwitchBuildersRejectMismatchedCasesAndBodies) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        auto index = arith::ConstantIndexOp::create(builder, 0);
+        const auto target = builder.allocQubit();
+        const auto identity = [](Value value) { return value; };
+        const SmallVector<function_ref<Value(Value)>> noCaseBuilders;
+        IndexSwitchOp::create(builder, index.getResult(), target,
+                              ArrayRef<int64_t>{0}, noCaseBuilders, identity);
+      },
+      "Each case must have a corresponding case body function");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto target = builder.allocQubit();
+        const auto identity = [](Value value) { return value; };
+        const SmallVector<function_ref<Value(Value)>> noCaseBodies;
+        builder.qcoIndexSwitch(0, target, ArrayRef<int64_t>{0}, noCaseBodies,
+                               identity);
+      },
+      "Each case must have a corresponding case body function");
+}
+
+TEST_F(QCOTest, IndexSwitchTiedValuesAndTargetExtension) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto target = builder.allocQubit();
+  const auto addon = builder.allocQubit();
+  const auto identity = [](Value value) { return value; };
+  const SmallVector<function_ref<Value(Value)>> caseBuilders{identity};
+  auto switchOp =
+      IndexSwitchOp::create(builder, index.getResult(), target,
+                            ArrayRef<int64_t>{0}, caseBuilders, identity);
+
+  auto* targetOperand = &switchOp->getOpOperand(1);
+  const auto caseArgument = switchOp.getCaseBlock(0)->getArgument(0);
+  const auto defaultArgument = switchOp.getDefaultBlock()->getArgument(0);
+  auto* caseYieldOperand = &switchOp.getCaseYield(0)->getOpOperand(0);
+  auto* defaultYieldOperand = &switchOp.getDefaultYield()->getOpOperand(0);
+
+  EXPECT_EQ(switchOp.getTiedResult(targetOperand), switchOp.getResult(0));
+  EXPECT_EQ(switchOp.getTiedTarget(cast<OpResult>(switchOp.getResult(0))),
+            targetOperand);
+  EXPECT_EQ(switchOp.getTiedCaseBlockArgument(targetOperand, 0), caseArgument);
+  EXPECT_EQ(switchOp.getTiedCaseYieldedValue(caseArgument, 0),
+            caseYieldOperand);
+  EXPECT_EQ(switchOp.getTiedDefaultBlockArgument(targetOperand),
+            defaultArgument);
+  EXPECT_EQ(switchOp.getTiedDefaultYieldedValue(defaultArgument),
+            defaultYieldOperand);
+
+  EXPECT_FALSE(switchOp.getTiedResult(caseYieldOperand));
+  EXPECT_EQ(switchOp.getTiedTarget(cast<OpResult>(addon)), nullptr);
+  EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(caseYieldOperand, 0));
+  EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(targetOperand, 1));
+  EXPECT_EQ(switchOp.getTiedCaseYieldedValue(defaultArgument, 0), nullptr);
+  EXPECT_EQ(switchOp.getTiedCaseYieldedValue(caseArgument, 1), nullptr);
+  EXPECT_FALSE(switchOp.getTiedDefaultBlockArgument(defaultYieldOperand));
+  EXPECT_EQ(switchOp.getTiedDefaultYieldedValue(caseArgument), nullptr);
+
+  IRRewriter rewriter(context.get());
+  rewriter.setInsertionPoint(switchOp);
+  EXPECT_EQ(switchOp.replaceWithAdditionalTargets(rewriter, ValueRange{}),
+            switchOp);
+
+  auto expanded = switchOp.replaceWithAdditionalTargets(rewriter, addon);
+  ASSERT_EQ(expanded.getTargets().size(), 2);
+  ASSERT_EQ(expanded.getResults().size(), 2);
+  EXPECT_EQ(expanded.getTargets()[0], target);
+  EXPECT_EQ(expanded.getTargets()[1], addon);
+  for (Region* region : expanded.getRegions()) {
+    ASSERT_EQ(region->getNumArguments(), 2);
+    auto yield = cast<YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getTargets().size(), 2);
+    EXPECT_EQ(yield.getTargets()[0], region->getArgument(0));
+    EXPECT_EQ(yield.getTargets()[1], region->getArgument(1));
+  }
+  EXPECT_TRUE(expanded.verify().succeeded());
 }
 
 TEST_F(QCOTest, IfOpParser) {
@@ -412,6 +506,16 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   auto switchOp = result.front().getDefiningOp<IndexSwitchOp>();
   ASSERT_TRUE(switchOp);
 
+  SmallVector<Attribute> unknownOperands(switchOp->getNumOperands());
+  SmallVector<InvocationBounds> unknownBounds;
+  switchOp.getRegionInvocationBounds(unknownOperands, unknownBounds);
+  ASSERT_EQ(unknownBounds.size(), switchOp->getNumRegions());
+  for (const auto& bound : unknownBounds) {
+    EXPECT_EQ(bound.getLowerBound(), 0);
+    ASSERT_TRUE(bound.getUpperBound().has_value());
+    EXPECT_EQ(*bound.getUpperBound(), 1);
+  }
+
   const auto checkConstant = [&](const int64_t value, Region* expectedRegion,
                                  const size_t expectedRegionIndex) {
     SmallVector<Attribute> operands(switchOp->getNumOperands());
@@ -432,7 +536,7 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
     }
   };
 
-  checkConstant(0, &switchOp.getCaseRegions()[0], 1);
+  checkConstant(0, switchOp.getCaseRegions().data(), 1);
   checkConstant(1, &switchOp.getCaseRegions()[1], 2);
   checkConstant(2, &switchOp.getDefaultRegion(), 0);
 
