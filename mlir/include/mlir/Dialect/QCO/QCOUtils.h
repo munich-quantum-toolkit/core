@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/Block.h>
@@ -24,6 +25,24 @@
 #include <optional>
 
 namespace mlir::qco {
+
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by sinks
+ * or resets and has no memory effects).
+ *
+ * @param op The operation to check.
+ * @return bool True if the operation is unused, false otherwise.
+ */
+inline bool checkDeadGate(Operation* op) {
+  if (!isMemoryEffectFree(op)) {
+    // This ignores operations and regions that have children with memory
+    // effects, which should never be considered dead.
+    return false;
+  }
+  return llvm::all_of(op->getUsers(), [](Operation* user) {
+    return isa<SinkOp, ResetOp>(user);
+  });
+}
 
 /// Maximum number of modifier targets supported by @ref
 /// composeBodyMatrix.
@@ -288,6 +307,59 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
     return failure();
   }
   return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, true);
+}
+
+/**
+ * @brief Search for and remove gates when their outputs are no longer used
+ * before the next `ResetOp` or `SinkOp`.
+ *
+ * @param qubit The value that was an input to a `ResetOp` or `SinkOp` from
+ * which the search is started.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the elimination.
+ */
+inline LogicalResult tryEliminateDeadGateValue(Value qubit,
+                                               PatternRewriter& rewriter) {
+  auto* currentOp = qubit.getDefiningOp();
+  auto success = false;
+  while (currentOp != nullptr) {
+    if (!checkDeadGate(currentOp)) {
+      break;
+    }
+
+    qubit =
+        TypeSwitch<Operation*, Value>(currentOp)
+            .Case<MeasureOp>([&](auto measureOp) {
+              auto newValue = measureOp.getQubitIn();
+              rewriter.replaceAllUsesWith(measureOp.getQubitOut(), newValue);
+              rewriter.eraseOp(measureOp);
+              return newValue;
+            })
+            .Case<IfOp>([&](auto ifOp) {
+              auto* tiedQubit = ifOp.getTiedQubit(cast<OpResult>(qubit));
+              auto newValue = tiedQubit->get();
+              rewriter.replaceOp(ifOp, ifOp.getQubits());
+              return newValue;
+            })
+            .Case<ResetOp>([&](auto resetOp) {
+              auto newValue = resetOp.getQubitIn();
+              rewriter.replaceOp(resetOp, resetOp->getOperands());
+              return newValue;
+            })
+            .Case<UnitaryOpInterface>([&](auto unitaryOp) {
+              auto newValue = unitaryOp.getInputForOutput(qubit);
+              rewriter.replaceOp(unitaryOp, unitaryOp.getInputQubits());
+              return newValue;
+            })
+            .Default([&](auto) { return nullptr; });
+
+    if (qubit == nullptr) {
+      break;
+    }
+    currentOp = qubit.getDefiningOp();
+    success = true;
+  }
+  return mlir::success(success);
 }
 
 } // namespace mlir::qco

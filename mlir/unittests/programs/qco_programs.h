@@ -72,6 +72,9 @@ Value allocSinkPair(QCOProgramBuilder& b);
 /// Allocates two qubits and performs a set of dead gates on them.
 SmallVector<Value> deadGatesProgram(QCOProgramBuilder& b);
 
+/// Allocates a qubit and uses a bunch of dead gates together with ResetOps.
+SmallVector<Value> deadGatesResetProgram(QCOProgramBuilder& b);
+
 /// Allocates two qubits and performs a set of dead gates on them, including
 /// `if` operations.
 Value deadGatesWithIfOpProgram(QCOProgramBuilder& b);
@@ -120,13 +123,13 @@ SmallVector<Value> resetMultipleQubitsWithoutOp(QCOProgramBuilder& b);
 Value repeatedResetWithoutOp(QCOProgramBuilder& b);
 
 /// Resets a single qubit after a single operation.
-Value resetQubitAfterSingleOp(QCOProgramBuilder& b);
+SmallVector<Value> resetQubitAfterSingleOp(QCOProgramBuilder& b);
 
 /// Resets multiple qubits after a single operation.
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
-Value repeatedResetAfterSingleOp(QCOProgramBuilder& b);
+SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b);
 
 // --- GPhaseOp ------------------------------------------------------------- //
 
