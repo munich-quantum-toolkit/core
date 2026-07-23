@@ -142,20 +142,20 @@ static Value ifNot(qc::QCProgramBuilder& b) {
 
 static Value powTwoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(2.0, q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  b.pow(2.0, q[0], [&](Value qubit) { b.x(qubit); });
   return b.measure(q[0]);
 }
 
 static Value powZeroX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(0.0, q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  b.pow(0.0, q[0], [&](Value qubit) { b.x(qubit); });
   return b.measure(q[0]);
 }
 
 static Value negativePowS(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(2.0, q[0], [&](ValueRange powQubits) {
-    b.inv(powQubits, [&](ValueRange invQubits) { b.s(invQubits[0]); });
+  b.pow(2.0, q[0], [&](Value powQubit) {
+    b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
   });
   return b.measure(q[0]);
 }
@@ -163,8 +163,8 @@ static Value negativePowS(qc::QCProgramBuilder& b) {
 static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](Value target) {
-    b.pow(2.0, target, [&](ValueRange powQubits) {
-      b.inv(powQubits, [&](ValueRange invQubits) { b.s(invQubits[0]); });
+    b.pow(2.0, target, [&](Value powQubit) {
+      b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
     });
   });
   return {b.measure(q[0]), b.measure(q[1])};
@@ -172,15 +172,15 @@ static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
 
 static Value nestedPowX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(6.0, q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  b.pow(6.0, q[0], [&](Value qubit) { b.x(qubit); });
   return b.measure(q[0]);
 }
 
 static Value customPowHS(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(2.0, q[0], [&](ValueRange qubits) {
-    b.h(qubits[0]);
-    b.s(qubits[0]);
+  b.pow(2.0, q[0], [&](Value qubit) {
+    b.h(qubit);
+    b.s(qubit);
   });
   return b.measure(q[0]);
 }
@@ -188,7 +188,7 @@ static Value customPowHS(qc::QCProgramBuilder& b) {
 static SmallVector<Value> broadcastPowX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   for (auto qubit : q.qubits) {
-    b.pow(2.0, qubit, [&](ValueRange qubits) { b.x(qubits[0]); });
+    b.pow(2.0, qubit, [&](Value argument) { b.x(argument); });
   }
   return {b.measure(q[0]), b.measure(q[1])};
 }
