@@ -283,12 +283,16 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
     return failure();
   }
 
-  for (auto [v0, v1] :
-       llvm::zip_equal(operands, llvm::drop_begin(result.operands, 1))) {
-    if (v0 != v1) {
-      return parser.emitError(
-          parser.getCurrentLocation(),
-          "else qubits must reference the same SSA values as then qubits");
+  if (caseValues.empty()) {
+    result.operands.append(operands);
+  } else {
+    for (auto [v0, v1] :
+         llvm::zip_equal(operands, llvm::drop_begin(result.operands, 1))) {
+      if (v0 != v1) {
+        return parser.emitError(
+            parser.getCurrentLocation(),
+            "else qubits must reference the same SSA values as then qubits");
+      }
     }
   }
 

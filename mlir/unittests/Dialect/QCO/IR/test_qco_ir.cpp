@@ -19,6 +19,7 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -261,6 +262,35 @@ TEST_F(QCOTest, IndexSwitchParser) {
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
+}
+
+TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {
+  const char* mlirCode = R"(
+      module {
+        func.func @main(%index: index) -> i1 {
+          %q0 = qco.alloc : !qco.qubit
+          %q1 = qco.index_switch %index -> !qco.qubit
+          default args(%arg0 = %q0) {
+            qco.yield %arg0 : !qco.qubit
+          }
+          %q2, %result = qco.measure %q1 : !qco.qubit
+          qco.sink %q2 : !qco.qubit
+          return %result : i1
+        }
+      })";
+
+  auto parsedModule = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedModule);
+  EXPECT_TRUE(verify(*parsedModule).succeeded());
+
+  std::string printed;
+  llvm::raw_string_ostream stream(printed);
+  parsedModule->print(stream);
+  stream.flush();
+
+  auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
+  ASSERT_TRUE(reparsedModule);
+  EXPECT_TRUE(verify(*reparsedModule).succeeded());
 }
 
 TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
