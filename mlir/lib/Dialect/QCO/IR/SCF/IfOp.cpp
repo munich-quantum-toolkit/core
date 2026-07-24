@@ -11,8 +11,10 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <llvm/ADT/BitVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
@@ -29,6 +31,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -272,11 +275,111 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     return success(changed);
   }
 };
+
+/**
+ * @brief Forward redundant classical results
+ *
+ * @details
+ * Replaces a classical result with a value yielded by both branches or with an
+ * earlier classical result whose pair of yielded values is identical. A
+ * separate pattern removes the result and its yield operands once they become
+ * unused. Linear results are intentionally excluded because their explicit
+ * branch threading is part of QCO's quantum dataflow.
+ */
+struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    const auto classicalResults = op.getClassicalResults();
+    if (classicalResults.empty()) {
+      return failure();
+    }
+
+    const auto thenValues =
+        op.thenYield().getTargets().take_front(classicalResults.size());
+    const auto elseValues =
+        op.elseYield().getTargets().take_front(classicalResults.size());
+
+    bool changed = false;
+    for (const auto [index, result] : llvm::enumerate(classicalResults)) {
+      Value replacement;
+      if (thenValues[index] == elseValues[index]) {
+        replacement = thenValues[index];
+      } else {
+        for (const auto candidate : llvm::seq(index)) {
+          if (thenValues[candidate] == thenValues[index] &&
+              elseValues[candidate] == elseValues[index]) {
+            replacement = classicalResults[candidate];
+            break;
+          }
+        }
+      }
+
+      if (replacement && !result.use_empty()) {
+        rewriter.replaceAllUsesWith(result, replacement);
+        changed = true;
+      }
+    }
+    return success(changed);
+  }
+};
+
+/**
+ * @brief Remove unused classical results
+ *
+ * @details
+ * Removes unused classical results and the corresponding operands from both
+ * branch terminators. The result segment property is updated on the replacement
+ * operation. The linear result suffix and all quantum dataflow remain intact.
+ */
+struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    llvm::BitVector resultsToErase(op.getNumResults());
+    for (const OpResult result : op.getClassicalResults()) {
+      if (result.use_empty()) {
+        resultsToErase.set(result.getResultNumber());
+      }
+    }
+    if (resultsToErase.none()) {
+      return failure();
+    }
+
+    const auto numLinearResults = op.getLinearResults().size();
+    const auto numClassicalResults =
+        op.getClassicalResults().size() - resultsToErase.count();
+
+    llvm::BitVector yieldOperandsToErase(op.thenYield().getNumOperands());
+    for (const auto result : op.getClassicalResults()) {
+      if (resultsToErase.test(result.getResultNumber())) {
+        yieldOperandsToErase.set(result.getResultNumber());
+      }
+    }
+    rewriter.modifyOpInPlace(op.thenYield(), [&]() {
+      op.thenYield()->eraseOperands(yieldOperandsToErase);
+    });
+    rewriter.modifyOpInPlace(op.elseYield(), [&]() {
+      op.elseYield()->eraseOperands(yieldOperandsToErase);
+    });
+
+    auto replacement = cast<IfOp>(rewriter.eraseOpResults(op, resultsToErase));
+    rewriter.modifyOpInPlace(replacement, [&]() {
+      replacement.getProperties().setResultSegmentSizes(
+          ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
+                             static_cast<int32_t>(numLinearResults)}));
+    });
+    return success();
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<RemoveStaticCondition, ConditionPropagation>(context);
+  results.add<RemoveStaticCondition, ConditionPropagation,
+              ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
 }
 
 LogicalResult IfOp::verify() {

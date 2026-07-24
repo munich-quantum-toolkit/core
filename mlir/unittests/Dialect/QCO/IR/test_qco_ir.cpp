@@ -501,6 +501,62 @@ TEST_F(QCOTest, CanonicalizesConstantIfWithClassicalResult) {
   EXPECT_TRUE(result.isOne());
 }
 
+TEST_F(QCOTest, CanonicalizesRedundantClassicalIfResults) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1, %shared: i64) -> (i64, i64, i64) {
+        %q0 = qco.alloc : !qco.qubit
+        %same, %first, %duplicate, %unused, %q1 =
+            qco.if %condition args(%arg0 = %q0)
+                -> (i64, i64, i64, i64, !qco.qubit) {
+          %value = arith.constant 1 : i64
+          %dead = arith.constant 3 : i64
+          %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %shared, %value, %value, %dead, %q2
+              : i64, i64, i64, i64, !qco.qubit
+        } else args(%arg0 = %q0) {
+          %value = arith.constant 2 : i64
+          %dead = arith.constant 4 : i64
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %shared, %value, %value, %dead, %q2
+              : i64, i64, i64, i64, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %same, %first, %duplicate : i64, i64, i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 1);
+  EXPECT_EQ(ifOp.getProperties().getResultSegmentSizes(),
+            ArrayRef<int32_t>({1, 1}));
+  for (YieldOp yield : {ifOp.thenYield(), ifOp.elseYield()}) {
+    ASSERT_EQ(yield.getTargets().size(), 2);
+    EXPECT_EQ(yield.getTargets().front().getType(),
+              ifOp.getClassicalResults().front().getType());
+    EXPECT_EQ(yield.getTargets().back().getType(),
+              ifOp.getLinearResults().front().getType());
+  }
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  ASSERT_EQ(returnOp.getNumOperands(), 3);
+  EXPECT_EQ(returnOp.getOperand(0), main.getArgument(1));
+  EXPECT_EQ(returnOp.getOperand(1), ifOp.getClassicalResults().front());
+  EXPECT_EQ(returnOp.getOperand(2), returnOp.getOperand(1));
+}
+
 TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
