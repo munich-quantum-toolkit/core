@@ -26,7 +26,6 @@
 
 #include <cstdint>
 #include <string>
-#include <variant>
 
 namespace mlir::qir {
 
