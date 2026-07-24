@@ -22,6 +22,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 
 namespace mlir::qtensor {
@@ -48,7 +49,7 @@ whileResultForInit(scf::WhileOp op, OpOperand& init) {
         llvm::reportFatalInternalError(
             "expected scf.while tensor in condition arguments");
       }
-      const auto resultNumber = static_cast<size_t>(
+      const auto resultNumber = static_cast<std::size_t>(
           std::distance(condition.getArgs().begin(), result));
       return cast<TypedValue<RankedTensorType>>(op.getResult(resultNumber));
     }
