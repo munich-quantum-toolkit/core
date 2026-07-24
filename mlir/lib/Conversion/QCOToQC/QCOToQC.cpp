@@ -697,8 +697,47 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
 };
 
 /**
+ * @brief Converts qco.pow to qc.pow
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out = qco.pow(%exponent) (%a_in = %q0_in) {
+ *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.pow(%exponent) (%a0 = %q0) {
+ *   qc.s %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ */
+struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::PowOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create qc.pow operation with exponent and qubit operands
+    auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), adaptor.getExponent(),
+                                  adaptor.getQubitsIn());
+
+    if (failed(moveRegion(op.getRegion(), qcOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, adaptor.getQubitsIn());
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts qco.yield to qc.yield or to scf.yield if the parent is a
- * scf::IfOp
+ * scf::IfOp or scf::IndexSwitchOp.
  *
  * @par Example:
  * ```mlir
@@ -715,7 +754,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   LogicalResult
   matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<scf::IfOp>(op->getParentOp())) {
+    if (isa<scf::IfOp, scf::IndexSwitchOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
     } else {
       rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
@@ -869,6 +908,59 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
 };
 
 /**
+ * @brief Converts qco.index_switch to scf.index_switch
+ *
+ * @par Example:
+ * ```mlir
+ * %result = qco.index_switch %condition -> !qco.qubit
+ * case 0 args(%arg0 = %q0) {
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q1 : !qco.qubit
+ * }
+ * default args(%arg0 = %q0) {
+ *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q2 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.index_switch %condition
+ * case 0 {
+ *   qc.x %q0 : !qc.qubit
+ * }
+ * default {
+ *   qc.z %q0 : !qc.qubit
+ * }
+ * ```
+ */
+struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(IndexSwitchOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newOp =
+        scf::IndexSwitchOp::create(rewriter, op.getLoc(), {}, adaptor.getArg(),
+                                   adaptor.getCases(), op.getNumCases());
+
+    const auto oldRegions = op.getCaseRegions();
+    const auto newCaseRegions = newOp.getCaseRegions();
+    for (size_t i = 0; i < op.getNumCases(); ++i) {
+      inlineRegion(oldRegions[i], newCaseRegions[i], 0,
+                   adaptor.getOperands().drop_front(1), rewriter);
+    }
+
+    inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(), 0,
+                 adaptor.getOperands().drop_front(1), rewriter);
+
+    // Replace the qco results with the input qc values except the condition
+    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts scf.yield with value semantics to scf.yield with memory
  * semantics for qubit values. This currently assumes no mixed types as yielded
  * values.
@@ -996,7 +1088,8 @@ protected:
 #undef MQT_ADD_QCO_TO_QC_GATE
 
     patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOSCFWhileOp,
+                 ConvertQCOPowOp, ConvertQCOYieldOp, ConvertQCOIfOp,
+                 ConvertQCOIndexSwitchOp, ConvertQCOSCFWhileOp,
                  ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp,
                  ConvertQCOSCFForOp>(typeConverter, context);
 
