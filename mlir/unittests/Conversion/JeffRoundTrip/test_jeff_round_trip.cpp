@@ -21,15 +21,18 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -179,6 +182,50 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   ASSERT_EQ(returnOp.getNumOperands(), 1);
   EXPECT_TRUE(returnOp.getOperand(0).getType().isInteger(1));
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) -> i64
+      attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %then = arith.constant 1 : i64
+    %else = arith.constant 2 : i64
+    %result, %q1 = qco.if %condition args(%arg = %q0)
+        -> (i64, !qco.qubit) {
+      qco.yield %then, %arg : i64, !qco.qubit
+    } else args(%arg = %q0) {
+      qco.yield %else, %arg : i64, !qco.qubit
+    }
+    qco.sink %q1 : !qco.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "classical qco.if results are not supported by the QCO-to-Jeff "
+        "conversion");
+    return success();
+  });
+  EXPECT_TRUE(failed(convertQCOToJeff(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {

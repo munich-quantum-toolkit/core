@@ -18,7 +18,8 @@ target_link_libraries(
           MLIRQCOProgramBuilder
           MLIRQCPrograms
           MLIRQCOPrograms
-          MLIRQCOToQC)
+          MLIRQCOToQC
+          MLIRQCToQCO)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

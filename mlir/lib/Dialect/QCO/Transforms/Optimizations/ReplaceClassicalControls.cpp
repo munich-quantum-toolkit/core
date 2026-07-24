@@ -165,7 +165,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
           return newCtrl.getOutputQubits();
         });
 
-    rewriter.replaceAllUsesWith(oldOutputs, ifOp.getResults());
+    rewriter.replaceAllUsesWith(oldOutputs, ifOp.getLinearResults());
     rewriter.eraseOp(ctrlOp);
 
     return success();

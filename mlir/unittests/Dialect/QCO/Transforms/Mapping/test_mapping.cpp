@@ -680,6 +680,65 @@ TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
   EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
 }
 
+TEST_P(MappingPassTest, MapIfWithClassicalResult) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<2x!qco.qubit>
+        %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q3, %condition = qco.measure %q2 : !qco.qubit
+        %state, %q4, %q5 = qco.if %condition
+            args(%arg0 = %q3, %arg1 = %q1)
+            -> (i64, !qco.qubit, !qco.qubit) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %then = arith.constant 1 : i64
+          qco.yield %then, %next0, %next1
+              : i64, !qco.qubit, !qco.qubit
+        } else args(%arg0 = %q3, %arg1 = %q1) {
+          %else = arith.constant 2 : i64
+          qco.yield %else, %arg0, %arg1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %q4 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %q5 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(64));
+  for (YieldOp yield : {ifOp.thenYield(), ifOp.elseYield()}) {
+    ASSERT_EQ(yield.getNumOperands(), ifOp.getNumResults());
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+  }
+}
+
 TEST_P(MappingPassTest, MapSABRECircuit) {
   const auto& device = GetParam();
   constexpr int64_t size = 6;

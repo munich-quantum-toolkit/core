@@ -31,6 +31,7 @@
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -338,6 +339,163 @@ TEST_F(QCOTest, IfOpParser) {
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
+}
+
+TEST_F(QCOTest, IfOpWithClassicalResultRoundTripsAndPreservesTies) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1) -> i1 {
+        %q0 = qco.alloc : !qco.qubit
+        %true = arith.constant true
+        %false = arith.constant false
+        %flag, %q1 = qco.if %condition args(%arg0 = %q0)
+            -> (i1, !qco.qubit) {
+          %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %true, %q2 : i1, !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %false, %arg0 : i1, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %flag : i1
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(1));
+  EXPECT_TRUE(isa<QubitType>(ifOp.getLinearResults().front().getType()));
+
+  auto* conditionOperand = &ifOp->getOpOperand(0);
+  auto* qubitOperand = &ifOp->getOpOperand(1);
+  EXPECT_FALSE(ifOp.getTiedResult(conditionOperand));
+  EXPECT_FALSE(ifOp.getTiedThenBlockArgument(conditionOperand));
+  EXPECT_FALSE(ifOp.getTiedElseBlockArgument(conditionOperand));
+  EXPECT_EQ(ifOp.getTiedResult(qubitOperand), ifOp.getLinearResults().front());
+  EXPECT_EQ(
+      ifOp.getTiedQubit(cast<OpResult>(ifOp.getClassicalResults().front())),
+      nullptr);
+  EXPECT_EQ(ifOp.getTiedQubit(cast<OpResult>(ifOp.getLinearResults().front())),
+            qubitOperand);
+  EXPECT_EQ(
+      ifOp.getTiedThenYieldedValue(ifOp.thenBlock()->getArgument(0))->get(),
+      ifOp.thenYield().getTargets().back());
+  EXPECT_EQ(
+      ifOp.getTiedElseYieldedValue(ifOp.elseBlock()->getArgument(0))->get(),
+      ifOp.elseYield().getTargets().back());
+  EXPECT_EQ(ifOp.getTiedThenYieldedValue(ifOp.elseBlock()->getArgument(0)),
+            nullptr);
+  EXPECT_EQ(ifOp.getTiedElseYieldedValue(ifOp.thenBlock()->getArgument(0)),
+            nullptr);
+
+  std::string printed;
+  llvm::raw_string_ostream stream(printed);
+  module->print(stream);
+  stream.flush();
+  auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
+  ASSERT_TRUE(reparsedModule);
+  EXPECT_TRUE(succeeded(verify(*reparsedModule)));
+}
+
+TEST_F(QCOTest, IfOpRejectsMismatchedClassicalYield) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1) -> i1 {
+        %q0 = qco.alloc : !qco.qubit
+        %true = arith.constant true
+        %flag, %q1 = qco.if %condition args(%arg0 = %q0)
+            -> (i1, !qco.qubit) {
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %true, %arg0 : i1, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %flag : i1
+      }
+    }
+  )mlir";
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                 .contains("must yield 2 values for parent "
+                                           "operation but yields 1");
+    return success();
+  });
+  EXPECT_FALSE(parseSourceString<ModuleOp>(mlirCode, context.get()));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCOTest, ModifierYieldStillRejectsClassicalValues) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main() {
+        %q0 = qco.alloc : !qco.qubit
+        %true = arith.constant true
+        %q1 = qco.inv (%arg = %q0) {
+          qco.yield %true : i1
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  std::string diagnosticMessage;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnosticMessage += diagnostic.str();
+    return success();
+  });
+  EXPECT_FALSE(parseSourceString<ModuleOp>(mlirCode, context.get()));
+  EXPECT_TRUE(StringRef(diagnosticMessage)
+                  .contains("'qco.yield' op operand 0 has type 'i1' but parent "
+                            "operation expects '!qco.qubit'"))
+      << diagnosticMessage;
+}
+
+TEST_F(QCOTest, CanonicalizesConstantIfWithClassicalResult) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main() -> i1 {
+        %condition = arith.constant true
+        %q0 = qco.alloc : !qco.qubit
+        %true = arith.constant true
+        %false = arith.constant false
+        %flag, %q1 = qco.if %condition args(%arg0 = %q0)
+            -> (i1, !qco.qubit) {
+          %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %true, %q2 : i1, !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %false, %arg0 : i1, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %flag : i1
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool containsIf = false;
+  module->walk([&](IfOp) { containsIf = true; });
+  EXPECT_FALSE(containsIf);
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  APInt result;
+  ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&result)));
+  EXPECT_TRUE(result.isOne());
 }
 
 TEST_F(QCOTest, IndexSwitchParser) {

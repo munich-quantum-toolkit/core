@@ -338,7 +338,9 @@ inline LogicalResult tryEliminateDeadGateValue(Value qubit,
             .Case<IfOp>([&](auto ifOp) {
               auto* tiedQubit = ifOp.getTiedQubit(cast<OpResult>(qubit));
               auto newValue = tiedQubit->get();
-              rewriter.replaceOp(ifOp, ifOp.getQubits());
+              rewriter.replaceAllUsesWith(ifOp.getLinearResults(),
+                                          ifOp.getQubits());
+              rewriter.eraseOp(ifOp);
               return newValue;
             })
             .Case<ResetOp>([&](auto resetOp) {

@@ -35,6 +35,15 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+static bool isQCOLinearType(Type type) {
+  if (isa<QubitType>(type)) {
+    return true;
+  }
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
+
 //===----------------------------------------------------------------------===//
 // Custom Parsers
 //===----------------------------------------------------------------------===//
@@ -77,14 +86,29 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseArrowTypeList(result.types)) {
     return failure();
   }
+  const auto numLinearResults = thenOperands.size();
+  if (result.types.size() < numLinearResults) {
+    return parser.emitError(
+        parser.getCurrentLocation(),
+        "expected at least one linear result type per assigned argument");
+  }
+  const auto numClassicalResults = result.types.size() - numLinearResults;
+  const auto linearResultTypes =
+      ArrayRef(result.types).take_back(numLinearResults);
+  if (llvm::any_of(linearResultTypes,
+                   [](Type type) { return !isQCOLinearType(type); })) {
+    return parser.emitError(parser.getCurrentLocation(),
+                            "assigned arguments must correspond to trailing "
+                            "linear result types");
+  }
   // Resolve the operands
-  if (failed(parser.resolveOperands(thenOperands, result.types,
+  if (failed(parser.resolveOperands(thenOperands, linearResultTypes,
                                     parser.getCurrentLocation(),
                                     result.operands))) {
     return failure();
   }
   // Set the argument types
-  for (auto [iterArg, type] : llvm::zip_equal(thenArgs, result.types)) {
+  for (auto [iterArg, type] : llvm::zip_equal(thenArgs, linearResultTypes)) {
     iterArg.type = type;
   }
   // Parse the then region
@@ -102,11 +126,16 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseAssignmentList(elseRegionArgs, elseOperands)) {
     return failure();
   }
+  if (elseOperands.size() != numLinearResults) {
+    return parser.emitError(
+        parser.getCurrentLocation(),
+        "expected the same number of linear arguments in both branches");
+  }
 
   SmallVector<Value> resolvedElseOperands;
   // Also resolve the else operands to check if they are the same as the
   // previous operands
-  if (failed(parser.resolveOperands(elseOperands, result.types,
+  if (failed(parser.resolveOperands(elseOperands, linearResultTypes,
                                     parser.getCurrentLocation(),
                                     resolvedElseOperands))) {
     return failure();
@@ -122,7 +151,8 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   }
 
   // Set the argument types
-  for (auto [iterArg, type] : llvm::zip_equal(elseRegionArgs, result.types)) {
+  for (auto [iterArg, type] :
+       llvm::zip_equal(elseRegionArgs, linearResultTypes)) {
     iterArg.type = type;
   }
   // Parse the else region
@@ -135,6 +165,11 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseOptionalAttrDict(result.attributes)) {
     return failure();
   }
+
+  llvm::copy(
+      ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
+                         static_cast<int32_t>(numLinearResults)}),
+      result.getOrAddProperties<IfOp::Properties>().resultSegmentSizes.begin());
 
   return success();
 }
@@ -170,7 +205,39 @@ void IfOp::print(OpAsmPrinter& p) {
   printQubitsBlock(getElseRegion(), getQubits());
   p.printRegion(getElseRegion(), /*printEntryBlockArgs=*/false);
 
-  p.printOptionalAttrDict((*this)->getAttrs());
+  p.printOptionalAttrDict((*this)->getAttrs(), {"resultSegmentSizes"});
+}
+
+LogicalResult YieldOp::verify() {
+  SmallVector<Type> expectedTypes;
+  bool validParent = true;
+  TypeSwitch<Operation*>(getOperation()->getParentOp())
+      .Case<IfOp, IndexSwitchOp, InvOp, PowOp>([&](auto parent) {
+        llvm::append_range(expectedTypes, parent.getResultTypes());
+      })
+      .Case<CtrlOp>([&](CtrlOp parent) {
+        llvm::append_range(expectedTypes, parent.getTargetsOut().getTypes());
+      })
+      .Default([&](Operation*) { validParent = false; });
+  if (!validParent) {
+    return emitOpError("has an unsupported parent operation");
+  }
+
+  if (getTargets().size() != expectedTypes.size()) {
+    return emitOpError() << "must yield " << expectedTypes.size()
+                         << " values for parent operation but yields "
+                         << getTargets().size();
+  }
+
+  for (const auto [index, types] : llvm::enumerate(llvm::zip_equal(
+           getTargets().getTypes(), TypeRange(expectedTypes)))) {
+    const auto [actual, expected] = types;
+    if (actual != expected) {
+      return emitOpError() << "operand " << index << " has type " << actual
+                           << " but parent operation expects " << expected;
+    }
+  }
+  return success();
 }
 
 ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,

@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -32,12 +33,22 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+static bool isLinearType(Type type) {
+  if (isa<QubitType>(type)) {
+    return true;
+  }
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
+
 void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  Value condition, ValueRange qubits,
                  function_ref<SmallVector<Value>(ValueRange)> thenBuilder,
                  function_ref<SmallVector<Value>(ValueRange)> elseBuilder) {
   // Build the empty operation
-  build(odsBuilder, odsState, qubits.getTypes(), condition, qubits);
+  build(odsBuilder, odsState, TypeRange{}, qubits.getTypes(), condition,
+        qubits);
 
   // Add the blocks to the regions
   auto& thenBlock = odsState.regions.front()->emplaceBlock();
@@ -65,7 +76,8 @@ void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  Value condition, Value input,
                  function_ref<Value(Value)> thenBuilder,
                  function_ref<Value(Value)> elseBuilder) {
-  build(odsBuilder, odsState, input.getType(), condition, input);
+  const SmallVector<Type> linearResultTypes{input.getType()};
+  build(odsBuilder, odsState, TypeRange{}, linearResultTypes, condition, input);
 
   auto& thenBlock = odsState.regions.front()->emplaceBlock();
   auto& elseBlock = odsState.regions.back()->emplaceBlock();
@@ -94,7 +106,8 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
     return;
   }
 
-  regions.push_back(RegionSuccessor(&getThenRegion()));
+  regions.push_back(
+      RegionSuccessor(&getThenRegion(), getThenRegion().getArguments()));
 
   // If the else region is empty, execution continues after the parent op.
   Region* elseRegion = &getElseRegion();
@@ -102,7 +115,7 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
     regions.push_back(
         RegionSuccessor(getOperation(), getOperation()->getResults()));
   } else {
-    regions.push_back(RegionSuccessor(elseRegion));
+    regions.push_back(RegionSuccessor(elseRegion, elseRegion->getArguments()));
   }
 }
 
@@ -111,17 +124,21 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
   FoldAdaptor adaptor(operands, *this);
   auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
   if (!boolAttr || boolAttr.getValue()) {
-    regions.emplace_back(&getThenRegion());
+    regions.emplace_back(&getThenRegion(), getThenRegion().getArguments());
   }
 
   // If the else region is empty, execution continues after the parent op.
   if (!boolAttr || !boolAttr.getValue()) {
     if (!getElseRegion().empty()) {
-      regions.emplace_back(&getElseRegion());
+      regions.emplace_back(&getElseRegion(), getElseRegion().getArguments());
     } else {
       regions.emplace_back(getOperation(), getResults());
     }
   }
+}
+
+OperandRange IfOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
+  return getQubits();
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void IfOp::getRegionInvocationBounds(
@@ -260,14 +277,12 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition, ConditionPropagation>(context);
-  populateRegionBranchOpInterfaceCanonicalizationPatterns(
-      results, IfOp::getOperationName());
 }
 
 LogicalResult IfOp::verify() {
   const auto& inputQubits = getQubits();
   const auto numInputQubits = inputQubits.size();
-  const auto& outputQubits = getResults();
+  const auto& outputQubits = getLinearResults();
   const auto numOutputQubits = outputQubits.size();
 
   const auto numThenArgs = thenBlock()->getNumArguments();
@@ -285,11 +300,24 @@ LogicalResult IfOp::verify() {
     return emitOpError("Operation must return the same number of qubits as the "
                        "number of input qubits.");
   }
+  for (Type type : getClassicalResults().getTypes()) {
+    if (isLinearType(type)) {
+      return emitOpError("classical results must not use QCO linear types");
+    }
+  }
   for (auto [inputQubitType, outputQubitType] :
        llvm::zip_equal(inputQubits.getTypes(), outputQubits.getTypes())) {
     if (inputQubitType != outputQubitType) {
       return emitOpError("Operation must return the same qubit types as its "
                          "input qubit types.");
+    }
+  }
+  for (const auto [inputType, thenType, elseType] :
+       llvm::zip_equal(inputQubits.getTypes(), thenBlock()->getArgumentTypes(),
+                       elseBlock()->getArgumentTypes())) {
+    if (inputType != thenType || inputType != elseType) {
+      return emitOpError(
+          "branch argument types must match the input qubit types");
     }
   }
   SmallPtrSet<Value, 4> uniqueQubitsIn;
@@ -303,22 +331,26 @@ LogicalResult IfOp::verify() {
 }
 
 OpResult IfOp::getTiedResult(OpOperand* qubit) {
-  if (qubit->getOwner() != getOperation()) {
+  if (qubit->getOwner() != getOperation() || qubit->getOperandNumber() == 0) {
     return {};
   }
   // Because the first operand is the if-condition, subtract one.
-  return getResults()[qubit->getOperandNumber() - 1];
+  return getLinearResults()[qubit->getOperandNumber() - 1];
 }
 
 OpOperand* IfOp::getTiedQubit(OpResult result) {
   if (result.getDefiningOp() != getOperation()) {
     return nullptr;
   }
-  return &getQubitsMutable()[result.getResultNumber()];
+  const auto numClassicalResults = getClassicalResults().size();
+  if (result.getResultNumber() < numClassicalResults) {
+    return nullptr;
+  }
+  return &getQubitsMutable()[result.getResultNumber() - numClassicalResults];
 }
 
 BlockArgument IfOp::getTiedThenBlockArgument(OpOperand* qubit) {
-  if (qubit->getOwner() != getOperation()) {
+  if (qubit->getOwner() != getOperation() || qubit->getOperandNumber() == 0) {
     return {};
   }
   // Because the first operand is the if-condition, subtract one.
@@ -326,7 +358,7 @@ BlockArgument IfOp::getTiedThenBlockArgument(OpOperand* qubit) {
 }
 
 BlockArgument IfOp::getTiedElseBlockArgument(OpOperand* qubit) {
-  if (qubit->getOwner() != getOperation()) {
+  if (qubit->getOwner() != getOperation() || qubit->getOperandNumber() == 0) {
     return {};
   }
   // Because the first operand is the if-condition, subtract one.
@@ -334,17 +366,19 @@ BlockArgument IfOp::getTiedElseBlockArgument(OpOperand* qubit) {
 }
 
 OpOperand* IfOp::getTiedThenYieldedValue(BlockArgument bbArg) {
-  if (bbArg.getOwner()->getParentOp() != getOperation()) {
+  if (bbArg.getOwner() != thenBlock()) {
     return nullptr;
   }
-  return &thenYield().getTargetsMutable()[bbArg.getArgNumber()];
+  return &thenYield().getTargetsMutable()[getClassicalResults().size() +
+                                          bbArg.getArgNumber()];
 }
 
 OpOperand* IfOp::getTiedElseYieldedValue(BlockArgument bbArg) {
-  if (bbArg.getOwner()->getParentOp() != getOperation()) {
+  if (bbArg.getOwner() != elseBlock()) {
     return nullptr;
   }
-  return &elseYield().getTargetsMutable()[bbArg.getArgNumber()];
+  return &elseYield().getTargetsMutable()[getClassicalResults().size() +
+                                          bbArg.getArgNumber()];
 }
 
 IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
@@ -361,7 +395,9 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
   newQubits.append(addons.begin(), addons.end());
   const auto allQubitTypes = ValueRange(newQubits).getTypes();
 
-  auto newIfOp = create(rewriter, getLoc(), getCondition(), newQubits);
+  auto newIfOp =
+      create(rewriter, getLoc(), getClassicalResults().getTypes(),
+             ValueRange(newQubits).getTypes(), getCondition(), newQubits);
 
   const auto rewriteRegion = [&](Region& oldRegion, Region& newRegion) {
     auto* oldBlock = &oldRegion.front();

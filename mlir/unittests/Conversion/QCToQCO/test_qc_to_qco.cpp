@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -22,10 +23,12 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
@@ -279,6 +282,101 @@ module {
   module->walk([&](scf::ExecuteRegionOp) { sawExecuteRegion = true; });
   EXPECT_TRUE(sawExecuteRegion);
   expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest, PreservesIfClassicalResultsWithoutScratch) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) -> i64
+      attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %result = scf.if %condition -> i64 {
+      qc.h %qc : !qc.qubit
+      %then = arith.constant 1 : i64
+      scf.yield %then : i64
+    } else {
+      qc.x %qc : !qc.qubit
+      %else = arith.constant 2 : i64
+      scf.yield %else : i64
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  qco::IfOp ifOp;
+  module->walk([&](qco::IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(64));
+  ASSERT_EQ(ifOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(isa<qco::QubitType>(ifOp.getLinearResults().front().getType()));
+  for (qco::YieldOp yield : {ifOp.thenYield(), ifOp.elseYield()}) {
+    ASSERT_EQ(yield.getNumOperands(), 2);
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+    EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
+  }
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), ifOp.getClassicalResults().front());
+
+  bool containsScratchStorage = false;
+  module->walk([&](Operation* operation) {
+    containsScratchStorage |=
+        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
+  });
+  EXPECT_FALSE(containsScratchStorage);
+  expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest, RejectsClassicalIndexSwitchResultsPrecisely) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%index: index) -> i64
+      attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %result = scf.index_switch %index -> i64
+    case 0 {
+      qc.h %qc : !qc.qubit
+      %case = arith.constant 1 : i64
+      scf.yield %case : i64
+    }
+    default {
+      qc.x %qc : !qc.qubit
+      %default = arith.constant 2 : i64
+      scf.yield %default : i64
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "classical scf.index_switch results are not supported by the "
+        "QC-to-QCO conversion");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_P(QCToQCOTest, ProgramEquivalence) {

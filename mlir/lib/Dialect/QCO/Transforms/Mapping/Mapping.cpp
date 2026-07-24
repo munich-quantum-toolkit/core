@@ -724,8 +724,8 @@ private:
 
               auto newIfOp = extend(ifOp, to_vector(qubits), rewriter);
 
-              for (const auto [qubit, result] :
-                   llvm::zip_equal(newIfOp.getQubits(), newIfOp.getResults())) {
+              for (const auto [qubit, result] : llvm::zip_equal(
+                       newIfOp.getQubits(), newIfOp.getLinearResults())) {
                 qubits.insert(result);
                 qubits.erase(qubit);
               }

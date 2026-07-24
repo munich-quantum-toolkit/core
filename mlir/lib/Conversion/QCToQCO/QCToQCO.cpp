@@ -1517,12 +1517,13 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new IfOp
-    auto newIfOp =
-        IfOp::create(rewriter, op.getLoc(), op.getCondition(), qcoTargets);
+    auto newIfOp = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
+                                ValueRange(qcoTargets).getTypes(),
+                                op.getCondition(), qcoTargets);
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newIfOp.getResults().take_front(numRegisters));
+                        newIfOp.getLinearResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
-                       newIfOp.getResults().take_back(numQubits));
+                       newIfOp.getLinearResults().take_back(numQubits));
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newIfOp);
@@ -1535,10 +1536,11 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     // Create the new blocks and move the contents from the old blocks into the
     // new ones
+    const auto qcoTargetTypes = ValueRange(qcoTargets).getTypes();
     auto* thenBlock =
-        rewriter.createBlock(&thenRegion, {}, newIfOp->getResultTypes(), locs);
+        rewriter.createBlock(&thenRegion, {}, qcoTargetTypes, locs);
     auto* elseBlock =
-        rewriter.createBlock(&elseRegion, {}, newIfOp->getResultTypes(), locs);
+        rewriter.createBlock(&elseRegion, {}, qcoTargetTypes, locs);
 
     thenBlock->getOperations().splice(
         thenBlock->end(), op.getThenRegion().front().getOperations());
@@ -1564,7 +1566,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                        thenBlock->getArguments().take_back(numQubits),
                        thenBlock->getArguments().take_front(numRegisters));
 
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, newIfOp.getClassicalResults());
     return success();
   }
 };
@@ -1602,6 +1604,12 @@ struct ConvertSCFIndexSwitchOp final
   LogicalResult
   matchAndRewrite(scf::IndexSwitchOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getNumResults() != 0) {
+      op.emitError("classical scf.index_switch results are not supported by "
+                   "the QC-to-QCO conversion");
+      return failure();
+    }
+
     auto& state = getState();
     auto* operation = op.getOperation();
     auto& registerMap = state.regionRegisterMap[op];
