@@ -252,4 +252,40 @@ def ReplaceClassicalControls
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// Decomposition Passes
+//===----------------------------------------------------------------------===//
+
+def DecomposeMultiControlled
+    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Decompose controlled X/Z/phase gates with at least "
+                "min-controls controls";
+  let description = [{
+    Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
+    a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
+    `min-controls` controls.
+
+    - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
+      when `min-controls` is at most 2.
+    - Four or five controls (X/Z): specialized ancilla-free cores (relative-
+      phase `C^4(Z)`; Vale MCP(π) hybrid residual).
+    - Six or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
+      synthesis with a compile-time CX policy table.
+    - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
+      residual at four) for three and four controls; da Silva-Park SP22
+      linear-depth decomposition at five and above. A compile-time angle of
+      `±π` is routed through the Z path.
+
+    Intermediate two- and three-control building blocks may be left as
+    `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
+    lowers further when the threshold allows.
+  }];
+  let options = [Option<
+      "minControls", "min-controls", "uint64_t", "2",
+      "Decompose controlled X/Z/phase gates with at least this many controls "
+      "(must be at least 2).">];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

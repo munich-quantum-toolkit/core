@@ -187,6 +187,10 @@ public:
   /// Lift Hadamard gates away from measurements.
   [[nodiscard]] bool liftHadamards();
 
+  /// Decompose controlled X/Z/phase gates with at least @p minControls
+  /// controls.
+  [[nodiscard]] bool decomposeMultiControlled(uint64_t minControls = 2);
+
   /// Place and route the program on a coupling graph.
   [[nodiscard]] bool
   placeAndRoute(std::span<const std::pair<std::size_t, std::size_t>> coupling,
