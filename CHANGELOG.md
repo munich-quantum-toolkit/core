@@ -12,6 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add versioned, relocatable configuration and stable-ID registration for
+  QDMI device libraries, including disabled-ID reservations, fresh device
+  sessions, idempotent registration, and external-device target metadata
+  ([#1912]) ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
@@ -88,6 +92,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
+  `add_dynamic_device_library` APIs with definition registration and stable-ID
+  opening ([#1912]) ([**@burgholzer**])
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -660,6 +667,7 @@ changelogs._
 [#1924]: https://github.com/munich-quantum-toolkit/core/pull/1924
 [#1915]: https://github.com/munich-quantum-toolkit/core/pull/1915
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
+[#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897

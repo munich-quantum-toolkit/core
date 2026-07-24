@@ -40,6 +40,43 @@ Known limitations:
   C++20 features being used that are not yet properly supported by older
   versions.
 
+### QDMI runtime device registration
+
+The unstable runtime-loading helpers have been replaced with registration by a
+stable device ID followed by an explicit open. In Python, replace
+`add_dynamic_device_library(library_path, prefix, ...)` with:
+
+```python
+from mqt.core.fomac import DeviceDefinition, open_device, register_device
+
+definition = DeviceDefinition("my.device", library_path, prefix, base_url="https://device.example")
+register_device(definition)
+device = open_device("my.device")
+```
+
+Per-backend session values can be passed directly to
+`open_device("my.device", base_url=..., token=...)`. Every call creates a fresh
+device session without registering another device ID. Repeated integration setup
+can use `register_device_if_absent(definition)` instead of suppressing
+duplicate-ID errors; invalid definitions are still rejected, and a device
+disabled by higher-precedence configuration remains reserved.
+
+The equivalent C++ flow is:
+
+```cpp
+qdmi::DeviceDefinition definition{.id = "my.device",
+                                  .library = libraryPath,
+                                  .prefix = prefix};
+auto& driver = qdmi::Driver::get();
+driver.registerDevice(definition);
+auto device = fomac::Session::openDevice("my.device");
+```
+
+Registration validates and stores metadata without loading native code. Opening
+an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
+owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
+behavior for client callers.
+
 ### Removal of the density matrix support from the DD package
 
 The density matrix support within the DD package has been removed. This change

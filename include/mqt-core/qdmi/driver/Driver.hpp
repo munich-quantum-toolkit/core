@@ -21,11 +21,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+namespace fomac {
+class Session;
+}
 
 namespace qdmi {
 
@@ -40,7 +47,7 @@ struct DeviceSessionConfig {
   /// Authentication token
   std::optional<std::string> token;
   /// Path to file containing authentication information
-  std::optional<std::string> authFile;
+  std::optional<std::filesystem::path> authFile;
   /// URL to authentication server
   std::optional<std::string> authUrl;
   /// Username for authentication
@@ -57,6 +64,22 @@ struct DeviceSessionConfig {
   std::optional<std::string> custom4;
   /// Custom configuration parameter 5
   std::optional<std::string> custom5;
+};
+
+/**
+ * @brief Stable registration for a QDMI device.
+ * @details Registration records this metadata without loading the native
+ * library. Use @ref Driver::open to create the corresponding device session.
+ */
+struct DeviceDefinition {
+  /// Stable identifier used to open this device.
+  std::string id;
+  /// Path to the native QDMI device library.
+  std::filesystem::path library;
+  /// Prefix used for the QDMI device interface functions.
+  std::string prefix;
+  /// Parameters applied before the device session is initialized.
+  DeviceSessionConfig session;
 };
 
 /**
@@ -351,14 +374,16 @@ struct QDMI_Session_impl_d {
 private:
   /// @brief The status of the session.
   qdmi::SessionStatus status_ = qdmi::SessionStatus::ALLOCATED;
-  /// @brief A pointer to the list of all devices.
-  const std::vector<std::unique_ptr<QDMI_Device_impl_d>>* devices_;
+  /// @brief Snapshot of devices visible when this session was allocated.
+  std::vector<QDMI_Device> devices_;
 
 public:
   /// @brief Constructor for the QDMI session.
   explicit QDMI_Session_impl_d(
-      const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices)
-      : devices_(&devices) {}
+      const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices);
+
+  /// @brief Constructor from an explicit device-handle snapshot.
+  explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
 
   /**
    * @brief Initializes the session.
@@ -384,14 +409,15 @@ public:
 namespace qdmi {
 /**
  * @brief The MQT QDMI driver class.
- * @details This driver loads all statically known and linked QDMI device
- * libraries. Additional devices can be added dynamically.
+ * @details This driver discovers configured QDMI device definitions and opens
+ * their libraries. Additional definitions can be registered at runtime.
  * @note This class is a singleton that manages the QDMI libraries and
  * sessions. It is responsible for loading the libraries, allocating sessions,
  * and providing access to the devices.
  */
 class Driver final : public Singleton<Driver> {
   friend class Singleton;
+  friend class fomac::Session;
 
   /// @brief Private constructor to enforce the singleton pattern.
   Driver();
@@ -401,6 +427,24 @@ class Driver final : public Singleton<Driver> {
    */
   std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
 
+  /// @brief Registered definitions in stable registration order.
+  std::vector<DeviceDefinition> definitions_;
+
+  /// @brief IDs disabled by the highest-precedence configuration source.
+  std::unordered_set<std::string> disabledDeviceIds_;
+
+  /// @brief Initially discovered definitions visible to the client API.
+  std::vector<std::string> clientDefinitionIds_;
+
+  /// @brief Materialized devices exposed through the client API.
+  std::vector<QDMI_Device> clientDevices_;
+
+  /// @brief Whether the configured client device catalog has been opened.
+  bool clientCatalogMaterialized_ = false;
+
+  /// @brief Opened devices indexed by their stable registration ID.
+  std::unordered_map<std::string, QDMI_Device> openedDevices_;
+
   /**
    * @brief Map of sessions to their corresponding unique pointers to
    * QDMI_Session_impl_d objects.
@@ -408,24 +452,48 @@ class Driver final : public Singleton<Driver> {
   std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
       sessions_;
 
+  /// Opens the initially configured definitions for the client API.
+  void materializeClientCatalog();
+
+  /// Opens a fresh device session with per-call overrides.
+  auto openFresh(std::string_view id, const DeviceSessionConfig& overrides)
+      -> std::shared_ptr<QDMI_Device_impl_d>;
+
 public:
   /**
-   * @brief Loads a dynamic device library and adds it to the driver.
-   *
-   * @param libName The path to the dynamic library to load.
-   * @param prefix The prefix used for the device interface functions in the
-   * library.
-   * @param config Configuration for device session parameters.
-   *
-   * @return A pointer to the newly created device.
-   *
-   * @throws std::runtime_error If the device cannot be initialized.
-   * @throws std::bad_alloc If memory allocation fails during the process.
+   * @returns the process-wide Driver instance.
+   * @details This out-of-line accessor keeps static-library consumers from
+   * instantiating separate singleton storage in different translation units.
    */
-  auto addDynamicDeviceLibrary(const std::string& libName,
-                               const std::string& prefix,
-                               const DeviceSessionConfig& config = {})
-      -> QDMI_Device;
+  [[nodiscard]] static auto get() -> Driver&;
+
+  /**
+   * @brief Registers a device definition without loading its library.
+   * @param definition The definition to validate and store.
+   * @param replace Whether an existing unopened definition may be replaced.
+   * @throws std::invalid_argument If the definition is incomplete or its ID is
+   * already registered.
+   * @throws std::runtime_error If replacing an already opened definition.
+   */
+  void registerDevice(DeviceDefinition definition, bool replace = false);
+
+  /**
+   * @brief Registers a device definition unless its ID is already present.
+   * @param definition The definition to validate and store.
+   * @returns Whether the definition was inserted.
+   * @throws std::invalid_argument If the definition is incomplete.
+   * @details An existing ID is the only ignored condition. The complete
+   * definition is validated before checking for that ID.
+   */
+  auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
+
+  /**
+   * @brief Opens the registered device with the given stable ID.
+   * @returns The existing device handle when the ID is already open.
+   * @throws std::out_of_range If the ID is unknown.
+   * @throws std::runtime_error If loading or session initialization fails.
+   */
+  auto open(std::string_view id) -> QDMI_Device;
 
   /**
    * @brief Allocates a new session.

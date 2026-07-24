@@ -14,16 +14,18 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/complex.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/map.h>      // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/optional.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/variant.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>   // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/complex.h>    // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/filesystem.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/map.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/optional.h>   // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/pair.h>       // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -70,6 +72,28 @@ template <typename Query>
   throw nb::type_error(
       "value_type must be exactly str, bool, int, float, or bytes");
 }
+
+[[nodiscard]] auto makeDeviceSessionConfig(
+    std::optional<std::string> baseUrl, std::optional<std::string> token,
+    std::optional<std::filesystem::path> authFile,
+    std::optional<std::string> authUrl, std::optional<std::string> username,
+    std::optional<std::string> password, std::optional<std::string> custom1,
+    std::optional<std::string> custom2, std::optional<std::string> custom3,
+    std::optional<std::string> custom4, std::optional<std::string> custom5)
+    -> qdmi::DeviceSessionConfig {
+  return {.baseUrl = std::move(baseUrl),
+          .token = std::move(token),
+          .authFile = std::move(authFile),
+          .authUrl = std::move(authUrl),
+          .username = std::move(username),
+          .password = std::move(password),
+          .custom1 = std::move(custom1),
+          .custom2 = std::move(custom2),
+          .custom3 = std::move(custom3),
+          .custom4 = std::move(custom4),
+          .custom5 = std::move(custom5)};
+}
+
 } // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
@@ -77,13 +101,13 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   auto session = nb::class_<fomac::Session>(
       m, "Session", R"pb(A FoMaC session for managing QDMI devices.
 
-Allows creating isolated sessions with independent authentication settings.
+Allows creating isolated sessions with separate authentication settings.
 All authentication parameters are optional and can be provided as keyword arguments to the constructor.)pb");
 
   session.def(
       "__init__",
       [](fomac::Session* self, std::optional<std::string> token,
-         std::optional<std::string> authFile,
+         std::optional<std::filesystem::path> authFile,
          std::optional<std::string> authUrl,
          std::optional<std::string> username,
          std::optional<std::string> password,
@@ -570,80 +594,153 @@ when the custom slot is unsupported.)pb");
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  // Module-level function to add dynamic device libraries
+  nb::class_<qdmi::DeviceDefinition>(
+      m, "DeviceDefinition",
+      R"pb(A stable QDMI device registration that can be stored before loading.)pb")
+      .def(
+          "__init__",
+          [](qdmi::DeviceDefinition* self, std::string deviceId,
+             std::string libraryPath, std::string prefix,
+             const std::optional<std::string>& baseUrl = std::nullopt,
+             const std::optional<std::string>& token = std::nullopt,
+             const std::optional<std::filesystem::path>& authFile =
+                 std::nullopt,
+             const std::optional<std::string>& authUrl = std::nullopt,
+             const std::optional<std::string>& username = std::nullopt,
+             const std::optional<std::string>& password = std::nullopt,
+             const std::optional<std::string>& custom1 = std::nullopt,
+             const std::optional<std::string>& custom2 = std::nullopt,
+             const std::optional<std::string>& custom3 = std::nullopt,
+             const std::optional<std::string>& custom4 = std::nullopt,
+             const std::optional<std::string>& custom5 = std::nullopt) {
+            new (self) qdmi::DeviceDefinition{
+                .id = std::move(deviceId),
+                .library = std::move(libraryPath),
+                .prefix = std::move(prefix),
+                .session = makeDeviceSessionConfig(
+                    baseUrl, token, authFile, authUrl, username, password,
+                    custom1, custom2, custom3, custom4, custom5)};
+          },
+          "device_id"_a, "library_path"_a, "prefix"_a, nb::kw_only(),
+          "base_url"_a = std::nullopt, "token"_a = std::nullopt,
+          "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
+          "username"_a = std::nullopt, "password"_a = std::nullopt,
+          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+          "custom5"_a = std::nullopt,
+          R"pb(Create a device definition without loading its native library.
+
+Args:
+    device_id: Stable identifier used by :func:`open_device`.
+    library_path: Path to the shared QDMI device library.
+    prefix: Function prefix used by the library (for example, ``MY_DEVICE``).
+    base_url: Optional base URL for the device API endpoint.
+    token: Optional authentication token.
+    auth_file: Optional path to an authentication file.
+    auth_url: Optional authentication server URL.
+    username: Optional authentication username.
+    password: Optional authentication password.
+    custom1: Optional custom configuration parameter 1.
+    custom2: Optional custom configuration parameter 2.
+    custom3: Optional custom configuration parameter 3.
+    custom4: Optional custom configuration parameter 4.
+    custom5: Optional custom configuration parameter 5.)pb")
+      .def_ro("device_id", &qdmi::DeviceDefinition::id,
+              R"pb(Stable identifier used to open the device.)pb")
+      .def_prop_ro(
+          "library_path",
+          [](const qdmi::DeviceDefinition& definition) {
+            return definition.library.string();
+          },
+          R"pb(Path to the native QDMI device library.)pb")
+      .def_ro("prefix", &qdmi::DeviceDefinition::prefix,
+              R"pb(Prefix used for the QDMI device interface functions.)pb");
+
   m.def(
-      "add_dynamic_device_library",
-      [](const std::string& libraryPath, const std::string& prefix,
-         const std::optional<std::string>& baseUrl = std::nullopt,
-         const std::optional<std::string>& token = std::nullopt,
-         const std::optional<std::string>& authFile = std::nullopt,
-         const std::optional<std::string>& authUrl = std::nullopt,
-         const std::optional<std::string>& username = std::nullopt,
-         const std::optional<std::string>& password = std::nullopt,
-         const std::optional<std::string>& custom1 = std::nullopt,
-         const std::optional<std::string>& custom2 = std::nullopt,
-         const std::optional<std::string>& custom3 = std::nullopt,
-         const std::optional<std::string>& custom4 = std::nullopt,
-         const std::optional<std::string>& custom5 =
-             std::nullopt) -> fomac::Device {
-        const qdmi::DeviceSessionConfig config{.baseUrl = baseUrl,
-                                               .token = token,
-                                               .authFile = authFile,
-                                               .authUrl = authUrl,
-                                               .username = username,
-                                               .password = password,
-                                               .custom1 = custom1,
-                                               .custom2 = custom2,
-                                               .custom3 = custom3,
-                                               .custom4 = custom4,
-                                               .custom5 = custom5};
-        auto* const qdmiDevice = qdmi::Driver::get().addDynamicDeviceLibrary(
-            libraryPath, prefix, config);
-        return fomac::Session::createSessionlessDevice(qdmiDevice);
+      "register_device",
+      [](qdmi::DeviceDefinition definition, const bool replace) {
+        qdmi::Driver::get().registerDevice(std::move(definition), replace);
       },
-      "library_path"_a, "prefix"_a, nb::kw_only(), "base_url"_a = std::nullopt,
+      "definition"_a, nb::kw_only(), "replace"_a = false,
+      R"pb(Register a QDMI device definition without loading its library.
+
+Args:
+    definition: Definition to validate and store.
+    replace: Replace an existing definition if it has not been opened.
+
+Raises:
+    ValueError: If the definition is invalid or its ID is already registered.
+    RuntimeError: If replacing an already opened ID.)pb");
+
+  m.def(
+      "register_device_if_absent",
+      [](qdmi::DeviceDefinition definition) {
+        return qdmi::Driver::get().registerDeviceIfAbsent(
+            std::move(definition));
+      },
+      "definition"_a,
+      R"pb(Register a valid QDMI device definition if its ID is absent.
+
+An existing ID is the only ignored condition. Invalid definitions still raise.
+
+Args:
+    definition: Definition to validate and store.
+
+Returns:
+    bool: Whether the definition was inserted.
+
+Raises:
+    ValueError: If the definition is invalid.)pb");
+
+  m.def(
+      "open_device",
+      [](const std::string& deviceId, std::optional<std::string> baseUrl,
+         std::optional<std::string> token,
+         std::optional<std::filesystem::path> authFile,
+         std::optional<std::string> authUrl,
+         std::optional<std::string> username,
+         std::optional<std::string> password,
+         std::optional<std::string> custom1, std::optional<std::string> custom2,
+         std::optional<std::string> custom3, std::optional<std::string> custom4,
+         std::optional<std::string> custom5) {
+        const auto overrides = makeDeviceSessionConfig(
+            std::move(baseUrl), std::move(token), std::move(authFile),
+            std::move(authUrl), std::move(username), std::move(password),
+            std::move(custom1), std::move(custom2), std::move(custom3),
+            std::move(custom4), std::move(custom5));
+        return fomac::Session::openDevice(deviceId, overrides);
+      },
+      "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
       "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
       "password"_a = std::nullopt, "custom1"_a = std::nullopt,
       "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
       "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
-      R"pb(Load a dynamic device library into the QDMI driver.
+      R"pb(Open a registered QDMI device by stable ID.
 
-This function loads a shared library (.so, .dll, or .dylib) that implements a QDMI device interface and makes it available for use in sessions.
+Every call creates a fresh device session while keeping the stable registration
+unchanged. Opening the device loads trusted native device code.
 
 Args:
-    library_path: Path to the shared library file to load.
-    prefix: Function prefix used by the library (e.g., "MY_DEVICE").
-    base_url: Optional base URL for the device API endpoint.
-    token: Optional authentication token.
-    auth_file: Optional path to authentication file.
-    auth_url: Optional authentication server URL.
-    username: Optional username for authentication.
-    password: Optional password for authentication.
-    custom1: Optional custom configuration parameter 1.
-    custom2: Optional custom configuration parameter 2.
-    custom3: Optional custom configuration parameter 3.
-    custom4: Optional custom configuration parameter 4.
-    custom5: Optional custom configuration parameter 5.
+    device_id: Stable ID of a registered device.
+    base_url: Optional base URL override for the device API endpoint.
+    token: Optional authentication token override.
+    auth_file: Optional authentication-file override.
+    auth_url: Optional authentication server URL override.
+    username: Optional authentication username override.
+    password: Optional authentication password override.
+    custom1: Optional custom configuration parameter 1 override.
+    custom2: Optional custom configuration parameter 2 override.
+    custom3: Optional custom configuration parameter 3 override.
+    custom4: Optional custom configuration parameter 4 override.
+    custom5: Optional custom configuration parameter 5 override.
 
 Returns:
-    Device: The newly loaded device that can be used to create backends.
+    Device: The opened device, ready for direct backend construction.
 
 Raises:
-    RuntimeError: If library loading fails or configuration is invalid.
-
-Examples:
-    Load a device library with configuration:
-
-    >>> import mqt.core.fomac as fomac
-    >>> device = fomac.add_dynamic_device_library(
-    ...     "/path/to/libmy_device.so", "MY_DEVICE", base_url="http://localhost:8080", custom1="API_V2"
-    ... )
-
-    Now the device can be used directly:
-
-    >>> from mqt.core.plugins.qiskit import QDMIBackend
-    >>> backend = QDMIBackend(device=device))pb");
+    IndexError: If the ID is not registered.
+    RuntimeError: If the device library cannot be loaded or initialized.)pb");
 }
 
 } // namespace mqt

@@ -55,6 +55,7 @@ coverage.xml
 .pytest_cache/
 cover/
 *.profraw
+cmake_test_discovery_*.json
 
 # Translations
 *.mo
