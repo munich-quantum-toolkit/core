@@ -6,18 +6,23 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-qco-to-qc)
-add_executable(${target_name} test_qco_to_qc.cpp)
+set(target_name mqt-core-mlir-unittest-qc-qco-round-trip)
+add_executable(${target_name} test_qc_qco_round_trip.cpp)
 
 target_link_libraries(
   ${target_name}
-  PRIVATE MLIRParser
+  PRIVATE GTest::gtest_main
+          MLIRArithDialect
+          MLIRFuncDialect
+          MLIRMemRefDialect
+          MLIRParser
+          MLIRPass
+          MLIRQCDialect
+          MLIRQCODialect
+          MLIRSCFDialect
           MLIRSupportMQT
-          GTest::gtest_main
-          MLIRQCProgramBuilder
-          MLIRQCOProgramBuilder
-          MLIRQCPrograms
-          MLIRQCOPrograms
+          MLIRTransforms
+          MLIRQCToQCO
           MLIRQCOToQC)
 
 mqt_mlir_configure_unittest_target(${target_name})
