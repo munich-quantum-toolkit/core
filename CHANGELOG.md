@@ -73,9 +73,9 @@ releases may include breaking changes.
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717],
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
-  [#1886], [#1914], [#1925], [#1935], [#1936]) ([**@burgholzer**], [**@denialhaag**],
-  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
-  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#1886], [#1914], [#1925], [#1935], [#1936]) ([**@burgholzer**],
+  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
