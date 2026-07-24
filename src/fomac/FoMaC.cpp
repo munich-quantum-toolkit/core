@@ -11,6 +11,7 @@
 #include "fomac/FoMaC.hpp"
 
 #include "qdmi/common/Common.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include <qdmi/client.h>
 #include <spdlog/spdlog.h>
@@ -28,6 +29,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
