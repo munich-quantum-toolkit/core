@@ -23,11 +23,37 @@
 #include <mlir/IR/Value.h>
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <numbers>
 #include <variant>
 
 namespace mlir::utils {
+
+/// Check if a floating-point value is an integer.
+[[nodiscard]] inline bool isIntegerExponent(double r) {
+  return r == std::floor(r) && std::isfinite(r);
+}
+
+/// Check if a floating-point value is an even integer.
+/// Uses fmod to avoid UB from narrowing to int64_t for large values.
+[[nodiscard]] inline bool isEvenExponent(double r) {
+  return std::fmod(std::fabs(r), 2.0) == 0.0;
+}
+
+/// Normalize an angle to (-π, π].
+[[nodiscard]] inline double normalizeAngle(double theta) {
+  const double twoPi = 2.0 * std::numbers::pi;
+  theta = std::fmod(theta, twoPi);
+  if (theta > std::numbers::pi) {
+    theta -= twoPi;
+  }
+  if (theta <= -std::numbers::pi) {
+    theta += twoPi;
+  }
+  return theta;
+}
 
 /// Default absolute tolerance for MLIR dialect numerics (angle wrapping,
 /// phase-zero checks).
@@ -255,6 +281,28 @@ template <typename UnitaryInterface>
 }
 
 /**
+ * @brief Hoists a body's supporting ops out before the modifier is erased.
+ *
+ * @details Moves every operation in @p body except @p keep and the block
+ * terminator to just before @p target. This keeps Values that feed @p keep
+ * (e.g., an exponent produced by constants/arithmetic) available after the
+ * modifier's region is erased, avoiding dangling operands.
+ *
+ * Unlike @c inlineBlockBefore, this is selective (@p keep and the terminator
+ * stay in @p body) and does not remap block arguments; the moved ops are
+ * classical and never reference the body's block arguments.
+ */
+inline void hoistSupportingOpsBefore(Block& body, Operation* keep,
+                                     Operation* target,
+                                     RewriterBase& rewriter) {
+  for (auto& bodyOp : llvm::make_early_inc_range(body)) {
+    if (&bodyOp != keep && !bodyOp.hasTrait<OpTrait::IsTerminator>()) {
+      rewriter.moveOpBefore(&bodyOp, target);
+    }
+  }
+}
+
+/**
  * @brief Inlines a modifier body and replaces the modifier with its results.
  *
  * @details Inlines the operations of @p body in front of @p op, substituting
@@ -269,6 +317,32 @@ inline void inlineModifierBody(Operation* op, Block& body,
   rewriter.inlineBlockBefore(&body, op, blockArgReplacements);
   rewriter.eraseOp(terminator);
   rewriter.replaceOp(op, results);
+}
+
+/**
+ * @brief Inline @p source into the block currently being built and return the
+ * values its terminator yielded.
+ *
+ * @details Intended for use inside a modifier's body-builder callback, where
+ * the current insertion block is the freshly created (still terminator-less)
+ * body of the op under construction. Inlines @p source at the start of that
+ * block, substituting @p source's block arguments with @p blockArgReplacements,
+ * then drops @p source's terminator and returns the values it yielded so the
+ * caller can re-yield them.
+ *
+ * Unlike @c inlineModifierBody, this does not replace an existing op: it
+ * splices a body into the block being constructed and hands back the yielded
+ * values. In dialects whose bodies yield nothing, the returned vector is empty.
+ */
+inline SmallVector<Value>
+inlineBodyReturningYields(Block& source, ValueRange blockArgReplacements,
+                          RewriterBase& rewriter) {
+  auto* dest = rewriter.getInsertionBlock();
+  rewriter.inlineBlockBefore(&source, dest, dest->begin(),
+                             blockArgReplacements);
+  auto yielded = llvm::to_vector(dest->back().getOperands());
+  rewriter.eraseOp(&dest->back());
+  return yielded;
 }
 
 /**

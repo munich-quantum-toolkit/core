@@ -16,16 +16,17 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -940,6 +941,62 @@ QCOProgramBuilder::inv(ValueRange qubits,
   return targetsOut;
 }
 
+ValueRange
+QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                       ValueRange qubits,
+                       function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto powOp = PowOp::create(*this, qubits, exponent);
+
+  // Add block arguments for all qubits
+  auto& block = powOp.getBodyRegion().emplaceBlock();
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
+    const auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Pow body must return exactly one output qubit per target");
+  }
+
+  // Update tracking
+  const auto& targetsOut = powOp.getQubitsOut();
+  for (const auto& [target, targetOut] :
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
+Value QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                             Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto powOp =
+      PowOp::create(*this, qubit, exponent, [&](Value qubitArg) -> Value {
+        updateQubitTracking(qubit, qubitArg);
+        innerQubitOut = body(qubitArg);
+        return innerQubitOut;
+      });
+
+  const auto& qubitsOut = powOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
+}
+
 std::pair<ValueRange, Value>
 QCOProgramBuilder::ctrl(ValueRange controls, Value target,
                         function_ref<Value(Value)> body) {
@@ -1149,13 +1206,104 @@ ValueRange QCOProgramBuilder::qcoIf(
           "Else body must return exactly one value per input value");
     }
     YieldOp::create(*this, elseResult);
-    updateQubitValueTracking(elseResult, ifOp->getResults());
+    updateQubitValueTracking(elseResult, ifOp.getResults());
   } else {
     YieldOp::create(*this, elseArgs);
-    updateQubitValueTracking(thenResult, ifOp->getResults());
+    updateQubitValueTracking(thenResult, ifOp.getResults());
   }
 
-  return ifOp->getResults();
+  return ifOp.getResults();
+}
+
+ValueRange QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, ValueRange targets,
+    ArrayRef<int64_t> cases,
+    ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
+    const function_ref<SmallVector<Value>(ValueRange)> defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  const auto ntargets = targets.size();
+  const auto types = targets.getTypes();
+  const auto updatedTargets = prepareInitArgs(targets);
+  const auto argValue = variantToValue(*this, getLoc(), arg);
+
+  auto switchOp = IndexSwitchOp::create(*this, types, argValue, cases,
+                                        updatedTargets, cases.size());
+
+  const InsertionGuard guard(*this);
+  const SmallVector locs(ntargets, getLoc());
+
+  const auto buildRegion = [&](Region& region, SmallVector<Value>& prev,
+                               function_ref<SmallVector<Value>(ValueRange)> f) {
+    Block* const block = createBlock(&region, {}, types, locs);
+    updateQubitValueTracking(prev, block->getArguments());
+
+    const auto result = f(block->getArguments());
+    if (result.size() != ntargets) {
+      const char* msg =
+          "Case body must return exactly one value per input value";
+      llvm::reportFatalUsageError(msg);
+      llvm_unreachable(msg);
+    }
+
+    YieldOp::create(*this, result);
+    prev = result;
+  };
+
+  SmallVector<Value> prev(updatedTargets);
+  for (const auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, prev, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), prev, defaultBody);
+  updateQubitValueTracking(prev, switchOp.getResults());
+
+  return switchOp.getResults();
+}
+
+Value QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, Value target,
+    ArrayRef<int64_t> cases, ArrayRef<function_ref<Value(Value)>> caseBodies,
+    function_ref<Value(Value)> defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    llvm::reportFatalUsageError(
+        "Each case must have a corresponding case body function");
+  }
+
+  const auto updatedTarget = prepareInitArg(target);
+  const auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp = IndexSwitchOp::create(*this, target.getType(), argValue,
+                                        cases, updatedTarget, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, Value previous,
+                               function_ref<Value(Value)> body) -> Value {
+    auto& block = region.emplaceBlock();
+    const auto blockArgument = block.addArgument(target.getType(), getLoc());
+    updateQubitValueTracking(previous, blockArgument);
+    setInsertionPointToStart(&block);
+    const auto result = body(blockArgument);
+    YieldOp::create(*this, result);
+    return result;
+  };
+
+  Value previous = updatedTarget;
+  for (const auto [region, body] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    previous = buildRegion(region, previous, body);
+  }
+  previous = buildRegion(switchOp.getDefaultRegion(), previous, defaultBody);
+  updateQubitValueTracking(previous, switchOp.getResult(0));
+  return switchOp.getResult(0);
 }
 
 Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,

@@ -24,7 +24,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cassert>
 #include <cstddef>
 #include <optional>
 #include <utility>
@@ -47,13 +46,21 @@ struct FusableRunScan {
 } // namespace
 
 /**
- * @brief Whether `gate` can take part in a fusable single-qubit run.
+ * @brief Whether `gate` has the structural shape of a fusable run member.
  */
-static bool isRunMember(UnitaryOpInterface gate) {
-  if (!gate || !gate.isSingleQubit() || isa<BarrierOp>(gate.getOperation())) {
-    return false;
+static bool isRunMemberCandidate(UnitaryOpInterface gate) {
+  return gate && gate.isSingleQubit() && !isa<BarrierOp>(gate.getOperation());
+}
+
+/**
+ * @brief Returns the matrix when `gate` can take part in a fusable
+ * single-qubit run.
+ */
+static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
+  if (!isRunMemberCandidate(gate)) {
+    return std::nullopt;
   }
-  return gate.hasCompileTimeKnownUnitaryMatrix();
+  return gate.getUnitaryMatrix<Matrix2x2>();
 }
 
 /**
@@ -88,19 +95,25 @@ static bool isTargetBasisGate(Operation* op,
  * @brief Walks the wire from @p head, composing the run's matrix and metadata.
  *
  * @param head First gate of the run.
+ * @param headMatrix Matrix already obtained while identifying the run head.
  * @param basis Target Euler basis.
  * @return Composed matrix, gate count, and run tail.
  */
 static FusableRunScan scanFusableRun(UnitaryOpInterface head,
+                                     const Matrix2x2& headMatrix,
                                      const decomposition::EulerBasis basis) {
   FusableRunScan scan;
   for (auto* op : WireRange(head.getOutputTarget(0))) {
     auto member = dyn_cast_or_null<UnitaryOpInterface>(op);
-    if (!member || !isRunMember(member)) {
+    if (!member) {
       break;
     }
-    const auto matrix = member.getUnitaryMatrix<Matrix2x2>();
-    assert(matrix && "run member must have a compile-time 2x2 matrix");
+    const auto matrix = member.getOperation() == head.getOperation()
+                            ? std::optional{headMatrix}
+                            : getRunMemberMatrix(member);
+    if (!matrix) {
+      break;
+    }
     scan.composed.premultiplyBy(*matrix);
     scan.hasNonBasisGate |= !isTargetBasisGate(op, basis);
     scan.tail = member;
@@ -143,17 +156,6 @@ struct FuseSingleQubitUnitaryRunsPattern final
   decomposition::EulerBasis basis;
 
   /**
-   * @brief Whether `op` starts a run.
-   *
-   * @param op The candidate run head.
-   * @return Whether `op` anchors a maximal fusable run.
-   */
-  static bool isRunStart(UnitaryOpInterface op) {
-    return isRunMember(op) && !isRunMember(dyn_cast_or_null<UnitaryOpInterface>(
-                                  op.getInputTarget(0).getDefiningOp()));
-  }
-
-  /**
    * @brief Fuses the run anchored at `op` when beneficial.
    *
    * Fuses if the run contains a non-basis gate or Euler resynthesis would
@@ -165,11 +167,20 @@ struct FuseSingleQubitUnitaryRunsPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    if (!isRunStart(op)) {
+    if (!isRunMemberCandidate(op)) {
+      return failure();
+    }
+    const auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
+        op.getInputTarget(0).getDefiningOp());
+    if (getRunMemberMatrix(predecessor)) {
+      return failure();
+    }
+    const auto headMatrix = getRunMemberMatrix(op);
+    if (!headMatrix) {
       return failure();
     }
 
-    FusableRunScan run = scanFusableRun(op, basis);
+    FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
     const auto qubitOut = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputTarget(0), run.composed,
         run.gateCount, run.hasNonBasisGate, basis);

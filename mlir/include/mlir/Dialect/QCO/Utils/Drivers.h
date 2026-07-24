@@ -53,6 +53,11 @@ inline size_t getNumQubitArgs(Operation* op) {
           return isa<QubitType>(v.getType());
         });
       })
+      .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+        return llvm::count_if(op.getTargets(), [](Value v) {
+          return isa<QubitType>(v.getType());
+        });
+      })
       .Default([&](Operation* op) {
         const auto name = op->getName().getStringRef();
         reportFatalInternalError("unknown op: " + name);

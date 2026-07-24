@@ -353,20 +353,22 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     return *this;
   }
 
-  SmallVector<Value> allQubits;
-  allQubits.reserve(getQubits().size() + addons.size());
-  allQubits.append(getQubits().begin(), getQubits().end());
-  allQubits.append(addons.begin(), addons.end());
-  const auto allQubitTypes = ValueRange(allQubits).getTypes();
+  const auto qubits = getQubits();
 
-  auto newIfOp = create(rewriter, getLoc(), getCondition(), allQubits);
+  SmallVector<Value> newQubits;
+  newQubits.reserve(qubits.size() + addons.size());
+  newQubits.append(qubits.begin(), qubits.end());
+  newQubits.append(addons.begin(), addons.end());
+  const auto allQubitTypes = ValueRange(newQubits).getTypes();
+
+  auto newIfOp = create(rewriter, getLoc(), getCondition(), newQubits);
 
   const auto rewriteRegion = [&](Region& oldRegion, Region& newRegion) {
     auto* oldBlock = &oldRegion.front();
     const auto numOldArgs = oldBlock->getNumArguments();
     auto* newBlock =
         rewriter.createBlock(&newRegion, {}, allQubitTypes,
-                             SmallVector<Location>(allQubits.size(), getLoc()));
+                             SmallVector<Location>(newQubits.size(), getLoc()));
     const auto oldArgs = newBlock->getArguments().take_front(numOldArgs);
     const auto addonArgs = newBlock->getArguments().drop_front(numOldArgs);
 
