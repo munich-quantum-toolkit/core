@@ -178,8 +178,7 @@ static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
     llvm::cl::desc(
         "Decompose controlled X/Z/phase gates with at least "
-        "--decompose-multi-controlled-min-controls controls (default 2; HP24 "
-        "for k>=4, then lower building blocks when min-controls allows)."),
+        "--decompose-multi-controlled-min-controls controls (default 2)."),
     llvm::cl::init(false));
 
 static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
@@ -188,7 +187,7 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
         "Minimum control count for --decompose-multi-controlled: decompose "
         "controlled X/Z/phase gates with at least this many controls (default "
         "2; must be at least 2). Higher values leave smaller controlled gates "
-        "and HP24 building blocks undecomposed."),
+        "undecomposed."),
     llvm::cl::init(2));
 
 /**
