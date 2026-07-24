@@ -689,18 +689,20 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOIfOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qco::simpleIf),
-                        MQT_NAMED_BUILDER(qc::simpleIf)},
-        QCOToQCTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
-                        MQT_NAMED_BUILDER(qc::ifElse)},
-        QCOToQCTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qco::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qc::ifTwoQubits)},
-        QCOToQCTestCase{"MeasureInIf", MQT_NAMED_BUILDER(qco::measureInIf),
-                        MQT_NAMED_BUILDER(qc::measureInIf)},
-        QCOToQCTestCase{"NestedIfOpForLoop",
-                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
-                        MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
+    testing::Values(QCOToQCTestCase{"SimpleIfOp",
+                                    MQT_NAMED_BUILDER(qco::simpleIf),
+                                    MQT_NAMED_BUILDER(qc::simpleIf)},
+                    QCOToQCTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
+                                    MQT_NAMED_BUILDER(qc::ifElse)},
+                    QCOToQCTestCase{"IfTwoQubits",
+                                    MQT_NAMED_BUILDER(qco::ifTwoQubits),
+                                    MQT_NAMED_BUILDER(qc::ifTwoQubits)},
+                    QCOToQCTestCase{"IfWithMeasurement",
+                                    MQT_NAMED_BUILDER(qco::ifWithMeasurement),
+                                    MQT_NAMED_BUILDER(qc::ifWithMeasurement)},
+                    QCOToQCTestCase{"NestedIfOpForLoop",
+                                    MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
+                                    MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
 /// @}
 
 /// \name QCOToQC/Operations/IndexSwitchOp.cpp

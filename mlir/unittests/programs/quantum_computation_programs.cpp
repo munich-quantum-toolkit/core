@@ -728,7 +728,7 @@ void ifTwoQubits(QuantumComputation& comp) {
   comp.measureAll(true, false);
 }
 
-void measureInIf(QuantumComputation& comp) {
+void ifWithMeasurement(QuantumComputation& comp) {
   const auto& q = comp.addQubitRegister(1, "q");
   const auto& c = comp.addClassicalRegister(1, "c");
   const auto& meas = comp.addClassicalRegister(1, "meas");

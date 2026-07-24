@@ -60,6 +60,14 @@ using namespace qco;
 #define GEN_PASS_DEF_QCOTOJEFF
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h.inc"
 
+/**
+ * @brief Returns whether @p value is a classical-bit-register memref.
+ */
+[[nodiscard]] static bool isClassicalRegister(Value value) {
+  auto memrefType = dyn_cast<MemRefType>(value.getType());
+  return memrefType && memrefType.getElementType().isInteger(1);
+}
+
 namespace {
 
 /** @brief Qubit allocation mode */
@@ -73,6 +81,10 @@ enum class AllocationMode : std::uint8_t {
  * @brief State object for tracking modifier information
  */
 struct LoweringState {
+  // Module information
+  SmallVector<std::string> strings;
+  std::string entryPointName;
+
   // Modifier information
   bool inCtrlOp = false;
   bool inInvOp = false;
@@ -92,23 +104,15 @@ struct LoweringState {
   /// Map from a tensor block argument to its classical-bit-register memref
   DenseMap<Value, Value> cregFromBlockArg;
 
-  /**
-   * @brief Resolves @p cregOrBlockArg to the underlying classical-bit-register
-   * memref.
-   *
-   * @details
-   * If @p cregOrBlockArg is a block argument, it is looked up in
-   * `cregFromBlockArg`. Otherwise, it is returned as-is.
-   */
+  /// Resolves @p cregOrBlockArg to the underlying classical-bit-register
+  /// memref.
   [[nodiscard]] Value resolveCreg(Value cregOrBlockArg) {
     auto it = cregFromBlockArg.find(cregOrBlockArg);
     return it != cregFromBlockArg.end() ? it->second : cregOrBlockArg;
   }
 
-  /**
-   * @brief Returns the latest tensor value for a @p memref in the region of @p
-   * anchor.
-   */
+  /// Returns the latest tensor value for a classical-bit-register @p memref in
+  /// the region of @p anchor.
   [[nodiscard]] Value getCurrentCreg(Value memref, Operation* anchor) {
     for (auto* region = anchor->getParentRegion(); region != nullptr;
          region = region->getParentRegion()) {
@@ -123,17 +127,11 @@ struct LoweringState {
     return nullptr;
   }
 
-  /**
-   * @brief Sets the latest tensor value for a @p memref in the region of @p
-   * anchor.
-   */
+  /// Sets the latest tensor value for a classical-bit-register @p memref in the
+  /// region of @p anchor.
   void setCurrentCreg(Value memref, Value tensor, Operation* anchor) {
     cregTensors[anchor->getParentRegion()][memref] = tensor;
   }
-
-  // Module information
-  SmallVector<std::string> strings;
-  std::string entryPointName;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -337,7 +335,8 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Patches register yields with each register's final value.
+ * @brief Updates all `jeff.yield` operations in @p module to use the latest
+ * classical-bit-register tensor values.
  */
 static void patchCregYields(Operation* module, LoweringState& state) {
   module->walk([&](jeff::YieldOp yieldOp) {
@@ -411,29 +410,6 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
   return success();
-}
-
-/**
- * @brief Returns whether @p value is a classical-bit-register memref.
- */
-[[nodiscard]] static bool isClassicalRegister(Value value) {
-  auto memrefType = dyn_cast<MemRefType>(value.getType());
-  return memrefType && memrefType.getElementType().isInteger(1);
-}
-
-/**
- * @brief Resolves the initial value for a value threaded into a control-flow
- * region: a register's latest `int_array`, or the remapped value otherwise.
- */
-[[nodiscard]] static Value
-resolveThreadedInit(LoweringState& state, Operation* anchor, Value memref,
-                    ConversionPatternRewriter& rewriter) {
-  if (isClassicalRegister(memref)) {
-    if (auto creg = state.getCurrentCreg(memref, anchor)) {
-      return creg;
-    }
-  }
-  return rewriter.getRemappedValue(memref);
 }
 
 /**
@@ -554,12 +530,12 @@ struct ConvertMemRefStoreOpToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto memref = state.resolveCreg(op.getMemrefMutable().get());
-    auto current = state.getCurrentCreg(memref, op);
-    if (!current) {
+    auto creg = state.getCurrentCreg(memref, op);
+    if (!creg) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
     }
     auto newCreg = jeff::IntArraySetIndexOp::create(
-                       rewriter, op.getLoc(), current.getType(), current,
+                       rewriter, op.getLoc(), creg.getType(), creg,
                        adaptor.getIndices()[0], adaptor.getValue())
                        .getResult();
     state.setCurrentCreg(memref, newCreg, op);
@@ -1303,9 +1279,17 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
 
     auto& state = getState();
     for (auto value : aboveValues) {
-      auto init = resolveThreadedInit(state, op, value, rewriter);
-      initArgs.push_back(init);
-      outTypes.push_back(init.getType());
+      Value remappedValue;
+      if (isClassicalRegister(value)) {
+        remappedValue = state.getCurrentCreg(value, op);
+        if (!remappedValue) {
+          return rewriter.notifyMatchFailure(op, "unknown classical register");
+        }
+      } else {
+        remappedValue = rewriter.getRemappedValue(value);
+      }
+      initArgs.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
     }
 
     auto jeffSwitch = jeff::SwitchOp::create(
@@ -1395,9 +1379,17 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
 
     auto& state = getState();
     for (auto value : aboveValues) {
-      auto init = resolveThreadedInit(state, op, value, rewriter);
-      initArgs.push_back(init);
-      outTypes.push_back(init.getType());
+      Value remappedValue;
+      if (isClassicalRegister(value)) {
+        remappedValue = state.getCurrentCreg(value, op);
+        if (!remappedValue) {
+          return rewriter.notifyMatchFailure(op, "unknown classical register");
+        }
+      } else {
+        remappedValue = rewriter.getRemappedValue(value);
+      }
+      initArgs.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
     }
 
     auto jeffFor = jeff::ForOp::create(
@@ -1471,9 +1463,17 @@ struct ConvertSCFWhileOpToJeff final
 
     auto& state = getState();
     for (auto value : aboveValues) {
-      auto init = resolveThreadedInit(state, op, value, rewriter);
-      inits.push_back(init);
-      outTypes.push_back(init.getType());
+      Value remappedValue;
+      if (isClassicalRegister(value)) {
+        remappedValue = state.getCurrentCreg(value, op);
+        if (!remappedValue) {
+          return rewriter.notifyMatchFailure(op, "unknown classical register");
+        }
+      } else {
+        remappedValue = rewriter.getRemappedValue(value);
+      }
+      inits.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
     }
 
     auto jeffWhile =

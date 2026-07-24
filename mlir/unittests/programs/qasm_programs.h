@@ -411,7 +411,7 @@ extern const std::string ifElse;
 extern const std::string ifTwoQubits;
 
 /// Creates a circuit that measures a qubit inside an if operation.
-extern const std::string measureInIf;
+extern const std::string ifWithMeasurement;
 
 /// Creates a circuit with an if operation with a negated condition.
 extern const std::string ifNot;

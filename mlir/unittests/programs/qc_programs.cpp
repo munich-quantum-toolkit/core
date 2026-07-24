@@ -2517,7 +2517,7 @@ SmallVector<Value> ifTwoQubits(QCProgramBuilder& b) {
   return {c0, c1};
 }
 
-SmallVector<Value> measureInIf(QCProgramBuilder& b) {
+SmallVector<Value> ifWithMeasurement(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);

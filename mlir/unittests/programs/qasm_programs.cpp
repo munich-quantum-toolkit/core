@@ -976,7 +976,7 @@ if (c) {
 bit[2] out = measure q;
 )qasm";
 
-const std::string measureInIf = R"qasm(OPENQASM 3.0;
+const std::string ifWithMeasurement = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
 bit c;

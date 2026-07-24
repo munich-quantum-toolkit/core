@@ -699,8 +699,9 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::ifElse)},
         QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
                         MQT_NAMED_BUILDER(qco::ifTwoQubits)},
-        QCToQCOTestCase{"MeasureInIf", MQT_NAMED_BUILDER(qc::measureInIf),
-                        MQT_NAMED_BUILDER(qco::measureInIf)},
+        QCToQCOTestCase{"IfWithMeasurement",
+                        MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+                        MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
