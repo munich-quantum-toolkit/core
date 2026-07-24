@@ -210,16 +210,4 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
   }
 }
 
-[[nodiscard]] Value
-resolveIntVariant(OpBuilder& builder, Location loc,
-                  const std::variant<int64_t, Value>& variant) {
-  if (const auto* value = std::get_if<Value>(&variant)) {
-    return *value;
-  }
-  return LLVM::ConstantOp::create(
-             builder, loc, builder.getI64Type(),
-             builder.getIndexAttr(std::get<int64_t>(variant)))
-      .getResult();
-}
-
 } // namespace mlir::qir

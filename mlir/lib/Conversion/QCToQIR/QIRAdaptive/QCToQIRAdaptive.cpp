@@ -129,6 +129,7 @@ convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
     return failure();
   }
 
+  auto loc = op.getLoc();
   auto* ctx = op.getContext();
   auto ptrType = LLVM::LLVMPointerType::get(ctx);
   auto voidType = LLVM::LLVMVoidType::get(ctx);
@@ -142,19 +143,16 @@ convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
   if (op.getType().getShape()[0] == ShapedType::kDynamic) {
     size = adaptor.getDynamicSizes()[0];
   } else {
-    size =
-        LLVM::ConstantOp::create(rewriter, op.getLoc(), rewriter.getI64Type(),
-                                 op.getType().getShape()[0])
-            .getResult();
+    size = LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
+                                    op.getType().getShape()[0])
+               .getResult();
   }
   state.qregSizes.try_emplace(op.getMemref(), size);
 
   auto array =
-      LLVM::AllocaOp::create(rewriter, op.getLoc(), ptrType, ptrType, size)
-          .getResult();
-  auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType).getResult();
-  LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
-                       ValueRange{size, array, zero});
+      LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size).getResult();
+  auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
+  LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
 
   rewriter.replaceOp(op, array);
   return success();

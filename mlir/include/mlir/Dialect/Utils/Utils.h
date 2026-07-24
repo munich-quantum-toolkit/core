@@ -80,8 +80,9 @@ inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
  * @return Value The parameter as a Value.
  */
 template <typename T>
-[[nodiscard]] Value variantToValue(OpBuilder& builder, Location loc,
-                                   const std::variant<T, Value>& parameter) {
+[[nodiscard]] inline Value
+variantToValue(OpBuilder& builder, Location loc,
+               const std::variant<T, Value>& parameter) {
   if (const auto* value = std::get_if<Value>(&parameter)) {
     return *value;
   }

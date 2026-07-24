@@ -196,7 +196,13 @@ public:
    * @return An LLVM pointer representing the result
    *
    * @par Example:
-   *
+   * ```c++
+   * auto r0 = builder.staticResult(0);
+   * ```
+   * ```mlir
+   * %c0 = llvm.mlir.constant(0 : i64) : i64
+   * %r0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+   * ```
    */
   Value staticResult(int64_t index, bool record = true);
 
