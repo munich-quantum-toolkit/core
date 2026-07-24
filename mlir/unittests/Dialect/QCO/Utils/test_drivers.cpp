@@ -66,7 +66,7 @@ TEST_F(DriversTest, ProgramGraphWalkTooFewWires) {
   wires.emplace_back(q00);
 
   auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyVec&, qco::ReleasedOps&) {
+      wires, [&](const qco::ReadyRange&, qco::ReleasedOps&) {
         return WalkResult::skip();
       });
   ASSERT_TRUE(res.failed());
@@ -105,7 +105,7 @@ TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
   size_t iteration = 0;
   bool observedDeferredOp = false;
   auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyVec& ready, qco::ReleasedOps& released) {
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, _] : ready) {
           layer.insert(op);
@@ -194,7 +194,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   // Forward pass.
   auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyVec& ready, qco::ReleasedOps& released) {
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
@@ -215,7 +215,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   // Backward pass.
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Backward>(
-      wires, [&](const qco::ReadyVec& ready, qco::ReleasedOps& released) {
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
@@ -236,7 +236,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   // Forward, but instead of releasing all, we use ::skip().
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyVec& ready, qco::ReleasedOps&) {
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps&) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
@@ -256,7 +256,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   // Backward, but stop after first layer.
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Backward>(
-      wires, [&](const qco::ReadyVec& ready, qco::ReleasedOps& released) {
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
@@ -278,7 +278,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyVec& ready, qco::ReleasedOps& released) {
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);

@@ -1028,7 +1028,7 @@ private:
     window.reserve(1 + nlookahead);
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyVec& ready, ReleasedOps& released) {
+        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
@@ -1116,7 +1116,7 @@ private:
     // result stack.
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyVec& ready, ReleasedOps& released) {
+        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
