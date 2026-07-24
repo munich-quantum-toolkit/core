@@ -10,6 +10,7 @@
 
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
+#include "dd/RealNumber.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
@@ -21,7 +22,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -35,11 +35,13 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <numbers>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -91,7 +93,7 @@ constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
 /// `4k^2 - 4k + 2`.
 [[nodiscard]] constexpr size_t expectedMcpCx(size_t k) {
   if (k >= 5) {
-    return 4 * k * k - 4 * k + 2;
+    return (4 * k * k) - (4 * k) + 2;
   }
   constexpr std::array<size_t, 5> small = {0, 0, 6, 20, 42};
   return small[k];
@@ -351,7 +353,7 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
       ++singleP;
     }
   });
-  return countElementaryCxOps(moduleOp) + 2 * singleP;
+  return countElementaryCxOps(moduleOp) + (2 * singleP);
 }
 
 void expectFullyLowered(ModuleOp moduleOp) {
