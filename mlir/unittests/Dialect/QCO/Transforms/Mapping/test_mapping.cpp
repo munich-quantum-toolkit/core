@@ -56,7 +56,8 @@ struct Device {
   DenseSet<std::pair<size_t, size_t>> couplingSet;
 };
 
-static SmallVector<Value> getQubitValues(ValueRange values) {
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+SmallVector<Value> getQubitValues(ValueRange values) {
   return to_vector(llvm::make_filter_range(
       values, [](Value value) { return isa<QubitType>(value.getType()); }));
 }
