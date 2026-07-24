@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/DenseSet.h>
@@ -32,6 +33,15 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+static bool isLinearType(Type type) {
+  if (isa<QubitType>(type)) {
+    return true;
+  }
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
+
 void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                           Value arg, Value target, ArrayRef<int64_t> cases,
                           ArrayRef<function_ref<Value(Value)>> caseBuilders,
@@ -41,7 +51,8 @@ void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
         "Each case must have a corresponding case body function");
   }
 
-  build(odsBuilder, odsState, target.getType(), arg, cases, target,
+  const SmallVector<Type> linearResultTypes{target.getType()};
+  build(odsBuilder, odsState, linearResultTypes, arg, cases, target,
         cases.size());
 
   const OpBuilder::InsertionGuard guard(odsBuilder);
@@ -70,7 +81,9 @@ void IndexSwitchOp::getSuccessorRegions(
     return;
   }
 
-  llvm::append_range(regions, getRegions());
+  for (Region* region : getRegions()) {
+    regions.emplace_back(region, region->getArguments());
+  }
 }
 
 void IndexSwitchOp::getRegionInvocationBounds(
@@ -108,7 +121,9 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   // If a constant was not provided, all regions are possible successors.
   auto arg = dyn_cast_or_null<IntegerAttr>(adaptor.getArg());
   if (!arg) {
-    llvm::append_range(regions, getRegions());
+    for (Region* region : getRegions()) {
+      regions.emplace_back(region, region->getArguments());
+    }
     return;
   }
 
@@ -117,12 +132,19 @@ void IndexSwitchOp::getEntrySuccessorRegions(
 
   const auto* it = llvm::find(getCases(), arg.getInt());
   if (it == getCases().end()) {
-    regions.emplace_back(&getDefaultRegion());
+    regions.emplace_back(&getDefaultRegion(),
+                         getDefaultRegion().getArguments());
     return;
   }
 
   const auto caseIndex = std::distance(getCases().begin(), it);
-  regions.emplace_back(&getCaseRegions()[caseIndex]);
+  auto& caseRegion = getCaseRegions()[caseIndex];
+  regions.emplace_back(&caseRegion, caseRegion.getArguments());
+}
+
+OperandRange
+IndexSwitchOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
+  return getTargets();
 }
 
 LogicalResult IndexSwitchOp::verify() {
@@ -140,7 +162,7 @@ LogicalResult IndexSwitchOp::verify() {
 
   const auto targets = getTargets();
   const auto ntargets = targets.size();
-  const auto results = getResults();
+  const auto results = getLinearResults();
   const auto nresults = results.size();
 
   for (Region* region : getRegions()) {
@@ -148,6 +170,15 @@ LogicalResult IndexSwitchOp::verify() {
       return emitOpError(
           "Region " + Twine(region->getRegionNumber()) +
           " must have the same number of arguments as the number of targets");
+    }
+    if (!llvm::equal(region->getArgumentTypes(), targets.getTypes())) {
+      return emitOpError("region argument types must match the target types");
+    }
+  }
+
+  for (Type type : getClassicalResults().getTypes()) {
+    if (isLinearType(type)) {
+      return emitOpError("classical results must not use QCO linear types");
     }
   }
 
@@ -175,23 +206,28 @@ LogicalResult IndexSwitchOp::verify() {
 }
 
 OpResult IndexSwitchOp::getTiedResult(OpOperand* target) {
-  if (target->getOwner() != getOperation()) {
+  if (target->getOwner() != getOperation() || target->getOperandNumber() == 0) {
     return {};
   }
   // Because the first operand is the index, subtract one.
-  return getResults()[target->getOperandNumber() - 1];
+  return getLinearResults()[target->getOperandNumber() - 1];
 }
 
 OpOperand* IndexSwitchOp::getTiedTarget(OpResult result) {
   if (result.getDefiningOp() != getOperation()) {
     return nullptr;
   }
-  return &getTargetsMutable()[result.getResultNumber()];
+  const auto numClassicalResults = getClassicalResults().size();
+  if (result.getResultNumber() < numClassicalResults) {
+    return nullptr;
+  }
+  return &getTargetsMutable()[result.getResultNumber() - numClassicalResults];
 }
 
 BlockArgument IndexSwitchOp::getTiedCaseBlockArgument(OpOperand* target,
                                                       size_t i) {
-  if (target->getOwner() != getOperation() || i >= getNumCases()) {
+  if (target->getOwner() != getOperation() || target->getOperandNumber() == 0 ||
+      i >= getNumCases()) {
     return {};
   }
 
@@ -204,11 +240,12 @@ OpOperand* IndexSwitchOp::getTiedCaseYieldedValue(BlockArgument bbArg,
     return nullptr;
   }
 
-  return &getCaseYield(i).getTargetsMutable()[bbArg.getArgNumber()];
+  return &getCaseYield(i).getTargetsMutable()[getClassicalResults().size() +
+                                              bbArg.getArgNumber()];
 }
 
 BlockArgument IndexSwitchOp::getTiedDefaultBlockArgument(OpOperand* target) {
-  if (target->getOwner() != getOperation()) {
+  if (target->getOwner() != getOperation() || target->getOperandNumber() == 0) {
     return {};
   }
 
@@ -220,7 +257,8 @@ OpOperand* IndexSwitchOp::getTiedDefaultYieldedValue(BlockArgument bbArg) {
     return nullptr;
   }
 
-  return &getDefaultYield().getTargetsMutable()[bbArg.getArgNumber()];
+  return &getDefaultYield().getTargetsMutable()[getClassicalResults().size() +
+                                                bbArg.getArgNumber()];
 }
 
 IndexSwitchOp
@@ -239,8 +277,9 @@ IndexSwitchOp::replaceWithAdditionalTargets(RewriterBase& rewriter,
   newTargets.append(addons.begin(), addons.end());
   const auto newTargetTypes = ValueRange(newTargets).getTypes();
 
-  auto newSwitchOp = create(rewriter, getLoc(), newTargetTypes, getArg(),
-                            getCases(), newTargets, getNumCases());
+  auto newSwitchOp =
+      create(rewriter, getLoc(), getClassicalResults().getTypes(),
+             newTargetTypes, getArg(), getCases(), newTargets, getNumCases());
 
   const auto rewriteRegion = [&](Region& oldRegion, Region& newRegion) {
     auto* oldBlock = &oldRegion.front();

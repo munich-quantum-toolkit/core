@@ -752,10 +752,15 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(qco::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<scf::IfOp, scf::IndexSwitchOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    if (auto ifOp = dyn_cast<scf::IfOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(
+          op, adaptor.getTargets().take_front(ifOp.getNumResults()));
+    } else if (auto switchOp =
+                   dyn_cast<scf::IndexSwitchOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(
+          op, adaptor.getTargets().take_front(switchOp.getNumResults()));
     } else {
       rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
     }
@@ -882,26 +887,38 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
   LogicalResult
   matchAndRewrite(IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    SmallVector<Type> classicalResultTypes;
+    if (failed(getTypeConverter()->convertTypes(
+            op.getClassicalResults().getTypes(), classicalResultTypes))) {
+      return failure();
+    }
+    const bool keepElseRegion =
+        !classicalResultTypes.empty() ||
+        op.getElseRegion().front().getOperations().size() > 1;
+
     // Create the new if operation
-    auto newIf = scf::IfOp::create(rewriter, op.getLoc(), TypeRange{},
-                                   adaptor.getCondition(), false);
+    auto newIf = scf::IfOp::create(rewriter, op.getLoc(), classicalResultTypes,
+                                   adaptor.getCondition(), keepElseRegion);
     auto& newThenRegion = newIf.getThenRegion();
     auto& oldElseRegion = op.getElseRegion();
     // Erase the default empty then block
     rewriter.eraseBlock(&newThenRegion.front());
 
     // Inline the region and replace the block arguments
-    inlineRegion(op.getThenRegion(), newThenRegion, 0,
-                 adaptor.getOperands().drop_front(1), rewriter);
+    inlineRegion(op.getThenRegion(), newThenRegion, 0, adaptor.getQubits(),
+                 rewriter);
 
-    // Inline the else block if it has more than just the yield operation
-    if (oldElseRegion.front().getOperations().size() > 1) {
-      inlineRegion(oldElseRegion, newIf.getElseRegion(), 0,
-                   adaptor.getOperands().drop_front(1), rewriter);
+    // Inline the else block when it has observable operations or must produce
+    // classical results.
+    if (keepElseRegion) {
+      rewriter.eraseBlock(&newIf.getElseRegion().front());
+      inlineRegion(oldElseRegion, newIf.getElseRegion(), 0, adaptor.getQubits(),
+                   rewriter);
     }
 
-    // Replace the qco results with the input qc values except the condition
-    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+    SmallVector<Value> replacements(newIf.getResults());
+    llvm::append_range(replacements, adaptor.getQubits());
+    rewriter.replaceOp(op, replacements);
 
     return success();
   }
@@ -939,22 +956,28 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   LogicalResult
   matchAndRewrite(IndexSwitchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto newOp =
-        scf::IndexSwitchOp::create(rewriter, op.getLoc(), {}, adaptor.getArg(),
-                                   adaptor.getCases(), op.getNumCases());
+    SmallVector<Type> classicalResultTypes;
+    if (failed(getTypeConverter()->convertTypes(
+            op.getClassicalResults().getTypes(), classicalResultTypes))) {
+      return failure();
+    }
+    auto newOp = scf::IndexSwitchOp::create(
+        rewriter, op.getLoc(), classicalResultTypes, adaptor.getArg(),
+        adaptor.getCases(), op.getNumCases());
 
     const auto oldRegions = op.getCaseRegions();
     const auto newCaseRegions = newOp.getCaseRegions();
     for (size_t i = 0; i < op.getNumCases(); ++i) {
-      inlineRegion(oldRegions[i], newCaseRegions[i], 0,
-                   adaptor.getOperands().drop_front(1), rewriter);
+      inlineRegion(oldRegions[i], newCaseRegions[i], 0, adaptor.getTargets(),
+                   rewriter);
     }
 
     inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(), 0,
-                 adaptor.getOperands().drop_front(1), rewriter);
+                 adaptor.getTargets(), rewriter);
 
-    // Replace the qco results with the input qc values except the condition
-    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+    SmallVector<Value> replacements(newOp.getResults());
+    llvm::append_range(replacements, adaptor.getTargets());
+    rewriter.replaceOp(op, replacements);
 
     return success();
   }

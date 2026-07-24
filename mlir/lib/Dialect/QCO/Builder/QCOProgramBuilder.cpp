@@ -1206,13 +1206,13 @@ ValueRange QCOProgramBuilder::qcoIf(
           "Else body must return exactly one value per input value");
     }
     YieldOp::create(*this, elseResult);
-    updateQubitValueTracking(elseResult, ifOp.getResults());
+    updateQubitValueTracking(elseResult, ifOp.getLinearResults());
   } else {
     YieldOp::create(*this, elseArgs);
-    updateQubitValueTracking(thenResult, ifOp.getResults());
+    updateQubitValueTracking(thenResult, ifOp.getLinearResults());
   }
 
-  return ifOp.getResults();
+  return ifOp.getLinearResults();
 }
 
 ValueRange QCOProgramBuilder::qcoIndexSwitch(
@@ -1263,9 +1263,9 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
   }
 
   buildRegion(switchOp.getDefaultRegion(), prev, defaultBody);
-  updateQubitValueTracking(prev, switchOp.getResults());
+  updateQubitValueTracking(prev, switchOp.getLinearResults());
 
-  return switchOp.getResults();
+  return switchOp.getLinearResults();
 }
 
 Value QCOProgramBuilder::qcoIndexSwitch(
@@ -1302,8 +1302,8 @@ Value QCOProgramBuilder::qcoIndexSwitch(
     previous = buildRegion(region, previous, body);
   }
   previous = buildRegion(switchOp.getDefaultRegion(), previous, defaultBody);
-  updateQubitValueTracking(previous, switchOp.getResult(0));
-  return switchOp.getResult(0);
+  updateQubitValueTracking(previous, switchOp.getLinearResults().front());
+  return switchOp.getLinearResults().front();
 }
 
 Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
@@ -1328,13 +1328,13 @@ Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
                                elseResult = elseBody(arg);
                                return elseResult;
                              });
-    updateQubitValueTracking(elseResult, ifOp.getResult(0));
-    return ifOp.getResult(0);
+    updateQubitValueTracking(elseResult, ifOp.getLinearResults().front());
+    return ifOp.getLinearResults().front();
   }
 
   auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody);
-  updateQubitValueTracking(thenResult, ifOp.getResult(0));
-  return ifOp.getResult(0);
+  updateQubitValueTracking(thenResult, ifOp.getLinearResults().front());
+  return ifOp.getLinearResults().front();
 }
 
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,

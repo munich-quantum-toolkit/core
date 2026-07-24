@@ -1517,12 +1517,13 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new IfOp
-    auto newIfOp =
-        IfOp::create(rewriter, op.getLoc(), op.getCondition(), qcoTargets);
+    auto newIfOp = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
+                                ValueRange(qcoTargets).getTypes(),
+                                op.getCondition(), qcoTargets);
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newIfOp.getResults().take_front(numRegisters));
+                        newIfOp.getLinearResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
-                       newIfOp.getResults().take_back(numQubits));
+                       newIfOp.getLinearResults().take_back(numQubits));
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newIfOp);
@@ -1535,10 +1536,11 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     // Create the new blocks and move the contents from the old blocks into the
     // new ones
+    const auto qcoTargetTypes = ValueRange(qcoTargets).getTypes();
     auto* thenBlock =
-        rewriter.createBlock(&thenRegion, {}, newIfOp->getResultTypes(), locs);
+        rewriter.createBlock(&thenRegion, {}, qcoTargetTypes, locs);
     auto* elseBlock =
-        rewriter.createBlock(&elseRegion, {}, newIfOp->getResultTypes(), locs);
+        rewriter.createBlock(&elseRegion, {}, qcoTargetTypes, locs);
 
     thenBlock->getOperations().splice(
         thenBlock->end(), op.getThenRegion().front().getOperations());
@@ -1564,7 +1566,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                        thenBlock->getArguments().take_back(numQubits),
                        thenBlock->getArguments().take_front(numRegisters));
 
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, newIfOp.getClassicalResults());
     return success();
   }
 };
@@ -1611,17 +1613,17 @@ struct ConvertSCFIndexSwitchOp final
 
     insertQubitsBeforeOp(state, operation, rewriter);
     const auto targets = resolveAllValues(state, operation);
-    const auto results = ValueRange(targets).getTypes();
+    const auto linearResultTypes = ValueRange(targets).getTypes();
     const SmallVector locs(targets.size(), op.getLoc());
 
-    auto newOp =
-        IndexSwitchOp::create(rewriter, op.getLoc(), results, op.getArg(),
-                              op.getCases(), targets, op.getNumCases());
+    auto newOp = IndexSwitchOp::create(
+        rewriter, op.getLoc(), op.getResultTypes(), linearResultTypes,
+        op.getArg(), op.getCases(), targets, op.getNumCases());
 
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newOp.getResults().take_front(numRegisters));
+                        newOp.getLinearResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
-                       newOp.getResults().take_back(numQubits));
+                       newOp.getLinearResults().take_back(numQubits));
 
     rewriter.setInsertionPointAfter(newOp);
     extractQubitsAfterOp(state, operation, rewriter);
@@ -1634,8 +1636,8 @@ struct ConvertSCFIndexSwitchOp final
     const auto oldCaseRegions = op.getCaseRegions();
     const auto buildRegion = [&](Region& oldRegion, Region& newRegion) {
       auto* oldBlock = &oldRegion.front();
-      auto* newBlock =
-          rewriter.createBlock(&newRegion, {}, newOp.getResultTypes(), locs);
+      auto* newBlock = rewriter.createBlock(
+          &newRegion, {}, newOp.getLinearResults().getTypes(), locs);
       newBlock->getOperations().splice(newBlock->end(),
                                        oldBlock->getOperations());
 
@@ -1650,7 +1652,7 @@ struct ConvertSCFIndexSwitchOp final
     }
     buildRegion(op.getDefaultRegion(), newOp.getDefaultRegion());
 
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, newOp.getClassicalResults());
     return success();
   }
 };
