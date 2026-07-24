@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
@@ -32,6 +33,8 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
@@ -52,6 +55,11 @@ struct Device {
   size_t nqubits{};
   DenseSet<std::pair<size_t, size_t>> couplingSet;
 };
+
+static SmallVector<Value> getQubitValues(ValueRange values) {
+  return to_vector(llvm::make_filter_range(
+      values, [](Value value) { return isa<QubitType>(value.getType()); }));
+}
 } // namespace
 
 /// Return true, if the operations within a region fulfill the given coupling
@@ -111,8 +119,8 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
                   [&](scf::ForOp forOp) { return forOp.getInits(); })
               .Default([](Operation*) -> ValueRange { return {}; });
 
-      const auto initialHardwareOrder =
-          to_vector(llvm::map_range(initArgs, [&](auto v) { return m.at(v); }));
+      const auto initialHardwareOrder = to_vector(llvm::map_range(
+          getQubitValues(initArgs), [&](auto v) { return m.at(v); }));
 
       const auto qubitArgs =
           llvm::make_filter_range(region.getArguments(), [](auto& arg) {
@@ -145,8 +153,9 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
               })
               .Default([](Operation*) -> ValueRange { return {}; });
 
-      const auto finalOrder = to_vector(llvm::map_range(
-          finalOrderArgs, [&](auto v) { return localM.at(v); }));
+      const auto finalOrder =
+          to_vector(llvm::map_range(getQubitValues(finalOrderArgs),
+                                    [&](auto v) { return localM.at(v); }));
 
       if (finalOrder != initialHardwareOrder) {
         llvm::dbgs()
@@ -157,6 +166,9 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
     }
 
     for (OpResult res : op.getResults()) {
+      if (!isa<QubitType>(res.getType())) {
+        continue;
+      }
       const Value init = TypeSwitch<Operation*, Value>(&op)
                              .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
                                return whileOp.getInits()[res.getResultNumber()];
@@ -239,8 +251,8 @@ class MappingPassTest : public testing::Test,
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, scf::SCFDialect, arith::ArithDialect,
-                    func::FuncDialect>();
+    registry.insert<QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
+                    arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -567,6 +579,104 @@ TEST_P(MappingPassTest, MapParallelLoops) {
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %state = arith.constant 0 : i64
+        %one = arith.constant 1 : i64
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1] : tensor<2x!qco.qubit>
+        %next_state, %next_q0, %next_q1 =
+            scf.for %iv = %c0 to %c2 step %c1
+                iter_args(%iter_state = %state, %iter_q0 = %q0,
+                          %iter_q1 = %q1)
+                -> (i64, !qco.qubit, !qco.qubit) {
+          %updated_state = arith.addi %iter_state, %one : i64
+          %updated_q0, %updated_q1 =
+              qco.swap %iter_q0, %iter_q1
+                  : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.yield %updated_state, %updated_q0, %updated_q1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %next_q0 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %next_q1 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %next_state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %false = arith.constant false
+        %state = arith.constant 0 : i32
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1] : tensor<2x!qco.qubit>
+        %next_state, %next_q0, %next_q1 =
+            scf.while (%iter_state = %state, %iter_q0 = %q0,
+                       %iter_q1 = %q1)
+                : (i32, !qco.qubit, !qco.qubit)
+                  -> (i64, !qco.qubit, !qco.qubit) {
+          %extended_state = arith.extsi %iter_state : i32 to i64
+          %updated_q0, %updated_q1 =
+              qco.swap %iter_q0, %iter_q1
+                  : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.condition(%false) %extended_state, %updated_q0, %updated_q1
+              : i64, !qco.qubit, !qco.qubit
+        } do {
+        ^bb0(%after_state: i64, %after_q0: !qco.qubit,
+             %after_q1: !qco.qubit):
+          %truncated_state = arith.trunci %after_state : i64 to i32
+          scf.yield %truncated_state, %after_q0, %after_q1
+              : i32, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %next_q0 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %next_q1 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %next_state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
 }
 
 TEST_P(MappingPassTest, MapSABRECircuit) {
