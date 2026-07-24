@@ -387,6 +387,11 @@ operations.)pb");
               &mlir::QCOProgram::fuseSingleQubitUnitaryRuns>::call,
           nb::kw_only(), "basis"_a = "zyz",
           "Fuse single-qubit unitary runs into the chosen decomposition basis.")
+      .def("fuse_two_qubit_unitary_runs",
+           &BooleanMemberAdapter<
+               &mlir::QCOProgram::fuseTwoQubitUnitaryRuns>::call,
+           nb::kw_only(), "native_gates"_a = "",
+           "Lower unitaries to a native gate menu via two-qubit run fusion.")
       .def("unroll_quantum_loops",
            &BooleanMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
            nb::kw_only(), "unroll_factor"_a = -1,

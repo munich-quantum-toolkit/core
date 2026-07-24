@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
 
@@ -81,6 +82,13 @@ static llvm::cl::opt<std::string> outputFormat(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
         "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
+
+static llvm::cl::opt<std::string> nativeGates(
+    "native-gates",
+    llvm::cl::desc(
+        "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
+        "pass"),
+    llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
@@ -405,6 +413,12 @@ int main(int argc, char** argv) {
             }
           } else {
             populateDefaultQCOOptimizationPipeline(pm);
+          }
+          if (!nativeGates.empty()) {
+            pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
+                qco::FuseTwoQubitUnitaryRunsOptions{
+                    .nativeGates = nativeGates.getValue(),
+                }));
           }
           populateQCOCleanupPipeline(pm);
           return success();

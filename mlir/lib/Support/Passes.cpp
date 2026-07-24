@@ -46,6 +46,7 @@ runWithPassManager(ModuleOp mod,
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
     qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerFuseTwoQubitUnitaryRuns();
     qco::registerHadamardLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();

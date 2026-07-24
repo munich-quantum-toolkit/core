@@ -20,6 +20,9 @@ releases may include breaking changes.
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
+  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
   ([**@simon1hofmann**])
@@ -36,7 +39,7 @@ releases may include breaking changes.
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1826]) ([**@ystade**])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
@@ -667,6 +670,7 @@ changelogs._
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
 [#1870]: https://github.com/munich-quantum-toolkit/core/pull/1870
 [#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
+[#1865]: https://github.com/munich-quantum-toolkit/core/pull/1865
 [#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848

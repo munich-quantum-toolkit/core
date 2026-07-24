@@ -432,6 +432,9 @@ cx q[0], q[2];
 
   EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
   EXPECT_NE(qco.str(), beforeFusion);
+  const auto beforeTwoQubitFusion = qco.str();
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("u,cx"));
+  EXPECT_NE(qco.str(), beforeTwoQubitFusion);
   const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
       {0, 1}, {1, 0}, {1, 2}, {2, 1}};
   EXPECT_TRUE(qco.placeAndRoute(coupling));
@@ -1007,5 +1010,99 @@ INSTANTIATE_TEST_SUITE_P(
         CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(::qc::ctrlTwo),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));
+
+/**
+ * @brief Test: fuseTwoQubitUnitaryRuns lowers Hadamards into native menus.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsLowersHadamard) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  EXPECT_NE(qco.str().find("qco.h"), std::string::npos);
+
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("x,sx,rz,cx"));
+  EXPECT_EQ(qco.str().find("qco.h"), std::string::npos);
+
+  auto qcU = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcU);
+  auto qcoUResult = std::move(*qcU).intoQCO();
+  ASSERT_TRUE(qcoUResult);
+  auto qcoU = std::move(*qcoUResult);
+  ASSERT_TRUE(qcoU.cleanup());
+  EXPECT_TRUE(qcoU.fuseTwoQubitUnitaryRuns("u,cx"));
+  EXPECT_EQ(qcoU.str().find("qco.h"), std::string::npos);
+  EXPECT_NE(qcoU.str().find("qco.u"), std::string::npos);
+
+  auto qcExpanded = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcExpanded);
+  auto qcoExpandedResult = std::move(*qcExpanded).intoQCO();
+  ASSERT_TRUE(qcoExpandedResult);
+  auto qcoExpanded = std::move(*qcoExpandedResult);
+  ASSERT_TRUE(qcoExpanded.cleanup());
+  EXPECT_TRUE(qcoExpanded.fuseTwoQubitUnitaryRuns("u,rx,rz,cx,cz"));
+  EXPECT_EQ(qcoExpanded.str().find("qco.h"), std::string::npos);
+}
+
+/**
+ * @brief Test: fuseTwoQubitUnitaryRuns rejects invalid native gate menus.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsRejectsInvalidMenus) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns("cx,cz"));
+
+  auto qcInvalid = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcInvalid);
+  auto qcoInvalidResult = std::move(*qcInvalid).intoQCO();
+  ASSERT_TRUE(qcoInvalidResult);
+  auto qcoInvalid = std::move(*qcoInvalidResult);
+  ASSERT_TRUE(qcoInvalid.cleanup());
+  EXPECT_FALSE(qcoInvalid.fuseTwoQubitUnitaryRuns("not-a-gate"));
+}
+
+/**
+ * @brief Test: an empty or whitespace-only native gateset is a no-op.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsEmptyMenuIsNoOp) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  const auto before = qco.str();
+  EXPECT_NE(before.find("qco.h"), std::string::npos);
+
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns(""));
+  EXPECT_EQ(qco.str(), before);
+
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("   \t  "));
+  EXPECT_EQ(qco.str(), before);
+}
 
 } // namespace mqt::test::compiler
