@@ -1,0 +1,144 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+name: 🧪 Python CI performance
+on:
+  push:
+    branches: ["agent/ci-python-performance"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: 🐍 ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [macos-26, windows-2025]
+    env:
+      FORCE_COLOR: 3
+      CMAKE_GENERATOR: Ninja
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_CACHE_SIZE: 4G
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: python-ci-v1
+      SKBUILD_BUILD_DIR: build/ci/{build_type}
+
+    steps:
+      - name: Free up space (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sudo rm -rf /usr/local/share/android-sdk || true
+          sudo rm -rf /usr/local/share/dotnet || true
+          sudo rm -rf /usr/share/swift || true
+
+      - name: Free up space (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Remove-Item -Recurse -Force "C:\Android\android-sdk" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "C:\Program Files\dotnet" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "C:\Program Files\ghc" -ErrorAction SilentlyContinue
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: Set up MLIR
+        uses: munich-quantum-software/setup-mlir@fc08baf0a172e98008e6528d465de3b5dd99bc68 # v1.4.1
+        with:
+          llvm-version: 22.1.7
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          save-cache: false
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+
+      - name: Show tool configuration
+        shell: pwsh
+        run: |
+          cmake --version
+          uv --version
+          sccache --version
+          Get-Command cmake
+          Get-Command sccache
+          if ("${{ runner.os }}" -eq "Windows") {
+            Get-Command cl.exe
+            Get-Command link.exe
+          }
+          $ninja = Get-Command ninja -ErrorAction SilentlyContinue
+          if ($null -eq $ninja) {
+            Write-Output "Ninja is not on PATH before the nox session."
+          } else {
+            ninja --version
+            $ninja
+          }
+          sccache --zero-stats
+
+      - name: 🐍 Test with minimal versions
+        env:
+          RUNS_ON: ${{ matrix.runs-on }}
+        run: uvx nox -s minimums --verbose -- --cov --cov-report=xml:coverage-$RUNS_ON.xml --cov-append
+
+      - name: Show compiler cache configuration
+        if: always()
+        shell: pwsh
+        run: |
+          $patterns = @(
+            "^CMAKE_GENERATOR:",
+            "^CMAKE_(C|CXX)_COMPILER:",
+            "^CMAKE_(C|CXX)_COMPILER_LAUNCHER:",
+            "^CMAKE_MSVC_DEBUG_INFORMATION_FORMAT:",
+            "^Python_EXECUTABLE:"
+          )
+          if (Test-Path build/ci) {
+            Get-ChildItem -Path build/ci -Filter CMakeCache.txt -Recurse |
+              ForEach-Object {
+                Write-Output "CMake cache: $($_.FullName)"
+                Select-String -Path $_.FullName -Pattern $patterns |
+                  ForEach-Object { $_.Line }
+              }
+          } else {
+            Write-Output "The shared CMake build directory was not created."
+          }
+          if ("${{ runner.os }}" -eq "Windows" -and (Test-Path build/ci/Release)) {
+            Write-Output "Sample compiler commands:"
+            ninja -C build/ci/Release -t commands |
+              Select-String -Pattern "sccache(?:\.exe)?.*cl(?:\.exe)?" |
+              Select-Object -First 3
+          }
+          sccache --show-stats
+          sccache --zero-stats
+
+      - name: 🐍 Test
+        env:
+          RUNS_ON: ${{ matrix.runs-on }}
+        run: uvx nox -s tests --verbose -- --cov --cov-report=xml:coverage-$RUNS_ON.xml --cov-append
+
+      - name: Show final sccache stats
+        if: always()
+        run: sccache --show-stats
