@@ -64,12 +64,12 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
 }
 
-bool isDecomposeMultiControlledConfigValid(const std::uint64_t minControls) {
+bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
   return minControls >= 2;
 }
 
 void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
-                                              const std::uint64_t minControls) {
+                                              const uint64_t minControls) {
   qco::DecomposeMultiControlledOptions options;
   options.minControls = minControls;
   pm.addPass(qco::createDecomposeMultiControlled(options));

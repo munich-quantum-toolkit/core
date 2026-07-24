@@ -367,7 +367,7 @@ bool QCOProgram::liftHadamards() {
       "failed to lift Hadamard gates"));
 }
 
-bool QCOProgram::decomposeMultiControlled(const std::uint64_t minControls) {
+bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {
   return succeeded(runPasses(
       mod(),
       [minControls](OpPassManager& pm) {

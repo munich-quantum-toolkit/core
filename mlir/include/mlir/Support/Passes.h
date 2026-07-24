@@ -35,12 +35,11 @@ void registerMQTCompilerPasses();
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 
 /// Return whether @p minControls is valid for multi-controlled decomposition.
-[[nodiscard]] bool
-isDecomposeMultiControlledConfigValid(std::uint64_t minControls);
+[[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minControls);
 
 /// Populate the multi-controlled decomposition pass sequence.
 void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
-                                              std::uint64_t minControls);
+                                              uint64_t minControls);
 
 /// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult

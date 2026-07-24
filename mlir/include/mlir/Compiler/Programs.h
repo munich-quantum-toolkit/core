@@ -189,7 +189,7 @@ public:
 
   /// Decompose controlled X/Z/phase gates with at least @p minControls
   /// controls.
-  [[nodiscard]] bool decomposeMultiControlled(std::uint64_t minControls = 2);
+  [[nodiscard]] bool decomposeMultiControlled(uint64_t minControls = 2);
 
   /// Place and route the program on a coupling graph.
   [[nodiscard]] bool

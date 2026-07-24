@@ -50,16 +50,16 @@ namespace {
 
 /// DD for k=2…20: full matrix DD through k=8 (MCX/MCZ) or k=6 (MCP);
 /// basis-state DD for larger MCX/MCZ widths; MCP pins CX only above k=6.
-constexpr std::array<std::size_t, 19> K_DD_CONTROL_COUNTS = {
+constexpr std::array<size_t, 19> K_DD_CONTROL_COUNTS = {
     2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
-constexpr std::size_t K_MATRIX_DD_MAX_PAULI = 8;
-constexpr std::size_t K_MATRIX_DD_MAX_MCP = 6;
+constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
+constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
 /// Smoke-only (fully lowered, no DD) for these widths.
-constexpr std::array<std::size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23, 24};
+constexpr std::array<size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23, 24};
 
 /// Expected elementary Ctrl@X counts after default `min-controls=2` lowering.
 /// Indexed by control count `k`; unused slots are zero.
-constexpr std::array<std::size_t, 25> K_EXPECTED_MCX_CX = {
+constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
     0,    0,
     6,    // 2
     14,   // 3
@@ -89,15 +89,15 @@ constexpr std::array<std::size_t, 25> K_EXPECTED_MCX_CX = {
 /// Effective CX for MCP: elementary Ctrl@X plus ~2 CX per leftover
 /// single-controlled P. For `k >= 5` this matches the SP22 LDD bound
 /// `4k^2 - 4k + 2`.
-[[nodiscard]] constexpr std::size_t expectedMcpCx(std::size_t k) {
+[[nodiscard]] constexpr size_t expectedMcpCx(size_t k) {
   if (k >= 5) {
     return 4 * k * k - 4 * k + 2;
   }
-  constexpr std::array<std::size_t, 5> small = {0, 0, 6, 20, 42};
+  constexpr std::array<size_t, 5> small = {0, 0, 6, 20, 42};
   return small[k];
 }
 
-enum class ControlledPauli : std::uint8_t { X, Z };
+enum class ControlledPauli : uint8_t { X, Z };
 
 class MultiControlledDecompositionTest : public testing::Test {
 protected:
@@ -117,26 +117,26 @@ private:
 };
 
 class McxDdTest : public MultiControlledDecompositionTest,
-                  public testing::WithParamInterface<std::size_t> {};
+                  public testing::WithParamInterface<size_t> {};
 class MczDdTest : public MultiControlledDecompositionTest,
-                  public testing::WithParamInterface<std::size_t> {};
+                  public testing::WithParamInterface<size_t> {};
 class McpDdTest : public MultiControlledDecompositionTest,
-                  public testing::WithParamInterface<std::size_t> {};
+                  public testing::WithParamInterface<size_t> {};
 class McxSmokeTest : public MultiControlledDecompositionTest,
-                     public testing::WithParamInterface<std::size_t> {};
+                     public testing::WithParamInterface<size_t> {};
 class MczSmokeTest : public MultiControlledDecompositionTest,
-                     public testing::WithParamInterface<std::size_t> {};
+                     public testing::WithParamInterface<size_t> {};
 class McpSmokeTest : public MultiControlledDecompositionTest,
-                     public testing::WithParamInterface<std::size_t> {};
+                     public testing::WithParamInterface<size_t> {};
 
 [[nodiscard]] OwningOpRef<ModuleOp>
-buildControlledPauliModule(MLIRContext* context, std::size_t numControls,
+buildControlledPauliModule(MLIRContext* context, size_t numControls,
                            ControlledPauli pauli) {
   return QCOProgramBuilder::build(
       context, [numControls, pauli](QCOProgramBuilder& b) {
         SmallVector<Value> wires;
         wires.reserve(numControls + 1);
-        for (std::size_t i = 0; i <= numControls; ++i) {
+        for (size_t i = 0; i <= numControls; ++i) {
           wires.push_back(b.staticQubit(i));
         }
         const auto controls = ValueRange(wires).drop_back();
@@ -151,22 +151,22 @@ buildControlledPauliModule(MLIRContext* context, std::size_t numControls,
 }
 
 [[nodiscard]] OwningOpRef<ModuleOp> buildMcxModule(MLIRContext* context,
-                                                   std::size_t numControls) {
+                                                   size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::X);
 }
 
 [[nodiscard]] OwningOpRef<ModuleOp> buildMczModule(MLIRContext* context,
-                                                   std::size_t numControls) {
+                                                   size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::Z);
 }
 
 [[nodiscard]] OwningOpRef<ModuleOp>
-buildMcpModule(MLIRContext* context, std::size_t numControls, double theta) {
+buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
   return QCOProgramBuilder::build(
       context, [numControls, theta](QCOProgramBuilder& b) {
         SmallVector<Value> wires;
         wires.reserve(numControls + 1);
-        for (std::size_t i = 0; i <= numControls; ++i) {
+        for (size_t i = 0; i <= numControls; ++i) {
           wires.push_back(b.staticQubit(i));
         }
         b.mcp(theta, ValueRange(wires).drop_back(), wires.back());
@@ -181,11 +181,11 @@ buildMcpModule(MLIRContext* context, std::size_t numControls, double theta) {
   });
 }
 
-[[nodiscard]] std::size_t countStaticQubits(func::FuncOp funcOp) {
-  std::size_t numQubits = 0;
+[[nodiscard]] size_t countStaticQubits(func::FuncOp funcOp) {
+  size_t numQubits = 0;
   for (StaticOp staticOp : funcOp.getOps<StaticOp>()) {
     numQubits =
-        std::max(numQubits, static_cast<std::size_t>(staticOp.getIndex()) + 1);
+        std::max(numQubits, static_cast<size_t>(staticOp.getIndex()) + 1);
   }
   return numQubits;
 }
@@ -198,8 +198,7 @@ void expectFullyDecomposed(func::FuncOp funcOp) {
   funcOp.walk([](RCCXOp) { ADD_FAILURE() << "unexpected leftover rccx"; });
 }
 
-void expectImplementsControlledPauli(func::FuncOp funcOp,
-                                     std::size_t numControls,
+void expectImplementsControlledPauli(func::FuncOp funcOp, size_t numControls,
                                      ControlledPauli pauli) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
@@ -211,7 +210,7 @@ void expectImplementsControlledPauli(func::FuncOp funcOp,
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
-  for (std::size_t i = 0; i < numControls; ++i) {
+  for (size_t i = 0; i < numControls; ++i) {
     controls.emplace(static_cast<qc::Qubit>(i));
   }
   const auto target = static_cast<qc::Qubit>(numControls);
@@ -228,7 +227,7 @@ void expectImplementsControlledPauli(func::FuncOp funcOp,
 }
 
 void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
-                                         std::size_t numControls,
+                                         size_t numControls,
                                          ControlledPauli pauli) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
@@ -236,7 +235,7 @@ void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
-  for (std::size_t i = 0; i < numControls; ++i) {
+  for (size_t i = 0; i < numControls; ++i) {
     controls.emplace(static_cast<qc::Qubit>(i));
   }
   const auto target = static_cast<qc::Qubit>(numControls);
@@ -250,8 +249,8 @@ void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   basisStates.emplace_back(numQubits, true);
   basisStates.back()[numControls] = false;
   basisStates.emplace_back(numQubits, true);
-  for (const std::size_t inactiveControl :
-       std::array<std::size_t, 3>{0U, numControls / 2U, numControls - 1U}) {
+  for (const size_t inactiveControl :
+       std::array<size_t, 3>{0U, numControls / 2U, numControls - 1U}) {
     basisStates.emplace_back(numQubits, true);
     basisStates.back()[inactiveControl] = false;
     basisStates.back()[numControls] = false;
@@ -275,7 +274,7 @@ void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   }
 }
 
-void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
+void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
                          double theta) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
@@ -287,7 +286,7 @@ void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
 
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
-  for (std::size_t i = 0; i < numControls; ++i) {
+  for (size_t i = 0; i < numControls; ++i) {
     controls.emplace(static_cast<qc::Qubit>(i));
   }
   referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
@@ -298,9 +297,9 @@ void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
   dd->decRef(referenceDD);
 }
 
-[[nodiscard]] std::size_t countMultiControlledOps(ModuleOp moduleOp,
-                                                  std::size_t minControls = 2) {
-  std::size_t count = 0;
+[[nodiscard]] size_t countMultiControlledOps(ModuleOp moduleOp,
+                                             size_t minControls = 2) {
+  size_t count = 0;
   moduleOp.walk([&count, minControls](CtrlOp op) {
     if (op.getNumControls() >= minControls) {
       ++count;
@@ -309,8 +308,8 @@ void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
   return count;
 }
 
-[[nodiscard]] std::size_t countRCCXOps(ModuleOp moduleOp) {
-  std::size_t count = 0;
+[[nodiscard]] size_t countRCCXOps(ModuleOp moduleOp) {
+  size_t count = 0;
   moduleOp.walk([&count](RCCXOp) { ++count; });
   return count;
 }
@@ -319,13 +318,13 @@ void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
   if (op.getNumControls() != 1) {
     return false;
   }
-  std::size_t xCount = 0;
+  size_t xCount = 0;
   op.getBody()->walk([&](XOp) { ++xCount; });
   return xCount == 1;
 }
 
-[[nodiscard]] std::size_t countElementaryCxOps(ModuleOp moduleOp) {
-  std::size_t count = 0;
+[[nodiscard]] size_t countElementaryCxOps(ModuleOp moduleOp) {
+  size_t count = 0;
   moduleOp.walk([&count](CtrlOp op) {
     if (ctrlBodyIsSingleX(op)) {
       ++count;
@@ -338,15 +337,15 @@ void expectImplementsMcp(func::FuncOp funcOp, std::size_t numControls,
   if (op.getNumControls() != 1) {
     return false;
   }
-  std::size_t pCount = 0;
-  std::size_t xCount = 0;
+  size_t pCount = 0;
+  size_t xCount = 0;
   op.getBody()->walk([&](POp) { ++pCount; });
   op.getBody()->walk([&](XOp) { ++xCount; });
   return xCount == 0 && pCount == 1;
 }
 
-[[nodiscard]] std::size_t countEffectiveCxOps(ModuleOp moduleOp) {
-  std::size_t singleP = 0;
+[[nodiscard]] size_t countEffectiveCxOps(ModuleOp moduleOp) {
+  size_t singleP = 0;
   moduleOp.walk([&singleP](CtrlOp op) {
     if (ctrlBodyIsSingleP(op)) {
       ++singleP;
@@ -374,7 +373,7 @@ LogicalResult runDecomposeMultiControlled(
 //===----------------------------------------------------------------------===//
 
 TEST_P(McxDdTest, EquivalenceAndCxCount) {
-  const std::size_t k = GetParam();
+  const size_t k = GetParam();
   auto moduleOp = buildMcxModule(context(), k);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
@@ -391,7 +390,7 @@ TEST_P(McxDdTest, EquivalenceAndCxCount) {
 }
 
 TEST_P(MczDdTest, EquivalenceAndCxCount) {
-  const std::size_t k = GetParam();
+  const size_t k = GetParam();
   auto moduleOp = buildMczModule(context(), k);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
@@ -410,7 +409,7 @@ TEST_P(MczDdTest, EquivalenceAndCxCount) {
 }
 
 TEST_P(McpDdTest, EquivalenceAndCxCount) {
-  const std::size_t k = GetParam();
+  const size_t k = GetParam();
   constexpr double theta = 0.7;
   auto moduleOp = buildMcpModule(context(), k, theta);
   ASSERT_TRUE(moduleOp);
@@ -426,17 +425,17 @@ TEST_P(McpDdTest, EquivalenceAndCxCount) {
 
 INSTANTIATE_TEST_SUITE_P(DdRange, McxDdTest,
                          testing::ValuesIn(K_DD_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<std::size_t>& info) {
+                         [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
 INSTANTIATE_TEST_SUITE_P(DdRange, MczDdTest,
                          testing::ValuesIn(K_DD_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<std::size_t>& info) {
+                         [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
 INSTANTIATE_TEST_SUITE_P(DdRange, McpDdTest,
                          testing::ValuesIn(K_DD_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<std::size_t>& info) {
+                         [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
 
@@ -445,7 +444,7 @@ INSTANTIATE_TEST_SUITE_P(DdRange, McpDdTest,
 //===----------------------------------------------------------------------===//
 
 TEST_P(McxSmokeTest, FullyLowersWithExpectedCx) {
-  const std::size_t k = GetParam();
+  const size_t k = GetParam();
   auto moduleOp = buildMcxModule(context(), k);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
@@ -455,7 +454,7 @@ TEST_P(McxSmokeTest, FullyLowersWithExpectedCx) {
 }
 
 TEST_P(MczSmokeTest, FullyLowersWithExpectedCx) {
-  const std::size_t k = GetParam();
+  const size_t k = GetParam();
   auto moduleOp = buildMczModule(context(), k);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
@@ -465,7 +464,7 @@ TEST_P(MczSmokeTest, FullyLowersWithExpectedCx) {
 }
 
 TEST_P(McpSmokeTest, FullyLowersWithExpectedCx) {
-  const std::size_t k = GetParam();
+  const size_t k = GetParam();
   constexpr double theta = std::numbers::pi / 3.0;
   auto moduleOp = buildMcpModule(context(), k, theta);
   ASSERT_TRUE(moduleOp);
@@ -476,17 +475,17 @@ TEST_P(McpSmokeTest, FullyLowersWithExpectedCx) {
 
 INSTANTIATE_TEST_SUITE_P(SmokeRange, McxSmokeTest,
                          testing::ValuesIn(K_SMOKE_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<std::size_t>& info) {
+                         [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
 INSTANTIATE_TEST_SUITE_P(SmokeRange, MczSmokeTest,
                          testing::ValuesIn(K_SMOKE_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<std::size_t>& info) {
+                         [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
 INSTANTIATE_TEST_SUITE_P(SmokeRange, McpSmokeTest,
                          testing::ValuesIn(K_SMOKE_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<std::size_t>& info) {
+                         [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
 
@@ -504,7 +503,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesSingleControlledUntouched) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
-  std::size_t singleControlled = 0;
+  size_t singleControlled = 0;
   moduleOp->walk([&](CtrlOp op) {
     if (op.getNumControls() == 1) {
       ++singleControlled;
@@ -557,8 +556,8 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 2U);
 
-  std::size_t multiOpCtrl = 0;
-  std::size_t mchCount = 0;
+  size_t multiOpCtrl = 0;
+  size_t mchCount = 0;
   moduleOp->walk([&](CtrlOp op) {
     if (op.getNumControls() < 2) {
       return;
@@ -577,7 +576,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
   constexpr double theta = std::numbers::pi;
-  for (const std::size_t k : {3U, 4U, 5U}) {
+  for (const size_t k : {3U, 4U, 5U}) {
     auto moduleOp = buildMcpModule(context(), k, theta);
     ASSERT_TRUE(moduleOp) << "k=" << k;
     ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded())
