@@ -823,6 +823,7 @@ constexpr std::array DEVICES{"MQT NA Default QDMI Device",
                              "MQT Core DDSIM QDMI Device",
                              "MQT SC Default QDMI Device"};
 
+namespace {
 void registerSessionTestDevice() {
   static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
       {.id = "test.session-overrides",
@@ -832,6 +833,7 @@ void registerSessionTestDevice() {
                    .token = "registered-token",
                    .custom1 = "registered-custom"}}));
 }
+} // namespace
 
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
