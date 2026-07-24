@@ -517,33 +517,6 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
 }
 
 /**
- * @brief Creates scalar scratch storage that is allocated once in the enclosing
- * function.
- *
- * Hoisting the allocation outside enclosing loops lets result-bearing
- * `scf.if` operations communicate classical branch results without growing the
- * stack on every iteration. Each syntactic conditional gets distinct storage,
- * and structured control flow executes it sequentially.
- */
-[[nodiscard]] static SmallVector<Value>
-createHoistedScratchStorage(Operation* operation, TypeRange elementTypes,
-                            ConversionPatternRewriter& rewriter) {
-  auto function = operation->getParentOfType<func::FuncOp>();
-  assert(function && !function.getBody().empty() &&
-         "structured QC control flow must be nested in a function");
-
-  OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPointToStart(&function.getBody().front());
-  SmallVector<Value> storage;
-  storage.reserve(elementTypes.size());
-  for (auto type : elementTypes) {
-    storage.push_back(memref::AllocaOp::create(rewriter, operation->getLoc(),
-                                               MemRefType::get({1}, type)));
-  }
-  return storage;
-}
-
-/**
  * @brief Collects all the QC qubit and memref references used by an scf
  * operation and stores them in the maps
  *
@@ -1542,8 +1515,6 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     // the IfOp
     insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
-    const auto scratch =
-        createHoistedScratchStorage(operation, op.getResultTypes(), rewriter);
 
     // Create the new IfOp
     auto newIfOp =
@@ -1572,21 +1543,6 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     thenBlock->getOperations().splice(
         thenBlock->end(), op.getThenRegion().front().getOperations());
 
-    const auto spillResults = [&](Block* block) {
-      auto yield = cast<scf::YieldOp>(block->getTerminator());
-      rewriter.setInsertionPoint(yield);
-      if (!scratch.empty()) {
-        auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-        for (auto [value, storage] :
-             llvm::zip_equal(yield.getResults(), scratch)) {
-          memref::StoreOp::create(rewriter, op.getLoc(), value, storage,
-                                  ValueRange{index});
-        }
-      }
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(yield);
-    };
-    spillResults(thenBlock);
-
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<Value> memrefs(registerMap.begin(), registerMap.end());
     state.structuredValues[newIfOp] = {.qubits = qubits, .memrefs = memrefs};
@@ -1594,7 +1550,6 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(
           elseBlock->end(), op.getElseRegion().front().getOperations());
-      spillResults(elseBlock);
       seedRegionMappings(state, newIfOp.getElseRegion(), qubits, memrefs,
                          elseBlock->getArguments().take_back(numQubits),
                          elseBlock->getArguments().take_front(numRegisters));
@@ -1609,17 +1564,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                        thenBlock->getArguments().take_back(numQubits),
                        thenBlock->getArguments().take_front(numRegisters));
 
-    rewriter.setInsertionPointAfter(newIfOp);
-    SmallVector<Value> classicalResults;
-    classicalResults.reserve(scratch.size());
-    if (!scratch.empty()) {
-      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-      for (auto storage : scratch) {
-        classicalResults.push_back(memref::LoadOp::create(
-            rewriter, op.getLoc(), storage, ValueRange{index}));
-      }
-    }
-    rewriter.replaceOp(op, classicalResults);
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -1668,8 +1613,6 @@ struct ConvertSCFIndexSwitchOp final
     const auto targets = resolveAllValues(state, operation);
     const auto results = ValueRange(targets).getTypes();
     const SmallVector locs(targets.size(), op.getLoc());
-    const auto scratch =
-        createHoistedScratchStorage(operation, op.getResultTypes(), rewriter);
 
     auto newOp =
         IndexSwitchOp::create(rewriter, op.getLoc(), results, op.getArg(),
@@ -1696,18 +1639,6 @@ struct ConvertSCFIndexSwitchOp final
       newBlock->getOperations().splice(newBlock->end(),
                                        oldBlock->getOperations());
 
-      auto yield = cast<scf::YieldOp>(newBlock->getTerminator());
-      rewriter.setInsertionPoint(yield);
-      if (!scratch.empty()) {
-        auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-        for (auto [value, storage] :
-             llvm::zip_equal(yield.getResults(), scratch)) {
-          memref::StoreOp::create(rewriter, op.getLoc(), value, storage,
-                                  ValueRange{index});
-        }
-      }
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(yield);
-
       seedRegionMappings(state, newRegion, qubits, memrefs,
                          newBlock->getArguments().take_back(numQubits),
                          newBlock->getArguments().take_front(numRegisters));
@@ -1719,17 +1650,7 @@ struct ConvertSCFIndexSwitchOp final
     }
     buildRegion(op.getDefaultRegion(), newOp.getDefaultRegion());
 
-    rewriter.setInsertionPointAfter(newOp);
-    SmallVector<Value> classicalResults;
-    classicalResults.reserve(scratch.size());
-    if (!scratch.empty()) {
-      auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-      for (auto storage : scratch) {
-        classicalResults.push_back(memref::LoadOp::create(
-            rewriter, op.getLoc(), storage, ValueRange{index}));
-      }
-    }
-    rewriter.replaceOp(op, classicalResults);
+    rewriter.eraseOp(op);
     return success();
   }
 };

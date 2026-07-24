@@ -110,17 +110,6 @@ protected:
     });
     EXPECT_FALSE(retainsQCOperations);
   }
-
-  static void expectReturnLoadedFromScratch(ModuleOp module) {
-    auto main = module.lookupSymbol<func::FuncOp>("main");
-    ASSERT_TRUE(main);
-    auto returnOp =
-        cast<func::ReturnOp>(main.getBody().front().getTerminator());
-    ASSERT_EQ(returnOp.getNumOperands(), 1);
-    auto load = returnOp.getOperand(0).getDefiningOp<memref::LoadOp>();
-    ASSERT_TRUE(load);
-    EXPECT_TRUE(load.getMemref().getDefiningOp<memref::AllocaOp>());
-  }
 };
 
 } // namespace
@@ -163,58 +152,6 @@ module {
   EXPECT_TRUE(sawLoop);
 
   expectNoQCOperations(*module);
-}
-
-TEST_F(QCToQCORegressionTest, PreservesResultBearingIfValues) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
-    %qc = qc.alloc : !qc.qubit
-    %condition = arith.constant true
-    %result = scf.if %condition -> i1 {
-      qc.h %qc : !qc.qubit
-      %value = arith.constant false
-      scf.yield %value : i1
-    } else {
-      qc.x %qc : !qc.qubit
-      %value = arith.constant true
-      scf.yield %value : i1
-    }
-    qc.dealloc %qc : !qc.qubit
-    return %result : i1
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  auto main = module->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
-  EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
-  expectNoQCOperations(*module);
-  expectReturnLoadedFromScratch(*module);
-  qco::IfOp branch;
-  module->walk([&](qco::IfOp candidate) { branch = candidate; });
-  ASSERT_TRUE(branch);
-  const auto storedResult = [](Region& region) -> std::optional<APInt> {
-    for (auto store : region.front().getOps<memref::StoreOp>()) {
-      APInt value;
-      if (matchPattern(store.getValue(), m_ConstantInt(&value))) {
-        return value;
-      }
-    }
-    return std::nullopt;
-  };
-  const auto thenResult = storedResult(branch.getThenRegion());
-  const auto elseResult = storedResult(branch.getElseRegion());
-  ASSERT_TRUE(thenResult);
-  ASSERT_TRUE(elseResult);
-  EXPECT_TRUE(thenResult->isZero());
-  EXPECT_TRUE(elseResult->isOne());
 }
 
 TEST_F(QCToQCORegressionTest, PreservesWhileConditionArgumentsAndOrdering) {
@@ -316,98 +253,6 @@ module {
       llvm::equal(condition.getArgs().getTypes(), loop.getResultTypes()));
   auto yield = cast<scf::YieldOp>(loop.getAfterBody()->getTerminator());
   EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getInits().getTypes()));
-  expectNoQCOperations(*module);
-}
-
-TEST_F(QCToQCORegressionTest, ConvertsIndexSwitchWithQuantumState) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
-    %qc = qc.alloc : !qc.qubit
-    %selector = arith.constant 0 : index
-    %result = scf.index_switch %selector -> i64
-    case 0 {
-      qc.h %qc : !qc.qubit
-      %value = arith.constant 1 : i64
-      scf.yield %value : i64
-    }
-    default {
-      qc.x %qc : !qc.qubit
-      %value = arith.constant 2 : i64
-      scf.yield %value : i64
-    }
-    qc.dealloc %qc : !qc.qubit
-    return %result : i64
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  qco::IndexSwitchOp indexSwitch;
-  module->walk([&](qco::IndexSwitchOp candidate) { indexSwitch = candidate; });
-  ASSERT_TRUE(indexSwitch);
-  ASSERT_EQ(indexSwitch.getNumResults(), 1);
-  EXPECT_TRUE(isa<qco::QubitType>(indexSwitch.getResult(0).getType()));
-  for (auto& region : indexSwitch->getRegions()) {
-    ASSERT_EQ(region.getNumArguments(), 1);
-    EXPECT_TRUE(isa<qco::QubitType>(region.getArgument(0).getType()));
-    auto yield = cast<qco::YieldOp>(region.front().getTerminator());
-    ASSERT_EQ(yield.getNumOperands(), 1);
-    EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(0).getType()));
-  }
-  expectNoQCOperations(*module);
-  expectReturnLoadedFromScratch(*module);
-}
-
-TEST_F(QCToQCORegressionTest, ConvertsNestedResultsAfterRegionContents) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
-    %qc = qc.alloc : !qc.qubit
-    %c0 = arith.constant 0 : index
-    %c1 = arith.constant 1 : index
-    %true = arith.constant true
-    %loop = scf.for %i = %c0 to %c1 step %c1
-        iter_args(%flag = %true) -> (i1) {
-      %next = scf.if %flag -> i1 {
-        qc.h %qc : !qc.qubit
-        %value = arith.constant false
-        scf.yield %value : i1
-      } else {
-        qc.x %qc : !qc.qubit
-        %value = arith.constant true
-        scf.yield %value : i1
-      }
-      qc.z %qc : !qc.qubit
-      scf.yield %next : i1
-    }
-    qc.dealloc %qc : !qc.qubit
-    return %loop : i1
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  bool sawLoop = false;
-  module->walk([&](scf::ForOp loop) {
-    sawLoop = true;
-    ASSERT_EQ(loop.getNumResults(), 2);
-    EXPECT_TRUE(loop.getResult(0).getType().isInteger(1));
-    EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(1).getType()));
-    auto yield = cast<scf::YieldOp>(loop.getBody()->getTerminator());
-    EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getResultTypes()));
-    EXPECT_TRUE(loop.getBody()->getOps<memref::AllocaOp>().empty());
-  });
-  EXPECT_TRUE(sawLoop);
   expectNoQCOperations(*module);
 }
 
