@@ -192,6 +192,65 @@ module {
   EXPECT_FALSE(containsScratchStorage);
 }
 
+TEST(QCOToQCRegressionTest,
+     RoundTripsClassicalIndexSwitchResultWithoutScratch) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%index: index) -> i64
+      attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    %result = scf.index_switch %index -> i64
+    case 0 {
+      qc.h %q : !qc.qubit
+      %case = arith.constant 1 : i64
+      scf.yield %case : i64
+    }
+    default {
+      qc.x %q : !qc.qubit
+      %default = arith.constant 2 : i64
+      scf.yield %default : i64
+    }
+    qc.dealloc %q : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  PassManager pm(&context);
+  pm.addPass(createQCToQCO());
+  pm.addPass(createQCOToQC());
+  ASSERT_TRUE(succeeded(pm.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::IndexSwitchOp switchOp;
+  module->walk([&](scf::IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getNumResults(), 1);
+  EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(64));
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), switchOp.getResult(0));
+
+  bool containsScratchStorage = false;
+  module->walk([&](Operation* operation) {
+    containsScratchStorage |=
+        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
+  });
+  EXPECT_FALSE(containsScratchStorage);
+}
+
 TEST_P(QCOToQCTest, ProgramEquivalence) {
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";

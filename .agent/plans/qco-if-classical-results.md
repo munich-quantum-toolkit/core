@@ -9,14 +9,14 @@ repository root.
 
 ## Purpose / Big Picture
 
-After this change, a QC program can use an `scf.if` to compute ordinary
-classical values while also updating quantum state, convert to QCO, and convert
-back to QC without allocating scratch memory or losing either kind of result.
-The QCO dialect will represent that behavior directly: a `qco.if` returns an
-ordinary SSA-value prefix followed by the existing linear quantum-value suffix.
-Focused dialect, conversion, mapping, and round-trip tests will demonstrate that
-the classical value remains connected to its consumer while QCO's explicit
-single-use quantum flow remains intact.
+After this change, a QC program can use an `scf.if` or `scf.index_switch` to
+compute ordinary classical values while also updating quantum state, convert to
+QCO, and convert back to QC without allocating scratch memory or losing either
+kind of result. The QCO dialect will represent that behavior directly: `qco.if`
+and `qco.index_switch` return an ordinary SSA-value prefix followed by the
+existing linear quantum-value suffix. Focused dialect, conversion, mapping, and
+round-trip tests will demonstrate that classical values remain connected to
+their consumers while QCO's explicit single-use quantum flow remains intact.
 
 ## Progress
 
@@ -38,9 +38,24 @@ single-use quantum flow remains intact.
       diagnostic regressions.
 - [x] (2026-07-24 19:42Z) Build the affected targets, run focused and complete
       suites, run `uvx nox -s lint`, and record the evidence here.
-- [ ] Keep the branch local until the prerequisite structured-loop PR is merged;
-      rebase then prepare it for human review without opening a PR
-      automatically.
+- [x] (2026-07-24 21:08Z) Rebase the two local commits onto the merge of the
+      prerequisite structured-loop PR #1935 without replaying its historical
+      commits.
+- [x] (2026-07-24 21:34Z) Extend `qco.index_switch`, its parser, printer,
+      verifier, tied-value helpers, target extension, region-branch interface,
+      builders, and equivalence support for mixed classical and linear results.
+- [x] (2026-07-24 21:34Z) Preserve classical `scf.index_switch` results through
+      QC-to-QCO and QCO-to-QC without scratch storage and add focused round-trip
+      regressions.
+- [x] (2026-07-24 22:07Z) Extend mapping, tensor traversal, and module
+      equivalence to distinguish each conditional's classical prefix from its
+      tied linear suffix.
+- [x] (2026-07-24 22:21Z) Rebuild all affected targets, pass 932 focused tests,
+      pass repository lint and changed-source clang-tidy, and run
+      `git diff --check`.
+- [x] (2026-07-24 23:31Z) Complete an independent read-only review, fix its
+      positional-classical-yield equivalence finding, rerun validation, and keep
+      the branch local for human inspection.
 
 ## Surprises & Discoveries
 
@@ -66,6 +81,29 @@ single-use quantum flow remains intact.
 - Observation: the MLIR parser verifies operations before returning a module.
   Invalid mixed yields are therefore rejected during `parseSourceString`,
   allowing tests to assert the precise `qco.yield` diagnostic directly.
+- Observation: GitHub merged PR #1935 as one commit, so a plain rebase tried to
+  replay its historical commits. Rebasing only the two commits after `cc5b3ed46`
+  moved the local plan and feature cleanly onto merge commit `745149687`.
+- Observation: `qco.index_switch` used the full result list to infer the types
+  of its region arguments. Once classical results are added, the assignment list
+  itself must define the number of trailing linear result types. The parser now
+  uses that count consistently for every case and the default.
+- Observation: QCO's module-equivalence and tensor-iterator utilities assumed
+  all conditional results were linear. Mixed results exposed incorrect result
+  indexing for both `qco.if` and `qco.index_switch`; the utilities now map the
+  classical prefix positionally and traverse only the tied linear suffix.
+- Observation: mapping had recursive handling for `qco.if` but no equivalent
+  handling for the already-existing `qco.index_switch`. Supporting mixed index
+  switches therefore also required making every case and the default region a
+  routing child, extending their explicit targets, and realigning only their
+  yielded linear suffixes. The focused mapping regression exercises two cases, a
+  default, one classical result, and two quantum wires.
+- Observation: the independent review found that module equivalence still
+  compared every `qco.yield` operand as a permutation, even though the new
+  classical result prefixes are positional. The comparison now checks the
+  classical prefix through `IRMapping` in order and permits permutation only for
+  the tied linear suffix. Regressions cover swapped and duplicate classical
+  values for both conditional operation forms.
 
 ## Decision Log
 
@@ -81,10 +119,11 @@ single-use quantum flow remains intact.
   a parent-aware verifier. Rationale: one terminator can then express mixed
   conditional results without weakening modifier or index-switch semantics.
   Date/Author: 2026-07-24, Codex.
-- Decision: Do not add classical results to `qco.index_switch` in this change.
-  Rationale: its parser, result layout, mapping, and both conversions form a
-  separate reviewable surface. QC-to-QCO must diagnose that case explicitly
-  rather than use scratch memory. Date/Author: 2026-07-24, Codex.
+- Decision: Add classical results to `qco.index_switch` in the same change,
+  superseding the earlier decision to defer them. Rationale: the user requested
+  one coherent conditional-result contract, and index switches can use the exact
+  same classical-prefix, linear-suffix representation without scratch memory or
+  a separate abstraction. Date/Author: 2026-07-24, Codex.
 - Decision: Jeff conversion may reject classical-result `qco.if` with a precise
   capability diagnostic. Rationale: QC to QCO to QC to QIR is the primary
   pipeline; Jeff limitations must be explicit but must not constrain valid QCO
@@ -93,21 +132,33 @@ single-use quantum flow remains intact.
   `qco.if` until it can preserve `resultSegmentSizes`. Rationale: retaining the
   QCO-specific patterns is both smaller and correct for mixed results.
   Date/Author: 2026-07-24, Codex.
+- Decision: Restore every mapped `qco.index_switch` region to the parent layout
+  before joining instead of attempting pairwise branch convergence. Rationale:
+  an index switch has an arbitrary number of regions, and a single explicit
+  parent-layout invariant is simpler, deterministic, and reuses the existing
+  `qco.if` yield-realignment machinery. Date/Author: 2026-07-24, Codex.
 
 ## Outcomes & Retrospective
 
-The implementation avoids runtime memory operations and limits the dialect
-change to one conditional operation plus its shared terminator. Focused tests
-demonstrate textual round-tripping, verifier diagnostics, constant folding,
-QC-to-QCO and QCO-to-QC conversion, a composed round trip, mapping, and the
-intentional Jeff and index-switch capability diagnostics.
+The implementation avoids runtime memory operations and gives both QCO
+conditional operations the same explicit contract: ordinary classical SSA
+results followed by tied linear quantum results. The index-switch extension
+removes its former conversion rejection and covers parser/printer behavior,
+verification, region-branch and tied-value interfaces, builders, module
+equivalence, tensor traversal, mapping, and both conversion directions.
 
-All affected suites pass: 447 QCO IR tests, 134 QC-to-QCO tests, 131 QCO-to-QC
-tests, 14 mapping tests, 82 QCO utility tests, and 117 Jeff round-trip tests.
-The changed C++ files produce no local clang-tidy 22 warnings. Targeted
-repository hooks, `uvx nox -s lint`, and `git diff --check` pass. The branch
-remains local on top of the reduced structured-loop PR and awaits that PR's
-merge before rebasing and publication.
+After rebuilding the affected targets, the complete focused suites passed: 450
+QCO IR tests, 134 QC-to-QCO tests, 132 QCO-to-QC tests, 82 QCO utility tests, 3
+QTensor utility tests, 15 mapping tests, and 117 Jeff round-trip tests, for 933
+tests in total. Repository lint and changed-source clang-tidy also passed; the
+only direct clang-tidy diagnostics outside the filtered source lines were known
+generated-MLIR warnings and an analyzer warning in MLIR's
+`OperationState::getOrAddProperties`.
+
+The independent read-only review passed the IR design, conversions, mapping,
+tensor traversal, performance, compatibility, tests, and scope after identifying
+one module-equivalence correctness issue and one documentation mismatch. Both
+were fixed and revalidated. The branch remains local.
 
 ## Context and Orientation
 
@@ -119,12 +170,14 @@ consumes a quantum value and produces its successor. The conversion in
 an SCF region and appends explicit state. The reverse conversion lives in
 `mlir/lib/Conversion/QCOToQC/QCOToQC.cpp`.
 
-`qco.if` is declared in `mlir/include/mlir/Dialect/QCO/IR/QCOOps.td`, with
-hand-written parsing, printing, verification, tied-value helpers, and
-replacement helpers in `mlir/lib/Dialect/QCO/IR/QCOOps.cpp`. Its regions receive
-only linear quantum block arguments and end in `qco.yield`. `qco.yield` is also
-used by `qco.index_switch`, `qco.ctrl`, `qco.inv`, and `qco.pow`, so changes to
-its ODS type constraint must be paired with parent-specific verification.
+`qco.if` and `qco.index_switch` are declared in
+`mlir/include/mlir/Dialect/QCO/IR/QCOOps.td`, with hand-written parsing,
+printing, verification, tied-value helpers, and replacement helpers in
+`mlir/lib/Dialect/QCO/IR/QCOOps.cpp` and `mlir/lib/Dialect/QCO/IR/SCF/`. Their
+regions receive only linear quantum block arguments and end in `qco.yield`.
+`qco.yield` is also used by `qco.ctrl`, `qco.inv`, and `qco.pow`, so its
+generalized ODS type constraint must remain paired with parent-specific
+verification.
 
 QCO mapping in `mlir/lib/Dialect/QCO/Transforms/Mapping/Mapping.cpp` extends
 structured operations with all physical qubits and may reorder yielded quantum
@@ -169,26 +222,31 @@ classical segment and discovered quantum targets as its linear segment. Move the
 regions, let the existing second terminator-conversion phase yield original
 classical values followed by resolved quantum values, replace the original SCF
 results with `getClassicalResults()`, and update quantum mappings from
-`getLinearResults()`. Leave an `scf.if` with no quantum state unchanged. Reject
-a result-bearing `scf.index_switch` with a precise unsupported-feature
-diagnostic.
+`getLinearResults()`. Leave an `scf.if` with no quantum state unchanged. Apply
+the same segmentation to `scf.index_switch`: preserve its original results as
+the classical prefix, append discovered quantum state as the linear suffix, and
+give each new QCO region only linear block arguments.
 
 In QCO-to-QC, create an `scf.if` that returns only the converted classical
 types. Replace its linear block arguments with QC references when inlining the
 regions, lower each `qco.yield` to an `scf.yield` containing only its classical
 prefix, and replace the QCO operation with the new classical SCF results plus
 the corresponding QC references for its linear results. Preserve an else region
-whenever classical results exist. In QCO-to-Jeff, reject a classical-result
-`qco.if` with a feature-specific message before generic conversion fails.
+whenever classical results exist. Lower `qco.index_switch` identically to a
+result-bearing `scf.index_switch`, retaining the classical yield prefix and
+replacing only its linear results with QC references. In QCO-to-Jeff, reject a
+classical-result `qco.if` with a feature-specific message before generic
+conversion fails.
 
 Add tests close to each contract. Dialect tests must cover textual round-trip,
 invalid segment and yield signatures, tied-value offsets, region-branch
 relationships, and constant-condition canonicalization. Conversion tests must
-cover QC-to-QCO, QCO-to-QC, nested conditionals in loops, and a full
-QC-to-QCO-to-QC round trip while asserting that no `memref.alloca`, store, or
-load exists. Mapping tests must force quantum permutation and prove the
-classical yield remains connected. Jeff and index-switch tests must check their
-specific diagnostics. Existing quantum-only suites must continue to pass.
+cover QC-to-QCO, QCO-to-QC, both conditional operation forms, nested
+conditionals in loops, and a full QC-to-QCO-to-QC round trip while asserting
+that no `memref.alloca`, store, or load exists. Mapping tests must force quantum
+permutation and prove the classical yield remains connected. Jeff tests must
+check the target-specific diagnostic. Existing quantum-only suites must continue
+to pass.
 
 ## Concrete Steps
 
@@ -216,24 +274,25 @@ unsupported behavior.
 
 ## Validation and Acceptance
 
-A parsed and verified `qco.if` with one `i1` result and one `!qco.qubit` result
-must print and parse again with the same two result segments. Each branch must
-yield exactly `i1, !qco.qubit`; placing a qubit in the classical segment or
-yielding a classical value from a modifier must fail verification with a
-specific diagnostic.
+A parsed and verified `qco.if` or `qco.index_switch` with one `i1` result and
+one `!qco.qubit` result must print and parse again with the same two result
+segments. Each region must yield exactly `i1, !qco.qubit`; placing a qubit in
+the classical segment or yielding a classical value from a modifier must fail
+verification with a specific diagnostic.
 
-A QC module containing a result-bearing `scf.if` and quantum operations in both
-branches must convert to a verified QCO module containing a mixed-result
-`qco.if`. Its classical result must feed the original consumer, and the module
-must contain no scratch allocation, store, or load. Converting that module back
-to QC must produce a verified result-bearing `scf.if`; an end-to-end round-trip
-test must preserve the observable classical return value.
+A QC module containing a result-bearing `scf.if` or `scf.index_switch` and
+quantum operations in every region must convert to a verified QCO module
+containing the corresponding mixed-result operation. Its classical result must
+feed the original consumer, and the module must contain no scratch allocation,
+store, or load. Converting that module back to QC must reproduce the
+result-bearing SCF operation; end-to-end round-trip tests must preserve the
+observable classical return value.
 
-The QCO mapping pass must succeed on a mixed-result `qco.if`, leave the module
-verified, preserve the classical yield values, and produce executable two-qubit
-operations for the test device. A classical-result `qco.if` sent to Jeff and a
-result-bearing `scf.index_switch` sent to QC-to-QCO must fail with their named
-capability diagnostics rather than crash or silently lower incorrectly.
+The QCO mapping pass must succeed on mixed-result `qco.if` and
+`qco.index_switch` operations, leave the module verified, preserve the classical
+yield values, and produce executable two-qubit operations for the test device. A
+classical-result `qco.if` sent to Jeff must fail with its named capability
+diagnostic rather than crash or silently lower incorrectly.
 
 All existing quantum-only QCO IR, builder, utility, mapping, QC-to-QCO,
 QCO-to-QC, and Jeff tests must pass. The final repository-wide lint session and
@@ -250,8 +309,8 @@ explicit capability diagnostic before proceeding; do not introduce scratch
 memory as a fallback.
 
 Keep all work confined to this task worktree. Preserve unrelated changes and do
-not alter the prerequisite worktree. This branch must remain local until its
-base PR is merged; rebasing and publication require a separate human decision.
+not alter any other task worktree. The prerequisite PR is merged and this branch
+is rebased; publication remains a separate human decision.
 
 ## Artifacts and Notes
 
@@ -275,6 +334,12 @@ remain source compatible. Its tied-value helpers accept only linear results and
 map them to the corresponding quantum operand and branch argument after
 subtracting the classical prefix.
 
+`qco::IndexSwitchOp` must expose the same two result accessors and retain its
+existing index, cases, targets, and region APIs. Its parser derives the number
+of linear results from the `args(...)` assignments, and all cases plus the
+default must use the same explicit target list. Its tied-value helpers and
+target-extension helper operate only on the linear suffix.
+
 `qco::YieldOp::verify()` must derive its expected operand types from one of
 `qco::IfOp`, `qco::IndexSwitchOp`, `qco::CtrlOp`, `qco::InvOp`, or `qco::PowOp`.
 No new runtime library or third-party dependency is required. Builtin MLIR
@@ -284,3 +349,14 @@ Revision note (2026-07-24): Initial plan created from the independent design
 review and the reduced structured-loop prerequisite. It records the SSA result
 segmentation, consumer audit, explicit target diagnostics, and local-only
 publication boundary.
+
+Revision note (2026-07-24): Rebased onto merged PR #1935 and expanded the single
+conditional-result contract to `qco.index_switch` at the user's request. The
+earlier deferral decision is explicitly superseded, and the plan now covers the
+parser, verifier, tied-value, conversion, equivalence, and test surfaces for
+both conditional operation forms.
+
+Revision note (2026-07-24): Recorded the completed independent review and its
+remediation. Classical yield values are now compared positionally while the
+linear suffix remains permutation-aware, with swapped-value and duplicate-value
+regressions for both conditional operation forms.

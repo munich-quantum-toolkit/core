@@ -1604,12 +1604,6 @@ struct ConvertSCFIndexSwitchOp final
   LogicalResult
   matchAndRewrite(scf::IndexSwitchOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumResults() != 0) {
-      op.emitError("classical scf.index_switch results are not supported by "
-                   "the QC-to-QCO conversion");
-      return failure();
-    }
-
     auto& state = getState();
     auto* operation = op.getOperation();
     auto& registerMap = state.regionRegisterMap[op];
@@ -1619,17 +1613,17 @@ struct ConvertSCFIndexSwitchOp final
 
     insertQubitsBeforeOp(state, operation, rewriter);
     const auto targets = resolveAllValues(state, operation);
-    const auto results = ValueRange(targets).getTypes();
+    const auto linearResultTypes = ValueRange(targets).getTypes();
     const SmallVector locs(targets.size(), op.getLoc());
 
-    auto newOp =
-        IndexSwitchOp::create(rewriter, op.getLoc(), results, op.getArg(),
-                              op.getCases(), targets, op.getNumCases());
+    auto newOp = IndexSwitchOp::create(
+        rewriter, op.getLoc(), op.getResultTypes(), linearResultTypes,
+        op.getArg(), op.getCases(), targets, op.getNumCases());
 
     assignMappedTensors(state, op.getOperation(), registerMap,
-                        newOp.getResults().take_front(numRegisters));
+                        newOp.getLinearResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
-                       newOp.getResults().take_back(numQubits));
+                       newOp.getLinearResults().take_back(numQubits));
 
     rewriter.setInsertionPointAfter(newOp);
     extractQubitsAfterOp(state, operation, rewriter);
@@ -1642,8 +1636,8 @@ struct ConvertSCFIndexSwitchOp final
     const auto oldCaseRegions = op.getCaseRegions();
     const auto buildRegion = [&](Region& oldRegion, Region& newRegion) {
       auto* oldBlock = &oldRegion.front();
-      auto* newBlock =
-          rewriter.createBlock(&newRegion, {}, newOp.getResultTypes(), locs);
+      auto* newBlock = rewriter.createBlock(
+          &newRegion, {}, newOp.getLinearResults().getTypes(), locs);
       newBlock->getOperations().splice(newBlock->end(),
                                        oldBlock->getOperations());
 
@@ -1658,7 +1652,7 @@ struct ConvertSCFIndexSwitchOp final
     }
     buildRegion(op.getDefaultRegion(), newOp.getDefaultRegion());
 
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, newOp.getClassicalResults());
     return success();
   }
 };

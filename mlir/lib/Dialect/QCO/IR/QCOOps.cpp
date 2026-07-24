@@ -264,6 +264,38 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
   SmallVector<int64_t> caseValues;
   SmallVector<OpAsmParser::Argument> regionArgs;
   SmallVector<OpAsmParser::UnresolvedOperand> regionOperands;
+  SmallVector<Type> linearResultTypes;
+  bool initializedResultSegments = false;
+
+  const auto initializeResultSegments =
+      [&](const size_t numLinearResults) -> ParseResult {
+    if (initializedResultSegments) {
+      if (linearResultTypes.size() != numLinearResults) {
+        return parser.emitError(
+            parser.getCurrentLocation(),
+            "all cases and the default region must use the same number of "
+            "linear arguments");
+      }
+      return success();
+    }
+    if (result.types.size() < numLinearResults) {
+      return parser.emitError(
+          parser.getCurrentLocation(),
+          "expected at least one linear result type per assigned argument");
+    }
+
+    const auto trailingTypes =
+        ArrayRef(result.types).take_back(numLinearResults);
+    if (llvm::any_of(trailingTypes,
+                     [](Type type) { return !isQCOLinearType(type); })) {
+      return parser.emitError(parser.getCurrentLocation(),
+                              "assigned arguments must correspond to trailing "
+                              "linear result types");
+    }
+    llvm::append_range(linearResultTypes, trailingTypes);
+    initializedResultSegments = true;
+    return success();
+  };
 
   while (succeeded(parser.parseOptionalKeyword("case"))) {
     int64_t caseValue = 0;
@@ -280,12 +312,15 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
     if (parser.parseAssignmentList(regionArgs, regionOperands)) {
       return failure();
     }
+    if (failed(initializeResultSegments(regionOperands.size()))) {
+      return failure();
+    }
 
     if (caseValues.size() == 1) {
 
       // Resolve the operands into the result for the very first case.
 
-      if (parser.resolveOperands(regionOperands, result.types,
+      if (parser.resolveOperands(regionOperands, linearResultTypes,
                                  parser.getCurrentLocation(),
                                  result.operands)) {
         return failure();
@@ -296,7 +331,7 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
       // the case-value) as the first one.
 
       SmallVector<Value> operands;
-      if (parser.resolveOperands(regionOperands, result.types,
+      if (parser.resolveOperands(regionOperands, linearResultTypes,
                                  parser.getCurrentLocation(), operands)) {
         return failure();
       }
@@ -311,7 +346,7 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
       }
     }
 
-    for (auto [arg, type] : llvm::zip_equal(regionArgs, result.types)) {
+    for (auto [arg, type] : llvm::zip_equal(regionArgs, linearResultTypes)) {
       arg.type = type;
     }
 
@@ -341,11 +376,14 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseAssignmentList(regionArgs, regionOperands)) {
     return failure();
   }
+  if (failed(initializeResultSegments(regionOperands.size()))) {
+    return failure();
+  }
 
   // Otherwise, verify if the other cases use the equivalent operands (minus
   // the case-value) for all other cases.
 
-  if (parser.resolveOperands(regionOperands, result.types,
+  if (parser.resolveOperands(regionOperands, linearResultTypes,
                              parser.getCurrentLocation(), operands)) {
     return failure();
   }
@@ -363,13 +401,20 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
     }
   }
 
-  for (auto [args, type] : llvm::zip_equal(regionArgs, result.types)) {
+  for (auto [args, type] : llvm::zip_equal(regionArgs, linearResultTypes)) {
     args.type = type;
   }
 
   if (parser.parseRegion(*defaultRegion, regionArgs)) {
     return failure();
   }
+
+  const auto numLinearResults = linearResultTypes.size();
+  const auto numClassicalResults = result.types.size() - numLinearResults;
+  llvm::copy(ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
+                                static_cast<int32_t>(numLinearResults)}),
+             result.getOrAddProperties<IndexSwitchOp::Properties>()
+                 .resultSegmentSizes.begin());
 
   return success();
 }
@@ -378,15 +423,12 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
   p << " ";
   p.printOperand(getArg());
 
-  // Print result types if present
-  if (!getResults().empty()) {
-    p << " -> ";
-    llvm::interleaveComma(getResultTypes(), p);
-  }
+  p.printOptionalArrowTypeList(getResultTypes());
 
   // Print attributes (excluding cases which we handle specially)
-  p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
-                                     /*elidedAttrs=*/{"cases"});
+  p.printOptionalAttrDictWithKeyword(
+      getOperation()->getAttrs(),
+      /*elidedAttrs=*/{"cases", "resultSegmentSizes"});
 
   // Print case regions
   const auto cases = getCases();

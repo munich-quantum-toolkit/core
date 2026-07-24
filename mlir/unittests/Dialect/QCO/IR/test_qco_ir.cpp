@@ -45,6 +45,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -402,6 +403,8 @@ TEST_F(QCOTest, IfOpWithClassicalResultRoundTripsAndPreservesTies) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(succeeded(verify(*reparsedModule)));
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reparsedModule.get()));
 }
 
 TEST_F(QCOTest, IfOpRejectsMismatchedClassicalYield) {
@@ -590,6 +593,216 @@ TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(verify(*reparsedModule).succeeded());
+}
+
+TEST_F(QCOTest, IndexSwitchWithClassicalResultRoundTripsAndPreservesTies) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%index: index) -> i64 {
+        %q0 = qco.alloc : !qco.qubit
+        %state, %q1 = qco.index_switch %index -> (i64, !qco.qubit)
+        case 0 args(%arg0 = %q0) {
+          %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          %case = arith.constant 1 : i64
+          qco.yield %case, %q2 : i64, !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          %default = arith.constant 2 : i64
+          qco.yield %default, %arg0 : i64, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IndexSwitchOp switchOp;
+  module->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
+  ASSERT_EQ(switchOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
+  EXPECT_TRUE(isa<QubitType>(switchOp.getLinearResults().front().getType()));
+
+  auto* targetOperand = &switchOp->getOpOperand(1);
+  auto* indexOperand = &switchOp->getOpOperand(0);
+  EXPECT_FALSE(switchOp.getTiedResult(indexOperand));
+  EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(indexOperand, 0));
+  EXPECT_FALSE(switchOp.getTiedDefaultBlockArgument(indexOperand));
+  EXPECT_EQ(switchOp.getTiedResult(targetOperand),
+            switchOp.getLinearResults().front());
+  EXPECT_EQ(switchOp.getTiedTarget(
+                cast<OpResult>(switchOp.getClassicalResults().front())),
+            nullptr);
+  EXPECT_EQ(switchOp.getTiedTarget(
+                cast<OpResult>(switchOp.getLinearResults().front())),
+            targetOperand);
+  EXPECT_EQ(
+      switchOp
+          .getTiedCaseYieldedValue(switchOp.getCaseBlock(0)->getArgument(0), 0)
+          ->get(),
+      switchOp.getCaseYield(0).getTargets().back());
+  EXPECT_EQ(switchOp
+                .getTiedDefaultYieldedValue(
+                    switchOp.getDefaultBlock()->getArgument(0))
+                ->get(),
+            switchOp.getDefaultYield().getTargets().back());
+
+  SmallVector<Attribute> operands(switchOp->getNumOperands());
+  SmallVector<RegionSuccessor> successors;
+  switchOp.getEntrySuccessorRegions(operands, successors);
+  ASSERT_EQ(successors.size(), 2);
+  for (const RegionSuccessor successor : successors) {
+    ASSERT_EQ(successor.getSuccessorInputs().size(), 1);
+    EXPECT_EQ(switchOp.getEntrySuccessorOperands(successor).front(),
+              switchOp.getTargets().front());
+  }
+
+  std::string printed;
+  llvm::raw_string_ostream stream(printed);
+  module->print(stream);
+  stream.flush();
+  auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
+  ASSERT_TRUE(reparsedModule);
+  EXPECT_TRUE(succeeded(verify(*reparsedModule)));
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reparsedModule.get()));
+}
+
+TEST_F(QCOTest, ClassicalYieldOrderAffectsConditionalEquivalence) {
+  constexpr StringLiteral ifSource = R"mlir(
+    module {
+      func.func @main(%condition: i1) -> (i64, i64) {
+        %q0 = qco.alloc : !qco.qubit
+        %first, %second, %q1 = qco.if %condition args(%arg0 = %q0)
+            -> (i64, i64, !qco.qubit) {
+          %one = arith.constant 1 : i64
+          %two = arith.constant 2 : i64
+          qco.yield %one, %two, %arg0 : i64, i64, !qco.qubit
+        } else args(%arg0 = %q0) {
+          %one = arith.constant 1 : i64
+          %two = arith.constant 2 : i64
+          qco.yield %one, %two, %arg0 : i64, i64, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %first, %second : i64, i64
+      }
+    }
+  )mlir";
+  constexpr StringLiteral switchSource = R"mlir(
+    module {
+      func.func @main(%index: index) -> (i64, i64) {
+        %q0 = qco.alloc : !qco.qubit
+        %first, %second, %q1 = qco.index_switch %index
+            -> (i64, i64, !qco.qubit)
+        case 0 args(%arg0 = %q0) {
+          %one = arith.constant 1 : i64
+          %two = arith.constant 2 : i64
+          qco.yield %one, %two, %arg0 : i64, i64, !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          %one = arith.constant 1 : i64
+          %two = arith.constant 2 : i64
+          qco.yield %one, %two, %arg0 : i64, i64, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %first, %second : i64, i64
+      }
+    }
+  )mlir";
+
+  for (const StringRef source : {ifSource, switchSource}) {
+    auto lhs = parseSourceString<ModuleOp>(source, context.get());
+    auto rhs = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(lhs);
+    ASSERT_TRUE(rhs);
+
+    const auto findFirstYield = [](ModuleOp module) {
+      YieldOp result;
+      module.walk([&](YieldOp candidate) {
+        if (!result) {
+          result = candidate;
+        }
+      });
+      return result;
+    };
+
+    auto rhsYield = findFirstYield(*rhs);
+    ASSERT_TRUE(rhsYield);
+    SmallVector<Value> operands(rhsYield.getTargets());
+    ASSERT_GE(operands.size(), 2);
+    std::swap(operands[0], operands[1]);
+    rhsYield->setOperands(operands);
+    ASSERT_TRUE(succeeded(verify(*rhs)));
+
+    EXPECT_FALSE(areModulesEquivalentWithPermutations(lhs.get(), rhs.get()));
+
+    auto duplicateLhs = parseSourceString<ModuleOp>(source, context.get());
+    auto duplicateRhs = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(duplicateLhs);
+    ASSERT_TRUE(duplicateRhs);
+    for (ModuleOp module : {*duplicateLhs, *duplicateRhs}) {
+      auto yield = findFirstYield(module);
+      ASSERT_TRUE(yield);
+      SmallVector<Value> duplicateOperands(yield.getTargets());
+      ASSERT_GE(duplicateOperands.size(), 2);
+      duplicateOperands[1] = duplicateOperands[0];
+      yield->setOperands(duplicateOperands);
+      ASSERT_TRUE(succeeded(verify(module)));
+    }
+    EXPECT_TRUE(areModulesEquivalentWithPermutations(duplicateLhs.get(),
+                                                     duplicateRhs.get()));
+  }
+}
+
+TEST_F(QCOTest, ExtendsMixedResultIndexSwitchTargets) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%index: index) -> i64 {
+        %q0 = qco.alloc : !qco.qubit
+        %state, %q1 = qco.index_switch %index -> (i64, !qco.qubit)
+        case 0 args(%arg0 = %q0) {
+          %case = arith.constant 1 : i64
+          qco.yield %case, %arg0 : i64, !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          %default = arith.constant 2 : i64
+          qco.yield %default, %arg0 : i64, !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return %state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  IndexSwitchOp switchOp;
+  module->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+
+  IRRewriter rewriter(context.get());
+  rewriter.setInsertionPoint(switchOp);
+  auto addon = AllocOp::create(rewriter, switchOp.getLoc());
+  auto extended =
+      switchOp.replaceWithAdditionalTargets(rewriter, addon.getResult());
+  rewriter.setInsertionPointAfter(extended);
+  SinkOp::create(rewriter, extended.getLoc(),
+                 extended.getLinearResults().back());
+
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_EQ(extended.getClassicalResults().size(), 1);
+  ASSERT_EQ(extended.getLinearResults().size(), 2);
+  for (Region* region : extended.getRegions()) {
+    ASSERT_EQ(region->getNumArguments(), 2);
+    auto yield = cast<YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getNumOperands(), 3);
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+  }
 }
 
 TEST_F(QCOTest, EquivalentTensorIndexSwitches) {

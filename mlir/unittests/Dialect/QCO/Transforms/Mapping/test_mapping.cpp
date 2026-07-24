@@ -739,6 +739,73 @@ TEST_P(MappingPassTest, MapIfWithClassicalResult) {
   }
 }
 
+TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<2x!qco.qubit>
+        %state, %q2, %q3 = qco.index_switch %selector
+            -> (i64, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %case = arith.constant 1 : i64
+          qco.yield %case, %next0, %next1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %case = arith.constant 2 : i64
+          qco.yield %case, %next0, %next1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          %default = arith.constant 3 : i64
+          qco.yield %default, %arg0, %arg1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %q2 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %q3 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+
+  IndexSwitchOp switchOp;
+  module->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
+  for (Region* region : switchOp.getRegions()) {
+    auto yield = cast<YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getNumOperands(), switchOp.getNumResults());
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+  }
+}
+
 TEST_P(MappingPassTest, MapSABRECircuit) {
   const auto& device = GetParam();
   constexpr int64_t size = 6;

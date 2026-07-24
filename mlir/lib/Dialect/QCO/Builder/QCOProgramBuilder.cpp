@@ -1263,9 +1263,9 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
   }
 
   buildRegion(switchOp.getDefaultRegion(), prev, defaultBody);
-  updateQubitValueTracking(prev, switchOp.getResults());
+  updateQubitValueTracking(prev, switchOp.getLinearResults());
 
-  return switchOp.getResults();
+  return switchOp.getLinearResults();
 }
 
 Value QCOProgramBuilder::qcoIndexSwitch(
@@ -1302,8 +1302,8 @@ Value QCOProgramBuilder::qcoIndexSwitch(
     previous = buildRegion(region, previous, body);
   }
   previous = buildRegion(switchOp.getDefaultRegion(), previous, defaultBody);
-  updateQubitValueTracking(previous, switchOp.getResult(0));
-  return switchOp.getResult(0);
+  updateQubitValueTracking(previous, switchOp.getLinearResults().front());
+  return switchOp.getLinearResults().front();
 }
 
 Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,

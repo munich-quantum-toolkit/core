@@ -757,8 +757,10 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
     if (auto ifOp = dyn_cast<scf::IfOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(
           op, adaptor.getTargets().take_front(ifOp.getNumResults()));
-    } else if (isa<scf::IndexSwitchOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    } else if (auto switchOp =
+                   dyn_cast<scf::IndexSwitchOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(
+          op, adaptor.getTargets().take_front(switchOp.getNumResults()));
     } else {
       rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
     }
@@ -954,22 +956,28 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   LogicalResult
   matchAndRewrite(IndexSwitchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto newOp =
-        scf::IndexSwitchOp::create(rewriter, op.getLoc(), {}, adaptor.getArg(),
-                                   adaptor.getCases(), op.getNumCases());
+    SmallVector<Type> classicalResultTypes;
+    if (failed(getTypeConverter()->convertTypes(
+            op.getClassicalResults().getTypes(), classicalResultTypes))) {
+      return failure();
+    }
+    auto newOp = scf::IndexSwitchOp::create(
+        rewriter, op.getLoc(), classicalResultTypes, adaptor.getArg(),
+        adaptor.getCases(), op.getNumCases());
 
     const auto oldRegions = op.getCaseRegions();
     const auto newCaseRegions = newOp.getCaseRegions();
     for (size_t i = 0; i < op.getNumCases(); ++i) {
-      inlineRegion(oldRegions[i], newCaseRegions[i], 0,
-                   adaptor.getOperands().drop_front(1), rewriter);
+      inlineRegion(oldRegions[i], newCaseRegions[i], 0, adaptor.getTargets(),
+                   rewriter);
     }
 
     inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(), 0,
-                 adaptor.getOperands().drop_front(1), rewriter);
+                 adaptor.getTargets(), rewriter);
 
-    // Replace the qco results with the input qc values except the condition
-    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+    SmallVector<Value> replacements(newOp.getResults());
+    llvm::append_range(replacements, adaptor.getTargets());
+    rewriter.replaceOp(op, replacements);
 
     return success();
   }

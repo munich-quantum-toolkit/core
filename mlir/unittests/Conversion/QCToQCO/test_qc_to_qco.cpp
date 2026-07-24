@@ -23,7 +23,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -338,7 +337,8 @@ module {
   expectNoQCOperations(*module);
 }
 
-TEST_F(QCToQCORegressionTest, RejectsClassicalIndexSwitchResultsPrecisely) {
+TEST_F(QCToQCORegressionTest,
+       PreservesIndexSwitchClassicalResultsWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%index: index) -> i64
@@ -364,19 +364,36 @@ module {
   auto module = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "classical scf.index_switch results are not supported by the "
-        "QC-to-QCO conversion");
-    return success();
+  qco::IndexSwitchOp switchOp;
+  module->walk([&](qco::IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
+  ASSERT_EQ(switchOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(
+      isa<qco::QubitType>(switchOp.getLinearResults().front().getType()));
+  for (Region* region : switchOp.getRegions()) {
+    auto yield = cast<qco::YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getNumOperands(), 2);
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+    EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
+  }
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), switchOp.getClassicalResults().front());
+
+  bool containsScratchStorage = false;
+  module->walk([&](Operation* operation) {
+    containsScratchStorage |=
+        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
   });
-  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_FALSE(containsScratchStorage);
+  expectNoQCOperations(*module);
 }
 
 TEST_P(QCToQCOTest, ProgramEquivalence) {

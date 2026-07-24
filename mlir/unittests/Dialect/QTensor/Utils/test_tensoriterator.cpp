@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
@@ -26,6 +27,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -257,6 +259,68 @@ TEST_F(TensorIteratorTest, Traversal) {
   --recIt;
   ASSERT_EQ(recIt.operation(), nullptr);
   ASSERT_EQ(recIt.tensor(), tensorElse0);
+}
+
+TEST_F(TensorIteratorTest, TraversesMixedResultConditionals) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1, %selector: index) -> i64 {
+        %c1 = arith.constant 1 : index
+        %tensor0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %if_state, %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (i64, tensor<1x!qco.qubit>) {
+          %then = arith.constant 1 : i64
+          qco.yield %then, %arg0 : i64, tensor<1x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          %else = arith.constant 2 : i64
+          qco.yield %else, %arg0 : i64, tensor<1x!qco.qubit>
+        }
+        %switch_state, %tensor2 = qco.index_switch %selector
+            -> (i64, tensor<1x!qco.qubit>)
+        case 0 args(%arg0 = %tensor1) {
+          qco.yield %if_state, %arg0 : i64, tensor<1x!qco.qubit>
+        }
+        default args(%arg0 = %tensor1) {
+          %default = arith.constant 3 : i64
+          qco.yield %default, %arg0 : i64, tensor<1x!qco.qubit>
+        }
+        qtensor.dealloc %tensor2 : tensor<1x!qco.qubit>
+        return %switch_state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  qtensor::AllocOp alloc;
+  module->walk([&](qtensor::AllocOp candidate) { alloc = candidate; });
+  ASSERT_TRUE(alloc);
+
+  TensorIterator iterator(alloc.getResult());
+  EXPECT_EQ(iterator.operation(), alloc.getOperation());
+  ++iterator;
+  ASSERT_TRUE(isa<qco::IfOp>(iterator.operation()));
+  auto ifOp = cast<qco::IfOp>(iterator.operation());
+  EXPECT_EQ(iterator.tensor(), ifOp.getLinearResults().front());
+  ++iterator;
+  ASSERT_TRUE(isa<qco::IndexSwitchOp>(iterator.operation()));
+  auto switchOp = cast<qco::IndexSwitchOp>(iterator.operation());
+  EXPECT_EQ(iterator.tensor(), switchOp.getLinearResults().front());
+  ++iterator;
+  EXPECT_TRUE(isa<qtensor::DeallocOp>(iterator.operation()));
+  EXPECT_EQ(iterator.tensor(), nullptr);
+
+  --iterator;
+  EXPECT_EQ(iterator.operation(), switchOp.getOperation());
+  EXPECT_EQ(iterator.tensor(), switchOp.getLinearResults().front());
+  --iterator;
+  EXPECT_EQ(iterator.operation(), ifOp.getOperation());
+  EXPECT_EQ(iterator.tensor(), ifOp.getLinearResults().front());
+  --iterator;
+  EXPECT_EQ(iterator.operation(), alloc.getOperation());
+  EXPECT_EQ(iterator.tensor(), alloc.getResult());
 }
 
 TEST_F(TensorIteratorTest, TraversesWhileCarriedTensors) {
