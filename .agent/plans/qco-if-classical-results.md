@@ -63,10 +63,10 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
 - [x] (2026-07-24 22:47Z) Move the QC-to-QCO-to-QC composition regressions into
       a dedicated round-trip test target so each directional conversion test
       links only its own conversion library.
-- [ ] Rebuild the affected targets, run focused suites and repository lint,
-      independently verify the follow-up, and record the final evidence
-      (completed: 718 affected tests, changed-source clang-tidy, repository
-      lint, and `git diff --check`; remaining: independent verification).
+- [x] (2026-07-24 22:53Z) Rebuild the affected targets, pass 718 affected tests,
+      pass changed-source clang-tidy and repository lint, run
+      `git diff --check`, and complete an independent read-only verification of
+      the follow-up.
 
 ## Surprises & Discoveries
 
@@ -204,8 +204,10 @@ regressions and a dedicated two-test QC/QCO round-trip target preserve both
 layers of coverage. The affected debug suites pass 451 QCO IR, 131 QCO-to-QC,
 134 QC-to-QCO, and 2 round-trip tests. LLVM 22.1.8 clang-tidy reports no
 diagnostics in the changed source files, repository lint passes, and
-`git diff --check` is clean. Independent verification of this follow-up remains
-before publication.
+`git diff --check` is clean. Independent read-only verification confirmed that
+the patterns preserve the quantum bundle and result-segment metadata, that no
+generic region-branch patterns are registered, and that each directional test
+target now owns only its conversion dependency.
 
 ## Context and Orientation
 
