@@ -774,6 +774,11 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(qir::ifTwoQubits)},
         QCToQIRAdaptiveTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
                                 MQT_NAMED_BUILDER(qir::ifElse)},
+        QCToQIRAdaptiveTestCase{"IfWithMeasurement",
+                                MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+                                MQT_NAMED_BUILDER(qir::ifWithMeasurement)},
+        QCToQIRAdaptiveTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
+                                MQT_NAMED_BUILDER(qir::ifWithCreg)},
         QCToQIRAdaptiveTestCase{
             "NestedIfOpForLoop", MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
             MQT_NAMED_BUILDER(qir::nestedIfOpForLoop<true>)}));

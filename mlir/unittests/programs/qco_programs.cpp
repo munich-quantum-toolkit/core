@@ -96,7 +96,7 @@ Value allocMultipleQubitRegisters(QCOProgramBuilder& b) {
 
 Value allocLargeRegister(QCOProgramBuilder& b) {
   auto r = b.allocQubitRegister(100);
-  return measureToRegister(b, r[0]);
+  return measureToRegister(b, {r[0], r[99]});
 }
 
 Value staticQubitsNoMeasure(QCOProgramBuilder& b) {
@@ -3999,6 +3999,21 @@ SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b) {
     return SmallVector{innerQubit};
   });
   q[0] = res[0];
+  return {c0, c1};
+}
+
+SmallVector<Value> ifWithCreg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  auto q0 = b.h(q[0]);
+  auto measuredQubit = b.measure(q0, c0, 0).first;
+  auto res = b.qcoIf(c0, 0, {measuredQubit}, [&](ValueRange args) {
+    auto innerQubit = b.x(args[0]);
+    return SmallVector{innerQubit};
+  });
+  q[0] = res[0];
+  b.measure(q[0], c1, 0);
   return {c0, c1};
 }
 

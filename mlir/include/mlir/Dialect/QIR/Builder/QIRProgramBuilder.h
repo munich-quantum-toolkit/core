@@ -255,17 +255,18 @@ public:
   /**
    * @brief Loads a qubit from a register
    *
-   * @param reg Source register
-   * @param index The index from where the qubit is loaded
-   * @return The loaded qubit
+   * @param reg The qubit register
+   * @param index The index within the register
+   * @return An LLVM pointer to the loaded qubit
    *
    * @par Example:
    * ```c++
-   * auto q = builder.loadQubit(register, index);
+   * auto q = builder.loadQubit(reg, index);
    * ```
    * ```mlir
-   * %elementptr = llvm.getelementptr %register[%index] : (!llvm.ptr, i64) ->
-   * !llvm.ptr, !llvm.ptr %q0 = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
+   * %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
+   * !llvm.ptr, !llvm.ptr
+   * %q = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
    * ```
    */
   Value loadQubit(Value reg, Value index);
@@ -282,6 +283,26 @@ public:
    * ```
    */
   ClassicalRegister allocClassicalBitRegister(int64_t size, bool record = true);
+
+  /**
+   * @brief Loads a classical bit from a register
+   *
+   * @param reg The classical bit register
+   * @param index The index within the register
+   * @return An LLVM pointer to the loaded classical bit
+   *
+   * @par Example:
+   * ```c++
+   * auto b = builder.loadClassicalBit(reg, index);
+   * ```
+   * ```mlir
+   * %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
+   * !llvm.ptr, !llvm.ptr
+   * %b = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
+   * ```
+   */
+  Value loadClassicalBit(const ClassicalRegister& reg,
+                         const std::variant<int64_t, Value>& index);
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset

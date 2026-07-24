@@ -702,6 +702,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"IfWithMeasurement",
                         MQT_NAMED_BUILDER(qc::ifWithMeasurement),
                         MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
+        QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
+                        MQT_NAMED_BUILDER(qco::ifWithCreg)},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));

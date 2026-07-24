@@ -113,7 +113,7 @@ static LogicalResult convertClassicalBitMemRefAllocOp(
   state.resultArrays.insert(array);
   reg.array = array;
 
-  rewriter.eraseOp(op);
+  rewriter.replaceOp(op, array);
   return success();
 }
 
@@ -183,7 +183,7 @@ struct ConvertMemRefAllocOp final
 };
 
 /**
- * @brief Converts a qubit-register `memref.load` to `llvm.load`
+ * @brief Converts `memref.load` to `llvm.load`
  *
  * @par Example:
  * ```mlir
@@ -201,23 +201,35 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (auto shape = op.getMemref().getType().getShape(); shape.size() != 1) {
+    auto memrefType = op.getMemref().getType();
+    if (memrefType.getShape().size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
 
+    auto loc = op.getLoc();
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    auto array = adaptor.getMemref();
-    auto index = adaptor.getIndices()[0];
-    auto gep = LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
-                                   array, index);
-    auto load =
-        LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType, gep.getResult());
+    auto elementptr =
+        LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType,
+                            adaptor.getMemref(), adaptor.getIndices()[0])
+            .getResult();
+    auto result =
+        LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
 
-    rewriter.replaceOp(op, load.getResult());
+    // If the loaded value is a measurement result, load the result pointer
+    if (isa<IntegerType>(memrefType.getElementType())) {
+      auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
+      auto fnDec =
+          getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
+      auto readResult =
+          LLVM::CallOp::create(rewriter, loc, fnDec, result).getResult();
+      rewriter.replaceOp(op, readResult);
+      return success();
+    }
 
+    rewriter.replaceOp(op, result);
     return success();
   }
 };

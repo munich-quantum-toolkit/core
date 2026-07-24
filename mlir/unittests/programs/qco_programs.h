@@ -1402,6 +1402,10 @@ SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b);
 /// Creates a circuit that measures a qubit inside an if operation.
 SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation conditioned on a bit loaded from a
+/// classical bit register.
+SmallVector<Value> ifWithCreg(QCOProgramBuilder& b);
+
 /// Creates a circuit with an if operation with one qubit and one register.
 Value ifOneQubitOneTensor(QCOProgramBuilder& b);
 

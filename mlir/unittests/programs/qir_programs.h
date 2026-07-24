@@ -541,6 +541,13 @@ Value ifElse(QIRProgramBuilder& b);
 /// Creates a circuit with an if operation with two qubits.
 Value ifTwoQubits(QIRProgramBuilder& b);
 
+/// Creates a circuit that measures a qubit inside an if operation.
+Value ifWithMeasurement(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation conditioned on a bit loaded from a
+/// classical bit register.
+Value ifWithCreg(QIRProgramBuilder& b);
+
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
 template <bool IntoRegister = false>

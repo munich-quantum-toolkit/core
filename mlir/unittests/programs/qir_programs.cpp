@@ -924,6 +924,28 @@ Value ifTwoQubits(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
+Value ifWithMeasurement(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], c0, 0);
+  b.scfIf(cond, [&] { b.measure(q[0], c1, 0); });
+  return b.intConstant(0);
+}
+
+Value ifWithCreg(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  b.measure(q[0], c0, 0);
+  auto cond = b.loadClassicalBit(c0, 0);
+  b.scfIf(cond, [&] { b.x(q[0]); });
+  b.measure(q[0], c1, 0);
+  return b.intConstant(0);
+}
+
 template <bool IntoRegister> Value nestedIfOpForLoop(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();

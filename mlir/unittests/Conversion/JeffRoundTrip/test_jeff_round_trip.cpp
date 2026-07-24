@@ -797,6 +797,8 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"IfWithMeasurement",
                               MQT_NAMED_BUILDER(qco::ifWithMeasurement),
                               MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
+        JeffRoundTripTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qco::ifWithCreg),
+                              MQT_NAMED_BUILDER(qco::ifWithCreg)},
         JeffRoundTripTestCase{"IfWithAngle", MQT_NAMED_BUILDER(ifWithAngle),
                               MQT_NAMED_BUILDER(ifWithAngle)},
         JeffRoundTripTestCase{"NestedIfOpForLoop",

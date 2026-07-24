@@ -269,6 +269,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 }
 
 Value QIRProgramBuilder::loadQubit(Value reg, Value index) {
+  checkFinalized();
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("Arrays cannot be used in the Base Profile");
   }
@@ -281,8 +282,7 @@ Value QIRProgramBuilder::loadQubit(Value reg, Value index) {
 
   auto elementptr =
       LLVM::GEPOp::create(*this, ptrType, ptrType, reg, index).getResult();
-  auto qubit = LLVM::LoadOp::create(*this, ptrType, elementptr).getResult();
-  return qubit;
+  return LLVM::LoadOp::create(*this, ptrType, elementptr).getResult();
 }
 
 ClassicalRegister
@@ -332,6 +332,25 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   }
 
   return {.label = label, .size = size, .array = reg.array};
+}
+
+Value QIRProgramBuilder::loadClassicalBit(
+    const ClassicalRegister& reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  if (profile == Profile::Base) {
+    llvm::reportFatalUsageError("Arrays cannot be used in the Base Profile");
+  }
+
+  const auto it = cregs.find(reg.label);
+  if (it == cregs.end()) {
+    llvm::reportFatalUsageError("Register does not belong to this builder");
+  }
+
+  auto indexValue = resolveIntVariant(*this, getLoc(), index);
+  auto elementptr =
+      LLVM::GEPOp::create(*this, ptrType, ptrType, it->second.array, indexValue)
+          .getResult();
+  return LLVM::LoadOp::create(*this, ptrType, elementptr).getResult();
 }
 
 Value QIRProgramBuilder::measure(Value qubit, const int64_t index,

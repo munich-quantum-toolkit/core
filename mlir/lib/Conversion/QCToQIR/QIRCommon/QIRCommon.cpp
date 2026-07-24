@@ -67,7 +67,8 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
   addConversion([ctx](MemRefType type) -> Type {
-    if (isa<QubitType>(type.getElementType())) {
+    if (isa<QubitType>(type.getElementType()) ||
+        isa<IntegerType>(type.getElementType())) {
       return LLVM::LLVMPointerType::get(ctx);
     }
     return type;

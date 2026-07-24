@@ -2527,6 +2527,17 @@ SmallVector<Value> ifWithMeasurement(QCProgramBuilder& b) {
   return {c0, c1};
 }
 
+SmallVector<Value> ifWithCreg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  b.measure(q[0], c0, 0);
+  b.scfIf(c0, 0, [&] { b.x(q[0]); });
+  b.measure(q[0], c1, 0);
+  return {c0, c1};
+}
+
 Value nestedIfOpForLoop(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();
