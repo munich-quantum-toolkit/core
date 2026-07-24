@@ -56,6 +56,17 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
 - [x] (2026-07-24 23:31Z) Complete an independent read-only review, fix its
       positional-classical-yield equivalence finding, rerun validation, and keep
       the branch local for human inspection.
+- [x] (2026-07-24 22:47Z) Add QCO-specific `qco.if` canonicalization patterns
+      that forward equal classical yields, coalesce duplicate classical result
+      columns, and remove unused classical results without changing the tied
+      linear suffix.
+- [x] (2026-07-24 22:47Z) Move the QC-to-QCO-to-QC composition regressions into
+      a dedicated round-trip test target so each directional conversion test
+      links only its own conversion library.
+- [ ] Rebuild the affected targets, run focused suites and repository lint,
+      independently verify the follow-up, and record the final evidence
+      (completed: 718 affected tests, changed-source clang-tidy, repository
+      lint, and `git diff --check`; remaining: independent verification).
 
 ## Surprises & Discoveries
 
@@ -104,6 +115,18 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
   classical prefix through `IRMapping` in order and permits permutation only for
   the tied linear suffix. Regressions cover swapped and duplicate classical
   values for both conditional operation forms.
+- Observation: `PatternRewriter::eraseOpResults` safely rebuilds a
+  result-bearing operation and transfers its regions, but it copies QCO's
+  result-segment property unchanged. The dedicated dead-classical-result pattern
+  therefore removes the matching yield operands and immediately updates the
+  replacement `qco.if` property. Evidence: the canonicalization regression
+  reduces four classical results to one, retains the linear result and both
+  linear yields, and verifies the resulting module.
+- Observation: the former QCO-to-QC round-trip tests conflated two contracts:
+  direct reverse conversion and composition of both conversions. The direct
+  suite now starts from QCO text for both conditional forms, while
+  `mlir/unittests/Conversion/QCQCORoundTrip/` explicitly owns the two-pass tests
+  and their intentional two-library dependency.
 
 ## Decision Log
 
@@ -132,6 +155,17 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
   `qco.if` until it can preserve `resultSegmentSizes`. Rationale: retaining the
   QCO-specific patterns is both smaller and correct for mixed results.
   Date/Author: 2026-07-24, Codex.
+- Decision: Reproduce the useful classical-result subset of MLIR's `scf.if`
+  canonicalization patterns in QCO-specific patterns while leaving the linear
+  suffix untouched. Rationale: equal and duplicate classical yields and dead
+  classical results can be simplified safely, whereas the generic region-branch
+  patterns cannot express QCO's atomic quantum input/argument/yield/result
+  bundle. Date/Author: 2026-07-24, Codex.
+- Decision: Test bidirectional QC/QCO composition in a dedicated round-trip
+  target. Rationale: the QCO-to-QC unit-test target should not depend on the
+  reverse conversion merely to construct its inputs; direct tests cover each
+  conversion independently, while the separate target names and owns the
+  intentional two-way dependency. Date/Author: 2026-07-24, Codex.
 - Decision: Restore every mapped `qco.index_switch` region to the parent layout
   before joining instead of attempting pairwise branch convergence. Rationale:
   an index switch has an arbitrary number of regions, and a single explicit
@@ -155,10 +189,23 @@ only direct clang-tidy diagnostics outside the filtered source lines were known
 generated-MLIR warnings and an analyzer warning in MLIR's
 `OperationState::getOrAddProperties`.
 
-The independent read-only review passed the IR design, conversions, mapping,
-tensor traversal, performance, compatibility, tests, and scope after identifying
-one module-equivalence correctness issue and one documentation mismatch. Both
-were fixed and revalidated. The branch remains local.
+The earlier independent read-only review passed the IR design, conversions,
+mapping, tensor traversal, performance, compatibility, tests, and scope after
+identifying one module-equivalence correctness issue and one documentation
+mismatch. Both were fixed and revalidated. The feature is under review in a
+draft pull request.
+
+The follow-up adds classical-only `qco.if` simplification without registering
+MLIR's unsafe generic region-branch pattern bundle. Equal branch yields are
+forwarded, duplicate classical result columns are coalesced, and dead classical
+results are removed together with the matching yield operands and segment
+metadata. The QCO-to-QC target no longer links QC-to-QCO; two direct QCO-to-QC
+regressions and a dedicated two-test QC/QCO round-trip target preserve both
+layers of coverage. The affected debug suites pass 451 QCO IR, 131 QCO-to-QC,
+134 QC-to-QCO, and 2 round-trip tests. LLVM 22.1.8 clang-tidy reports no
+diagnostics in the changed source files, repository lint passes, and
+`git diff --check` is clean. Independent verification of this follow-up remains
+before publication.
 
 ## Context and Orientation
 
@@ -217,6 +264,15 @@ uses with the generated linear-result accessor. When mapping rewrites a
 When a dead conditional has classical results, erase it only if those results
 are unused; replace only linear result uses with their tied inputs.
 
+Add QCO-specific `IfOp` canonicalization patterns in
+`mlir/lib/Dialect/QCO/IR/SCF/IfOp.cpp`. One pattern forwards an ordinary
+classical result when both branches yield the same value and coalesces two
+classical result positions when both corresponding branch yields are identical.
+A second pattern removes unused classical result positions from the operation
+and both `qco.yield` terminators, updating `resultSegmentSizes` at the same
+time. These patterns must never inspect or erase linear results, qubit operands,
+branch arguments, or the linear yield suffix.
+
 In QC-to-QCO, create `qco.if` with the original `scf.if` result types as its
 classical segment and discovered quantum targets as its linear segment. Move the
 regions, let the existing second terminator-conversion phase yield original
@@ -240,13 +296,15 @@ conversion fails.
 
 Add tests close to each contract. Dialect tests must cover textual round-trip,
 invalid segment and yield signatures, tied-value offsets, region-branch
-relationships, and constant-condition canonicalization. Conversion tests must
-cover QC-to-QCO, QCO-to-QC, both conditional operation forms, nested
-conditionals in loops, and a full QC-to-QCO-to-QC round trip while asserting
-that no `memref.alloca`, store, or load exists. Mapping tests must force quantum
-permutation and prove the classical yield remains connected. Jeff tests must
-check the target-specific diagnostic. Existing quantum-only suites must continue
-to pass.
+relationships, constant-condition canonicalization, equal classical-yield
+forwarding, duplicate classical-result coalescing, dead classical-result
+removal, and preservation of the complete linear suffix. Conversion tests must
+cover QC-to-QCO and QCO-to-QC directly for both conditional operation forms and
+nested conditionals in loops. A dedicated QC/QCO round-trip target must own the
+full two-pass composition regressions and assert that no `memref.alloca`, store,
+or load exists. Mapping tests must force quantum permutation and prove the
+classical yield remains connected. Jeff tests must check the target-specific
+diagnostic. Existing quantum-only suites must continue to pass.
 
 ## Concrete Steps
 
@@ -262,8 +320,8 @@ Configure and build with the repository's debug preset if needed:
 
 Run the focused dialect and conversion binaries discovered under
 `build/debug/mlir/unittests`, including the QCO IR, QC-to-QCO, QCO-to-QC,
-round-trip, mapping, and Jeff conversion targets. Each must report all tests
-passed. Then run:
+dedicated QC/QCO round-trip, mapping, and Jeff conversion targets. Each must
+report all tests passed. Then run:
 
     .agent/run.sh uvx nox -s lint
     git diff --check
@@ -295,8 +353,10 @@ classical-result `qco.if` sent to Jeff must fail with its named capability
 diagnostic rather than crash or silently lower incorrectly.
 
 All existing quantum-only QCO IR, builder, utility, mapping, QC-to-QCO,
-QCO-to-QC, and Jeff tests must pass. The final repository-wide lint session and
-`git diff --check` must pass without modifying files.
+QCO-to-QC, QC/QCO round-trip, and Jeff tests must pass. The QCO-to-QC test
+target must not link `MLIRQCToQCO`; only the dedicated round-trip target may
+link both directional conversion libraries. The final repository-wide lint
+session and `git diff --check` must pass without modifying files.
 
 ## Idempotence and Recovery
 
@@ -360,3 +420,7 @@ Revision note (2026-07-24): Recorded the completed independent review and its
 remediation. Classical yield values are now compared positionally while the
 linear suffix remains permutation-aware, with swapped-value and duplicate-value
 regressions for both conditional operation forms.
+
+Revision note (2026-07-24): Added the follow-up milestone for QCO-specific
+classical `qco.if` canonicalization patterns and separated bidirectional
+conversion regressions from the directional QCO-to-QC test target.
