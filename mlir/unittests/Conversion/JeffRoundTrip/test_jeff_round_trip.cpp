@@ -24,6 +24,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -170,12 +171,14 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
   auto main = program->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
-  auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
-  ASSERT_TRUE(passthrough);
-  EXPECT_TRUE(llvm::is_contained(passthrough,
-                                 StringAttr::get(&context, "entry_point")));
+  EXPECT_EQ(
+      main->getAttrOfType<ArrayAttr>("passthrough"),
+      ArrayAttr::get(&context, {StringAttr::get(&context, "entry_point")}));
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
   EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  ASSERT_EQ(returnOp.getNumOperands(), 1);
+  EXPECT_TRUE(returnOp.getOperand(0).getType().isInteger(1));
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {

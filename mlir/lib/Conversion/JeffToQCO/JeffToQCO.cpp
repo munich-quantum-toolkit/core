@@ -1137,31 +1137,27 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
     }
     auto* block = &op.getBlocks().front();
 
-    auto* returnOp = block->getTerminator();
-    if (!isa<func::ReturnOp>(returnOp)) {
+    auto returnOp = dyn_cast<func::ReturnOp>(block->getTerminator());
+    if (!returnOp) {
       return failure();
     }
 
     // Restore the compiler entry-point marker. Jeff functions may retain
     // observable classical results, so only synthesize the legacy i64 status
     // result for a result-less entry point.
-    rewriter.startOpModification(op);
-    auto* ctx = rewriter.getContext();
-    auto entryPointAttr = StringAttr::get(ctx, "entry_point");
-    op->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
     const bool needsStatusResult = op.getFunctionType().getResults().empty();
-    if (needsStatusResult) {
-      op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
-    }
-    rewriter.finalizeOpModification(op);
+    rewriter.modifyOpInPlace(op, [&] {
+      op->setAttr("passthrough", rewriter.getArrayAttr(
+                                     {rewriter.getStringAttr("entry_point")}));
+      if (needsStatusResult) {
+        op.setType(rewriter.getFunctionType({}, {rewriter.getI64Type()}));
+      }
+    });
 
     if (needsStatusResult) {
       rewriter.setInsertionPointToStart(block);
-      auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
-                                               rewriter.getI64IntegerAttr(0));
-      rewriter.setInsertionPointToEnd(block);
-      func::ReturnOp::create(rewriter, op.getLoc(), constOp.getResult());
-      rewriter.eraseOp(returnOp);
+      auto zero = arith::ConstantIntOp::create(rewriter, op.getLoc(), 0, 64);
+      rewriter.replaceOpWithNewOp<func::ReturnOp>(returnOp, zero.getResult());
     }
 
     return success();
