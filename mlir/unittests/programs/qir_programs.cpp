@@ -11,6 +11,7 @@
 #include "qir_programs.h"
 
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <mlir/IR/Value.h>
 
@@ -31,19 +32,20 @@ namespace mlir::qir {
  * @return The result value.
  */
 static Value measureAndRecord(QIRProgramBuilder& b, ValueRange qubits,
-                              bool inRegister, int64_t startIndex = 0) {
-
+                              const bool inRegister,
+                              const int64_t startIndex = 0) {
   if (qubits.empty()) {
     return b.intConstant(0);
   }
-  QIRProgramBuilder::ClassicalRegister resultArray;
+
+  ClassicalRegister resultArray;
   if (inRegister) {
-    resultArray = b.allocClassicalBitRegister(
-        static_cast<int64_t>(qubits.size()), "meas");
+    resultArray =
+        b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
   }
 
   for (auto i = 0L; i < qubits.size(); ++i) {
-    inRegister ? b.measure(qubits[i], resultArray[i])
+    inRegister ? b.measure(qubits[i], resultArray, i)
                : b.measure(qubits[i], startIndex + i);
   }
 
@@ -101,7 +103,7 @@ template <bool IntoRegister> Value allocLargeRegister(QIRProgramBuilder& b) {
 Value staticQubits(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value staticQubitsWithOps(QIRProgramBuilder& b) {
@@ -109,7 +111,7 @@ Value staticQubitsWithOps(QIRProgramBuilder& b) {
   auto q1 = b.staticQubit(1);
   b.h(q0);
   b.h(q1);
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value staticQubitsWithParametricOps(QIRProgramBuilder& b) {
@@ -117,27 +119,27 @@ Value staticQubitsWithParametricOps(QIRProgramBuilder& b) {
   auto q1 = b.staticQubit(1);
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value staticQubitsWithTwoTargetOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rzz(0.123, q0, q1);
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value staticQubitsWithCtrl(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value staticQubitsWithInv(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   b.tdg(q0);
-  return measureAndRecord(b, {q0}, false);
+  return measureAndRecord(b, {q0}, true);
 }
 
 Value staticQubitsWithDuplicates(QIRProgramBuilder& b) {
@@ -150,7 +152,7 @@ Value staticQubitsWithDuplicates(QIRProgramBuilder& b) {
   b.rzz(0.123, q0b, q1b);
   b.cx(q0b, q1b);
   b.tdg(q0a);
-  return measureAndRecord(b, {q0b, q1b}, false);
+  return measureAndRecord(b, {q0b, q1b}, true);
 }
 
 Value staticQubitsCanonical(QIRProgramBuilder& b) {
@@ -161,64 +163,78 @@ Value staticQubitsCanonical(QIRProgramBuilder& b) {
   b.rzz(0.123, q0, q1);
   b.cx(q0, q1);
   b.tdg(q0);
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value mixedStaticThenDynamicQubit(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.allocQubit();
-  return measureAndRecord(b, {q0, q1}, false);
+  return measureAndRecord(b, {q0, q1}, true);
 }
 
 Value mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
   auto q0 = b.allocQubitRegister(2);
   auto q1 = b.staticQubit(0);
-  return measureAndRecord(b, {q0[0], q0[1], q1}, false);
+  return measureAndRecord(b, {q0[0], q0[1], q1}, true);
 }
 
-template <bool IntoRegister>
 Value singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
+  b.measure(q[0], c, 0);
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(3);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[1]);
-  b.measure(q[0], c[2]);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 1);
+  b.measure(q[0], c, 2);
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
 Value multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  b.measure(q[0], c0[0]);
-  b.measure(q[1], c1[0]);
-  b.measure(q[2], c1[1]);
+  const auto& c0 = b.allocClassicalBitRegister(1);
+  const auto& c1 = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c0, 0);
+  b.measure(q[1], c1, 0);
+  b.measure(q[2], c1, 1);
   return b.intConstant(0);
 }
 
-template <bool IntoRegister>
+Value partialMeasurementToRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto c = b.allocClassicalBitRegister(2);
+  // Only the first bit is measured; the second is still output-recorded.
+  b.measure(q[0], c, 0);
+  return b.intConstant(0);
+}
+
+Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto c = b.allocClassicalBitRegister(2);
+  // The bit index is the loop induction variable, i.e. only known at runtime.
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto qubit = b.loadQubit(q.value, iv);
+    b.measure(qubit, c, iv);
+  });
+  return b.intConstant(0);
+}
+
 Value measurementWithoutRegisters(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
-  auto bit = b.measure(q, 0);
+  b.measure(q, 0);
   return b.intConstant(0);
 }
 
@@ -250,10 +266,10 @@ Value resetQubitAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   if constexpr (IntoRegister) {
-    auto c = b.allocClassicalBitRegister(static_cast<int64_t>(2), "c");
-    b.measure(q[0], c[0]);
+    auto c = b.allocClassicalBitRegister(2);
+    b.measure(q[0], c, 0);
     b.reset(q[0]);
-    b.measure(q[0], c[1]);
+    b.measure(q[0], c, 1);
   } else {
     b.measure(q[0], 0);
     b.reset(q[0]);
@@ -267,14 +283,14 @@ Value resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
   if constexpr (IntoRegister) {
-    auto c = b.allocClassicalBitRegister(static_cast<int64_t>(4), "c");
-    b.measure(q[0], c[0]);
+    auto c = b.allocClassicalBitRegister(4);
+    b.measure(q[0], c, 0);
     b.reset(q[0]);
-    b.measure(q[0], c[1]);
+    b.measure(q[0], c, 1);
     b.h(q[1]);
-    b.measure(q[1], c[2]);
+    b.measure(q[1], c, 2);
     b.reset(q[1]);
-    b.measure(q[1], c[3]);
+    b.measure(q[1], c, 3);
   } else {
     b.measure(q[0], 0);
     b.reset(q[0]);
@@ -292,12 +308,12 @@ Value repeatedResetAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   if constexpr (IntoRegister) {
-    auto c = b.allocClassicalBitRegister(static_cast<int64_t>(2), "c");
-    b.measure(q[0], c[0]);
+    auto c = b.allocClassicalBitRegister(2);
+    b.measure(q[0], c, 0);
     b.reset(q[0]);
     b.reset(q[0]);
     b.reset(q[0]);
-    b.measure(q[0], c[1]);
+    b.measure(q[0], c, 1);
   } else {
     b.measure(q[0], 0);
     b.reset(q[0]);
@@ -418,7 +434,7 @@ template <bool IntoRegister> Value multipleControlledH(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
-template <bool IntoRegister> Value hWithoutRegister(QIRProgramBuilder& b) {
+Value hWithoutRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
   return measureAndRecord(b, {q}, false);
@@ -871,31 +887,63 @@ Value multipleControlledRccx(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
-template <bool IntoRegister> Value simpleIf(QIRProgramBuilder& b) {
+Value simpleIf(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], 0);
+  auto cond = b.measure(q[0], c0, 0);
   b.scfIf(cond, [&] { b.x(q[0]); });
-  return measureAndRecord(b, q.qubits, IntoRegister, 1);
+  b.measure(q[0], c1, 0);
+  return b.intConstant(0);
 }
 
-template <bool IntoRegister> Value ifElse(QIRProgramBuilder& b) {
+Value ifElse(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], 0);
+  auto cond = b.measure(q[0], c0, 0);
   b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
-  return measureAndRecord(b, q.qubits, IntoRegister, 1);
+  b.measure(q[0], c1, 0);
+  return b.intConstant(0);
 }
 
-template <bool IntoRegister> Value ifTwoQubits(QIRProgramBuilder& b) {
+Value ifTwoQubits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(2);
   b.h(q[0]);
-  auto cond = b.measure(q[0], 0);
+  auto cond = b.measure(q[0], c0, 0);
   b.scfIf(cond, [&] {
     b.x(q[0]);
     b.x(q[1]);
   });
-  return measureAndRecord(b, q.qubits, IntoRegister, 1);
+  b.measure(q[0], c1, 0);
+  b.measure(q[1], c1, 1);
+  return b.intConstant(0);
+}
+
+Value ifWithMeasurement(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], c0, 0);
+  b.scfIf(cond, [&] { b.measure(q[0], c1, 0); });
+  return b.intConstant(0);
+}
+
+Value ifWithCreg(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto c0 = b.allocClassicalBitRegister(1);
+  const auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  b.measure(q[0], c0, 0);
+  auto cond = b.loadClassicalBit(c0, 0);
+  b.scfIf(cond, [&] { b.x(q[0]); });
+  b.measure(q[0], c1, 0);
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister> Value nestedIfOpForLoop(QIRProgramBuilder& b) {
@@ -907,7 +955,7 @@ template <bool IntoRegister> Value nestedIfOpForLoop(QIRProgramBuilder& b) {
       cond, [&] { b.h(q0); },
       [&] {
         b.scfFor(0, 3, 1, [&](Value iv) {
-          auto q1 = b.load(reg.value, iv);
+          auto q1 = b.loadQubit(reg.value, iv);
           b.h(q1);
         });
       });
@@ -939,7 +987,7 @@ template <bool IntoRegister> Value simpleDoWhileReset(QIRProgramBuilder& b) {
 template <bool IntoRegister> Value simpleForLoop(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.load(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
   return measureAndRecord(b, reg.qubits, IntoRegister);
@@ -952,7 +1000,7 @@ template <bool IntoRegister> Value nestedForLoopIfOp(QIRProgramBuilder& b) {
     b.h(qCond);
     auto cond = b.measure(qCond, 0, false);
     b.scfIf(cond, [&] {
-      auto q = b.load(reg.value, iv);
+      auto q = b.loadQubit(reg.value, iv);
       b.h(q);
     });
   });
@@ -962,11 +1010,11 @@ template <bool IntoRegister> Value nestedForLoopIfOp(QIRProgramBuilder& b) {
 template <bool IntoRegister> Value nestedForLoopWhileOp(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.load(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.load(reg.value, iv);
+    auto q = b.loadQubit(reg.value, iv);
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q, 0, false);
@@ -983,7 +1031,7 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b) {
   auto control = b.allocQubit();
   b.h(control);
   b.scfFor(0, 3, 1, [&](Value iv) {
-    auto q0 = b.load(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(control, q0);
   });
@@ -995,7 +1043,7 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.h(reg[0]);
   b.scfFor(1, 4, 1, [&](Value iv) {
-    auto q0 = b.load(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(reg[0], q0);
   });
@@ -1018,12 +1066,6 @@ template Value alloc3QubitRegister<false>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegisters<false>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegistersWithOps<false>(QIRProgramBuilder& b);
 template Value allocLargeRegister<false>(QIRProgramBuilder& b);
-template Value singleMeasurementToSingleBit<false>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToSameBit<false>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToDifferentBits<false>(QIRProgramBuilder& b);
-template Value
-multipleClassicalRegistersAndMeasurements<false>(QIRProgramBuilder& b);
-template Value measurementWithoutRegisters<false>(QIRProgramBuilder& b);
 template Value resetQubitWithoutOp<false>(QIRProgramBuilder& b);
 template Value resetMultipleQubitsWithoutOp<false>(QIRProgramBuilder& b);
 template Value repeatedResetWithoutOp<false>(QIRProgramBuilder& b);
@@ -1048,7 +1090,6 @@ template Value multipleControlledZ<false>(QIRProgramBuilder& b);
 template Value h<false>(QIRProgramBuilder& b);
 template Value singleControlledH<false>(QIRProgramBuilder& b);
 template Value multipleControlledH<false>(QIRProgramBuilder& b);
-template Value hWithoutRegister<false>(QIRProgramBuilder& b);
 template Value s<false>(QIRProgramBuilder& b);
 template Value singleControlledS<false>(QIRProgramBuilder& b);
 template Value multipleControlledS<false>(QIRProgramBuilder& b);
@@ -1122,9 +1163,6 @@ template Value multipleControlledXxMinusYY<false>(QIRProgramBuilder& b);
 template Value rccx<false>(QIRProgramBuilder& b);
 template Value singleControlledRccx<false>(QIRProgramBuilder& b);
 template Value multipleControlledRccx<false>(QIRProgramBuilder& b);
-template Value simpleIf<false>(QIRProgramBuilder& b);
-template Value ifElse<false>(QIRProgramBuilder& b);
-template Value ifTwoQubits<false>(QIRProgramBuilder& b);
 template Value nestedIfOpForLoop<false>(QIRProgramBuilder& b);
 template Value simpleWhileReset<false>(QIRProgramBuilder& b);
 template Value simpleDoWhileReset<false>(QIRProgramBuilder& b);
@@ -1146,12 +1184,6 @@ template Value alloc3QubitRegister<true>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegisters<true>(QIRProgramBuilder& b);
 template Value allocMultipleQubitRegistersWithOps<true>(QIRProgramBuilder& b);
 template Value allocLargeRegister<true>(QIRProgramBuilder& b);
-template Value singleMeasurementToSingleBit<true>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToSameBit<true>(QIRProgramBuilder& b);
-template Value repeatedMeasurementToDifferentBits<true>(QIRProgramBuilder& b);
-template Value
-multipleClassicalRegistersAndMeasurements<true>(QIRProgramBuilder& b);
-template Value measurementWithoutRegisters<true>(QIRProgramBuilder& b);
 template Value resetQubitWithoutOp<true>(QIRProgramBuilder& b);
 template Value resetMultipleQubitsWithoutOp<true>(QIRProgramBuilder& b);
 template Value repeatedResetWithoutOp<true>(QIRProgramBuilder& b);
@@ -1176,7 +1208,6 @@ template Value multipleControlledZ<true>(QIRProgramBuilder& b);
 template Value h<true>(QIRProgramBuilder& b);
 template Value singleControlledH<true>(QIRProgramBuilder& b);
 template Value multipleControlledH<true>(QIRProgramBuilder& b);
-template Value hWithoutRegister<true>(QIRProgramBuilder& b);
 template Value s<true>(QIRProgramBuilder& b);
 template Value singleControlledS<true>(QIRProgramBuilder& b);
 template Value multipleControlledS<true>(QIRProgramBuilder& b);
@@ -1250,9 +1281,6 @@ template Value multipleControlledXxMinusYY<true>(QIRProgramBuilder& b);
 template Value rccx<true>(QIRProgramBuilder& b);
 template Value singleControlledRccx<true>(QIRProgramBuilder& b);
 template Value multipleControlledRccx<true>(QIRProgramBuilder& b);
-template Value simpleIf<true>(QIRProgramBuilder& b);
-template Value ifElse<true>(QIRProgramBuilder& b);
-template Value ifTwoQubits<true>(QIRProgramBuilder& b);
 template Value nestedIfOpForLoop<true>(QIRProgramBuilder& b);
 template Value simpleWhileReset<true>(QIRProgramBuilder& b);
 template Value simpleDoWhileReset<true>(QIRProgramBuilder& b);

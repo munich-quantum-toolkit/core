@@ -17,7 +17,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -68,7 +67,8 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
   addConversion([ctx](MemRefType type) -> Type {
-    if (isa<QubitType>(type.getElementType())) {
+    if (isa<QubitType>(type.getElementType()) ||
+        isa<IntegerType>(type.getElementType())) {
       return LLVM::LLVMPointerType::get(ctx);
     }
     return type;
@@ -410,51 +410,11 @@ void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
-  auto& resultArrays = state.resultArrays;
-  auto& resultPtrs = state.resultPtrs;
-
-  if (resultArrays.empty() && resultPtrs.empty()) {
-    return;
-  }
-
   OpBuilder builder(ctx);
-  auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  auto voidType = LLVM::LLVMVoidType::get(ctx);
-
-  auto& outputBlock = main.getBlocks().back();
-  builder.setInsertionPoint(&outputBlock.back());
-
-  if (!resultPtrs.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-    auto fnDec =
-        getOrCreateFunctionDeclaration(builder, main, QIR_RECORD_OUTPUT, fnSig);
-    for (const auto& [index, ptr] : resultPtrs) {
-      if (!state.recordedIndices.contains(index)) {
-        continue;
-      }
-      auto label = createResultLabel(builder, main,
-                                     "__unnamed__" + std::to_string(index))
-                       .getResult();
-      LLVM::CallOp::create(builder, main->getLoc(), fnDec,
-                           ValueRange{ptr, label});
-    }
-  }
-
-  if (!resultArrays.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(
-        voidType, {builder.getI64Type(), ptrType, ptrType});
-    auto fnDec = getOrCreateFunctionDeclaration(builder, main,
-                                                QIR_ARRAY_RECORD_OUTPUT, fnSig);
-    for (const auto& [name, results] : resultArrays) {
-      if (!state.recordedArrays.contains(name)) {
-        continue;
-      }
-      auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-      auto label = createResultLabel(builder, main, name).getResult();
-      LLVM::CallOp::create(builder, main->getLoc(), fnDec,
-                           ValueRange{size, results, label});
-    }
-  }
+  builder.setInsertionPoint(&main.getBlocks().back().back());
+  emitOutputRecording(builder, main,
+                      llvm::to_vector(llvm::make_second_range(state.cregs)),
+                      state.staticResults);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
@@ -472,9 +432,21 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
                                                      &state);
 }
 
+Value getResultPtr(LoweringState& state, Operation* op,
+                   ConversionPatternRewriter& rewriter) {
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+  const auto index = static_cast<int64_t>(state.staticResults.size());
+  const auto record = state.returnedStaticResults.contains(op);
+  auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
+  state.staticResults.try_emplace(
+      index, qir::StaticResult{.pointer = result, .record = record});
+  return result;
+}
+
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
   moduleOp->walk([&](func::FuncOp funcOp) {
-    // First, check if the given function is the main entrypoint or not.
+    // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
     bool isEntryPoint = false;
     if (passthrough) {
@@ -493,7 +465,31 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
 
       for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
-          state.returnedMeasurements.insert(measureOp.getOperation());
+          state.returnedStaticResults.insert(measureOp.getOperation());
+        } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>()) {
+          const std::string label = "c" + std::to_string(state.cregs.size());
+          auto& reg =
+              state.cregs.try_emplace(allocOp.getOperation()).first->second;
+          reg.label = label;
+          const auto size = allocOp.getType().getShape()[0];
+          if (size != ShapedType::kDynamic) {
+            reg.size = size;
+            reg.results.assign(size, Value{});
+          }
+          for (auto* user : allocOp.getResult().getUsers()) {
+            auto storeOp = dyn_cast<memref::StoreOp>(user);
+            if (!storeOp) {
+              continue;
+            }
+            auto measureOp =
+                storeOp.getValueToStore().getDefiningOp<MeasureOp>();
+            if (!measureOp) {
+              continue;
+            }
+            state.returnedCregs.try_emplace(measureOp.getOperation(),
+                                            allocOp.getOperation(),
+                                            storeOp.getIndices()[0]);
+          }
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());

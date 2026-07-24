@@ -20,26 +20,34 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -201,6 +209,128 @@ static StringRef getEntryPointName(Operation* op) {
   }
 
   return cast<StringAttr>(strings[entryPoint]).getValue();
+}
+
+/**
+ * @brief Converts tensors representing classical registers to memrefs.
+ */
+static LogicalResult
+rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
+  OpBuilder builder(module->getContext());
+  const auto result = module->walk([&](func::FuncOp funcOp) -> WalkResult {
+    DenseMap<Value, Value> memrefs;
+    SmallVector<Operation*> toErase;
+    funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) {
+      TypeSwitch<Operation*>(op)
+          .Case<tensor::EmptyOp>([&](auto emptyOp) {
+            auto tensorType = emptyOp.getType();
+            if (tensorType.getRank() != 1 ||
+                !tensorType.getElementType().isInteger(1)) {
+              return;
+            }
+            builder.setInsertionPoint(emptyOp);
+            auto loc = emptyOp.getLoc();
+            auto elementType = tensorType.getElementType();
+            auto dynamicSizes = emptyOp.getDynamicSizes();
+            std::optional<int64_t> size;
+            if (dynamicSizes.empty()) {
+              size = tensorType.getShape()[0];
+            } else if (auto castOp =
+                           dynamicSizes[0]
+                               .template getDefiningOp<arith::IndexCastOp>()) {
+              size = getConstantIntValue(castOp.getIn());
+            } else {
+              size = getConstantIntValue(dynamicSizes[0]);
+            }
+            Value memref;
+            if (size) {
+              memref = memref::AllocOp::create(
+                  builder, loc, MemRefType::get({*size}, elementType));
+            } else {
+              memref = memref::AllocOp::create(
+                  builder, loc,
+                  MemRefType::get({ShapedType::kDynamic}, elementType),
+                  ValueRange{dynamicSizes[0]});
+            }
+            memrefs[emptyOp.getResult()] = memref;
+            toErase.emplace_back(emptyOp);
+          })
+          .Case<tensor::InsertOp>([&](auto insertOp) {
+            auto it = memrefs.find(insertOp.getDest());
+            if (it == memrefs.end()) {
+              return;
+            }
+            auto memref = it->second;
+            builder.setInsertionPoint(insertOp);
+            memref::StoreOp::create(builder, insertOp.getLoc(),
+                                    insertOp.getScalar(), memref,
+                                    insertOp.getIndices());
+            memrefs[insertOp.getResult()] = memref;
+            toErase.emplace_back(insertOp);
+          })
+          .Case<tensor::ExtractOp>([&](auto extractOp) {
+            auto it = memrefs.find(extractOp.getTensor());
+            if (it == memrefs.end()) {
+              return;
+            }
+            builder.setInsertionPoint(extractOp);
+            auto newResult =
+                memref::LoadOp::create(builder, extractOp.getLoc(), it->second,
+                                       extractOp.getIndices())
+                    .getResult();
+            extractOp.getResult().replaceAllUsesWith(newResult);
+            toErase.emplace_back(extractOp);
+          })
+          .Case<scf::ForOp>([&](auto forOp) {
+            for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
+              auto it = memrefs.find(init);
+              if (it == memrefs.end()) {
+                continue;
+              }
+              auto memref = it->second;
+              memrefs[forOp.getRegionIterArg(i)] = memref;
+              memrefs[forOp.getResult(i)] = memref;
+            }
+          });
+    });
+
+    funcOp.walk([&](scf::ForOp forOp) {
+      auto* yield = forOp.getBody()->getTerminator();
+      for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
+        auto it = memrefs.find(init);
+        if (it == memrefs.end()) {
+          continue;
+        }
+        forOp.getInitArgsMutable()[i].set(it->second);
+        forOp.getRegionIterArg(i).setType(it->second.getType());
+        forOp.getResult(i).setType(it->second.getType());
+        yield->getOpOperand(i).set(it->second);
+      }
+    });
+
+    // Update terminator operands
+    auto* terminator = funcOp.getBlocks().front().getTerminator();
+    for (auto& operand : terminator->getOpOperands()) {
+      auto it = memrefs.find(operand.get());
+      if (it == memrefs.end()) {
+        continue;
+      }
+      operand.set(it->second);
+    }
+
+    // Update function signature
+    if (!memrefs.empty()) {
+      funcOp.setType(builder.getFunctionType(funcOp.getArgumentTypes(),
+                                             terminator->getOperandTypes()));
+    }
+
+    for (Operation* op : llvm::reverse(toErase)) {
+      op->erase();
+    }
+
+    return WalkResult::advance();
+  });
+  return result.wasInterrupted() ? failure() : success();
 }
 
 /**
@@ -1241,6 +1371,11 @@ protected:
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    if (rewriteClassicalRegisterTensorsToMemrefs(module).failed()) {
       signalPassFailure();
       return;
     }

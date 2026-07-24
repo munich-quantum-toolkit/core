@@ -10,13 +10,22 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <variant>
 
 namespace mlir {
 class OpBuilder;
@@ -41,6 +50,8 @@ inline constexpr auto QIR_QUBIT_RELEASE = "__quantum__rt__qubit_release";
 
 inline constexpr auto QIR_RESULT_ARRAY_ALLOC =
     "__quantum__rt__result_array_allocate";
+inline constexpr auto QIR_RESULT_ARRAY_RECORD_OUTPUT =
+    "__quantum__rt__result_array_record_output";
 inline constexpr auto QIR_RESULT_ARRAY_RELEASE =
     "__quantum__rt__result_array_release";
 
@@ -52,7 +63,7 @@ inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
-    "__quantum__rt__result_array_record_output";
+    "__quantum__rt__array_record_output";
 inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
@@ -261,5 +272,62 @@ createResultLabel(OpBuilder& builder, Operation* op, StringRef label,
  * @return The pointer value
  */
 Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
+
+/// A classical bit register.
+struct ClassicalRegister {
+  /// Label of the register (e.g., "c0").
+  std::string label;
+  /// Whether the register should be recorded in the output.
+  bool record = true;
+  /// Number of bits in the register.
+  std::variant<int64_t, Value> size = int64_t{0};
+  /// Base Profile: Pre-allocated result pointer for each bit.
+  SmallVector<Value> results;
+  /// Adaptive Profile: The backing result array.
+  Value array;
+};
+
+/// A static result (i.e., a result that is not part of a classical register).
+struct StaticResult {
+  /// The result pointer.
+  Value pointer;
+  /// Whether the result should be recorded in the output.
+  bool record = false;
+};
+
+/**
+ * @brief Emit the output-recording calls.
+ *
+ * @param builder The builder to use
+ * @param anchor An operation used to locate the enclosing module
+ * @param classicalRegisters The classical registers to record. If `record` is
+ * not set, the register is skipped.
+ * @param staticResults The static results to record. If `record` is not set,
+ * the result is skipped.
+ */
+void emitOutputRecording(OpBuilder& builder, Operation* anchor,
+                         ArrayRef<ClassicalRegister> classicalRegisters,
+                         const DenseMap<int64_t, StaticResult>& staticResults);
+
+/**
+ * @brief Helper to resolve a variant of either `int64_t` type or `Value` type
+ * to a `Value`
+ *
+ * @details
+ * Helper function to resolve a given variant to a `Value`. Creates an
+ * `LLVM::ConstantOp` from the `int64_t` value. If the variant holds a `Value`,
+ * return it directly.
+ */
+[[nodiscard]] inline Value
+resolveIntVariant(OpBuilder& builder, Location loc,
+                  const std::variant<int64_t, Value>& variant) {
+  if (const auto* value = std::get_if<Value>(&variant)) {
+    return *value;
+  }
+  return LLVM::ConstantOp::create(
+             builder, loc, builder.getI64Type(),
+             builder.getIndexAttr(std::get<int64_t>(variant)))
+      .getResult();
+}
 
 } // namespace mlir::qir

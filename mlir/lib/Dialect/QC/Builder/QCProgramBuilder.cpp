@@ -127,12 +127,14 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
-  auto memref = memref::AllocOp::create(*this, memrefType);
-  allocatedMemrefs.insert(memref);
+  auto allocOp = memref::AllocOp::create(*this, memrefType);
+  auto memref = allocOp.getResult();
+  allocatedQregs.insert(memref);
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
-  auto& loadedQubitsForRegion = loadedQubits[memref->getParentRegion()][memref];
+  auto& loadedQubitsForRegion =
+      loadedQubits[allocOp->getParentRegion()][memref];
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
@@ -144,18 +146,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = memref, .qubits = std::move(qubits)};
 }
 
-QCProgramBuilder::Bit
-QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + name +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerName = name, .registerSize = size, .registerIndex = index};
-}
-
-Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+Value QCProgramBuilder::loadQubit(Value memref, Value index) {
   checkFinalized();
 
   auto* region = getInsertionBlock()->getParent();
@@ -176,16 +167,16 @@ Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
   return loadOp.getResult();
 }
 
-QCProgramBuilder::ClassicalRegister
-QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                            std::string name) const {
+Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = std::move(name), .size = size};
+  auto memrefType = MemRefType::get({size}, getI1Type());
+  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
+  return memref;
 }
 
 //===----------------------------------------------------------------------===//
@@ -198,14 +189,14 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-Value QCProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QCProgramBuilder::measure(Value qubit, Value reg,
+                                const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  auto nameAttr = getStringAttr(bit.registerName);
-  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  auto measureOp =
-      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  return measureOp.getResult();
+  auto measureOp = MeasureOp::create(*this, qubit);
+  auto result = measureOp.getResult();
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  memref::StoreOp::create(*this, result, reg, indexValue);
+  return result;
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
@@ -644,6 +635,16 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 }
 
 QCProgramBuilder&
+QCProgramBuilder::scfIf(Value reg, const std::variant<int64_t, Value>& index,
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
+  checkFinalized();
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  return scfIf(condition, thenBody, elseBody);
+}
+
+QCProgramBuilder&
 QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
                                  ArrayRef<int64_t> cases,
                                  ArrayRef<function_ref<void()>> caseBodies,
@@ -683,6 +684,15 @@ QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   checkFinalized();
   scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfCondition(Value reg,
+                               const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  return scfCondition(condition);
 }
 
 //===----------------------------------------------------------------------===//
@@ -776,10 +786,10 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   }
   allocatedQubits.clear();
 
-  for (auto memref : allocatedMemrefs) {
+  for (auto memref : allocatedQregs) {
     memref::DeallocOp::create(*this, memref);
   }
-  allocatedMemrefs.clear();
+  allocatedQregs.clear();
 
   // Add return statement with the given return values to the main function
   func::ReturnOp::create(*this, returnValues);

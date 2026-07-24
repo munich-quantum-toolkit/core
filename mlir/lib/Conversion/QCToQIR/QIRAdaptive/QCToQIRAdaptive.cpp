@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -34,11 +33,10 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
-#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -49,21 +47,121 @@ using namespace qir;
 #define GEN_PASS_DEF_QCTOQIRADAPTIVE
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
 
-namespace {
 /**
- * @brief Converts memref.alloc to QIR qubit-array allocation
- *
- * @par Example:
- * ```mlir
- * %memref = memref.alloc() : memref<3x!qc.qubit>
- * ```
- * is converted to
- * ```mlir
- * %zero = llvm.mlir.zero : !llvm.ptr
- * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
- * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
- * (i64, !llvm.ptr, !llvm.ptr) -> ()
- * ```
+ * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
+ * `nullptr` if it does not write into a returned classical register.
+ */
+static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
+                                        ConversionPatternRewriter& rewriter) {
+  const auto it = state.returnedCregs.find(op);
+  if (it == state.returnedCregs.end()) {
+    return nullptr;
+  }
+  const auto [allocOp, index] = it->second;
+  auto& reg = state.cregs[allocOp];
+  assert(reg.array && "result array must be allocated");
+  auto loc = op->getLoc();
+  auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+  auto remappedIndex = rewriter.getRemappedValue(index);
+  auto elementptr = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType,
+                                        reg.array, ValueRange{remappedIndex})
+                        .getResult();
+  return LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
+}
+
+/**
+ * @brief Converts classical-bit-register `memref.alloc` to `llvm.alloca`
+ */
+static LogicalResult convertClassicalBitMemRefAllocOp(
+    memref::AllocOp op, memref::AllocOp::Adaptor adaptor, LoweringState& state,
+    ConversionPatternRewriter& rewriter) {
+  const auto it = state.cregs.find(op.getOperation());
+  if (it == state.cregs.end()) {
+    rewriter.eraseOp(op);
+    return success();
+  }
+  auto& reg = it->second;
+
+  auto loc = op.getLoc();
+  auto* ctx = op.getContext();
+  auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  auto voidType = LLVM::LLVMVoidType::get(ctx);
+
+  const OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+
+  auto fnSig = LLVM::LLVMFunctionType::get(
+      voidType, {rewriter.getI64Type(), ptrType, ptrType});
+  auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
+                                              QIR_RESULT_ARRAY_ALLOC, fnSig);
+
+  Value size;
+  if (op.getType().getShape()[0] == ShapedType::kDynamic) {
+    size = adaptor.getDynamicSizes()[0];
+    reg.size = size;
+  } else {
+    size = LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
+                                    op.getType().getShape()[0])
+               .getResult();
+  }
+
+  auto array =
+      LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size).getResult();
+  auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
+  LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
+
+  state.resultArrays.insert(array);
+  reg.array = array;
+
+  rewriter.replaceOp(op, array);
+  return success();
+}
+
+/**
+ * @brief Converts qubit-register `memref.alloc` to `llvm.alloca`
+ */
+static LogicalResult
+convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
+                          LoweringState& state,
+                          ConversionPatternRewriter& rewriter) {
+  if (failed(state.ensureAllocationMode(AllocationMode::Dynamic,
+                                        op.getOperation()))) {
+    return failure();
+  }
+
+  auto loc = op.getLoc();
+  auto* ctx = op.getContext();
+  auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  auto voidType = LLVM::LLVMVoidType::get(ctx);
+
+  auto fnSig = LLVM::LLVMFunctionType::get(
+      voidType, {rewriter.getI64Type(), ptrType, ptrType});
+  auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
+                                              QIR_QUBIT_ARRAY_ALLOC, fnSig);
+
+  Value size;
+  if (op.getType().getShape()[0] == ShapedType::kDynamic) {
+    size = adaptor.getDynamicSizes()[0];
+  } else {
+    size = LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
+                                    op.getType().getShape()[0])
+               .getResult();
+  }
+  state.qregSizes.try_emplace(op.getMemref(), size);
+
+  auto array =
+      LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size).getResult();
+  auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
+  LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
+
+  rewriter.replaceOp(op, array);
+  return success();
+}
+
+namespace {
+
+/**
+ * @brief Converts `memref.alloc` to `llvm.alloca`
  */
 struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
@@ -72,49 +170,20 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto shape = op.getType().getShape();
-    if (shape.size() != 1) {
+    if (op.getType().getShape().size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
-    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
-                                               op.getOperation()))) {
-      return failure();
+    if (isa<IntegerType>(op.getType().getElementType())) {
+      return convertClassicalBitMemRefAllocOp(op, adaptor, getState(),
+                                              rewriter);
     }
-
-    auto& state = getState();
-    auto* ctx = getContext();
-    auto ptrType = LLVM::LLVMPointerType::get(ctx);
-
-    auto fnSig =
-        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
-                                    {rewriter.getI64Type(), ptrType, ptrType});
-    auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
-                                                QIR_QUBIT_ARRAY_ALLOC, fnSig);
-
-    Value size;
-    if (shape[0] == ShapedType::kDynamic) {
-      size = adaptor.getDynamicSizes()[0];
-    } else {
-      size = LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                      rewriter.getI64Type(), shape[0]);
-    }
-    state.memrefSizes.try_emplace(op.getMemref(), size);
-
-    auto array =
-        LLVM::AllocaOp::create(rewriter, op.getLoc(), ptrType, ptrType, size);
-    auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType);
-    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
-                         ValueRange{size, array.getResult(), zero.getResult()});
-
-    rewriter.replaceOp(op, array.getResult());
-
-    return success();
+    return convertQubitMemRefAllocOp(op, adaptor, getState(), rewriter);
   }
 };
 
 /**
- * @brief Converts memref.load to llvm.load
+ * @brief Converts `memref.load` to `llvm.load`
  *
  * @par Example:
  * ```mlir
@@ -132,23 +201,53 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (auto shape = op.getMemref().getType().getShape(); shape.size() != 1) {
+    auto memrefType = op.getMemref().getType();
+    if (memrefType.getShape().size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
 
+    auto loc = op.getLoc();
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    auto array = adaptor.getMemref();
-    auto index = adaptor.getIndices()[0];
-    auto gep = LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
-                                   array, index);
-    auto load =
-        LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType, gep.getResult());
+    auto elementptr =
+        LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType,
+                            adaptor.getMemref(), adaptor.getIndices()[0])
+            .getResult();
+    auto result =
+        LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
 
-    rewriter.replaceOp(op, load.getResult());
+    // If the loaded value is a measurement result, load the result pointer
+    if (isa<IntegerType>(memrefType.getElementType())) {
+      auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
+      auto fnDec =
+          getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
+      auto readResult =
+          LLVM::CallOp::create(rewriter, loc, fnDec, result).getResult();
+      rewriter.replaceOp(op, readResult);
+      return success();
+    }
 
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+/**
+ * @brief Erases `memref.store` operations
+ *
+ * @details
+ * Measurement results are implicitly stored by `__quantum__qis__mz__body`.
+ */
+struct ConvertMemRefStoreOp final
+    : StatefulOpConversionPattern<memref::StoreOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -194,7 +293,7 @@ struct ConvertMemRefDeallocOp final
     auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
 
-    auto size = state.memrefSizes.lookup(op.getMemref());
+    auto size = state.qregSizes.lookup(op.getMemref());
     assert(size != nullptr && "Size not found");
 
     // Create the release call
@@ -340,15 +439,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
  * ```
  * is converted to
  * ```mlir
- * // In entry block:
- * %zero = llvm.mlir.zero : !llvm.ptr
- * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
- * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
- * (i64, !llvm.ptr, !llvm.ptr) -> ()
- * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
- *
- * // In measurements block:
- * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+ * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
  * ```
  */
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
@@ -358,94 +449,31 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto& resultArrays = state.resultArrays;
-    auto& loadedResults = state.loadedResults;
-    auto& resultPtrs = state.resultPtrs;
 
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
 
-    // Save current insertion point
-    auto savedInsertionPoint = rewriter.saveInsertionPoint();
-
-    // Insert allocations and constants in entry block
-    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-
-    // Get result pointer
-    Value result;
-    const bool shouldRecord =
-        state.returnedMeasurements.contains(op.getOperation());
-
-    if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
-      const auto registerName = op.getRegisterName().value();
-      const auto registerSize =
-          static_cast<int64_t>(op.getRegisterSize().value());
-      const auto registerIndex =
-          static_cast<int64_t>(op.getRegisterIndex().value());
-
-      if (shouldRecord) {
-        state.recordedArrays.insert(state.stringSaver.save(registerName));
-      }
-
-      // Create result register if it does not exist yet
-      if (!resultArrays.contains(registerName)) {
-        auto fnSig = LLVM::LLVMFunctionType::get(
-            LLVM::LLVMVoidType::get(ctx),
-            {rewriter.getI64Type(), ptrType, ptrType});
-        auto fnDec = getOrCreateFunctionDeclaration(
-            rewriter, op, QIR_RESULT_ARRAY_ALLOC, fnSig);
-
-        auto size =
-            LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                     rewriter.getI64IntegerAttr(registerSize))
-                .getResult();
-        auto array = LLVM::AllocaOp::create(rewriter, op.getLoc(), ptrType,
-                                            ptrType, size);
-        auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType);
-        LLVM::CallOp::create(
-            rewriter, op.getLoc(), fnDec,
-            ValueRange{size, array.getResult(), zero.getResult()});
-        resultArrays.try_emplace(registerName, array.getResult());
-
-        for (int64_t i = 0; i < registerSize; ++i) {
-          auto gep = LLVM::GEPOp::create(
-              rewriter, op.getLoc(), ptrType, ptrType, array.getResult(),
-              ValueRange{LLVM::ConstantOp::create(
-                  rewriter, op.getLoc(), rewriter.getI64IntegerAttr(i))});
-          auto load = LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType,
-                                           gep.getResult());
-          loadedResults.try_emplace({state.stringSaver.save(registerName), i},
-                                    load.getResult());
-        }
-      }
-
-      result = loadedResults.at({registerName, registerIndex});
-    } else {
-      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-      auto index = resultPtrs.size();
-      if (shouldRecord) {
-        state.recordedIndices.insert(index);
-      }
-      result = createPointerFromIndex(rewriter, op.getLoc(), index);
-      resultPtrs.try_emplace(index, result);
+    auto result =
+        resolveRegisterMeasurement(state, op.getOperation(), rewriter);
+    if (!result) {
+      result = getResultPtr(state, op.getOperation(), rewriter);
     }
 
-    rewriter.restoreInsertionPoint(savedInsertionPoint);
-
     // Create measure call
-    auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
-                                             {ptrType, ptrType});
+    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
 
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
                          ValueRange{adaptor.getQubit(), result});
 
-    // Creates a readResult operation if the measure operation has any users
-    if (op.getResult().use_empty()) {
+    // Create read-result call if the result is used
+    if (op.getResult().use_empty() ||
+        (op.getResult().hasOneUse() &&
+         isa<memref::StoreOp>(*op.getResult().user_begin()))) {
       rewriter.eraseOp(op);
     } else {
-      // Create read_result call
       auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
       auto fnDec =
           getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
@@ -454,6 +482,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
           LLVM::CallOp::create(rewriter, op.getLoc(), fnDec, result);
       rewriter.replaceOp(op, readResult.getResult());
     }
+
     return success();
   }
 };
@@ -467,7 +496,7 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefStoreOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);
@@ -557,14 +586,14 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
     builder.setInsertionPoint(state->outputBlock->getTerminator());
 
-    for (auto& [_, ptr] : state->resultPtrs) {
+    for (auto& [_, result] : state->staticResults) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_RESULT_RELEASE, sig);
-      LLVM::CallOp::create(builder, main->getLoc(), dec, ptr);
+      LLVM::CallOp::create(builder, main->getLoc(), dec, result.pointer);
     }
 
-    for (auto& [_, array] : state->resultArrays) {
+    for (auto array : state->resultArrays) {
       auto sig = LLVM::LLVMFunctionType::get(voidType,
                                              {builder.getI64Type(), ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,

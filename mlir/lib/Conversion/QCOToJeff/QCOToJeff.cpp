@@ -24,11 +24,14 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
@@ -57,6 +60,14 @@ using namespace qco;
 #define GEN_PASS_DEF_QCOTOJEFF
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h.inc"
 
+/**
+ * @brief Returns whether @p value is a classical-bit-register memref.
+ */
+[[nodiscard]] static bool isClassicalRegister(Value value) {
+  auto memrefType = dyn_cast<MemRefType>(value.getType());
+  return memrefType && memrefType.getElementType().isInteger(1);
+}
+
 namespace {
 
 /** @brief Qubit allocation mode */
@@ -70,6 +81,10 @@ enum class AllocationMode : std::uint8_t {
  * @brief State object for tracking modifier information
  */
 struct LoweringState {
+  // Module information
+  SmallVector<std::string> strings;
+  std::string entryPointName;
+
   // Modifier information
   bool inCtrlOp = false;
   bool inInvOp = false;
@@ -82,9 +97,41 @@ struct LoweringState {
 
   [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
 
-  // Module information
-  SmallVector<std::string> strings;
-  std::string entryPointName;
+  /// Per-region map from a classical-bit-register memref to its latest tensor
+  /// value
+  DenseMap<Region*, DenseMap<Value, Value>> cregTensors;
+
+  /// Map from a tensor block argument to its classical-bit-register memref
+  DenseMap<Value, Value> cregFromBlockArg;
+
+  /// Resolves @p cregOrBlockArg to the underlying classical-bit-register
+  /// memref.
+  [[nodiscard]] Value resolveCreg(Value cregOrBlockArg) {
+    auto it = cregFromBlockArg.find(cregOrBlockArg);
+    return it != cregFromBlockArg.end() ? it->second : cregOrBlockArg;
+  }
+
+  /// Returns the latest tensor value for a classical-bit-register @p memref in
+  /// the region of @p anchor.
+  [[nodiscard]] Value getCurrentCreg(Value memref, Operation* anchor) {
+    for (auto* region = anchor->getParentRegion(); region != nullptr;
+         region = region->getParentRegion()) {
+      auto it = cregTensors.find(region);
+      if (it == cregTensors.end()) {
+        continue;
+      }
+      if (auto valueIt = it->second.find(memref); valueIt != it->second.end()) {
+        return valueIt->second;
+      }
+    }
+    return nullptr;
+  }
+
+  /// Sets the latest tensor value for a classical-bit-register @p memref in the
+  /// region of @p anchor.
+  void setCurrentCreg(Value memref, Value tensor, Operation* anchor) {
+    cregTensors[anchor->getParentRegion()][memref] = tensor;
+  }
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -288,6 +335,29 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
+ * @brief Updates all `jeff.yield` operations in @p module to use the latest
+ * classical-bit-register tensor values.
+ */
+static void patchCregYields(Operation* module, LoweringState& state) {
+  module->walk([&](jeff::YieldOp yieldOp) {
+    auto it = state.cregTensors.find(yieldOp->getParentRegion());
+    if (it == state.cregTensors.end()) {
+      return;
+    }
+    for (auto& operand : yieldOp->getOpOperands()) {
+      auto cregIt = state.cregFromBlockArg.find(operand.get());
+      if (cregIt == state.cregFromBlockArg.end()) {
+        continue;
+      }
+      if (auto valueIt = it->second.find(cregIt->second);
+          valueIt != it->second.end()) {
+        operand.set(valueIt->second);
+      }
+    }
+  });
+}
+
+/**
  * @brief Cleans up the module after conversion
  *
  * @param op The module operation to clean up
@@ -348,7 +418,8 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 static LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
                                 const TypeConverter* typeConverter,
-                                const SetVector<Value>& aboveValues) {
+                                const SetVector<Value>& aboveValues,
+                                LoweringState& state) {
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
   rewriter.setInsertionPointToEnd(newBlock);
@@ -363,6 +434,10 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     auto newArg = newBlock->addArgument(
         typeConverter->convertType(value.getType()), value.getLoc());
     mapping.map(value, newArg);
+    if (isClassicalRegister(value)) {
+      state.cregTensors[&dest][value] = newArg;
+      state.cregFromBlockArg[newArg] = value;
+    }
   }
 
   for (auto& op : oldBlock->without_terminator()) {
@@ -382,6 +457,124 @@ static LogicalResult moveRegion(Region& source, Region& dest,
 }
 
 namespace {
+
+/**
+ * @brief Converts a classical-bit-register `memref.alloc` to
+ * `jeff.int_array_zero`
+ *
+ * @par Example:
+ * ```mlir
+ * %c = memref.alloc() : memref<2xi1>
+ * ```
+ * is converted to
+ * ```mlir
+ * %size = jeff.int_const32(2) : i32
+ * %c = jeff.int_array_zero(%size) : tensor<2xi1>
+ * ```
+ */
+struct ConvertMemRefAllocOpToJeff final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto memrefType = op.getType();
+    auto elementType = memrefType.getElementType();
+    if (memrefType.getRank() != 1 || !elementType.isInteger(1)) {
+      return rewriter.notifyMatchFailure(op, "unsupported memref type");
+    }
+    auto loc = op.getLoc();
+    auto dynamicSizes = op.getDynamicSizes();
+    RankedTensorType tensorType;
+    Value size;
+    if (dynamicSizes.empty()) {
+      auto sizeValue = memrefType.getShape()[0];
+      tensorType =
+          RankedTensorType::get({memrefType.getShape()[0]}, elementType);
+      size = jeff::IntConst32Op::create(
+          rewriter, loc,
+          rewriter.getI32IntegerAttr(static_cast<int32_t>(sizeValue)));
+    } else {
+      tensorType = RankedTensorType::get({ShapedType::kDynamic}, elementType);
+      size = dynamicSizes[0];
+    }
+    auto creg = jeff::IntArrayZeroOp::create(rewriter, loc, tensorType, size)
+                    .getResult();
+    getState().setCurrentCreg(op.getResult(), creg, op);
+    rewriter.replaceOp(op, creg);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a classical-bit-register `memref.store` to
+ * `jeff.int_array_set_index`
+ *
+ * @par Example:
+ * ```mlir
+ * memref.store %bit, %c[%index] : memref<2xi1>
+ * ```
+ * is converted to
+ * ```mlir
+ * %reg_out = jeff.int_array_set_index(%index) %c %bit : i32, tensor<2xi1>, i1
+ * -> tensor<2xi1>
+ * ```
+ */
+struct ConvertMemRefStoreOpToJeff final
+    : StatefulOpConversionPattern<memref::StoreOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto memref = state.resolveCreg(op.getMemrefMutable().get());
+    auto creg = state.getCurrentCreg(memref, op);
+    if (!creg) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    auto newCreg = jeff::IntArraySetIndexOp::create(
+                       rewriter, op.getLoc(), creg.getType(), creg,
+                       adaptor.getIndices()[0], adaptor.getValue())
+                       .getResult();
+    state.setCurrentCreg(memref, newCreg, op);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a classical-bit-register `memref.load` to
+ * `jeff.int_array_get_index`
+ *
+ * @par Example:
+ * ```mlir
+ * %bit = memref.load %c[%index] : memref<2xi1>
+ * ```
+ * is converted to
+ * ```mlir
+ * %bit = jeff.int_array_get_index(%index) %c : i32, tensor<2xi1> -> i1
+ * ```
+ */
+struct ConvertMemRefLoadOpToJeff final
+    : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto memref = state.resolveCreg(op.getMemrefMutable().get());
+    auto creg = state.getCurrentCreg(memref, op);
+    if (!creg) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
+        op, op.getType(), creg, adaptor.getIndices()[0]);
+    return success();
+  }
+};
 
 /**
  * @brief Converts qtensor.alloc to jeff.qureg_alloc
@@ -1084,8 +1277,17 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
       return failure();
     }
 
+    auto& state = getState();
     for (auto value : aboveValues) {
-      auto remappedValue = rewriter.getRemappedValue(value);
+      Value remappedValue;
+      if (isClassicalRegister(value)) {
+        remappedValue = state.getCurrentCreg(value, op);
+        if (!remappedValue) {
+          return rewriter.notifyMatchFailure(op, "unknown classical register");
+        }
+      } else {
+        remappedValue = rewriter.getRemappedValue(value);
+      }
       initArgs.push_back(remappedValue);
       outTypes.push_back(remappedValue.getType());
     }
@@ -1094,11 +1296,11 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
         rewriter, loc, outTypes, adaptor.getCondition(), initArgs, 2);
 
     if (failed(moveRegion(op.getElseRegion(), jeffSwitch.getBranches()[0],
-                          rewriter, getTypeConverter(), aboveValues))) {
+                          rewriter, getTypeConverter(), aboveValues, state))) {
       return failure();
     }
     if (failed(moveRegion(op.getThenRegion(), jeffSwitch.getBranches()[1],
-                          rewriter, getTypeConverter(), aboveValues))) {
+                          rewriter, getTypeConverter(), aboveValues, state))) {
       return failure();
     }
 
@@ -1116,8 +1318,15 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
       jeff::YieldOp::create(rewriter, loc, block->getArguments());
     }
 
-    rewriter.replaceOp(op,
-                       jeffSwitch.getResults().take_front(op.getNumResults()));
+    // Update tensor values
+    const auto numResults = op.getNumResults();
+    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
+      if (isClassicalRegister(value)) {
+        state.setCurrentCreg(value, jeffSwitch.getResult(numResults + i), op);
+      }
+    }
+
+    rewriter.replaceOp(op, jeffSwitch.getResults().take_front(numResults));
 
     return success();
   }
@@ -1168,8 +1377,17 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
       return failure();
     }
 
+    auto& state = getState();
     for (auto value : aboveValues) {
-      auto remappedValue = rewriter.getRemappedValue(value);
+      Value remappedValue;
+      if (isClassicalRegister(value)) {
+        remappedValue = state.getCurrentCreg(value, op);
+        if (!remappedValue) {
+          return rewriter.notifyMatchFailure(op, "unknown classical register");
+        }
+      } else {
+        remappedValue = rewriter.getRemappedValue(value);
+      }
       initArgs.push_back(remappedValue);
       outTypes.push_back(remappedValue.getType());
     }
@@ -1179,11 +1397,19 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
         adaptor.getUpperBound(), adaptor.getStep(), initArgs);
 
     if (failed(moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
-                          getTypeConverter(), aboveValues))) {
+                          getTypeConverter(), aboveValues, state))) {
       return failure();
     }
 
-    rewriter.replaceOp(op, jeffFor.getResults().take_front(op.getNumResults()));
+    // Update tensor values
+    const auto numResults = op.getNumResults();
+    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
+      if (isClassicalRegister(value)) {
+        state.setCurrentCreg(value, jeffFor.getResult(numResults + i), op);
+      }
+    }
+
+    rewriter.replaceOp(op, jeffFor.getResults().take_front(numResults));
 
     return success();
   }
@@ -1235,8 +1461,17 @@ struct ConvertSCFWhileOpToJeff final
       return failure();
     }
 
+    auto& state = getState();
     for (auto value : aboveValues) {
-      auto remappedValue = rewriter.getRemappedValue(value);
+      Value remappedValue;
+      if (isClassicalRegister(value)) {
+        remappedValue = state.getCurrentCreg(value, op);
+        if (!remappedValue) {
+          return rewriter.notifyMatchFailure(op, "unknown classical register");
+        }
+      } else {
+        remappedValue = rewriter.getRemappedValue(value);
+      }
       inits.push_back(remappedValue);
       outTypes.push_back(remappedValue.getType());
     }
@@ -1245,23 +1480,30 @@ struct ConvertSCFWhileOpToJeff final
         jeff::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
 
     if (failed(moveRegion(op.getBefore(), jeffWhile.getBefore(), rewriter,
-                          getTypeConverter(), aboveValues))) {
+                          getTypeConverter(), aboveValues, state))) {
       return failure();
     }
     if (failed(moveRegion(op.getAfter(), jeffWhile.getAfter(), rewriter,
-                          getTypeConverter(), aboveValues))) {
+                          getTypeConverter(), aboveValues, state))) {
       return failure();
     }
 
-    rewriter.replaceOp(op,
-                       jeffWhile.getResults().take_front(op.getNumResults()));
+    // Update tensor values
+    const auto numResults = op.getNumResults();
+    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
+      if (isClassicalRegister(value)) {
+        state.setCurrentCreg(value, jeffWhile.getResult(numResults + i), op);
+      }
+    }
+
+    rewriter.replaceOp(op, jeffWhile.getResults().take_front(numResults));
 
     return success();
   }
 };
 
 /**
- * @brief Converts the QCO-style main function to a jeff-style main function
+ * @brief Converts the QCO-style main function to a `jeff`-style main function
  *
  * @par Example:
  * ```mlir
@@ -1302,11 +1544,42 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 
     getState().entryPointName = op.getSymName();
 
-    // Remove passthrough attribute from function signature
+    auto funcType = op.getFunctionType();
+    SmallVector<Type> newResults;
+    if (failed(getTypeConverter()->convertTypes(funcType.getResults(),
+                                                newResults))) {
+      return failure();
+    }
+
     rewriter.startOpModification(op);
+    op.setType(rewriter.getFunctionType(funcType.getInputs(), newResults));
     op->removeAttr("passthrough");
     rewriter.finalizeOpModification(op);
 
+    return success();
+  }
+};
+
+/**
+ * @brief Updates `func.return` by replacing classical-bit-register memrefs with
+ * their latest tensor value
+ */
+struct ConvertFuncReturnOpToJeff final
+    : StatefulOpConversionPattern<func::ReturnOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    SmallVector<Value> returnValues;
+    returnValues.reserve(op.getNumOperands());
+    for (const auto& [operand, adapted] :
+         llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
+      auto creg = state.getCurrentCreg(operand, op);
+      returnValues.emplace_back(creg ? creg : adapted);
+    }
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
   }
 };
@@ -1333,6 +1606,10 @@ public:
         return jeff::QuregType::get(ctx, type.getShape()[0]);
       }
       return type;
+    });
+
+    addConversion([](MemRefType type) -> Type {
+      return RankedTensorType::get(type.getShape(), type.getElementType());
     });
   }
 };
@@ -1451,21 +1728,26 @@ protected:
     // Configure conversion target
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect,
                              arith::ArithDialect, math::MathDialect,
-                             tensor::TensorDialect, scf::SCFDialect>();
+                             tensor::TensorDialect, scf::SCFDialect,
+                             memref::MemRefDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>(
         [](func::FuncOp op) { return !op->hasAttr("passthrough"); });
-    target.addLegalOp<func::ReturnOp>();
+    target.addDynamicallyLegalOp<func::ReturnOp>([](func::ReturnOp op) {
+      return llvm::none_of(op.getOperandTypes(),
+                           [](Type type) { return isa<MemRefType>(type); });
+    });
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
-    patterns.add<ConvertQTensorAllocOp, ConvertQTensorExtractOp,
-                 ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
-                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
-                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
-        typeConverter, context, &state);
+    patterns.add<ConvertMemRefAllocOpToJeff, ConvertMemRefStoreOpToJeff,
+                 ConvertMemRefLoadOpToJeff, ConvertQTensorAllocOp,
+                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+                 ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
+                 ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
+                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
+                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
@@ -1532,14 +1814,16 @@ protected:
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
                  ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
-                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff>(
-        typeConverter, context, &state);
+                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff,
+                 ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
       signalPassFailure();
       return;
     }
+
+    patchCregYields(module, state);
 
     if (cleanUp(module, state).failed()) {
       signalPassFailure();

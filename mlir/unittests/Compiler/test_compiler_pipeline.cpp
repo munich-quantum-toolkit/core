@@ -589,19 +589,18 @@ INSTANTIATE_TEST_SUITE_P(
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(::qc::singleMeasurementToSingleBit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleMeasurementToSingleBit),
-            MQT_NAMED_BUILDER(mlir::qir::singleMeasurementToSingleBit<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::singleMeasurementToSingleBit)},
         CompilerPipelineTestCase{
             "RepeatedMeasurementToSameBit",
             MQT_NAMED_BUILDER(::qc::repeatedMeasurementToSameBit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToSameBit<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToSameBit)},
         CompilerPipelineTestCase{
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(::qc::repeatedMeasurementToDifferentBits),
             nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(
-                mlir::qir::repeatedMeasurementToDifferentBits<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToDifferentBits)},
         CompilerPipelineTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(::qc::multipleClassicalRegistersAndMeasurements),
@@ -609,13 +608,22 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(
                 mlir::qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(
-                mlir::qir::multipleClassicalRegistersAndMeasurements<true>)},
+                mlir::qir::multipleClassicalRegistersAndMeasurements)},
+        CompilerPipelineTestCase{
+            "PartialMeasurementToRegister", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(mlir::qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(mlir::qir::partialMeasurementToRegister), false},
+        CompilerPipelineTestCase{
+            "DynamicallyIndexedMeasurement", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(mlir::qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(mlir::qir::dynamicallyIndexedMeasurement), false},
         CompilerPipelineTestCase{
             "MeasurementWithoutRegisters", nullptr,
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(mlir::qir::measurementWithoutRegisters<true>),
-            false},
+            MQT_NAMED_BUILDER(mlir::qir::measurementWithoutRegisters), false},
         CompilerPipelineTestCase{
             "ResetQubitAfterSingleOp",
             MQT_NAMED_BUILDER(::qc::resetQubitAfterSingleOp), nullptr,
@@ -694,11 +702,11 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledH", MQT_NAMED_BUILDER(::qc::multipleControlledH),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledH),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledH<true>)},
-        CompilerPipelineTestCase{
-            "HWithoutRegister", nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
-            MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
-            MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister<true>), false},
+        CompilerPipelineTestCase{"HWithoutRegister", nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister),
+                                 false},
         CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(::qc::s), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::s),
                                  MQT_NAMED_BUILDER(mlir::qir::s<true>)},

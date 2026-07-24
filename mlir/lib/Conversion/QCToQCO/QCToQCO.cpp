@@ -923,15 +923,13 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
  * performs the measurement, updates the mapping with the output qubit,
  * and returns the classical bit result.
  *
- * Register metadata (name, size, index) for output recording is preserved
- * during conversion.
- *
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %c = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
- * // becomes (where %q maps to %q_in):
- * %q_out, %c = qco.measure("c", 2, 0) %q_in : !qco.qubit
- * // state updated: %q now maps to %q_out
+ * %c = qc.measure %q : !qc.qubit -> i1
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out, %c = qco.measure %q_in : !qco.qubit
  * ```
  */
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
@@ -946,9 +944,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
     auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create qco.measure (returns both output qubit and bit result)
-    auto qcoOp = qco::MeasureOp::create(
-        rewriter, op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
-        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
+    auto qcoOp = qco::MeasureOp::create(rewriter, op.getLoc(), qcoQubit);
 
     // Update mapping: the QC qubit now corresponds to the output qubit
     assignMappedQubit(state, operation, qcQubit, qcoOp.getQubitOut());

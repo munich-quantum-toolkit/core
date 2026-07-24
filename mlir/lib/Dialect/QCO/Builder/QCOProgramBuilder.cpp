@@ -25,6 +25,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -153,27 +154,16 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
-QCOProgramBuilder::Bit
-QCOProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + name +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerName = name, .registerSize = size, .registerIndex = index};
-}
-
-QCOProgramBuilder::ClassicalRegister
-QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                             std::string name) const {
+Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = std::move(name), .size = size};
+  auto memrefType = MemRefType::get({size}, getI1Type());
+  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
+  return memref;
 }
 
 //===----------------------------------------------------------------------===//
@@ -423,21 +413,22 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   return {qubitOut, result};
 }
 
-std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit,
-                                                   const Bit& bit) {
+std::pair<Value, Value>
+QCOProgramBuilder::measure(Value qubit, Value reg,
+                           const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto nameAttr = getStringAttr(bit.registerName);
-  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  auto measureOp =
-      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
+  auto measureOp = MeasureOp::create(*this, qubit);
   auto qubitOut = measureOp.getQubitOut();
+  auto result = measureOp.getResult();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  return {qubitOut, measureOp.getResult()};
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  memref::StoreOp::create(*this, result, reg, indexValue);
+
+  return {qubitOut, result};
 }
 
 Value QCOProgramBuilder::reset(Value qubit) {
@@ -1337,6 +1328,16 @@ Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
   return ifOp.getResult(0);
 }
 
+ValueRange QCOProgramBuilder::qcoIf(
+    Value reg, const std::variant<int64_t, Value>& index, ValueRange initArgs,
+    function_ref<SmallVector<Value>(ValueRange)> thenBody,
+    function_ref<SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  return qcoIf(condition, initArgs, thenBody, elseBody);
+}
+
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();
@@ -1354,6 +1355,16 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
 
   scf::ConditionOp::create(*this, condition, yieldedValues);
   return *this;
+}
+
+QCOProgramBuilder&
+QCOProgramBuilder::scfCondition(Value reg,
+                                const std::variant<int64_t, Value>& index,
+                                ValueRange yieldedValues) {
+  checkFinalized();
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  return scfCondition(condition, yieldedValues);
 }
 
 //===----------------------------------------------------------------------===//

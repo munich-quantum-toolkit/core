@@ -102,39 +102,17 @@ def MeasureOp : QCOOp<"measure", [Pure]> {
         Measures a qubit in the computational (Z) basis, collapsing the state
         and returning both the output qubit and a classical bit result.
 
-        Optionally, the measurement can be recorded to an output register by
-        specifying:
-        - `register_name`: Name of the classical register (e.g., "c")
-        - `register_size`: Total size of the register
-        - `register_index`: Index within the register for this measurement
-
-        Example (simple measurement):
+        Example:
         ```mlir
         %q_out, %result = qco.measure %q_in : !qco.qubit
         ```
-
-        Example (measurement with output recording):
-        ```mlir
-        %q_out, %result = qco.measure("c", 2, 0) %q_in : !qco.qubit
-        ```
     }];
 
-  let arguments = (ins Arg<QubitType, "the qubit to measure">:$qubit_in,
-      OptionalAttr<StrAttr>:$register_name,
-      OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
-      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
+  let arguments = (ins Arg<QubitType, "the qubit to measure">:$qubit_in);
   let results = (outs QubitType:$qubit_out, I1:$result);
   let assemblyFormat = [{
-        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
         $qubit_in `:` type($qubit_in) attr-dict
     }];
-
-  let builders = [OpBuilder<(ins "Value":$qubit_in), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()), $_builder.getI1Type(),
-                  qubit_in, nullptr, nullptr, nullptr);
-        }]>];
-
-  let hasVerifier = 1;
 }
 
 def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {

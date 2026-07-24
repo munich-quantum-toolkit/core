@@ -660,6 +660,12 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        QCToQCOTestCase{"PartialMeasurementToRegister",
+                        MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
+                        MQT_NAMED_BUILDER(qco::partialMeasurementToRegister)},
+        QCToQCOTestCase{"DynamicallyIndexedMeasurement",
+                        MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
+                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement)},
         QCToQCOTestCase{"MeasurementWithoutRegisters",
                         MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
                         MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
@@ -689,10 +695,15 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQCOTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
                         MQT_NAMED_BUILDER(qco::simpleIf)},
-        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
         QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
                         MQT_NAMED_BUILDER(qco::ifElse)},
+        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
+                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
+        QCToQCOTestCase{"IfWithMeasurement",
+                        MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+                        MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
+        QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
+                        MQT_NAMED_BUILDER(qco::ifWithCreg)},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
@@ -740,11 +751,11 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
                         MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp)},
         QCToQCOTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
         QCToQCOTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}
