@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
