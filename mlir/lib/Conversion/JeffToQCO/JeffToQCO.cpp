@@ -1157,6 +1157,7 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
     if (needsStatusResult) {
       rewriter.setInsertionPointToStart(block);
       auto zero = arith::ConstantIntOp::create(rewriter, op.getLoc(), 0, 64);
+      rewriter.setInsertionPoint(returnOp);
       rewriter.replaceOpWithNewOp<func::ReturnOp>(returnOp, zero.getResult());
     }
 
