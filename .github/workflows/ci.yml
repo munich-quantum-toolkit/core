@@ -165,6 +165,9 @@ jobs:
       setup-python: true
       install-pkgs: "nanobind==2.13.0"
       cpp-linter-extra-args: "-std=c++20"
+      # The vendored toml++ header is checked upstream and is not maintained
+      # according to MQT Core's clang-tidy configuration.
+      cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
       llvm-version: 22.1.7
 

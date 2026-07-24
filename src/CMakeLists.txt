@@ -129,6 +129,7 @@ if(MQT_CORE_INSTALL)
 
   install(
     FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
+          ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
           ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
           ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake

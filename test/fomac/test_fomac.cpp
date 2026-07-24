@@ -346,6 +346,8 @@ TEST(FoMaCTest, DevicePropertyToString) {
                "MIN ATOM DISTANCE");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS),
                "SUPPORTED PROGRAM FORMATS");
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CHILDDEVICES),
+               "CHILD DEVICES");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_MAX), "MAX");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM1), "CUSTOM1");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM2), "CUSTOM2");
@@ -356,6 +358,11 @@ TEST(FoMaCTest, DevicePropertyToString) {
 
 TEST(FoMaCTest, SessionPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PROPERTY_DEVICES), "DEVICES");
+}
+
+TEST(FoMaCTest, DeviceSessionParameterToString) {
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE),
+               "CHILD DEVICE");
 }
 
 TEST(FoMaCTest, ThrowIfError) {
@@ -1090,7 +1097,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
   }
 
   SessionConfig config2;
-  config2.authFile = tmpPath.string();
+  config2.authFile = tmpPath;
   EXPECT_NO_THROW({ const Session session(config2); });
 
   // Clean up
@@ -1218,6 +1225,34 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
   // Should return the same number of devices
   EXPECT_EQ(devices1.size(), devices2.size());
+}
+
+TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
+  const auto site = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    return device.getSites().front();
+  }();
+
+  EXPECT_EQ(site.getIndex(), 0);
+}
+
+TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
+  const auto operation = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    return device.getOperations().front();
+  }();
+
+  EXPECT_FALSE(operation.getName().empty());
+}
+
+TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
+  const auto site = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    const auto operation = device.getOperations().front();
+    return operation.getSites().value().front();
+  }();
+
+  EXPECT_TRUE(site.isZone());
 }
 
 namespace {

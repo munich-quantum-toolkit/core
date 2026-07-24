@@ -134,10 +134,9 @@ std::optional<std::vector<Site>> Operation::getSites() const {
   }
   std::vector<Site> returnedSites;
   returnedSites.reserve(qdmiSites->size());
-  std::ranges::transform(*qdmiSites, std::back_inserter(returnedSites),
-                         [device = device_](const QDMI_Site& site) -> Site {
-                           return {device, site};
-                         });
+  std::ranges::transform(
+      *qdmiSites, std::back_inserter(returnedSites),
+      [this](const QDMI_Site& site) -> Site { return {device_, site}; });
   return returnedSites;
 }
 std::optional<std::vector<std::pair<Site, Site>>>
@@ -199,7 +198,7 @@ std::vector<Site> Device::getSites() const {
   sites.reserve(qdmiSites.size());
   std::ranges::transform(
       qdmiSites, std::back_inserter(sites),
-      [this](const QDMI_Site& site) -> Site { return {this, site}; });
+      [this](const QDMI_Site& site) -> Site { return {device_, site}; });
   return sites;
 }
 
@@ -227,7 +226,7 @@ std::vector<Operation> Device::getOperations() const {
   operations.reserve(qdmiOperations.size());
   std::ranges::transform(
       qdmiOperations, std::back_inserter(operations),
-      [this](const QDMI_Operation& op) -> Operation { return {this, op}; });
+      [this](const QDMI_Operation& op) -> Operation { return {device_, op}; });
   return operations;
 }
 
@@ -245,8 +244,10 @@ Device::getCouplingMap() const {
   std::ranges::transform(*qdmiCouplingMap, std::back_inserter(couplingMap),
                          [this](const std::pair<QDMI_Site, QDMI_Site>& pair)
                              -> std::pair<Site, Site> {
-                           return {Site{this, pair.first},
-                                   Site{this, pair.second}};
+                           return {
+                               Site{device_, pair.first},
+                               Site{device_, pair.second},
+                           };
                          });
   return couplingMap;
 }
@@ -289,7 +290,7 @@ std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
 std::vector<Device> Device::getChildDevices() const {
   size_t size = 0;
   auto result = QDMI_device_query_device_property(
-      device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
+      device_.get(), QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return {};
   }
@@ -301,7 +302,7 @@ std::vector<Device> Device::getChildDevices() const {
   std::vector<QDMI_Device> handles(size / sizeof(QDMI_Device));
   if (size != 0) {
     result = QDMI_device_query_device_property(
-        device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
+        device_.get(), QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
         static_cast<void*>(handles.data()), nullptr);
     qdmi::throwIfError(result, "Querying child devices");
   }
@@ -310,7 +311,9 @@ std::vector<Device> Device::getChildDevices() const {
   devices.reserve(handles.size());
   std::ranges::transform(
       handles, std::back_inserter(devices),
-      [](QDMI_Device_impl_d* const handle) { return Device(handle); });
+      [this](QDMI_Device_impl_d* const handle) {
+        return Device(std::shared_ptr<QDMI_Device_impl_d>(device_, handle));
+      });
   return devices;
 }
 
@@ -322,8 +325,9 @@ Job Device::submitJob(const std::string& program,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
-  qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
-  Job jobWrapper{job};
+  qdmi::throwIfError(QDMI_device_create_job(device_.get(), &job),
+                     "Creating job");
+  Job jobWrapper{job, device_};
 
   qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
@@ -400,6 +404,16 @@ bool Job::wait(const size_t timeout) const {
 
 void Job::cancel() const {
   qdmi::throwIfError(QDMI_job_cancel(job_.get()), "Cancelling job");
+}
+
+auto Job::operator=(Job&& other) noexcept -> Job& {
+  if (this != &other) {
+    // Release the current job while its owning device session is still alive.
+    job_.reset();
+    device_ = std::move(other.device_);
+    job_ = std::move(other.job_);
+  }
+  return *this;
 }
 
 std::string Job::getId() const {
@@ -685,6 +699,11 @@ Device Session::createSessionlessDevice(QDMI_Device device) {
   return Device(device);
 }
 
+Device Session::openDevice(const std::string_view id,
+                           const qdmi::DeviceSessionConfig& overrides) {
+  return Device(qdmi::Driver::get().openFresh(id, overrides));
+}
+
 Session::Session(const SessionConfig& config) {
   session_ = [] {
     QDMI_Session session = nullptr;
@@ -720,7 +739,7 @@ Session::Session(const SessionConfig& config) {
   if (config.authFile) {
     if (!std::filesystem::exists(*config.authFile)) {
       throw std::runtime_error("Authentication file does not exist: " +
-                               *config.authFile);
+                               config.authFile->string());
     }
   }
   // Validate URL format for authUrl
@@ -757,7 +776,10 @@ Session::Session(const SessionConfig& config) {
 
   // Set session parameters
   setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
-  setParameter(config.authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+  if (config.authFile) {
+    const std::optional authFile = config.authFile->string();
+    setParameter(authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+  }
   setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
   setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
   setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);

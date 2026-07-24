@@ -7,13 +7,14 @@
 # Licensed under the MIT License
 
 import enum
+import os
 from collections.abc import Sequence
 from typing import overload
 
 class Session:
     """A FoMaC session for managing QDMI devices.
 
-    Allows creating isolated sessions with independent authentication settings.
+    Allows creating isolated sessions with separate authentication settings.
     All authentication parameters are optional and can be provided as keyword arguments to the constructor.
     """
 
@@ -21,7 +22,7 @@ class Session:
         self,
         *,
         token: str | None = None,
-        auth_file: str | None = None,
+        auth_file: str | os.PathLike | None = None,
         auth_url: str | None = None,
         username: str | None = None,
         password: str | None = None,
@@ -511,13 +512,91 @@ class Device:
         def __eq__(self, arg: object, /) -> bool: ...
         def __ne__(self, arg: object, /) -> bool: ...
 
-def add_dynamic_device_library(
-    library_path: str,
-    prefix: str,
+class DeviceDefinition:
+    """A stable QDMI device registration that can be stored before loading."""
+
+    def __init__(
+        self,
+        device_id: str,
+        library_path: str,
+        prefix: str,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> None:
+        """Create a device definition without loading its native library.
+
+        Args:
+            device_id: Stable identifier used by :func:`open_device`.
+            library_path: Path to the shared QDMI device library.
+            prefix: Function prefix used by the library (for example, ``MY_DEVICE``).
+            base_url: Optional base URL for the device API endpoint.
+            token: Optional authentication token.
+            auth_file: Optional path to an authentication file.
+            auth_url: Optional authentication server URL.
+            username: Optional authentication username.
+            password: Optional authentication password.
+            custom1: Optional custom configuration parameter 1.
+            custom2: Optional custom configuration parameter 2.
+            custom3: Optional custom configuration parameter 3.
+            custom4: Optional custom configuration parameter 4.
+            custom5: Optional custom configuration parameter 5.
+        """
+
+    @property
+    def device_id(self) -> str:
+        """Stable identifier used to open the device."""
+
+    @property
+    def library_path(self) -> str:
+        """Path to the native QDMI device library."""
+
+    @property
+    def prefix(self) -> str:
+        """Prefix used for the QDMI device interface functions."""
+
+def register_device(definition: DeviceDefinition, *, replace: bool = False) -> None:
+    """Register a QDMI device definition without loading its library.
+
+    Args:
+        definition: Definition to validate and store.
+        replace: Replace an existing definition if it has not been opened.
+
+    Raises:
+        ValueError: If the definition is invalid or its ID is already registered.
+        RuntimeError: If replacing an already opened ID.
+    """
+
+def register_device_if_absent(definition: DeviceDefinition) -> bool:
+    """Register a valid QDMI device definition if its ID is absent.
+
+    An existing ID is the only ignored condition. Invalid definitions still raise.
+
+    Args:
+        definition: Definition to validate and store.
+
+    Returns:
+        bool: Whether the definition was inserted.
+
+    Raises:
+        ValueError: If the definition is invalid.
+    """
+
+def open_device(
+    device_id: str,
     *,
     base_url: str | None = None,
     token: str | None = None,
-    auth_file: str | None = None,
+    auth_file: str | os.PathLike | None = None,
     auth_url: str | None = None,
     username: str | None = None,
     password: str | None = None,
@@ -527,41 +606,29 @@ def add_dynamic_device_library(
     custom4: str | None = None,
     custom5: str | None = None,
 ) -> Device:
-    """Load a dynamic device library into the QDMI driver.
+    """Open a registered QDMI device by stable ID.
 
-    This function loads a shared library (.so, .dll, or .dylib) that implements a QDMI device interface and makes it available for use in sessions.
+    Every call creates a fresh device session while keeping the stable registration
+    unchanged. Opening the device loads trusted native device code.
 
     Args:
-        library_path: Path to the shared library file to load.
-        prefix: Function prefix used by the library (e.g., "MY_DEVICE").
-        base_url: Optional base URL for the device API endpoint.
-        token: Optional authentication token.
-        auth_file: Optional path to authentication file.
-        auth_url: Optional authentication server URL.
-        username: Optional username for authentication.
-        password: Optional password for authentication.
-        custom1: Optional custom configuration parameter 1.
-        custom2: Optional custom configuration parameter 2.
-        custom3: Optional custom configuration parameter 3.
-        custom4: Optional custom configuration parameter 4.
-        custom5: Optional custom configuration parameter 5.
+        device_id: Stable ID of a registered device.
+        base_url: Optional base URL override for the device API endpoint.
+        token: Optional authentication token override.
+        auth_file: Optional authentication-file override.
+        auth_url: Optional authentication server URL override.
+        username: Optional authentication username override.
+        password: Optional authentication password override.
+        custom1: Optional custom configuration parameter 1 override.
+        custom2: Optional custom configuration parameter 2 override.
+        custom3: Optional custom configuration parameter 3 override.
+        custom4: Optional custom configuration parameter 4 override.
+        custom5: Optional custom configuration parameter 5 override.
 
     Returns:
-        Device: The newly loaded device that can be used to create backends.
+        Device: The opened device, ready for direct backend construction.
 
     Raises:
-        RuntimeError: If library loading fails or configuration is invalid.
-
-    Examples:
-        Load a device library with configuration:
-
-        >>> import mqt.core.fomac as fomac
-        >>> device = fomac.add_dynamic_device_library(
-        ...     "/path/to/libmy_device.so", "MY_DEVICE", base_url="http://localhost:8080", custom1="API_V2"
-        ... )
-
-        Now the device can be used directly:
-
-        >>> from mqt.core.plugins.qiskit import QDMIBackend
-        >>> backend = QDMIBackend(device=device)
+        IndexError: If the ID is not registered.
+        RuntimeError: If the device library cannot be loaded or initialized.
     """

@@ -29,6 +29,7 @@ include(PreventInSourceBuilds)
 include(PackageAddTest)
 include(Cache)
 include(AddMQTCoreLibrary)
+include(AddMQTQDMIDevice)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
@@ -167,6 +168,28 @@ if(BUILD_MQT_CORE_MLIR)
       add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
     endforeach()
   endif()
+endif()
+
+if(BUILD_MQT_CORE_BINDINGS)
+  set(MQT_CORE_WHEEL_TARGETS
+      mqt-core-ir
+      mqt-core-algorithms
+      mqt-core-circuit-optimizer
+      mqt-core-dd
+      mqt-core-zx
+      mqt-core-na
+      mqt-core-ir-bindings
+      mqt-core-dd-bindings
+      mqt-core-fomac-bindings
+      mqt-core-na-bindings
+      mqt-core-qdmi-ddsim-device
+      mqt-core-qdmi-na-device
+      mqt-core-qdmi-sc-device)
+  if(BUILD_MQT_CORE_MLIR)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-mlir-bindings)
+  endif()
+  add_custom_target(mqt-core-wheel)
+  add_dependencies(mqt-core-wheel ${MQT_CORE_WHEEL_TARGETS})
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

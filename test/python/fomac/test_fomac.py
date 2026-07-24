@@ -16,7 +16,17 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import CustomProperty, Device, Job, ProgramFormat, Session, add_dynamic_device_library
+from mqt.core.fomac import (
+    CustomProperty,
+    Device,
+    DeviceDefinition,
+    Job,
+    ProgramFormat,
+    Session,
+    open_device,
+    register_device,
+    register_device_if_absent,
+)
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
@@ -767,9 +777,11 @@ def test_session_construction_with_auth_file() -> None:
         tmp_path = tmp_file.name
 
     try:
-        # Existing file should be accepted (validation passes, parameter may be skipped)
-        session = Session(auth_file=tmp_path)
-        assert session is not None
+        # Both string and pathlib paths should be accepted.
+        string_session = Session(auth_file=tmp_path)
+        path_session = Session(auth_file=Path(tmp_path))
+        assert string_session is not None
+        assert path_session is not None
     finally:
         # Clean up
         Path(tmp_path).unlink(missing_ok=True)
@@ -893,7 +905,46 @@ def test_session_multiple_instances() -> None:
     assert len(devices1) == len(devices2)
 
 
-def test_add_dynamic_device_library_nonexistent_library() -> None:
-    """Test that loading a non-existent library raises an error."""
+def test_register_device_does_not_load_nonexistent_library() -> None:
+    """Registration stores metadata and opening performs native loading."""
+    definition = DeviceDefinition("python.missing", "/nonexistent/lib.so", "PREFIX")
+    assert definition.device_id == "python.missing"
+    assert definition.library_path == "/nonexistent/lib.so"
+    assert definition.prefix == "PREFIX"
+    register_device(definition)
     with pytest.raises(RuntimeError):
-        add_dynamic_device_library("/nonexistent/lib.so", "PREFIX")
+        open_device("python.missing")
+
+
+def test_register_device_if_absent_only_ignores_existing_id() -> None:
+    """Idempotent registration still validates duplicate definitions."""
+    definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
+    assert register_device_if_absent(definition)
+    assert not register_device_if_absent(definition)
+    with pytest.raises(ValueError, match="library must not be empty"):
+        register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
+
+
+def test_open_device_rejects_unknown_id() -> None:
+    """Opening requires a stable registered ID."""
+    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
+        open_device("python.unknown")
+
+
+def test_open_device_creates_a_fresh_session() -> None:
+    """Stable-ID opens should return separately owned sessions."""
+    first = open_device("mqt.na.default")
+    second = open_device("mqt.na.default")
+    assert first != second
+
+
+def test_site_keeps_fresh_session_alive() -> None:
+    """A site should remain usable after its device wrapper is destroyed."""
+    site = open_device("mqt.na.default").sites()[0]
+    assert site.index() == 0
+
+
+def test_operation_keeps_fresh_session_alive() -> None:
+    """An operation should remain usable after its device wrapper is destroyed."""
+    operation = open_device("mqt.na.default").operations()[0]
+    assert operation.name()
