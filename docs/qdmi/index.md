@@ -15,5 +15,6 @@ components, such as a [QDMI driver](driver.md), a
 NA QDMI Device <na_device>
 DDSIM QDMI Device <ddsim_device>
 QDMI Driver <driver>
+QDMI device configuration <configuration>
 QDMI-Qiskit Backend <qdmi_backend>
 ```
