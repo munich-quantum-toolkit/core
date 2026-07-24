@@ -17,7 +17,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
 
   cpp-tests-ubuntu:
-    name: 🇨‌ Test 🐧
+    name: 🇨 Test 🐧
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -39,7 +39,7 @@ jobs:
       preset-name: ${{ matrix.preset }}
 
   cpp-tests-macos:
-    name: 🇨‌ Test 🍎
+    name: 🇨 Test 🍎
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -61,7 +61,7 @@ jobs:
       preset-name: ${{ matrix.preset }}
 
   cpp-tests-windows:
-    name: 🇨‌ Test 🏁
+    name: 🇨 Test 🏁
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -85,7 +85,7 @@ jobs:
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-ubuntu:
-    name: 🇨‌ Test (Extensive) 🐧
+    name: 🇨 Test (Extensive) 🐧
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -104,7 +104,7 @@ jobs:
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-macos:
-    name: 🇨‌ Test (Extensive) 🍎
+    name: 🇨 Test (Extensive) 🍎
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -123,7 +123,7 @@ jobs:
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
-    name: 🇨‌ Test (Extensive) 🏁
+    name: 🇨 Test (Extensive) 🏁
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -142,7 +142,7 @@ jobs:
       preset-name: ${{ matrix.preset }}
 
   cpp-coverage:
-    name: 🇨‌ Coverage
+    name: 🇨 Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
@@ -154,7 +154,7 @@ jobs:
       id-token: write
 
   cpp-linter:
-    name: 🇨‌ Lint
+    name: 🇨 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
