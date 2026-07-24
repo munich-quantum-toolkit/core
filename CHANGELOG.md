@@ -56,7 +56,8 @@ releases may include breaking changes.
   rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836]) ([**@denialhaag**], [**@burgholzer**])
+  [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
+  [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
   [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
@@ -652,6 +653,7 @@ changelogs._
 <!-- PR links -->
 
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
+[#1934]: https://github.com/munich-quantum-toolkit/core/pull/1934
 [#1933]: https://github.com/munich-quantum-toolkit/core/pull/1933
 [#1925]: https://github.com/munich-quantum-toolkit/core/pull/1925
 [#1924]: https://github.com/munich-quantum-toolkit/core/pull/1924
