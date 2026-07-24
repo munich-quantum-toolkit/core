@@ -745,11 +745,11 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp)},
         QCOToQCTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit)},
         QCOToQCTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}

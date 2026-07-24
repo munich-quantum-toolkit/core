@@ -219,7 +219,7 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
   const auto result = module->walk([&](func::FuncOp funcOp) -> WalkResult {
     DenseMap<Value, Value> memrefs;
     SmallVector<Operation*> toErase;
-    funcOp.walk([&](Operation* op) {
+    funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) {
       TypeSwitch<Operation*>(op)
           .Case<tensor::EmptyOp>([&](auto emptyOp) {
             auto tensorType = emptyOp.getType();
@@ -259,11 +259,12 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
             if (it == memrefs.end()) {
               return;
             }
+            auto memref = it->second;
             builder.setInsertionPoint(insertOp);
             memref::StoreOp::create(builder, insertOp.getLoc(),
-                                    insertOp.getScalar(), it->second,
+                                    insertOp.getScalar(), memref,
                                     insertOp.getIndices());
-            memrefs[insertOp.getResult()] = it->second;
+            memrefs[insertOp.getResult()] = memref;
             toErase.emplace_back(insertOp);
           })
           .Case<tensor::ExtractOp>([&](auto extractOp) {
@@ -278,7 +279,32 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
                     .getResult();
             extractOp.getResult().replaceAllUsesWith(newResult);
             toErase.emplace_back(extractOp);
+          })
+          .Case<scf::ForOp>([&](auto forOp) {
+            for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
+              auto it = memrefs.find(init);
+              if (it == memrefs.end()) {
+                continue;
+              }
+              auto memref = it->second;
+              memrefs[forOp.getRegionIterArg(i)] = memref;
+              memrefs[forOp.getResult(i)] = memref;
+            }
           });
+    });
+
+    funcOp.walk([&](scf::ForOp forOp) {
+      auto* yield = forOp.getBody()->getTerminator();
+      for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
+        auto it = memrefs.find(init);
+        if (it == memrefs.end()) {
+          continue;
+        }
+        forOp.getInitArgsMutable()[i].set(it->second);
+        forOp.getRegionIterArg(i).setType(it->second.getType());
+        forOp.getResult(i).setType(it->second.getType());
+        yield->getOpOperand(i).set(it->second);
+      }
     });
 
     // Update terminator operands

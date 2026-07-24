@@ -85,8 +85,51 @@ struct LoweringState {
 
   [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
 
-  /// Map from classical-bit-register memref to latest tensor value
-  DenseMap<Value, Value> registerTensors;
+  /// Per-region map from a classical-bit-register memref to its latest tensor
+  /// value
+  DenseMap<Region*, DenseMap<Value, Value>> cregTensors;
+
+  /// Map from a tensor block argument to its classical-bit-register memref
+  DenseMap<Value, Value> cregFromBlockArg;
+
+  /**
+   * @brief Resolves @p cregOrBlockArg to the underlying classical-bit-register
+   * memref.
+   *
+   * @details
+   * If @p cregOrBlockArg is a block argument, it is looked up in
+   * `cregFromBlockArg`. Otherwise, it is returned as-is.
+   */
+  [[nodiscard]] Value resolveCreg(Value cregOrBlockArg) {
+    auto it = cregFromBlockArg.find(cregOrBlockArg);
+    return it != cregFromBlockArg.end() ? it->second : cregOrBlockArg;
+  }
+
+  /**
+   * @brief Returns the latest tensor value for a @p memref in the region of @p
+   * anchor.
+   */
+  [[nodiscard]] Value getCurrentCreg(Value memref, Operation* anchor) {
+    for (auto* region = anchor->getParentRegion(); region != nullptr;
+         region = region->getParentRegion()) {
+      auto it = cregTensors.find(region);
+      if (it == cregTensors.end()) {
+        continue;
+      }
+      if (auto valueIt = it->second.find(memref); valueIt != it->second.end()) {
+        return valueIt->second;
+      }
+    }
+    return nullptr;
+  }
+
+  /**
+   * @brief Sets the latest tensor value for a @p memref in the region of @p
+   * anchor.
+   */
+  void setCurrentCreg(Value memref, Value tensor, Operation* anchor) {
+    cregTensors[anchor->getParentRegion()][memref] = tensor;
+  }
 
   // Module information
   SmallVector<std::string> strings;
@@ -294,6 +337,28 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
+ * @brief Patches register yields with each register's final value.
+ */
+static void patchCregYields(Operation* module, LoweringState& state) {
+  module->walk([&](jeff::YieldOp yieldOp) {
+    auto it = state.cregTensors.find(yieldOp->getParentRegion());
+    if (it == state.cregTensors.end()) {
+      return;
+    }
+    for (auto& operand : yieldOp->getOpOperands()) {
+      auto cregIt = state.cregFromBlockArg.find(operand.get());
+      if (cregIt == state.cregFromBlockArg.end()) {
+        continue;
+      }
+      if (auto valueIt = it->second.find(cregIt->second);
+          valueIt != it->second.end()) {
+        operand.set(valueIt->second);
+      }
+    }
+  });
+}
+
+/**
  * @brief Cleans up the module after conversion
  *
  * @param op The module operation to clean up
@@ -349,12 +414,36 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 }
 
 /**
+ * @brief Returns whether @p value is a classical-bit-register memref.
+ */
+[[nodiscard]] static bool isClassicalRegister(Value value) {
+  auto memrefType = dyn_cast<MemRefType>(value.getType());
+  return memrefType && memrefType.getElementType().isInteger(1);
+}
+
+/**
+ * @brief Resolves the initial value for a value threaded into a control-flow
+ * region: a register's latest `int_array`, or the remapped value otherwise.
+ */
+[[nodiscard]] static Value
+resolveThreadedInit(LoweringState& state, Operation* anchor, Value memref,
+                    ConversionPatternRewriter& rewriter) {
+  if (isClassicalRegister(memref)) {
+    if (auto creg = state.getCurrentCreg(memref, anchor)) {
+      return creg;
+    }
+  }
+  return rewriter.getRemappedValue(memref);
+}
+
+/**
  * @brief Moves a region from a QCO/SCF operation to a jeff operation
  */
 static LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
                                 const TypeConverter* typeConverter,
-                                const SetVector<Value>& aboveValues) {
+                                const SetVector<Value>& aboveValues,
+                                LoweringState& state) {
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
   rewriter.setInsertionPointToEnd(newBlock);
@@ -369,6 +458,10 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     auto newArg = newBlock->addArgument(
         typeConverter->convertType(value.getType()), value.getLoc());
     mapping.map(value, newArg);
+    if (isClassicalRegister(value)) {
+      state.cregTensors[&dest][value] = newArg;
+      state.cregFromBlockArg[newArg] = value;
+    }
   }
 
   for (auto& op : oldBlock->without_terminator()) {
@@ -432,7 +525,7 @@ struct ConvertMemRefAllocOpToJeff final
     }
     auto creg = jeff::IntArrayZeroOp::create(rewriter, loc, tensorType, size)
                     .getResult();
-    getState().registerTensors[op.getResult()] = creg;
+    getState().setCurrentCreg(op.getResult(), creg, op);
     rewriter.replaceOp(op, creg);
     return success();
   }
@@ -459,16 +552,17 @@ struct ConvertMemRefStoreOpToJeff final
   LogicalResult
   matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& registerTensors = getState().registerTensors;
-    auto it = registerTensors.find(op.getMemref());
-    if (it == registerTensors.end()) {
+    auto& state = getState();
+    auto memref = state.resolveCreg(op.getMemrefMutable().get());
+    auto current = state.getCurrentCreg(memref, op);
+    if (!current) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
     }
     auto newCreg = jeff::IntArraySetIndexOp::create(
-                       rewriter, op.getLoc(), it->second.getType(), it->second,
+                       rewriter, op.getLoc(), current.getType(), current,
                        adaptor.getIndices()[0], adaptor.getValue())
                        .getResult();
-    it->second = newCreg;
+    state.setCurrentCreg(memref, newCreg, op);
     rewriter.eraseOp(op);
     return success();
   }
@@ -494,12 +588,14 @@ struct ConvertMemRefLoadOpToJeff final
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto it = getState().registerTensors.find(op.getMemref());
-    if (it == getState().registerTensors.end()) {
+    auto& state = getState();
+    auto memref = state.resolveCreg(op.getMemrefMutable().get());
+    auto creg = state.getCurrentCreg(memref, op);
+    if (!creg) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
     }
     rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
-        op, op.getType(), it->second, adaptor.getIndices()[0]);
+        op, op.getType(), creg, adaptor.getIndices()[0]);
     return success();
   }
 };
@@ -1205,21 +1301,22 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
       return failure();
     }
 
+    auto& state = getState();
     for (auto value : aboveValues) {
-      auto remappedValue = rewriter.getRemappedValue(value);
-      initArgs.push_back(remappedValue);
-      outTypes.push_back(remappedValue.getType());
+      auto init = resolveThreadedInit(state, op, value, rewriter);
+      initArgs.push_back(init);
+      outTypes.push_back(init.getType());
     }
 
     auto jeffSwitch = jeff::SwitchOp::create(
         rewriter, loc, outTypes, adaptor.getCondition(), initArgs, 2);
 
     if (failed(moveRegion(op.getElseRegion(), jeffSwitch.getBranches()[0],
-                          rewriter, getTypeConverter(), aboveValues))) {
+                          rewriter, getTypeConverter(), aboveValues, state))) {
       return failure();
     }
     if (failed(moveRegion(op.getThenRegion(), jeffSwitch.getBranches()[1],
-                          rewriter, getTypeConverter(), aboveValues))) {
+                          rewriter, getTypeConverter(), aboveValues, state))) {
       return failure();
     }
 
@@ -1237,8 +1334,15 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
       jeff::YieldOp::create(rewriter, loc, block->getArguments());
     }
 
-    rewriter.replaceOp(op,
-                       jeffSwitch.getResults().take_front(op.getNumResults()));
+    // Update tensor values
+    const auto numResults = op.getNumResults();
+    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
+      if (isClassicalRegister(value)) {
+        state.setCurrentCreg(value, jeffSwitch.getResult(numResults + i), op);
+      }
+    }
+
+    rewriter.replaceOp(op, jeffSwitch.getResults().take_front(numResults));
 
     return success();
   }
@@ -1289,10 +1393,11 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
       return failure();
     }
 
+    auto& state = getState();
     for (auto value : aboveValues) {
-      auto remappedValue = rewriter.getRemappedValue(value);
-      initArgs.push_back(remappedValue);
-      outTypes.push_back(remappedValue.getType());
+      auto init = resolveThreadedInit(state, op, value, rewriter);
+      initArgs.push_back(init);
+      outTypes.push_back(init.getType());
     }
 
     auto jeffFor = jeff::ForOp::create(
@@ -1300,11 +1405,19 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
         adaptor.getUpperBound(), adaptor.getStep(), initArgs);
 
     if (failed(moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
-                          getTypeConverter(), aboveValues))) {
+                          getTypeConverter(), aboveValues, state))) {
       return failure();
     }
 
-    rewriter.replaceOp(op, jeffFor.getResults().take_front(op.getNumResults()));
+    // Update tensor values
+    const auto numResults = op.getNumResults();
+    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
+      if (isClassicalRegister(value)) {
+        state.setCurrentCreg(value, jeffFor.getResult(numResults + i), op);
+      }
+    }
+
+    rewriter.replaceOp(op, jeffFor.getResults().take_front(numResults));
 
     return success();
   }
@@ -1356,26 +1469,34 @@ struct ConvertSCFWhileOpToJeff final
       return failure();
     }
 
+    auto& state = getState();
     for (auto value : aboveValues) {
-      auto remappedValue = rewriter.getRemappedValue(value);
-      inits.push_back(remappedValue);
-      outTypes.push_back(remappedValue.getType());
+      auto init = resolveThreadedInit(state, op, value, rewriter);
+      inits.push_back(init);
+      outTypes.push_back(init.getType());
     }
 
     auto jeffWhile =
         jeff::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
 
     if (failed(moveRegion(op.getBefore(), jeffWhile.getBefore(), rewriter,
-                          getTypeConverter(), aboveValues))) {
+                          getTypeConverter(), aboveValues, state))) {
       return failure();
     }
     if (failed(moveRegion(op.getAfter(), jeffWhile.getAfter(), rewriter,
-                          getTypeConverter(), aboveValues))) {
+                          getTypeConverter(), aboveValues, state))) {
       return failure();
     }
 
-    rewriter.replaceOp(op,
-                       jeffWhile.getResults().take_front(op.getNumResults()));
+    // Update tensor values
+    const auto numResults = op.getNumResults();
+    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
+      if (isClassicalRegister(value)) {
+        state.setCurrentCreg(value, jeffWhile.getResult(numResults + i), op);
+      }
+    }
+
+    rewriter.replaceOp(op, jeffWhile.getResults().take_front(numResults));
 
     return success();
   }
@@ -1450,14 +1571,13 @@ struct ConvertFuncReturnOpToJeff final
   LogicalResult
   matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& registerTensors = getState().registerTensors;
+    auto& state = getState();
     SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
-    for (auto [operand, adapted] :
+    for (const auto& [operand, adapted] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      auto it = registerTensors.find(operand);
-      returnValues.emplace_back(it != registerTensors.end() ? it->second
-                                                            : adapted);
+      auto creg = state.getCurrentCreg(operand, op);
+      returnValues.emplace_back(creg ? creg : adapted);
     }
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
@@ -1702,6 +1822,8 @@ protected:
       signalPassFailure();
       return;
     }
+
+    patchCregYields(module, state);
 
     if (cleanUp(module, state).failed()) {
       signalPassFailure();
