@@ -27,6 +27,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <tuple>
