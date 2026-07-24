@@ -702,6 +702,7 @@ protected:
 
       cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
                                                       stdPatterns);
+      cf::populateAssertToLLVMConversionPattern(typeConverter, stdPatterns);
       arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
 
       if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))

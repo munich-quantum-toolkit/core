@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -81,6 +82,37 @@ static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(module);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
+  cf::AssertOp::create(builder, condition, "runtime precondition");
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
+  bool retainsAssertion = false;
+  bool hasConditionalBranch = false;
+  bool hasUnreachableFailure = false;
+  module->walk([&](Operation* operation) {
+    retainsAssertion |= isa<cf::AssertOp>(operation);
+    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
+    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
+  });
+  EXPECT_FALSE(retainsAssertion);
+  EXPECT_TRUE(hasConditionalBranch);
+  EXPECT_TRUE(hasUnreachableFailure);
 }
 
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
