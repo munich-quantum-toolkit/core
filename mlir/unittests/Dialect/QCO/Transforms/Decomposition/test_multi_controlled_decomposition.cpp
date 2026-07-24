@@ -48,20 +48,19 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
 /// DD for k=2…20: full matrix DD through k=8 (MCX/MCZ) or k=6 (MCP);
 /// basis-state DD for larger MCX/MCZ widths; MCP pins CX only above k=6.
-constexpr std::array<size_t, 19> K_DD_CONTROL_COUNTS = {
+static constexpr std::array<size_t, 19> K_DD_CONTROL_COUNTS = {
     2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
-constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
-constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
+static constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
+static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
 /// Smoke-only (fully lowered, no DD) for these widths.
-constexpr std::array<size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23, 24};
+static constexpr std::array<size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23,
+                                                                 24};
 
 /// Expected elementary Ctrl@X counts after default `min-controls=2` lowering.
 /// Indexed by control count `k`; unused slots are zero.
-constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
+static constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
     0,    0,
     6,    // 2
     14,   // 3
@@ -91,7 +90,7 @@ constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
 /// Effective CX for MCP: elementary Ctrl@X plus ~2 CX per leftover
 /// single-controlled P. For `k >= 5` this matches the SP22 LDD bound
 /// `4k^2 - 4k + 2`.
-[[nodiscard]] constexpr size_t expectedMcpCx(size_t k) {
+[[nodiscard]] static constexpr size_t expectedMcpCx(size_t k) {
   if (k >= 5) {
     return (4 * k * k) - (4 * k) + 2;
   }
@@ -131,7 +130,7 @@ class MczSmokeTest : public MultiControlledDecompositionTest,
 class McpSmokeTest : public MultiControlledDecompositionTest,
                      public testing::WithParamInterface<size_t> {};
 
-[[nodiscard]] OwningOpRef<ModuleOp>
+[[nodiscard]] static OwningOpRef<ModuleOp>
 buildControlledPauliModule(MLIRContext* context, size_t numControls,
                            ControlledPauli pauli) {
   return QCOProgramBuilder::build(
@@ -152,17 +151,17 @@ buildControlledPauliModule(MLIRContext* context, size_t numControls,
       });
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp> buildMcxModule(MLIRContext* context,
-                                                   size_t numControls) {
+[[nodiscard]] static OwningOpRef<ModuleOp> buildMcxModule(MLIRContext* context,
+                                                          size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::X);
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp> buildMczModule(MLIRContext* context,
-                                                   size_t numControls) {
+[[nodiscard]] static OwningOpRef<ModuleOp> buildMczModule(MLIRContext* context,
+                                                          size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::Z);
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp>
+[[nodiscard]] static OwningOpRef<ModuleOp>
 buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
   return QCOProgramBuilder::build(
       context, [numControls, theta](QCOProgramBuilder& b) {
@@ -176,14 +175,15 @@ buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
       });
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp> buildRCCXModule(MLIRContext* context) {
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildRCCXModule(MLIRContext* context) {
   return QCOProgramBuilder::build(context, [](QCOProgramBuilder& b) {
     std::ignore = b.rccx(b.staticQubit(0), b.staticQubit(1), b.staticQubit(2));
     return SmallVector<Value>{};
   });
 }
 
-[[nodiscard]] size_t countStaticQubits(func::FuncOp funcOp) {
+[[nodiscard]] static size_t countStaticQubits(func::FuncOp funcOp) {
   size_t numQubits = 0;
   for (StaticOp staticOp : funcOp.getOps<StaticOp>()) {
     numQubits =
@@ -192,7 +192,7 @@ buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
   return numQubits;
 }
 
-void expectFullyDecomposed(func::FuncOp funcOp) {
+static void expectFullyDecomposed(func::FuncOp funcOp) {
   funcOp.walk([](CtrlOp op) {
     EXPECT_EQ(op.getNumControls(), 1U);
     EXPECT_EQ(op.getNumTargets(), 1U);
@@ -200,8 +200,9 @@ void expectFullyDecomposed(func::FuncOp funcOp) {
   funcOp.walk([](RCCXOp) { ADD_FAILURE() << "unexpected leftover rccx"; });
 }
 
-void expectImplementsControlledPauli(func::FuncOp funcOp, size_t numControls,
-                                     ControlledPauli pauli) {
+static void expectImplementsControlledPauli(func::FuncOp funcOp,
+                                            size_t numControls,
+                                            ControlledPauli pauli) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
@@ -228,9 +229,9 @@ void expectImplementsControlledPauli(func::FuncOp funcOp, size_t numControls,
   dd->decRef(referenceDD);
 }
 
-void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
-                                         size_t numControls,
-                                         ControlledPauli pauli) {
+static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
+                                                size_t numControls,
+                                                ControlledPauli pauli) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
@@ -276,8 +277,8 @@ void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   }
 }
 
-void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
-                         double theta) {
+static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
+                                double theta) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
@@ -299,8 +300,8 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   dd->decRef(referenceDD);
 }
 
-[[nodiscard]] size_t countMultiControlledOps(ModuleOp moduleOp,
-                                             size_t minControls = 2) {
+[[nodiscard]] static size_t countMultiControlledOps(ModuleOp moduleOp,
+                                                    size_t minControls = 2) {
   size_t count = 0;
   moduleOp.walk([&count, minControls](CtrlOp op) {
     if (op.getNumControls() >= minControls) {
@@ -310,13 +311,13 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   return count;
 }
 
-[[nodiscard]] size_t countRCCXOps(ModuleOp moduleOp) {
+[[nodiscard]] static size_t countRCCXOps(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&count](RCCXOp) { ++count; });
   return count;
 }
 
-[[nodiscard]] bool ctrlBodyIsSingleX(CtrlOp op) {
+[[nodiscard]] static bool ctrlBodyIsSingleX(CtrlOp op) {
   if (op.getNumControls() != 1) {
     return false;
   }
@@ -325,7 +326,7 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   return xCount == 1;
 }
 
-[[nodiscard]] size_t countElementaryCxOps(ModuleOp moduleOp) {
+[[nodiscard]] static size_t countElementaryCxOps(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&count](CtrlOp op) {
     if (ctrlBodyIsSingleX(op)) {
@@ -335,7 +336,7 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   return count;
 }
 
-[[nodiscard]] bool ctrlBodyIsSingleP(CtrlOp op) {
+[[nodiscard]] static bool ctrlBodyIsSingleP(CtrlOp op) {
   if (op.getNumControls() != 1) {
     return false;
   }
@@ -346,7 +347,7 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   return xCount == 0 && pCount == 1;
 }
 
-[[nodiscard]] size_t countEffectiveCxOps(ModuleOp moduleOp) {
+[[nodiscard]] static size_t countEffectiveCxOps(ModuleOp moduleOp) {
   size_t singleP = 0;
   moduleOp.walk([&singleP](CtrlOp op) {
     if (ctrlBodyIsSingleP(op)) {
@@ -356,19 +357,17 @@ void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   return countElementaryCxOps(moduleOp) + (2 * singleP);
 }
 
-void expectFullyLowered(ModuleOp moduleOp) {
+static void expectFullyLowered(ModuleOp moduleOp) {
   EXPECT_EQ(countMultiControlledOps(moduleOp, 2), 0U);
   EXPECT_EQ(countRCCXOps(moduleOp), 0U);
 }
 
-LogicalResult runDecomposeMultiControlled(
+static LogicalResult runDecomposeMultiControlled(
     ModuleOp moduleOp, const DecomposeMultiControlledOptions& options = {}) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createDecomposeMultiControlled(options));
   return pm.run(moduleOp);
 }
-
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // MCX / MCZ / MCP: DD + CX for k = 2..20

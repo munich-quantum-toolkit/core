@@ -39,8 +39,6 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_DECOMPOSEMULTICONTROLLED
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-namespace {
-
 enum class Hp24DirtyMode : uint8_t { OneDirty, TwoDirty };
 enum class Hp24IncrementerKind : uint8_t { Ripple, Partitioned };
 enum class Hp24HalfMcxKind : uint8_t { RelativePhaseTernary, BorrowedHelper };
@@ -55,8 +53,8 @@ struct Hp24Policy {
 
 enum class ControlledTarget : uint8_t { X, Z, Phase };
 
-constexpr double K_PI = std::numbers::pi;
-constexpr double K_PI8 = K_PI / 8.0;
+static constexpr double K_PI = std::numbers::pi;
+static constexpr double K_PI8 = K_PI / 8.0;
 
 class GateEmitter {
 public:
@@ -298,7 +296,7 @@ struct CircuitPlan {
   void append(PlanOp op) { ops.push_back(std::move(op)); }
 };
 
-[[nodiscard]] size_t estimateBorrowedHelperMcxOps(size_t numControls) {
+[[nodiscard]] static size_t estimateBorrowedHelperMcxOps(size_t numControls) {
   if (numControls <= 3) {
     return 1;
   }
@@ -306,7 +304,7 @@ struct CircuitPlan {
   return 2 * (2 + (10 * (numControls - 3)));
 }
 
-[[nodiscard]] size_t estimateRelativePhaseMcxOps(size_t numControls) {
+[[nodiscard]] static size_t estimateRelativePhaseMcxOps(size_t numControls) {
   if (numControls <= 2) {
     return 1;
   }
@@ -318,11 +316,11 @@ struct CircuitPlan {
          (2 * estimateRelativePhaseMcxOps(num1));
 }
 
-[[nodiscard]] size_t estimateIncrementerPartitionedOps(size_t n) {
+[[nodiscard]] static size_t estimateIncrementerPartitionedOps(size_t n) {
   return (16 * n) + 4;
 }
 
-[[nodiscard]] size_t estimateIncrementerRippleOps(size_t n) {
+[[nodiscard]] static size_t estimateIncrementerRippleOps(size_t n) {
   size_t total = 1;
   for (size_t width = 1; width < n; ++width) {
     total += estimateBorrowedHelperMcxOps(width);
@@ -330,14 +328,14 @@ struct CircuitPlan {
   return total;
 }
 
-void remapPlanOpInPlace(PlanOp& op, ArrayRef<size_t> map) {
+static void remapPlanOpInPlace(PlanOp& op, ArrayRef<size_t> map) {
   for (size_t& w : op.wires) {
     assert(w < map.size() && "plan wire out of remap range");
     w = map[w];
   }
 }
 
-void appendPlanOps(CircuitPlan& dest, CircuitPlan src) {
+static void appendPlanOps(CircuitPlan& dest, CircuitPlan src) {
   dest.ops.reserve(dest.ops.size() + src.ops.size());
   for (PlanOp& op : src.ops) {
     dest.append(std::move(op));
@@ -345,7 +343,7 @@ void appendPlanOps(CircuitPlan& dest, CircuitPlan src) {
 }
 
 /// Lower every `PlanOp` in `plan` onto `emitter`, in order.
-void lowerPlan(GateEmitter& emitter, const CircuitPlan& plan) {
+static void lowerPlan(GateEmitter& emitter, const CircuitPlan& plan) {
   for (const PlanOp& op : plan.ops) {
     switch (op.kind) {
     case PlanOpKind::H:
@@ -393,7 +391,8 @@ void lowerPlan(GateEmitter& emitter, const CircuitPlan& plan) {
 }
 
 /// Append `src` into `dest`, remapping each wire `w` to `map[w]`.
-void appendRemapped(CircuitPlan& dest, CircuitPlan src, ArrayRef<size_t> map) {
+static void appendRemapped(CircuitPlan& dest, CircuitPlan src,
+                           ArrayRef<size_t> map) {
   dest.ops.reserve(dest.ops.size() + src.ops.size());
   for (PlanOp& op : src.ops) {
     remapPlanOpInPlace(op, map);
@@ -412,11 +411,12 @@ struct ControlledGateSpec {
 // Phase-π core on all-ones; no clean helpers (borrow target / a control as
 // dirty). Callers use `MCZ = core` and `MCX = H . core . H` on the target.
 
-constexpr size_t K_ONE_DIRTY_MIN_CONTROLS = 23;
-constexpr size_t K_HP24_POLICY_TABLE_MIN = 4;
-constexpr size_t K_HP24_POLICY_TABLE_MAX = 24;
+static constexpr size_t K_ONE_DIRTY_MIN_CONTROLS = 23;
+static constexpr size_t K_HP24_POLICY_TABLE_MIN = 4;
+static constexpr size_t K_HP24_POLICY_TABLE_MAX = 24;
 
-[[nodiscard]] constexpr Hp24Policy defaultHp24Policy(size_t numControls) {
+[[nodiscard]] static constexpr Hp24Policy
+defaultHp24Policy(size_t numControls) {
   Hp24Policy policy;
   if (numControls >= K_ONE_DIRTY_MIN_CONTROLS && (numControls % 2 == 1)) {
     policy.dirtyMode = Hp24DirtyMode::OneDirty;
@@ -425,7 +425,7 @@ constexpr size_t K_HP24_POLICY_TABLE_MAX = 24;
 }
 
 // HP24 policies for k=4…24 (`selectHp24Policy`).
-constexpr auto K_HP24_POLICY_TABLE = [] {
+static constexpr auto K_HP24_POLICY_TABLE = [] {
   std::array<Hp24Policy, K_HP24_POLICY_TABLE_MAX + 1> table{};
   for (size_t k = 0; k <= K_HP24_POLICY_TABLE_MAX; ++k) {
     table[k] = defaultHp24Policy(k);
@@ -436,7 +436,7 @@ constexpr auto K_HP24_POLICY_TABLE = [] {
   return table;
 }();
 
-[[nodiscard]] Hp24Policy selectHp24Policy(size_t numControls) {
+[[nodiscard]] static Hp24Policy selectHp24Policy(size_t numControls) {
   if (numControls >= K_HP24_POLICY_TABLE_MIN &&
       numControls <= K_HP24_POLICY_TABLE_MAX) {
     return K_HP24_POLICY_TABLE[numControls];
@@ -445,8 +445,8 @@ constexpr auto K_HP24_POLICY_TABLE = [] {
 }
 
 // HP24 §4.3 relative-phase Toffoli gadget (and its reverse-order adjoint).
-void appendGadget(CircuitPlan& plan, size_t q0, size_t q1, size_t q2,
-                  bool invert) {
+static void appendGadget(CircuitPlan& plan, size_t q0, size_t q1, size_t q2,
+                         bool invert) {
   const double quarterPi = K_PI / 4.0; // T = p(pi/4), Tdg = p(-pi/4)
   if (!invert) {
     plan.append({.kind = PlanOpKind::H, .wires = {q2}});
@@ -464,20 +464,21 @@ void appendGadget(CircuitPlan& plan, size_t q0, size_t q1, size_t q2,
 }
 
 // HP24 Fig. 5 carry / uncarry steps for the borrowed-helper incrementer.
-void appendCarry(CircuitPlan& plan, size_t carry, size_t hi, size_t lo) {
+static void appendCarry(CircuitPlan& plan, size_t carry, size_t hi, size_t lo) {
   plan.append({.kind = PlanOpKind::CX, .wires = {carry, lo}});
   plan.append({.kind = PlanOpKind::CX, .wires = {carry, hi}});
   plan.append({.kind = PlanOpKind::CCX, .wires = {hi, lo, carry}});
 }
 
-void appendUncarry(CircuitPlan& plan, size_t carry, size_t hi, size_t lo) {
+static void appendUncarry(CircuitPlan& plan, size_t carry, size_t hi,
+                          size_t lo) {
   plan.append({.kind = PlanOpKind::CCX, .wires = {hi, lo, carry}});
   plan.append({.kind = PlanOpKind::CX, .wires = {carry, hi}});
   plan.append({.kind = PlanOpKind::CX, .wires = {hi, lo}});
 }
 
 // HP24 Eq. (2) borrowed-helper MCX (controls, target, then dirty helpers).
-CircuitPlan planBorrowedHelperMcx(size_t numControls) {
+static CircuitPlan planBorrowedHelperMcx(size_t numControls) {
   CircuitPlan plan;
   if (numControls == 1) {
     plan.append({.kind = PlanOpKind::CX, .wires = {0, 1}});
@@ -514,7 +515,7 @@ CircuitPlan planBorrowedHelperMcx(size_t numControls) {
 }
 
 // HP24 Fig. 6 borrowed-helper incrementer `U^n_{+1}` (wide registers).
-CircuitPlan planIncrementerPartitioned(size_t n) {
+static CircuitPlan planIncrementerPartitioned(size_t n) {
   CircuitPlan plan;
   plan.ops.reserve(estimateIncrementerPartitionedOps(n));
   const size_t lastRegister = n - 1;
@@ -558,7 +559,7 @@ CircuitPlan planIncrementerPartitioned(size_t n) {
 }
 
 // HP24 Fig. 10 ripple incrementer (narrow registers).
-CircuitPlan planIncrementerRipple(size_t n) {
+static CircuitPlan planIncrementerRipple(size_t n) {
   CircuitPlan plan;
   plan.ops.reserve(estimateIncrementerRippleOps(n));
   SmallVector<size_t, 16> wires;
@@ -577,7 +578,7 @@ CircuitPlan planIncrementerRipple(size_t n) {
 }
 
 // `U^n_{+1}`: Fig. 6 when wide, Fig. 10 ripple when narrow (crossover n=10).
-CircuitPlan planIncrementer(size_t n, const Hp24Policy& policy) {
+static CircuitPlan planIncrementer(size_t n, const Hp24Policy& policy) {
   if (policy.incrementerKind == Hp24IncrementerKind::Ripple &&
       n <= policy.incrementerRippleMaxWidth) {
     return planIncrementerRipple(n);
@@ -586,7 +587,7 @@ CircuitPlan planIncrementer(size_t n, const Hp24Policy& policy) {
 }
 
 // HP24 §4.3 relative-phase MCX (ternary ladder); phases cancel in pairs.
-CircuitPlan planRelativePhaseMcx(size_t numControls) {
+static CircuitPlan planRelativePhaseMcx(size_t numControls) {
   CircuitPlan plan;
   const size_t target = numControls;
   if (numControls == 0) {
@@ -641,8 +642,8 @@ CircuitPlan planRelativePhaseMcx(size_t numControls) {
 }
 
 // Ternary relative-phase MCX below helperMin; else borrowed-helper MCX.
-CircuitPlan planRelativePhaseMcxWide(size_t numControls,
-                                     const Hp24Policy& policy) {
+static CircuitPlan planRelativePhaseMcxWide(size_t numControls,
+                                            const Hp24Policy& policy) {
   if (policy.halfMcxKind == Hp24HalfMcxKind::RelativePhaseTernary &&
       numControls < policy.halfMcxBorrowedHelperMinControls) {
     return planRelativePhaseMcx(numControls);
@@ -653,8 +654,8 @@ CircuitPlan planRelativePhaseMcxWide(size_t numControls,
 // HP24 Fig. 6/8 partitioned incrementer. One-dirty borrows the target;
 // two-dirty also borrows the top control. `flagAdd == false` yields `U_{-1}`
 // (Eq. (7)).
-CircuitPlan planBorrowedDirtyIncrementer(size_t n, bool flagAdd,
-                                         const Hp24Policy& policy) {
+static CircuitPlan planBorrowedDirtyIncrementer(size_t n, bool flagAdd,
+                                                const Hp24Policy& policy) {
   CircuitPlan plan;
   const bool oneDirty = policy.dirtyMode == Hp24DirtyMode::OneDirty;
   const size_t numDirty = oneDirty ? 1 : 2;
@@ -768,7 +769,7 @@ CircuitPlan planBorrowedDirtyIncrementer(size_t n, bool flagAdd,
 }
 
 // HP24 Theorem 4.4: `C^{n-1}(p(π))` via dirty incrementer + phase ladder.
-CircuitPlan planHp24Core(size_t n, const Hp24Policy& policy) {
+static CircuitPlan planHp24Core(size_t n, const Hp24Policy& policy) {
   CircuitPlan plan;
   const size_t numControls = n - 1;
   const size_t target = n - 1;
@@ -839,21 +840,22 @@ CircuitPlan planHp24Core(size_t n, const Hp24Policy& policy) {
 // Rewrite entry points (called by patterns)
 //===----------------------------------------------------------------------===//
 
-SmallVector<Value> threeControlledWires(ValueRange controls, Value target) {
+static SmallVector<Value> threeControlledWires(ValueRange controls,
+                                               Value target) {
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
   return wires;
 }
 
-SmallVector<Value> synthesizeRCCX(OpBuilder& builder, Location loc,
-                                  Value control0, Value control1,
-                                  Value target) {
+static SmallVector<Value> synthesizeRCCX(OpBuilder& builder, Location loc,
+                                         Value control0, Value control1,
+                                         Value target) {
   SmallVector<Value> wires = {control0, control1, target};
   GateEmitter(builder, loc, wires).emitRCCXSequence(0, 1, 2);
   return wires;
 }
 
-SmallVector<Value>
+static SmallVector<Value>
 synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
                         Value control1, Value target, ControlledTarget gate,
                         std::optional<double> /*theta*/ = std::nullopt) {
@@ -876,9 +878,9 @@ synthesizeTwoControlled(OpBuilder& builder, Location loc, Value control0,
   return wires;
 }
 
-SmallVector<Value> synthesizeThreeControlled(OpBuilder& builder, Location loc,
-                                             ValueRange controls, Value target,
-                                             ControlledTarget gate) {
+static SmallVector<Value>
+synthesizeThreeControlled(OpBuilder& builder, Location loc, ValueRange controls,
+                          Value target, ControlledTarget gate) {
   SmallVector<Value> wires = threeControlledWires(controls, target);
   GateEmitter emitter(builder, loc, wires);
   if (gate == ControlledTarget::X) {
@@ -892,8 +894,8 @@ SmallVector<Value> synthesizeThreeControlled(OpBuilder& builder, Location loc,
 }
 
 // Barenco peel with RCCX at width 2; exact NestedMCX for wider peels.
-void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
-                              size_t numControls, size_t target) {
+static void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
+                                     size_t numControls, size_t target) {
   if (numControls == 1) {
     plan.append({.kind = PlanOpKind::CP, .wires = {0, target}, .angle = theta});
     return;
@@ -926,8 +928,8 @@ void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
 }
 
 // Maslov relative-phase C^3(X) (arXiv:1508.03273 Fig. 4); `invert` = adjoint.
-void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1, size_t c2,
-                            size_t t, bool invert) {
+static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
+                                   size_t c2, size_t t, bool invert) {
   const double q = K_PI / 4.0; // T = p(pi/4)
   const std::array<PlanOp, 18> ops = {{
       {.kind = PlanOpKind::H, .wires = {t}},
@@ -966,7 +968,7 @@ void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1, size_t c2,
 
 /// Ancilla-free `C^4(Z)` (Barenco √Z peels + Maslov relative-phase toggles).
 /// Controls 0..3, target 4.
-CircuitPlan planMczRelativePhaseK4() {
+static CircuitPlan planMczRelativePhaseK4() {
   CircuitPlan plan;
   constexpr size_t t = 4;
   const double half = K_PI / 2.0;
@@ -994,11 +996,11 @@ CircuitPlan planMczRelativePhaseK4() {
   return plan;
 }
 
-CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires);
+static CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires);
 
-SmallVector<Value> synthesizeMultiControlled(OpBuilder& builder, Location loc,
-                                             ValueRange controls, Value target,
-                                             ControlledTarget gate) {
+static SmallVector<Value>
+synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
+                          Value target, ControlledTarget gate) {
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
 
@@ -1020,9 +1022,9 @@ SmallVector<Value> synthesizeMultiControlled(OpBuilder& builder, Location loc,
 //===----------------------------------------------------------------------===//
 
 // SP22 LDD for general-angle MCP at and above this width.
-constexpr size_t K_MCP_SP22_MIN_CONTROLS = 5;
+static constexpr size_t K_MCP_SP22_MIN_CONTROLS = 5;
 
-CircuitPlan planMcp(double theta, size_t numControls);
+static CircuitPlan planMcp(double theta, size_t numControls);
 
 //===----------------------------------------------------------------------===//
 // Vale multi-controlled phase
@@ -1034,16 +1036,17 @@ struct BorrowedControlPartition {
   size_t k2; // floor(k / 2)
 };
 
-BorrowedControlPartition partitionControls(size_t numControls) {
+static BorrowedControlPartition partitionControls(size_t numControls) {
   return {.k1 = (numControls + 1) / 2, .k2 = numControls / 2};
 }
 
 // Vale + Barenco-relative residual at this MCP width.
-constexpr size_t K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS = 4;
+static constexpr size_t K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS = 4;
 
 /// Vale24 Fig. 7 shell (arXiv:2302.06377): alternate half-MCX with target
 /// `p(±θ/4)`. Controls then target. Caller appends the residual.
-void appendValeFig7Shell(CircuitPlan& plan, double theta, size_t numControls) {
+static void appendValeFig7Shell(CircuitPlan& plan, double theta,
+                                size_t numControls) {
   const size_t target = numControls;
   const auto [k1, k2] = partitionControls(numControls);
   const double quarter = theta / 4.0;
@@ -1067,7 +1070,7 @@ void appendValeFig7Shell(CircuitPlan& plan, double theta, size_t numControls) {
 }
 
 /// Vale Fig. 7 + recursive `planMcp(θ/2)` residual on the control register.
-CircuitPlan planMcpVale(double theta, size_t numControls) {
+static CircuitPlan planMcpVale(double theta, size_t numControls) {
   CircuitPlan plan;
   // Fig. 7 shell (8 ops) + optimized C²P residual at the production width k=3.
   plan.ops.reserve(18);
@@ -1077,7 +1080,8 @@ CircuitPlan planMcpVale(double theta, size_t numControls) {
 }
 
 /// Vale shell with Barenco-relative (RCCX) residual.
-CircuitPlan planMcpValeRelativeResidual(double theta, size_t numControls) {
+static CircuitPlan planMcpValeRelativeResidual(double theta,
+                                               size_t numControls) {
   CircuitPlan plan;
   appendValeFig7Shell(plan, theta, numControls);
   appendMcpBarencoRelative(plan, theta / 2.0, numControls - 1, numControls - 1);
@@ -1086,7 +1090,7 @@ CircuitPlan planMcpValeRelativeResidual(double theta, size_t numControls) {
 
 /// Recursive Vale shells; Barenco-relative residual at width ≤ 4.
 /// Used for MCX/MCZ k=5 (shell at 5, then relative residual at 4).
-CircuitPlan planMcpValeHybridResidual(double theta, size_t numControls) {
+static CircuitPlan planMcpValeHybridResidual(double theta, size_t numControls) {
   if (numControls <= K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS) {
     return planMcpValeRelativeResidual(theta, numControls);
   }
@@ -1097,7 +1101,7 @@ CircuitPlan planMcpValeHybridResidual(double theta, size_t numControls) {
 }
 
 /// Optimized ancilla-free `C^2(P(θ))`. Wires: `c0`, `c1`, target.
-CircuitPlan planMcpTwoControlled(double theta) {
+static CircuitPlan planMcpTwoControlled(double theta) {
   CircuitPlan plan;
   plan.ops.reserve(10);
   const double quarter = theta / 4.0;
@@ -1120,7 +1124,7 @@ CircuitPlan planMcpTwoControlled(double theta) {
 
 /// General-angle MCP for `2 ≤ k < K_MCP_SP22_MIN_CONTROLS`: optimized C²P at
 /// k=2, Vale at k=3, Vale + Barenco-relative residual at k=4.
-CircuitPlan planMcp(double theta, size_t numControls) {
+static CircuitPlan planMcp(double theta, size_t numControls) {
   assert(numControls >= 2 && numControls < K_MCP_SP22_MIN_CONTROLS &&
          "planMcp covers only the pre-SP22 MCP band");
   if (numControls == 2) {
@@ -1137,7 +1141,7 @@ CircuitPlan planMcp(double theta, size_t numControls) {
 //===----------------------------------------------------------------------===//
 
 /// SP22 Eq. (1) `P_m` as single-controlled CRX ladder; `sign = -1` → dagger.
-void appendSp22PRx(CircuitPlan& plan, size_t m, double sign) {
+static void appendSp22PRx(CircuitPlan& plan, size_t m, double sign) {
   for (size_t c = 1; c < m; ++c) {
     plan.append({.kind = PlanOpKind::CRX,
                  .wires = {c, m},
@@ -1146,7 +1150,7 @@ void appendSp22PRx(CircuitPlan& plan, size_t m, double sign) {
 }
 
 /// SP22 Theorem 2: expand `Q_m` into single-controlled CRX only.
-CircuitPlan buildSp22Q(size_t m) {
+static CircuitPlan buildSp22Q(size_t m) {
   CircuitPlan q;
   if (m < 2) {
     return q; // Q_1 = Q_0 = I
@@ -1162,7 +1166,7 @@ CircuitPlan buildSp22Q(size_t m) {
 
 /// SP22 LDD MCP (arXiv:2203.11882 Them. 1): CP ladder + CRX `Q_n` conjugation.
 /// Controls `0..n-1`, target `n`.
-CircuitPlan planMcpSp22(double theta, size_t numControls) {
+static CircuitPlan planMcpSp22(double theta, size_t numControls) {
   CircuitPlan plan;
   const size_t n = numControls;
   const size_t target = n;
@@ -1210,7 +1214,7 @@ CircuitPlan planMcpSp22(double theta, size_t numControls) {
 }
 
 // MCZ core: k=4 relative-phase C^4(Z); k=5 Vale hybrid; else HP24.
-CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires) {
+static CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires) {
   if (numControls == 4) {
     return planMczRelativePhaseK4();
   }
@@ -1221,7 +1225,8 @@ CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires) {
 }
 
 // General-angle MCP: SP22 at k >= 5, else C²P / Vale (relative residual at 4).
-void emitMcpDefault(GateEmitter& emitter, double phi, size_t numControls) {
+static void emitMcpDefault(GateEmitter& emitter, double phi,
+                           size_t numControls) {
   if (numControls >= K_MCP_SP22_MIN_CONTROLS) {
     lowerPlan(emitter, planMcpSp22(phi, numControls));
     return;
@@ -1229,10 +1234,11 @@ void emitMcpDefault(GateEmitter& emitter, double phi, size_t numControls) {
   lowerPlan(emitter, planMcp(phi, numControls));
 }
 
-SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
-                                                  Location loc,
-                                                  ValueRange controls,
-                                                  Value target, double theta) {
+static SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
+                                                         Location loc,
+                                                         ValueRange controls,
+                                                         Value target,
+                                                         double theta) {
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
   GateEmitter emitter(builder, loc, wires);
@@ -1246,7 +1252,7 @@ SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
 
 /// Match a supported controlled-target body: Pauli-X, Pauli-Z, or a
 /// constant-theta phase.
-std::optional<ControlledGateSpec>
+static std::optional<ControlledGateSpec>
 matchControlledTarget(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
     return ControlledGateSpec{.gate = ControlledTarget::X,
@@ -1379,7 +1385,5 @@ protected:
     }
   }
 };
-
-} // namespace
 
 } // namespace mlir::qco
