@@ -67,6 +67,9 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
       pass changed-source clang-tidy and repository lint, run
       `git diff --check`, and complete an independent read-only verification of
       the follow-up.
+- [x] (2026-07-24 23:19Z) Merge current `origin/main` after PR #1939, preserve
+      both Jeff round-trip regression families, pass 836 affected tests and
+      repository lint, and prepare the exact merged head for publication.
 
 ## Surprises & Discoveries
 
@@ -127,6 +130,10 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
   suite now starts from QCO text for both conditional forms, while
   `mlir/unittests/Conversion/QCQCORoundTrip/` explicitly owns the two-pass tests
   and their intentional two-library dependency.
+- Observation: PR #1939 touched the same Jeff round-trip test file but a
+  different contract. Git merged its entry-point return-placement regression
+  cleanly alongside this change's precise rejection test for classical
+  conditional results, and the complete 118-test Jeff round-trip suite passes.
 
 ## Decision Log
 
@@ -208,6 +215,11 @@ diagnostics in the changed source files, repository lint passes, and
 the patterns preserve the quantum bundle and result-segment metadata, that no
 generic region-branch patterns are registered, and that each directional test
 target now owns only its conversion dependency.
+
+After merging `origin/main` at `013aef0de`, the complete QCO IR, QCO-to-QC,
+QC-to-QCO, QC/QCO round-trip, and Jeff round-trip suites pass 836 tests in
+total. Repository lint and both working-tree and branch diff checks pass on the
+merged exact head.
 
 ## Context and Orientation
 
