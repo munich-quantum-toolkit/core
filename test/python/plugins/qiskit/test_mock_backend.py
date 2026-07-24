@@ -15,6 +15,7 @@ import re
 import secrets
 import string
 import warnings
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
@@ -22,7 +23,7 @@ import pytest
 from qiskit import qasm2, qasm3
 from qiskit.circuit import Clbit, Parameter, QuantumCircuit
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import (
     MoveGate,
     QDMIBackend,
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 class MockQDMIDevice:
     """Mock QDMI device for testing with configurable properties and job execution.
 
-    This class implements the FoMaC device interface for testing purposes,
+    This class implements the QDMI device interface for testing purposes,
     providing configurable device properties and mock job execution.
     """
 
@@ -138,7 +139,7 @@ class MockQDMIDevice:
             return self._zoned
 
     class MockJob:
-        """Mock FoMaC job with simulated results."""
+        """Mock QDMI job with simulated results."""
 
         def __init__(self, num_clbits: int, shots: int) -> None:
             """Initialize mock job with number of classical bits and shots."""
@@ -146,7 +147,7 @@ class MockQDMIDevice:
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
             self._id = "mock-job-" + "".join(secrets.choice(alphabet) for _ in range(8))
-            self._status = fomac.Job.Status.DONE
+            self._status = qdmi.Job.Status.DONE
             self._counts: dict[str, int] | None = None
 
         @property
@@ -159,7 +160,7 @@ class MockQDMIDevice:
             """The number of shots."""
             return self._shots
 
-        def check(self) -> fomac.Job.Status:
+        def check(self) -> qdmi.Job.Status:
             """Return job status."""
             return self._status
 
@@ -262,11 +263,11 @@ class MockQDMIDevice:
         return self._coupling_map
 
     @staticmethod
-    def supported_program_formats() -> list[fomac.ProgramFormat]:
+    def supported_program_formats() -> list[qdmi.ProgramFormat]:
         """Return list of supported program formats."""
-        return [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3]
+        return [qdmi.ProgramFormat.QASM2, qdmi.ProgramFormat.QASM3]
 
-    def submit_job(self, program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockJob:  # noqa: ARG002
+    def submit_job(self, program: str, program_format: qdmi.ProgramFormat, num_shots: int) -> MockJob:  # noqa: ARG002
         """Submit a mock job to the device.
 
         Args:
@@ -318,13 +319,43 @@ def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
     return MockQDMIDevice
 
 
-def _patch_session_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
-    """Helper to monkeypatch fomac.Session.get_devices to return the given devices list."""
+def _patch_manager_devices(
+    monkeypatch: pytest.MonkeyPatch,
+    devices: list[MockQDMIDevice],
+    errors: dict[str, str] | None = None,
+) -> None:
+    """Patch QDMI device discovery to return the supplied mock devices."""
 
-    def _mock_get_devices(_self: object) -> list[MockQDMIDevice]:
-        return devices
+    class MockManager:
+        def __init__(self) -> None:
+            self.definitions = [SimpleNamespace(device_id=f"mock-{index}") for index in range(len(devices))]
+            self.devices = devices
 
-    monkeypatch.setattr(fomac.Session, "get_devices", _mock_get_devices)
+        def open(self, device_id: str, **_kwargs: object) -> MockQDMIDevice:
+            return self.devices[int(device_id.removeprefix("mock-"))]
+
+        def open_all(self, **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                devices={f"mock-{index}": device for index, device in enumerate(self.devices)}, errors=errors or {}
+            )
+
+    monkeypatch.setattr(qdmi, "DeviceManager", MockManager)
+
+
+def test_provider_keeps_openable_devices_after_partial_discovery_failure(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+) -> None:
+    """Provider retains successful bulk-open results when another definition fails."""
+    mock_device = mock_qdmi_device_factory(
+        name="Available Device",
+        num_qubits=2,
+        operations=["h", "measure"],
+    )
+    _patch_manager_devices(monkeypatch, [mock_device], {"unavailable": "provider failed"})
+
+    provider = QDMIProvider()
+
+    assert provider.get_backend("Available Device").name == "Available Device"
 
 
 def test_backend_warns_on_unmappable_operation(
@@ -338,8 +369,7 @@ def test_backend_warns_on_unmappable_operation(
         operations=["cz", "custom_unmappable_gate", "measure"],
     )
 
-    # Use helper to patch Session.get_devices
-    _patch_session_devices(monkeypatch, [mock_device])
+    _patch_manager_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
@@ -365,7 +395,7 @@ def test_backend_exposes_move_operation(
         num_qubits=2,
         operations=["move", "measure"],
     )
-    _patch_session_devices(monkeypatch, [mock_device])
+    _patch_manager_devices(monkeypatch, [mock_device])
 
     provider = QDMIProvider()
     backend = provider.get_backend("Test Device")
@@ -384,8 +414,7 @@ def test_backend_warns_on_missing_measurement_operation(
         operations=["cz"],  # No measure operation
     )
 
-    # Use helper to patch Session.get_devices
-    _patch_session_devices(monkeypatch, [mock_device])
+    _patch_manager_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:
@@ -412,7 +441,7 @@ def test_backend_exposes_move_gate(
         operations=["move", "cz", "measure"],
     )
 
-    _patch_session_devices(monkeypatch, [mock_device])
+    _patch_manager_devices(monkeypatch, [mock_device])
 
     provider = QDMIProvider()
     backend = provider.get_backend("Test Device with MOVE")
@@ -446,9 +475,9 @@ def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [qdmi.ProgramFormat.QASM3])  # noqa: SLF001
 
-    assert fmt == fomac.ProgramFormat.QASM3
+    assert fmt == qdmi.ProgramFormat.QASM3
     assert "OPENQASM 3" in program
     assert "h q[0]" in program
     assert "cx q[0], q[1]" in program
@@ -464,9 +493,9 @@ def test_backend_qasm2_conversion_success(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [qdmi.ProgramFormat.QASM2])  # noqa: SLF001
 
-    assert fmt == fomac.ProgramFormat.QASM2
+    assert fmt == qdmi.ProgramFormat.QASM2
     assert "OPENQASM 2.0" in program
     assert "h q[0]" in program
     assert "cx q[0],q[1]" in program
@@ -482,9 +511,9 @@ def test_backend_qasm3_preferred_over_qasm2(mock_qdmi_device_factory: type[MockQ
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     # When both formats are available, QASM3 should be chosen
-    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [qdmi.ProgramFormat.QASM2, qdmi.ProgramFormat.QASM3])  # noqa: SLF001
 
-    assert fmt == fomac.ProgramFormat.QASM3
+    assert fmt == qdmi.ProgramFormat.QASM3
     assert "OPENQASM 3" in program
 
 
@@ -492,12 +521,12 @@ def test_backend_uses_iqm_json_when_supported(mock_qdmi_device_factory: type[Moc
     """Test that backend uses IQM JSON format when supported."""
     device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
 
-    submitted_format: fomac.ProgramFormat | None = None
+    submitted_format: qdmi.ProgramFormat | None = None
 
-    def mock_supported_formats() -> list[fomac.ProgramFormat]:
-        return [fomac.ProgramFormat.IQM_JSON, fomac.ProgramFormat.QASM3]
+    def mock_supported_formats() -> list[qdmi.ProgramFormat]:
+        return [qdmi.ProgramFormat.IQM_JSON, qdmi.ProgramFormat.QASM3]
 
-    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
+    def mock_submit_job(program: str, program_format: qdmi.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
         nonlocal submitted_format
         submitted_format = program_format
         return device.MockJob(num_clbits=2, shots=num_shots)
@@ -513,19 +542,19 @@ def test_backend_uses_iqm_json_when_supported(mock_qdmi_device_factory: type[Moc
 
     backend.run(qc, shots=100)
 
-    assert submitted_format == fomac.ProgramFormat.IQM_JSON
+    assert submitted_format == qdmi.ProgramFormat.IQM_JSON
 
 
 def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Test that IQM JSON takes priority over QASM formats."""
     device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
 
-    submitted_format: fomac.ProgramFormat | None = None
+    submitted_format: qdmi.ProgramFormat | None = None
 
-    def mock_supported_formats() -> list[fomac.ProgramFormat]:
-        return [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3, fomac.ProgramFormat.IQM_JSON]
+    def mock_supported_formats() -> list[qdmi.ProgramFormat]:
+        return [qdmi.ProgramFormat.QASM2, qdmi.ProgramFormat.QASM3, qdmi.ProgramFormat.IQM_JSON]
 
-    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
+    def mock_submit_job(program: str, program_format: qdmi.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
         nonlocal submitted_format
         submitted_format = program_format
         return device.MockJob(num_clbits=2, shots=num_shots)
@@ -541,20 +570,20 @@ def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[Moc
 
     backend.run(qc, shots=100)
 
-    assert submitted_format == fomac.ProgramFormat.IQM_JSON
+    assert submitted_format == qdmi.ProgramFormat.IQM_JSON
 
 
 @pytest.mark.parametrize(
     ("qasm_module_name", "program_format"),
     [
-        ("qasm3", fomac.ProgramFormat.QASM3),
-        ("qasm2", fomac.ProgramFormat.QASM2),
+        ("qasm3", qdmi.ProgramFormat.QASM3),
+        ("qasm2", qdmi.ProgramFormat.QASM2),
     ],
 )
 def test_backend_qasm_conversion_failure(
     monkeypatch: pytest.MonkeyPatch,
     qasm_module_name: str,
-    program_format: fomac.ProgramFormat,
+    program_format: qdmi.ProgramFormat,
     mock_qdmi_device_factory: type[MockQDMIDevice],
 ) -> None:
     """Backend should raise TranslationError when QASM conversion fails."""
@@ -591,11 +620,11 @@ def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDM
     with pytest.raises(
         UnsupportedFormatError, match="No conversion from Qiskit to any of the supported program formats"
     ):
-        backend._convert_circuit(qc, [fomac.ProgramFormat.QPY])  # noqa: SLF001
+        backend._convert_circuit(qc, [qdmi.ProgramFormat.QPY])  # noqa: SLF001
 
 
 def test_map_operation_returns_none_for_unknown() -> None:
-    """Unknown FoMaC operations cannot be mapped to Qiskit gates."""
+    """Unknown QDMI operations cannot be mapped to Qiskit gates."""
     assert QDMIBackend._map_operation_to_gate("unknown_gate") is None  # noqa: SLF001
     assert QDMIBackend._map_operation_to_gate("custom_op") is None  # noqa: SLF001
     assert QDMIBackend._map_operation_to_gate("") is None  # noqa: SLF001
@@ -658,8 +687,7 @@ def test_backend_validation_uses_inverse_mapping(
         operations=["prx", "cz", "measure"],  # Uses 'prx' instead of 'r'
     )
 
-    # Use helper to patch Session.get_devices
-    _patch_session_devices(monkeypatch, [mock_device])
+    _patch_manager_devices(monkeypatch, [mock_device])
 
     provider = QDMIProvider()
     backend = provider.get_backend("Test Device with PRX")

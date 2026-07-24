@@ -14,6 +14,7 @@ import sys
 import warnings
 from importlib import metadata
 from pathlib import Path
+from re import search
 from typing import TYPE_CHECKING
 
 import pybtex.plugin
@@ -26,6 +27,26 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(Path(__file__).parent / "_ext"))
+
+
+def dependency_version(name: str) -> str:
+    """Read a dependency version from the central CMake configuration.
+
+    Args:
+        name: Name of the dependency whose version should be read.
+
+    Returns:
+        The configured dependency version.
+
+    Raises:
+        RuntimeError: If the dependency version is not configured.
+    """
+    dependencies = (ROOT / "cmake" / "ExternalDependencies.cmake").read_text(encoding="utf-8")
+    match = search(rf"set\({name}_VERSION\s+([^\s)]+)", dependencies)
+    if match is None:
+        msg = f"Unable to determine the configured {name} version"
+        raise RuntimeError(msg)
+    return match.group(1)
 
 
 try:
@@ -177,8 +198,9 @@ nitpick_ignore_regex = [
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
 qdmi_api_tagfile = (
     "_build/qdmi.tag",
-    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/",
+    f"https://munich-quantum-software-stack.github.io/QDMI/v{dependency_version('QDMI')}/",
 )
+qdmi_api_tagfile_url = f"{qdmi_api_tagfile[1]}qdmi.tag"
 
 # -- Options for HTML output -------------------------------------------------
 

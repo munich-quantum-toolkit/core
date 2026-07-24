@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIProvider
 
 
@@ -79,11 +80,15 @@ def test_provider_get_backend_nonexistent() -> None:
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provider raises ValueError when no devices available."""
 
-    # Monkeypatch to return empty device list
-    def mock_get_devices(_self: object) -> list[object]:
-        return []
+    class EmptyManager:
+        def __init__(self) -> None:
+            self.definitions: list[object] = []
 
-    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
+        @staticmethod
+        def open_all(**_kwargs: object) -> object:
+            return SimpleNamespace(devices={}, errors={})
+
+    monkeypatch.setattr(qdmi, "DeviceManager", EmptyManager)
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
@@ -164,18 +169,6 @@ def test_provider_with_username_password_parameters() -> None:
         pass
 
 
-def test_provider_with_project_id_parameter() -> None:
-    """Provider accepts project_id parameter."""
-    # Should not raise an error when creating provider with project_id
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(project_id="test_project")
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
 def test_provider_with_multiple_auth_parameters() -> None:
     """Provider accepts multiple authentication parameters."""
     # Should not raise an error when creating provider with multiple auth parameters
@@ -185,7 +178,6 @@ def test_provider_with_multiple_auth_parameters() -> None:
             token="test_token",  # noqa: S106
             username="test_user",
             password="test_pass",  # noqa: S106
-            project_id="test_project",
         )
         assert provider is not None
     except RuntimeError:
@@ -239,7 +231,6 @@ def test_provider_with_custom_parameters() -> None:
         provider = QDMIProvider(
             token="test_token",  # noqa: S106
             custom1="custom_value",
-            project_id="project_id",
         )
         assert provider is not None
     except (RuntimeError, ValueError):

@@ -14,7 +14,7 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
-from ... import fomac
+from ... import qdmi
 from .backend import QDMIBackend
 
 __all__ = ["QDMIProvider"]
@@ -25,10 +25,10 @@ def __dir__() -> list[str]:
 
 
 class QDMIProvider:
-    """Provider for QDMI devices accessed via FoMaC.
+    """Provider for devices discovered by the QDMI device manager.
 
     This provider discovers and manages QDMI devices that are available through
-    the FoMaC layer. It provides a Qiskit-idiomatic interface for device
+    the QDMI layer. It provides a Qiskit-idiomatic interface for device
     discovery and backend instantiation.
 
     Examples:
@@ -58,7 +58,6 @@ class QDMIProvider:
         auth_url: str | None = None,
         username: str | None = None,
         password: str | None = None,
-        project_id: str | None = None,
         **session_kwargs: str,
     ) -> None:
         """Initialize the QDMI provider.
@@ -69,24 +68,26 @@ class QDMIProvider:
             auth_url: URL to authentication server.
             username: Username for authentication.
             password: Password for authentication.
-            project_id: Project ID for the session.
-            session_kwargs: Optional additional keyword arguments for Session initialization.
-        """
-        kwargs = {
-            "token": token,
-            "auth_file": auth_file,
-            "auth_url": auth_url,
-            "username": username,
-            "password": password,
-            "project_id": project_id,
-        }
-        if session_kwargs:
-            kwargs.update(session_kwargs)
+            session_kwargs: Optional provider-specific session parameters.
 
-        self._session = fomac.Session(**kwargs)
-        self._backends = [
-            QDMIBackend(device=d, provider=self) for d in self._session.get_devices() if QDMIBackend.is_convertible(d)
-        ]
+        Raises:
+            TypeError: If ``session_kwargs`` contains an unknown session parameter.
+        """
+        parameters = qdmi.SessionParameters()
+        parameters.token = token
+        parameters.auth_file = auth_file
+        parameters.auth_url = auth_url
+        parameters.username = username
+        parameters.password = password
+        for key, value in session_kwargs.items():
+            if not hasattr(parameters, key):
+                msg = f"Unknown QDMI session parameter: {key}"
+                raise TypeError(msg)
+            setattr(parameters, key, value)
+
+        self._manager = qdmi.DeviceManager()
+        devices = self._manager.open_all(session_overrides=parameters).devices.values()
+        self._backends = [QDMIBackend(device=d, provider=self) for d in devices if QDMIBackend.is_convertible(d)]
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.

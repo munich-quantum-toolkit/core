@@ -165,6 +165,9 @@ jobs:
       setup-python: true
       install-pkgs: "nanobind==2.13.0"
       cpp-linter-extra-args: "-std=c++20"
+      # Private headers have no standalone compile command; their including
+      # translation units are still checked by clang-tidy.
+      cpp-linter-ignore-extra: "vendor/**|src/qdmi/DeviceApi.hpp"
       setup-mlir: true
       llvm-version: 22.1.7
 

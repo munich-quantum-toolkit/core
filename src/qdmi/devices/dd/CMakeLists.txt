@@ -45,12 +45,7 @@ if(NOT TARGET ${TARGET_NAME})
     target_compile_definitions(${TARGET_NAME} PRIVATE BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR)
   endif()
 
-  # Make QDMI version available and ensure symbols are exported when building the library
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                                    ${QDMI_PREFIX}_QDMI_device_EXPORTS)
-
-  # Add to list of MQT Core targets
-  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
+  mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
 endif()
 
 set(MQT_CORE_TARGETS

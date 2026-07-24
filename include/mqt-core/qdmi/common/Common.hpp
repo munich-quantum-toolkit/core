@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <qdmi/client.h>
+#include <qdmi/device.h>
 
 #include <string>
 
@@ -180,58 +180,6 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
  */
 auto throwIfError(int result, const std::string& msg) -> void;
 
-/// Returns the string representation of the given session parameter @p param.
-constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {
-  switch (param) {
-  case QDMI_SESSION_PARAMETER_TOKEN:
-    return "TOKEN";
-  case QDMI_SESSION_PARAMETER_AUTHFILE:
-    return "AUTH FILE";
-  case QDMI_SESSION_PARAMETER_AUTHURL:
-    return "AUTH URL";
-  case QDMI_SESSION_PARAMETER_USERNAME:
-    return "USERNAME";
-  case QDMI_SESSION_PARAMETER_PASSWORD:
-    return "PASSWORD";
-  case QDMI_SESSION_PARAMETER_PROJECTID:
-    return "PROJECT ID";
-  case QDMI_SESSION_PARAMETER_MAX:
-    return "MAX";
-  case QDMI_SESSION_PARAMETER_CUSTOM1:
-    return "CUSTOM1";
-  case QDMI_SESSION_PARAMETER_CUSTOM2:
-    return "CUSTOM2";
-  case QDMI_SESSION_PARAMETER_CUSTOM3:
-    return "CUSTOM3";
-  case QDMI_SESSION_PARAMETER_CUSTOM4:
-    return "CUSTOM4";
-  case QDMI_SESSION_PARAMETER_CUSTOM5:
-    return "CUSTOM5";
-  }
-  unreachable();
-}
-
-/// Returns the string representation of the given session property @p prop.
-constexpr auto toString(const QDMI_Session_Property prop) -> const char* {
-  switch (prop) {
-  case QDMI_SESSION_PROPERTY_DEVICES:
-    return "DEVICES";
-  case QDMI_SESSION_PROPERTY_MAX:
-    return "MAX";
-  case QDMI_SESSION_PROPERTY_CUSTOM1:
-    return "CUSTOM1";
-  case QDMI_SESSION_PROPERTY_CUSTOM2:
-    return "CUSTOM2";
-  case QDMI_SESSION_PROPERTY_CUSTOM3:
-    return "CUSTOM3";
-  case QDMI_SESSION_PROPERTY_CUSTOM4:
-    return "CUSTOM4";
-  case QDMI_SESSION_PROPERTY_CUSTOM5:
-    return "CUSTOM5";
-  }
-  unreachable();
-}
-
 /// Returns the string representation of the given device session parameter
 /// @p param.
 constexpr auto toString(const QDMI_Device_Session_Parameter param) -> const
@@ -249,6 +197,8 @@ constexpr auto toString(const QDMI_Device_Session_Parameter param) -> const
     return "USERNAME";
   case QDMI_DEVICE_SESSION_PARAMETER_PASSWORD:
     return "PASSWORD";
+  case QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE:
+    return "CHILD DEVICE";
   case QDMI_DEVICE_SESSION_PARAMETER_MAX:
     return "MAX";
   case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1:
@@ -386,6 +336,8 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "PULSE SUPPORT";
   case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
     return "SUPPORTED PROGRAM FORMATS";
+  case QDMI_DEVICE_PROPERTY_CHILDDEVICES:
+    return "CHILD DEVICES";
   case QDMI_DEVICE_PROPERTY_MAX:
     return "MAX";
   case QDMI_DEVICE_PROPERTY_CUSTOM1:

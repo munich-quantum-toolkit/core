@@ -22,7 +22,7 @@ if(NOT TARGET ${TARGET_NAME})
     INSTALL_DIR
     .
     LINK_LIBS
-    MQT::CoreNAFoMaC)
+    MQT::CoreNAQDMI)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")

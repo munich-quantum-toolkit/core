@@ -1,4 +1,4 @@
-mqt\.core\.fomac\.(?:Job|Device|Device\.Site)\.query_custom_property$:
+(?:mqt\.core\.)?qdmi\.(?:Job|Device|Device\.Site)\.query_custom_property$:
     \from typing import overload
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -16,7 +16,7 @@ mqt\.core\.fomac\.(?:Job|Device|Device\.Site)\.query_custom_property$:
     ) -> str | bool | int | float | bytes | None:
         \doc
 
-mqt\.core\.fomac\.Job\.get_custom_result$:
+(?:mqt\.core\.)?qdmi\.Job\.get_custom_result$:
     \from typing import overload
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -34,7 +34,7 @@ mqt\.core\.fomac\.Job\.get_custom_result$:
     ) -> str | bool | int | float | bytes | None:
         \doc
 
-mqt\.core\.fomac\.Device\.Operation\.query_custom_property$:
+(?:mqt\.core\.)?qdmi\.Device\.Operation\.query_custom_property$:
     \from typing import overload
     @overload
     def query_custom_property(
