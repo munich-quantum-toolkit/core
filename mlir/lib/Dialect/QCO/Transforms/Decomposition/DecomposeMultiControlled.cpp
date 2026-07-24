@@ -298,10 +298,6 @@ struct CircuitPlan {
   void append(PlanOp op) { ops.push_back(std::move(op)); }
 };
 
-[[nodiscard]] size_t estimateMcpBarencoOps(size_t numControls) {
-  return numControls == 0 ? 0 : (4 * (numControls - 1)) + 1;
-}
-
 [[nodiscard]] size_t estimateBorrowedHelperMcxOps(size_t numControls) {
   if (numControls <= 3) {
     return 1;
@@ -1029,56 +1025,8 @@ constexpr size_t K_MCP_SP22_MIN_CONTROLS = 5;
 CircuitPlan planMcp(double theta, size_t numControls);
 
 //===----------------------------------------------------------------------===//
-// Barenco multi-controlled phase
-//===----------------------------------------------------------------------===//
-
-/// Barenco peel-a-control MCP (PRA 52, 3457 (1995)). Controls then `target`.
-void appendMcpBarenco(CircuitPlan& plan, double theta, size_t numControls,
-                      size_t target) {
-  if (numControls == 1) {
-    plan.append({.kind = PlanOpKind::CP, .wires = {0, target}, .angle = theta});
-    return;
-  }
-
-  const size_t peeled = numControls - 1;
-  const double half = theta / 2.0;
-
-  const auto appendPeeledMcx = [&] {
-    PlanOp mcx{.kind = PlanOpKind::NestedMCX, .nestedControls = peeled};
-    mcx.wires.reserve(numControls);
-    for (size_t control = 0; control < peeled; ++control) {
-      mcx.wires.push_back(control);
-    }
-    mcx.wires.push_back(peeled);
-    plan.append(std::move(mcx));
-  };
-
-  plan.append(
-      {.kind = PlanOpKind::CP, .wires = {peeled, target}, .angle = half});
-  appendPeeledMcx();
-  plan.append(
-      {.kind = PlanOpKind::CP, .wires = {peeled, target}, .angle = -half});
-  appendPeeledMcx();
-  appendMcpBarenco(plan, half, peeled, target);
-}
-
-/// Barenco recursive multi-controlled phase. Local wires: controls
-/// `0 .. numControls-1`, target `numControls`.
-CircuitPlan planMcpBarenco(double theta, size_t numControls) {
-  CircuitPlan plan;
-  plan.ops.reserve(estimateMcpBarencoOps(numControls));
-  appendMcpBarenco(plan, theta, numControls, numControls);
-  return plan;
-}
-
-//===----------------------------------------------------------------------===//
 // Vale multi-controlled phase
 //===----------------------------------------------------------------------===//
-
-/// Vale Fig. 7 for `3 <= k < K_MCP_SP22_MIN_CONTROLS`.
-bool valeMcpApplicable(size_t numControls) {
-  return numControls >= 3 && numControls < K_MCP_SP22_MIN_CONTROLS;
-}
 
 /// Vale control split: top `ceil(k/2)`, bottom `floor(k/2)`.
 struct BorrowedControlPartition {
@@ -1121,7 +1069,8 @@ void appendValeFig7Shell(CircuitPlan& plan, double theta, size_t numControls) {
 /// Vale Fig. 7 + recursive `planMcp(θ/2)` residual on the control register.
 CircuitPlan planMcpVale(double theta, size_t numControls) {
   CircuitPlan plan;
-  plan.ops.reserve(8 + estimateMcpBarencoOps(numControls - 1));
+  // Fig. 7 shell (8 ops) + optimized C²P residual at the production width k=3.
+  plan.ops.reserve(18);
   appendValeFig7Shell(plan, theta, numControls);
   appendPlanOps(plan, planMcp(theta / 2.0, numControls - 1));
   return plan;
@@ -1136,10 +1085,8 @@ CircuitPlan planMcpValeRelativeResidual(double theta, size_t numControls) {
 }
 
 /// Recursive Vale shells; Barenco-relative residual at width ≤ 4.
+/// Used for MCX/MCZ k=5 (shell at 5, then relative residual at 4).
 CircuitPlan planMcpValeHybridResidual(double theta, size_t numControls) {
-  if (numControls < 3) {
-    return planMcpBarenco(theta, numControls);
-  }
   if (numControls <= K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS) {
     return planMcpValeRelativeResidual(theta, numControls);
   }
@@ -1171,19 +1118,18 @@ CircuitPlan planMcpTwoControlled(double theta) {
   return plan;
 }
 
-/// General-angle MCP: optimized C²P at k=2, Vale (relative residual at k=4),
-/// else Barenco.
+/// General-angle MCP for `2 ≤ k < K_MCP_SP22_MIN_CONTROLS`: optimized C²P at
+/// k=2, Vale at k=3, Vale + Barenco-relative residual at k=4.
 CircuitPlan planMcp(double theta, size_t numControls) {
+  assert(numControls >= 2 && numControls < K_MCP_SP22_MIN_CONTROLS &&
+         "planMcp covers only the pre-SP22 MCP band");
   if (numControls == 2) {
     return planMcpTwoControlled(theta);
   }
   if (numControls == K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS) {
     return planMcpValeRelativeResidual(theta, numControls);
   }
-  if (valeMcpApplicable(numControls)) {
-    return planMcpVale(theta, numControls);
-  }
-  return planMcpBarenco(theta, numControls);
+  return planMcpVale(theta, numControls);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1263,38 +1209,18 @@ CircuitPlan planMcpSp22(double theta, size_t numControls) {
   return plan;
 }
 
-// Expand NestedMCX (k>=4) via the MCX core to avoid CtrlOp re-entry.
-CircuitPlan expandNestedMcx(CircuitPlan plan) {
-  CircuitPlan out;
-  out.ops.reserve(plan.ops.size());
-  for (PlanOp& op : plan.ops) {
-    if (op.kind != PlanOpKind::NestedMCX || op.nestedControls < 4) {
-      out.append(std::move(op));
-      continue;
-    }
-    const size_t numControls = op.nestedControls;
-    const size_t target = op.wires[numControls];
-    const SmallVector<size_t, 16> remap(op.wires.begin(), op.wires.end());
-    out.append({.kind = PlanOpKind::H, .wires = {target}});
-    CircuitPlan core = mczCoreForWidth(numControls, numControls + 1);
-    appendRemapped(out, std::move(core), remap);
-    out.append({.kind = PlanOpKind::H, .wires = {target}});
-  }
-  return out;
-}
-
 // MCZ core: k=4 relative-phase C^4(Z); k=5 Vale hybrid; else HP24.
 CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires) {
   if (numControls == 4) {
     return planMczRelativePhaseK4();
   }
   if (numControls == 5) {
-    return expandNestedMcx(planMcpValeHybridResidual(K_PI, numControls));
+    return planMcpValeHybridResidual(K_PI, numControls);
   }
   return planHp24Core(numWires, selectHp24Policy(numControls));
 }
 
-// General-angle MCP: SP22 at k >= 5, else Vale/Barenco (k=2 via optimized C²P).
+// General-angle MCP: SP22 at k >= 5, else C²P / Vale (relative residual at 4).
 void emitMcpDefault(GateEmitter& emitter, double phi, size_t numControls) {
   if (numControls >= K_MCP_SP22_MIN_CONTROLS) {
     lowerPlan(emitter, planMcpSp22(phi, numControls));
