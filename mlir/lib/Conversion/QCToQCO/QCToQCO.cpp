@@ -20,7 +20,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -526,13 +525,12 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
  * stack on every iteration. Each syntactic conditional gets distinct storage,
  * and structured control flow executes it sequentially.
  */
-[[nodiscard]] static FailureOr<SmallVector<Value>>
+[[nodiscard]] static SmallVector<Value>
 createHoistedScratchStorage(Operation* operation, TypeRange elementTypes,
                             ConversionPatternRewriter& rewriter) {
   auto function = operation->getParentOfType<func::FuncOp>();
-  if (!function || function.getBody().empty()) {
-    return failure();
-  }
+  assert(function && !function.getBody().empty() &&
+         "structured QC control flow must be nested in a function");
 
   OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPointToStart(&function.getBody().front());
@@ -1544,12 +1542,8 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     // the IfOp
     insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
-    auto scratch =
+    const auto scratch =
         createHoistedScratchStorage(operation, op.getResultTypes(), rewriter);
-    if (failed(scratch)) {
-      return rewriter.notifyMatchFailure(
-          op, "result-bearing scf.if requires an automatic allocation scope");
-    }
 
     // Create the new IfOp
     auto newIfOp =
@@ -1581,10 +1575,10 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     const auto spillResults = [&](Block* block) {
       auto yield = cast<scf::YieldOp>(block->getTerminator());
       rewriter.setInsertionPoint(yield);
-      if (!scratch->empty()) {
+      if (!scratch.empty()) {
         auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
         for (auto [value, storage] :
-             llvm::zip_equal(yield.getResults(), *scratch)) {
+             llvm::zip_equal(yield.getResults(), scratch)) {
           memref::StoreOp::create(rewriter, op.getLoc(), value, storage,
                                   ValueRange{index});
         }
@@ -1617,10 +1611,10 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     rewriter.setInsertionPointAfter(newIfOp);
     SmallVector<Value> classicalResults;
-    classicalResults.reserve(scratch->size());
-    if (!scratch->empty()) {
+    classicalResults.reserve(scratch.size());
+    if (!scratch.empty()) {
       auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-      for (auto storage : *scratch) {
+      for (auto storage : scratch) {
         classicalResults.push_back(memref::LoadOp::create(
             rewriter, op.getLoc(), storage, ValueRange{index}));
       }
@@ -1674,13 +1668,8 @@ struct ConvertSCFIndexSwitchOp final
     const auto targets = resolveAllValues(state, operation);
     const auto results = ValueRange(targets).getTypes();
     const SmallVector locs(targets.size(), op.getLoc());
-    auto scratch =
+    const auto scratch =
         createHoistedScratchStorage(operation, op.getResultTypes(), rewriter);
-    if (failed(scratch)) {
-      return rewriter.notifyMatchFailure(
-          op, "result-bearing scf.index_switch requires an automatic "
-              "allocation scope");
-    }
 
     auto newOp =
         IndexSwitchOp::create(rewriter, op.getLoc(), results, op.getArg(),
@@ -1709,10 +1698,10 @@ struct ConvertSCFIndexSwitchOp final
 
       auto yield = cast<scf::YieldOp>(newBlock->getTerminator());
       rewriter.setInsertionPoint(yield);
-      if (!scratch->empty()) {
+      if (!scratch.empty()) {
         auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
         for (auto [value, storage] :
-             llvm::zip_equal(yield.getResults(), *scratch)) {
+             llvm::zip_equal(yield.getResults(), scratch)) {
           memref::StoreOp::create(rewriter, op.getLoc(), value, storage,
                                   ValueRange{index});
         }
@@ -1732,10 +1721,10 @@ struct ConvertSCFIndexSwitchOp final
 
     rewriter.setInsertionPointAfter(newOp);
     SmallVector<Value> classicalResults;
-    classicalResults.reserve(scratch->size());
-    if (!scratch->empty()) {
+    classicalResults.reserve(scratch.size());
+    if (!scratch.empty()) {
       auto index = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-      for (auto storage : *scratch) {
+      for (auto storage : scratch) {
         classicalResults.push_back(memref::LoadOp::create(
             rewriter, op.getLoc(), storage, ValueRange{index}));
       }
