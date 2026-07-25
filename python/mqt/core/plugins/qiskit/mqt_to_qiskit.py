@@ -409,7 +409,7 @@ def mqt_to_qiskit(qc: QuantumComputation, *, set_layout: bool = False) -> Quantu
         p2v[virtual] = qubit_map[physical]
     final_layout = Layout().from_qubit_list(p2v, *circ.qregs)
 
-    circ._layout = TranspileLayout(  # noqa: SLF001
+    circ._layout = TranspileLayout(  # ruff:ignore[private-member-access]
         initial_layout=initial_layout,
         input_qubit_mapping={qubit: idx for idx, qubit in qubit_map.items()},
         final_layout=final_layout,

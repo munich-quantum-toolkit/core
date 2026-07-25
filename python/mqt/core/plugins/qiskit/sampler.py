@@ -88,7 +88,7 @@ class QDMISampler(BaseSamplerV2):
 
         # Use PrimitiveJob to handle asynchronous execution
         job = PrimitiveJob(self._run, coerced_pubs)
-        job._submit()  # noqa: SLF001
+        job._submit()  # ruff:ignore[private-member-access]
         return job
 
     def _run(self, pubs: list[SamplerPub]) -> PrimitiveResult[SamplerPubResult]:
