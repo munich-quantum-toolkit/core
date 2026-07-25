@@ -447,6 +447,22 @@ private:
     return newIfOp;
   }
 
+  /// Extend the target arguments of an `IndexSwitchOp` by adding a given range
+  /// of additional SSA values. Replaces the existing operation and returns the
+  /// newly created one.
+  static IndexSwitchOp extend(IndexSwitchOp switchOp, ValueRange addons,
+                              IRRewriter& rewriter) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(switchOp);
+
+    auto newSwitchOp = switchOp.replaceWithAdditionalTargets(rewriter, addons);
+    for (const auto [before, after] : llvm::zip_equal(
+             addons, newSwitchOp.getLinearResults().take_back(addons.size()))) {
+      rewriter.replaceAllUsesExcept(before, after, newSwitchOp);
+    }
+    return newSwitchOp;
+  }
+
   /// Extend the arguments of an `scf::WhileOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
@@ -724,8 +740,8 @@ private:
 
               auto newIfOp = extend(ifOp, to_vector(qubits), rewriter);
 
-              for (const auto [qubit, result] :
-                   llvm::zip_equal(newIfOp.getQubits(), newIfOp.getResults())) {
+              for (const auto [qubit, result] : llvm::zip_equal(
+                       newIfOp.getQubits(), newIfOp.getLinearResults())) {
                 qubits.insert(result);
                 qubits.erase(qubit);
               }
@@ -738,6 +754,26 @@ private:
               stack.emplace_back(
                   newIfOp.getElseRegion(),
                   DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
+            })
+            .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
+              assert(qubits.size() == layout.nqubits());
+
+              llvm::for_each(switchOp.getTargets(),
+                             [&](Value value) { qubits.erase(value); });
+
+              auto newSwitchOp = extend(switchOp, to_vector(qubits), rewriter);
+              for (const auto [target, result] :
+                   llvm::zip_equal(newSwitchOp.getTargets(),
+                                   newSwitchOp.getLinearResults())) {
+                qubits.insert(result);
+                qubits.erase(target);
+              }
+
+              for (Region* region : newSwitchOp.getRegions()) {
+                const auto args = region->getArguments();
+                stack.emplace_back(*region,
+                                   DenseSet<Value>(args.begin(), args.end()));
+              }
             })
             .Case<ResetOp, MeasureOp>([&](auto resetOp) {
               qubits.insert(resetOp.getQubitOut());
@@ -1150,7 +1186,7 @@ private:
                     released.emplace_back(op);
                   }
                 })
-                .template Case<scf::ForOp, scf::WhileOp, IfOp>(
+                .template Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
                     [&](auto op) { stack.emplace_back(op, indices); });
           }
 
@@ -1208,6 +1244,11 @@ private:
               return SmallVector<RoutingBundle, 2>{
                   RoutingBundle{.layout = parent.layout},
                   RoutingBundle{.layout = parent.layout}};
+            })
+            .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
+              return SmallVector<RoutingBundle, 2>(
+                  switchOp.getNumRegions(),
+                  RoutingBundle{.layout = parent.layout});
             });
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
@@ -1277,6 +1318,29 @@ private:
                              ? ifOp.getTiedThenYieldedValue(arg)->get()
                              : ifOp.getTiedElseYieldedValue(arg)->get();
                 }
+              }());
+            }
+          })
+          .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
+            OpOperand* const target = switchOp.getTiedTarget(res);
+            for (Region* region : switchOp.getRegions()) {
+              const auto regionNumber = region->getRegionNumber();
+              const auto arg =
+                  regionNumber == 0
+                      ? switchOp.getTiedDefaultBlockArgument(target)
+                      : switchOp.getTiedCaseBlockArgument(target,
+                                                          regionNumber - 1);
+              auto& child = children[regionNumber];
+              child.infos.insertOrUpdate(child.infos.size(), prog);
+              child.wires.emplace_back([&] -> Value {
+                if constexpr (Direction == WireDirection::Forward) {
+                  return arg;
+                }
+                return regionNumber == 0
+                           ? switchOp.getTiedDefaultYieldedValue(arg)->get()
+                           : switchOp
+                                 .getTiedCaseYieldedValue(arg, regionNumber - 1)
+                                 ->get();
               }());
             }
           });
@@ -1362,6 +1426,13 @@ private:
               insertSWAPs<Mode>(fst, children[0], stats, rewriter);
               insertSWAPs<Mode>(snd, children[1], stats, rewriter);
               return convergedLayout;
+            })
+            .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
+              for (auto& child : children) {
+                const auto swaps = restore(child.layout, parent.layout);
+                insertSWAPs<Mode>(swaps, child, stats, rewriter);
+              }
+              return parent.layout;
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
@@ -1387,9 +1458,9 @@ private:
                 yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
                                             children[1]));
           })
-          .template Case<IfOp>([&](IfOp ifOp) {
+          .template Case<IfOp, IndexSwitchOp>([&](auto branchOp) {
             for (const auto [region, child] :
-                 llvm::zip_equal(ifOp->getRegions(), children)) {
+                 llvm::zip_equal(branchOp->getRegions(), children)) {
               auto yieldOp = cast<YieldOp>(region.front().getTerminator());
               rewriter->setInsertionPoint(yieldOp);
               rewriter->replaceOpWithNewOp<YieldOp>(
