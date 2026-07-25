@@ -1033,10 +1033,10 @@ private:
             return WalkResult::advance();
           }
 
-          for (const auto& [op, indices] : ready) {
+          for (const auto& [op, item] : ready) {
             if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
-              const auto i0 = indices[0];
-              const auto i1 = indices[1];
+              const auto i0 = item.indices[0];
+              const auto i1 = item.indices[1];
 
               const auto prog0 = infos.lookupProgram(i0);
               const auto prog1 = infos.lookupProgram(i1);
@@ -1121,13 +1121,13 @@ private:
             return WalkResult::advance();
           }
 
-          for (const auto& [readyOp, indices] : ready) {
+          for (const auto& [readyOp, item] : ready) {
             TypeSwitch<Operation*>(readyOp)
                 .template Case<BarrierOp>(
                     [&](BarrierOp op) { released.emplace_back(op); })
                 .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                  const auto prog0 = infos.lookupProgram(indices[0]);
-                  const auto prog1 = infos.lookupProgram(indices[1]);
+                  const auto prog0 = infos.lookupProgram(item.indices[0]);
+                  const auto prog1 = infos.lookupProgram(item.indices[1]);
                   if (const auto [hw0, hw1] =
                           layout.getHardwareIndices(prog0, prog1);
                       device->areAdjacent(hw0, hw1)) {
@@ -1135,7 +1135,7 @@ private:
                   }
                 })
                 .template Case<scf::ForOp, scf::WhileOp, IfOp>(
-                    [&](auto op) { stack.emplace_back(op, indices); });
+                    [&](auto op) { stack.emplace_back(op, item.indices); });
           }
 
           if (released.empty()) {
