@@ -27,8 +27,7 @@ from mqt.core.mlir import (
 )
 
 MLIR_STRING = r"""module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
-    %c0_i64 = arith.constant 0 : i64
+  func.func @main() -> memref<2xi1> attributes {passthrough = ["entry_point"]} {
     %c1 = arith.constant 1 : index
     %c0 = arith.constant 0 : index
     %alloc = memref.alloc() : memref<2x!qc.qubit>
@@ -39,8 +38,13 @@ MLIR_STRING = r"""module {
       qc.x %arg0 : !qc.qubit
       qc.yield
     } : {!qc.qubit}, {!qc.qubit}
+    %alloc_0 = memref.alloc() : memref<2xi1>
+    %2 = qc.measure %0 : !qc.qubit -> i1
+    memref.store %2, %alloc_0[%c0] : memref<2xi1>
+    %3 = qc.measure %1 : !qc.qubit -> i1
+    memref.store %3, %alloc_0[%c1] : memref<2xi1>
     memref.dealloc %alloc : memref<2x!qc.qubit>
-    return %c0_i64 : i64
+    return %alloc_0 : memref<2xi1>
   }
 }
 """
@@ -64,13 +68,12 @@ def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
     assert ir.count("qc.x ") == 1
 
     if not measured:
-        assert "qc.measure" not in ir
         assert "func.func @main() -> i64" in ir
+        assert "qc.measure" not in ir
         return
 
+    assert "func.func @main() -> memref<2xi1>" in ir
     assert ir.count("qc.measure") == 2
-    assert "func.func @main() -> (i1, i1)" in ir
-    assert ": i1, i1" in ir
 
 
 def test_compile_program_jeff_file() -> None:
