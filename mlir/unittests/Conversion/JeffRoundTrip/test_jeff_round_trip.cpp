@@ -248,7 +248,7 @@ TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
 TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  qco::QCODialect, scf::SCFDialect>();
+                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto program = mqt::test::buildMLIRProgram(
@@ -261,11 +261,12 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   EXPECT_EQ(
       main->getAttrOfType<ArrayAttr>("passthrough"),
       ArrayAttr::get(&context, {StringAttr::get(&context, "entry_point")}));
+  auto cregType = MemRefType::get({1}, IntegerType::get(&context, 1));
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
-  EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
+  EXPECT_EQ(main.getFunctionType().getResult(0), cregType);
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   ASSERT_EQ(returnOp.getNumOperands(), 1);
-  EXPECT_TRUE(returnOp.getOperand(0).getType().isInteger(1));
+  EXPECT_EQ(returnOp.getOperand(0).getType(), cregType);
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
