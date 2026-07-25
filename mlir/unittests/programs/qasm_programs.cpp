@@ -283,6 +283,7 @@ const std::string floatingPowX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
 pow(0.5) @ x q;
+output bit result = measure q;
 )qasm";
 
 const std::string booleanPowX = R"qasm(OPENQASM 3.0;
@@ -1358,6 +1359,12 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       {"induction-variable-index", inductionVariableIndex},
       {"checked-integer-state", checkedIntegerState},
       {"dynamic-range", dynamicRange},
+      {"pow-two-x", powTwoX},
+      {"negative-pow-s", negativePowS},
+      {"controlled-inverse-pow-s", controlledInversePowS},
+      {"nested-pow-x", nestedPowX},
+      {"broadcast-pow-x", broadcastPowX},
+      {"floating-pow-x", floatingPowX},
   };
   return programs;
 }
@@ -1370,6 +1377,12 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
       {"scalar-loop-state", scalarLoopState},
       {"reset", resetQubitAfterSingleOp},
       {"mixed-controls", mixedControlledX},
+      {"pow-two-x", powTwoX},
+      {"negative-pow-s", negativePowS},
+      {"controlled-inverse-pow-s", controlledInversePowS},
+      {"nested-pow-x", nestedPowX},
+      {"broadcast-pow-x", broadcastPowX},
+      {"floating-pow-x", floatingPowX},
   };
   return programs;
 }
@@ -1380,6 +1393,7 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
       {"induction-variable-index", inductionVariableIndex},
       {"checked-integer-state", checkedIntegerState},
       {"dynamic-range", dynamicRange},
+      {"custom-pow-hs", customPowHS},
   };
   return programs;
 }
@@ -1390,6 +1404,8 @@ llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms() {
       {"arithmetic-parameters", expressionArithmetic},
       {"math-parameters", expressionMathFunctions},
       {"barrier", barrierMultipleQubits},
+      {"pow-two-x", powTwoX},
+      {"floating-pow-x", floatingPowX},
   };
   return programs;
 }

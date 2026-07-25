@@ -72,6 +72,7 @@ constexpr std::array CATALOG{
                      false, true},
     GateCatalogEntry{"dcx", "dcx", 0, 0, 2, Availability::Compatibility},
     GateCatalogEntry{"ecr", "ecr", 0, 0, 2, Availability::Compatibility},
+    GateCatalogEntry{"rccx", "rccx", 0, 0, 3, Availability::Compatibility},
     GateCatalogEntry{"rxx", "rxx", 1, 0, 2, Availability::Compatibility},
     GateCatalogEntry{"ryy", "ryy", 1, 0, 2, Availability::Compatibility},
     GateCatalogEntry{"rzx", "rzx", 1, 0, 2, Availability::Compatibility},

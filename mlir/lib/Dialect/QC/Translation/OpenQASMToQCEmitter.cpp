@@ -35,6 +35,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OperationSupport.h>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -126,6 +127,37 @@ private:
   }
 
   static constexpr std::size_t projectedEmissionLimit = 100000;
+
+  [[nodiscard]] static bool
+  isExactlyRepresentableAsDouble(const std::uint64_t magnitude) {
+    if (magnitude == 0) {
+      return true;
+    }
+    auto significand = magnitude;
+    while ((significand & 1U) == 0) {
+      significand >>= 1U;
+    }
+    return std::bit_width(significand) <= std::numeric_limits<double>::digits;
+  }
+
+  [[nodiscard]] static bool
+  isExactlyRepresentableAsDouble(const frontend::ScalarExpression& expression) {
+    if (expression.kind != frontend::ExpressionKind::Constant) {
+      return true;
+    }
+    if (expression.type == frontend::ScalarType::Uint) {
+      return isExactlyRepresentableAsDouble(
+          std::get<std::uint64_t>(expression.constant));
+    }
+    if (expression.type != frontend::ScalarType::Int) {
+      return true;
+    }
+    const auto value = std::get<std::int64_t>(expression.constant);
+    const auto magnitude = value < 0
+                               ? static_cast<std::uint64_t>(-(value + 1)) + 1U
+                               : static_cast<std::uint64_t>(value);
+    return isExactlyRepresentableAsDouble(magnitude);
+  }
 
   [[nodiscard]] const oq3::frontend::GateDefinition*
   findCustomGate(const StringRef name) const {
@@ -354,12 +386,14 @@ private:
         continue;
       }
       for (const auto& modifier : application->modifiers) {
-        if (modifier.kind == oq3::frontend::ModifierKind::Pow) {
+        if (modifier.kind == oq3::frontend::ModifierKind::Pow &&
+            !isExactlyRepresentableAsDouble(
+                program.expressions.at(*modifier.operand))) {
           const auto& source = statement.location;
           llvm::errs() << source.filename << ':' << source.line << ':'
                        << source.column
-                       << ": OpenQASM QC emission error: power gate modifiers "
-                          "are not supported by the QC dialect.\n";
+                       << ": OpenQASM QC emission error: power modifier "
+                          "exponent cannot be represented exactly as an f64.\n";
           return false;
         }
       }
@@ -876,6 +910,7 @@ private:
             .Case("iswap", qc::iSWAPOp::getOperationName())
             .Case("dcx", qc::DCXOp::getOperationName())
             .Case("ecr", qc::ECROp::getOperationName())
+            .Case("rccx", qc::RCCXOp::getOperationName())
             .Case("rxx", qc::RXXOp::getOperationName())
             .Case("ryy", qc::RYYOp::getOperationName())
             .Case("rzx", qc::RZXOp::getOperationName())
@@ -961,11 +996,13 @@ private:
     return result;
   }
 
-  LogicalResult emitModifiers(OpBuilder& opBuilder,
-                              const frontend::GateApplication& application,
-                              const Location loc, ValueRange parameters,
-                              ArrayRef<std::int64_t> controlCounts,
-                              const std::size_t position, ValueRange qubits) {
+  LogicalResult
+  emitModifiers(OpBuilder& opBuilder,
+                const frontend::GateApplication& application,
+                const Location loc, ValueRange parameters,
+                ArrayRef<std::int64_t> controlCounts,
+                ArrayRef<std::variant<double, Value>> modifierOperands,
+                const std::size_t position, ValueRange qubits) {
     if (position == application.modifiers.size()) {
       return emitResolvedGate(opBuilder, application, loc, parameters, qubits);
     }
@@ -974,31 +1011,45 @@ private:
       LogicalResult result = success();
       qc::InvOp::create(opBuilder, loc, qubits, [&](ValueRange aliases) {
         result = emitModifiers(opBuilder, application, loc, parameters,
-                               controlCounts, position + 1, aliases);
+                               controlCounts, modifierOperands, position + 1,
+                               aliases);
       });
       return result;
     }
+    if (kind == frontend::ModifierKind::Pow) {
+      LogicalResult result = success();
+      qc::PowOp::create(opBuilder, loc, modifierOperands[position], qubits,
+                        [&](ValueRange aliases) {
+                          result = emitModifiers(opBuilder, application, loc,
+                                                 parameters, controlCounts,
+                                                 modifierOperands, position + 1,
+                                                 aliases);
+                        });
+      return result;
+    }
     return emitControls(opBuilder, application, loc, parameters, controlCounts,
-                        position + 1, controlCounts[position], qubits);
+                        modifierOperands, position + 1, controlCounts[position],
+                        qubits);
   }
 
-  LogicalResult emitControls(OpBuilder& opBuilder,
-                             const frontend::GateApplication& application,
-                             const Location loc, ValueRange parameters,
-                             ArrayRef<std::int64_t> controlCounts,
-                             const std::size_t nextPosition,
-                             const std::size_t remainingControls,
-                             ValueRange qubits) {
+  LogicalResult
+  emitControls(OpBuilder& opBuilder,
+               const frontend::GateApplication& application, const Location loc,
+               ValueRange parameters, ArrayRef<std::int64_t> controlCounts,
+               ArrayRef<std::variant<double, Value>> modifierOperands,
+               const std::size_t nextPosition,
+               const std::size_t remainingControls, ValueRange qubits) {
     if (remainingControls == 0) {
       return emitModifiers(opBuilder, application, loc, parameters,
-                           controlCounts, nextPosition, qubits);
+                           controlCounts, modifierOperands, nextPosition,
+                           qubits);
     }
     LogicalResult result = success();
     qc::CtrlOp::create(opBuilder, loc, qubits.take_front(1),
                        qubits.drop_front(1), [&](ValueRange aliases) {
                          result = emitControls(opBuilder, application, loc,
                                                parameters, controlCounts,
-                                               nextPosition,
+                                               modifierOperands, nextPosition,
                                                remainingControls - 1, aliases);
                        });
     return result;
@@ -1053,8 +1104,44 @@ private:
       }
     }
     SmallVector<std::int64_t> controlCounts(application.modifiers.size(), 0);
+    SmallVector<std::variant<double, Value>> modifierOperands(
+        application.modifiers.size());
     for (const auto [position, modifier] :
          llvm::enumerate(application.modifiers)) {
+      if (modifier.kind == frontend::ModifierKind::Pow) {
+        const auto& expression = program.expressions.at(*modifier.operand);
+        if (expression.kind == frontend::ExpressionKind::Constant) {
+          switch (expression.type) {
+          case frontend::ScalarType::Int:
+            modifierOperands[position] = static_cast<double>(
+                std::get<std::int64_t>(expression.constant));
+            break;
+          case frontend::ScalarType::Uint:
+            modifierOperands[position] = static_cast<double>(
+                std::get<std::uint64_t>(expression.constant));
+            break;
+          case frontend::ScalarType::Float:
+            modifierOperands[position] = std::get<double>(expression.constant);
+            break;
+          case frontend::ScalarType::Bool:
+            llvm_unreachable("boolean power modifiers fail semantic analysis");
+          }
+          continue;
+        }
+        auto exponent =
+            emitExpression(opBuilder, *modifier.operand, gateParameters);
+        if (isa<IntegerType>(exponent.getType())) {
+          exponent = expression.type == frontend::ScalarType::Uint
+                         ? arith::UIToFPOp::create(
+                               opBuilder, loc, opBuilder.getF64Type(), exponent)
+                               .getResult()
+                         : arith::SIToFPOp::create(
+                               opBuilder, loc, opBuilder.getF64Type(), exponent)
+                               .getResult();
+        }
+        modifierOperands[position] = exponent;
+        continue;
+      }
       if (modifier.kind != frontend::ModifierKind::Ctrl &&
           modifier.kind != frontend::ModifierKind::NegCtrl) {
         continue;
@@ -1098,7 +1185,7 @@ private:
           }
           const auto result =
               emitModifiers(opBuilder, application, loc, parameters,
-                            controlCounts, 0, qubits);
+                            controlCounts, modifierOperands, 0, qubits);
           negativeOffset = 0;
           for (const auto [position, modifier] :
                llvm::enumerate(application.modifiers)) {

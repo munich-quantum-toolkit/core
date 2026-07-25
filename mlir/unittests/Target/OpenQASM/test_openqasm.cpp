@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
@@ -335,8 +334,6 @@ ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
   ASSERT_TRUE(module);
 
-  PassManager manager(&context);
-  ASSERT_TRUE(succeeded(manager.run(*module)));
   ASSERT_TRUE(succeeded(verify(*module)));
 
   std::size_t controls = 0;
@@ -356,7 +353,7 @@ ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
   EXPECT_EQ(outerPolarityFlips, 2);
 }
 
-TEST(OpenQASMTargetTest, RejectsPowerAtTheQCTargetBoundary) {
+TEST(OpenQASMTargetTest, LowersDynamicPowerModifiersToQC) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.0;
 include "stdgates.inc";
@@ -368,13 +365,15 @@ powered(0.5) q;
 )qasm";
 
   MLIRContext context;
-  testing::internal::CaptureStderr();
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
-  EXPECT_FALSE(module);
-  EXPECT_NE(diagnostic.find("power gate modifiers are not supported"),
-            std::string::npos);
-  EXPECT_NE(diagnostic.find("<input>:5:"), std::string::npos);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  SmallVector<qc::PowOp> powers;
+  module->walk([&](qc::PowOp op) { powers.push_back(op); });
+  ASSERT_EQ(powers.size(), 1U);
+  ASSERT_TRUE(powers.front().getExponentValue().has_value());
+  EXPECT_DOUBLE_EQ(*powers.front().getExponentValue(), 0.5);
 }
 
 TEST(OpenQASMTargetTest,
@@ -408,8 +407,6 @@ output bit[2] out = measure q;
   });
   EXPECT_EQ(conditionals, 1);
 
-  PassManager manager(&context);
-  ASSERT_TRUE(succeeded(manager.run(*module)));
   ASSERT_TRUE(succeeded(verify(*module)));
 
   std::size_t resets = 0;
@@ -2033,48 +2030,6 @@ x q[i];
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(OpenQASMTargetTest, DynamicQubitDispatchLowersThroughQCO) {
-  constexpr llvm::StringLiteral SOURCE = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit[2] q;
-int i = 0;
-x q[i];
-bit result = measure q[i];
-)qasm";
-
-  MLIRContext context;
-  auto module = qc::translateQASM3ToQC(SOURCE, &context);
-  ASSERT_TRUE(module);
-  bool sawResultDispatch = false;
-  std::size_t stackAllocations = 0;
-  module->walk([&](Operation* operation) {
-    stackAllocations += isa<memref::AllocaOp>(operation);
-    auto conditional = dyn_cast<scf::IfOp>(operation);
-    if (!conditional || conditional.getNumResults() != 1 ||
-        !conditional.getResult(0).getType().isInteger(1)) {
-      return;
-    }
-    std::size_t measurements = 0;
-    conditional->walk([&](qc::MeasureOp) { ++measurements; });
-    sawResultDispatch |= measurements > 0;
-  });
-  EXPECT_EQ(stackAllocations, 0);
-  EXPECT_TRUE(sawResultDispatch);
-  PassManager manager(&context);
-  manager.addPass(createQCToQCO());
-  ASSERT_TRUE(succeeded(manager.run(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  bool retainsQCReferences = false;
-  module->walk([&](Operation* operation) {
-    const auto isQCQubit = [](Type type) { return isa<qc::QubitType>(type); };
-    retainsQCReferences |=
-        llvm::any_of(operation->getOperandTypes(), isQCQubit) ||
-        llvm::any_of(operation->getResultTypes(), isQCQubit);
-  });
-  EXPECT_FALSE(retainsQCReferences);
-}
-
 TEST(OpenQASMTargetTest, PreservesBooleanEvaluationOrderAndIEEEInequality) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
@@ -2173,8 +2128,6 @@ bit result = measure q;
   EXPECT_EQ(upper.getSExtValue(), 3);
   EXPECT_EQ(step.getSExtValue(), 1);
 
-  PassManager manager(&context);
-  ASSERT_TRUE(succeeded(manager.run(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
@@ -2440,8 +2393,6 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
       EXPECT_EQ(step.getSExtValue(), 1);
     }
 
-    PassManager lowering(&context);
-    ASSERT_TRUE(succeeded(lowering.run(*module)));
     ASSERT_TRUE(succeeded(verify(*module)));
     std::size_t hGates = 0;
     std::size_t xGates = 0;

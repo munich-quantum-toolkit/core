@@ -22,17 +22,21 @@ path observable stage by stage.
 The parser and semantic analyzer remain independent of MLIR and continue to
 recognize valid source even when the selected compiler target lacks a concept.
 The gate `pow @` modifier is the defining example: parsing and semantic analysis
-succeed, but the direct QC emitter reports a source-located unsupported-feature
-diagnostic until QC gains power semantics. There is no OQ3 MLIR dialect or
-OQ3-to-QC conversion. An intermediate dialect that cannot proceed through the
-compiler adds maintenance and test surface without user value.
+preserve its ordered numeric exponent, and the direct emitter now creates
+`qc.pow` after that operation became available on `main`. Downstream conversions
+decide whether a particular power body can be canonicalized or represented.
+There is no OQ3 MLIR dialect or OQ3-to-QC conversion. An intermediate dialect
+that cannot proceed through the compiler adds maintenance and test surface
+without user value.
 
 The scope is the staged frontend under `mlir/include/mlir/Target/OpenQASM` and
 `mlir/lib/Target/OpenQASM`, direct QC translation under
 `mlir/lib/Dialect/QC/Translation`, the OpenQASM fixture corpus and compiler
 tests, and only those existing conversion files for which a full-chain fixture
 demonstrates a real defect. Preserve the legacy `QuantumComputation` parser and
-unrelated behavior. Do not push or publish GitHub text under this plan.
+unrelated behavior. The 2026-07-25 request authorizes updating the existing PR
+branch after the rebase is validated, but does not authorize resolving review
+threads or publishing new PR text.
 
 ## Progress
 
@@ -61,7 +65,8 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
       private `OpenQASMToQCEmitter` files and kept `TranslateQASM3ToQC.cpp` as a
       small public adapter.
 - [x] (2026-07-16) Converted target tests from OQ3 inspection to direct QC
-  behavior and precise target diagnostics, including rejection of `pow @`.
+      behavior and precise target diagnostics. The original `pow @` rejection
+      was replaced after QC gained a native power modifier.
 - [x] (2026-07-16) Defined a shared `{name, source}` OpenQASM compiler corpus
       and added public-API full-chain tests, including both direct composition
       and `runDefaultPipeline`.
@@ -129,6 +134,19 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
 - [x] (2026-07-16) Rebuilt and ran all affected frontend, translation,
       conversion, compiler, QIR, and legacy-parser tests. The warning-as-error
       documentation session, repository lint, and diff checks pass.
+- [x] (2026-07-25) Rebased the complete branch onto `origin/main` at `7c50a17a`,
+      after #1932, #1933, #1934, #1935, #1936, #1938, #1939, and the QC/QCO
+      power-modifier work had landed. Conflict resolution retained the extracted
+      upstream implementations and removed those conversion changes from the
+      effective OpenQASM diff.
+- [x] (2026-07-25) Integrated the current QC power modifier into direct OpenQASM
+      emission, preserved ordered and nested modifiers, accepted floating
+      exponents, retained exact-f64 checks for constant integer exponents, and
+      restored the `rccx` compatibility dispatch.
+- [x] (2026-07-25) Extended the public compiler corpus with six representative
+      power programs that pass QC to QCO to QC to QIR and `jeff`, two Base power
+      cases, and one composite-body power case that fails explicitly at
+      QCO-to-`jeff`.
 
 ## Surprises & Discoveries
 
@@ -141,10 +159,11 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   could not construct those statements. Evidence: the staged frontend now has
   source fixtures that produce and exercise standard SCF regions.
 
-- Observation: valid source and target support are distinct, but a dialect is
-  not required to preserve that distinction. Evidence: the typed semantic
-  program already retains modifiers and source locations, so a QC emitter can
-  reject `pow @` before creating target IR.
+- Observation: valid source and downstream target support are distinct, but a
+  source dialect is not required to preserve that distinction. Evidence: the
+  typed semantic program retains ordered modifiers and source locations, the QC
+  emitter creates `qc.pow`, and an unsupported composite power is rejected only
+  by the later QIR or `jeff` conversion that cannot represent it.
 
 - Observation: the OQ3 dialect has shrunk to gate declarations, applications,
   and modifiers while classical computation and control flow already use
@@ -229,6 +248,14 @@ unrelated behavior. Do not push or publish GitHub text under this plan.
   adapter. Rationale: a large emitter should not obscure the stable translation
   entry points, and private files avoid exposing a second public API.
   Date/Author: 2026-07-16 / Codex.
+
+- Decision: lower numeric OpenQASM `pow @` modifiers to nested `qc.pow`
+  operations in source order. Rationale: QC and QCO now represent integer,
+  floating, and dynamic f64 exponents; retaining the modifier lets downstream
+  canonicalization and target conversion own their actual capability limits.
+  Constant integer exponents that cannot be represented exactly as f64 are
+  rejected at QC emission rather than silently rounded. Date/Author: 2026-07-25
+  / Codex.
 
 - Decision: rename the frontend library target to `MLIROpenQASMFrontend`.
   Rationale: after emission moves to QC translation, the target contains only
@@ -427,9 +454,9 @@ ordered inverse/positive-control/negative-control modifiers, and recursive
 inlining of typed custom-gate bodies. Semantic analysis continues to reject
 source-illegal recursion. The emitter preflights reachable custom-gate expansion
 cost, target support, modifier operands, and structured custom-gate limitations
-before creating each affected application. A `pow @` modifier produces a
-source-located error and a null translation result; scalar exponentiation and
-the scalar `pow()` function remain supported.
+before creating each affected application. A `pow @` modifier produces an
+ordered `qc.pow` region; scalar exponentiation and the scalar `pow()` function
+remain separate classical expressions.
 
 Acceptance for this milestone is a clean build with no OQ3 dialect or conversion
 target and direct QC translation for existing supported sources. Repository
@@ -446,13 +473,14 @@ is OQ3 operation verification. Preserve behavior tests for source ownership,
 recovery, includes, scope, initialization, expressions, broadcasting, dynamic
 dispatch, control flow, recursion, and cost bounds.
 
-Add a positive direct-emission test for representative primitive and custom
-gates and a negative test proving that a valid `pow @` program parses and
-analyzes but `qc::translateQASM3ToQC` returns null with a source-located message
-stating that QC power support is unavailable. Add equivalent focused cases for
-every other frontend-accepted feature that the emitter rejects. Update
-`mlir/unittests/Target/OpenQASM/CMakeLists.txt` to link `MLIROpenQASMFrontend`,
-`MLIRQCTranslation`, and only directly used test libraries.
+Add positive direct-emission tests for representative primitive and custom gates
+and for constant, floating, dynamic, nested, controlled, inverted, and broadcast
+`pow @` modifiers. Retain a source-located failure for constant integer
+exponents that cannot be represented exactly by QC's f64 exponent. Add
+equivalent focused cases for every other frontend-accepted feature that the
+emitter rejects. Update `mlir/unittests/Target/OpenQASM/CMakeLists.txt` to link
+`MLIROpenQASMFrontend`, `MLIRQCTranslation`, and only directly used test
+libraries.
 
 Keep exact QC equivalence tests in
 `mlir/unittests/Dialect/QC/Translation/test_qasm3_translation.cpp`. They compare
@@ -540,9 +568,9 @@ standard Adaptive QIR, `jeff`, Base, restriction or rejection reason, and the
 representative test. Use precise statuses such as supported, recognized and
 rejected semantically, or accepted by the frontend and rejected by QC. Mark
 structured fixtures Adaptive-only and record Base support only for the tested
-straight-line subset. List `pow @` as parsed and semantically valid but rejected
-by QC. Update `CHANGELOG.md` to describe direct OpenQASM import without an OQ3
-dialect claim.
+straight-line subset. List `pow @` as supported by QC and record downstream
+canonicalization restrictions separately. Update `CHANGELOG.md` to describe
+direct OpenQASM import without an OQ3 dialect claim.
 
 Run formatting, all affected unit binaries, the legacy parser regression,
 warning-as-error documentation, coverage, and repository lint after cleanup.
@@ -622,10 +650,11 @@ diagnostics at the owning stage.
 
 Direct emission is accepted when supported programs return verified modules
 containing QC and standard MLIR dialects only. Primitive aliases, custom gates,
-broadcasting, controls, inverse and negative controls, expressions, dynamic
-indices, measurements, reset, barrier, and structured control flow must retain
-their tested behavior. A valid `pow @` program must parse and analyze, then fail
-QC translation with a precise source-located message and no fallback IR.
+broadcasting, controls, inverse, negative controls, ordered power modifiers,
+expressions, dynamic indices, measurements, reset, barrier, and structured
+control flow must retain their tested behavior. Valid numeric `pow @` programs
+must produce `qc.pow`; constant integer exponents must not be rounded silently
+when converted to f64.
 
 The complete compiler is accepted when every broad corpus fixture passes the
 explicit public API chain through optimized QCO, reconstructed QC, Adaptive QIR,
@@ -660,16 +689,17 @@ repeatable and write only to ignored build directories. If CMake retains deleted
 OQ3 targets, remove the ignored `build` and `docs/_build` directories and
 configure again; do not add source-tree cleanup workarounds.
 
-Make the architecture transition in coherent local commits when useful, but do
-not push. Before removing an old source, ensure its required direct-emission
-behavior has moved into the private emitter and its tests pass. If a downstream
-fixture fails, preserve the failing source, reduce it to native IR, and repair
-the owning conversion instead of introducing a parser-side special case.
+Make the architecture transition in coherent local commits when useful. Before
+removing an old source, ensure its required direct-emission behavior has moved
+into the private emitter and its tests pass. If a downstream fixture fails,
+preserve the failing source, reduce it to native IR, and repair the owning
+conversion instead of introducing a parser-side special case.
 
-Never discard unrelated user changes or edit another task worktree. This plan
-does not authorize pushing, changing pull request state, resolving review
-threads, or publishing comments. Any later public action requires explicit human
-authorization and the disclosure required by `docs/ai_usage.md`.
+Never discard unrelated user changes or edit another task worktree. The current
+authorization covers a force-with-lease update of the already-open PR branch
+after the requested rebase. Changing pull request state, resolving review
+threads, or publishing comments still requires separate human authorization and
+the disclosure required by `docs/ai_usage.md`.
 
 ## Artifacts and Notes
 
@@ -679,10 +709,12 @@ and clean focused validation. It also comprised an OQ3 dialect and OQ3-to-QC
 pass that this plan now deliberately removes. Earlier OQ3-specific test counts
 are historical evidence, not revised acceptance evidence.
 
-The target-boundary proof after implementation must read:
+The power target-boundary proof after implementation must read:
 
     analyzeOpenQASM(pow-source) succeeds.
-    translateQASM3ToQC(pow-source) fails at the pow modifier location.
+    translateQASM3ToQC(pow-source) produces an ordered qc.pow region.
+    inexact constant integer exponents fail before silent f64 rounding.
+    unsupported composite powers fail at the owning downstream conversion.
     No OQ3 module is constructed.
 
 The standard-chain proof must record a representative structured fixture
@@ -691,29 +723,23 @@ reaching:
     OpenQASM -> QC -> QCO -> optimized QCO -> QC -> Adaptive QIR
     -> LLVM IR and bitcode
 
-The final corpus contains seventeen standard programs, six `jeff` round-trip
-programs, four `jeff`-incompatible programs, and four Base programs. One native
-`JeffToQCO` regression proves that a serialized entry point with observable
-results regains its marker without losing those results. A native QC-to-QIR
-regression proves that `cf.assert` lowers through LLVM. The latest focused
-validation results are:
+The final corpus contains twenty-three standard programs, twelve `jeff`
+round-trip programs, five `jeff`-incompatible programs, and six Base programs.
+One native `JeffToQCO` regression proves that a serialized entry point with
+observable results regains its marker without losing those results. A native
+QC-to-QIR regression proves that `cf.assert` lowers through LLVM. The latest
+focused validation results are:
 
-    OpenQASM frontend and target: 96 tests passed.
-    OpenQASM compiler corpus: 48 tests passed.
-    Native QC-to-QIR assertion regression: passed.
-    QC translation: 241 tests passed.
-    QC-to-QCO: 124 tests passed.
-    QCO-to-QC: 121 tests passed.
-    `jeff` round trip: 113 tests passed.
-    Compiler pipeline: 164 tests passed, including 48 corpus cases.
-    QC-to-QIR Adaptive: 126 tests passed.
-    QC-to-QIR Base: 107 tests passed.
-    Legacy OpenQASM parser: 97 tests passed.
-    Warning-as-error documentation: passed.
-    Repository lint and diff checks: passed.
-    Frontend and direct-emitter line coverage: 89.9 percent (4117/4579).
+    OpenQASM frontend and target: 95 tests passed.
+    QC translation: 256 tests passed.
+    Compiler pipeline: 188 tests passed, including 69 corpus cases.
+    QC-to-QIR Adaptive: 129 tests passed.
+    QC-to-QIR Base: 111 tests passed.
+    Legacy OpenQASM parser: 101 tests passed.
+    Changed-file repository hooks and diff checks: passed.
 
-No public GitHub action is authorized by this plan.
+The remaining fresh-review findings are recorded outside this baseline repair
+and require the review-selection gate before implementation.
 
 ## Interfaces and Dependencies
 

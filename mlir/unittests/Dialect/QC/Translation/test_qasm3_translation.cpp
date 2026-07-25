@@ -398,18 +398,25 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
 }
 
-TEST(QASM3TranslationErrors, RejectsNonIntegerPowerExponent) {
+TEST(QASM3TranslationErrors, AcceptsFloatingAndRejectsBooleanPowerExponent) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                   memref::MemRefDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::floatingPowX, &context));
+  auto translated = qc::translateQASM3ToQC(qasm::floatingPowX, &context);
+  ASSERT_TRUE(translated);
+  SmallVector<qc::PowOp> powers;
+  translated->walk([&](qc::PowOp op) { powers.push_back(op); });
+  ASSERT_EQ(powers.size(), 1U);
+  ASSERT_TRUE(powers.front().getExponentValue().has_value());
+  EXPECT_DOUBLE_EQ(*powers.front().getExponentValue(), 0.5);
+
   EXPECT_FALSE(qc::translateQASM3ToQC(qasm::booleanPowX, &context));
 }
 
-TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
+TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                   memref::MemRefDialect, scf::SCFDialect>();
@@ -426,7 +433,16 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
   EXPECT_DOUBLE_EQ(*exponent, 9007199254740992.0);
 
   EXPECT_FALSE(qc::translateQASM3ToQC(qasm::inexactLargePowX, &context));
-  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::overflowingNestedPowX, &context));
+
+  translated = qc::translateQASM3ToQC(qasm::overflowingNestedPowX, &context);
+  ASSERT_TRUE(translated);
+  powers.clear();
+  translated->walk([&](qc::PowOp op) { powers.push_back(op); });
+  ASSERT_EQ(powers.size(), 2U);
+  for (auto power : powers) {
+    ASSERT_TRUE(power.getExponentValue().has_value());
+    EXPECT_DOUBLE_EQ(*power.getExponentValue(), 4294967296.0);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
