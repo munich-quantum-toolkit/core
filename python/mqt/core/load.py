@@ -51,6 +51,6 @@ def load(input_circuit: QuantumComputation | str | os.PathLike[str] | QuantumCir
             return QuantumComputation.from_qasm(input_str)
         case _:
             # At this point, we know that the input is a Qiskit QuantumCircuit
-            from .plugins.qiskit import qiskit_to_mqt  # noqa: PLC0415 lazy import
+            from .plugins.qiskit import qiskit_to_mqt  # ruff:ignore[import-outside-top-level] lazy import
 
             return qiskit_to_mqt(input_circuit)
