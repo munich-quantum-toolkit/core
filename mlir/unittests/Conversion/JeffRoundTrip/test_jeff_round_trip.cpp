@@ -25,6 +25,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -209,6 +211,61 @@ static LogicalResult convertJeffToQCO(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(module);
+}
+
+TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  OpBuilder builder(&context);
+  auto loc = builder.getUnknownLoc();
+  auto program = ModuleOp::create(loc);
+  program->setAttr(
+      "jeff.entrypoint",
+      builder.getIntegerAttr(builder.getIntegerType(16, false), 0));
+  program->setAttr("jeff.strings",
+                   builder.getArrayAttr({builder.getStringAttr("main")}));
+
+  auto main = func::FuncOp::create(builder, loc, "main",
+                                   builder.getFunctionType({}, {}));
+  program.push_back(main);
+  auto* block = main.addEntryBlock();
+  builder.setInsertionPointToEnd(block);
+  arith::ConstantIntOp::create(builder, loc, 1, 1);
+  func::ReturnOp::create(builder, loc);
+
+  ASSERT_TRUE(succeeded(convertJeffToQCO(program)));
+  EXPECT_TRUE(succeeded(verify(program)));
+  EXPECT_EQ(main.getFunctionType(),
+            builder.getFunctionType({}, {builder.getI64Type()}));
+  auto returnOp = cast<func::ReturnOp>(block->getTerminator());
+  ASSERT_EQ(returnOp.getNumOperands(), 1);
+  EXPECT_TRUE(returnOp.getOperand(0).getType().isInteger(64));
+}
+
+TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto program = mqt::test::buildMLIRProgram(
+      &context, MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  auto main = program->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_EQ(
+      main->getAttrOfType<ArrayAttr>("passthrough"),
+      ArrayAttr::get(&context, {StringAttr::get(&context, "entry_point")}));
+  ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
+  EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  ASSERT_EQ(returnOp.getNumOperands(), 1);
+  EXPECT_TRUE(returnOp.getOperand(0).getType().isInteger(1));
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {

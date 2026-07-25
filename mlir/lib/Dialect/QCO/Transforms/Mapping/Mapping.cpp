@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
@@ -79,6 +80,12 @@ private:
   using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
   enum class RoutingMode : bool { Cold, Hot };
+
+  /// Return the qubit values in `values`, preserving their relative order.
+  static SmallVector<Value> getQubitValues(ValueRange values) {
+    return to_vector(llvm::make_filter_range(
+        values, [](Value value) { return isa<QubitType>(value.getType()); }));
+  }
 
   class AugmentedDevice {
   public:
@@ -466,11 +473,13 @@ private:
     auto newWhileOp =
         rewriter.create<scf::WhileOp>(whileOp.getLoc(), newTypes, newInits);
 
-    const SmallVector<Location> locs(newTypes.size(), whileOp.getLoc());
+    const SmallVector<Location> beforeLocs(newInits.size(), whileOp.getLoc());
+    const SmallVector<Location> afterLocs(newTypes.size(), whileOp.getLoc());
     Block* newBefBlock =
-        rewriter.createBlock(&newWhileOp.getBefore(), {}, newTypes, locs);
+        rewriter.createBlock(&newWhileOp.getBefore(), {},
+                             ValueRange(newInits).getTypes(), beforeLocs);
     Block* newAftBlock =
-        rewriter.createBlock(&newWhileOp.getAfter(), {}, newTypes, locs);
+        rewriter.createBlock(&newWhileOp.getAfter(), {}, newTypes, afterLocs);
 
     rewriter.mergeBlocks(oldBefBlock, newBefBlock,
                          newBefBlock->getArguments().take_front(oldBefNumArgs));
@@ -499,7 +508,7 @@ private:
 
     SmallVector<Value> newYieldArgs(yieldOp.getResults());
     llvm::append_range(newYieldArgs,
-                       newAftBlock->getArguments().drop_front(oldBefNumArgs));
+                       newAftBlock->getArguments().drop_front(oldAftNumArgs));
 
     rewriter.create<scf::YieldOp>(yieldOp.getLoc(), newYieldArgs);
     rewriter.eraseOp(yieldOp);
@@ -663,36 +672,43 @@ private:
             .Case<scf::ForOp>([&](scf::ForOp forOp) {
               assert(qubits.size() == layout.nqubits());
 
-              llvm::for_each(forOp.getInits(),
+              llvm::for_each(getQubitValues(forOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
 
               auto newForOp = extend(forOp, to_vector(qubits), rewriter);
               for (const auto [init, result] : llvm::zip_equal(
                        newForOp.getInits(), *newForOp.getLoopResults())) {
-                qubits.insert(result);
-                qubits.erase(init);
+                if (isa<QubitType>(init.getType())) {
+                  qubits.insert(result);
+                  qubits.erase(init);
+                }
               }
 
+              const auto regionQubits =
+                  getQubitValues(newForOp.getRegionIterArgs());
               stack.emplace_back(
                   newForOp.getRegion(),
-                  DenseSet<Value>(newForOp.getRegionIterArgs().begin(),
-                                  newForOp.getRegionIterArgs().end()));
+                  DenseSet<Value>(regionQubits.begin(), regionQubits.end()));
             })
             .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
               assert(qubits.size() == layout.nqubits());
 
-              llvm::for_each(whileOp.getInits(),
+              llvm::for_each(getQubitValues(whileOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
 
               auto newWhileOp = extend(whileOp, to_vector(qubits), rewriter);
               for (const auto [init, result] : llvm::zip_equal(
                        newWhileOp.getInits(), newWhileOp.getResults())) {
-                qubits.insert(result);
-                qubits.erase(init);
+                if (isa<QubitType>(init.getType())) {
+                  qubits.insert(result);
+                  qubits.erase(init);
+                }
               }
 
-              const auto beforeArgs = newWhileOp.getBeforeArguments();
-              const auto afterArgs = newWhileOp.getAfterArguments();
+              const auto beforeArgs =
+                  getQubitValues(newWhileOp.getBeforeArguments());
+              const auto afterArgs =
+                  getQubitValues(newWhileOp.getAfterArguments());
               stack.emplace_back(
                   newWhileOp.getBefore(),
                   DenseSet<Value>(beforeArgs.begin(), beforeArgs.end()));
@@ -1148,13 +1164,11 @@ private:
     return stack;
   }
 
-  /// Helper function to realign a terminator operation based on a permutation
-  /// of hardware indices. This constructs a value map from the given bundle and
-  /// reorders the terminator's operands according to the permutation vector.
-  template <typename T, typename... Args>
-  static void realignTerminator(Operation* terminator, ArrayRef<size_t> perm,
-                                const RoutingBundle& bundle,
-                                IRRewriter& rewriter, Args&&... extraArgs) {
+  /// Return `values` with only the qubit entries realigned according to the
+  /// given permutation of hardware indices.
+  static SmallVector<Value> realignQubitValues(ValueRange values,
+                                               ArrayRef<size_t> perm,
+                                               const RoutingBundle& bundle) {
     // Map hardware indices to qubit values for the given bundle.
     DenseMap<size_t, Value> m(bundle.wires.size());
     for (size_t i = 0; i < bundle.wires.size(); ++i) {
@@ -1163,10 +1177,15 @@ private:
       m.try_emplace(hw, bundle.wires[i].qubit());
     }
 
-    rewriter.setInsertionPoint(terminator);
-    rewriter.replaceOpWithNewOp<T>(
-        terminator, std::forward<Args>(extraArgs)...,
-        to_vector(map_range(perm, [&](size_t hw) { return m.at(hw); })));
+    SmallVector<Value> realigned(values);
+    size_t qubitIndex = 0;
+    for (Value& value : realigned) {
+      if (isa<QubitType>(value.getType())) {
+        value = m.at(perm[qubitIndex++]);
+      }
+    }
+    assert(qubitIndex == perm.size());
+    return realigned;
   }
 
   /// Processes the recursive stack item by routing the nested operation and
@@ -1191,11 +1210,30 @@ private:
                   RoutingBundle{.layout = parent.layout}};
             });
 
+    SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
+    size_t numQubitResults = 0;
+    for (const auto [resultIndex, result] : llvm::enumerate(op->getResults())) {
+      if (isa<QubitType>(result.getType())) {
+        resultToQubitIndex[resultIndex] = numQubitResults++;
+      }
+    }
+    assert(numQubitResults == indices.size());
+
+    SmallVector<Value> whileBeforeQubits;
+    SmallVector<Value> whileConditionQubits;
+    if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
+      whileBeforeQubits = getQubitValues(whileOp.getBeforeArguments());
+      whileConditionQubits = getQubitValues(
+          cast<scf::ConditionOp>(whileOp.getBeforeBody()->getTerminator())
+              .getArgs());
+    }
+
     for (size_t i : indices) {
       const auto prog = parent.infos.lookupProgram(i);
       const auto hw = parent.layout.getHardwareIndex(prog);
       const auto res = cast<OpResult>(parent.wires[i].qubit());
       const auto resNum = res.getResultNumber();
+      const auto qubitResNum = *resultToQubitIndex[resNum];
 
       TypeSwitch<Operation*>(op)
           .template Case<scf::ForOp>([&](scf::ForOp forOp) {
@@ -1209,16 +1247,14 @@ private:
               }
             }());
           })
-          .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+          .template Case<scf::WhileOp>([&](scf::WhileOp) {
             children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
             children[0].wires.emplace_back([&] -> Value {
-              auto condOp = cast<scf::ConditionOp>(
-                  whileOp.getBeforeBody()->getTerminator());
-              const auto arg = whileOp.getBeforeArguments()[resNum];
+              const auto arg = whileBeforeQubits[qubitResNum];
               if constexpr (Direction == WireDirection::Forward) {
                 return arg;
               } else {
-                return condOp.getArgs()[resNum];
+                return whileConditionQubits[qubitResNum];
               }
             }());
           })
@@ -1245,7 +1281,7 @@ private:
             }
           });
 
-      permutation[resNum] = hw;
+      permutation[qubitResNum] = hw;
     }
 
     // Route each child branch and prepare the wire iterators for
@@ -1271,13 +1307,14 @@ private:
       children.emplace_back(RoutingBundle{.layout = children[0].layout});
       assert(children.size() == 2);
 
-      const auto rng = [&] -> ValueRange {
+      const auto values = [&] -> ValueRange {
         if constexpr (Direction == WireDirection::Forward) {
           return whileOp.getAfterArguments();
         }
         return cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator())
             .getResults();
       }();
+      const auto rng = getQubitValues(values);
 
       for (const auto& [i, arg] : llvm::enumerate(rng)) {
         const auto hw = permutation[i];
@@ -1338,20 +1375,27 @@ private:
           .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
             auto condOp = cast<scf::ConditionOp>(
                 whileOp.getBeforeBody()->getTerminator());
-            realignTerminator<scf::ConditionOp>(condOp, permutation,
-                                                children[0], *rewriter,
-                                                condOp.getCondition());
-            realignTerminator<scf::YieldOp>(
-                whileOp.getAfterBody()->getTerminator(), permutation,
-                children[1], *rewriter);
+            rewriter->setInsertionPoint(condOp);
+            rewriter->replaceOpWithNewOp<scf::ConditionOp>(
+                condOp, condOp.getCondition(),
+                realignQubitValues(condOp.getArgs(), permutation, children[0]));
+
+            auto yieldOp =
+                cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator());
+            rewriter->setInsertionPoint(yieldOp);
+            rewriter->replaceOpWithNewOp<scf::YieldOp>(
+                yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
+                                            children[1]));
           })
           .template Case<IfOp>([&](IfOp ifOp) {
-            realignTerminator<YieldOp>(
-                ifOp.getThenRegion().front().getTerminator(), permutation,
-                children[0], *rewriter);
-            realignTerminator<YieldOp>(
-                ifOp.getElseRegion().front().getTerminator(), permutation,
-                children[1], *rewriter);
+            for (const auto [region, child] :
+                 llvm::zip_equal(ifOp->getRegions(), children)) {
+              auto yieldOp = cast<YieldOp>(region.front().getTerminator());
+              rewriter->setInsertionPoint(yieldOp);
+              rewriter->replaceOpWithNewOp<YieldOp>(
+                  yieldOp,
+                  realignQubitValues(yieldOp.getTargets(), permutation, child));
+            }
           });
 
       // Sort topologically to fix any occurring SSA dominance errors.

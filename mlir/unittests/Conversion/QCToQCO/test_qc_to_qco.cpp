@@ -21,13 +21,16 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -79,6 +82,203 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQCO());
   return pm.run(module);
+}
+
+namespace {
+
+class QCToQCORegressionTest : public testing::Test {
+protected:
+  MLIRContext context;
+
+  QCToQCORegressionTest() {
+    DialectRegistry registry;
+    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                    arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect, scf::SCFDialect>();
+    context.appendDialectRegistry(registry);
+    context.loadAllAvailableDialects();
+  }
+
+  void expectNoQCOperations(ModuleOp module) {
+    bool retainsQCOperations = false;
+    module.walk([&](Operation* operation) {
+      retainsQCOperations |=
+          operation->getDialect() == context.getLoadedDialect<qc::QCDialect>();
+    });
+    EXPECT_FALSE(retainsQCOperations);
+  }
+};
+
+} // namespace
+
+TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %true = arith.constant true
+    %loop = scf.for %i = %c0 to %c1 step %c1
+        iter_args(%flag = %true) -> (i1) {
+      qc.h %qc : !qc.qubit
+      scf.yield %flag : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %loop : i1
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawLoop = false;
+  module->walk([&](scf::ForOp loop) {
+    sawLoop = true;
+    EXPECT_EQ(loop.getNumResults(), 2);
+    EXPECT_TRUE(loop.getResult(0).getType().isInteger(1));
+    EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(1).getType()));
+    auto yield = cast<scf::YieldOp>(loop.getBody()->getTerminator());
+    EXPECT_EQ(yield.getNumOperands(), loop.getNumResults());
+    EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getResultTypes()));
+  });
+  EXPECT_TRUE(sawLoop);
+
+  expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest, PreservesWhileConditionArgumentsAndOrdering) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %true = arith.constant true
+    %zero = arith.constant 0 : i64
+    %result:2 = scf.while (%flag = %true, %count = %zero)
+        : (i1, i64) -> (i64, i1) {
+      qc.h %qc : !qc.qubit
+      %false = arith.constant false
+      scf.condition(%false) %count, %flag : i64, i1
+    } do {
+    ^bb0(%count: i64, %flag: i1):
+      qc.x %qc : !qc.qubit
+      scf.yield %flag, %count : i1, i64
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result#1 : i1
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool sawWhile = false;
+  module->walk([&](scf::WhileOp loop) {
+    sawWhile = true;
+    ASSERT_EQ(loop.getNumResults(), 3);
+    EXPECT_TRUE(loop.getResult(0).getType().isInteger(64));
+    EXPECT_TRUE(loop.getResult(1).getType().isInteger(1));
+    EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(2).getType()));
+    auto condition =
+        cast<scf::ConditionOp>(loop.getBeforeBody()->getTerminator());
+    EXPECT_TRUE(
+        llvm::equal(condition.getArgs().getTypes(), loop.getResultTypes()));
+    auto yield = cast<scf::YieldOp>(loop.getAfterBody()->getTerminator());
+    EXPECT_TRUE(
+        llvm::equal(yield.getOperandTypes(), loop.getInits().getTypes()));
+  });
+  EXPECT_TRUE(sawWhile);
+  expectNoQCOperations(*module);
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  APInt result;
+  ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&result)));
+  EXPECT_TRUE(result.isOne());
+}
+
+TEST_F(QCToQCORegressionTest, ConvertsTypeChangingWhileWithQuantumState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %initial = arith.constant 1.0 : f32
+    %result = scf.while (%input = %initial) : (f32) -> i64 {
+      qc.h %qc : !qc.qubit
+      %condition = arith.constant true
+      %next = arith.constant 7 : i64
+      scf.condition(%condition) %next : i64
+    } do {
+    ^bb0(%input: i64):
+      qc.x %qc : !qc.qubit
+      %next = arith.sitofp %input : i64 to f32
+      scf.yield %next : f32
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::WhileOp loop;
+  module->walk([&](scf::WhileOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getInits().size(), 2);
+  EXPECT_TRUE(loop.getInits().front().getType().isF32());
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getInits().back().getType()));
+  ASSERT_EQ(loop.getNumResults(), 2);
+  EXPECT_TRUE(loop.getResult(0).getType().isInteger(64));
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(1).getType()));
+
+  auto condition =
+      cast<scf::ConditionOp>(loop.getBeforeBody()->getTerminator());
+  EXPECT_TRUE(
+      llvm::equal(condition.getArgs().getTypes(), loop.getResultTypes()));
+  auto yield = cast<scf::YieldOp>(loop.getAfterBody()->getTerminator());
+  EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getInits().getTypes()));
+  expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest, LeavesUnrelatedSCFTerminatorsUntouched) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    qc.h %qc : !qc.qubit
+    %result = scf.execute_region -> i1 {
+      %true = arith.constant true
+      scf.yield %true : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i1
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExecuteRegion = false;
+  module->walk([&](scf::ExecuteRegionOp) { sawExecuteRegion = true; });
+  EXPECT_TRUE(sawExecuteRegion);
+  expectNoQCOperations(*module);
 }
 
 TEST_P(QCToQCOTest, ProgramEquivalence) {

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from ..._compat.optional import OptionalDependencyTester
 
 # Optional dependency tester for Qiskit
-HAS_QISKIT = OptionalDependencyTester(  # noqa: RUF067 Used for handling optional plugin
+HAS_QISKIT = OptionalDependencyTester(  # ruff:ignore[non-empty-init-module] Used for handling optional plugin
     "qiskit",
     install_msg="Install with 'pip install mqt-core[qiskit]'",
 )
@@ -24,7 +24,7 @@ __all__ = [
     "HAS_QISKIT",
 ]
 
-if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugin
+if TYPE_CHECKING or HAS_QISKIT:  # ruff:ignore[non-empty-init-module] Used for handling optional plugin
     from .backend import QDMIBackend
     from .converters import qiskit_to_iqm_json
     from .estimator import QDMIEstimator
