@@ -31,6 +31,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -153,6 +154,22 @@ static void mapResults(Operation* lhs, Operation* rhs,
                        ArrayRef<size_t> permutation, IRMapping& m) {
   for (const auto& [i, lhsResult] : llvm::enumerate(lhs->getResults())) {
     m.map(lhsResult, rhs->getResult(permutation[i]));
+  }
+}
+
+/// Map a classical result prefix positionally and a linear result suffix using
+/// the given permutation.
+static void mapSegmentedResults(ValueRange lhsClassical,
+                                ValueRange rhsClassical, ValueRange lhsLinear,
+                                ValueRange rhsLinear,
+                                ArrayRef<size_t> linearPermutation,
+                                IRMapping& mapping) {
+  for (const auto [lhsResult, rhsResult] :
+       llvm::zip_equal(lhsClassical, rhsClassical)) {
+    mapping.map(lhsResult, rhsResult);
+  }
+  for (const auto [index, lhsResult] : llvm::enumerate(lhsLinear)) {
+    mapping.map(lhsResult, rhsLinear[linearPermutation[index]]);
   }
 }
 
@@ -416,8 +433,27 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
     }
   } else if (isa<qco::YieldOp>(lhs)) {
     assert(isa<qco::YieldOp>(rhs));
-    if (!compareValueLists(cast<qco::YieldOp>(lhs).getTargets(),
-                           cast<qco::YieldOp>(rhs).getTargets(), m, tm)) {
+    auto lhsYield = cast<qco::YieldOp>(lhs);
+    auto rhsYield = cast<qco::YieldOp>(rhs);
+
+    size_t numClassicalResults = 0;
+    if (auto ifOp = dyn_cast<qco::IfOp>(lhs->getParentOp())) {
+      numClassicalResults = ifOp.getClassicalResults().size();
+    } else if (auto switchOp =
+                   dyn_cast<qco::IndexSwitchOp>(lhs->getParentOp())) {
+      numClassicalResults = switchOp.getClassicalResults().size();
+    }
+
+    for (const auto [lhsValue, rhsValue] : llvm::zip_equal(
+             lhsYield.getTargets().take_front(numClassicalResults),
+             rhsYield.getTargets().take_front(numClassicalResults))) {
+      if (m.lookup(lhsValue) != rhsValue) {
+        return false;
+      }
+    }
+    if (!compareValueLists(
+            lhsYield.getTargets().drop_front(numClassicalResults),
+            rhsYield.getTargets().drop_front(numClassicalResults), m, tm)) {
       return false;
     }
   } else {
@@ -658,7 +694,10 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             if (failed(permutation)) {
               return false;
             }
-            mapResults(lhsIf, rhsIf, *permutation, m);
+            mapSegmentedResults(lhsIf.getClassicalResults(),
+                                rhsIf.getClassicalResults(),
+                                lhsIf.getLinearResults(),
+                                rhsIf.getLinearResults(), *permutation, m);
           } else if (isa<qco::IndexSwitchOp>(lhsOp)) {
             assert(isa<qco::IndexSwitchOp>(rhsOp));
             auto lhsSwitch = cast<qco::IndexSwitchOp>(lhsOp);
@@ -668,7 +707,10 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             if (failed(permutation)) {
               return false;
             }
-            mapResults(lhsSwitch, rhsSwitch, *permutation, m);
+            mapSegmentedResults(lhsSwitch.getClassicalResults(),
+                                rhsSwitch.getClassicalResults(),
+                                lhsSwitch.getLinearResults(),
+                                rhsSwitch.getLinearResults(), *permutation, m);
           } else if (isa<qtensor::AllocOp>(lhsOp)) {
             assert(isa<qtensor::AllocOp>(rhsOp));
             auto lhsAlloc = cast<qtensor::AllocOp>(lhsOp);
