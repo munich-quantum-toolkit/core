@@ -193,7 +193,7 @@ class QDMIBackend(BackendV2):
         return self._target
 
     @property
-    def provider(self) -> Any | None:  # noqa: ANN401
+    def provider(self) -> Any | None:  # ruff:ignore[any-type]
         """The provider that created the backend."""
         return self._provider
 
@@ -442,7 +442,7 @@ class QDMIBackend(BackendV2):
         # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
         return [None]
 
-    def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # noqa: PLR6301
+    def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]
         """Rewrite a bound circuit before validation and conversion.
 
         Called once per circuit in :meth:`run`, after parameter binding and
@@ -569,7 +569,7 @@ class QDMIBackend(BackendV2):
         self,
         run_input: QuantumCircuit | Sequence[QuantumCircuit],
         parameter_values: Sequence[ParametersType] | None = None,
-        **options: Any,  # noqa: ANN401
+        **options: Any,  # ruff:ignore[any-type]
     ) -> QDMIJob:
         """Execute one or more :class:`~qiskit.circuit.QuantumCircuit` instances on the backend.
 

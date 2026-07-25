@@ -24,7 +24,7 @@ try:
 except ImportError:
     # For Qiskit versions < 1.1
     from qiskit.primitives.containers.data_bin import (
-        _make_data_bin as make_data_bin,  # noqa: PLC2701 # ty: ignore[unresolved-import]
+        _make_data_bin as make_data_bin,  # ruff:ignore[import-private-name] # ty: ignore[unresolved-import]
     )
 
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
@@ -88,7 +88,7 @@ class QDMIEstimator(BaseEstimatorV2):
 
         # Use PrimitiveJob to handle asynchronous execution
         job = PrimitiveJob(self._run, coerced_pubs)
-        job._submit()  # noqa: SLF001
+        job._submit()  # ruff:ignore[private-member-access]
         return job
 
     def _run(self, pubs: list[EstimatorPub]) -> PrimitiveResult[PubResult]:
