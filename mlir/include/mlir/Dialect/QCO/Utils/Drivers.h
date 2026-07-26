@@ -34,7 +34,8 @@
 
 namespace mlir::qco {
 struct PendingItem {
-  explicit PendingItem(const size_t nrequired) : nrequired(nrequired) {
+  PendingItem(const size_t nrequired, const bool isUnitary)
+      : nrequired(nrequired), isUnitary(isUnitary) {
     indices.reserve(nrequired);
   }
 
@@ -43,6 +44,7 @@ struct PendingItem {
 
   SmallVector<size_t> indices;
   size_t nrequired;
+  bool isUnitary;
 };
 
 using PendingMap = DenseMap<Operation*, PendingItem>;
@@ -89,7 +91,11 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                                WalkProgramGraphFn fn) {
   using Traits = WireTraversalTraits<Direction>;
 
-  using IterationStep = std::pair</*skip= */ bool, /*nqubits= */ size_t>;
+  struct IterationStep {
+    bool skip;
+    size_t nqubits;
+    bool isUnitary;
+  };
 
   ReleasedOps released;
   PendingMap pending;
@@ -115,44 +121,44 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
           PendingItem& item = mapIt->second;
           item.indices.emplace_back(i);
         } else {
-          const auto [skip, nqubits] =
+          const auto [skip, nqubits, isUnitary] =
               TypeSwitch<Operation*, IterationStep>(it.operation())
                   .template Case<UnitaryOpInterface>(
                       [&](UnitaryOpInterface op) {
-                        return std::make_pair(false, op.getNumQubits());
+                        return IterationStep{false, op.getNumQubits(), true};
                       })
                   .template Case<scf::ForOp, scf::WhileOp>([&](auto op) {
-                    const auto nqubits =
+                    const auto nqubits = static_cast<size_t>(
                         llvm::count_if(op.getInits(), [](Value v) {
                           return isa<QubitType>(v.getType());
-                        });
-                    return std::make_pair(false, nqubits);
+                        }));
+                    return IterationStep{false, nqubits, false};
                   })
                   .template Case<qco::IfOp>([&](qco::IfOp op) {
-                    const auto nqubits =
+                    const auto nqubits = static_cast<size_t>(
                         llvm::count_if(op.getQubits(), [](Value v) {
                           return isa<QubitType>(v.getType());
-                        });
-                    return std::make_pair(false, nqubits);
+                        }));
+                    return IterationStep{false, nqubits, false};
                   })
                   .template Case<qco::IndexSwitchOp>(
                       [&](qco::IndexSwitchOp op) {
-                        const auto nqubits =
+                        const auto nqubits = static_cast<size_t>(
                             llvm::count_if(op.getTargets(), [](Value v) {
                               return isa<QubitType>(v.getType());
-                            });
-                        return std::make_pair(false, nqubits);
+                            }));
+                        return IterationStep{false, nqubits, false};
                       })
                   .template Case<ResetOp, MeasureOp>(
-                      [&](auto) { return std::make_pair(false, 1); })
+                      [&](auto) { return IterationStep{false, 1, false}; })
                   .template Case<AllocOp, StaticOp, SinkOp, YieldOp,
                                  qtensor::ExtractOp, qtensor::InsertOp,
                                  scf::YieldOp, scf::ConditionOp>(
-                      [&](auto) { return std::make_pair(true, 0); })
+                      [&](auto) { return IterationStep{true, 0, false}; })
                   .Default([&](Operation* op) {
                     const auto name = op->getName().getStringRef();
                     reportFatalInternalError("unknown op: " + name);
-                    return std::make_pair(false, 0);
+                    return IterationStep{false, 0, false};
                   });
 
           if (skip || nqubits == 1) {
@@ -169,7 +175,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
           // Insert the multi-qubit op to the pending map.
           // The caller decides if this op should be released.
-          PendingItem item(nqubits);
+          PendingItem item(nqubits, isUnitary);
           item.indices.emplace_back(i);
           pending.try_emplace(it.operation(), std::move(item));
         }

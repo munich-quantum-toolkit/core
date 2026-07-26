@@ -1086,7 +1086,7 @@ private:
           }
 
           for (const auto& [op, item] : ready) {
-            if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+            if (item.isUnitary) {
               const auto i0 = item.indices[0];
               const auto i1 = item.indices[1];
 
@@ -1099,7 +1099,7 @@ private:
               }
 
               skipQubitPairBlock<Direction>(wires[i0], wires[i1]);
-              released.emplace_back(u);
+              released.emplace_back(op);
               return WalkResult::advance();
             }
 
@@ -1167,35 +1167,33 @@ private:
     // nested regions and the respective wire indices of their inputs onto the
     // result stack.
 
-    walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
-          if (ready.empty()) {
-            return WalkResult::advance();
-          }
+    walkProgramGraph<Direction>(wires, [&](const ReadyRange& ready,
+                                           ReleasedOps& released) {
+      if (ready.empty()) {
+        return WalkResult::advance();
+      }
 
-          for (const auto& [readyOp, item] : ready) {
-            TypeSwitch<Operation*>(readyOp)
-                .template Case<BarrierOp>(
-                    [&](BarrierOp op) { released.emplace_back(op); })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                  const auto prog0 = infos.lookupProgram(item.indices[0]);
-                  const auto prog1 = infos.lookupProgram(item.indices[1]);
-                  if (const auto [hw0, hw1] =
-                          layout.getHardwareIndices(prog0, prog1);
-                      device->areAdjacent(hw0, hw1)) {
-                    released.emplace_back(op);
-                  }
-                })
-                .template Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
-                    [&](auto op) { stack.emplace_back(op, item.indices); });
+      for (const auto& [readyOp, item] : ready) {
+        if (isa<BarrierOp>(readyOp)) {
+          released.emplace_back(readyOp);
+        } else if (item.isUnitary) {
+          const auto prog0 = infos.lookupProgram(item.indices[0]);
+          const auto prog1 = infos.lookupProgram(item.indices[1]);
+          if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+              device->areAdjacent(hw0, hw1)) {
+            released.emplace_back(readyOp);
           }
+        } else {
+          stack.emplace_back(readyOp, item.indices);
+        }
+      }
 
-          if (released.empty()) {
-            return WalkResult::interrupt();
-          }
+      if (released.empty()) {
+        return WalkResult::interrupt();
+      }
 
-          return WalkResult::advance();
-        });
+      return WalkResult::advance();
+    });
 
     return stack;
   }
