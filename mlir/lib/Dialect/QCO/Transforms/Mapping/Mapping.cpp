@@ -1186,7 +1186,7 @@ private:
                     released.emplace_back(op);
                   }
                 })
-                .template Case<scf::ForOp, scf::WhileOp, IfOp>(
+                .template Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
                     [&](auto op) { stack.emplace_back(op, item.indices); });
           }
 
