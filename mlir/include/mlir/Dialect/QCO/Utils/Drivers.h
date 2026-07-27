@@ -15,6 +15,8 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -33,9 +35,9 @@
 #include <utility>
 
 namespace mlir::qco {
+namespace details {
 struct PendingItem {
-  PendingItem(const size_t nrequired, const bool isUnitary)
-      : nrequired(nrequired), isUnitary(isUnitary) {
+  explicit PendingItem(const size_t nrequired) : nrequired(nrequired) {
     indices.reserve(nrequired);
   }
 
@@ -44,23 +46,15 @@ struct PendingItem {
 
   SmallVector<size_t> indices;
   size_t nrequired;
-  bool isUnitary;
 };
 
 using PendingMap = DenseMap<Operation*, PendingItem>;
+} // namespace details
 
-struct IsReady {
-  bool operator()(PendingMap::value_type& kv) const {
-    return kv.second.ready();
-  }
-};
-
-using ReadyRange =
-    decltype(make_filter_range(std::declval<PendingMap&>(), IsReady{}));
-
+using ReadyMap = llvm::SmallDenseMap<Operation*, SmallVector<size_t>, 8>;
 using ReleasedOps = SmallVector<Operation*, 8>;
 using WalkProgramGraphFn =
-    function_ref<WalkResult(const ReadyRange&, ReleasedOps&)>;
+    function_ref<WalkResult(const ReadyMap&, ReleasedOps&)>;
 
 /**
  * @brief Walk the graph-like circuit IR of QCO dialect programs.
@@ -94,12 +88,15 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
   struct IterationStep {
     bool skip;
     size_t nqubits;
-    bool isUnitary;
   };
 
-  ReleasedOps released;
-  PendingMap pending;
+  details::PendingMap pending;
   pending.reserve((wires.size() + 1) / 2);
+  
+  ReadyMap ready;
+  ready.reserve((wires.size() + 1) / 2);
+  
+  ReleasedOps released;
 
   SmallVector<size_t> curr(wires.size());
   std::iota(curr.begin(), curr.end(), 0UL);
@@ -118,28 +115,32 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       while (Traits::isActive(it)) {
         if (const auto mapIt = pending.find(it.operation());
             mapIt != pending.end()) {
-          PendingItem& item = mapIt->second;
+          details::PendingItem& item = mapIt->second;
           item.indices.emplace_back(i);
+
+          if (item.ready()) {
+            ready.insert(std::make_pair(it.operation(), item.indices));
+          }
         } else {
-          const auto [skip, nqubits, isUnitary] =
+          const auto [skip, nqubits] =
               TypeSwitch<Operation*, IterationStep>(it.operation())
                   .template Case<UnitaryOpInterface>(
                       [&](UnitaryOpInterface op) {
-                        return IterationStep{false, op.getNumQubits(), true};
+                        return IterationStep{false, op.getNumQubits()};
                       })
                   .template Case<scf::ForOp, scf::WhileOp>([&](auto op) {
                     const auto nqubits = static_cast<size_t>(
                         llvm::count_if(op.getInits(), [](Value v) {
                           return isa<QubitType>(v.getType());
                         }));
-                    return IterationStep{false, nqubits, false};
+                    return IterationStep{false, nqubits};
                   })
                   .template Case<qco::IfOp>([&](qco::IfOp op) {
                     const auto nqubits = static_cast<size_t>(
                         llvm::count_if(op.getQubits(), [](Value v) {
                           return isa<QubitType>(v.getType());
                         }));
-                    return IterationStep{false, nqubits, false};
+                    return IterationStep{false, nqubits};
                   })
                   .template Case<qco::IndexSwitchOp>(
                       [&](qco::IndexSwitchOp op) {
@@ -147,18 +148,18 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                             llvm::count_if(op.getTargets(), [](Value v) {
                               return isa<QubitType>(v.getType());
                             }));
-                        return IterationStep{false, nqubits, false};
+                        return IterationStep{false, nqubits};
                       })
                   .template Case<ResetOp, MeasureOp>(
-                      [&](auto) { return IterationStep{false, 1, false}; })
+                      [&](auto) { return IterationStep{false, 1}; })
                   .template Case<AllocOp, StaticOp, SinkOp, YieldOp,
                                  qtensor::ExtractOp, qtensor::InsertOp,
                                  scf::YieldOp, scf::ConditionOp>(
-                      [&](auto) { return IterationStep{true, 0, false}; })
+                      [&](auto) { return IterationStep{true, 0}; })
                   .Default([&](Operation* op) {
                     const auto name = op->getName().getStringRef();
                     reportFatalInternalError("unknown op: " + name);
-                    return IterationStep{false, 0, false};
+                    return IterationStep{false, 0};
                   });
 
           if (skip || nqubits == 1) {
@@ -175,7 +176,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
           // Insert the multi-qubit op to the pending map.
           // The caller decides if this op should be released.
-          PendingItem item(nqubits, isUnitary);
+          details::PendingItem item(nqubits);
           item.indices.emplace_back(i);
           pending.try_emplace(it.operation(), std::move(item));
         }
@@ -185,7 +186,6 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
     }
 
     released.clear();
-    const auto ready = make_filter_range(pending, IsReady{});
     const auto res = std::invoke(fn, ready, released);
     if (res.wasInterrupted()) {
       return failure();
@@ -208,6 +208,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       }
 
       pending.erase(mapIt);
+      ready.erase(op);
     }
 
     curr.swap(next);

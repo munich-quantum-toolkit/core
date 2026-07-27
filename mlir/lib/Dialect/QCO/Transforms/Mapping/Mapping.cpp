@@ -1080,16 +1080,15 @@ private:
     window.reserve(1 + nlookahead);
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
+        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
 
-          for (const auto& [op, item] : ready) {
-            if (item.isUnitary) {
-              const auto i0 = item.indices[0];
-              const auto i1 = item.indices[1];
-
+          for (const auto& [op, indices] : ready) {
+            if (isa<UnitaryOpInterface>(op)) {
+              const auto i0 = indices[0];
+              const auto i1 = indices[1];
               const auto prog0 = infos.lookupProgram(i0);
               const auto prog1 = infos.lookupProgram(i1);
 
@@ -1167,24 +1166,24 @@ private:
     // nested regions and the respective wire indices of their inputs onto the
     // result stack.
 
-    walkProgramGraph<Direction>(wires, [&](const ReadyRange& ready,
+    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
                                            ReleasedOps& released) {
       if (ready.empty()) {
         return WalkResult::advance();
       }
 
-      for (const auto& [readyOp, item] : ready) {
-        if (isa<BarrierOp>(readyOp)) {
-          released.emplace_back(readyOp);
-        } else if (item.isUnitary) {
-          const auto prog0 = infos.lookupProgram(item.indices[0]);
-          const auto prog1 = infos.lookupProgram(item.indices[1]);
+      for (const auto& [op, indices] : ready) {
+        if (isa<BarrierOp>(op)) {
+          released.emplace_back(op);
+        } else if (isa<UnitaryOpInterface>(op)) {
+          const auto prog0 = infos.lookupProgram(indices[0]);
+          const auto prog1 = infos.lookupProgram(indices[1]);
           if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
               device->areAdjacent(hw0, hw1)) {
-            released.emplace_back(readyOp);
+            released.emplace_back(op);
           }
         } else {
-          stack.emplace_back(readyOp, item.indices);
+          stack.emplace_back(op, indices);
         }
       }
 
@@ -1480,7 +1479,6 @@ private:
     // mapping to the parent.
 
     if (!isa<scf::ForOp>(op)) {
-
       WireInfos realigendInfos;
       for (size_t i = 0; i < parent.wires.size(); ++i) {
         const auto oldProg = parent.infos.lookupProgram(i);
