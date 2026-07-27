@@ -869,6 +869,68 @@ TEST_P(MappingPassTest, RouteIndexSwitchRegions) {
   EXPECT_GT(numSwaps, 3);
 }
 
+TEST_P(MappingPassTest, RouteNestedOperationOnceWhileIndependentWiresAdvance) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c3 = arith.constant 3 : index
+        %c4 = arith.constant 4 : index
+        %tensor0 = qtensor.alloc(%c4) : tensor<4x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<4x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<4x!qco.qubit>
+        %tensor3, %q2 = qtensor.extract %tensor2[%c2]
+            : tensor<4x!qco.qubit>
+        %tensor4, %q3 = qtensor.extract %tensor3[%c3]
+            : tensor<4x!qco.qubit>
+        %q4, %q5 = qco.index_switch %selector
+            -> (!qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %next0, %next1 : !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          qco.yield %arg0, %arg1 : !qco.qubit, !qco.qubit
+        }
+        %q6, %q7 = qco.barrier %q2, %q3
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q8, %q9 = qco.barrier %q6, %q7
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %tensor5 = qtensor.insert %q4 into %tensor4[%c0]
+            : tensor<4x!qco.qubit>
+        %tensor6 = qtensor.insert %q5 into %tensor5[%c1]
+            : tensor<4x!qco.qubit>
+        %tensor7 = qtensor.insert %q8 into %tensor6[%c2]
+            : tensor<4x!qco.qubit>
+        %tensor8 = qtensor.insert %q9 into %tensor7[%c3]
+            : tensor<4x!qco.qubit>
+        qtensor.dealloc %tensor8 : tensor<4x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  size_t numIndexSwitches = 0;
+  module->walk([&](IndexSwitchOp) { ++numIndexSwitches; });
+  EXPECT_EQ(numIndexSwitches, 1);
+}
+
 TEST_P(MappingPassTest, MapSABRECircuit) {
   const auto& device = GetParam();
   constexpr int64_t size = 6;

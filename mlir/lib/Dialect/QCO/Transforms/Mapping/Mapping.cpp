@@ -1183,7 +1183,7 @@ private:
               device->areAdjacent(hw0, hw1)) {
             released.emplace_back(op);
           }
-        } else if (!visited.contains(op)) {
+        } else if (visited.insert(op).second) {
           stack.emplace_back(op, indices);
         }
       }
