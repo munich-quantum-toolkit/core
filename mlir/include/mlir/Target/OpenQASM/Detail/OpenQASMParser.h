@@ -97,8 +97,11 @@ struct Expr {
     Log,
     Mod,
     BuiltinMod,
+    PopCount,
     BuiltinPow,
     Pow,
+    RotateLeft,
+    RotateRight,
     Sin,
     Sqrt,
     Tan,
@@ -128,7 +131,10 @@ getMathFunctionKind(StringRef name) {
       .Case("floor", Expr::Kind::Floor)
       .Case("log", Expr::Kind::Log)
       .Case("mod", Expr::Kind::BuiltinMod)
+      .Case("popcount", Expr::Kind::PopCount)
       .Case("pow", Expr::Kind::BuiltinPow)
+      .Case("rotl", Expr::Kind::RotateLeft)
+      .Case("rotr", Expr::Kind::RotateRight)
       .Case("sin", Expr::Kind::Sin)
       .Case("sqrt", Expr::Kind::Sqrt)
       .Case("tan", Expr::Kind::Tan)
@@ -1545,7 +1551,8 @@ private:
     }
     expr->lhs = *lhs;
 
-    if (kind == Expr::Kind::BuiltinMod || kind == Expr::Kind::BuiltinPow) {
+    if (kind == Expr::Kind::BuiltinMod || kind == Expr::Kind::BuiltinPow ||
+        kind == Expr::Kind::RotateLeft || kind == Expr::Kind::RotateRight) {
       if (failed(expect(TokenKind::Comma))) {
         return failure();
       }

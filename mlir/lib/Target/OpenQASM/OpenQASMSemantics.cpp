@@ -216,7 +216,7 @@ public:
 private:
   struct DynamicBitFact {
     ExpressionId expression = 0;
-    std::vector<std::pair<ScalarId, std::uint64_t>> dependencies;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> dependencies;
   };
   using BitInitialization = std::vector<bool>;
   using DynamicBitFactSet = std::vector<DynamicBitFact>;
@@ -231,6 +231,7 @@ private:
   std::vector<std::shared_ptr<DynamicBitFactSet>> dynamicBitFacts;
   std::vector<bool> initializedScalars;
   std::vector<std::uint64_t> scalarGenerations;
+  std::vector<std::uint64_t> bitGenerations;
   std::vector<RegisterId> bitRegisters;
   std::vector<RegisterId> explicitOutputs;
   bool insideGate = false;
@@ -285,13 +286,17 @@ private:
   void restoreStatePrefix(
       const std::vector<std::shared_ptr<BitInitialization>>& bitsInitialized,
       const std::vector<bool>& scalarsInitialized,
-      const std::vector<std::uint64_t>& generations) {
+      const std::vector<std::uint64_t>& generations,
+      const std::vector<std::uint64_t>& registerGenerations) {
     for (std::size_t reg = 0; reg < bitsInitialized.size(); ++reg) {
       initializedBits[reg] = bitsInitialized[reg];
     }
     for (std::size_t scalar = 0; scalar < scalarsInitialized.size(); ++scalar) {
       initializedScalars[scalar] = scalarsInitialized[scalar];
       scalarGenerations[scalar] = generations[scalar];
+    }
+    for (std::size_t reg = 0; reg < registerGenerations.size(); ++reg) {
+      bitGenerations[reg] = registerGenerations[reg];
     }
   }
 
@@ -337,6 +342,8 @@ private:
     case ExpressionKind::GateParameter:
     case ExpressionKind::Variable:
       return true;
+    case ExpressionKind::PopCount:
+      return sameBitVectorExpression(left.bitVector, right.bitVector);
     case ExpressionKind::Negate:
     case ExpressionKind::ArcCos:
     case ExpressionKind::ArcSin:
@@ -356,17 +363,49 @@ private:
     }
   }
 
-  void collectDependencies(
-      const ExpressionId expression,
-      std::vector<std::pair<ScalarId, std::uint64_t>>& dependencies) const {
+  [[nodiscard]] bool
+  sameBitVectorExpression(const BitVectorExpressionId lhs,
+                          const BitVectorExpressionId rhs) const {
+    const auto& left = program.bitVectorExpressions[lhs];
+    const auto& right = program.bitVectorExpressions[rhs];
+    if (left.kind != right.kind || left.width != right.width) {
+      return false;
+    }
+    if (left.kind == BitVectorExpressionKind::Register) {
+      return left.reg == right.reg;
+    }
+    return sameBitVectorExpression(left.operand, right.operand) &&
+           sameExpression(left.distance, right.distance);
+  }
+
+  void collectBitVectorDependencies(
+      const BitVectorExpressionId expression,
+      std::vector<std::pair<std::uint64_t, std::uint64_t>>& dependencies)
+      const {
+    const auto& value = program.bitVectorExpressions[expression];
+    if (value.kind == BitVectorExpressionKind::Register) {
+      dependencies.emplace_back(value.reg, bitGenerations[value.reg]);
+      return;
+    }
+    collectBitVectorDependencies(value.operand, dependencies);
+    collectDependencies(value.distance, dependencies);
+  }
+
+  void collectDependencies(const ExpressionId expression,
+                           std::vector<std::pair<std::uint64_t, std::uint64_t>>&
+                               dependencies) const {
     const auto& value = program.expressions[expression];
     if (value.kind == ExpressionKind::Variable) {
-      dependencies.emplace_back(value.variable,
+      dependencies.emplace_back((std::uint64_t{1} << 63U) | value.variable,
                                 scalarGenerations[value.variable]);
       return;
     }
     if (value.kind == ExpressionKind::Constant ||
         value.kind == ExpressionKind::GateParameter) {
+      return;
+    }
+    if (value.kind == ExpressionKind::PopCount) {
+      collectBitVectorDependencies(value.bitVector, dependencies);
       return;
     }
     collectDependencies(value.lhs, dependencies);
@@ -540,6 +579,14 @@ private:
   [[nodiscard]] ExpressionId addExpression(ScalarExpression expression) {
     const auto id = static_cast<ExpressionId>(program.expressions.size());
     program.expressions.push_back(expression);
+    return id;
+  }
+
+  [[nodiscard]] BitVectorExpressionId
+  addBitVectorExpression(BitVectorExpression expression) {
+    const auto id =
+        static_cast<BitVectorExpressionId>(program.bitVectorExpressions.size());
+    program.bitVectorExpressions.push_back(expression);
     return id;
   }
 
@@ -878,6 +925,11 @@ private:
            "operands, which are not supported yet");
     case Expr::Kind::Index:
       fail(expression.location, "expression is not a compile-time constant");
+    case Expr::Kind::PopCount:
+    case Expr::Kind::RotateLeft:
+    case Expr::Kind::RotateRight:
+      fail(expression.location,
+           "bit-register expressions are not compile-time constants");
     }
     llvm_unreachable("unknown syntax expression kind");
   }
@@ -999,6 +1051,12 @@ private:
            "operands, which are not supported yet");
     case Expr::Kind::Index:
       fail(expression.location, "expression is not a compile-time constant");
+    case Expr::Kind::PopCount:
+      return ScalarType::Uint;
+    case Expr::Kind::RotateLeft:
+    case Expr::Kind::RotateRight:
+      fail(expression.location,
+           "bit-register rotations are not scalar expressions");
     }
     llvm_unreachable("unknown syntax expression kind");
   }
@@ -1190,6 +1248,9 @@ private:
     case Expr::Kind::Bool:
       return true;
     case Expr::Kind::Index:
+    case Expr::Kind::PopCount:
+    case Expr::Kind::RotateLeft:
+    case Expr::Kind::RotateRight:
       return false;
     default:
       return (!expression.lhs || isConstantExpression(*expression.lhs)) &&
@@ -1218,6 +1279,45 @@ private:
     }
   }
 
+  [[nodiscard]] BitVectorExpressionId
+  analyzeBitVectorExpression(const SyntaxExpressionId syntaxId) {
+    const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::Identifier) {
+      const auto* symbol = lookup(expression.identifier);
+      if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
+          program.registers[symbol->id].kind != RegisterKind::Bit) {
+        fail(expression.location,
+             "bit-vector expression requires a bit register");
+      }
+      const auto reg = static_cast<RegisterId>(symbol->id);
+      const auto width = program.registers[reg].width;
+      for (std::uint64_t bit = 0; bit < width; ++bit) {
+        ensureBitInitialized({.reg = reg, .index = bit}, expression.location);
+      }
+      return addBitVectorExpression({.kind = BitVectorExpressionKind::Register,
+                                     .width = width,
+                                     .reg = reg});
+    }
+    if (expression.kind != Expr::Kind::RotateLeft &&
+        expression.kind != Expr::Kind::RotateRight) {
+      fail(expression.location,
+           "bit-vector expression requires a bit register or rotation");
+    }
+    const auto operand = analyzeBitVectorExpression(*expression.lhs);
+    const auto distance = analyzeExpression(*expression.rhs);
+    if (program.expressions[distance].type != ScalarType::Int) {
+      fail(syntax.expressions[*expression.rhs].location,
+           "bit-register rotation distance must have signed int type");
+    }
+    return addBitVectorExpression(
+        {.kind = expression.kind == Expr::Kind::RotateLeft
+                     ? BitVectorExpressionKind::RotateLeft
+                     : BitVectorExpressionKind::RotateRight,
+         .width = program.bitVectorExpressions[operand].width,
+         .operand = operand,
+         .distance = distance});
+  }
+
   [[nodiscard]] ExpressionId
   analyzeExpression(const SyntaxExpressionId syntaxId) {
     const auto& expression = syntax.expressions[syntaxId];
@@ -1226,6 +1326,12 @@ private:
     }
     if (isConstantExpression(syntaxId)) {
       return addConstant(evaluateConstant(syntaxId));
+    }
+    if (expression.kind == Expr::Kind::PopCount) {
+      return addExpression(
+          {.kind = ExpressionKind::PopCount,
+           .type = ScalarType::Uint,
+           .bitVector = analyzeBitVectorExpression(*expression.lhs)});
     }
     if (expression.kind == Expr::Kind::Identifier) {
       const auto* symbol = lookup(expression.identifier);
@@ -1289,6 +1395,12 @@ private:
       fail(expression.location,
            "bitwise operators require explicitly sized uint, bit, or angle "
            "operands, which are not supported yet");
+    case Expr::Kind::RotateLeft:
+    case Expr::Kind::RotateRight:
+      fail(expression.location,
+           "bit-register rotations require a whole-register assignment");
+    case Expr::Kind::PopCount:
+      llvm_unreachable("handled bit-register population count");
     case Expr::Kind::ArcCos:
       kind = ExpressionKind::ArcCos;
       break;
@@ -1555,6 +1667,7 @@ private:
   }
 
   void markBitInitialized(const frontend::BitReference& target) {
+    ++bitGenerations[target.reg];
     if (!target.dynamicIndex) {
       mutableBitInitialization(target.reg)[target.index] = true;
       return;
@@ -1592,38 +1705,41 @@ private:
         program.registers[symbol->id].kind != RegisterKind::Bit) {
       fail(location, "cannot assign to '" + assignment.target.identifier + "'");
     }
-    auto targets = resolveBits(assignment.target);
-    if (targets.size() > 1) {
-      const auto& value = syntax.expressions[assignment.value];
-      if (value.kind != Expr::Kind::Identifier) {
-        fail(location,
-             "whole-register bit assignment requires a bit-register value");
-      }
-      auto sourceBits = resolveBits(
-          {.location = value.location, .identifier = value.identifier});
-      if (sourceBits.size() != targets.size()) {
+    const auto targetReg = static_cast<RegisterId>(symbol->id);
+    const auto& value = syntax.expressions[assignment.value];
+    const auto* valueSymbol = value.kind == Expr::Kind::Identifier
+                                  ? lookup(value.identifier)
+                                  : nullptr;
+    const bool bitVectorValue =
+        value.kind == Expr::Kind::RotateLeft ||
+        value.kind == Expr::Kind::RotateRight ||
+        (valueSymbol != nullptr && valueSymbol->kind == SymbolKind::Register &&
+         program.registers[valueSymbol->id].kind == RegisterKind::Bit);
+    if (!assignment.target.index && bitVectorValue) {
+      const auto bitVector = analyzeBitVectorExpression(assignment.value);
+      if (program.bitVectorExpressions[bitVector].width !=
+          program.registers[targetReg].width) {
         fail(location, "bit-register assignment widths must match");
       }
-      for (const auto& source : sourceBits) {
-        ensureBitInitialized(source, value.location);
+      for (std::uint64_t bit = 0; bit < program.registers[targetReg].width;
+           ++bit) {
+        markBitInitialized({.reg = targetReg, .index = bit});
       }
-      for (const auto [target, source] : llvm::zip_equal(targets, sourceBits)) {
-        const auto condition =
-            addCondition({.kind = ConditionKind::Bit,
-                          .location = getSourceLocation(value.location),
-                          .bit = source});
-        markBitInitialized(target);
-        destination.push_back(
-            addStatement(location, BitAssignmentStatement{.target = target,
-                                                          .value = condition}));
-      }
+      destination.push_back(
+          addStatement(location, BitVectorAssignmentStatement{
+                                     .target = targetReg, .value = bitVector}));
       return;
     }
-    const auto value = analyzeBoolValue(assignment.value);
+    auto targets = resolveBits(assignment.target);
+    if (targets.size() > 1) {
+      fail(location,
+           "whole-register bit assignment requires a bit-register value");
+    }
+    const auto condition = analyzeBoolValue(assignment.value);
     markBitInitialized(targets.front());
     destination.push_back(
         addStatement(location, BitAssignmentStatement{.target = targets.front(),
-                                                      .value = value}));
+                                                      .value = condition}));
   }
 
   template <class Declaration>
@@ -1668,6 +1784,7 @@ private:
     initializedBits.push_back(
         std::make_shared<BitInitialization>(width, false));
     dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
+    bitGenerations.push_back(0);
     declare(location, declaration.identifier,
             {.kind = SymbolKind::Register, .id = id});
     if (!isQubit && global) {
@@ -1805,6 +1922,7 @@ private:
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
     analyzeBody(conditional.thenStatements, result.thenStatements,
@@ -1812,11 +1930,12 @@ private:
     const auto afterThenBitsInitialized = initializedBits;
     const auto afterThenInitialized = initializedScalars;
     const auto afterThenGenerations = scalarGenerations;
+    const auto afterThenBitGenerations = bitGenerations;
     const auto afterThenDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations);
+                       beforeGenerations, beforeBitGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     scopes.emplace_back();
     analyzeBody(conditional.elseStatements, result.elseStatements,
@@ -1824,6 +1943,7 @@ private:
     const auto afterElseBitsInitialized = initializedBits;
     const auto afterElseInitialized = initializedScalars;
     const auto afterElseGenerations = scalarGenerations;
+    const auto afterElseBitGenerations = bitGenerations;
     const auto afterElseDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
@@ -1831,18 +1951,18 @@ private:
     if (knownCondition) {
       if (*knownCondition) {
         restoreStatePrefix(afterThenBitsInitialized, afterThenInitialized,
-                           afterThenGenerations);
+                           afterThenGenerations, afterThenBitGenerations);
         restoreDynamicFactsPrefix(afterThenDynamicBitFacts);
       } else {
         restoreStatePrefix(afterElseBitsInitialized, afterElseInitialized,
-                           afterElseGenerations);
+                           afterElseGenerations, afterElseBitGenerations);
         restoreDynamicFactsPrefix(afterElseDynamicBitFacts);
       }
       return addStatement(location, std::move(result));
     }
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations);
+                       beforeGenerations, beforeBitGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (std::size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
@@ -1872,6 +1992,10 @@ private:
       scalarGenerations[scalar] =
           std::max(afterThenGenerations[scalar], afterElseGenerations[scalar]);
     }
+    for (std::size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
+      bitGenerations[reg] =
+          std::max(afterThenBitGenerations[reg], afterElseBitGenerations[reg]);
+    }
     return addStatement(location, std::move(result));
   }
 
@@ -1897,6 +2021,7 @@ private:
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
     const auto scalar = static_cast<ScalarId>(program.scalars.size());
@@ -1915,10 +2040,11 @@ private:
     const auto afterBodyBitsInitialized = initializedBits;
     const auto afterBodyInitialized = initializedScalars;
     const auto afterBodyGenerations = scalarGenerations;
+    const auto afterBodyBitGenerations = bitGenerations;
     const auto afterBodyDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations);
+                       beforeGenerations, beforeBitGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     if (isConstantExpression(loop.start) && isConstantExpression(loop.step) &&
         isConstantExpression(loop.stop)) {
@@ -1959,6 +2085,9 @@ private:
           initializedScalars[scalar] = afterBodyInitialized[scalar];
           scalarGenerations[scalar] = afterBodyGenerations[scalar];
         }
+        for (std::size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
+          bitGenerations[reg] = afterBodyBitGenerations[reg];
+        }
         for (std::size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
           dynamicBitFacts[reg] = afterBodyDynamicBitFacts[reg];
         }
@@ -1973,17 +2102,23 @@ private:
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
     analyzeBody(loop.body, result.body, /*global=*/false);
     scopes.pop_back();
     const auto afterBodyGenerations = scalarGenerations;
+    const auto afterBodyBitGenerations = bitGenerations;
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations);
+                       beforeGenerations, beforeBitGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (std::size_t scalar = 0; scalar < beforeGenerations.size(); ++scalar) {
       scalarGenerations[scalar] =
           std::max(beforeGenerations[scalar], afterBodyGenerations[scalar]);
+    }
+    for (std::size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
+      bitGenerations[reg] =
+          std::max(beforeBitGenerations[reg], afterBodyBitGenerations[reg]);
     }
     return addStatement(location, std::move(result));
   }
@@ -2472,7 +2607,7 @@ private:
                        [](const bool initialized) { return initialized; })) {
         return;
       }
-      std::vector<std::pair<ScalarId, std::uint64_t>> dependencies;
+      std::vector<std::pair<std::uint64_t, std::uint64_t>> dependencies;
       collectDependencies(*bit.dynamicIndex, dependencies);
       if (llvm::any_of(*dynamicBitFacts[bit.reg], [&](const auto& fact) {
             return fact.dependencies == dependencies &&

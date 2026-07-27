@@ -1140,6 +1140,27 @@ rx(tan(0.5)) q;
 bit c = measure q;
 )qasm";
 
+const std::string bitVectorBuiltins = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[5] q;
+bit[5] bits = measure q;
+int distance = -7;
+bits = rotl(bits, distance);
+uint count = popcount(bits);
+rx(count) q[0];
+output bit result;
+result = measure q[0];
+)qasm";
+
+const std::string runtimeScalarRounding = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+float value = -1.25;
+rx(ceiling(value) + floor(value)) q;
+output bit result;
+result = measure q;
+)qasm";
+
 const std::string expressionNestedMathFunctions = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
@@ -1359,6 +1380,8 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       {"broadcast-custom-gate", broadcastCompoundGate},
       {"arithmetic-parameters", expressionArithmetic},
       {"math-parameters", expressionMathFunctions},
+      {"bit-vector-builtins", bitVectorBuiltins},
+      {"runtime-scalar-rounding", runtimeScalarRounding},
       {"simple-if", conditionLiteral},
       {"nested-static-control-flow", nestedStaticControlFlow},
       {"mutable-loop-state", mutableLoopState},
@@ -1395,6 +1418,7 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
       {"nested-pow-x", nestedPowX},
       {"broadcast-pow-x", broadcastPowX},
       {"floating-pow-x", floatingPowX},
+      {"runtime-scalar-rounding", runtimeScalarRounding},
   };
   return programs;
 }
@@ -1406,6 +1430,7 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
       {"checked-integer-state", checkedIntegerState},
       {"dynamic-range", dynamicRange},
       {"custom-pow-hs", customPowHS},
+      {"bit-vector-builtins", bitVectorBuiltins},
   };
   return programs;
 }
@@ -1415,6 +1440,7 @@ llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms() {
       {"broadcast-custom-gate", broadcastCompoundGate},
       {"arithmetic-parameters", expressionArithmetic},
       {"math-parameters", expressionMathFunctions},
+      {"runtime-scalar-rounding", runtimeScalarRounding},
       {"barrier", barrierMultipleQubits},
       {"pow-two-x", powTwoX},
       {"floating-pow-x", floatingPowX},

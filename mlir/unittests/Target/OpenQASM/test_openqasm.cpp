@@ -20,6 +20,8 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -920,6 +922,22 @@ TEST(OpenQASMTargetTest, BudgetsScalarAndStructuredOperationConstruction) {
   }
 }
 
+TEST(OpenQASMTargetTest, BudgetsLinearBitVectorPackingWork) {
+  constexpr std::size_t WIDTH = 12501;
+  std::string source =
+      "OPENQASM 3.1;\noutput bit[" + std::to_string(WIDTH) + "] value;\n";
+  for (std::size_t bit = 0; bit < WIDTH; ++bit) {
+    source += "value[" + std::to_string(bit) + "] = false;\n";
+  }
+  source += "int distance = 1;\nvalue = rotl(value, distance);\n";
+
+  MLIRContext context;
+  ScopedDiagnosticHandler diagnostics(&context,
+                                      [](Diagnostic&) { return success(); });
+  auto module = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(module);
+}
+
 TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
@@ -1015,6 +1033,242 @@ if (target[0] || target[1]) { x q[0]; }
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(OpenQASMTargetTest, LowersTypedBitVectorBuiltins) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+output bit[5] value;
+value[0] = true;
+value[1] = false;
+value[2] = true;
+value[3] = false;
+value[4] = true;
+uint count = popcount(value);
+value = rotl(value, 0);
+value = rotr(value, -7);
+qubit q;
+if (count == 3) { x q; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_FALSE(analyzed.program->bitVectorExpressions.empty());
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->expressions, [](const auto& expression) {
+        return expression.kind == oq3::frontend::ExpressionKind::PopCount &&
+               expression.type == oq3::frontend::ScalarType::Uint;
+      }));
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  std::size_t populationCounts = 0;
+  std::size_t funnelShifts = 0;
+  module->walk([&](Operation* operation) {
+    populationCounts += isa<math::CtPopOp>(operation);
+    funnelShifts += isa<LLVM::FshlOp, LLVM::FshrOp>(operation);
+  });
+  EXPECT_EQ(populationCounts, 1);
+  // Both rotation distances are constant and therefore only permute SSA values.
+  EXPECT_EQ(funnelShifts, 0);
+}
+
+TEST(OpenQASMTargetTest, ReusesPackedNestedDynamicRotations) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+bit[5] value;
+value[0] = true;
+value[1] = false;
+value[2] = true;
+value[3] = false;
+value[4] = true;
+int distance = -7;
+uint count = popcount(rotl(rotr(value, distance), 1));
+qubit q;
+if (count == 3) { x q; }
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t leftShifts = 0;
+  std::size_t rightShifts = 0;
+  std::size_t populationCounts = 0;
+  std::size_t unpackingTruncations = 0;
+  module->walk([&](Operation* operation) {
+    leftShifts += isa<LLVM::FshlOp>(operation);
+    rightShifts += isa<LLVM::FshrOp>(operation);
+    populationCounts += isa<math::CtPopOp>(operation);
+    if (auto truncation = dyn_cast<arith::TruncIOp>(operation);
+        truncation && truncation.getOut().getType().isInteger(1)) {
+      ++unpackingTruncations;
+    }
+  });
+  EXPECT_EQ(leftShifts, 1);
+  EXPECT_EQ(rightShifts, 1);
+  EXPECT_EQ(populationCounts, 1);
+  // The nested packed value reaches popcount without an unpack/repack cycle.
+  EXPECT_EQ(unpackingTruncations, 0);
+}
+
+TEST(OpenQASMTargetTest, CarriesAtomicRotationsThroughControlFlow) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+output bit[5] value;
+value[0] = true;
+value[1] = false;
+value[2] = true;
+value[3] = false;
+value[4] = true;
+qubit q;
+bit condition = measure q;
+if (condition) {
+  value = rotl(value, 1);
+}
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool carriedWholeRegister = false;
+  module->walk([&](scf::IfOp conditional) {
+    carriedWholeRegister |= conditional.getNumResults() == 5;
+  });
+  EXPECT_TRUE(carriedWholeRegister);
+}
+
+TEST(OpenQASMTargetTest, SelfRotationSnapshotsTheWholeRegister) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+qubit[5] q;
+output bit[5] result;
+result = measure q;
+result = rotl(result, 2);
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  SmallVector<Value> measured;
+  SmallVector<Value> returned;
+  module->walk([&](qc::MeasureOp measurement) {
+    measured.push_back(measurement.getResult());
+  });
+  module->walk([&](func::ReturnOp operation) {
+    returned.assign(operation.getOperands().begin(),
+                    operation.getOperands().end());
+  });
+  ASSERT_EQ(measured.size(), 5);
+  ASSERT_EQ(returned.size(), 5);
+  EXPECT_EQ(returned[0], measured[3]);
+  EXPECT_EQ(returned[1], measured[4]);
+  EXPECT_EQ(returned[2], measured[0]);
+  EXPECT_EQ(returned[3], measured[1]);
+  EXPECT_EQ(returned[4], measured[2]);
+}
+
+TEST(OpenQASMTargetTest, SupportsWidthOneBitVectorBuiltins) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+output bit value;
+value = measure q;
+int distance = -3;
+value = rotl(value, distance);
+value = rotr(value, 4);
+uint count = popcount(value);
+rx(count) q;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  std::size_t populationCounts = 0;
+  std::size_t leftShifts = 0;
+  std::size_t rightShifts = 0;
+  module->walk([&](Operation* operation) {
+    populationCounts += isa<math::CtPopOp>(operation);
+    leftShifts += isa<LLVM::FshlOp>(operation);
+    rightShifts += isa<LLVM::FshrOp>(operation);
+  });
+  EXPECT_EQ(populationCounts, 1);
+  EXPECT_EQ(leftShifts, 1);
+  EXPECT_EQ(rightShifts, 0);
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidBitVectorBuiltinUses) {
+  const std::vector<llvm::StringLiteral> invalidSources{
+      "OPENQASM 3.1; qubit q; uint n = popcount(q);",
+      R"qasm(OPENQASM 3.1;
+bit[2] value;
+value[0] = false;
+value[1] = true;
+uint distance = 1;
+value = rotl(value, distance);
+)qasm",
+      "OPENQASM 3.1; bit[2] value; value = rotl(value, 1);",
+      R"qasm(OPENQASM 3.1;
+bit[2] source;
+source[0] = false;
+source[1] = true;
+bit[3] target;
+target = rotr(source, 1);
+)qasm"};
+  for (const auto source : invalidSources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    EXPECT_FALSE(analyzed) << source.str();
+  }
+
+  EXPECT_FALSE(oq3::frontend::parseOpenQASM(
+      "OPENQASM 3.1; bit[2] value; value = rotl(value);"));
+  EXPECT_FALSE(oq3::frontend::parseOpenQASM(
+      "OPENQASM 3.1; bit[2] value; uint n = popcount(value, 1);"));
+}
+
+TEST(OpenQASMFrontendTest, InvalidatesPopcountIndexFactsOnBitMutation) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+bit[2] source;
+source[0] = false;
+source[1] = true;
+bit[2] target;
+target[popcount(source)] = true;
+source[0] = true;
+qubit q;
+if (target[popcount(source)]) { x q; }
+output bit out;
+out = true;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("uninitialized bit"),
+            std::string::npos);
+
+  constexpr llvm::StringLiteral NO_MUTATION = R"qasm(
+OPENQASM 3.1;
+bit[2] source;
+source[0] = false;
+source[1] = true;
+bit[2] target;
+target[popcount(source)] = true;
+qubit q;
+if (target[popcount(source)]) { x q; }
+output bit out;
+out = true;
+)qasm";
+  auto preserved = oq3::frontend::analyzeOpenQASM(NO_MUTATION);
+  EXPECT_TRUE(preserved) << preserved.diagnostics.front().message;
 }
 
 TEST(OpenQASMTargetTest, SupportsOpenQASM2RegisterConditions) {

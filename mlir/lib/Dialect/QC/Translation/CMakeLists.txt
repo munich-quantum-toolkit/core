@@ -14,6 +14,7 @@ add_mlir_library(
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
+  MLIRLLVMDialect
   MLIROpenQASMFrontend
   MLIRControlFlowDialect
   MLIRMathDialect

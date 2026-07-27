@@ -477,6 +477,12 @@ extern const std::string expressionBuiltinConstants;
 /// Exercises scalar mathematical functions in gate parameters.
 extern const std::string expressionMathFunctions;
 
+/// Exercises population count and dynamic whole-bit-register rotation.
+extern const std::string bitVectorBuiltins;
+
+/// Exercises runtime ceiling and floor through the compiler pipeline.
+extern const std::string runtimeScalarRounding;
+
 /// Exercises nested scalar mathematical functions.
 extern const std::string expressionNestedMathFunctions;
 

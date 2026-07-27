@@ -27,6 +27,7 @@ class SourceMgr;
 namespace mlir::oq3::frontend {
 
 using ExpressionId = std::uint32_t;
+using BitVectorExpressionId = std::uint32_t;
 using RegisterId = std::uint32_t;
 using ScalarId = std::uint32_t;
 using ConditionId = std::uint32_t;
@@ -113,6 +114,7 @@ enum class ExpressionKind : std::uint8_t {
   Exp,
   Ln,
   Sqrt,
+  PopCount,
   Add,
   Subtract,
   Multiply,
@@ -129,6 +131,21 @@ struct ScalarExpression {
   ScalarId variable = 0;
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
+  BitVectorExpressionId bitVector = 0;
+};
+
+enum class BitVectorExpressionKind : std::uint8_t {
+  Register,
+  RotateLeft,
+  RotateRight,
+};
+
+struct BitVectorExpression {
+  BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
+  std::uint64_t width = 0;
+  RegisterId reg = 0;
+  BitVectorExpressionId operand = 0;
+  ExpressionId distance = 0;
 };
 
 struct ScalarDeclaration {
@@ -251,6 +268,11 @@ struct BitAssignmentStatement {
   ConditionId value = 0;
 };
 
+struct BitVectorAssignmentStatement {
+  RegisterId target = 0;
+  BitVectorExpressionId value = 0;
+};
+
 struct MeasurementStatement {
   std::vector<BitReference> targets;
   std::vector<QubitReference> qubits;
@@ -286,8 +308,9 @@ struct WhileStatement {
 using StatementData =
     std::variant<DeclarationStatement, ScalarDeclarationStatement,
                  ScalarAssignmentStatement, BitAssignmentStatement,
-                 GateApplication, MeasurementStatement, ResetStatement,
-                 BarrierStatement, IfStatement, ForStatement, WhileStatement>;
+                 BitVectorAssignmentStatement, GateApplication,
+                 MeasurementStatement, ResetStatement, BarrierStatement,
+                 IfStatement, ForStatement, WhileStatement>;
 
 struct Statement {
   StatementData data;
@@ -299,6 +322,7 @@ struct TypedProgram {
   bool stdGatesIncluded = false;
   bool qelib1Included = false;
   std::vector<ScalarExpression> expressions;
+  std::vector<BitVectorExpression> bitVectorExpressions;
   std::vector<ConditionExpression> conditions;
   std::vector<ScalarDeclaration> scalars;
   std::vector<RegisterDeclaration> registers;

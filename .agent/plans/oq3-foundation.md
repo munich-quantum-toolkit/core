@@ -199,6 +199,10 @@ threads or publishing new PR text.
 - [x] (2026-07-27) Implemented the selected FU-02 scalar builtins `ceiling()`
       and `floor()` with compile-time folding, runtime Math-dialect lowering,
       focused semantic and QC-emission coverage, and maintained documentation.
+- [x] (2026-07-27) Implemented the selected FU-02 bit-vector builtins
+      `popcount()`, `rotl()`, and `rotr()` with a typed bit-vector expression
+      pool, atomic whole-register assignment, signed dynamic distances, linear
+      emission preflight, and focused source and native QIR regressions.
 
 ## Surprises & Discoveries
 
@@ -306,6 +310,16 @@ threads or publishing new PR text.
   correction, or runtime power checks. A builder listener supplies the
   authoritative construction count; conservative preflight retains early,
   source-located rejection for statically predictable work.
+
+- Observation: eagerly unpacking every dynamic rotation would make nested
+  `rotl()` and `rotr()` calls repeatedly rebuild the same bit vector. Retaining
+  either source-order bits or one packed integer lets nested rotations remain
+  packed until a consumer actually needs individual bits.
+
+- Observation: a folded `popcount(bits)` used as a later dynamic index becomes
+  stale when any element of `bits` changes. Register-wide bit generations are
+  therefore part of the constant-fact dependency snapshot, including across
+  structured control-flow joins.
 
 ## Decision Log
 
@@ -473,6 +487,21 @@ threads or publishing new PR text.
   preflight and the authoritative builder listener continue to provide the one
   construction budget. Date/Author: 2026-07-27 / Codex.
 
+- Decision: represent bit-vector builtins in a dedicated typed expression pool
+  instead of pretending they are scalar expressions. Pack bit zero as the
+  least-significant bit, use host permutations for constant rotations when bits
+  are available, and use LLVM funnel shifts for packed or dynamic rotations.
+  Rationale: the source width and atomic whole-register value remain explicit,
+  while the lazy emitted representation avoids redundant pack/unpack chains.
+  Date/Author: 2026-07-27 / Codex.
+
+- Decision: lower Math-dialect integer population count through the standard
+  Math-to-LLVM conversion seam in both Adaptive and Base QIR pipelines.
+  Rationale: QC legitimately contains the standard operation; the QIR
+  conversions, rather than the source parser, own its LLVM realization. `jeff`
+  retains an explicit incompatibility fixture for population count and funnel
+  shifts. Date/Author: 2026-07-27 / Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
@@ -509,6 +538,17 @@ powers no longer round through f64, and all operation construction is bounded
 independently of projected gate expansion. Focused tests exercise the matrix
 contracts directly in QC IR and force each newly budgeted construction category
 to fail during preflight.
+
+The selected FU-02 builtins now cover constant and runtime scalar rounding plus
+whole-register population count and rotation. Rotation assignment evaluates its
+right-hand side from a snapshot before replacing the target, and dynamic
+distances are normalized modulo the register width, including negative values.
+Focused tests cover self-assignment, width one, nested packed rotations,
+control-flow carrying, the shared construction budget, stale constant facts,
+standard and Base/Adaptive QIR lowering, a positive `jeff` scalar-rounding
+fixture, and an explicit `jeff` bit-vector boundary. Declaration initialization,
+casts, sized-`uint` overloads, bit-string literals, and broader folding remain
+follow-up work.
 
 ## Context and Orientation
 
@@ -947,3 +987,9 @@ functionality.
 
 Revision note (2026-07-27): selected FU-02 work added constant and runtime
 `ceiling()` and `floor()` through the existing typed scalar-expression path.
+
+Revision note (2026-07-27): the second selected FU-02 slice added typed
+whole-bit-register `popcount()`, `rotl()`, and `rotr()`. Emission uses a lazy
+bits-or-packed representation, includes linear packing work in the existing
+construction budget, invalidates constant facts through bit-register
+generations, and lowers retained Math operations through both QIR profiles.
