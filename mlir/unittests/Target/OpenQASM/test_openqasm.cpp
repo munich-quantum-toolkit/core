@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
+#include "mlir/Target/OpenQASM/GateCatalog.h"
 #include "qasm_programs.h"
 
 #include <gtest/gtest.h>
@@ -475,6 +476,15 @@ TEST(OpenQASMTargetTest, ProductionTranslationUsesTheStagedPipeline) {
   EXPECT_TRUE(hasQuantumOperation);
 }
 
+TEST(OpenQASMFrontendTest, CanonicalGateNamesRoundTripThroughTheCatalog) {
+  for (const auto& entry : oq3::frontend::getGateCatalog()) {
+    const auto canonicalName = oq3::frontend::canonicalGateName(entry.lowering);
+    const auto* canonicalEntry = oq3::frontend::lookupGate(canonicalName);
+    ASSERT_NE(canonicalEntry, nullptr) << canonicalName.str();
+    EXPECT_EQ(canonicalEntry->lowering, entry.lowering) << entry.name.str();
+  }
+}
+
 TEST(OpenQASMTargetTest, EmitsTypedMixedNumericGateExpressions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -522,6 +532,183 @@ shaped(0.5) q;
                      math::LogOp, math::SqrtOp>(operation);
   });
   EXPECT_EQ(functions, 6);
+}
+
+TEST(OpenQASMTargetTest, EmitsInverseTrigFunctionsWithNumericConversions) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+uint unsigned_value = 1;
+int signed_value = 1;
+float float_value = 0.5;
+qubit q;
+rx(arccos(unsigned_value) + arcsin(signed_value) + arctan(float_value)) q;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t arcCosines = 0;
+  size_t arcSines = 0;
+  size_t arcTangents = 0;
+  size_t unsignedConversions = 0;
+  size_t signedConversions = 0;
+  module->walk([&](Operation* operation) {
+    arcCosines += isa<math::AcosOp>(operation);
+    arcSines += isa<math::AsinOp>(operation);
+    arcTangents += isa<math::AtanOp>(operation);
+    unsignedConversions += isa<arith::UIToFPOp>(operation);
+    signedConversions += isa<arith::SIToFPOp>(operation);
+  });
+  EXPECT_EQ(arcCosines, 1);
+  EXPECT_EQ(arcSines, 1);
+  EXPECT_EQ(arcTangents, 1);
+  EXPECT_EQ(unsignedConversions, 1);
+  EXPECT_EQ(signedConversions, 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsRuntimeScalarConversionMatrix) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+float source_float = 2.5;
+uint uint_from_float = source_float;
+int int_from_float = source_float;
+bool source_bool = true;
+float float_from_bool = source_bool;
+int int_from_bool = source_bool;
+uint source_uint = 2;
+float float_from_uint = source_uint;
+int source_int = 2;
+float float_from_int = source_int;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t floatToUnsigned = 0;
+  size_t floatToSigned = 0;
+  size_t boolToInteger = 0;
+  size_t unsignedToFloat = 0;
+  size_t signedToFloat = 0;
+  module->walk([&](Operation* operation) {
+    floatToUnsigned += isa<arith::FPToUIOp>(operation);
+    floatToSigned += isa<arith::FPToSIOp>(operation);
+    boolToInteger += isa<arith::ExtUIOp>(operation);
+    unsignedToFloat += isa<arith::UIToFPOp>(operation);
+    signedToFloat += isa<arith::SIToFPOp>(operation);
+  });
+  EXPECT_EQ(floatToUnsigned, 1);
+  EXPECT_EQ(floatToSigned, 1);
+  EXPECT_EQ(boolToInteger, 1);
+  EXPECT_EQ(unsignedToFloat, 2);
+  EXPECT_EQ(signedToFloat, 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsEveryRuntimeComparisonPredicate) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+float float_left = 1.0;
+float float_right = 2.0;
+bool float_equal = float_left == float_right;
+bool float_not_equal = float_left != float_right;
+bool float_less = float_left < float_right;
+bool float_less_equal = float_left <= float_right;
+bool float_greater = float_left > float_right;
+bool float_greater_equal = float_left >= float_right;
+int signed_left = 1;
+int signed_right = 2;
+bool signed_equal = signed_left == signed_right;
+bool signed_not_equal = signed_left != signed_right;
+bool signed_less = signed_left < signed_right;
+bool signed_less_equal = signed_left <= signed_right;
+bool signed_greater = signed_left > signed_right;
+bool signed_greater_equal = signed_left >= signed_right;
+uint unsigned_left = 1;
+uint unsigned_right = 2;
+bool unsigned_equal = unsigned_left == unsigned_right;
+bool unsigned_not_equal = unsigned_left != unsigned_right;
+bool unsigned_less = unsigned_left < unsigned_right;
+bool unsigned_less_equal = unsigned_left <= unsigned_right;
+bool unsigned_greater = unsigned_left > unsigned_right;
+bool unsigned_greater_equal = unsigned_left >= unsigned_right;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::array<size_t, 6> floatPredicates{};
+  std::array<size_t, 10> integerPredicates{};
+  module->walk([&](Operation* operation) {
+    if (auto comparison = dyn_cast<arith::CmpFOp>(operation)) {
+      switch (comparison.getPredicate()) {
+      case arith::CmpFPredicate::OEQ:
+        ++floatPredicates[0];
+        break;
+      case arith::CmpFPredicate::UNE:
+        ++floatPredicates[1];
+        break;
+      case arith::CmpFPredicate::OLT:
+        ++floatPredicates[2];
+        break;
+      case arith::CmpFPredicate::OLE:
+        ++floatPredicates[3];
+        break;
+      case arith::CmpFPredicate::OGT:
+        ++floatPredicates[4];
+        break;
+      case arith::CmpFPredicate::OGE:
+        ++floatPredicates[5];
+        break;
+      default:
+        break;
+      }
+    }
+    if (auto comparison = dyn_cast<arith::CmpIOp>(operation)) {
+      switch (comparison.getPredicate()) {
+      case arith::CmpIPredicate::eq:
+        ++integerPredicates[0];
+        break;
+      case arith::CmpIPredicate::ne:
+        ++integerPredicates[1];
+        break;
+      case arith::CmpIPredicate::slt:
+        ++integerPredicates[2];
+        break;
+      case arith::CmpIPredicate::sle:
+        ++integerPredicates[3];
+        break;
+      case arith::CmpIPredicate::sgt:
+        ++integerPredicates[4];
+        break;
+      case arith::CmpIPredicate::sge:
+        ++integerPredicates[5];
+        break;
+      case arith::CmpIPredicate::ult:
+        ++integerPredicates[6];
+        break;
+      case arith::CmpIPredicate::ule:
+        ++integerPredicates[7];
+        break;
+      case arith::CmpIPredicate::ugt:
+        ++integerPredicates[8];
+        break;
+      case arith::CmpIPredicate::uge:
+        ++integerPredicates[9];
+        break;
+      default:
+        break;
+      }
+    }
+  });
+  EXPECT_EQ(floatPredicates, (std::array<size_t, 6>{1, 1, 1, 1, 1, 1}));
+  EXPECT_EQ(integerPredicates,
+            (std::array<size_t, 10>{2, 2, 1, 1, 1, 1, 1, 1, 1, 1}));
 }
 
 TEST(OpenQASMTargetTest, FoldsAndEmitsCeilingAndFloor) {
@@ -1411,6 +1598,41 @@ rx(count) q;
   EXPECT_EQ(populationCounts, 1);
   EXPECT_EQ(leftShifts, 1);
   EXPECT_EQ(rightShifts, 0);
+}
+
+TEST(OpenQASMTargetTest, SupportsWideBitVectorBuiltins) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[65] q;
+bit[65] value = measure q;
+int distance = 3;
+value = rotl(value, distance);
+uint count = popcount(value);
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t wideFunnelShifts = 0;
+  size_t populationCounts = 0;
+  size_t narrowedCounts = 0;
+  module->walk([&](Operation* operation) {
+    if (auto shift = dyn_cast<LLVM::FshlOp>(operation)) {
+      wideFunnelShifts += shift.getResult().getType().isInteger(65);
+    }
+    if (auto count = dyn_cast<math::CtPopOp>(operation)) {
+      populationCounts += count.getResult().getType().isInteger(65);
+    }
+    if (auto truncation = dyn_cast<arith::TruncIOp>(operation)) {
+      narrowedCounts += truncation.getIn().getType().isInteger(65) &&
+                        truncation.getOut().getType().isInteger(64);
+    }
+  });
+  EXPECT_EQ(wideFunnelShifts, 1);
+  EXPECT_EQ(populationCounts, 1);
+  EXPECT_EQ(narrowedCounts, 1);
 }
 
 TEST(OpenQASMTargetTest, RotationsProduceSpecifiedBitResults) {
@@ -2488,6 +2710,68 @@ if (mixed_order) { x q; }
   }
   EXPECT_TRUE(sawWrappedParameter);
   EXPECT_TRUE(sawFalseCondition);
+}
+
+TEST(OpenQASMFrontendTest, FoldsUnsignedAndMixedNumericConstantOperators) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+const uint operand = 9;
+const uint added = operand + 4;
+const uint subtracted = operand - 4;
+const uint multiplied = operand * 4;
+const uint divided = operand / 4;
+const uint remainder = operand % 4;
+const uint builtin_remainder = mod(operand, 4);
+const uint powered = operand ** 2;
+const uint builtin_powered = pow(operand, 2);
+qubit q;
+rx(added) q;
+rx(subtracted) q;
+rx(multiplied) q;
+rx(divided) q;
+rx(remainder) q;
+rx(builtin_remainder) q;
+rx(powered) q;
+rx(builtin_powered) q;
+if (1.5 < operand) { x q; }
+if (operand <= 9.0) { x q; }
+if (10.0 > operand) { x q; }
+if (operand >= 9.0) { x q; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+
+  constexpr std::array<uint64_t, 8> expectedParameters{13, 5, 36, 2,
+                                                       1,  1, 81, 81};
+  size_t parameterIndex = 0;
+  size_t trueConditions = 0;
+  for (const auto statement : analyzed.program->body) {
+    const auto& data = analyzed.program->statements[statement].data;
+    if (const auto* application =
+            std::get_if<oq3::frontend::GateApplication>(&data);
+        application != nullptr && application->callee == "rx") {
+      ASSERT_LT(parameterIndex, expectedParameters.size());
+      ASSERT_EQ(application->parameters.size(), 1);
+      const auto& parameter =
+          analyzed.program->expressions[application->parameters.front()];
+      ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Constant);
+      ASSERT_EQ(parameter.type, oq3::frontend::ScalarType::Uint);
+      EXPECT_EQ(std::get<uint64_t>(parameter.constant),
+                expectedParameters[parameterIndex]);
+      ++parameterIndex;
+    }
+    if (const auto* conditional =
+            std::get_if<oq3::frontend::IfStatement>(&data)) {
+      const auto& condition =
+          analyzed.program->conditions[conditional->condition];
+      ASSERT_EQ(condition.kind, oq3::frontend::ConditionKind::Literal);
+      trueConditions += condition.literal;
+    }
+  }
+  EXPECT_EQ(parameterIndex, expectedParameters.size());
+  EXPECT_EQ(trueConditions, 4);
 }
 
 TEST(OpenQASMFrontendTest, PromotesReleasedConstInitializerSubset) {

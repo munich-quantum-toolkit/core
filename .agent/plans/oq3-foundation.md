@@ -102,9 +102,10 @@ threads or publishing new PR text.
 - [x] (2026-07-16) Closed the checked-integer acceptance gap by rejecting
       non-folded checked integer arithmetic and ranges at the QC boundary with a
       source-located diagnostic while preserving frontend support.
-- [x] (2026-07-16) Ran final documentation, lint, architecture, affected unit,
-      legacy-parser, and clean sequential coverage validation. Coverage is 89.9
-      percent (4117/4579); the remaining lines do not justify test-only padding.
+- [x] (2026-07-16) Ran documentation, lint, architecture, affected unit,
+      legacy-parser, and clean sequential coverage validation for that
+      historical revision. Its substantive coverage was 4117/4579 lines (89.9
+      percent); later behavior-driven tests supersede this measurement.
 - [x] (2026-07-16) Re-read the complete effective branch diff after the final
       implementation commits. Removed the unused gate-policy field from the
       resolved program model and corrected stale plan claims; retained the
@@ -174,9 +175,9 @@ threads or publishing new PR text.
       tests passed. The warning-as-error documentation build and the complete
       repository lint session also passed.
 - [x] (2026-07-27) Rebuilt the coverage configuration, discarded only stale
-      ignored `.gcda` counters, and ran the affected binaries sequentially. The
-      substantive frontend and emitter sources reached 89 percent line coverage
-      (3537/3958) and 60 percent branch coverage (2855/4698).
+      ignored `.gcda` counters, and ran the affected binaries sequentially. This
+      intermediate revision reached 3537/3958 lines (89 percent) and 2855/4698
+      branches (60 percent); the final coverage pass below supersedes it.
 - [x] (2026-07-27) Closed the independent verification findings by making
       compile-time logical evaluation short-circuit without skipping dead-branch
       type validation and by attaching include provenance to each cached-source
@@ -207,30 +208,37 @@ threads or publishing new PR text.
       the distinction between scalar `bit` and `bit[1]`, rejecting scalar bits
       from `popcount()`, `rotl()`, and `rotr()`, and adding result-level
       constant and runtime rotation and population-count oracles.
-- [x] (2026-07-27) Audited OpenQASM issues #527, #594, #610, #612, #613,
-      #614, and #617 and pull requests #624 and #666. None is a merged
-      specification change that supersedes the released OpenQASM 3.1
-      constant-initializer rules, so the frontend implements the released
-      same-type and promotable-constant matrix and treats the broader draft
-      tables in #666 as non-normative follow-up work.
+- [x] (2026-07-27) Audited OpenQASM issues #527, #594, #610, #612, #613, #614,
+      and #617 and pull requests #624 and #666. None is a merged specification
+      change that supersedes the released OpenQASM 3.1 constant-initializer
+      rules, so the frontend implements the released same-type and
+      promotable-constant matrix and treats the broader draft tables in #666 as
+      non-normative follow-up work.
 - [x] (2026-07-27) Completed the selected MF-06 and Q-01 cleanup. An exact
       Clang-Tidy 22.1.8 audit of the ten changed OpenQASM translation units and
       their headers fell from 1,376 diagnostics to zero without changing the
       repository policy. The pass also adopted project-style unqualified
       `size_t`, `int64_t`, and `uint64_t` names and renamed the internal
       logarithm expression kind from `Ln` to `Log`.
-- [x] (2026-07-27) Added a deterministic PE-01 structural stress regression
-      with 2,048 indexed custom-gate definitions and applications. Rebuilt the
-      frontend, QC translation, and compiler-driver targets and ran 131
-      OpenQASM frontend/target tests plus 257 QC translation tests
-      successfully. The latest clean coverage result remains 89 percent
-      (3537/3958); a new coverage run and behavior-driven expansion are still
-      required before claiming the requested greater-than-90-percent margin.
+- [x] (2026-07-27) Added a deterministic custom-gate indexing structural stress
+      regression with 2,048 indexed definitions and applications. Rebuilt the
+      frontend, QC translation, and compiler-driver targets and ran 131 OpenQASM
+      frontend/target tests plus 257 QC translation tests successfully.
 - [x] (2026-07-27) Made the FU-02 QIR boundary explicit: constant-folded scalar
       rounding remains convertible, while retained `math.ceil`, `math.floor`,
       `math.ctpop`, `llvm.fshl`, and `llvm.fshr` operations produce
       feature-named diagnostics in both the Base and Adaptive profile
       conversions.
+- [x] (2026-07-27) Regenerated coverage from clean counters and added
+      behavior-driven tests for the runtime scalar-conversion matrix, all
+      floating-point and signed/unsigned integer comparison predicates,
+      inverse-trigonometric numeric conversions, unsigned constant arithmetic,
+      bit-vector operations wider than 64 bits, and gate-catalog canonical-name
+      round trips. All 137 frontend/target, 257 QC translation, 130 Adaptive
+      QIR, 112 Base QIR, and 191 compiler tests passed. The five substantive
+      frontend and emitter files reached 4149/4542 lines (91.35 percent) and
+      3283/5195 branches (63.20 percent); changed production C++ reached
+      4256/4651 lines (91.51 percent) against `origin/main`.
 
 ## Surprises & Discoveries
 
@@ -359,8 +367,8 @@ threads or publishing new PR text.
   test-only integer evaluator can inspect the returned bits without routing
   source correctness through QCO or QIR conversions.
 
-- Observation: foldable scalar builtins pass the optimized Standard, `jeff`,
-  and Base paths, but retained `math.ceil`, `math.floor`, population-count, and
+- Observation: foldable scalar builtins pass the optimized Standard, `jeff`, and
+  Base paths, but retained `math.ceil`, `math.floor`, population-count, and
   funnel-shift operations are explicit QC-to-QIR boundary failures. The
   bit-vector fixture is tracked independently in both the `jeff` and QIR
   boundary corpora; source acceptance must not imply retained-operation QIR
@@ -478,11 +486,11 @@ threads or publishing new PR text.
   while dynamic zero steps remain guarded by `cf.assert`. Date/Author:
   2026-07-16 / Codex.
 
-- Decision: accept the measured 89.9 percent frontend and emitter line coverage
-  without adding tests whose only purpose is crossing a round-number threshold.
-  Rationale: final review identified no missing behavior-driven regression, and
-  line-only tests would not improve evidence for the supported contracts.
-  Date/Author: 2026-07-16 / Codex.
+- Decision: raise coverage through behavioral matrix and boundary tests rather
+  than line-only execution. Rationale: runtime scalar conversions, every
+  comparison predicate, greater-than-64-bit vectors, and gate-catalog
+  round-tripping are observable contracts whose tests both close real gaps and
+  establish a stable margin above 90 percent. Date/Author: 2026-07-27 / Codex.
 
 - Decision: describe the parser as a supported-subset parser and use the live
   OpenQASM specification as the language reference. Rationale: this PR should
@@ -567,10 +575,10 @@ threads or publishing new PR text.
   `rotl(a, n) == rotr(a, -n)` without coupling the source contract to unrelated
   downstream conversions. Date/Author: 2026-07-27 / Codex.
 
-- Decision: implement the released OpenQASM 3.1 constant-initializer matrix,
-  not the broader draft conversion tables proposed in upstream pull request
-  #666. Rationale: the related upstream issues and pull requests remain open,
-  and no merged specification revision supersedes the released same-type and
+- Decision: implement the released OpenQASM 3.1 constant-initializer matrix, not
+  the broader draft conversion tables proposed in upstream pull request #666.
+  Rationale: the related upstream issues and pull requests remain open, and no
+  merged specification revision supersedes the released same-type and
   promotable-constant rules. Date/Author: 2026-07-27 / Codex.
 
 - Decision: name the internal natural-logarithm expression kind `Log`, matching
@@ -633,6 +641,15 @@ bits, while explicit `bit[1]` retains the width-one behavior. Result-level tests
 independently confirm constant and runtime rotations for zero, positive,
 negative, and over-width distances, the specified low-to-high bit-index order,
 the left/right inverse identity, and an observable population-count result.
+
+The final coverage pass exercises behavior that was previously accepted but not
+observed directly: every runtime scalar coercion and comparison predicate,
+inverse-trigonometric integer conversion, unsigned constant operator family,
+wide bit-vector packing and population-count narrowing, and the closed
+gate-catalog canonical-name mapping. Clean sequential counters report 4149 of
+4542 substantive frontend/emitter lines and 3283 of 5195 branches. A local
+Cobertura plus `diff-cover` calculation against `origin/main` reports 4256 of
+4651 changed production C++ lines.
 
 ## Context and Orientation
 
@@ -993,13 +1010,15 @@ results regains its marker without losing those results. A native QC-to-QIR
 regression proves that `cf.assert` lowers through LLVM. The latest focused
 validation results are:
 
-    OpenQASM frontend and target: 105 tests passed.
-    QC translation: 256 tests passed.
-    Compiler pipeline: 185 tests passed, including 66 corpus cases.
-    QC-to-QIR Adaptive: 129 tests passed.
-    QC-to-QIR Base: 111 tests passed.
+    OpenQASM frontend and target: 137 tests passed.
+    QC translation: 257 tests passed.
+    Compiler pipeline: 191 tests passed.
+    QC-to-QIR Adaptive: 130 tests passed.
+    QC-to-QIR Base: 112 tests passed.
     Legacy OpenQASM parser: 101 tests passed.
     Changed-file repository hooks and diff checks: passed.
+    Substantive frontend/emitter coverage: 4149/4542 lines and 3283/5195 branches.
+    Changed production C++ diff coverage: 4256/4651 lines.
 
 The remaining fresh-review findings are recorded outside this baseline repair
 and require the review-selection gate before implementation.
