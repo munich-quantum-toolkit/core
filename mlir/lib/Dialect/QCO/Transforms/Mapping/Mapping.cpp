@@ -1160,6 +1160,7 @@ private:
   template <WireDirection Direction>
   RecursiveRoutingStack advance(Wires& wires, const WireInfos& infos,
                                 const Layout& layout) {
+    DenseSet<Operation*> visited;
     RecursiveRoutingStack stack;
 
     // Advance wires past all executable gates and push operations with
@@ -1182,7 +1183,7 @@ private:
               device->areAdjacent(hw0, hw1)) {
             released.emplace_back(op);
           }
-        } else {
+        } else if (!visited.contains(op)) {
           stack.emplace_back(op, indices);
         }
       }
