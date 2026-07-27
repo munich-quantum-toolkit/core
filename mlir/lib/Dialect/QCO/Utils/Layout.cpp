@@ -11,26 +11,27 @@
 #include "mlir/Dialect/QCO/Utils/Layout.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <numeric>
 #include <random>
 
 namespace mlir::qco {
 Layout Layout::random(const size_t nqubits, const size_t seed) {
-  SmallVector<size_t> mapping(nqubits);
-  std::iota(mapping.begin(), mapping.end(), size_t{0});
-  std::ranges::shuffle(mapping, std::mt19937_64{seed});
+  auto mapping = llvm::to_vector(llvm::seq(nqubits));
+  llvm::shuffle(mapping.begin(), mapping.end(), std::mt19937_64{seed});
+  return fromMapping(mapping);
+}
 
-  Layout layout(nqubits);
+Layout Layout::fromMapping(ArrayRef<size_t> mapping) {
+  Layout layout(mapping.size());
   for (const auto [prog, hw] : enumerate(mapping)) {
     layout.add(prog, hw);
   }
-
   return layout;
 }
 

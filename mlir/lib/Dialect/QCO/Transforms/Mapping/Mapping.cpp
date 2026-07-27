@@ -23,6 +23,7 @@
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
@@ -970,6 +971,8 @@ private:
       curr.swap(unhappy->first, unhappy->second);
     }
 
+    assert(curr == to);
+
     return swaps;
   }
 
@@ -1026,6 +1029,30 @@ private:
     assert(layouts[0] == layouts[1]);
 
     return {layouts[0], std::move(swaps[0]), std::move(swaps[1])};
+  }
+
+  /// Return the "average" layout by computing the borda count, where each
+  /// layout is a voter and each hardware index counts as a candidate. One vote
+  /// is the order (the permutation) of program-to-hardware indices.
+  template <typename Range> static Layout vote(Range layouts) {
+    assert(!layouts.empty() && "expected at least one layout");
+    const auto ncandidates = (*layouts.begin()).nqubits();
+
+    SmallVector<size_t> scores(ncandidates, 0);
+    for (const Layout& layout : layouts) {
+      for (const auto [rank, hw] : enumerate(layout.getProgramToHardware())) {
+        scores[hw] += ncandidates - rank - 1;
+      }
+    }
+
+    auto mapping = llvm::to_vector(llvm::seq(ncandidates));
+    llvm::sort(mapping, [&](const size_t lhs, const size_t rhs) {
+      return scores[lhs] != scores[rhs]
+                 ? scores[lhs] > scores[rhs]
+                 : lhs < rhs; // Ensure order on borda equality.
+    });
+
+    return Layout::fromMapping(mapping);
   }
 
   /// Skip to the end of the two-qubit block for both wire iterators, where
@@ -1167,35 +1194,44 @@ private:
     // nested regions and the respective wire indices of their inputs onto the
     // result stack.
 
-    walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
-          if (ready.empty()) {
-            return WalkResult::advance();
-          }
+    walkProgramGraph<Direction>(wires, [&](const ReadyRange& ready,
+                                           ReleasedOps& released) {
+      if (ready.empty()) {
+        return WalkResult::advance();
+      }
 
-          for (const auto& [readyOp, indices] : ready) {
-            TypeSwitch<Operation*>(readyOp)
-                .template Case<BarrierOp>(
-                    [&](BarrierOp op) { released.emplace_back(op); })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                  const auto prog0 = infos.lookupProgram(indices[0]);
-                  const auto prog1 = infos.lookupProgram(indices[1]);
-                  if (const auto [hw0, hw1] =
-                          layout.getHardwareIndices(prog0, prog1);
-                      device->areAdjacent(hw0, hw1)) {
-                    released.emplace_back(op);
-                  }
-                })
-                .template Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
-                    [&](auto op) { stack.emplace_back(op, indices); });
-          }
+      for (const auto& [op, indices] : ready) {
+        if (isa<BarrierOp>(op)) {
+          released.emplace_back(op);
+          continue;
+        }
 
-          if (released.empty()) {
-            return WalkResult::interrupt();
+        if (isa<UnitaryOpInterface>(op)) {
+          const auto prog0 = infos.lookupProgram(indices[0]);
+          const auto prog1 = infos.lookupProgram(indices[1]);
+          if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+              device->areAdjacent(hw0, hw1)) {
+            released.emplace_back(op);
           }
+          continue;
+        }
 
-          return WalkResult::advance();
-        });
+        if (op->getNumRegions() > 0) {
+          assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
+          stack.emplace_back(op, indices);
+          continue;
+        }
+
+        llvm::reportFatalInternalError("unhandled op type");
+        llvm_unreachable("unhandled op type");
+      }
+
+      if (released.empty()) {
+        return WalkResult::interrupt();
+      }
+
+      return WalkResult::advance();
+    });
 
     return stack;
   }
@@ -1234,28 +1270,27 @@ private:
     const auto& [op, indices] = item;
 
     SmallVector<size_t> permutation(indices.size());
-    SmallVector<RoutingBundle, 2> children =
-        TypeSwitch<Operation*, SmallVector<RoutingBundle, 2>>(op)
+    SmallVector<RoutingBundle, 0> children =
+        TypeSwitch<Operation*, SmallVector<RoutingBundle, 0>>(op)
             .template Case<scf::ForOp, scf::WhileOp>([&](auto) {
-              return SmallVector<RoutingBundle, 2>{
+              return SmallVector<RoutingBundle, 0>{
                   RoutingBundle{.layout = parent.layout}};
             })
             .template Case<IfOp>([&](IfOp) {
-              return SmallVector<RoutingBundle, 2>{
-                  RoutingBundle{.layout = parent.layout},
-                  RoutingBundle{.layout = parent.layout}};
+              return SmallVector<RoutingBundle, 0>(
+                  2, RoutingBundle{.layout = parent.layout});
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-              return SmallVector<RoutingBundle, 2>(
+              return SmallVector<RoutingBundle, 0>(
                   switchOp.getNumRegions(),
                   RoutingBundle{.layout = parent.layout});
             });
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
     size_t numQubitResults = 0;
-    for (const auto [resultIndex, result] : llvm::enumerate(op->getResults())) {
-      if (isa<QubitType>(result.getType())) {
-        resultToQubitIndex[resultIndex] = numQubitResults++;
+    for (const auto res : op->getResults()) {
+      if (isa<QubitType>(res.getType())) {
+        resultToQubitIndex[res.getResultNumber()] = numQubitResults++;
       }
     }
     assert(numQubitResults == indices.size());
@@ -1300,47 +1335,37 @@ private:
             }());
           })
           .template Case<IfOp>([&](IfOp ifOp) {
-            assert(ifOp.getNumRegions() == 2);
-
             OpOperand* const qubit = ifOp.getTiedQubit(res);
             for (size_t i = 0; i < 2; ++i) {
-              Region& region = ifOp.getRegion(i);
-
-              const auto arg = region.getRegionNumber() == 0
-                                   ? ifOp.getTiedThenBlockArgument(qubit)
-                                   : ifOp.getTiedElseBlockArgument(qubit);
+              const auto arg = i == 0 ? ifOp.getTiedThenBlockArgument(qubit)
+                                      : ifOp.getTiedElseBlockArgument(qubit);
               children[i].infos.insertOrUpdate(children[i].infos.size(), prog);
               children[i].wires.emplace_back([&] -> Value {
                 if constexpr (Direction == WireDirection::Forward) {
                   return arg;
                 } else {
-                  return region.getRegionNumber() == 0
-                             ? ifOp.getTiedThenYieldedValue(arg)->get()
-                             : ifOp.getTiedElseYieldedValue(arg)->get();
+                  return i == 0 ? ifOp.getTiedThenYieldedValue(arg)->get()
+                                : ifOp.getTiedElseYieldedValue(arg)->get();
                 }
               }());
             }
           })
           .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-            OpOperand* const target = switchOp.getTiedTarget(res);
-            for (Region* region : switchOp.getRegions()) {
-              const auto regionNumber = region->getRegionNumber();
+            OpOperand* const qubit = switchOp.getTiedTarget(res);
+            for (size_t i = 0; i < switchOp.getNumRegions(); ++i) {
               const auto arg =
-                  regionNumber == 0
-                      ? switchOp.getTiedDefaultBlockArgument(target)
-                      : switchOp.getTiedCaseBlockArgument(target,
-                                                          regionNumber - 1);
-              auto& child = children[regionNumber];
-              child.infos.insertOrUpdate(child.infos.size(), prog);
-              child.wires.emplace_back([&] -> Value {
+                  i == 0 ? switchOp.getTiedDefaultBlockArgument(qubit)
+                         : switchOp.getTiedCaseBlockArgument(qubit, i - 1);
+              children[i].infos.insertOrUpdate(children[i].infos.size(), prog);
+              children[i].wires.emplace_back([&] -> Value {
                 if constexpr (Direction == WireDirection::Forward) {
                   return arg;
+                } else {
+                  return i == 0
+                             ? switchOp.getTiedDefaultYieldedValue(arg)->get()
+                             : switchOp.getTiedCaseYieldedValue(arg, i - 1)
+                                   ->get();
                 }
-                return regionNumber == 0
-                           ? switchOp.getTiedDefaultYieldedValue(arg)->get()
-                           : switchOp
-                                 .getTiedCaseYieldedValue(arg, regionNumber - 1)
-                                 ->get();
               }());
             }
           });
@@ -1378,9 +1403,8 @@ private:
         return cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator())
             .getResults();
       }();
-      const auto rng = getQubitValues(values);
 
-      for (const auto& [i, arg] : llvm::enumerate(rng)) {
+      for (const auto& [i, arg] : llvm::enumerate(getQubitValues(values))) {
         const auto hw = permutation[i];
         const auto prog = children[0].layout.getProgramIndex(hw);
         children[1].wires.emplace_back(arg);
@@ -1396,43 +1420,39 @@ private:
       }
     }
 
+    // Find (insert) the epilogue SWAP sequence for (into) the child region
+    // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote and
+    // restore (IndexSwitchOp) strategies.
+
     const Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
-              // Find (insert) the epilogue SWAP sequence for (into) the child
-              // region using the restore strategy.
-
               const auto swaps = restore(children[0].layout, parent.layout);
               insertSWAPs<Mode>(swaps, children[0], stats, rewriter);
               return parent.layout;
             })
             .template Case<scf::WhileOp>([&](scf::WhileOp) {
-              // Find (insert) the epilogue SWAP sequence for (into) the after
-              // region using the restore strategy.
-
               const auto swaps = restore(children[1].layout, parent.layout);
               insertSWAPs<Mode>(swaps, children[1], stats, rewriter);
-
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
             })
             .template Case<IfOp>([&](IfOp) {
-              // Find (insert) the epilogue SWAP sequence for (into) each child
-              // branch using the "converge" strategy.
-
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
               insertSWAPs<Mode>(fst, children[0], stats, rewriter);
               insertSWAPs<Mode>(snd, children[1], stats, rewriter);
-              return convergedLayout;
+              return std::move(convergedLayout);
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
-              for (auto& child : children) {
-                const auto swaps = restore(child.layout, parent.layout);
+              const auto winner = vote(map_range(
+                  children, [&](const RoutingBundle& b) { return b.layout; }));
+              for (RoutingBundle& child : children) {
+                const auto swaps = restore(child.layout, winner);
                 insertSWAPs<Mode>(swaps, child, stats, rewriter);
               }
-              return parent.layout;
+              return std::move(winner);
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
@@ -1458,6 +1478,13 @@ private:
                 yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
                                             children[1]));
           })
+          .template Case<scf::ForOp>([&](scf::ForOp forOp) {
+            auto yieldOp = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
+            rewriter->setInsertionPoint(yieldOp);
+            rewriter->replaceOpWithNewOp<scf::YieldOp>(
+                yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
+                                            children[0]));
+          })
           .template Case<IfOp, IndexSwitchOp>([&](auto branchOp) {
             for (const auto [region, child] :
                  llvm::zip_equal(branchOp->getRegions(), children)) {
@@ -1482,7 +1509,6 @@ private:
     // mapping to the parent.
 
     if (!isa<scf::ForOp>(op)) {
-
       WireInfos realigendInfos;
       for (size_t i = 0; i < parent.wires.size(); ++i) {
         const auto oldProg = parent.infos.lookupProgram(i);

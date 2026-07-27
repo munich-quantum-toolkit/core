@@ -90,30 +90,36 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 
       for (const auto [pred, succ] : llvm::zip_equal(
                unitaryOp.getInputQubits(), unitaryOp.getOutputQubits())) {
-        m.try_emplace(succ, m.at(pred));
+        const auto hw = m.at(pred);
+        m.try_emplace(succ, hw);
       }
 
       continue;
     }
 
     if (auto resetOp = dyn_cast<ResetOp>(op)) {
-      m.try_emplace(resetOp.getQubitOut(), m.at(resetOp.getQubitIn()));
+      const auto hw = m.at(resetOp.getQubitIn());
+      m.try_emplace(resetOp.getQubitOut(), hw);
       continue;
     }
 
     if (auto measOp = dyn_cast<MeasureOp>(op)) {
-      m.try_emplace(measOp.getQubitOut(), m.at(measOp.getQubitIn()));
+      const auto hw = m.at(measOp.getQubitIn());
+      m.try_emplace(measOp.getQubitOut(), hw);
       continue;
     }
 
-    if (!isa<scf::ForOp, scf::WhileOp, qco::IfOp>(op)) {
+    if (!isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(op)) {
       continue;
     }
 
     for (Region& region : op.getRegions()) {
       const ValueRange initArgs =
-          TypeSwitch<Operation*, ValueRange>(region.getParentOp())
+          TypeSwitch<Operation*, ValueRange>(&op)
               .Case<qco::IfOp>([&](qco::IfOp ifOp) { return ifOp.getQubits(); })
+              .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp switchOp) {
+                return switchOp.getTargets();
+              })
               .Case<scf::WhileOp>(
                   [&](scf::WhileOp whileOp) { return whileOp.getInits(); })
               .Case<scf::ForOp>(
@@ -123,14 +129,12 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
       const auto initialHardwareOrder = to_vector(llvm::map_range(
           getQubitValues(initArgs), [&](auto v) { return m.at(v); }));
 
-      const auto qubitArgs =
-          llvm::make_filter_range(region.getArguments(), [](auto& arg) {
-            return isa<QubitType>(arg.getType());
-          });
+      const auto qubitArgs = getQubitValues(region.getArguments());
 
       DenseMap<Value, size_t> localM;
-      for (const auto [i, arg] : llvm::enumerate(qubitArgs)) {
-        localM.try_emplace(arg, initialHardwareOrder[i]);
+      for (const auto [arg, hw] :
+           llvm::zip_equal(qubitArgs, initialHardwareOrder)) {
+        localM.try_emplace(arg, hw);
       }
 
       if (!isExecutable(region, localM, couplingSet)) {
@@ -140,7 +144,7 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
       Operation* terminator = region.front().getTerminator();
       const ValueRange finalOrderArgs =
           TypeSwitch<Operation*, ValueRange>(region.getParentOp())
-              .Case<qco::IfOp>([&](qco::IfOp) {
+              .Case<qco::IfOp, qco::IndexSwitchOp>([&](auto) {
                 return cast<qco::YieldOp>(terminator).getTargets();
               })
               .Case<scf::WhileOp>([&](auto) {
@@ -162,6 +166,14 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
         llvm::dbgs()
             << "The hardware indices of the yielded terminator qubit values "
                "must be in the same order as parent's op input qubit values!\n";
+        for (const auto hw : initialHardwareOrder) {
+          llvm::dbgs() << hw << ' ';
+        }
+        llvm::dbgs() << "\n";
+        for (const auto hw : finalOrder) {
+          llvm::dbgs() << hw << ' ';
+        }
+        llvm::dbgs() << "\n";
         return false;
       }
     }
@@ -170,17 +182,22 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
       if (!isa<QubitType>(res.getType())) {
         continue;
       }
-      const Value init = TypeSwitch<Operation*, Value>(&op)
-                             .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-                               return whileOp.getInits()[res.getResultNumber()];
-                             })
-                             .Case<scf::ForOp>([&](scf::ForOp forOp) {
-                               return forOp.getTiedLoopInit(res)->get();
-                             })
-                             .Case<qco::IfOp>([&](qco::IfOp ifOp) {
-                               return ifOp.getTiedQubit(res)->get();
-                             });
-      m.try_emplace(res, m.at(init));
+      const Value init =
+          TypeSwitch<Operation*, Value>(&op)
+              .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+                return whileOp.getInits()[res.getResultNumber()];
+              })
+              .Case<scf::ForOp>([&](scf::ForOp forOp) {
+                return forOp.getTiedLoopInit(res)->get();
+              })
+              .Case<qco::IfOp>(
+                  [&](qco::IfOp ifOp) { return ifOp.getTiedQubit(res)->get(); })
+              .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp switchOp) {
+                return switchOp.getTiedTarget(res)->get();
+              });
+
+      const auto hw = m.at(init);
+      m.try_emplace(res, hw);
     }
   }
 
@@ -977,6 +994,93 @@ TEST_P(MappingPassTest, MapDoUntil) {
       });
 
   flatGHZ(builder, qubits);
+
+  qubits = builder.barrier(qubits);
+
+  for (int64_t i = 0; i < size; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  auto res =
+      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
+  auto entry = getEntryPoint(m.get());
+
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapNestedForSwitch) {
+  const auto& device = GetParam();
+  const auto size = 9;
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(size);
+  SmallVector<Value> qubits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  qubits = builder.scfFor(0, 1000, 1, qubits, [&](Value, ValueRange initArgs) {
+    SmallVector<Value> args(initArgs);
+
+    std::tie(args[0], args[3]) = builder.cx(args[0], args[3]);
+    std::tie(args[0], args[6]) = builder.cx(args[0], args[6]);
+
+    SmallVector<Value> t(ArrayRef(args).slice(0, 3));
+    SmallVector<Value> m(ArrayRef(args).slice(3, 3));
+    SmallVector<Value> b(ArrayRef(args).slice(6, 3));
+
+    flatGHZ(builder, t);
+    flatGHZ(builder, m);
+    flatGHZ(builder, b);
+
+    args.clear();
+    args.append(t.begin(), t.end());
+    args.append(m.begin(), m.end());
+    args.append(b.begin(), b.end());
+
+    args = builder.barrier(args);
+
+    auto cnt = arith::ConstantIntOp::create(builder, builder.getI64Type(), 0)
+                   .getResult();
+    for (auto& arg : args) {
+      Value bit;
+      std::tie(arg, bit) = builder.measure(arg);
+      cnt = arith::AddUIExtendedOp::create(
+                builder, cnt,
+                arith::ExtUIOp::create(builder, builder.getI64Type(), bit)
+                    .getResult())
+                .getSum();
+    }
+    auto index =
+        arith::IndexCastOp::create(builder, builder.getIndexType(), cnt);
+
+    const auto cases = to_vector(llvm::seq<int64_t>(1, size));
+    SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies;
+    for (size_t i = 0; i < cases.size(); ++i) {
+      caseBodies.emplace_back([&](ValueRange initArgs) {
+        SmallVector<Value> caseArgs(initArgs);
+        for (size_t j = 1; j < i; ++j) {
+          std::tie(caseArgs[0], caseArgs[j]) =
+              builder.cx(caseArgs[0], caseArgs[j]);
+        }
+        return caseArgs;
+      });
+    };
+
+    const auto defaultCase = [](auto initArgs) {
+      return llvm::to_vector(initArgs);
+    };
+
+    return llvm::to_vector(
+        builder.qcoIndexSwitch(index, args, cases, caseBodies, defaultCase));
+  });
 
   qubits = builder.barrier(qubits);
 

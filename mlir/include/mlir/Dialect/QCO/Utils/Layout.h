@@ -32,6 +32,14 @@ public:
   /// Construct and return a random layout with size `nqubits`.
   static Layout random(size_t nqubits, size_t seed);
 
+  /// Construct a layout from a program-to-hardware mapping,
+  /// where mapping[prog] = hw.
+  static Layout fromMapping(ArrayRef<size_t> mapping);
+
+  /// Construct a layout with `nqubits`.
+  explicit Layout(const size_t nqubits)
+      : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
+
   /// Insert program:hardware index mapping.
   void add(size_t prog, size_t hw);
 
@@ -76,9 +84,5 @@ protected:
   SmallVector<size_t> programToHardware_;
   /// Maps a hardware qubit index to its program index.
   SmallVector<size_t> hardwareToProgram_;
-
-private:
-  explicit Layout(const size_t nqubits)
-      : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
 };
 } // namespace mlir::qco
