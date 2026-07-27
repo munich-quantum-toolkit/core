@@ -926,6 +926,17 @@ TEST(DDPackageTest, InvalidMakeBasisStateAndGate) {
   EXPECT_THROW(getDD(qc::StandardOperation(3, qc::X), *dd), std::runtime_error);
 }
 
+TEST(DDPackageTest, RejectsGateConstructionInEmptyPackage) {
+  auto dd = std::make_unique<Package>(0U);
+  EXPECT_THROW(dd->makeGateDD(opToSingleQubitGateMatrix(qc::X), 0U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeTwoQubitGateDD(opToTwoQubitGateMatrix(qc::SWAP), 0U, 0U),
+               std::runtime_error);
+  EXPECT_THROW(
+      dd->makeThreeQubitGateDD(opToThreeQubitGateMatrix(qc::RCCX), 0U, 0U, 0U),
+      std::runtime_error);
+}
+
 TEST(DDPackageTest, PackageReset) {
   auto dd = std::make_unique<Package>(1);
 

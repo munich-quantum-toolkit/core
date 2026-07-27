@@ -154,6 +154,10 @@ Package::ActiveCounts Package::computeActiveCounts() {
 namespace {
 
 [[noreturn]] void throwGateQubitOutOfRange(const std::size_t nqubits) {
+  if (nqubits == 0U) {
+    throw std::runtime_error(
+        "Cannot construct a gate in a package with zero qubits.");
+  }
   throw std::runtime_error{
       "Requested gate acting on qubit(s) with index larger than " +
       std::to_string(nqubits - 1U) +
@@ -165,11 +169,14 @@ namespace {
 void ensureGateQubitsInRange(const std::size_t nqubits,
                              const qc::Controls& controls,
                              const std::initializer_list<qc::Qubit> targets) {
-  const auto maxQubit = static_cast<Qubit>(nqubits - 1U);
-  if (std::ranges::any_of(
-          controls, [maxQubit](const auto& c) { return c.qubit > maxQubit; }) ||
-      std::ranges::any_of(targets,
-                          [maxQubit](const Qubit t) { return t > maxQubit; })) {
+  if (nqubits == 0U ||
+      std::ranges::any_of(controls,
+                          [nqubits](const auto& c) {
+                            return static_cast<std::size_t>(c.qubit) >= nqubits;
+                          }) ||
+      std::ranges::any_of(targets, [nqubits](const Qubit target) {
+        return static_cast<std::size_t>(target) >= nqubits;
+      })) {
     throwGateQubitOutOfRange(nqubits);
   }
 }
