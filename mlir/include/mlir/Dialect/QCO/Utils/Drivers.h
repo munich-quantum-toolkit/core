@@ -35,22 +35,6 @@
 #include <utility>
 
 namespace mlir::qco {
-namespace details {
-struct PendingItem {
-  explicit PendingItem(const size_t nrequired) : nrequired(nrequired) {
-    indices.reserve(nrequired);
-  }
-
-  /// Return true, if this item is ready to be released.
-  [[nodiscard]] bool ready() const { return indices.size() == nrequired; }
-
-  SmallVector<size_t> indices;
-  size_t nrequired;
-};
-
-using PendingMap = DenseMap<Operation*, PendingItem>;
-} // namespace details
-
 using ReadyMap = llvm::SmallDenseMap<Operation*, SmallVector<size_t>, 8>;
 using ReleasedOps = SmallVector<Operation*, 8>;
 using WalkProgramGraphFn =
@@ -90,7 +74,21 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
     size_t nqubits;
   };
 
-  details::PendingMap pending;
+  struct PendingItem {
+    explicit PendingItem(const size_t nrequired) : nrequired_(nrequired) {
+      indices_.reserve(nrequired);
+    }
+
+    /// Return true, if this item is ready to be released.
+    [[nodiscard]] bool ready() const { return indices_.size() == nrequired_; }
+
+    SmallVector<size_t> indices_;
+    size_t nrequired_;
+  };
+
+  using PendingMap = DenseMap<Operation*, PendingItem>;
+
+  PendingMap pending;
   pending.reserve((wires.size() + 1) / 2);
 
   ReadyMap ready;
@@ -115,11 +113,11 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       while (Traits::isActive(it)) {
         if (const auto mapIt = pending.find(it.operation());
             mapIt != pending.end()) {
-          details::PendingItem& item = mapIt->second;
-          item.indices.emplace_back(i);
+          PendingItem& item = mapIt->second;
+          item.indices_.emplace_back(i);
 
           if (item.ready()) {
-            ready.insert(std::make_pair(it.operation(), item.indices));
+            ready.try_emplace(it.operation(), item.indices_);
           }
         } else {
           const auto [skip, nqubits] =
@@ -176,8 +174,8 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
           // Insert the multi-qubit op to the pending map.
           // The caller decides if this op should be released.
-          details::PendingItem item(nqubits);
-          item.indices.emplace_back(i);
+          PendingItem item(nqubits);
+          item.indices_.emplace_back(i);
           pending.try_emplace(it.operation(), std::move(item));
         }
 
@@ -193,7 +191,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
     if (res.wasSkipped()) {
       released.clear();
-      for (const auto& [op, _] : ready) {
+      for (Operation* op : ready.keys()) {
         released.emplace_back(op);
       }
     }
@@ -202,7 +200,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       const auto mapIt = pending.find(op);
       assert(mapIt != pending.end());
 
-      for (size_t i : mapIt->second.indices) {
+      for (size_t i : mapIt->second.indices_) {
         std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
