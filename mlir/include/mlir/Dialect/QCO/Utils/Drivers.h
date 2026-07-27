@@ -92,10 +92,10 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
   details::PendingMap pending;
   pending.reserve((wires.size() + 1) / 2);
-  
+
   ReadyMap ready;
   ready.reserve((wires.size() + 1) / 2);
-  
+
   ReleasedOps released;
 
   SmallVector<size_t> curr(wires.size());
