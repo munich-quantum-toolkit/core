@@ -54,8 +54,15 @@ struct ParseArtifacts {
 constexpr std::size_t includeNestingLimit = 64;
 constexpr std::size_t expandedStatementLimit = 100'000;
 
-[[nodiscard]] bool isStandardLibrary(const llvm::StringRef filename) {
-  return filename == "stdgates.inc" || filename == "qelib1.inc";
+[[nodiscard]] std::optional<detail::StandardLibraryKind>
+standardLibraryKind(const llvm::StringRef filename) {
+  if (filename == "stdgates.inc") {
+    return detail::StandardLibraryKind::StdGates;
+  }
+  if (filename == "qelib1.inc") {
+    return detail::StandardLibraryKind::QELib1;
+  }
+  return std::nullopt;
 }
 
 ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
@@ -69,13 +76,12 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   }
   const auto mainBufferId =
       sources->AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
+  llvm::StringMap<const llvm::MemoryBuffer*> providedIncludeBuffers;
   if (providedSources != nullptr) {
     for (unsigned id = 2; id <= providedSources->getNumBuffers(); ++id) {
       const auto* included = providedSources->getMemoryBuffer(id);
-      sources->AddNewSourceBuffer(
-          llvm::MemoryBuffer::getMemBufferCopy(included->getBuffer(),
-                                               included->getBufferIdentifier()),
-          llvm::SMLoc());
+      providedIncludeBuffers.try_emplace(included->getBufferIdentifier(),
+                                         included);
     }
   }
 
@@ -104,10 +110,6 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   };
   llvm::DenseMap<unsigned, ParsedSource> parsedSources;
   llvm::StringMap<unsigned> includeBuffers;
-  for (unsigned id = 2; id <= sources->getNumBuffers(); ++id) {
-    includeBuffers.try_emplace(
-        sources->getMemoryBuffer(id)->getBufferIdentifier(), id);
-  }
   const auto parseSource = [&](const unsigned bufferId) {
     const auto bodyBegin = builder.getBody().size();
     const auto includeBegin = builder.getIncludes().size();
@@ -136,10 +138,20 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
       reportIncludeNestingLimit(include.location);
       continue;
     }
-    if (isStandardLibrary(include.filename)) {
+    if (standardLibraryKind(include.filename)) {
       continue;
     }
     auto bufferId = includeBuffers.lookup(include.filename);
+    if (bufferId == 0) {
+      if (const auto* provided =
+              providedIncludeBuffers.lookup(include.filename)) {
+        bufferId = sources->AddNewSourceBuffer(
+            llvm::MemoryBuffer::getMemBufferCopy(
+                provided->getBuffer(), provided->getBufferIdentifier()),
+            include.location);
+        includeBuffers[include.filename] = bufferId;
+      }
+    }
     if (bufferId == 0) {
       std::string includedPath;
       auto included =
@@ -171,27 +183,37 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   std::vector<std::optional<detail::SyntaxStatementId>> includeMarkers(
       builder.getIncludes().size());
   for (const auto [index, include] : llvm::enumerate(builder.getIncludes())) {
-    if (isStandardLibrary(include.filename)) {
-      includeMarkers[index] = builder.standardLibraryInclude(include.location);
+    if (const auto kind = standardLibraryKind(include.filename)) {
+      includeMarkers[index] =
+          builder.standardLibraryInclude(include.location, *kind);
     }
   }
 
   std::vector<detail::SyntaxStatementId> expandedBody;
+  std::vector<std::optional<detail::SyntaxIncludeContextId>>
+      expandedIncludeContexts;
+  std::vector<detail::SyntaxIncludeContext> includeContexts;
   llvm::SmallSet<unsigned, 8> activeBuffers;
-  const auto appendBodyRange = [&](const std::size_t begin,
-                                   const std::size_t end,
-                                   const llvm::SMLoc location) {
-    const auto count = end - begin;
-    if (count > expandedStatementLimit - expandedBody.size()) {
-      reportStatementLimit(location);
-      return false;
-    }
-    expandedBody.insert(expandedBody.end(), builder.getBody().begin() + begin,
-                        builder.getBody().begin() + end);
-    return true;
-  };
-  const auto appendSource = [&](auto&& self, const unsigned bufferId,
-                                const std::size_t depth) -> bool {
+  const auto appendBodyRange =
+      [&](const std::size_t begin, const std::size_t end,
+          const llvm::SMLoc location,
+          const std::optional<detail::SyntaxIncludeContextId> includeContext) {
+        const auto count = end - begin;
+        if (count > expandedStatementLimit - expandedBody.size()) {
+          reportStatementLimit(location);
+          return false;
+        }
+        expandedBody.insert(expandedBody.end(),
+                            builder.getBody().begin() + begin,
+                            builder.getBody().begin() + end);
+        expandedIncludeContexts.insert(expandedIncludeContexts.end(), count,
+                                       includeContext);
+        return true;
+      };
+  const auto appendSource =
+      [&](auto&& self, const unsigned bufferId, const std::size_t depth,
+          const std::optional<detail::SyntaxIncludeContextId> includeContext)
+      -> bool {
     activeBuffers.insert(bufferId);
     const auto parsed = parsedSources.lookup(bufferId);
     auto cursor = parsed.bodyBegin;
@@ -199,7 +221,7 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
          includeIndex < parsed.includeEnd; ++includeIndex) {
       const auto offset = builder.getIncludes()[includeIndex].bodyOffset;
       const auto includeLocation = builder.getIncludes()[includeIndex].location;
-      if (!appendBodyRange(cursor, offset, includeLocation)) {
+      if (!appendBodyRange(cursor, offset, includeLocation, includeContext)) {
         activeBuffers.erase(bufferId);
         return false;
       }
@@ -210,6 +232,7 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
           return false;
         }
         expandedBody.push_back(*includeMarkers[includeIndex]);
+        expandedIncludeContexts.push_back(includeContext);
       } else if (includeTargets[includeIndex] != 0) {
         const auto target = includeTargets[includeIndex];
         if (activeBuffers.contains(target)) {
@@ -221,7 +244,11 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
           activeBuffers.erase(bufferId);
           return false;
         } else {
-          if (!self(self, target, depth + 1)) {
+          const auto childContext = static_cast<detail::SyntaxIncludeContextId>(
+              includeContexts.size());
+          includeContexts.push_back(
+              {.location = includeLocation, .parent = includeContext});
+          if (!self(self, target, depth + 1, childContext)) {
             activeBuffers.erase(bufferId);
             return false;
           }
@@ -230,17 +257,19 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
       cursor = offset;
     }
     const auto* source = sources->getMemoryBuffer(bufferId);
-    if (!appendBodyRange(
-            cursor, parsed.bodyEnd,
-            llvm::SMLoc::getFromPointer(source->getBufferStart()))) {
+    if (!appendBodyRange(cursor, parsed.bodyEnd,
+                         llvm::SMLoc::getFromPointer(source->getBufferStart()),
+                         includeContext)) {
       activeBuffers.erase(bufferId);
       return false;
     }
     activeBuffers.erase(bufferId);
     return true;
   };
-  (void)appendSource(appendSource, mainBufferId, 0);
-  builder.replaceBody(std::move(expandedBody));
+  (void)appendSource(appendSource, mainBufferId, 0, std::nullopt);
+  builder.replaceBody(std::move(expandedBody),
+                      std::move(expandedIncludeContexts),
+                      std::move(includeContexts));
 
   if (failedParsing) {
     for (const auto& diagnostic : builder.getDiagnostics()) {

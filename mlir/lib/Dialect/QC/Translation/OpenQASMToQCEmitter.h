@@ -17,8 +17,13 @@
 namespace mlir {
 class MLIRContext;
 class ModuleOp;
+class Location;
 
 namespace qc::detail {
+
+[[nodiscard]] Location
+getOpenQASMLocation(const oq3::frontend::SourceLocation& source,
+                    MLIRContext& context);
 
 [[nodiscard]] OwningOpRef<ModuleOp>
 emitOpenQASMToQC(const oq3::frontend::TypedProgram& program,

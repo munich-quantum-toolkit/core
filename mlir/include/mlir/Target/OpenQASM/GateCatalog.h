@@ -21,6 +21,8 @@ namespace mlir::oq3::frontend {
 enum class GateAvailability : std::uint8_t {
   Language,
   StandardLibrary,
+  QELib1,
+  StandardLibraryAndQELib1,
   Compatibility,
 };
 

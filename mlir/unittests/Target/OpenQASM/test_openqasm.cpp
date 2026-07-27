@@ -17,6 +17,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/VirtualFileSystem.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -167,6 +168,62 @@ x q;
   EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(WITHOUT_INCLUDE, strict));
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(WITH_INCLUDE, strict));
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(WITHOUT_INCLUDE));
+}
+
+TEST(OpenQASMFrontendTest, PreservesStandardLibraryIdentity) {
+  oq3::frontend::FrontendOptions strict;
+  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+phase(0.5) q[0];
+u1(0.5) q[0];
+CX q[0], q[1];
+)qasm",
+                                             strict));
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+r(0.5, 0.25) q;
+)qasm",
+                                              strict));
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+include "qelib1.inc";
+qubit[2] q;
+crz(0.5) q[0], q[1];
+cu1(0.5) q[0], q[1];
+)qasm",
+                                             strict));
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+cu1(0.5) q[0], q[1];
+)qasm",
+                                              strict));
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+include "qelib1.inc";
+qubit[2] q;
+swap q[0], q[1];
+)qasm",
+                                              strict));
+}
+
+TEST(OpenQASMFrontendTest, AcceptsHybridOpenQASM2Libraries) {
+  oq3::frontend::FrontendOptions strict;
+  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 2.0;
+include "stdgates.inc";
+qreg q[1];
+sx q[0];
+)qasm",
+                                             strict));
 }
 
 TEST(OpenQASMFrontendTest, StrictPolicyAllowsUserDefinedGateNames) {
@@ -336,12 +393,11 @@ ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
 
   ASSERT_TRUE(succeeded(verify(*module)));
 
-  std::size_t controls = 0;
+  SmallVector<std::size_t> controlArities;
   std::size_t outerPolarityFlips = 0;
   module->walk([&](Operation* operation) {
     if (auto control = dyn_cast<qc::CtrlOp>(operation)) {
-      ++controls;
-      EXPECT_EQ(control.getNumControls(), 1);
+      controlArities.push_back(control.getNumControls());
     }
     if (isa<qc::XOp>(operation) &&
         operation->getParentOfType<qc::CtrlOp>() == nullptr &&
@@ -349,8 +405,33 @@ ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
       ++outerPolarityFlips;
     }
   });
-  EXPECT_EQ(controls, 4);
+  llvm::sort(controlArities);
+  EXPECT_EQ(controlArities, (SmallVector<std::size_t>{1, 1, 2}));
   EXPECT_EQ(outerPolarityFlips, 2);
+}
+
+TEST(OpenQASMTargetTest, EmitsOneControlRegionForNegCtrlArity) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+negctrl(3) @ x q[0], q[1], q[2], q[3];
+)qasm";
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  std::size_t controlRegions = 0;
+  std::size_t polarityFlips = 0;
+  module->walk([&](qc::CtrlOp control) {
+    ++controlRegions;
+    EXPECT_EQ(control.getNumControls(), 3);
+  });
+  module->walk([&](qc::XOp operation) {
+    polarityFlips += operation->getParentOfType<qc::CtrlOp>() == nullptr;
+  });
+  EXPECT_EQ(controlRegions, 1);
+  EXPECT_EQ(polarityFlips, 6);
 }
 
 TEST(OpenQASMTargetTest, LowersDynamicPowerModifiersToQC) {
@@ -393,7 +474,8 @@ if (!c) {
   reset q[1];
 }
 barrier q;
-output bit[2] out = measure q;
+output bit[2] out;
+out = measure q;
 )qasm";
 
   MLIRContext context;
@@ -438,7 +520,7 @@ measure q -> c;
   std::size_t controls = 0;
   module->walk(
       [&](Operation* operation) { controls += isa<qc::CtrlOp>(operation); });
-  EXPECT_EQ(controls, 3);
+  EXPECT_EQ(controls, 1);
 }
 
 TEST(OpenQASMTargetTest, LowersLanguageBuiltinsOnHardwareQubits) {
@@ -588,11 +670,20 @@ cx q[i], aux[j];
 )qasm";
 
   MLIRContext context;
-  testing::internal::CaptureStderr();
+  std::string diagnostic;
+  Location location = UnknownLoc::get(&context);
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    location = value.getLocation();
+    return success();
+  });
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_FALSE(module);
-  EXPECT_NE(diagnostic.find("<input>:8:1"), std::string::npos);
+  const auto fileLocation = dyn_cast<FileLineColLoc>(location);
+  ASSERT_TRUE(fileLocation);
+  EXPECT_EQ(fileLocation.getFilename(), "<input>");
+  EXPECT_EQ(fileLocation.getLine(), 8);
+  EXPECT_EQ(fileLocation.getColumn(), 1);
   EXPECT_NE(diagnostic.find("projected emitted operation count"),
             std::string::npos);
 }
@@ -609,11 +700,13 @@ TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
   source += "qubit q;\ng17 q;\n";
 
   MLIRContext context;
-  testing::internal::CaptureStderr();
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    return success();
+  });
   auto module = qc::translateQASM3ToQC(source, &context);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_FALSE(module);
-  EXPECT_NE(diagnostic.find("<input>:"), std::string::npos);
   EXPECT_NE(diagnostic.find("projected emitted operation count"),
             std::string::npos);
 }
@@ -633,11 +726,13 @@ TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
             "expanded q[i], aux[j];\n";
 
   MLIRContext context;
-  testing::internal::CaptureStderr();
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    return success();
+  });
   auto module = qc::translateQASM3ToQC(source, &context);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_FALSE(module);
-  EXPECT_NE(diagnostic.find("<input>:"), std::string::npos);
   EXPECT_NE(diagnostic.find("projected emitted operation count"),
             std::string::npos);
 }
@@ -755,7 +850,9 @@ if (c == 1) x q[0];
   ASSERT_TRUE(succeeded(verify(*module)));
   std::size_t conditionals = 0;
   module->walk([&](scf::IfOp) { ++conditionals; });
-  EXPECT_EQ(conditionals, 1);
+  // The register equality and the source-level branch each short-circuit
+  // through their own structured conditional.
+  EXPECT_EQ(conditionals, 2);
 }
 
 TEST(OpenQASMTargetTest, SelectsFloatingPowForNegativeSignedExponent) {
@@ -888,6 +985,105 @@ int after = nested;
   EXPECT_EQ(analyzed.program->scalars[3].name, "result");
 }
 
+TEST(OpenQASMFrontendTest, PreservesNestedIncludeStacksInDiagnostics) {
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBufferCopy(
+          "OPENQASM 3.1;\ninclude \"outer.inc\";\n", "main.qasm"),
+      llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "include \"nested.inc\";\n", "outer.inc"),
+                               llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "int value = missing;\n", "nested.inc"),
+                               llvm::SMLoc());
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  ASSERT_FALSE(analyzed);
+  ASSERT_EQ(analyzed.diagnostics.size(), 1);
+  const auto& location = analyzed.diagnostics.front().location;
+  EXPECT_EQ(location.filename, "nested.inc");
+  EXPECT_EQ(location.line, 1);
+  ASSERT_EQ(location.includeStack.size(), 2);
+  EXPECT_EQ(location.includeStack[0].filename, "outer.inc");
+  EXPECT_EQ(location.includeStack[0].line, 1);
+  EXPECT_EQ(location.includeStack[1].filename, "main.qasm");
+  EXPECT_EQ(location.includeStack[1].line, 2);
+}
+
+TEST(OpenQASMFrontendTest, PreservesDistinctProvenanceForRepeatedIncludes) {
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBufferCopy(
+          "OPENQASM 3.1;\ninclude \"a.inc\";\ninclude \"b.inc\";\n",
+          "main.qasm"),
+      llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "include \"shared.inc\";\n", "a.inc"),
+                               llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "include \"shared.inc\";\n", "b.inc"),
+                               llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "int duplicate = 1;\n", "shared.inc"),
+                               llvm::SMLoc());
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  ASSERT_FALSE(analyzed);
+  ASSERT_EQ(analyzed.diagnostics.size(), 1);
+  const auto& location = analyzed.diagnostics.front().location;
+  EXPECT_EQ(location.filename, "shared.inc");
+  ASSERT_EQ(location.includeStack.size(), 2);
+  EXPECT_EQ(location.includeStack[0].filename, "b.inc");
+  EXPECT_EQ(location.includeStack[0].line, 1);
+  EXPECT_EQ(location.includeStack[1].filename, "main.qasm");
+  EXPECT_EQ(location.includeStack[1].line, 3);
+}
+
+TEST(OpenQASMTargetTest, EmitsStructuredDiagnosticsWithIncludeStacks) {
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "OPENQASM 3.1;\ninclude \"stdgates.inc\";\n"
+                                   "include \"outer.inc\";\n",
+                                   "main.qasm"),
+                               llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   "include \"nested.inc\";\n", "outer.inc"),
+                               llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBufferCopy(
+          "qubit q;\npow(9007199254740993) @ x q;\n", "nested.inc"),
+      llvm::SMLoc());
+
+  MLIRContext context;
+  std::string message;
+  Location location = UnknownLoc::get(&context);
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    message = diagnostic.str();
+    location = diagnostic.getLocation();
+    return success();
+  });
+  auto module = qc::translateQASM3ToQC(sourceMgr, &context);
+  EXPECT_FALSE(module);
+  EXPECT_NE(message.find("cannot be represented exactly"), std::string::npos);
+  const auto mainCall = dyn_cast<CallSiteLoc>(location);
+  ASSERT_TRUE(mainCall);
+  const auto mainLocation = dyn_cast<FileLineColLoc>(mainCall.getCaller());
+  ASSERT_TRUE(mainLocation);
+  EXPECT_EQ(mainLocation.getFilename(), "main.qasm");
+  EXPECT_EQ(mainLocation.getLine(), 3);
+  const auto outerCall = dyn_cast<CallSiteLoc>(mainCall.getCallee());
+  ASSERT_TRUE(outerCall);
+  const auto outerLocation = dyn_cast<FileLineColLoc>(outerCall.getCaller());
+  ASSERT_TRUE(outerLocation);
+  EXPECT_EQ(outerLocation.getFilename(), "outer.inc");
+  EXPECT_EQ(outerLocation.getLine(), 1);
+  const auto nestedLocation = dyn_cast<FileLineColLoc>(outerCall.getCallee());
+  ASSERT_TRUE(nestedLocation);
+  EXPECT_EQ(nestedLocation.getFilename(), "nested.inc");
+  EXPECT_EQ(nestedLocation.getLine(), 2);
+}
+
 TEST(OpenQASMFrontendTest, RejectsRecursiveIncludesResolvedThroughSearchPaths) {
   auto fileSystem = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   ASSERT_TRUE(fileSystem->addFile(
@@ -962,6 +1158,84 @@ TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest, BoundsRegisterStorageBeforeAllocation) {
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; qubit[100000] q;"));
+
+  for (const auto source : {
+           "OPENQASM 3.1; qubit[100001] q;",
+           "OPENQASM 3.1; qubit[18446744073709551615] q;",
+           "OPENQASM 3.1; qubit[60000] q; bit[40001] c;",
+       }) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source;
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("limit"),
+              std::string::npos);
+    EXPECT_EQ(analyzed.diagnostics.front().location.filename, "<input>");
+    EXPECT_EQ(analyzed.diagnostics.front().location.line, 1);
+  }
+}
+
+TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
+  std::string flatExpression = "OPENQASM 3.1; int value = 1";
+  for (std::size_t index = 0; index < 256; ++index) {
+    flatExpression += " + 1";
+  }
+  flatExpression += ";";
+  auto flat = oq3::frontend::analyzeOpenQASM(flatExpression);
+  ASSERT_FALSE(flat);
+  ASSERT_FALSE(flat.diagnostics.empty());
+  EXPECT_NE(flat.diagnostics.front().message.find("expression depth"),
+            std::string::npos);
+
+  std::string nestedExpression = "OPENQASM 3.1; int value = ";
+  nestedExpression.append(257, '(');
+  nestedExpression += "1";
+  nestedExpression.append(257, ')');
+  nestedExpression += ";";
+  auto nested = oq3::frontend::parseOpenQASM(nestedExpression);
+  ASSERT_FALSE(nested);
+  ASSERT_FALSE(nested.diagnostics.empty());
+  EXPECT_NE(nested.diagnostics.front().message.find("expression nesting"),
+            std::string::npos);
+
+  std::string nestedBlocks = "OPENQASM 3.1;";
+  for (std::size_t depth = 0; depth < 65; ++depth) {
+    nestedBlocks += "if (true) {";
+  }
+  nestedBlocks += "int value = 0;";
+  nestedBlocks.append(65, '}');
+  auto blocks = oq3::frontend::parseOpenQASM(nestedBlocks);
+  ASSERT_FALSE(blocks);
+  ASSERT_FALSE(blocks.diagnostics.empty());
+  EXPECT_NE(blocks.diagnostics.front().message.find("block depth"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, BoundsModifiersAndGateDependencies) {
+  std::string modifiers = "OPENQASM 3.1; qubit[66] q;";
+  for (std::size_t depth = 0; depth < 65; ++depth) {
+    modifiers += "ctrl @ ";
+  }
+  modifiers += "x q;";
+  auto parsed = oq3::frontend::parseOpenQASM(modifiers);
+  ASSERT_FALSE(parsed);
+  ASSERT_FALSE(parsed.diagnostics.empty());
+  EXPECT_NE(parsed.diagnostics.front().message.find("modifier depth"),
+            std::string::npos);
+
+  std::string gates = "OPENQASM 3.1; gate g0 q { U(0, 0, 0) q; }\n";
+  for (std::size_t depth = 1; depth < 65; ++depth) {
+    gates += "gate g" + std::to_string(depth) + " q { g" +
+             std::to_string(depth - 1) + " q; }\n";
+  }
+  auto analyzed = oq3::frontend::analyzeOpenQASM(gates);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("dependency depth"),
+            std::string::npos);
+}
+
 TEST(OpenQASMFrontendTest, EnforcesUnicodeIdentifierCategoriesAndUtf8) {
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; int θ = 1; int Ångström = θ;"));
@@ -1001,7 +1275,8 @@ bit[2] c;
 int i = 1;
 if (true) { c[i] = measure q[i]; }
 if (c[i]) { x q[0]; }
-output bit result = measure q[0];
+output bit result;
+result = measure q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
@@ -1110,7 +1385,7 @@ x q;
 
   auto collision = oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
-gate r(theta, phi) q { U(theta, phi, 0) q; }
+gate x q { U(0, 0, 0) q; }
 include "stdgates.inc";
 )qasm");
   ASSERT_FALSE(collision);
@@ -1432,8 +1707,6 @@ TEST(OpenQASMFrontendTest, RejectsInvalidProgramsAcrossSemanticFamilies) {
       {"non-bool-condition", "OPENQASM 3.1; int value = 1; if (value) {}"},
       {"bool-compound-assignment",
        "OPENQASM 3.1; bool value = true; value += false;"},
-      {"measurement-compound-assignment",
-       "OPENQASM 3.1; qubit q; bit value; value += measure q;"},
       {"unsupported-bitwise-not", "OPENQASM 3.1; int value = ~1;"},
       {"unsupported-bitwise-and", "OPENQASM 3.1; int value = 1 & 2;"},
       {"unsupported-bitwise-or", "OPENQASM 3.1; int value = 1 | 2;"},
@@ -1495,7 +1768,8 @@ if (true) { branch = measure q[0]; }
 bit loop;
 for int i in [0:0] { loop = measure q[i]; }
 if (branch && loop && combined >= 4) { h q[1]; }
-output bit[2] result = measure q;
+output bit[2] result;
+result = measure q;
 )qasm";
 
   auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
@@ -1574,7 +1848,8 @@ for uint i in [0:2] {
   if (scratch[i] || !enabled) { h q[3]; }
 }
 rx(functions) q[3];
-output bit[4] result = measure q;
+output bit[4] result;
+result = measure q;
 )qasm";
 
   auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
@@ -1592,7 +1867,8 @@ int i = -1;
 x q[i];
 c[i] = measure q[i];
 if (c[i]) { x q[0]; }
-output bit[3] result = measure q;
+output bit[3] result;
+result = measure q;
 )qasm";
   MLIRContext indexContext;
   auto indexed = qc::translateQASM3ToQC(INDEX_SOURCE, &indexContext);
@@ -1631,12 +1907,16 @@ x q[i];
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(std::distance(module->getOps<scf::IfOp>().begin(),
-                          module->getOps<scf::IfOp>().end()),
-            0);
-  std::size_t dispatches = 0;
-  module->walk([&](scf::IfOp) { ++dispatches; });
-  EXPECT_EQ(dispatches, 1);
+  std::size_t switches = 0;
+  std::size_t conditionals = 0;
+  module->walk([&](scf::IndexSwitchOp switchOp) {
+    ++switches;
+    EXPECT_EQ(switchOp.getNumCases(), 1);
+    EXPECT_EQ(switchOp.getNumResults(), 0);
+  });
+  module->walk([&](scf::IfOp) { ++conditionals; });
+  EXPECT_EQ(switches, 1);
+  EXPECT_EQ(conditionals, 0);
 }
 
 TEST(OpenQASMTargetTest,
@@ -1653,9 +1933,53 @@ c = measure q[i];
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  std::size_t dispatches = 0;
-  module->walk([&](scf::IfOp) { ++dispatches; });
-  EXPECT_EQ(dispatches, 1);
+  std::size_t switches = 0;
+  std::size_t conditionals = 0;
+  module->walk([&](scf::IndexSwitchOp switchOp) {
+    ++switches;
+    EXPECT_EQ(switchOp.getNumCases(), 1);
+    ASSERT_EQ(switchOp.getNumResults(), 1);
+    EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(1));
+  });
+  module->walk([&](scf::IfOp) { ++conditionals; });
+  EXPECT_EQ(switches, 1);
+  EXPECT_EQ(conditionals, 0);
+}
+
+TEST(OpenQASMTargetTest, HandlesWidthOneAndNestedDynamicQubitDispatch) {
+  constexpr llvm::StringLiteral WIDTH_ONE = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[1] q;
+int i = 0;
+x q[i];
+)qasm";
+  MLIRContext widthOneContext;
+  auto widthOne = qc::translateQASM3ToQC(WIDTH_ONE, &widthOneContext);
+  ASSERT_TRUE(widthOne);
+  widthOne->walk([&](scf::IndexSwitchOp switchOp) {
+    EXPECT_EQ(switchOp.getNumCases(), 0);
+  });
+
+  constexpr llvm::StringLiteral NESTED = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] left;
+qubit[2] right;
+int i = 0;
+int j = 1;
+cx left[i], right[j];
+)qasm";
+  MLIRContext nestedContext;
+  auto nested = qc::translateQASM3ToQC(NESTED, &nestedContext);
+  ASSERT_TRUE(nested);
+  ASSERT_TRUE(succeeded(verify(*nested)));
+  std::size_t switches = 0;
+  std::size_t controls = 0;
+  nested->walk([&](scf::IndexSwitchOp) { ++switches; });
+  nested->walk([&](qc::CtrlOp) { ++controls; });
+  EXPECT_EQ(switches, 3);
+  EXPECT_EQ(controls, 4);
 }
 
 TEST(OpenQASMTargetTest, SupportsOrdinaryBitInitializationAndAssignment) {
@@ -1755,9 +2079,12 @@ inv @ looped(pi / 2) q;
 )qasm";
 
   MLIRContext context;
-  testing::internal::CaptureStderr();
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    return success();
+  });
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_FALSE(module);
   EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
 }
@@ -1774,11 +2101,20 @@ inv @ wrapper q;
 )qasm";
 
   MLIRContext context;
-  testing::internal::CaptureStderr();
+  std::string diagnostic;
+  Location location = UnknownLoc::get(&context);
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    location = value.getLocation();
+    return success();
+  });
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_FALSE(module);
-  EXPECT_NE(diagnostic.find("<input>:7:1"), std::string::npos);
+  const auto fileLocation = dyn_cast<FileLineColLoc>(location);
+  ASSERT_TRUE(fileLocation);
+  EXPECT_EQ(fileLocation.getFilename(), "<input>");
+  EXPECT_EQ(fileLocation.getLine(), 7);
+  EXPECT_EQ(fileLocation.getColumn(), 1);
   EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
 }
 
@@ -1804,7 +2140,8 @@ OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int i = 0;
-if (measure q[0]) { i = 1; }
+bit choose = measure q[0];
+if (choose) { i = 1; }
 x q[i];
 )qasm";
 
@@ -1821,20 +2158,22 @@ TEST(OpenQASMTargetTest, LowersRuntimeIndicesAcrossStatementKinds) {
   constexpr llvm::StringLiteral sources[] = {
       "OPENQASM 3.1; include \"stdgates.inc\"; qubit[2] q; bit[2] c = measure "
       "q; "
-      "int i = 0; if (measure q[0]) { i = 1; } if (c[i]) { x q[0]; }",
+      "int i = 0; bit choose = measure q[0]; if (choose) { i = 1; } "
+      "if (c[i]) { x q[0]; }",
       "OPENQASM 3.1; qubit[2] q; bit[2] c = measure q; int i = 0; "
-      "if (measure q[0]) { i = 1; } bool value = c[i];",
+      "bit choose = measure q[0]; if (choose) { i = 1; } bool value = c[i];",
       "OPENQASM 3.1; qubit[2] q; bit[2] c = measure q; int i = 0; "
       "bool value = false; "
-      "if (measure q[0]) { i = 1; } value = c[i];",
+      "bit choose = measure q[0]; if (choose) { i = 1; } value = c[i];",
       "OPENQASM 3.1; qubit[2] q; bit[2] c = measure q; int i = 0; "
-      "if (measure q[0]) { i = 1; } c[i] = true;",
+      "bit choose = measure q[0]; if (choose) { i = 1; } c[i] = true;",
       "OPENQASM 3.1; qubit[2] q; bit[2] c = measure q; int i = 0; "
-      "if (measure q[0]) { i = 1; } c[i] = measure q[0];",
+      "bit choose = measure q[0]; if (choose) { i = 1; } "
+      "c[i] = measure q[0];",
       "OPENQASM 3.1; qubit[2] q; int i = 0; "
-      "if (measure q[0]) { i = 1; } reset q[i];",
+      "bit choose = measure q[0]; if (choose) { i = 1; } reset q[i];",
       "OPENQASM 3.1; qubit[2] q; int i = 0; "
-      "if (measure q[0]) { i = 1; } barrier q[i];",
+      "bit choose = measure q[0]; if (choose) { i = 1; } barrier q[i];",
   };
 
   for (const auto source : sources) {
@@ -1852,7 +2191,8 @@ OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int i = 0;
-while (measure q[0]) { x q[i]; i = 1; }
+bit repeat = measure q[0];
+while (repeat) { x q[i]; i = 1; repeat = measure q[0]; }
 )qasm";
 
   MLIRContext context;
@@ -1976,7 +2316,8 @@ qubit q;
 int start = 0;
 int step = 1;
 int stop = 2;
-if (measure q) { start = 1; }
+bit choose = measure q;
+if (choose) { start = 1; }
 for int i in [start:step:stop] { x q; }
 )qasm";
 
@@ -2010,8 +2351,17 @@ x q[i];
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   std::size_t conditionals = 0;
+  std::size_t indexSwitches = 0;
+  std::size_t xGates = 0;
+  std::size_t powers = 0;
   module->walk([&](scf::IfOp) { ++conditionals; });
-  EXPECT_EQ(conditionals, 1);
+  module->walk([&](scf::IndexSwitchOp) { ++indexSwitches; });
+  module->walk([&](qc::XOp) { ++xGates; });
+  module->walk([&](qc::PowOp) { ++powers; });
+  EXPECT_EQ(conditionals, 0);
+  EXPECT_EQ(indexSwitches, 1);
+  EXPECT_EQ(xGates, 2);
+  EXPECT_EQ(powers, 0);
 }
 
 TEST(OpenQASMTargetTest, PreservesEqualConstantIndexJoins) {
@@ -2020,7 +2370,8 @@ OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int i = 0;
-if (measure q[0]) { i = 1; } else { i = 1; }
+bit choose = measure q[0];
+if (choose) { i = 1; } else { i = 1; }
 x q[i];
 )qasm";
 
@@ -2030,15 +2381,16 @@ x q[i];
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(OpenQASMTargetTest, PreservesBooleanEvaluationOrderAndIEEEInequality) {
+TEST(OpenQASMTargetTest, LowersShortCircuitBooleanEvaluation) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
 qubit[2] q;
-bool measured = measure q[0] && measure q[1];
+bit[2] measured = measure q;
 float negative = -1.0;
 float notANumber = sqrt(negative);
-if (measured || notANumber != notANumber) { x q[0]; }
-output bit[2] result = measure q;
+if ((measured[0] && measured[1]) || notANumber != notANumber) { x q[0]; }
+output bit[2] result;
+result = measure q;
 )qasm";
 
   MLIRContext context;
@@ -2048,11 +2400,17 @@ output bit[2] result = measure q;
 
   SmallVector<std::int64_t> firstMeasuredIndices;
   bool sawUnorderedInequality = false;
+  std::size_t shortCircuitOperations = 0;
+  std::size_t eagerLogicalOperations = 0;
   module->walk([&](Operation* operation) {
     if (auto comparison = dyn_cast<arith::CmpFOp>(operation)) {
       sawUnorderedInequality |=
           comparison.getPredicate() == arith::CmpFPredicate::UNE;
     }
+    if (auto conditional = dyn_cast<scf::IfOp>(operation)) {
+      shortCircuitOperations += conditional.getNumResults() == 1;
+    }
+    eagerLogicalOperations += isa<arith::AndIOp, arith::OrIOp>(operation);
     auto measurement = dyn_cast<qc::MeasureOp>(operation);
     if (!measurement || firstMeasuredIndices.size() == 2) {
       return;
@@ -2067,7 +2425,50 @@ output bit[2] result = measure q;
     }
   });
   EXPECT_EQ(firstMeasuredIndices, (SmallVector<std::int64_t>{0, 1}));
+  EXPECT_EQ(shortCircuitOperations, 2);
+  EXPECT_EQ(eagerLogicalOperations, 0);
   EXPECT_TRUE(sawUnorderedInequality);
+}
+
+TEST(OpenQASMFrontendTest, ConstantEvaluationShortCircuitsLogicalOperands) {
+  auto analyzed = oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+bool andValue = false && (1 / 0 == 0);
+bool orValue = true || (1 / 0 == 0);
+)qasm");
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_EQ(analyzed.program->scalars.size(), 2);
+  ASSERT_EQ(analyzed.program->conditions.size(), 2);
+  EXPECT_EQ(analyzed.program->conditions[0].kind,
+            oq3::frontend::ConditionKind::Literal);
+  EXPECT_FALSE(analyzed.program->conditions[0].literal);
+  EXPECT_EQ(analyzed.program->conditions[1].kind,
+            oq3::frontend::ConditionKind::Literal);
+  EXPECT_TRUE(analyzed.program->conditions[1].literal);
+
+  auto invalid = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; const bool value = false && (1 / 0);");
+  ASSERT_FALSE(invalid);
+  ASSERT_FALSE(invalid.diagnostics.empty());
+  EXPECT_NE(invalid.diagnostics.front().message.find(
+                "logical operators require bool operands"),
+            std::string::npos);
+  EXPECT_EQ(invalid.diagnostics.front().message.find("division by zero"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsMeasurementsInGeneralExpressions) {
+  constexpr llvm::StringLiteral SOURCES[] = {
+      "OPENQASM 3.1; qubit q; if (measure q) {}",
+      "OPENQASM 3.1; qubit q; bool value = measure q && true;",
+      "OPENQASM 3.1; qubit q; output bit value = measure q;",
+      "OPENQASM 3.1; qubit q; bit value; value += measure q;",
+  };
+  for (const auto source : SOURCES) {
+    auto parsed = oq3::frontend::parseOpenQASM(source);
+    ASSERT_FALSE(parsed) << source.str();
+    ASSERT_FALSE(parsed.diagnostics.empty());
+  }
 }
 
 TEST(OpenQASMTargetTest, EmitsStructuredLoopsWithCarriedMutableState) {
@@ -2080,9 +2481,11 @@ for int i in [0:2] {
   theta += 0.125;
   h q;
 }
-while (measure q) {
+bit repeat = measure q;
+while (repeat) {
   theta += 0.25;
   rx(theta) q;
+  repeat = measure q;
 }
 rx(theta) q;
 bit result = measure q;
@@ -2108,10 +2511,10 @@ bit result = measure q;
   EXPECT_EQ(forLoop.getInitArgs().size(), 1);
   EXPECT_EQ(forLoop.getNumResults(), 1);
   EXPECT_EQ(forLoop.getBody()->getTerminator()->getNumOperands(), 1);
-  EXPECT_EQ(whileLoop.getInits().size(), 1);
-  EXPECT_EQ(whileLoop.getNumResults(), 1);
-  EXPECT_EQ(whileLoop.getBeforeBody()->getTerminator()->getNumOperands(), 2);
-  EXPECT_EQ(whileLoop.getAfterBody()->getTerminator()->getNumOperands(), 1);
+  EXPECT_EQ(whileLoop.getInits().size(), 2);
+  EXPECT_EQ(whileLoop.getNumResults(), 2);
+  EXPECT_EQ(whileLoop.getBeforeBody()->getTerminator()->getNumOperands(), 3);
+  EXPECT_EQ(whileLoop.getAfterBody()->getTerminator()->getNumOperands(), 2);
   PassManager canonicalizer(&context);
   canonicalizer.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(canonicalizer.run(*module)));
@@ -2148,7 +2551,8 @@ while (branch) {
   branch = measure q[0];
 }
 if (branch) { x q[1]; }
-output bit[2] result = measure q;
+output bit[2] result;
+result = measure q;
 )qasm";
 
   MLIRContext context;
@@ -2300,7 +2704,7 @@ mcx_recursive q[0], q[1], q[2], q[3], q[4], q[9];
     xGates += isa<qc::XOp>(operation);
     phaseGates += isa<qc::POp>(operation);
   });
-  EXPECT_EQ(controls, 13);
+  EXPECT_EQ(controls, 4);
   EXPECT_EQ(xGates, 3);
   EXPECT_EQ(phaseGates, 1);
 }
@@ -2345,13 +2749,13 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
     ConditionalCounts conditionals;
   };
   const Fixture fixtures[] = {
-      {"simple-while", qasm::simpleWhileReset, {}, 1, {2, 0, 2, 0}, {0, 0, 1}},
+      {"simple-while", qasm::simpleWhileReset, {}, 1, {2, 0, 3, 0}, {0, 0, 0}},
       {"condition-while-and",
        qasm::conditionWhileAnd,
        {},
        1,
-       {3, 0, 4, 0},
-       {0, 0, 2}},
+       {3, 0, 6, 0},
+       {0, 0, 0}},
   };
 
   for (const auto& fixture : fixtures) {

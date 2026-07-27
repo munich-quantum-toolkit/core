@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSwitch.h>
@@ -65,7 +66,6 @@ struct Expr {
     Bool,
     Identifier,
     Index,
-    Measurement,
     Neg,
     Not,
     BitNot,
@@ -248,6 +248,10 @@ public:
   }
 
 private:
+  static constexpr std::size_t blockDepthLimit = 64;
+  static constexpr std::size_t recursiveExpressionDepthLimit = 256;
+  static constexpr std::size_t modifierDepthLimit = 64;
+
   //===--- Token scaffolding --------------------------------------------===//
 
   void advance() {
@@ -379,6 +383,11 @@ private:
    * The block is parsed in a new scope.
    */
   [[nodiscard]] LogicalResult parseBlock() {
+    if (blockDepth >= blockDepthLimit) {
+      return sink.error(current().loc,
+                        Twine("block depth exceeds the limit of ") +
+                            Twine(static_cast<unsigned>(blockDepthLimit)));
+    }
     ++blockDepth;
     const auto result = parseBlockInScope();
     --blockDepth;
@@ -534,12 +543,22 @@ private:
     }
 
     const Expr* initializer = nullptr;
+    std::optional<Operand> measureSource;
     if (hasInitializer) {
-      auto value = parseExpression();
-      if (failed(value)) {
-        return failure();
+      if (current().kind == TokenKind::Measure) {
+        advance();
+        auto operand = parseGateOperand();
+        if (failed(operand)) {
+          return failure();
+        }
+        measureSource = *operand;
+      } else {
+        auto value = parseExpression();
+        if (failed(value)) {
+          return failure();
+        }
+        initializer = *value;
       }
-      initializer = *value;
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
@@ -548,7 +567,14 @@ private:
                             : kind == TokenKind::Int  ? ScalarKind::Int
                             : kind == TokenKind::Uint ? ScalarKind::Uint
                                                       : ScalarKind::Float;
-    return sink.scalarDecl(loc, scalarKind, id, initializer, isConst);
+    if (failed(sink.scalarDecl(loc, scalarKind, id, initializer, isConst))) {
+      return failure();
+    }
+    if (measureSource) {
+      const BitReference target{.loc = loc, .identifier = id, .index = nullptr};
+      return sink.measure(loc, &target, *measureSource);
+    }
+    return success();
   }
 
   /// Parse `qubit[<n>] <id>;`.
@@ -597,7 +623,7 @@ private:
     return sink.qubitRegister(loc, id, size);
   }
 
-  /// Parse `output bit[<n>] <id> (= <measurement>);`.
+  /// Parse `output bit[<n>] <id>;`.
   [[nodiscard]] LogicalResult parseOutputDecl() {
     const auto loc = current().loc;
     advance(); // output
@@ -631,6 +657,12 @@ private:
 
     const Expr* initializer = nullptr;
     std::optional<Operand> measureSource;
+    if (isOutput && current().kind == TokenKind::Equals) {
+      return sink.error(
+          current().loc,
+          "output declarations cannot have an initializer; assign the output "
+          "in a separate statement");
+    }
     if (current().kind == TokenKind::Equals) {
       advance();
       if (current().kind == TokenKind::Measure) {
@@ -882,6 +914,11 @@ private:
            current().kind == TokenKind::Pow ||
            current().kind == TokenKind::Ctrl ||
            current().kind == TokenKind::NegCtrl) {
+      if (modifiers.size() >= modifierDepthLimit) {
+        return sink.error(current().loc,
+                          Twine("gate modifier depth exceeds the limit of ") +
+                              Twine(static_cast<unsigned>(modifierDepthLimit)));
+      }
       auto modifier = parseModifier();
       if (failed(modifier)) {
         return failure();
@@ -1381,6 +1418,15 @@ private:
   }
 
   [[nodiscard]] FailureOr<const Expr*> parseUnary() {
+    ++recursiveExpressionDepth;
+    auto depthGuard =
+        llvm::make_scope_exit([&] { --recursiveExpressionDepth; });
+    if (recursiveExpressionDepth > recursiveExpressionDepthLimit) {
+      return sink.error(
+          current().loc,
+          Twine("expression nesting exceeds the limit of ") +
+              Twine(static_cast<unsigned>(recursiveExpressionDepthLimit)));
+    }
     if (current().kind == TokenKind::Minus ||
         current().kind == TokenKind::ExclamationPoint ||
         current().kind == TokenKind::Tilde) {
@@ -1459,18 +1505,6 @@ private:
       }
       return expr;
     }
-    case TokenKind::Measure: {
-      advance();
-      auto operand = parseGateOperand();
-      if (failed(operand)) {
-        return failure();
-      }
-      expr->kind = Expr::Kind::Measurement;
-      expr->identifier = operand->identifier;
-      expr->hardwareQubit = operand->hardwareQubit;
-      expr->lhs = operand->index;
-      return expr;
-    }
     // `pow` is also a gate modifier, so it has a dedicated token.
     case TokenKind::Pow:
       return parseMathCall(Expr::Kind::BuiltinPow, expr);
@@ -1541,6 +1575,7 @@ private:
   Token currentToken;
   Token nextToken;
   std::size_t blockDepth = 0;
+  std::size_t recursiveExpressionDepth = 0;
 };
 
 } // namespace mlir::oq3::frontend::detail

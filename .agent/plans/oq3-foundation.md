@@ -147,6 +147,45 @@ threads or publishing new PR text.
       power programs that pass QC to QCO to QC to QIR and `jeff`, two Base power
       cases, and one composite-body power case that fails explicitly at
       QCO-to-`jeff`.
+- [x] (2026-07-25) Addressed the selected fresh-review findings without
+      broadening the parser claim: made Boolean `&&` and `||` short-circuit,
+      restricted measurement to its grammar statement contexts, and retained the
+      compatibility-oriented implicit-output behavior.
+- [x] (2026-07-25) Kept `stdgates.inc` and `qelib1.inc` as distinct semantic
+      libraries while deliberately accepting either include in either source
+      mode. Corrected the catalog membership of compatibility gates and retained
+      the default compatibility policy used by legacy programs.
+- [x] (2026-07-25) Routed translation failures through MLIR diagnostics with
+      nested `CallSiteLoc` include stacks and corrected preloaded include-buffer
+      parentage so diagnostics name the actual include chain.
+- [x] (2026-07-25) Added bounded expression, block, modifier, custom-gate,
+      register-storage, typed-statement, projected-emission, and actual-emission
+      work. Replaced recursive expression copying, linear gate lookup, repeated
+      dynamic-index `scf.if` chains, eager semantic-state snapshots, and
+      per-control nested regions with bounded or more compact implementations.
+- [x] (2026-07-25) Revalidated the public compiler corpus after making
+      measurement grammar-correct. Reworked condition fixtures to use measured
+      Boolean scalars so the intentional implicit-bit export contract remains
+      unchanged, and removed the numeric loop-state fixture from downstream
+      positive corpora because QCO-to-QC does not yet preserve such loop
+      results. Direct QC retains dedicated coverage for the accepted source.
+- [x] (2026-07-27) Rebuilt and reran the affected frontend, translation,
+      compiler, Adaptive QIR, and Base QIR suites after formatting: all 788
+      tests passed. The warning-as-error documentation build and the complete
+      repository lint session also passed.
+- [x] (2026-07-27) Rebuilt the coverage configuration, discarded only stale
+      ignored `.gcda` counters, and ran the affected binaries sequentially. The
+      substantive frontend and emitter sources reached 89 percent line coverage
+      (3537/3958) and 60 percent branch coverage (2855/4698).
+- [x] (2026-07-27) Closed the independent verification findings by making
+      compile-time logical evaluation short-circuit without skipping dead-branch
+      type validation and by attaching include provenance to each cached-source
+      expansion rather than to the shared parsed buffer. Added focused faulting
+      RHS and repeated-include regressions.
+- [x] (2026-07-27) Rebased the complete 31-commit branch without conflicts onto
+      `origin/main` at `07fafad95`, rebuilt the affected targets, and reran all
+      788 focused tests, the complete repository lint session, and the
+      warning-as-error documentation build.
 
 ## Surprises & Discoveries
 
@@ -223,6 +262,26 @@ threads or publishing new PR text.
   `cf.assert` operations. MLIR's control-flow-to-LLVM conversion requires the
   assert pattern to be registered separately. Once registered, checked integer
   state reaches QIR; `jeff` still rejects it at its conversion boundary.
+
+- Observation: treating `measure` as an ordinary primary expression accepted
+  forms outside the language's measurement statement contexts and made
+  short-circuit behavior observable in places the grammar does not permit.
+  Keeping measurement as a declaration, assignment, arrow, or targetless
+  statement gives the parser and semantic analyzer a clearer boundary.
+
+- Observation: MLIR's result-bearing `scf.if` builder may create empty regions
+  rather than regions with an existing terminator. Short-circuit emission must
+  therefore tolerate both region shapes before adding `scf.yield`.
+
+- Observation: a chain of individually completed custom-gate definitions can
+  still exceed the dependency-depth limit. Memoizing only visit state loses that
+  depth; memoizing the computed dependency depth preserves linear validation.
+
+- Observation: QC represents multiple classical values carried through `scf.for`
+  and `scf.while`, but QCO-to-QC still documents and implements a quantum-only
+  loop-result assumption. A direct-QC regression verifies the source behavior;
+  the end-to-end positive corpus must not claim reconstructed QC support until
+  that independent conversion limitation is removed.
 
 ## Decision Log
 
@@ -342,27 +401,51 @@ threads or publishing new PR text.
   line-only tests would not improve evidence for the supported contracts.
   Date/Author: 2026-07-16 / Codex.
 
+- Decision: describe the parser as a supported-subset parser and use the live
+  OpenQASM specification as the language reference. Rationale: this PR should
+  accurately document implemented productions without vendoring a second grammar
+  ground truth. Date/Author: 2026-07-25 / Codex.
+
+- Decision: preserve compatibility leniency around standard-library spelling
+  while retaining `stdgates.inc` and `qelib1.inc` identity internally.
+  Rationale: strict mode can enforce the actual gate membership, while the
+  default importer continues accepting common legacy and hybrid programs.
+  Date/Author: 2026-07-25 / Codex.
+
+- Decision: lower dynamic register selection with `scf.index_switch` and emit a
+  single `qc.ctrl` region for each source control modifier, regardless of its
+  arity. Rationale: these operations directly represent multi-way selection and
+  variadic controls, reducing generated operation count and nested-region depth
+  without changing source ordering. Date/Author: 2026-07-25 / Codex.
+
+- Decision: enforce explicit frontend and emission resource budgets and use
+  copy-on-write semantic bit state. Rationale: hostile or accidental deep and
+  wide inputs must fail with source diagnostics before unbounded recursion or
+  allocation, while ordinary control-flow analysis should not copy every bit
+  register at each branch. Date/Author: 2026-07-25 / Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
 analyzer cover the source-language behavior needed by the compiler. The earlier
 OQ3 target architecture has been removed in favor of direct QC emission.
 
-The direct architecture and end-to-end behavior are implemented. Seventeen
+The direct architecture and end-to-end behavior are implemented. Twenty-two
 OpenQASM fixtures traverse direct QC, QCO cleanup and optimization,
 reconstructed QC, and Adaptive QIR; the same fixtures pass `runDefaultPipeline`.
-Four straight-line fixtures also reach Base QIR. A separate six-program corpus
-round-trips through `jeff`, while four explicitly tracked cases reach optimized
+Six straight-line fixtures also reach Base QIR. A separate eleven-program corpus
+round-trips through `jeff`, while five explicitly tracked cases reach optimized
 QCO and then fail at `intoJeff()`. The standard corpus includes runtime and
 induction-variable indexing, checked integer state, and dynamic ranges in
 addition to custom gates and structured control flow.
 
 The downstream production corrections are constrained to demonstrated conversion
 invariants. QC-to-QCO preserves classical results alongside linear quantum state
-through `if`, `for`, and `while`, converts their terminators after region
-contents, and allocates conditional scratch storage once per function.
-`JeffToQCO` restores entry-point markers without losing observable results. Both
-areas have parser-independent native regressions.
+through `if`, `for`, and `while` and converts their terminators after region
+contents. QCO-to-QC preserves classical `if` and `index_switch` results, while
+numeric loop results remain an explicitly documented follow-up. `JeffToQCO`
+restores entry-point markers without losing observable results. These areas have
+parser-independent native regressions.
 
 Runtime-dynamic indices, multi-iteration induction indices, and non-folded
 integer expressions now produce verified QC and reach QIR. Signed operations
@@ -723,16 +806,16 @@ reaching:
     OpenQASM -> QC -> QCO -> optimized QCO -> QC -> Adaptive QIR
     -> LLVM IR and bitcode
 
-The final corpus contains twenty-three standard programs, twelve `jeff`
-round-trip programs, five `jeff`-incompatible programs, and six Base programs.
-One native `JeffToQCO` regression proves that a serialized entry point with
-observable results regains its marker without losing those results. A native
-QC-to-QIR regression proves that `cf.assert` lowers through LLVM. The latest
-focused validation results are:
+The final corpus contains twenty-two standard programs, eleven `jeff` round-trip
+programs, five `jeff`-incompatible programs, and six Base programs. One native
+`JeffToQCO` regression proves that a serialized entry point with observable
+results regains its marker without losing those results. A native QC-to-QIR
+regression proves that `cf.assert` lowers through LLVM. The latest focused
+validation results are:
 
-    OpenQASM frontend and target: 95 tests passed.
+    OpenQASM frontend and target: 105 tests passed.
     QC translation: 256 tests passed.
-    Compiler pipeline: 188 tests passed, including 69 corpus cases.
+    Compiler pipeline: 185 tests passed, including 66 corpus cases.
     QC-to-QIR Adaptive: 129 tests passed.
     QC-to-QIR Base: 111 tests passed.
     Legacy OpenQASM parser: 101 tests passed.

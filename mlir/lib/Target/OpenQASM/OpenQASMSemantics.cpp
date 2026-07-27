@@ -22,10 +22,12 @@
 
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <numbers>
 #include <optional>
 #include <set>
@@ -37,6 +39,12 @@
 
 namespace mlir::oq3::frontend::detail {
 namespace {
+
+constexpr std::uint64_t registerWidthLimit = 100'000;
+constexpr std::uint64_t totalRegisterElementLimit = 100'000;
+constexpr std::size_t expressionDepthLimit = 256;
+constexpr std::size_t gateDependencyDepthLimit = 64;
+constexpr std::size_t typedStatementLimit = 100'000;
 
 class SemanticError final : public std::runtime_error {
 public:
@@ -92,6 +100,16 @@ struct Symbol {
   return type == ScalarType::Int || type == ScalarType::Uint;
 }
 
+[[nodiscard]] bool belongsToStdGates(const GateAvailability availability) {
+  return availability == GateAvailability::StandardLibrary ||
+         availability == GateAvailability::StandardLibraryAndQELib1;
+}
+
+[[nodiscard]] bool belongsToQELib1(const GateAvailability availability) {
+  return availability == GateAvailability::QELib1 ||
+         availability == GateAvailability::StandardLibraryAndQELib1;
+}
+
 [[nodiscard]] double asDouble(const Constant& constant) {
   return std::visit([](const auto value) { return static_cast<double>(value); },
                     constant.value);
@@ -145,7 +163,8 @@ public:
   [[nodiscard]] AnalysisResult run() {
     try {
       analyzeVersion();
-      analyzeBody(syntax.body, program.body, /*global=*/true);
+      validateExpressionDepth();
+      analyzeTopLevelBody();
       validateGateCallGraph();
       finalizeOutputs();
       return {.program = std::make_unique<TypedProgram>(std::move(program))};
@@ -161,6 +180,8 @@ private:
     ExpressionId expression = 0;
     std::vector<std::pair<ScalarId, std::uint64_t>> dependencies;
   };
+  using BitInitialization = std::vector<bool>;
+  using DynamicBitFactSet = std::vector<DynamicBitFact>;
 
   const SyntaxProgram& syntax;
   const llvm::SourceMgr& sources;
@@ -168,8 +189,8 @@ private:
   TypedProgram program;
   SmallVector<llvm::StringMap<Symbol>> scopes;
   llvm::StringMap<GateSignature> customGates;
-  std::vector<std::vector<bool>> initializedBits;
-  std::vector<std::vector<DynamicBitFact>> dynamicBitFacts;
+  std::vector<std::shared_ptr<BitInitialization>> initializedBits;
+  std::vector<std::shared_ptr<DynamicBitFactSet>> dynamicBitFacts;
   std::vector<bool> initializedScalars;
   std::vector<std::uint64_t> scalarGenerations;
   std::vector<RegisterId> bitRegisters;
@@ -178,15 +199,55 @@ private:
   bool hasVirtualQubits = false;
   bool hasHardwareQubits = false;
   std::set<std::uint64_t> hardwareQubits;
+  std::uint64_t totalRegisterElements = 0;
+  std::optional<SyntaxIncludeContextId> currentIncludeContext;
 
-  [[noreturn]] void fail(SMLoc location, const Twine& message) const {
-    throw SemanticError({.location = sourceLocation(sources, location),
-                         .message = message.str()});
+  [[nodiscard]] SourceLocation getSourceLocation(const SMLoc location) const {
+    auto result = sourceLocation(sources, location);
+    if (!currentIncludeContext) {
+      return result;
+    }
+    result.includeStack.clear();
+    auto context = currentIncludeContext;
+    while (context) {
+      const auto& include = syntax.includeContexts.at(*context);
+      const auto includeLocation = sourceLocation(sources, include.location);
+      result.includeStack.push_back({.filename = includeLocation.filename,
+                                     .line = includeLocation.line,
+                                     .column = includeLocation.column});
+      context = include.parent;
+    }
+    return result;
   }
 
-  void restoreStatePrefix(const std::vector<std::vector<bool>>& bitsInitialized,
-                          const std::vector<bool>& scalarsInitialized,
-                          const std::vector<std::uint64_t>& generations) {
+  [[noreturn]] void fail(SMLoc location, const Twine& message) const {
+    throw SemanticError(
+        {.location = getSourceLocation(location), .message = message.str()});
+  }
+
+  void validateExpressionDepth() const {
+    std::vector<std::size_t> depths(syntax.expressions.size(), 1);
+    for (const auto [id, expression] : llvm::enumerate(syntax.expressions)) {
+      auto depth = std::size_t{1};
+      if (expression.lhs) {
+        depth = std::max(depth, depths[*expression.lhs] + 1);
+      }
+      if (expression.rhs) {
+        depth = std::max(depth, depths[*expression.rhs] + 1);
+      }
+      if (depth > expressionDepthLimit) {
+        fail(expression.location,
+             Twine("expression depth exceeds the limit of ") +
+                 Twine(static_cast<unsigned>(expressionDepthLimit)));
+      }
+      depths[id] = depth;
+    }
+  }
+
+  void restoreStatePrefix(
+      const std::vector<std::shared_ptr<BitInitialization>>& bitsInitialized,
+      const std::vector<bool>& scalarsInitialized,
+      const std::vector<std::uint64_t>& generations) {
     for (std::size_t reg = 0; reg < bitsInitialized.size(); ++reg) {
       initializedBits[reg] = bitsInitialized[reg];
     }
@@ -197,13 +258,31 @@ private:
   }
 
   void restoreDynamicFactsPrefix(
-      const std::vector<std::vector<DynamicBitFact>>& facts) {
+      const std::vector<std::shared_ptr<DynamicBitFactSet>>& facts) {
     for (std::size_t reg = 0; reg < facts.size(); ++reg) {
       dynamicBitFacts[reg] = facts[reg];
     }
     for (std::size_t reg = facts.size(); reg < dynamicBitFacts.size(); ++reg) {
-      dynamicBitFacts[reg].clear();
+      dynamicBitFacts[reg] = std::make_shared<DynamicBitFactSet>();
     }
+  }
+
+  [[nodiscard]] BitInitialization&
+  mutableBitInitialization(const RegisterId reg) {
+    if (initializedBits[reg].use_count() != 1) {
+      initializedBits[reg] =
+          std::make_shared<BitInitialization>(*initializedBits[reg]);
+    }
+    return *initializedBits[reg];
+  }
+
+  [[nodiscard]] DynamicBitFactSet&
+  mutableDynamicBitFacts(const RegisterId reg) {
+    if (dynamicBitFacts[reg].use_count() != 1) {
+      dynamicBitFacts[reg] =
+          std::make_shared<DynamicBitFactSet>(*dynamicBitFacts[reg]);
+    }
+    return *dynamicBitFacts[reg];
   }
 
   [[nodiscard]] bool sameExpression(const ExpressionId lhs,
@@ -290,8 +369,10 @@ private:
     const bool catalogNameReserved =
         catalog != nullptr &&
         (catalog->availability == GateAvailability::Language ||
-         (catalog->availability == GateAvailability::StandardLibrary &&
-          program.standardLibraryIncluded));
+         (belongsToStdGates(catalog->availability) &&
+          program.stdGatesIncluded) ||
+         (belongsToQELib1(catalog->availability) && program.qelib1Included) ||
+         (program.openQASM2 && catalog->name == "CX"));
     if (builtinConstant(name) ||
         (scopes.size() == 1 &&
          (customGates.contains(name) || catalogNameReserved))) {
@@ -309,8 +390,9 @@ private:
     if (options.gatePolicy == GatePolicy::MQTCompatibility) {
       return true;
     }
-    return gate.availability == GateAvailability::StandardLibrary &&
-           program.standardLibraryIncluded;
+    return (belongsToStdGates(gate.availability) && program.stdGatesIncluded) ||
+           (belongsToQELib1(gate.availability) && program.qelib1Included) ||
+           (program.openQASM2 && gate.name == "CX");
   }
 
   void analyzeVersion() {
@@ -337,6 +419,7 @@ private:
     }
     enum class VisitState : std::uint8_t { Unvisited, Active, Complete };
     std::vector states(program.gates.size(), VisitState::Unvisited);
+    std::vector<std::size_t> dependencyDepths(program.gates.size());
     const auto visitApplications = [&](auto&& self,
                                        ArrayRef<StatementId> statements,
                                        const auto& callback) -> void {
@@ -358,11 +441,13 @@ private:
             statement.data);
       }
     };
-    const auto visit = [&](auto&& self, const std::size_t index) -> void {
+    const auto visit = [&](auto&& self,
+                           const std::size_t index) -> std::size_t {
       if (states[index] == VisitState::Complete) {
-        return;
+        return dependencyDepths[index];
       }
       states[index] = VisitState::Active;
+      std::size_t dependencyDepth = 1;
       visitApplications(
           visitApplications, program.gates[index].body,
           [&](const GateApplication& application,
@@ -377,22 +462,36 @@ private:
                    .message = "recursive custom gate definition involving '" +
                               application.callee + "'"});
             }
-            self(self, callee->second);
+            const auto calleeDepth = self(self, callee->second);
+            if (calleeDepth >= gateDependencyDepthLimit) {
+              throw SemanticError(
+                  {.location = location,
+                   .message =
+                       "custom gate dependency depth exceeds the limit of " +
+                       std::to_string(gateDependencyDepthLimit)});
+            }
+            dependencyDepth = std::max(dependencyDepth, calleeDepth + 1);
           });
       states[index] = VisitState::Complete;
+      dependencyDepths[index] = dependencyDepth;
+      return dependencyDepth;
     };
     for (std::size_t index = 0; index < program.gates.size(); ++index) {
       if (states[index] == VisitState::Unvisited) {
-        visit(visit, index);
+        (void)visit(visit, index);
       }
     }
   }
 
   [[nodiscard]] StatementId addStatement(SMLoc location, StatementData data) {
+    if (program.statements.size() >= typedStatementLimit) {
+      fail(location, Twine("typed OpenQASM program exceeds the statement "
+                           "limit of ") +
+                         Twine(static_cast<unsigned>(typedStatementLimit)));
+    }
     const auto id = static_cast<StatementId>(program.statements.size());
     program.statements.push_back(
-        {.data = std::move(data),
-         .location = sourceLocation(sources, location)});
+        {.data = std::move(data), .location = getSourceLocation(location)});
     return id;
   }
 
@@ -468,7 +567,6 @@ private:
     const auto& expression = syntax.expressions[id];
     switch (expression.kind) {
     case Expr::Kind::Bool:
-    case Expr::Kind::Measurement:
     case Expr::Kind::Not:
     case Expr::Kind::And:
     case Expr::Kind::Or:
@@ -606,11 +704,22 @@ private:
     case Expr::Kind::And:
     case Expr::Kind::Or: {
       const auto lhs = evaluateConstant(*expression.lhs);
-      const auto rhs = evaluateConstant(*expression.rhs);
-      if (lhs.type != ScalarType::Bool || rhs.type != ScalarType::Bool) {
+      if (lhs.type != ScalarType::Bool) {
         fail(expression.location, "logical operators require bool operands");
       }
       const auto left = std::get<bool>(lhs.value);
+      const auto shortCircuits =
+          expression.kind == Expr::Kind::And ? !left : left;
+      if (shortCircuits) {
+        if (constantExpressionType(*expression.rhs) != ScalarType::Bool) {
+          fail(expression.location, "logical operators require bool operands");
+        }
+        return {.type = ScalarType::Bool, .value = left};
+      }
+      const auto rhs = evaluateConstant(*expression.rhs);
+      if (rhs.type != ScalarType::Bool) {
+        fail(expression.location, "logical operators require bool operands");
+      }
       const auto right = std::get<bool>(rhs.value);
       return {.type = ScalarType::Bool,
               .value = expression.kind == Expr::Kind::And ? left && right
@@ -729,7 +838,125 @@ private:
            "bitwise operators require explicitly sized uint, bit, or angle "
            "operands, which are not supported yet");
     case Expr::Kind::Index:
-    case Expr::Kind::Measurement:
+      fail(expression.location, "expression is not a compile-time constant");
+    }
+    llvm_unreachable("unknown syntax expression kind");
+  }
+
+  [[nodiscard]] ScalarType
+  constantExpressionType(const SyntaxExpressionId id) const {
+    const auto& expression = syntax.expressions[id];
+    switch (expression.kind) {
+    case Expr::Kind::Int:
+      return expression.integer <= static_cast<std::uint64_t>(
+                                       std::numeric_limits<std::int64_t>::max())
+                 ? ScalarType::Int
+                 : ScalarType::Uint;
+    case Expr::Kind::Float:
+      return ScalarType::Float;
+    case Expr::Kind::Bool:
+      return ScalarType::Bool;
+    case Expr::Kind::Identifier: {
+      if (const auto builtin = builtinConstant(expression.identifier)) {
+        return builtin->type;
+      }
+      const auto* symbol = lookup(expression.identifier);
+      if (symbol == nullptr || symbol->kind != SymbolKind::Constant ||
+          !symbol->constant) {
+        fail(expression.location, "expression is not a compile-time constant");
+      }
+      return symbol->constant->type;
+    }
+    case Expr::Kind::Neg: {
+      const auto type = constantExpressionType(*expression.lhs);
+      if (type == ScalarType::Bool) {
+        fail(expression.location,
+             "numeric negation requires a numeric operand");
+      }
+      return type;
+    }
+    case Expr::Kind::Not:
+      if (constantExpressionType(*expression.lhs) != ScalarType::Bool) {
+        fail(expression.location, "logical negation requires a bool operand");
+      }
+      return ScalarType::Bool;
+    case Expr::Kind::And:
+    case Expr::Kind::Or:
+      if (constantExpressionType(*expression.lhs) != ScalarType::Bool ||
+          constantExpressionType(*expression.rhs) != ScalarType::Bool) {
+        fail(expression.location, "logical operators require bool operands");
+      }
+      return ScalarType::Bool;
+    case Expr::Kind::Equal:
+    case Expr::Kind::NotEqual:
+    case Expr::Kind::Less:
+    case Expr::Kind::LessEqual:
+    case Expr::Kind::Greater:
+    case Expr::Kind::GreaterEqual: {
+      const auto lhs = constantExpressionType(*expression.lhs);
+      const auto rhs = constantExpressionType(*expression.rhs);
+      if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
+        if (lhs != ScalarType::Bool || rhs != ScalarType::Bool ||
+            (expression.kind != Expr::Kind::Equal &&
+             expression.kind != Expr::Kind::NotEqual)) {
+          fail(expression.location,
+               "bool values only support equality comparisons with bool "
+               "values");
+        }
+      }
+      return ScalarType::Bool;
+    }
+    case Expr::Kind::ArcCos:
+    case Expr::Kind::ArcSin:
+    case Expr::Kind::ArcTan:
+    case Expr::Kind::Cos:
+    case Expr::Kind::Exp:
+    case Expr::Kind::Log:
+    case Expr::Kind::Sin:
+    case Expr::Kind::Sqrt:
+    case Expr::Kind::Tan:
+      if (constantExpressionType(*expression.lhs) == ScalarType::Bool) {
+        fail(expression.location, "math functions require numeric operands");
+      }
+      return ScalarType::Float;
+    case Expr::Kind::Add:
+    case Expr::Kind::Sub:
+    case Expr::Kind::Mul:
+    case Expr::Kind::Div:
+    case Expr::Kind::Mod:
+    case Expr::Kind::BuiltinMod:
+    case Expr::Kind::BuiltinPow:
+    case Expr::Kind::Pow: {
+      const auto lhs = constantExpressionType(*expression.lhs);
+      const auto rhs = constantExpressionType(*expression.rhs);
+      if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
+        fail(expression.location,
+             "arithmetic operators require numeric operands");
+      }
+      if (expression.kind == Expr::Kind::Mod &&
+          (lhs == ScalarType::Float || rhs == ScalarType::Float)) {
+        fail(expression.location,
+             "the '%' operator requires integer operands; use mod() for "
+             "floating-point remainder");
+      }
+      if (lhs == ScalarType::Float || rhs == ScalarType::Float ||
+          expression.kind == Expr::Kind::BuiltinPow) {
+        return ScalarType::Float;
+      }
+      return lhs == ScalarType::Uint || rhs == ScalarType::Uint
+                 ? ScalarType::Uint
+                 : ScalarType::Int;
+    }
+    case Expr::Kind::BitNot:
+    case Expr::Kind::BitAnd:
+    case Expr::Kind::BitOr:
+    case Expr::Kind::BitXor:
+    case Expr::Kind::ShiftLeft:
+    case Expr::Kind::ShiftRight:
+      fail(expression.location,
+           "bitwise operators require explicitly sized uint, bit, or angle "
+           "operands, which are not supported yet");
+    case Expr::Kind::Index:
       fail(expression.location, "expression is not a compile-time constant");
     }
     llvm_unreachable("unknown syntax expression kind");
@@ -922,7 +1149,6 @@ private:
     case Expr::Kind::Bool:
       return true;
     case Expr::Kind::Index:
-    case Expr::Kind::Measurement:
       return false;
     default:
       return (!expression.lhs || isConstantExpression(*expression.lhs)) &&
@@ -1059,7 +1285,6 @@ private:
     case Expr::Kind::And:
     case Expr::Kind::Or:
     case Expr::Kind::Index:
-    case Expr::Kind::Measurement:
       fail(expression.location, "expected a scalar arithmetic expression");
     case Expr::Kind::Int:
     case Expr::Kind::Float:
@@ -1115,11 +1340,19 @@ private:
     if (!isInteger(constant.type)) {
       fail(location, "register width must be an integer expression");
     }
-    const auto value = asSigned(constant);
-    if (value <= 0) {
+    const auto value = constant.type == ScalarType::Uint
+                           ? std::get<std::uint64_t>(constant.value)
+                           : static_cast<std::uint64_t>(
+                                 std::get<std::int64_t>(constant.value));
+    if (value == 0 || (constant.type == ScalarType::Int &&
+                       std::get<std::int64_t>(constant.value) < 0)) {
       fail(location, "register width must be greater than zero");
     }
-    return static_cast<std::uint64_t>(value);
+    if (value > registerWidthLimit) {
+      fail(location, Twine("register width exceeds the limit of ") +
+                         Twine(registerWidthLimit));
+    }
+    return value;
   }
 
   [[nodiscard]] std::optional<std::uint64_t>
@@ -1140,6 +1373,16 @@ private:
       fail(location, "index is out of bounds");
     }
     return static_cast<std::uint64_t>(value);
+  }
+
+  void analyzeTopLevelBody() {
+    assert(syntax.body.size() == syntax.bodyIncludeContexts.size());
+    for (const auto [id, includeContext] :
+         llvm::zip_equal(syntax.body, syntax.bodyIncludeContexts)) {
+      currentIncludeContext = includeContext;
+      analyzeStatement(syntax.statements[id], program.body, /*global=*/true);
+    }
+    currentIncludeContext.reset();
   }
 
   void analyzeBody(ArrayRef<SyntaxStatementId> source,
@@ -1165,7 +1408,7 @@ private:
             }
           }
           if constexpr (std::is_same_v<T, SyntaxStandardLibraryInclude>) {
-            activateStandardLibrary(statement.location);
+            activateStandardLibrary(statement.location, data.kind);
           } else if constexpr (std::is_same_v<T, SyntaxScalarDeclaration>) {
             analyzeScalarDeclaration(statement.location, data, destination);
           } else if constexpr (std::is_same_v<T, SyntaxAssignment>) {
@@ -1203,12 +1446,20 @@ private:
         statement.data);
   }
 
-  void activateStandardLibrary(SMLoc location) {
-    if (program.standardLibraryIncluded) {
-      fail(location, "standard library is included more than once");
+  void activateStandardLibrary(SMLoc location, const StandardLibraryKind kind) {
+    auto& alreadyIncluded = kind == StandardLibraryKind::StdGates
+                                ? program.stdGatesIncluded
+                                : program.qelib1Included;
+    if (alreadyIncluded) {
+      fail(location, kind == StandardLibraryKind::StdGates
+                         ? "stdgates.inc is included more than once"
+                         : "qelib1.inc is included more than once");
     }
     for (const auto& gate : getGateCatalog()) {
-      if (gate.availability != GateAvailability::StandardLibrary) {
+      const bool belongsToLibrary = kind == StandardLibraryKind::StdGates
+                                        ? belongsToStdGates(gate.availability)
+                                        : belongsToQELib1(gate.availability);
+      if (!belongsToLibrary) {
         continue;
       }
       if (customGates.contains(gate.name) || lookup(gate.name) != nullptr) {
@@ -1216,7 +1467,7 @@ private:
              "standard-library gate '" + gate.name + "' is already declared");
       }
     }
-    program.standardLibraryIncluded = true;
+    alreadyIncluded = true;
   }
 
   void analyzeScalarDeclaration(SMLoc location,
@@ -1257,12 +1508,12 @@ private:
 
   void markBitInitialized(const frontend::BitReference& target) {
     if (!target.dynamicIndex) {
-      initializedBits[target.reg][target.index] = true;
+      mutableBitInitialization(target.reg)[target.index] = true;
       return;
     }
     DynamicBitFact fact{.expression = *target.dynamicIndex};
     collectDependencies(*target.dynamicIndex, fact.dependencies);
-    auto& facts = dynamicBitFacts[target.reg];
+    auto& facts = mutableDynamicBitFacts(target.reg);
     if (llvm::none_of(facts, [&](const auto& existing) {
           return existing.dependencies == fact.dependencies &&
                  sameExpression(existing.expression, fact.expression);
@@ -1311,7 +1562,7 @@ private:
       for (const auto [target, source] : llvm::zip_equal(targets, sourceBits)) {
         const auto condition =
             addCondition({.kind = ConditionKind::Bit,
-                          .location = sourceLocation(sources, value.location),
+                          .location = getSourceLocation(value.location),
                           .bit = source});
         markBitInitialized(target);
         destination.push_back(
@@ -1356,13 +1607,19 @@ private:
         return declaration.output;
       }
     }();
+    if (width > totalRegisterElementLimit - totalRegisterElements) {
+      fail(location, Twine("total register elements exceed the limit of ") +
+                         Twine(totalRegisterElementLimit));
+    }
+    totalRegisterElements += width;
     program.registers.push_back(
         {.kind = isQubit ? RegisterKind::Qubit : RegisterKind::Bit,
          .name = declaration.identifier.str(),
          .width = width,
-         .location = sourceLocation(sources, location)});
-    initializedBits.emplace_back(width, false);
-    dynamicBitFacts.emplace_back();
+         .location = getSourceLocation(location)});
+    initializedBits.push_back(
+        std::make_shared<BitInitialization>(width, false));
+    dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
     declare(location, declaration.identifier,
             {.kind = SymbolKind::Register, .id = id});
     if (!isQubit && global) {
@@ -1409,7 +1666,7 @@ private:
     GateDefinition definition{.name = declaration.identifier.str(),
                               .parameterCount = declaration.parameters.size(),
                               .qubitCount = declaration.qubits.size(),
-                              .location = sourceLocation(sources, location)};
+                              .location = getSourceLocation(location)};
     scopes.emplace_back();
     for (const auto [index, parameter] :
          llvm::enumerate(declaration.parameters)) {
@@ -1448,7 +1705,7 @@ private:
       }
       const auto condition =
           addCondition({.kind = ConditionKind::Measurement,
-                        .location = sourceLocation(sources, location),
+                        .location = getSourceLocation(location),
                         .measurement = qubits.front()});
       initializedScalars[destination->id] = true;
       ++scalarGenerations[destination->id];
@@ -1536,14 +1793,15 @@ private:
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     const auto knownCondition = constantCondition(conditional.condition);
     for (std::size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
-      for (std::size_t bit = 0; bit < beforeBitsInitialized[reg].size();
+      auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
+      for (std::size_t bit = 0; bit < beforeBitsInitialized[reg]->size();
            ++bit) {
-        initializedBits[reg][bit] =
+        merged[bit] =
             knownCondition
-                ? (*knownCondition ? afterThenBitsInitialized[reg][bit]
-                                   : afterElseBitsInitialized[reg][bit])
-                : afterThenBitsInitialized[reg][bit] &&
-                      afterElseBitsInitialized[reg][bit];
+                ? (*knownCondition ? (*afterThenBitsInitialized[reg])[bit]
+                                   : (*afterElseBitsInitialized[reg])[bit])
+                : (*afterThenBitsInitialized[reg])[bit] &&
+                      (*afterElseBitsInitialized[reg])[bit];
       }
     }
     for (std::size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
@@ -1552,15 +1810,16 @@ private:
                                                : afterElseDynamicBitFacts[reg];
         continue;
       }
-      dynamicBitFacts[reg].clear();
-      for (const auto& thenFact : afterThenDynamicBitFacts[reg]) {
+      auto& merged = mutableDynamicBitFacts(static_cast<RegisterId>(reg));
+      merged.clear();
+      for (const auto& thenFact : *afterThenDynamicBitFacts[reg]) {
         if (llvm::any_of(
-                afterElseDynamicBitFacts[reg], [&](const auto& elseFact) {
+                *afterElseDynamicBitFacts[reg], [&](const auto& elseFact) {
                   return thenFact.dependencies == elseFact.dependencies &&
                          sameExpression(thenFact.expression,
                                         elseFact.expression);
                 })) {
-          dynamicBitFacts[reg].push_back(thenFact);
+          merged.push_back(thenFact);
         }
       }
     }
@@ -1696,7 +1955,7 @@ private:
   analyzeCondition(const SyntaxExpressionId syntaxId) {
     const auto& condition = syntax.expressions[syntaxId];
     ConditionExpression typed{.location =
-                                  sourceLocation(sources, condition.location)};
+                                  getSourceLocation(condition.location)};
     if (isConstantExpression(syntaxId)) {
       const auto constant = evaluateConstant(syntaxId);
       if (constant.type != ScalarType::Bool) {
@@ -1752,20 +2011,6 @@ private:
       typed.bit = bits.front();
       break;
     }
-    case Expr::Kind::Measurement: {
-      auto qubits =
-          resolveQubitOperand({.location = condition.location,
-                               .identifier = condition.identifier,
-                               .index = condition.lhs,
-                               .hardwareQubit = condition.hardwareQubit});
-      if (qubits.size() != 1) {
-        fail(condition.location,
-             "measurement condition must select exactly one qubit");
-      }
-      typed.kind = ConditionKind::Measurement;
-      typed.measurement = qubits.front();
-      break;
-    }
     case Expr::Kind::Not:
       typed.kind = ConditionKind::Not;
       typed.lhs = analyzeCondition(*condition.lhs);
@@ -1810,28 +2055,28 @@ private:
         }
         const bool fits =
             bits.size() >= 64 || (expectedValue >> bits.size()) == 0;
-        auto result = addCondition(
-            {.kind = ConditionKind::Literal,
-             .location = sourceLocation(sources, condition.location),
-             .literal = fits});
+        auto result =
+            addCondition({.kind = ConditionKind::Literal,
+                          .location = getSourceLocation(condition.location),
+                          .literal = fits});
         for (const auto [index, bit] : llvm::enumerate(bits)) {
-          auto bitCondition = addCondition(
-              {.kind = ConditionKind::Bit,
-               .location = sourceLocation(sources, condition.location),
-               .bit = bit});
+          auto bitCondition =
+              addCondition({.kind = ConditionKind::Bit,
+                            .location = getSourceLocation(condition.location),
+                            .bit = bit});
           const bool expectedBit =
               index < 64 && ((expectedValue >> index) & 1U) != 0;
           if (!expectedBit) {
-            bitCondition = addCondition(
-                {.kind = ConditionKind::Not,
-                 .location = sourceLocation(sources, condition.location),
-                 .lhs = bitCondition});
+            bitCondition =
+                addCondition({.kind = ConditionKind::Not,
+                              .location = getSourceLocation(condition.location),
+                              .lhs = bitCondition});
           }
-          result = addCondition(
-              {.kind = ConditionKind::And,
-               .location = sourceLocation(sources, condition.location),
-               .lhs = result,
-               .rhs = bitCondition});
+          result =
+              addCondition({.kind = ConditionKind::And,
+                            .location = getSourceLocation(condition.location),
+                            .lhs = result,
+                            .rhs = bitCondition});
         }
         return result;
       }
@@ -2184,13 +2429,13 @@ private:
   void ensureBitInitialized(const frontend::BitReference& bit,
                             SMLoc location) const {
     if (bit.dynamicIndex) {
-      if (llvm::all_of(initializedBits[bit.reg],
+      if (llvm::all_of(*initializedBits[bit.reg],
                        [](const bool initialized) { return initialized; })) {
         return;
       }
       std::vector<std::pair<ScalarId, std::uint64_t>> dependencies;
       collectDependencies(*bit.dynamicIndex, dependencies);
-      if (llvm::any_of(dynamicBitFacts[bit.reg], [&](const auto& fact) {
+      if (llvm::any_of(*dynamicBitFacts[bit.reg], [&](const auto& fact) {
             return fact.dependencies == dependencies &&
                    sameExpression(fact.expression, *bit.dynamicIndex);
           })) {
@@ -2198,7 +2443,7 @@ private:
       }
       fail(location, "dynamic classical index may read an uninitialized bit");
     }
-    if (!initializedBits[bit.reg][bit.index]) {
+    if (!(*initializedBits[bit.reg])[bit.index]) {
       fail(location, "classical condition bit has not been initialized");
     }
   }
@@ -2206,7 +2451,7 @@ private:
   void finalizeOutputs() {
     program.outputs = explicitOutputs.empty() ? bitRegisters : explicitOutputs;
     for (const auto reg : program.outputs) {
-      if (llvm::any_of(initializedBits[reg],
+      if (llvm::any_of(*initializedBits[reg],
                        [](const bool initialized) { return !initialized; })) {
         throw SemanticError({.location = program.registers[reg].location,
                              .message = "Output register '" +
@@ -2230,9 +2475,26 @@ SourceLocation sourceLocation(const llvm::SourceMgr& sources,
   }
   const auto [line, column] = sources.getLineAndColumn(location, bufferId);
   const auto* buffer = sources.getMemoryBuffer(bufferId);
-  return {.filename = buffer->getBufferIdentifier().str(),
-          .line = line,
-          .column = column};
+  SourceLocation result{.filename = buffer->getBufferIdentifier().str(),
+                        .line = line,
+                        .column = column};
+  auto parent = sources.getParentIncludeLoc(bufferId);
+  while (parent.isValid()) {
+    const auto parentBufferId = sources.FindBufferContainingLoc(parent);
+    if (parentBufferId == 0) {
+      break;
+    }
+    const auto [parentLine, parentColumn] =
+        sources.getLineAndColumn(parent, parentBufferId);
+    result.includeStack.push_back(
+        {.filename = sources.getMemoryBuffer(parentBufferId)
+                         ->getBufferIdentifier()
+                         .str(),
+         .line = parentLine,
+         .column = parentColumn});
+    parent = sources.getParentIncludeLoc(parentBufferId);
+  }
+  return result;
 }
 
 AnalysisResult analyzeSyntaxProgram(const SyntaxProgram& syntax,

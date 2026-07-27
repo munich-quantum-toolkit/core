@@ -36,6 +36,13 @@ struct SourceLocation {
   std::string filename = "<input>";
   std::uint32_t line = 1;
   std::uint32_t column = 1;
+  struct IncludeFrame {
+    std::string filename;
+    std::uint32_t line = 1;
+    std::uint32_t column = 1;
+  };
+  /// Include sites from the immediate parent through the main source.
+  std::vector<IncludeFrame> includeStack;
 };
 
 struct Diagnostic {
@@ -287,7 +294,8 @@ struct Statement {
 
 struct TypedProgram {
   bool openQASM2 = false;
-  bool standardLibraryIncluded = false;
+  bool stdGatesIncluded = false;
+  bool qelib1Included = false;
   std::vector<ScalarExpression> expressions;
   std::vector<ConditionExpression> conditions;
   std::vector<ScalarDeclaration> scalars;

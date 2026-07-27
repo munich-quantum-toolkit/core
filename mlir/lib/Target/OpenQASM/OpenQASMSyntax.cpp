@@ -10,7 +10,9 @@
 
 #include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Twine.h>
 
 #include <utility>
@@ -41,15 +43,22 @@ LogicalResult SyntaxBuilder::include(SMLoc location, StringRef filename) {
   return success();
 }
 
-SyntaxStatementId SyntaxBuilder::standardLibraryInclude(SMLoc location) {
+SyntaxStatementId
+SyntaxBuilder::standardLibraryInclude(SMLoc location,
+                                      const StandardLibraryKind kind) {
   const auto id = static_cast<SyntaxStatementId>(program.statements.size());
   program.statements.push_back(
-      {.location = location, .data = SyntaxStandardLibraryInclude{}});
+      {.location = location, .data = SyntaxStandardLibraryInclude{kind}});
   return id;
 }
 
-void SyntaxBuilder::replaceBody(std::vector<SyntaxStatementId> body) {
+void SyntaxBuilder::replaceBody(
+    std::vector<SyntaxStatementId> body,
+    std::vector<std::optional<SyntaxIncludeContextId>> includeContexts,
+    std::vector<SyntaxIncludeContext> contexts) {
   program.body = std::move(body);
+  program.bodyIncludeContexts = std::move(includeContexts);
+  program.includeContexts = std::move(contexts);
 }
 
 SyntaxStatementId SyntaxBuilder::addStatement(SMLoc location,
@@ -62,22 +71,41 @@ SyntaxStatementId SyntaxBuilder::addStatement(SMLoc location,
 }
 
 SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
-  SyntaxExpression copy{.kind = expression.kind,
-                        .location = expression.loc,
-                        .integer = expression.intValue,
-                        .floatingPoint = expression.floatValue,
-                        .boolean = expression.boolValue,
-                        .identifier = expression.identifier,
-                        .hardwareQubit = expression.hardwareQubit};
-  if (expression.lhs != nullptr) {
-    copy.lhs = copyExpression(*expression.lhs);
+  DenseMap<const Expr*, SyntaxExpressionId> copies;
+  SmallVector<std::pair<const Expr*, bool>> worklist{{&expression, false}};
+  while (!worklist.empty()) {
+    const auto [current, expanded] = worklist.pop_back_val();
+    if (copies.contains(current)) {
+      continue;
+    }
+    if (!expanded) {
+      worklist.emplace_back(current, true);
+      if (current->rhs != nullptr) {
+        worklist.emplace_back(current->rhs, false);
+      }
+      if (current->lhs != nullptr) {
+        worklist.emplace_back(current->lhs, false);
+      }
+      continue;
+    }
+    SyntaxExpression copy{.kind = current->kind,
+                          .location = current->loc,
+                          .integer = current->intValue,
+                          .floatingPoint = current->floatValue,
+                          .boolean = current->boolValue,
+                          .identifier = current->identifier,
+                          .hardwareQubit = current->hardwareQubit};
+    if (current->lhs != nullptr) {
+      copy.lhs = copies.lookup(current->lhs);
+    }
+    if (current->rhs != nullptr) {
+      copy.rhs = copies.lookup(current->rhs);
+    }
+    const auto id = static_cast<SyntaxExpressionId>(program.expressions.size());
+    program.expressions.push_back(copy);
+    copies.try_emplace(current, id);
   }
-  if (expression.rhs != nullptr) {
-    copy.rhs = copyExpression(*expression.rhs);
-  }
-  const auto id = static_cast<SyntaxExpressionId>(program.expressions.size());
-  program.expressions.push_back(copy);
-  return id;
+  return copies.lookup(&expression);
 }
 
 SyntaxOperand SyntaxBuilder::copyOperand(const Operand& operand) {

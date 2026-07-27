@@ -13,25 +13,22 @@
 #include "OpenQASMToQCEmitter.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
-
-#include <vector>
 
 namespace mlir::qc {
 namespace {
 
-void printDiagnostics(
-    const std::vector<oq3::frontend::Diagnostic>& diagnostics) {
+void emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
+                     MLIRContext& context) {
   for (const auto& diagnostic : diagnostics) {
-    llvm::errs() << diagnostic.location.filename << ':'
-                 << diagnostic.location.line << ':'
-                 << diagnostic.location.column
-                 << ": OpenQASM frontend error: " << diagnostic.message << '\n';
+    emitError(detail::getOpenQASMLocation(diagnostic.location, context))
+        << "OpenQASM frontend error: " << diagnostic.message;
   }
 }
 
@@ -41,7 +38,7 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
                                          MLIRContext* context) {
   auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
   if (!analyzed) {
-    printDiagnostics(analyzed.diagnostics);
+    emitDiagnostics(analyzed.diagnostics, *context);
     return nullptr;
   }
   auto module = detail::emitOpenQASMToQC(*analyzed.program, *context);
@@ -49,7 +46,6 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
     return nullptr;
   }
   if (failed(verify(*module))) {
-    llvm::errs() << "OpenQASM emission produced invalid QC IR.\n";
     return nullptr;
   }
   return module;

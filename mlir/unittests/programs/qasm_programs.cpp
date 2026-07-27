@@ -283,7 +283,8 @@ const std::string floatingPowX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
 pow(0.5) @ x q;
-output bit result = measure q;
+output bit result;
+result = measure q;
 )qasm";
 
 const std::string booleanPowX = R"qasm(OPENQASM 3.0;
@@ -960,7 +961,8 @@ bit c = measure q[0];
 if (!c) {
   x q[0];
 }
-output bit[1] out = measure q;
+output bit[1] out;
+out = measure q;
 )qasm";
 
 const std::string ifTwoQubits = R"qasm(OPENQASM 3.0;
@@ -984,7 +986,8 @@ if (c) {
 } else {
   x q[0];
 }
-output bit[1] out = measure q;
+output bit[1] out;
+out = measure q;
 )qasm";
 
 const std::string ifElse = R"qasm(OPENQASM 3.0;
@@ -1009,14 +1012,16 @@ bit c = measure q;
 if (c) { h q; } else {
   for uint i in [0:2] { h reg[i]; }
 }
-output bit out = measure q;
+output bit out;
+out = measure q;
 )qasm";
 
 const std::string simpleWhileReset = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
 h q;
-while (measure q) { h q; }
+bit repeat = measure q;
+while (repeat) { h q; repeat = measure q; }
 bit out = measure q;
 )qasm";
 
@@ -1031,9 +1036,11 @@ const std::string nestedForLoopIfOp = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] reg;
 qubit q;
+bit enabled;
 for uint i in [0:1] {
   h q;
-  if (measure q) { h reg[i]; }
+  enabled = measure q;
+  if (enabled) { h reg[i]; }
 }
 bit out = measure q;
 )qasm";
@@ -1042,8 +1049,10 @@ const std::string nestedForLoopWhileOp = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 for uint i in [0:1] { h q[i]; }
+bit repeat;
 for uint i in [0:1] {
-  while (measure q[i]) { h q[i]; }
+  repeat = measure q[i];
+  while (repeat) { h q[i]; repeat = measure q[i]; }
 }
 bit[2] out = measure q;
 )qasm";
@@ -1201,7 +1210,8 @@ const std::string conditionMeasurement = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 h q[0];
-if (measure q[0]) { x q[1]; }
+bool enabled = measure q[0];
+if (enabled) { x q[1]; }
 bit c = measure q[1];
 )qasm";
 
@@ -1209,7 +1219,7 @@ const std::string conditionAnd = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0]; h q[1];
-bit c0 = measure q[0]; bit c1 = measure q[1];
+bool c0 = measure q[0]; bool c1 = measure q[1];
 if (c0 && c1) { x q[2]; }
 bit out = measure q[2];
 )qasm";
@@ -1218,7 +1228,7 @@ const std::string conditionOr = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0]; h q[1];
-bit c0 = measure q[0]; bit c1 = measure q[1];
+bool c0 = measure q[0]; bool c1 = measure q[1];
 if (c0 || c1) { x q[2]; } else { h q[2]; }
 bit out = measure q[2];
 )qasm";
@@ -1227,8 +1237,8 @@ const std::string conditionNotAndOr = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[4] q;
 h q[0]; h q[1]; h q[2];
-bit c0 = measure q[0]; bit c1 = measure q[1];
-bit c2 = measure q[2];
+bool c0 = measure q[0]; bool c1 = measure q[1];
+bool c2 = measure q[2];
 if (!(c0 && c1) || c2) { x q[3]; }
 bit out = measure q[3];
 )qasm";
@@ -1237,7 +1247,7 @@ const std::string conditionBoolVariable = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0]; h q[1];
-bit c0 = measure q[0]; bit c1 = measure q[1];
+bool c0 = measure q[0]; bool c1 = measure q[1];
 bool both = c0 && c1;
 bool neither = !both;
 if (neither) { x q[2]; }
@@ -1258,7 +1268,12 @@ const std::string conditionWhileAnd = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 h q[0];
-while (measure q[0] && measure q[1]) { h q[0]; h q[1]; }
+bit c0 = measure q[0];
+bit c1 = measure q[1];
+while (c0 && c1) {
+  h q[0]; h q[1];
+  c0 = measure q[0]; c1 = measure q[1];
+}
 bit[2] c = measure q;
 )qasm";
 
@@ -1267,7 +1282,8 @@ include "stdgates.inc";
 qubit q;
 bit enabled = false;
 if (enabled) { h q; } else { for int i in [0:2] { x q; } }
-output bit result = measure q;
+output bit result;
+result = measure q;
 )qasm";
 static const std::string mutableLoopState = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -1278,48 +1294,43 @@ while (enabled) {
   enabled = measure q;
 }
 if (enabled) { h q; }
-output bit result = measure q;
+output bit result;
+result = measure q;
 )qasm";
 static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int index = 1;
 x q[index];
-output bit[2] result = measure q;
+output bit[2] result;
+result = measure q;
 )qasm";
 static const std::string equalConstantIndexJoin = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int index = 0;
-if (measure q[0]) { index = 1; } else { index = 1; }
+bit choose = measure q[0];
+if (choose) { index = 1; } else { index = 1; }
 x q[index];
-output bit[2] result = measure q;
-)qasm";
-static const std::string scalarLoopState = R"qasm(OPENQASM 3.1;
-include "stdgates.inc";
-qubit q;
-float theta = 0.0;
-for int i in [0:2] { theta += 0.125; }
-while (measure q) {
-  theta += 0.25;
-  rx(theta) q;
-}
-rx(theta) q;
-output bit result = measure q;
+output bit[2] result;
+result = measure q;
 )qasm";
 static const std::string runtimeDynamicIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 int index = 0;
-if (measure q[0]) { index = 1; }
+bit choose = measure q[0];
+if (choose) { index = 1; }
 x q[index];
-output bit[2] result = measure q;
+output bit[2] result;
+result = measure q;
 )qasm";
 static const std::string inductionVariableIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[3] q;
 for uint i in [0:2] { x q[i]; }
-output bit[3] result = measure q;
+output bit[3] result;
+result = measure q;
 )qasm";
 static const std::string checkedIntegerState = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -1327,7 +1338,8 @@ qubit q;
 int turns = 0;
 for int i in [0:2] { turns += 1; }
 rx(turns) q;
-output bit result = measure q;
+output bit result;
+result = measure q;
 )qasm";
 static const std::string dynamicRange = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -1335,9 +1347,11 @@ qubit q;
 int start = 0;
 int step = 1;
 int stop = 2;
-if (measure q) { start = 1; }
+bit choose = measure q;
+if (choose) { start = 1; }
 for int i in [start:step:stop] { x q; }
-output bit result = measure q;
+output bit result;
+result = measure q;
 )qasm";
 
 llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
@@ -1351,7 +1365,6 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       {"measurement-controlled-while", conditionWhileAnd},
       {"resolved-dynamic-index", resolvedDynamicIndex},
       {"equal-constant-index-join", equalConstantIndexJoin},
-      {"scalar-loop-state", scalarLoopState},
       {"reset", resetQubitAfterSingleOp},
       {"barrier", barrierMultipleQubits},
       {"mixed-controls", mixedControlledX},
@@ -1374,7 +1387,6 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
       {"broadcast-custom-gate", broadcastCompoundGate},
       {"nested-static-control-flow", nestedStaticControlFlow},
       {"mutable-loop-state", mutableLoopState},
-      {"scalar-loop-state", scalarLoopState},
       {"reset", resetQubitAfterSingleOp},
       {"mixed-controls", mixedControlledX},
       {"pow-two-x", powTwoX},

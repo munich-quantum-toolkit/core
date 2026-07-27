@@ -29,6 +29,7 @@ namespace mlir::oq3::frontend::detail {
 
 using SyntaxExpressionId = std::uint32_t;
 using SyntaxStatementId = std::uint32_t;
+using SyntaxIncludeContextId = std::size_t;
 
 struct SyntaxExpression {
   Expr::Kind kind = Expr::Kind::Int;
@@ -132,7 +133,14 @@ struct SyntaxWhile {
   std::vector<SyntaxStatementId> body;
 };
 
-struct SyntaxStandardLibraryInclude {};
+enum class StandardLibraryKind : std::uint8_t {
+  StdGates,
+  QELib1,
+};
+
+struct SyntaxStandardLibraryInclude {
+  StandardLibraryKind kind = StandardLibraryKind::StdGates;
+};
 
 using SyntaxStatementData =
     std::variant<SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
@@ -151,13 +159,21 @@ struct SyntaxInclude {
   std::size_t bodyOffset = 0;
 };
 
+struct SyntaxIncludeContext {
+  SMLoc location;
+  std::optional<SyntaxIncludeContextId> parent;
+};
+
 struct SyntaxProgram {
   std::optional<Version> version;
   SMLoc versionLocation;
   std::vector<SyntaxInclude> includes;
+  std::vector<SyntaxIncludeContext> includeContexts;
   std::vector<SyntaxExpression> expressions;
   std::vector<SyntaxStatement> statements;
   std::vector<SyntaxStatementId> body;
+  /// Expansion-site include context for each statement in `body`.
+  std::vector<std::optional<SyntaxIncludeContextId>> bodyIncludeContexts;
 };
 
 struct SyntaxDiagnostic {
@@ -170,7 +186,8 @@ public:
   [[nodiscard]] LogicalResult error(SMLoc location, const Twine& message);
   [[nodiscard]] LogicalResult version(SMLoc location, Version value);
   [[nodiscard]] LogicalResult include(SMLoc location, StringRef filename);
-  [[nodiscard]] SyntaxStatementId standardLibraryInclude(SMLoc location);
+  [[nodiscard]] SyntaxStatementId
+  standardLibraryInclude(SMLoc location, StandardLibraryKind kind);
   [[nodiscard]] LogicalResult scalarDecl(SMLoc location, ScalarKind kind,
                                          StringRef identifier,
                                          const Expr* initializer, bool isConst);
@@ -213,7 +230,10 @@ public:
   [[nodiscard]] ArrayRef<SyntaxStatementId> getBody() const {
     return program.body;
   }
-  void replaceBody(std::vector<SyntaxStatementId> body);
+  void replaceBody(
+      std::vector<SyntaxStatementId> body,
+      std::vector<std::optional<SyntaxIncludeContextId>> includeContexts,
+      std::vector<SyntaxIncludeContext> contexts);
 
 private:
   [[nodiscard]] SyntaxExpressionId copyExpression(const Expr& expression);
