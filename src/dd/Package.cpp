@@ -363,9 +363,9 @@ mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
                                     const qc::Qubit target1,
                                     const qc::Qubit target2) {
   // Bottom-up construction analogous to makeTwoQubitGateDD: materialize the
-  // 8×8 as terminals (matrix bit k ↔ targets[k]), sort targets by qubit index,
-  // then reduce 8×8 → 4×4 → 4 edges → root while inserting controls on the
-  // free lines between those levels.
+  // 8×8 as terminals in MSB-first order (targets[0] = high bit), sort targets
+  // by qubit index, then reduce 8×8 → 4×4 → 4 edges → root while inserting
+  // controls on the free lines between those levels.
   ensureGateQubitsInRange(nqubits, controls, {target0, target1, target2});
 
   std::array<std::array<mCachedEdge, THREE_QUBIT_GATE_DIM>,
@@ -373,10 +373,10 @@ mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
       em{};
   fillTerminalMatrix(em, mat);
 
-  // process targets in ascending qubit order, remembering each target's matrix
-  // bit (0 -> target0, 1 -> target1, 2 -> target2)
+  // process targets in ascending qubit order; matrix bits are MSB-first
+  // (2 -> target0, 1 -> target1, 0 -> target2)
   std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
-      {{target0, 0}, {target1, 1}, {target2, 2}}};
+      {{target0, 2}, {target1, 1}, {target2, 0}}};
   std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
   const auto qLow = ordered[0].first;
   const auto qMid = ordered[1].first;

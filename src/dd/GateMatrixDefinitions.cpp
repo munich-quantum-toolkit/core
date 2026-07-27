@@ -257,16 +257,15 @@ opToThreeQubitGateMatrix(const qc::OpType t,
                          const std::vector<fp>& /*params*/) {
   switch (t) {
   case qc::RCCX: {
-    // Relative-phase CCX in DD bit order (qubit index = bit index).
     ThreeQubitGateMatrix matrix{};
     for (size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
       matrix[i][i] = 1.;
     }
-    matrix[3][3] = 0.;
     matrix[5][5] = -1.;
+    matrix[6][6] = 0.;
     matrix[7][7] = 0.;
-    matrix[3][7] = {0., -1.};
-    matrix[7][3] = {0., 1.};
+    matrix[6][7] = {0., -1.};
+    matrix[7][6] = {0., 1.};
     return matrix;
   }
   default:
