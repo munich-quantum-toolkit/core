@@ -90,8 +90,10 @@ struct Expr {
     ArcCos,
     ArcSin,
     ArcTan,
+    Ceiling,
     Cos,
     Exp,
+    Floor,
     Log,
     Mod,
     BuiltinMod,
@@ -120,8 +122,10 @@ getMathFunctionKind(StringRef name) {
       .Case("arccos", Expr::Kind::ArcCos)
       .Case("arcsin", Expr::Kind::ArcSin)
       .Case("arctan", Expr::Kind::ArcTan)
+      .Case("ceiling", Expr::Kind::Ceiling)
       .Case("cos", Expr::Kind::Cos)
       .Case("exp", Expr::Kind::Exp)
+      .Case("floor", Expr::Kind::Floor)
       .Case("log", Expr::Kind::Log)
       .Case("mod", Expr::Kind::BuiltinMod)
       .Case("pow", Expr::Kind::BuiltinPow)

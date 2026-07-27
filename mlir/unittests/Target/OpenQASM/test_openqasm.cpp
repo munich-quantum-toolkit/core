@@ -381,6 +381,41 @@ shaped(0.5) q;
   EXPECT_EQ(functions, 6);
 }
 
+TEST(OpenQASMTargetTest, FoldsAndEmitsCeilingAndFloor) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+gate rounded(theta) q {
+  rx(ceiling(theta) + floor(theta)) q;
+}
+qubit q;
+rx(ceiling(1.25) + floor(-1.25)) q;
+rounded(0.5) q;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  const auto& constantApplication = std::get<oq3::frontend::GateApplication>(
+      analyzed.program->statements[analyzed.program->body[1]].data);
+  const auto& constant =
+      analyzed.program->expressions.at(constantApplication.parameters.front());
+  ASSERT_EQ(constant.kind, oq3::frontend::ExpressionKind::Constant);
+  EXPECT_DOUBLE_EQ(std::get<double>(constant.constant), 0.0);
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(SOURCE, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t ceilings = 0;
+  std::size_t floors = 0;
+  module->walk([&](Operation* operation) {
+    ceilings += isa<math::CeilOp>(operation);
+    floors += isa<math::FloorOp>(operation);
+  });
+  EXPECT_EQ(ceilings, 1);
+  EXPECT_EQ(floors, 1);
+}
+
 TEST(OpenQASMFrontendTest, AcceptsLogAndRejectsLnBuiltInSpelling) {
   auto log = oq3::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; const float value = log(2.0);");

@@ -341,8 +341,10 @@ private:
     case ExpressionKind::ArcCos:
     case ExpressionKind::ArcSin:
     case ExpressionKind::ArcTan:
+    case ExpressionKind::Ceiling:
     case ExpressionKind::Sin:
     case ExpressionKind::Cos:
+    case ExpressionKind::Floor:
     case ExpressionKind::Tan:
     case ExpressionKind::Exp:
     case ExpressionKind::Ln:
@@ -372,8 +374,10 @@ private:
         value.kind != ExpressionKind::ArcCos &&
         value.kind != ExpressionKind::ArcSin &&
         value.kind != ExpressionKind::ArcTan &&
+        value.kind != ExpressionKind::Ceiling &&
         value.kind != ExpressionKind::Sin &&
         value.kind != ExpressionKind::Cos &&
+        value.kind != ExpressionKind::Floor &&
         value.kind != ExpressionKind::Tan &&
         value.kind != ExpressionKind::Exp && value.kind != ExpressionKind::Ln &&
         value.kind != ExpressionKind::Sqrt) {
@@ -802,8 +806,10 @@ private:
     case Expr::Kind::ArcCos:
     case Expr::Kind::ArcSin:
     case Expr::Kind::ArcTan:
+    case Expr::Kind::Ceiling:
     case Expr::Kind::Cos:
     case Expr::Kind::Exp:
+    case Expr::Kind::Floor:
     case Expr::Kind::Log:
     case Expr::Kind::Sin:
     case Expr::Kind::Sqrt:
@@ -820,11 +826,17 @@ private:
       case Expr::Kind::ArcTan:
         result = std::atan(value);
         break;
+      case Expr::Kind::Ceiling:
+        result = std::ceil(value);
+        break;
       case Expr::Kind::Cos:
         result = std::cos(value);
         break;
       case Expr::Kind::Exp:
         result = std::exp(value);
+        break;
+      case Expr::Kind::Floor:
+        result = std::floor(value);
         break;
       case Expr::Kind::Log:
         result = std::log(value);
@@ -936,8 +948,10 @@ private:
     case Expr::Kind::ArcCos:
     case Expr::Kind::ArcSin:
     case Expr::Kind::ArcTan:
+    case Expr::Kind::Ceiling:
     case Expr::Kind::Cos:
     case Expr::Kind::Exp:
+    case Expr::Kind::Floor:
     case Expr::Kind::Log:
     case Expr::Kind::Sin:
     case Expr::Kind::Sqrt:
@@ -1284,11 +1298,17 @@ private:
     case Expr::Kind::ArcTan:
       kind = ExpressionKind::ArcTan;
       break;
+    case Expr::Kind::Ceiling:
+      kind = ExpressionKind::Ceiling;
+      break;
     case Expr::Kind::Cos:
       kind = ExpressionKind::Cos;
       break;
     case Expr::Kind::Exp:
       kind = ExpressionKind::Exp;
+      break;
+    case Expr::Kind::Floor:
+      kind = ExpressionKind::Floor;
       break;
     case Expr::Kind::Log:
       kind = ExpressionKind::Ln;
@@ -1338,8 +1358,9 @@ private:
     }
     auto type = program.expressions[lhs].type;
     if (kind == ExpressionKind::ArcCos || kind == ExpressionKind::ArcSin ||
-        kind == ExpressionKind::ArcTan || kind == ExpressionKind::Cos ||
-        kind == ExpressionKind::Exp || kind == ExpressionKind::Ln ||
+        kind == ExpressionKind::ArcTan || kind == ExpressionKind::Ceiling ||
+        kind == ExpressionKind::Cos || kind == ExpressionKind::Exp ||
+        kind == ExpressionKind::Floor || kind == ExpressionKind::Ln ||
         kind == ExpressionKind::Sin || kind == ExpressionKind::Sqrt ||
         kind == ExpressionKind::Tan || type == ScalarType::Float ||
         (expression.kind == Expr::Kind::BuiltinPow && rhs &&
@@ -2146,8 +2167,10 @@ private:
     case Expr::Kind::ArcCos:
     case Expr::Kind::ArcSin:
     case Expr::Kind::ArcTan:
+    case Expr::Kind::Ceiling:
     case Expr::Kind::Cos:
     case Expr::Kind::Exp:
+    case Expr::Kind::Floor:
     case Expr::Kind::Log:
     case Expr::Kind::Mod:
     case Expr::Kind::BuiltinMod:

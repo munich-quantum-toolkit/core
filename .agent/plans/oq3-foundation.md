@@ -196,6 +196,9 @@ threads or publishing new PR text.
       branch-joined, and loop-carried integer-power tests and early-rejection
       tests for wide, scalar-expression, structured-control, phase-correction,
       and power-check construction.
+- [x] (2026-07-27) Implemented the selected FU-02 scalar builtins `ceiling()`
+      and `floor()` with compile-time folding, runtime Math-dialect lowering,
+      focused semantic and QC-emission coverage, and maintained documentation.
 
 ## Surprises & Discoveries
 
@@ -462,6 +465,13 @@ threads or publishing new PR text.
   construction. Rationale: the regression must independently test the emitted QC
   recipe without coupling translation correctness to downstream conversion and
   placement machinery. Date/Author: 2026-07-27 / Codex.
+
+- Decision: represent runtime `ceiling()` and `floor()` with `math.ceil` and
+  `math.floor`, while folding constant calls during semantic analysis.
+  Rationale: the standard Math dialect expresses the source operations directly
+  and keeps the frontend independent of MLIR; existing scalar-expression
+  preflight and the authoritative builder listener continue to provide the one
+  construction budget. Date/Author: 2026-07-27 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -934,3 +944,6 @@ guards, and an authoritative operation-construction budget with complete
 preflight accounting. Independent phase tests deliberately evaluate QC IR
 locally rather than depending on downstream QCO conversion, mapping, or DD
 functionality.
+
+Revision note (2026-07-27): selected FU-02 work added constant and runtime
+`ceiling()` and `floor()` through the existing typed scalar-expression path.

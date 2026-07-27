@@ -352,8 +352,10 @@ private:
     case frontend::ExpressionKind::ArcCos:
     case frontend::ExpressionKind::ArcSin:
     case frontend::ExpressionKind::ArcTan:
+    case frontend::ExpressionKind::Ceiling:
     case frontend::ExpressionKind::Sin:
     case frontend::ExpressionKind::Cos:
+    case frontend::ExpressionKind::Floor:
     case frontend::ExpressionKind::Tan:
     case frontend::ExpressionKind::Exp:
     case frontend::ExpressionKind::Ln:
@@ -970,8 +972,10 @@ private:
     case frontend::ExpressionKind::ArcCos:
     case frontend::ExpressionKind::ArcSin:
     case frontend::ExpressionKind::ArcTan:
+    case frontend::ExpressionKind::Ceiling:
     case frontend::ExpressionKind::Sin:
     case frontend::ExpressionKind::Cos:
+    case frontend::ExpressionKind::Floor:
     case frontend::ExpressionKind::Tan:
     case frontend::ExpressionKind::Exp:
     case frontend::ExpressionKind::Ln:
@@ -994,10 +998,14 @@ private:
         return math::AsinOp::create(opBuilder, loc, operand);
       case frontend::ExpressionKind::ArcTan:
         return math::AtanOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Ceiling:
+        return math::CeilOp::create(opBuilder, loc, operand);
       case frontend::ExpressionKind::Sin:
         return math::SinOp::create(opBuilder, loc, operand);
       case frontend::ExpressionKind::Cos:
         return math::CosOp::create(opBuilder, loc, operand);
+      case frontend::ExpressionKind::Floor:
+        return math::FloorOp::create(opBuilder, loc, operand);
       case frontend::ExpressionKind::Tan:
         return math::TanOp::create(opBuilder, loc, operand);
       case frontend::ExpressionKind::Exp:
