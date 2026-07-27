@@ -171,6 +171,10 @@ class Job:
         """The submitted program."""
 
     @property
+    def program_bytes(self) -> bytes:
+        """The exact bytes of the submitted program."""
+
+    @property
     def num_shots(self) -> int:
         """The number of shots."""
 
@@ -331,6 +335,7 @@ class Device:
         when the custom slot is unsupported.
         """
 
+    @overload
     def submit_job(
         self,
         program: str,
@@ -343,7 +348,22 @@ class Device:
         custom4: str | bool | float | None = None,
         custom5: str | bool | float | None = None,
     ) -> Job:
-        """Submits a job to the device."""
+        """Submits a text job to the device."""
+
+    @overload
+    def submit_job(
+        self,
+        program: bytes,
+        program_format: ProgramFormat,
+        num_shots: int,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
+        """Submits an exact byte payload to the device."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...

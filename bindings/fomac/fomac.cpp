@@ -25,6 +25,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -244,6 +245,14 @@ when the custom slot is unsupported.)pb");
 
   job.def_prop_ro("program", &fomac::Job::getProgram, "The submitted program.");
 
+  job.def_prop_ro(
+      "program_bytes",
+      [](const fomac::Job& self) {
+        const auto program = self.getProgramBytes();
+        return nb::bytes(program.data(), program.size());
+      },
+      "The exact bytes of the submitted program.");
+
   job.def_prop_ro("num_shots", &fomac::Job::getNumShots,
                   "The number of shots.");
 
@@ -383,12 +392,43 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  device.def("submit_job", &fomac::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a, nb::kw_only(),
-             "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-             "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-             "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-             "Submits a job to the device.");
+  device.def(
+      "submit_job",
+      [](const fomac::Device& self, const std::string& program,
+         const QDMI_Program_Format format, const size_t numShots,
+         const std::optional<fomac::CustomJobParameter>& custom1,
+         const std::optional<fomac::CustomJobParameter>& custom2,
+         const std::optional<fomac::CustomJobParameter>& custom3,
+         const std::optional<fomac::CustomJobParameter>& custom4,
+         const std::optional<fomac::CustomJobParameter>& custom5) {
+        return self.submitJob(program, format, numShots, custom1, custom2,
+                              custom3, custom4, custom5);
+      },
+      "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
+      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+      "Submits a text job to the device.");
+
+  device.def(
+      "submit_job",
+      [](const fomac::Device& self, const nb::bytes& program,
+         const QDMI_Program_Format format, const size_t numShots,
+         const std::optional<fomac::CustomJobParameter>& custom1,
+         const std::optional<fomac::CustomJobParameter>& custom2,
+         const std::optional<fomac::CustomJobParameter>& custom3,
+         const std::optional<fomac::CustomJobParameter>& custom4,
+         const std::optional<fomac::CustomJobParameter>& custom5) {
+        const auto bytes = std::span{
+            static_cast<const std::byte*>(program.data()), program.size()};
+        return self.submitJob(bytes, format, numShots, custom1, custom2,
+                              custom3, custom4, custom5);
+      },
+      "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
+      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+      "Submits an exact byte payload to the device.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";

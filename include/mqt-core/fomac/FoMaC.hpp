@@ -30,6 +30,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -505,9 +506,29 @@ public:
             std::to_string(static_cast<unsigned>(property)));
   }
 
-  /// @see QDMI_job_submit
+  /**
+   * @brief Submits a textual program.
+   * @details The terminating null byte required by QDMI text formats is
+   * included in the submitted payload.
+   * @see QDMI_job_submit
+   */
   [[nodiscard]] Job submitJob(
       const std::string& program, QDMI_Program_Format format, size_t numShots,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /**
+   * @brief Submits a binary program.
+   * @details The bytes are submitted exactly as provided without appending a
+   * null byte.
+   * @see QDMI_job_submit
+   */
+  [[nodiscard]] Job submitJob(
+      std::span<const std::byte> program, QDMI_Program_Format format,
+      size_t numShots,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,
@@ -625,8 +646,15 @@ public:
   /// Get the program format
   [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
 
-  /// Get the program to be executed
+  /**
+   * @brief Gets a textual program without its terminating null byte.
+   * @throws std::invalid_argument If the device does not return a
+   * null-terminated payload.
+   */
   [[nodiscard]] std::string getProgram() const;
+
+  /// Gets the submitted program bytes exactly as returned by the device.
+  [[nodiscard]] std::vector<std::byte> getProgramBytes() const;
 
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;
