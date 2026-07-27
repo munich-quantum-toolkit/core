@@ -3938,8 +3938,8 @@ SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);
   auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
-  auto res = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+  auto measuredQubit = b.measure(q0, c0, 0).first;
+  auto res = b.qcoIf(c0, 0, measuredQubit, [&](ValueRange args) {
     auto innerQubit = b.x(args[0]);
     return SmallVector{innerQubit};
   });
@@ -3953,9 +3953,9 @@ SmallVector<Value> ifElse(QCOProgramBuilder& b) {
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);
   auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
+  auto measuredQubit = b.measure(q0, c0, 0).first;
   auto res = b.qcoIf(
-      measureResult, {measuredQubit},
+      c0, 0, {measuredQubit},
       [&](ValueRange args) {
         auto innerQubit = b.x(args[0]);
         return SmallVector{innerQubit};
@@ -3974,13 +3974,12 @@ SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b) {
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(2);
   auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
-  auto res =
-      b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](ValueRange args) {
-        auto innerQubit0 = b.x(args[0]);
-        auto innerQubit1 = b.x(args[1]);
-        return SmallVector{innerQubit0, innerQubit1};
-      });
+  auto measuredQubit = b.measure(q0, c0, 0).first;
+  auto res = b.qcoIf(c0, 0, {measuredQubit, q[1]}, [&](ValueRange args) {
+    auto innerQubit0 = b.x(args[0]);
+    auto innerQubit1 = b.x(args[1]);
+    return SmallVector{innerQubit0, innerQubit1};
+  });
   q[0] = res[0];
   q[1] = res[1];
   b.measure(q[0], c1, 0);
@@ -3993,8 +3992,8 @@ SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b) {
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);
   auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
-  auto res = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+  auto measuredQubit = b.measure(q0, c0, 0).first;
+  auto res = b.qcoIf(c0, 0, measuredQubit, [&](ValueRange args) {
     auto innerQubit = b.measure(args[0], c1, 0).first;
     return SmallVector{innerQubit};
   });
