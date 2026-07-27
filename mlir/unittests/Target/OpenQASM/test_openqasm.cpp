@@ -34,8 +34,11 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <algorithm>
+#include <array>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -51,6 +54,131 @@ qubit[2] q;
 h q;
 bit[2] c = measure q;
 )qasm";
+
+std::optional<APInt> evaluateConstantInteger(const Value value) {
+  APInt constant;
+  if (matchPattern(value, m_ConstantInt(&constant))) {
+    return constant;
+  }
+  auto* operation = value.getDefiningOp();
+  if (operation == nullptr || operation->getNumOperands() == 0) {
+    return std::nullopt;
+  }
+  const auto operand = [&](const unsigned index) {
+    return evaluateConstantInteger(operation->getOperand(index));
+  };
+  const auto width = cast<IntegerType>(value.getType()).getWidth();
+  if (isa<arith::TruncIOp>(operation)) {
+    const auto input = operand(0);
+    return input ? std::optional(input->trunc(width)) : std::nullopt;
+  }
+  if (isa<arith::ExtUIOp>(operation)) {
+    const auto input = operand(0);
+    return input ? std::optional(input->zext(width)) : std::nullopt;
+  }
+  const auto lhs = operand(0);
+  if (!lhs) {
+    return std::nullopt;
+  }
+  if (isa<math::CtPopOp>(operation)) {
+    return APInt(width, lhs->popcount());
+  }
+  if (isa<arith::SelectOp>(operation)) {
+    return evaluateConstantInteger(
+        operation->getOperand(lhs->isZero() ? 2 : 1));
+  }
+  const auto rhs = operand(1);
+  if (!rhs) {
+    return std::nullopt;
+  }
+  if (isa<arith::AddIOp>(operation)) {
+    return *lhs + *rhs;
+  }
+  if (isa<arith::RemSIOp>(operation)) {
+    return lhs->srem(*rhs);
+  }
+  if (isa<arith::ShLIOp>(operation)) {
+    return lhs->shl(rhs->getLimitedValue());
+  }
+  if (isa<arith::ShRUIOp>(operation)) {
+    return lhs->lshr(rhs->getLimitedValue());
+  }
+  if (isa<arith::OrIOp>(operation)) {
+    return *lhs | *rhs;
+  }
+  if (isa<LLVM::FshlOp, LLVM::FshrOp>(operation)) {
+    const auto shift = evaluateConstantInteger(operation->getOperand(2));
+    if (!shift) {
+      return std::nullopt;
+    }
+    const auto amount = shift->urem(APInt(shift->getBitWidth(), width));
+    const auto distance = amount.getLimitedValue();
+    if (distance == 0) {
+      return lhs;
+    }
+    if (isa<LLVM::FshlOp>(operation)) {
+      return lhs->shl(distance) | rhs->lshr(width - distance);
+    }
+    return lhs->lshr(distance) | rhs->shl(width - distance);
+  }
+  return std::nullopt;
+}
+
+std::vector<bool> canonicalizedBitOutputs(const StringRef source) {
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  if (!module) {
+    ADD_FAILURE() << "translation failed";
+    return {};
+  }
+  if (failed(verify(*module))) {
+    ADD_FAILURE() << "translation produced an invalid module";
+    return {};
+  }
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  if (failed(canonicalizer.run(*module))) {
+    ADD_FAILURE() << "canonicalization failed";
+    return {};
+  }
+
+  func::ReturnOp result;
+  module->walk([&](func::ReturnOp operation) { result = operation; });
+  if (!result) {
+    ADD_FAILURE() << "translated module has no return operation";
+    return {};
+  }
+  std::vector<bool> outputs;
+  outputs.reserve(result.getNumOperands());
+  for (const auto operand : result.getOperands()) {
+    const auto value = evaluateConstantInteger(operand);
+    if (!value) {
+      std::string description;
+      llvm::raw_string_ostream stream(description);
+      operand.print(stream);
+      ADD_FAILURE() << "canonicalized output is not constant: " << description;
+      return {};
+    }
+    outputs.push_back(!value->isZero());
+  }
+  return outputs;
+}
+
+std::vector<bool> rotateBits(const std::array<bool, 5>& bits,
+                             const int64_t distance, const bool left) {
+  constexpr int64_t width = 5;
+  auto normalized = distance % width;
+  if (normalized < 0) {
+    normalized += width;
+  }
+  std::vector<bool> result(width);
+  for (int64_t bit = 0; bit < width; ++bit) {
+    const auto source =
+        left ? (bit + width - normalized) % width : (bit + normalized) % width;
+    result[bit] = bits[static_cast<size_t>(source)];
+  }
+  return result;
+}
 
 TEST(OpenQASMFrontendTest, SemanticAnalysisIsIndependentOfMLIR) {
   auto parsed = oq3::frontend::parseOpenQASM(BROADCAST_PROGRAM);
@@ -1059,6 +1187,23 @@ if (target[0] || target[1]) { x q[0]; }
   EXPECT_EQ(returned[1], measured[1]);
 }
 
+TEST(OpenQASMFrontendTest, RetainsScalarAndWidthOneBitTypes) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit scalar = true;
+bit[1] vector;
+vector[0] = scalar;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_EQ(analyzed.program->registers.size(), 2);
+  EXPECT_EQ(analyzed.program->registers[0].width, 1);
+  EXPECT_TRUE(analyzed.program->registers[0].isScalar);
+  EXPECT_EQ(analyzed.program->registers[1].width, 1);
+  EXPECT_FALSE(analyzed.program->registers[1].isScalar);
+}
+
 TEST(OpenQASMTargetTest, LowersTypedBitVectorBuiltins) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
@@ -1203,8 +1348,8 @@ TEST(OpenQASMTargetTest, SupportsWidthOneBitVectorBuiltins) {
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
-output bit value;
-value = measure q;
+output bit[1] value;
+value[0] = measure q;
 int distance = -3;
 value = rotl(value, distance);
 value = rotr(value, 4);
@@ -1229,9 +1374,93 @@ rx(count) q;
   EXPECT_EQ(rightShifts, 0);
 }
 
+TEST(OpenQASMTargetTest, RotationsProduceSpecifiedBitResults) {
+  constexpr std::array input{true, false, true, true, false};
+  constexpr std::array<int64_t, 5> distances{0, 2, -2, 7, -7};
+  std::string source = "OPENQASM 3.1;\n";
+  std::vector<std::vector<bool>> expectedResults;
+  size_t resultIndex = 0;
+  for (const bool runtime : {false, true}) {
+    for (const auto distance : distances) {
+      for (const bool left : {true, false}) {
+        const auto resultName = "result" + std::to_string(resultIndex);
+        source += "output bit[5] " + resultName + ";\n";
+        for (size_t bit = 0; bit < input.size(); ++bit) {
+          source += resultName + "[" + std::to_string(bit) +
+                    "] = " + (input[bit] ? "true;\n" : "false;\n");
+        }
+        std::string distanceExpression = std::to_string(distance);
+        if (runtime) {
+          const auto distanceName = "distance" + std::to_string(resultIndex);
+          source += "int " + distanceName + " = " + distanceExpression + ";\n";
+          distanceExpression = distanceName;
+        }
+        source += resultName + " = " + (left ? "rotl(" : "rotr(") + resultName +
+                  ", " + distanceExpression + ");\n";
+        expectedResults.push_back(rotateBits(input, distance, left));
+        ++resultIndex;
+      }
+    }
+  }
+
+  const auto outputs = canonicalizedBitOutputs(source);
+  ASSERT_EQ(outputs.size(), expectedResults.size() * input.size());
+  std::vector<std::vector<bool>> actualResults;
+  actualResults.reserve(expectedResults.size());
+  for (size_t result = 0; result < expectedResults.size(); ++result) {
+    const auto begin =
+        outputs.begin() + static_cast<ptrdiff_t>(result * input.size());
+    actualResults.emplace_back(begin, begin + input.size());
+    EXPECT_EQ(actualResults.back(), expectedResults[result])
+        << "rotation result " << result;
+  }
+
+  for (size_t runtime = 0; runtime < 2; ++runtime) {
+    for (size_t distance = 0; distance < distances.size(); ++distance) {
+      const auto opposite =
+          std::find(distances.begin(), distances.end(), -distances[distance]);
+      ASSERT_NE(opposite, distances.end());
+      const auto oppositeIndex =
+          static_cast<size_t>(opposite - distances.begin());
+      const auto left = (runtime * distances.size() + distance) * 2;
+      const auto oppositeRight =
+          (runtime * distances.size() + oppositeIndex) * 2 + 1;
+      EXPECT_EQ(actualResults[left], actualResults[oppositeRight])
+          << "rotl(a, n) differs from rotr(a, -n) for n = "
+          << distances[distance];
+    }
+  }
+}
+
+TEST(OpenQASMTargetTest, PopcountProducesSpecifiedResult) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[5] source;
+source[0] = true;
+source[1] = false;
+source[2] = true;
+source[3] = true;
+source[4] = false;
+output bit[6] result;
+result[0] = false;
+result[1] = false;
+result[2] = false;
+result[3] = false;
+result[4] = false;
+result[5] = false;
+result[popcount(source)] = true;
+)qasm";
+
+  EXPECT_EQ(canonicalizedBitOutputs(source),
+            (std::vector<bool>{false, false, false, true, false, false}));
+}
+
 TEST(OpenQASMFrontendTest, RejectsInvalidBitVectorBuiltinUses) {
   const std::vector<llvm::StringLiteral> invalidSources{
       "OPENQASM 3.1; qubit q; uint n = popcount(q);",
+      "OPENQASM 3.1; bit value = true; uint n = popcount(value);",
+      "OPENQASM 3.1; bit value = true; value = rotl(value, 1);",
+      "OPENQASM 3.1; bit value = true; value = rotr(value, -1);",
       R"qasm(OPENQASM 3.1;
 bit[2] value;
 value[0] = false;

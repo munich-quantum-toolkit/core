@@ -162,6 +162,7 @@ struct RegisterDeclaration {
   RegisterKind kind = RegisterKind::Qubit;
   std::string name;
   std::uint64_t width = 0;
+  bool isScalar = false;
   SourceLocation location;
 };
 

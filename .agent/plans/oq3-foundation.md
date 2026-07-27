@@ -203,6 +203,10 @@ threads or publishing new PR text.
       `popcount()`, `rotl()`, and `rotr()` with a typed bit-vector expression
       pool, atomic whole-register assignment, signed dynamic distances, linear
       emission preflight, and focused source and native QIR regressions.
+- [x] (2026-07-27) Corrected the FU-02 bit-vector source contract by retaining
+      the distinction between scalar `bit` and `bit[1]`, rejecting scalar bits
+      from `popcount()`, `rotl()`, and `rotr()`, and adding result-level
+      constant and runtime rotation and population-count oracles.
 
 ## Surprises & Discoveries
 
@@ -320,6 +324,16 @@ threads or publishing new PR text.
   stale when any element of `bits` changes. Register-wide bit generations are
   therefore part of the constant-fact dependency snapshot, including across
   structured control-flow joins.
+
+- Observation: width alone cannot represent the OpenQASM type distinction
+  between scalar `bit` and the one-element register `bit[1]`. Evidence: both
+  previously produced a typed register declaration of width one, which let the
+  register-only `popcount()`, `rotl()`, and `rotr()` signatures accept a scalar.
+
+- Observation: MLIR canonicalization folds the constant population-count path
+  but retains LLVM funnel shifts even when their operands are constants. A small
+  test-only integer evaluator can inspect the returned bits without routing
+  source correctness through QCO or QIR conversions.
 
 ## Decision Log
 
@@ -502,6 +516,19 @@ threads or publishing new PR text.
   retains an explicit incompatibility fixture for population count and funnel
   shifts. Date/Author: 2026-07-27 / Codex.
 
+- Decision: add one `isScalar` flag to typed register declarations and require a
+  non-scalar bit register when constructing a bit-vector expression. Rationale:
+  storage width and existing bit assignment remain unchanged, while the typed
+  source model can enforce the OpenQASM `bit[_]` and `bit[n]` builtin
+  signatures, including for width one. Date/Author: 2026-07-27 / Codex.
+
+- Decision: verify rotation results through returned QC bits using an
+  independent test-only evaluator for standard integer and funnel-shift
+  operations. Rationale: the oracle directly checks positive, negative, zero,
+  and over-width distances, source bit-index ordering, and
+  `rotl(a, n) == rotr(a, -n)` without coupling the source contract to unrelated
+  downstream conversions. Date/Author: 2026-07-27 / Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
@@ -549,6 +576,13 @@ standard and Base/Adaptive QIR lowering, a positive `jeff` scalar-rounding
 fixture, and an explicit `jeff` bit-vector boundary. Declaration initialization,
 casts, sized-`uint` overloads, bit-string literals, and broader folding remain
 follow-up work.
+
+The source-side correction now treats scalar `bit` and `bit[1]` as distinct
+typed declarations. Register-only population count and rotation reject scalar
+bits, while explicit `bit[1]` retains the width-one behavior. Result-level tests
+independently confirm constant and runtime rotations for zero, positive,
+negative, and over-width distances, the specified low-to-high bit-index order,
+the left/right inverse identity, and an observable population-count result.
 
 ## Context and Orientation
 
@@ -993,3 +1027,8 @@ whole-bit-register `popcount()`, `rotl()`, and `rotr()`. Emission uses a lazy
 bits-or-packed representation, includes linear packing work in the existing
 construction budget, invalidates constant facts through bit-register
 generations, and lowers retained Math operations through both QIR profiles.
+
+Revision note (2026-07-27): the FU-02 source correction retained scalar-versus-
+register bit type identity, enforced the register-only builtin signatures, and
+added returned-value rotation and population-count oracles without changing QIR
+conversion code or widening support to casts, bit strings, or sized integers.

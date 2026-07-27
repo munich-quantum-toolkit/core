@@ -1290,6 +1290,10 @@ private:
              "bit-vector expression requires a bit register");
       }
       const auto reg = static_cast<RegisterId>(symbol->id);
+      if (program.registers[reg].isScalar) {
+        fail(expression.location,
+             "bit-vector expression requires a bit register, not scalar bit");
+      }
       const auto width = program.registers[reg].width;
       for (std::uint64_t bit = 0; bit < width; ++bit) {
         ensureBitInitialized({.reg = reg, .index = bit}, expression.location);
@@ -1714,7 +1718,8 @@ private:
         value.kind == Expr::Kind::RotateLeft ||
         value.kind == Expr::Kind::RotateRight ||
         (valueSymbol != nullptr && valueSymbol->kind == SymbolKind::Register &&
-         program.registers[valueSymbol->id].kind == RegisterKind::Bit);
+         program.registers[valueSymbol->id].kind == RegisterKind::Bit &&
+         !program.registers[valueSymbol->id].isScalar);
     if (!assignment.target.index && bitVectorValue) {
       const auto bitVector = analyzeBitVectorExpression(assignment.value);
       if (program.bitVectorExpressions[bitVector].width !=
@@ -1780,6 +1785,7 @@ private:
         {.kind = isQubit ? RegisterKind::Qubit : RegisterKind::Bit,
          .name = declaration.identifier.str(),
          .width = width,
+         .isScalar = !declaration.size.has_value(),
          .location = getSourceLocation(location)});
     initializedBits.push_back(
         std::make_shared<BitInitialization>(width, false));
