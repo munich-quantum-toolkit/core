@@ -123,7 +123,6 @@ getMathFunctionKind(StringRef name) {
       .Case("cos", Expr::Kind::Cos)
       .Case("exp", Expr::Kind::Exp)
       .Case("log", Expr::Kind::Log)
-      .Case("ln", Expr::Kind::Log)
       .Case("mod", Expr::Kind::BuiltinMod)
       .Case("pow", Expr::Kind::BuiltinPow)
       .Case("sin", Expr::Kind::Sin)

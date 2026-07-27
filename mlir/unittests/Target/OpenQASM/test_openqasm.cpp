@@ -358,7 +358,7 @@ TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
 OPENQASM 3.0;
 include "stdgates.inc";
 gate shaped(theta) q {
-  rx(sin(theta) + cos(theta) + tan(theta) + exp(theta) + ln(theta) +
+  rx(sin(theta) + cos(theta) + tan(theta) + exp(theta) + log(theta) +
      sqrt(theta)) q;
 }
 
@@ -377,6 +377,19 @@ shaped(0.5) q;
                      math::LogOp, math::SqrtOp>(operation);
   });
   EXPECT_EQ(functions, 6);
+}
+
+TEST(OpenQASMFrontendTest, AcceptsLogAndRejectsLnBuiltInSpelling) {
+  auto log = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; const float value = log(2.0);");
+  ASSERT_TRUE(log) << log.diagnostics.front().message;
+
+  auto ln = oq3::frontend::parseOpenQASM(
+      "OPENQASM 3.1; const float value = ln(2.0);");
+  ASSERT_FALSE(ln);
+  ASSERT_FALSE(ln.diagnostics.empty());
+  EXPECT_NE(ln.diagnostics.front().message.find("unknown function 'ln'"),
+            std::string::npos);
 }
 
 TEST(OpenQASMTargetTest, NestsAlternatingControlsAndFlipsPolarityOutside) {
