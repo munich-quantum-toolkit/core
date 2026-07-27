@@ -39,6 +39,7 @@
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -1462,45 +1463,34 @@ private:
       // we restore the layout at the end of the scf::ForOp, we don't require
       // this procedure.
 
-      TypeSwitch<Operation*>(op)
-          .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-            auto condOp = cast<scf::ConditionOp>(
-                whileOp.getBeforeBody()->getTerminator());
-            rewriter->setInsertionPoint(condOp);
-            rewriter->replaceOpWithNewOp<scf::ConditionOp>(
-                condOp, condOp.getCondition(),
-                realignQubitValues(condOp.getArgs(), permutation, children[0]));
+      for (const auto& [region, child] :
+           llvm::zip_equal(op->getRegions(), children)) {
+        assert(region.hasOneBlock());
 
-            auto yieldOp =
-                cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator());
-            rewriter->setInsertionPoint(yieldOp);
-            rewriter->replaceOpWithNewOp<scf::YieldOp>(
-                yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
-                                            children[1]));
-          })
-          .template Case<scf::ForOp>([&](scf::ForOp forOp) {
-            auto yieldOp = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
-            rewriter->setInsertionPoint(yieldOp);
-            rewriter->replaceOpWithNewOp<scf::YieldOp>(
-                yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
-                                            children[0]));
-          })
-          .template Case<IfOp, IndexSwitchOp>([&](auto branchOp) {
-            for (const auto [region, child] :
-                 llvm::zip_equal(branchOp->getRegions(), children)) {
-              auto yieldOp = cast<YieldOp>(region.front().getTerminator());
-              rewriter->setInsertionPoint(yieldOp);
+        Block* const block = &region.front();
+        Operation* const terminator = block->getTerminator();
+
+        rewriter->setInsertionPoint(terminator);
+        TypeSwitch<Operation*>(terminator)
+            .template Case<scf::YieldOp>([&](scf::YieldOp yieldOp) {
+              rewriter->replaceOpWithNewOp<scf::YieldOp>(
+                  yieldOp,
+                  realignQubitValues(yieldOp.getResults(), permutation, child));
+            })
+            .template Case<scf::ConditionOp>([&](scf::ConditionOp condOp) {
+              rewriter->replaceOpWithNewOp<scf::ConditionOp>(
+                  condOp, condOp.getCondition(),
+                  realignQubitValues(condOp.getArgs(), permutation, child));
+            })
+            .template Case<YieldOp>([&](YieldOp yieldOp) {
               rewriter->replaceOpWithNewOp<YieldOp>(
                   yieldOp,
                   realignQubitValues(yieldOp.getTargets(), permutation, child));
-            }
-          });
+            });
 
-      // Sort topologically to fix any occurring SSA dominance errors.
+        // Sort topologically to fix any occurring SSA dominance errors.
 
-      for (Region& region : op->getRegions()) {
-        assert(region.hasOneBlock());
-        sortTopologically(&region.front());
+        sortTopologically(block);
       }
     }
 
