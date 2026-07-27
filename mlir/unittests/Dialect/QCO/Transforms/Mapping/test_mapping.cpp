@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
@@ -42,6 +43,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <tuple>
 #include <utility>
@@ -1187,7 +1189,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
         arith::IndexCastOp::create(builder, builder.getIndexType(), cnt);
 
     const auto cases = to_vector(llvm::seq<int64_t>(1, size));
-    
+
     SmallVector<std::function<SmallVector<Value>(ValueRange)>> bodies;
     for (size_t i = 0; i < cases.size(); ++i) {
       bodies.emplace_back([&](ValueRange initArgs) {
