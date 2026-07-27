@@ -378,6 +378,12 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  if (nativeGates.getNumOccurrences() > 0 &&
+      *parsedOutputFormat == OutputFormat::QCO) {
+    llvm::errs() << "--native-gates requires an output that passes through "
+                    "QCO optimization.\n";
+    return 1;
+  }
 
   const auto runPasses =
       [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
@@ -414,13 +420,13 @@ int main(int argc, char** argv) {
           } else {
             populateDefaultQCOOptimizationPipeline(pm);
           }
+          populateQCOCleanupPipeline(pm);
           if (!nativeGates.empty()) {
             pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
                 qco::FuseTwoQubitUnitaryRunsOptions{
                     .nativeGates = nativeGates.getValue(),
                 }));
           }
-          populateQCOCleanupPipeline(pm);
           return success();
         }))) {
       return 1;
