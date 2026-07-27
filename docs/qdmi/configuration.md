@@ -162,12 +162,12 @@ It can export its stable ID and prefix as target metadata:
 ```cmake
 set_target_properties(
   example-device
-  PROPERTIES MQT_QDMI_DEVICE_ID "example.device"
-             MQT_QDMI_DEVICE_PREFIX "EXAMPLE")
+  PROPERTIES QDMI_DEVICE_ID "example.device"
+             QDMI_DEVICE_PREFIX "EXAMPLE")
 set_property(
   TARGET example-device
   APPEND
-  PROPERTY EXPORT_PROPERTIES MQT_QDMI_DEVICE_ID MQT_QDMI_DEVICE_PREFIX)
+  PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX)
 ```
 
 When `mqt_copy_qdmi_runtime` receives that built or imported target, it

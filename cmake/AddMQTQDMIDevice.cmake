@@ -53,14 +53,14 @@ function(mqt_configure_qdmi_device target)
             "$<TARGET_FILE_DIR:${target}>/${target}.qdmi.json")
   set_target_properties(
     ${target}
-    PROPERTIES MQT_QDMI_DEVICE_ID "${ARG_ID}"
-               MQT_QDMI_DEVICE_PREFIX "${ARG_PREFIX}"
-               MQT_QDMI_MANIFEST_NAME "${target}.qdmi.json")
+    PROPERTIES QDMI_DEVICE_ID "${ARG_ID}"
+               QDMI_DEVICE_PREFIX "${ARG_PREFIX}"
+               QDMI_MANIFEST_NAME "${target}.qdmi.json")
   set_property(GLOBAL APPEND PROPERTY MQT_QDMI_DEVICE_TARGETS ${target})
   set_property(
     TARGET ${target}
     APPEND
-    PROPERTY EXPORT_PROPERTIES MQT_QDMI_DEVICE_ID MQT_QDMI_DEVICE_PREFIX MQT_QDMI_MANIFEST_NAME)
+    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_MANIFEST_NAME)
   if(WIN32)
     # Shared-library targets are runtime artifacts on Windows and are installed under bin. Keep the
     # fragment beside the DLL so its relative path resolves.
@@ -106,14 +106,14 @@ function(mqt_copy_qdmi_runtime target)
     if(NOT device_target)
       set(device_target ${device})
     endif()
-    get_target_property(manifest_name ${device_target} MQT_QDMI_MANIFEST_NAME)
+    get_target_property(manifest_name ${device_target} QDMI_MANIFEST_NAME)
     if(NOT manifest_name)
-      get_target_property(device_id ${device_target} MQT_QDMI_DEVICE_ID)
-      get_target_property(device_prefix ${device_target} MQT_QDMI_DEVICE_PREFIX)
+      get_target_property(device_id ${device_target} QDMI_DEVICE_ID)
+      get_target_property(device_prefix ${device_target} QDMI_DEVICE_PREFIX)
       if(NOT device_id OR NOT device_prefix)
         message(
           FATAL_ERROR
-            "QDMI device target '${device}' must define either MQT_QDMI_MANIFEST_NAME or both MQT_QDMI_DEVICE_ID and MQT_QDMI_DEVICE_PREFIX"
+            "QDMI device target '${device}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX"
         )
       endif()
       _mqt_qdmi_json_escape(device_id "${device_id}")

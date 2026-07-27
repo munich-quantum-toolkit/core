@@ -14,12 +14,12 @@ if(TARGET MQT::CoreQDMIDriver)
     mqt-core-qdmi-metadata-device
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
-               MQT_QDMI_DEVICE_ID "test.metadata-only"
-               MQT_QDMI_DEVICE_PREFIX "TEST_METADATA")
+               QDMI_DEVICE_ID "test.metadata-only"
+               QDMI_DEVICE_PREFIX "TEST_METADATA")
   set_property(
     TARGET mqt-core-qdmi-metadata-device
     APPEND
-    PROPERTY EXPORT_PROPERTIES MQT_QDMI_DEVICE_ID MQT_QDMI_DEVICE_PREFIX)
+    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX)
   set(metadata_device_export
       "${CMAKE_CURRENT_BINARY_DIR}/mqt-core-qdmi-metadata-device-targets.cmake")
   export(TARGETS mqt-core-qdmi-metadata-device FILE "${metadata_device_export}")

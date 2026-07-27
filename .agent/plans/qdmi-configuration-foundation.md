@@ -189,8 +189,8 @@ runtime registrations do not mutate an allocated session's catalog. Cache
 initialized dynamic libraries by normalized path and prefix.
 
 Use `cmake/AddMQTQDMIDevice.cmake` for built-in device targets and export
-`MQT_QDMI_DEVICE_ID`, `MQT_QDMI_DEVICE_PREFIX`, and manifest-name metadata. Test
-both built and imported targets.
+`QDMI_DEVICE_ID`, `QDMI_DEVICE_PREFIX`, and manifest-name metadata. Test both
+built and imported targets.
 
 Expose `DeviceDefinition`, `register_device`, `register_device_if_absent`, and
 `open_device` in the FoMaC Python module. Accept `str` and path-like
