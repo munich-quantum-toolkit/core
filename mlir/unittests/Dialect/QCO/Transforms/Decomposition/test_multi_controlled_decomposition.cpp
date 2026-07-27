@@ -303,17 +303,17 @@ makeCoherentControlInput(size_t numControls, bool targetOne, dd::Package& dd) {
   return dd::simulate(preparationQc, dd::makeZeroState(numQubits, dd), dd);
 }
 
-static void expectMatchesReferenceOnCoherentState(
-    func::FuncOp funcOp, const qc::QuantumComputation& referenceQc,
-    size_t numControls, bool targetOne) {
+static void
+expectMatchesReferenceOnCoherentState(func::FuncOp funcOp,
+                                      const qc::QuantumComputation& referenceQc,
+                                      size_t numControls, bool targetOne) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedOutput =
-      simulate(funcOp,
-               makeCoherentControlInput(numControls, targetOne, *dd), *dd);
+  const auto decomposedOutput = simulate(
+      funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd);
   ASSERT_TRUE(succeeded(decomposedOutput));
   dd->incRef(*decomposedOutput);
   const auto referenceOutput = dd::simulate(
@@ -328,8 +328,9 @@ static void expectMatchesReferenceOnCoherentState(
   dd->decRef(*decomposedOutput);
 }
 
-static void expectMatchesControlledPauliOnCoherentState(
-    func::FuncOp funcOp, size_t numControls, ControlledPauli pauli) {
+static void expectMatchesControlledPauliOnCoherentState(func::FuncOp funcOp,
+                                                        size_t numControls,
+                                                        ControlledPauli pauli) {
   const auto numQubits = numControls + 1;
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
@@ -342,8 +343,8 @@ static void expectMatchesControlledPauliOnCoherentState(
   } else {
     referenceQc.mcz(controls, target);
   }
-  expectMatchesReferenceOnCoherentState(
-      funcOp, referenceQc, numControls, pauli == ControlledPauli::Z);
+  expectMatchesReferenceOnCoherentState(funcOp, referenceQc, numControls,
+                                        pauli == ControlledPauli::Z);
 }
 
 static void expectMatchesMcpOnCoherentState(func::FuncOp funcOp,
@@ -536,8 +537,7 @@ TEST_F(MultiControlledDecompositionTest,
   }
 }
 
-TEST_F(MultiControlledDecompositionTest,
-       CoherentStatesMatchForLargerSp22Mcp) {
+TEST_F(MultiControlledDecompositionTest, CoherentStatesMatchForLargerSp22Mcp) {
   constexpr double theta = 0.7;
   for (const auto k : K_COHERENT_MCP_CONTROL_COUNTS) {
     SCOPED_TRACE(testing::Message() << "k=" << k);
