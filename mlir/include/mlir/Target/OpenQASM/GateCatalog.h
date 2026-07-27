@@ -62,14 +62,25 @@ enum class GateLowering : std::uint8_t {
 };
 
 struct GateCatalogEntry {
+  constexpr GateCatalogEntry(llvm::StringRef name, GateLowering lowering,
+                             std::size_t parameterCount,
+                             std::size_t controlCount, std::size_t targetCount,
+                             GateAvailability availability,
+                             bool variadicControls = false,
+                             bool inverse = false) noexcept
+      : name(name), lowering(lowering), parameterCount(parameterCount),
+        controlCount(controlCount), targetCount(targetCount),
+        availability(availability), variadicControls(variadicControls),
+        inverse(inverse) {}
+
   llvm::StringRef name;
   GateLowering lowering;
   std::size_t parameterCount;
   std::size_t controlCount;
   std::size_t targetCount;
   GateAvailability availability;
-  bool variadicControls = false;
-  bool inverse = false;
+  bool variadicControls;
+  bool inverse;
 
   [[nodiscard]] std::size_t qubitCount() const {
     return controlCount + targetCount;

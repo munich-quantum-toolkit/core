@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -17,6 +18,10 @@
 namespace mlir::oq3::frontend::detail {
 
 struct UnicodeRange {
+  constexpr UnicodeRange(const std::uint32_t first,
+                         const std::uint32_t last) noexcept
+      : first(first), last(last) {}
+
   std::uint32_t first;
   std::uint32_t last;
 };
@@ -24,7 +29,7 @@ struct UnicodeRange {
 // Unicode general categories Lu, Ll, Lt, Lm, Lo, and Nl, as required by the
 // OpenQASM 3 identifier grammar. ASCII letters are handled directly by the
 // lexer and are intentionally omitted from this table.
-inline constexpr UnicodeRange OPENQASM_IDENTIFIER_RANGES[] = {
+inline constexpr auto OPENQASM_IDENTIFIER_RANGES = std::to_array<UnicodeRange>({
     {0xAA, 0xAA},       {0xB5, 0xB5},       {0xBA, 0xBA},
     {0xC0, 0xD6},       {0xD8, 0xF6},       {0xF8, 0x2C1},
     {0x2C6, 0x2D1},     {0x2E0, 0x2E4},     {0x2EC, 0x2EC},
@@ -251,14 +256,14 @@ inline constexpr UnicodeRange OPENQASM_IDENTIFIER_RANGES[] = {
     {0x20000, 0x2A6DF}, {0x2A700, 0x2B739}, {0x2B740, 0x2B81D},
     {0x2B820, 0x2CEA1}, {0x2CEB0, 0x2EBE0}, {0x2EBF0, 0x2EE5D},
     {0x2F800, 0x2FA1D}, {0x30000, 0x3134A}, {0x31350, 0x323AF},
-};
+});
 
 [[nodiscard]] constexpr bool
 isOpenQASMIdentifierCodePoint(const std::uint32_t codePoint) noexcept {
   std::size_t first = 0;
   std::size_t last = std::size(OPENQASM_IDENTIFIER_RANGES);
   while (first < last) {
-    const auto middle = first + (last - first) / 2;
+    const auto middle = first + ((last - first) / 2);
     const auto range = OPENQASM_IDENTIFIER_RANGES[middle];
     if (codePoint < range.first) {
       last = middle;

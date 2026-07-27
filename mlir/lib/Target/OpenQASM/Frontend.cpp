@@ -18,12 +18,17 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/VirtualFileSystem.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -51,10 +56,10 @@ struct ParseArtifacts {
   std::vector<Diagnostic> diagnostics;
 };
 
-constexpr std::size_t includeNestingLimit = 64;
-constexpr std::size_t expandedStatementLimit = 100'000;
+constexpr std::size_t INCLUDE_NESTING_LIMIT = 64;
+constexpr std::size_t EXPANDED_STATEMENT_LIMIT = 100'000;
 
-[[nodiscard]] std::optional<detail::StandardLibraryKind>
+[[nodiscard]] static std::optional<detail::StandardLibraryKind>
 standardLibraryKind(const llvm::StringRef filename) {
   if (filename == "stdgates.inc") {
     return detail::StandardLibraryKind::StdGates;
@@ -65,8 +70,9 @@ standardLibraryKind(const llvm::StringRef filename) {
   return std::nullopt;
 }
 
-ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
-                           const llvm::SourceMgr* providedSources = nullptr) {
+static ParseArtifacts
+parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
+            const llvm::SourceMgr* providedSources = nullptr) {
   ParseArtifacts result;
   auto sources = std::make_unique<llvm::SourceMgr>();
   if (providedSources != nullptr) {
@@ -90,8 +96,9 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   bool failedParsing = false;
   const auto reportIncludeNestingLimit = [&](const llvm::SMLoc location) {
     (void)builder.error(
-        location, llvm::Twine("include nesting exceeds the limit of ") +
-                      llvm::Twine(static_cast<unsigned>(includeNestingLimit)));
+        location,
+        llvm::Twine("include nesting exceeds the limit of ") +
+            llvm::Twine(static_cast<unsigned>(INCLUDE_NESTING_LIMIT)));
     failedParsing = true;
   };
   const auto reportStatementLimit = [&](const llvm::SMLoc location) {
@@ -99,7 +106,7 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
         location,
         llvm::Twine(
             "expanded OpenQASM program exceeds the statement limit of ") +
-            llvm::Twine(static_cast<unsigned>(expandedStatementLimit)));
+            llvm::Twine(static_cast<unsigned>(EXPANDED_STATEMENT_LIMIT)));
     failedParsing = true;
   };
   struct ParsedSource {
@@ -134,7 +141,7 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
        includeIndex < builder.getIncludes().size(); ++includeIndex) {
     includeTargets.resize(builder.getIncludes().size());
     const auto include = builder.getIncludes()[includeIndex];
-    if (includeDepths[includeIndex] > includeNestingLimit) {
+    if (includeDepths[includeIndex] > INCLUDE_NESTING_LIMIT) {
       reportIncludeNestingLimit(include.location);
       continue;
     }
@@ -199,13 +206,15 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
           const llvm::SMLoc location,
           const std::optional<detail::SyntaxIncludeContextId> includeContext) {
         const auto count = end - begin;
-        if (count > expandedStatementLimit - expandedBody.size()) {
+        if (count > EXPANDED_STATEMENT_LIMIT - expandedBody.size()) {
           reportStatementLimit(location);
           return false;
         }
-        expandedBody.insert(expandedBody.end(),
-                            builder.getBody().begin() + begin,
-                            builder.getBody().begin() + end);
+        const auto bodyBegin = std::next(builder.getBody().begin(),
+                                         static_cast<std::ptrdiff_t>(begin));
+        const auto bodyEnd = std::next(builder.getBody().begin(),
+                                       static_cast<std::ptrdiff_t>(end));
+        expandedBody.insert(expandedBody.end(), bodyBegin, bodyEnd);
         expandedIncludeContexts.insert(expandedIncludeContexts.end(), count,
                                        includeContext);
         return true;
@@ -226,7 +235,7 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
         return false;
       }
       if (includeMarkers[includeIndex]) {
-        if (expandedBody.size() >= expandedStatementLimit) {
+        if (expandedBody.size() >= EXPANDED_STATEMENT_LIMIT) {
           reportStatementLimit(includeLocation);
           activeBuffers.erase(bufferId);
           return false;
@@ -239,7 +248,7 @@ ParseArtifacts parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
           (void)builder.error(includeLocation,
                               "recursive include is not allowed");
           failedParsing = true;
-        } else if (depth >= includeNestingLimit) {
+        } else if (depth >= INCLUDE_NESTING_LIMIT) {
           reportIncludeNestingLimit(includeLocation);
           activeBuffers.erase(bufferId);
           return false;

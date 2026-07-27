@@ -10,12 +10,17 @@
 
 #include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
+#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
+
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/Twine.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <iterator>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace mlir::oq3::frontend::detail {
 

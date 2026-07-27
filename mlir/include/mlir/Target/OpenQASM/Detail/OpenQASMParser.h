@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <new>
 #include <optional>
 #include <utility>
@@ -257,9 +258,9 @@ public:
   }
 
 private:
-  static constexpr std::size_t blockDepthLimit = 64;
-  static constexpr std::size_t recursiveExpressionDepthLimit = 256;
-  static constexpr std::size_t modifierDepthLimit = 64;
+  static constexpr std::size_t BLOCK_DEPTH_LIMIT = 64;
+  static constexpr std::size_t RECURSIVE_EXPRESSION_DEPTH_LIMIT = 256;
+  static constexpr std::size_t MODIFIER_DEPTH_LIMIT = 64;
 
   //===--- Token scaffolding --------------------------------------------===//
 
@@ -312,7 +313,7 @@ private:
   //===--- Allocation helpers -------------------------------------------===//
 
   [[nodiscard]] Expr* makeExpr() {
-    return new (allocator.Allocate<Expr>()) Expr();
+    return std::construct_at(allocator.Allocate<Expr>());
   }
 
   //===--- Program and statements ---------------------------------------===//
@@ -392,10 +393,10 @@ private:
    * The block is parsed in a new scope.
    */
   [[nodiscard]] LogicalResult parseBlock() {
-    if (blockDepth >= blockDepthLimit) {
+    if (blockDepth >= BLOCK_DEPTH_LIMIT) {
       return sink.error(current().loc,
                         Twine("block depth exceeds the limit of ") +
-                            Twine(static_cast<unsigned>(blockDepthLimit)));
+                            Twine(static_cast<unsigned>(BLOCK_DEPTH_LIMIT)));
     }
     ++blockDepth;
     const auto result = parseBlockInScope();
@@ -572,10 +573,14 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    const auto scalarKind = kind == TokenKind::Bool   ? ScalarKind::Bool
-                            : kind == TokenKind::Int  ? ScalarKind::Int
-                            : kind == TokenKind::Uint ? ScalarKind::Uint
-                                                      : ScalarKind::Float;
+    auto scalarKind = ScalarKind::Float;
+    if (kind == TokenKind::Bool) {
+      scalarKind = ScalarKind::Bool;
+    } else if (kind == TokenKind::Int) {
+      scalarKind = ScalarKind::Int;
+    } else if (kind == TokenKind::Uint) {
+      scalarKind = ScalarKind::Uint;
+    }
     if (failed(sink.scalarDecl(loc, scalarKind, id, initializer, isConst))) {
       return failure();
     }
@@ -923,10 +928,11 @@ private:
            current().kind == TokenKind::Pow ||
            current().kind == TokenKind::Ctrl ||
            current().kind == TokenKind::NegCtrl) {
-      if (modifiers.size() >= modifierDepthLimit) {
-        return sink.error(current().loc,
-                          Twine("gate modifier depth exceeds the limit of ") +
-                              Twine(static_cast<unsigned>(modifierDepthLimit)));
+      if (modifiers.size() >= MODIFIER_DEPTH_LIMIT) {
+        return sink.error(
+            current().loc,
+            Twine("gate modifier depth exceeds the limit of ") +
+                Twine(static_cast<unsigned>(MODIFIER_DEPTH_LIMIT)));
       }
       auto modifier = parseModifier();
       if (failed(modifier)) {
@@ -1412,9 +1418,12 @@ private:
     while (current().kind == TokenKind::Asterisk ||
            current().kind == TokenKind::Slash ||
            current().kind == TokenKind::Percent) {
-      const auto kind = current().kind == TokenKind::Asterisk ? Expr::Kind::Mul
-                        : current().kind == TokenKind::Slash  ? Expr::Kind::Div
-                                                              : Expr::Kind::Mod;
+      auto kind = Expr::Kind::Mul;
+      if (current().kind == TokenKind::Slash) {
+        kind = Expr::Kind::Div;
+      } else if (current().kind == TokenKind::Percent) {
+        kind = Expr::Kind::Mod;
+      }
       const auto loc = current().loc;
       advance();
       auto rhs = parseUnary();
@@ -1430,20 +1439,22 @@ private:
     ++recursiveExpressionDepth;
     auto depthGuard =
         llvm::make_scope_exit([&] { --recursiveExpressionDepth; });
-    if (recursiveExpressionDepth > recursiveExpressionDepthLimit) {
+    if (recursiveExpressionDepth > RECURSIVE_EXPRESSION_DEPTH_LIMIT) {
       return sink.error(
           current().loc,
           Twine("expression nesting exceeds the limit of ") +
-              Twine(static_cast<unsigned>(recursiveExpressionDepthLimit)));
+              Twine(static_cast<unsigned>(RECURSIVE_EXPRESSION_DEPTH_LIMIT)));
     }
     if (current().kind == TokenKind::Minus ||
         current().kind == TokenKind::ExclamationPoint ||
         current().kind == TokenKind::Tilde) {
       const auto loc = current().loc;
-      const auto kind = current().kind == TokenKind::Minus ? Expr::Kind::Neg
-                        : current().kind == TokenKind::Tilde
-                            ? Expr::Kind::BitNot
-                            : Expr::Kind::Not;
+      auto kind = Expr::Kind::Neg;
+      if (current().kind == TokenKind::Tilde) {
+        kind = Expr::Kind::BitNot;
+      } else if (current().kind == TokenKind::ExclamationPoint) {
+        kind = Expr::Kind::Not;
+      }
       advance();
       auto operand = parseUnary();
       if (failed(operand)) {
@@ -1579,9 +1590,11 @@ private:
     return expr;
   }
 
-  Lexer& lexer;
-  Sink& sink;
-  llvm::BumpPtrAllocator& allocator;
+  // Parser collaborators are mandatory and outlive this single parse.
+  Lexer& lexer; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  Sink& sink;   // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  llvm::BumpPtrAllocator&
+      allocator; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   Token currentToken;
   Token nextToken;
   std::size_t blockDepth = 0;

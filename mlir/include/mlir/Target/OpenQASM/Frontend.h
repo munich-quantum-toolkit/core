@@ -78,10 +78,10 @@ private:
 
   explicit ParsedProgram(std::unique_ptr<Impl> implementation);
 
-  friend ParseResult parseOpenQASM(llvm::StringRef);
-  friend ParseResult parseOpenQASM(llvm::SourceMgr&);
-  friend AnalysisResult analyzeOpenQASM(const ParsedProgram&,
-                                        const FrontendOptions&);
+  friend ParseResult parseOpenQASM(llvm::StringRef source);
+  friend ParseResult parseOpenQASM(llvm::SourceMgr& sourceMgr);
+  friend AnalysisResult analyzeOpenQASM(const ParsedProgram& program,
+                                        const FrontendOptions& options);
 };
 
 struct ParseResult {
@@ -274,22 +274,22 @@ struct BitVectorAssignmentStatement {
 };
 
 struct MeasurementStatement {
-  std::vector<BitReference> targets;
-  std::vector<QubitReference> qubits;
+  std::vector<BitReference> targets{};
+  std::vector<QubitReference> qubits{};
 };
 
 struct ResetStatement {
-  std::vector<QubitReference> qubits;
+  std::vector<QubitReference> qubits{};
 };
 
 struct BarrierStatement {
-  std::vector<QubitReference> qubits;
+  std::vector<QubitReference> qubits{};
 };
 
 struct IfStatement {
   ConditionId condition = 0;
-  std::vector<StatementId> thenStatements;
-  std::vector<StatementId> elseStatements;
+  std::vector<StatementId> thenStatements{};
+  std::vector<StatementId> elseStatements{};
 };
 
 struct ForStatement {
@@ -297,12 +297,12 @@ struct ForStatement {
   ExpressionId start = 0;
   ExpressionId step = 0;
   ExpressionId stop = 0;
-  std::vector<StatementId> body;
+  std::vector<StatementId> body{};
 };
 
 struct WhileStatement {
   ConditionId condition = 0;
-  std::vector<StatementId> body;
+  std::vector<StatementId> body{};
 };
 
 using StatementData =
@@ -321,20 +321,20 @@ struct TypedProgram {
   bool openQASM2 = false;
   bool stdGatesIncluded = false;
   bool qelib1Included = false;
-  std::vector<ScalarExpression> expressions;
-  std::vector<BitVectorExpression> bitVectorExpressions;
-  std::vector<ConditionExpression> conditions;
-  std::vector<ScalarDeclaration> scalars;
-  std::vector<RegisterDeclaration> registers;
-  std::vector<GateDefinition> gates;
-  std::vector<Statement> statements;
-  std::vector<StatementId> body;
-  std::vector<RegisterId> outputs;
+  std::vector<ScalarExpression> expressions{};
+  std::vector<BitVectorExpression> bitVectorExpressions{};
+  std::vector<ConditionExpression> conditions{};
+  std::vector<ScalarDeclaration> scalars{};
+  std::vector<RegisterDeclaration> registers{};
+  std::vector<GateDefinition> gates{};
+  std::vector<Statement> statements{};
+  std::vector<StatementId> body{};
+  std::vector<RegisterId> outputs{};
 };
 
 struct AnalysisResult {
-  std::unique_ptr<TypedProgram> program;
-  std::vector<Diagnostic> diagnostics;
+  std::unique_ptr<TypedProgram> program{};
+  std::vector<Diagnostic> diagnostics{};
 
   [[nodiscard]] explicit operator bool() const { return program != nullptr; }
 };

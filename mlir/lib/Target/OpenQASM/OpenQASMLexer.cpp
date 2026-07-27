@@ -21,7 +21,9 @@
 #include <cctype>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <utility>
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 namespace mlir::oq3::frontend::detail {
@@ -38,20 +40,20 @@ namespace mlir::oq3::frontend::detail {
 
 [[nodiscard]] static bool isDigitForRadix(const char c, const unsigned radix) {
   if (c >= '0' && c <= '9') {
-    return static_cast<unsigned>(c - '0') < radix;
+    return std::cmp_less(c - '0', radix);
   }
   if (c >= 'a' && c <= 'f') {
-    return static_cast<unsigned>(c - 'a' + 10) < radix;
+    return std::cmp_less(c - 'a' + 10, radix);
   }
   if (c >= 'A' && c <= 'F') {
-    return static_cast<unsigned>(c - 'A' + 10) < radix;
+    return std::cmp_less(c - 'A' + 10, radix);
   }
   return false;
 }
 
 template <class IsDigit>
 [[nodiscard]] static bool hasValidSeparators(const StringRef text,
-                                             IsDigit&& isValidDigit) {
+                                             IsDigit isValidDigit) {
   for (std::size_t index = 0; index < text.size(); ++index) {
     if (text[index] != '_') {
       continue;
@@ -64,14 +66,16 @@ template <class IsDigit>
   return true;
 }
 
+namespace {
 struct DecodedCodePoint {
   std::uint32_t value = 0;
   std::size_t width = 0;
 };
+} // namespace
 
 [[nodiscard]] static std::optional<DecodedCodePoint>
 decodeCodePoint(const char* position, const char* end) {
-  auto* source = reinterpret_cast<const llvm::UTF8*>(position);
+  const auto* source = reinterpret_cast<const llvm::UTF8*>(position);
   const auto* const begin = source;
   const auto* const sourceEnd = reinterpret_cast<const llvm::UTF8*>(end);
   llvm::UTF32 codePoint = 0;
@@ -246,9 +250,12 @@ Token Lexer::lexNumber(const char* start) {
                         peek() == 'O' || peek() == 'x' || peek() == 'X')) {
     const char prefix = peek();
     cur += 2;
-    const unsigned radix = prefix == 'b' || prefix == 'B'   ? 2
-                           : prefix == 'o' || prefix == 'O' ? 8
-                                                            : 16;
+    unsigned radix = 16;
+    if (prefix == 'b' || prefix == 'B') {
+      radix = 2;
+    } else if (prefix == 'o' || prefix == 'O') {
+      radix = 8;
+    }
     const char* digits = cur;
     while (!atEnd() && (std::isalnum(static_cast<unsigned char>(*cur)) ||
                         isSeparator(*cur))) {
@@ -399,14 +406,14 @@ Token Lexer::next() {
     return lexIdentifierOrKeyword(start);
   }
   const auto remaining = static_cast<std::size_t>(end - cur);
-  const std::size_t unsupportedHashKeywordWidth =
-      c == '#' && remaining >= 4 && StringRef(cur, 4) == "#dim" &&
-              (remaining == 4 || !canContinueIdentifier(cur[4]))
-          ? 4
-      : c == '#' && remaining >= 7 && StringRef(cur, 7) == "#pragma" &&
-              (remaining == 7 || !canContinueIdentifier(cur[7]))
-          ? 7
-          : 0;
+  std::size_t unsupportedHashKeywordWidth = 0;
+  if (c == '#' && remaining >= 4 && StringRef(cur, 4) == "#dim" &&
+      (remaining == 4 || !canContinueIdentifier(cur[4]))) {
+    unsupportedHashKeywordWidth = 4;
+  } else if (c == '#' && remaining >= 7 && StringRef(cur, 7) == "#pragma" &&
+             (remaining == 7 || !canContinueIdentifier(cur[7]))) {
+    unsupportedHashKeywordWidth = 7;
+  }
   if (unsupportedHashKeywordWidth != 0) {
     cur += unsupportedHashKeywordWidth;
     token.kind = TokenKind::UnsupportedKeyword;

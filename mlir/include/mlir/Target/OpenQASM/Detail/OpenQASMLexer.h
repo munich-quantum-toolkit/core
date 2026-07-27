@@ -15,6 +15,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <iterator>
 
 namespace mlir::oq3::frontend::detail {
 
@@ -147,7 +148,13 @@ private:
   [[nodiscard]] bool atEnd() const { return cur == end; }
 
   /// The character after the cursor, or `'\0'` at the end of the buffer.
-  [[nodiscard]] char peek() const { return (cur + 1) != end ? cur[1] : '\0'; }
+  [[nodiscard]] char peek() const {
+    if (atEnd()) {
+      return '\0';
+    }
+    const auto next = std::next(cur);
+    return next != end ? *next : '\0';
+  }
 
   /**
    * @brief Skip whitespace and comments.
