@@ -55,8 +55,8 @@ struct Hp24Policy {
 
 enum class ControlledTarget : uint8_t { X, Z, Phase };
 
-static constexpr double K_PI = std::numbers::pi;
-static constexpr double K_PI8 = K_PI / 8.0;
+constexpr double K_PI = std::numbers::pi;
+constexpr double K_PI8 = K_PI / 8.0;
 
 class GateEmitter {
 public:

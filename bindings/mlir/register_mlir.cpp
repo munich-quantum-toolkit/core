@@ -398,8 +398,9 @@ operations.)pb");
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_controls"_a = 2,
-           "Decompose controlled X/Z/phase gates with at least min_controls "
-           "controls.")
+           "Decompose controlled X/Z gates, qco.rccx, and constant-angle phase "
+           "gates with at least min_controls controls (min_controls must be at "
+           "least 2).")
       .def(
           "place_and_route",
           [](mlir::QCOProgram& value,

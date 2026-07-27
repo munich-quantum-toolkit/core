@@ -187,8 +187,9 @@ public:
   /// Lift Hadamard gates away from measurements.
   [[nodiscard]] bool liftHadamards();
 
-  /// Decompose controlled X/Z/phase gates with at least @p minControls
-  /// controls.
+  /// Decompose controlled X/Z gates, `qco.rccx`, and constant-angle phase
+  /// gates with at least @p minControls controls (@p minControls must be at
+  /// least 2).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minControls = 2);
 
   /// Place and route the program on a coupling graph.

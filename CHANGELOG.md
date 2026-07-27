@@ -21,8 +21,8 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
-  and phase gates with a configurable `min-controls` threshold ([#1810])
-  ([**@simon1hofmann**])
+  RCCX, and constant-angle phase gates with a configurable `min-controls`
+  threshold ([#1810]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
   ([**@simon1hofmann**])
