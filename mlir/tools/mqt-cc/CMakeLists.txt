@@ -29,6 +29,7 @@ mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)
 
 if(BUILD_MQT_CORE_TESTS)
+  set_target_properties(mqt-cc PROPERTIES EXCLUDE_FROM_ALL FALSE)
   set(MQT_CC_NATIVE_GATES_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-gates.qasm)
 
   add_test(NAME mqt-cc-native-gates-qco-optimized
