@@ -1014,25 +1014,49 @@ OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 bit[2] source = measure q;
-bit[2] target = measure q;
+output bit[2] target;
 target = source;
 if (target[0] || target[1]) { x q[0]; }
 )qasm";
 
   auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  std::size_t assignments = 0;
+  const oq3::frontend::BitVectorAssignmentStatement* assignment = nullptr;
   for (const auto& statement : analyzed.program->statements) {
-    assignments +=
-        std::holds_alternative<oq3::frontend::BitAssignmentStatement>(
-            statement.data);
+    if (const auto* current =
+            std::get_if<oq3::frontend::BitVectorAssignmentStatement>(
+                &statement.data)) {
+      ASSERT_EQ(assignment, nullptr);
+      assignment = current;
+    }
   }
-  EXPECT_EQ(assignments, 2);
+  ASSERT_NE(assignment, nullptr);
+  ASSERT_EQ(analyzed.program->registers.size(), 3);
+  EXPECT_EQ(analyzed.program->registers[assignment->target].name, "target");
+  const auto& value =
+      analyzed.program->bitVectorExpressions.at(assignment->value);
+  EXPECT_EQ(value.kind, oq3::frontend::BitVectorExpressionKind::Register);
+  EXPECT_EQ(analyzed.program->registers[value.reg].name, "source");
+  EXPECT_EQ(value.width, 2);
 
   MLIRContext context;
   auto module = qc::translateQASM3ToQC(SOURCE, &context);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
+
+  SmallVector<Value> measured;
+  SmallVector<Value> returned;
+  module->walk([&](qc::MeasureOp measurement) {
+    measured.push_back(measurement.getResult());
+  });
+  module->walk([&](func::ReturnOp operation) {
+    returned.assign(operation.getOperands().begin(),
+                    operation.getOperands().end());
+  });
+  ASSERT_EQ(measured.size(), 2);
+  ASSERT_EQ(returned.size(), 2);
+  EXPECT_EQ(returned[0], measured[0]);
+  EXPECT_EQ(returned[1], measured[1]);
 }
 
 TEST(OpenQASMTargetTest, LowersTypedBitVectorBuiltins) {
