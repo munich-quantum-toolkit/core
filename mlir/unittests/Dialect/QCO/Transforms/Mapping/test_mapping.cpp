@@ -1159,9 +1159,9 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
     std::tie(args[0], args[3]) = builder.cx(args[0], args[3]);
     std::tie(args[0], args[6]) = builder.cx(args[0], args[6]);
 
-    SmallVector<Value> t(ArrayRef(args).slice(0, 3));
-    SmallVector<Value> m(ArrayRef(args).slice(3, 3));
-    SmallVector<Value> b(ArrayRef(args).slice(6, 3));
+    SmallVector<Value> t(ArrayRef<Value>(args).slice(0, 3));
+    SmallVector<Value> m(ArrayRef<Value>(args).slice(3, 3));
+    SmallVector<Value> b(ArrayRef<Value>(args).slice(6, 3));
 
     flatGHZ(builder, t);
     flatGHZ(builder, m);
