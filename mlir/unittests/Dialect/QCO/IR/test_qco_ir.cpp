@@ -152,6 +152,25 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.qcoIf(c, -1, ValueRange{},
+                      [](ValueRange) { return SmallVector<Value>{}; });
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.scfCondition(c, 1, ValueRange{});
+      },
+      "Register index is out of bounds");
 }
 
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {

@@ -640,6 +640,7 @@ QCProgramBuilder::scfIf(Value reg, const std::variant<int64_t, Value>& index,
                         const function_ref<void()>& thenBody,
                         const function_ref<void()>& elseBody) {
   checkFinalized();
+  validateMemRefIndex(reg, index);
   auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfIf(condition, thenBody, elseBody);
@@ -691,6 +692,7 @@ QCProgramBuilder&
 QCProgramBuilder::scfCondition(Value reg,
                                const std::variant<int64_t, Value>& index) {
   checkFinalized();
+  validateMemRefIndex(reg, index);
   auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfCondition(condition);

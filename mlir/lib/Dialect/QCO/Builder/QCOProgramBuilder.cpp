@@ -1334,6 +1334,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     function_ref<SmallVector<Value>(ValueRange)> thenBody,
     function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
+  validateMemRefIndex(reg, index);
   auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return qcoIf(condition, initArgs, thenBody, elseBody);
@@ -1363,6 +1364,7 @@ QCOProgramBuilder::scfCondition(Value reg,
                                 const std::variant<int64_t, Value>& index,
                                 ValueRange yieldedValues) {
   checkFinalized();
+  validateMemRefIndex(reg, index);
   auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfCondition(condition, yieldedValues);
