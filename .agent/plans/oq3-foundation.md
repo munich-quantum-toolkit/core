@@ -186,6 +186,16 @@ threads or publishing new PR text.
       `origin/main` at `07fafad95`, rebuilt the affected targets, and reran all
       788 focused tests, the complete repository lint session, and the
       warning-as-error documentation build.
+- [x] (2026-07-27) Addressed selected review findings MF-01, MF-04, and MF-05:
+      made standard-gate lowering recipes exhaustive, restored the distinct
+      OpenQASM 2 and 3 U-family phase conventions, guarded runtime integer power
+      exponents against inexact f64 conversion, and made the 100000-operation
+      construction budget authoritative with conservative preflight accounting.
+- [x] (2026-07-27) Added an independent lightweight QC-IR matrix oracle for U,
+      u2/u3/u, cu/cu3, and modifier phase behavior, plus variable,
+      branch-joined, and loop-carried integer-power tests and early-rejection
+      tests for wide, scalar-expression, structured-control, phase-correction,
+      and power-check construction.
 
 ## Surprises & Discoveries
 
@@ -282,6 +292,17 @@ threads or publishing new PR text.
   loop-result assumption. A direct-QC regression verifies the source behavior;
   the end-to-end positive corpus must not claim reconstructed QC support until
   that independent conversion limitation is removed.
+
+- Observation: `qc.u` implements the conventional phaseful U matrix, while
+  OpenQASM 3's language builtin U and OpenQASM 2/qelib U-family gates attach
+  different global phases. Those phases become observable under control, so
+  lowering aliases directly to `qc.u` was not semantics-preserving.
+
+- Observation: a projected gate-expansion count does not bound operation
+  construction from scalar expressions, comparisons, SCF scaffolding, phase
+  correction, or runtime power checks. A builder listener supplies the
+  authoritative construction count; conservative preflight retains early,
+  source-located rejection for statically predictable work.
 
 ## Decision Log
 
@@ -424,6 +445,24 @@ threads or publishing new PR text.
   allocation, while ordinary control-flow analysis should not copy every bit
   register at each branch. Date/Author: 2026-07-25 / Codex.
 
+- Decision: represent every catalog lowering with a closed `GateLowering` enum
+  and use dedicated recipes for OpenQASM 3 U, OpenQASM 2 u2/u3/u, cu, and cu3.
+  Rationale: string aliases cannot express phase corrections, and exhaustive
+  switches make omissions a compile-time maintenance failure. Date/Author:
+  2026-07-27 / Codex.
+
+- Decision: reject a runtime integer power exponent unless removing its trailing
+  binary zeroes leaves at most 53 significant bits before converting it to f64.
+  Rationale: this is the exact IEEE-754 binary64 representability condition and
+  prevents variable, branch-joined, and loop-carried values from silently
+  rounding. Date/Author: 2026-07-27 / Codex.
+
+- Decision: keep phase-convention tests in QC translation with a small local
+  evaluator instead of routing them through QC-to-QCO, mapping, or DD
+  construction. Rationale: the regression must independently test the emitted QC
+  recipe without coupling translation correctness to downstream conversion and
+  placement machinery. Date/Author: 2026-07-27 / Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
@@ -453,6 +492,13 @@ assert overflow and invalid division, unsigned operations wrap at 64 bits, and
 dynamic ranges use comparison-driven structured control flow. MLIR's canonical
 `cf.assert` conversion preserves these checks in QIR. Cases that `jeff` cannot
 represent fail at its conversion boundary instead of reducing source support.
+
+The selected emitter remediation preserves exact OpenQASM U-family matrices,
+including relative phases once gates are controlled or modified. Runtime integer
+powers no longer round through f64, and all operation construction is bounded
+independently of projected gate expansion. Focused tests exercise the matrix
+contracts directly in QC IR and force each newly budgeted construction category
+to fail during preflight.
 
 ## Context and Orientation
 
@@ -881,3 +927,10 @@ boundary-failure suites. It removed the constant-lattice preflight, implemented
 runtime integer and inclusive-range semantics, relocated implementation headers,
 fixed the remaining lint diagnostics, and added canonical `cf.assert` lowering
 to QIR.
+
+Revision note (2026-07-27): selected PR review remediation added closed,
+phase-aware U-family lowering recipes, exact runtime integer-to-f64 power
+guards, and an authoritative operation-construction budget with complete
+preflight accounting. Independent phase tests deliberately evaluate QC IR
+locally rather than depending on downstream QCO conversion, mapping, or DD
+functionality.

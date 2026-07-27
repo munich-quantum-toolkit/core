@@ -2305,7 +2305,7 @@ private:
            .operand = addConstant(
                {.type = ScalarType::Int,
                 .value = static_cast<std::int64_t>(intrinsicControls)})});
-      callee = standard->primitive.str();
+      callee = canonicalGateName(standard->lowering).str();
       emittedOperandCount = addedControls + activeBaseOperands;
     }
 

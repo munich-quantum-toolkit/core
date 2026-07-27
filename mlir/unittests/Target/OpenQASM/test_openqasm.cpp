@@ -35,6 +35,8 @@
 #include <memory>
 #include <numbers>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace mlir;
 
@@ -470,6 +472,61 @@ powered(0.5) q;
   EXPECT_DOUBLE_EQ(*powers.front().getExponentValue(), 0.5);
 }
 
+TEST(OpenQASMTargetTest, GuardsRuntimeIntegerPowerModifierExactness) {
+  constexpr llvm::StringLiteral sources[] = {
+      R"qasm(
+OPENQASM 3.1;
+qubit q;
+uint exponent = 9007199254740993;
+pow(exponent) @ x q;
+)qasm",
+      R"qasm(
+OPENQASM 3.1;
+qubit q;
+int exponent = 9007199254740992;
+bit choose = measure q;
+if (choose) { exponent = 9007199254740993; }
+pow(exponent) @ x q;
+)qasm",
+      R"qasm(
+OPENQASM 3.1;
+qubit q;
+uint exponent = 9007199254740993;
+bit repeat = measure q;
+while (repeat) {
+  exponent -= 1;
+  repeat = measure q;
+}
+pow(exponent) @ x q;
+)qasm",
+  };
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    MLIRContext context;
+    auto module = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+
+    SmallVector<qc::PowOp> powers;
+    std::size_t exactnessAssertions = 0;
+    module->walk([&](Operation* operation) {
+      if (auto power = dyn_cast<qc::PowOp>(operation)) {
+        powers.push_back(power);
+      }
+      if (auto assertion = dyn_cast<cf::AssertOp>(operation);
+          assertion &&
+          assertion.getMsg().contains(
+              "power modifier exponent cannot be represented exactly")) {
+        ++exactnessAssertions;
+      }
+    });
+    ASSERT_EQ(powers.size(), 1U);
+    EXPECT_FALSE(powers.front().getExponentValue().has_value());
+    EXPECT_EQ(exactnessAssertions, 1U);
+  }
+}
+
 TEST(OpenQASMTargetTest,
      LowersCustomGatesConditionalsAndQuantumRuntimeOperations) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
@@ -748,6 +805,84 @@ TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
   EXPECT_FALSE(module);
   EXPECT_NE(diagnostic.find("projected emitted operation count"),
             std::string::npos);
+}
+
+TEST(OpenQASMTargetTest, RejectsWideConstructionBeforeEmittingOperations) {
+  constexpr llvm::StringLiteral sources[] = {
+      "OPENQASM 3.1;\nqubit[50001] q;\n",
+      "OPENQASM 3.1;\nbit[40000] c;\nint i = 0;\n"
+      "output bit value;\nvalue = false;\n"
+      "c[i] = value;\n",
+  };
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    MLIRContext context;
+    std::string diagnostic;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+      diagnostic = value.str();
+      return success();
+    });
+    auto module = qc::translateQASM3ToQC(source, &context);
+    EXPECT_FALSE(module);
+    EXPECT_NE(diagnostic.find("projected emitted operation count"),
+              std::string::npos)
+        << diagnostic;
+  }
+}
+
+TEST(OpenQASMTargetTest, BudgetsScalarAndStructuredOperationConstruction) {
+  std::string expressionSource =
+      "OPENQASM 3.1;\nint operand = 1;\nint result = ";
+  std::vector<std::string> expressions(16384, "operand");
+  while (expressions.size() > 1) {
+    std::vector<std::string> next;
+    next.reserve(expressions.size() / 2);
+    for (std::size_t expression = 0; expression < expressions.size();
+         expression += 2) {
+      next.push_back("(" + expressions[expression] + " + " +
+                     expressions[expression + 1] + ")");
+    }
+    expressions = std::move(next);
+  }
+  expressionSource += expressions.front();
+  expressionSource += ";\n";
+
+  std::string controlFlowSource = "OPENQASM 3.1;\nint operand = 1;\n";
+  constexpr std::size_t conditionals = 12000;
+  for (std::size_t conditional = 0; conditional < conditionals; ++conditional) {
+    controlFlowSource += "if (operand > 0) {}\n";
+  }
+
+  std::string phaseSource = "OPENQASM 3.1;\nqubit q;\n";
+  // Setup costs eight operations and each OpenQASM 3 U application costs
+  // three parameter constants plus four phase-aware lowering operations.
+  constexpr std::size_t phaseGates = ((100000 - 8) / 7) + 1;
+  static_assert(8 + (phaseGates - 1) * 7 <= 100000);
+  static_assert(8 + phaseGates * 7 > 100000);
+  for (std::size_t gate = 0; gate < phaseGates; ++gate) {
+    phaseSource += "U(0.1, 0.2, 0.3) q;\n";
+  }
+
+  std::string powerSource = "OPENQASM 3.1;\nqubit q;\nint exponent = 1;\n";
+  constexpr std::size_t powerGates = 6000;
+  for (std::size_t gate = 0; gate < powerGates; ++gate) {
+    powerSource += "pow(exponent) @ x q;\n";
+  }
+
+  for (const auto* source :
+       {&expressionSource, &controlFlowSource, &phaseSource, &powerSource}) {
+    MLIRContext context;
+    std::string diagnostic;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+      diagnostic = value.str();
+      return success();
+    });
+    auto module = qc::translateQASM3ToQC(*source, &context);
+    EXPECT_FALSE(module);
+    EXPECT_NE(diagnostic.find("projected emitted operation count"),
+              std::string::npos)
+        << diagnostic;
+  }
 }
 
 TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {

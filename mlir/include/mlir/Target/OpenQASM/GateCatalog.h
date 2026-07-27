@@ -26,9 +26,44 @@ enum class GateAvailability : std::uint8_t {
   Compatibility,
 };
 
+enum class GateLowering : std::uint8_t {
+  GPhase,
+  Id,
+  X,
+  Y,
+  Z,
+  H,
+  S,
+  Sdg,
+  T,
+  Tdg,
+  SX,
+  SXdg,
+  P,
+  RX,
+  RY,
+  RZ,
+  R,
+  U2,
+  U3,
+  BuiltinU,
+  CU,
+  SWAP,
+  ISWAP,
+  DCX,
+  ECR,
+  RCCX,
+  RXX,
+  RYY,
+  RZX,
+  RZZ,
+  XXPlusYY,
+  XXMinusYY,
+};
+
 struct GateCatalogEntry {
   llvm::StringRef name;
-  llvm::StringRef primitive;
+  GateLowering lowering;
   std::size_t parameterCount;
   std::size_t controlCount;
   std::size_t targetCount;
@@ -44,5 +79,7 @@ struct GateCatalogEntry {
 [[nodiscard]] llvm::ArrayRef<GateCatalogEntry> getGateCatalog();
 
 [[nodiscard]] const GateCatalogEntry* lookupGate(llvm::StringRef name);
+
+[[nodiscard]] llvm::StringRef canonicalGateName(GateLowering lowering);
 
 } // namespace mlir::oq3::frontend
