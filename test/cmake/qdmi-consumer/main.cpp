@@ -13,14 +13,13 @@
 #include <array>
 #include <cstddef>
 
-int main() {
-  const auto submitBinaryProgram = [](const fomac::Device& device) {
-    constexpr std::array<std::byte, 0> program{};
-    return device.submitJob(program, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0);
-  };
-  static_cast<void>(submitBinaryProgram);
-
+int main(const int argc, char**) {
   fomac::Session session;
-  static_cast<void>(session.getDevices());
+  const auto devices = session.getDevices();
+  if (argc > 1 && !devices.empty()) {
+    constexpr std::array program{std::byte{0}};
+    static_cast<void>(devices.front().submitJob(
+        program, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0));
+  }
   return 0;
 }

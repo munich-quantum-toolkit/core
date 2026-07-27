@@ -35,6 +35,21 @@
 #include <vector>
 
 namespace fomac {
+namespace {
+[[nodiscard]] constexpr bool
+isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
+  return format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+         format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
+         format == QDMI_PROGRAM_FORMAT_QPY;
+}
+
+[[nodiscard]] constexpr bool
+hasNoGenericProgramPayload(const QDMI_Program_Format format) noexcept {
+  return format == QDMI_PROGRAM_FORMAT_CALIBRATION ||
+         format == QDMI_PROGRAM_FORMAT_BATCHJOB;
+}
+} // namespace
+
 size_t Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
@@ -322,6 +337,15 @@ Job Device::submitJob(const std::string& program,
                       const std::optional<CustomJobParameter>& custom3,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
+  if (isBinaryProgramFormat(format)) {
+    throw std::invalid_argument(
+        "Binary program formats require exact-byte submission");
+  }
+  if (hasNoGenericProgramPayload(format)) {
+    throw std::invalid_argument(
+        "Calibration and batch jobs do not use a generic program payload");
+  }
+
   const auto bytes = std::as_bytes(
       std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
   return submitJob(bytes, format, numShots, custom1, custom2, custom3, custom4,
@@ -335,6 +359,11 @@ Job Device::submitJob(const std::span<const std::byte> program,
                       const std::optional<CustomJobParameter>& custom3,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
+  if (hasNoGenericProgramPayload(format)) {
+    throw std::invalid_argument(
+        "Calibration and batch jobs do not use a generic program payload");
+  }
+
   QDMI_Job job = nullptr;
   qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job};
@@ -438,6 +467,11 @@ QDMI_Program_Format Job::getProgramFormat() const {
 }
 
 std::vector<std::byte> Job::getProgramBytes() const {
+  if (hasNoGenericProgramPayload(getProgramFormat())) {
+    throw std::invalid_argument(
+        "Calibration and batch jobs do not expose a generic program payload");
+  }
+
   size_t size = 0;
   qdmi::throwIfError(QDMI_job_query_property(job_.get(),
                                              QDMI_JOB_PROPERTY_PROGRAM, 0,
@@ -455,17 +489,14 @@ std::vector<std::byte> Job::getProgramBytes() const {
 }
 
 std::string Job::getProgram() const {
-  switch (getProgramFormat()) {
-  case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
-  case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
-  case QDMI_PROGRAM_FORMAT_CALIBRATION:
-  case QDMI_PROGRAM_FORMAT_QPY:
-  case QDMI_PROGRAM_FORMAT_BATCHJOB:
+  const auto format = getProgramFormat();
+  if (isBinaryProgramFormat(format)) {
     throw std::invalid_argument(
-        "Cannot decode a binary or non-text program as a string; use "
-        "getProgramBytes()");
-  default:
-    break;
+        "Cannot decode a binary program as a string; use getProgramBytes()");
+  }
+  if (hasNoGenericProgramPayload(format)) {
+    throw std::invalid_argument(
+        "Calibration and batch jobs do not expose a generic program payload");
   }
 
   const auto program = getProgramBytes();

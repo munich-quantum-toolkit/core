@@ -102,6 +102,23 @@ TEST(JobParameters, RejectsUnterminatedTextProgram) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
+TEST(JobParameters, RejectsInteriorNullInTextProgram) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &fmt),
+            QDMI_SUCCESS);
+
+  constexpr char program[] = "OPENQASM 3.0;\0garbage";
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, sizeof(program), program),
+      QDMI_ERROR_INVALIDARGUMENT);
+}
+
 TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};

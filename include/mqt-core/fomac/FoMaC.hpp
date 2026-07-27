@@ -510,6 +510,8 @@ public:
    * @brief Submits a textual program.
    * @details The terminating null byte required by QDMI text formats is
    * included in the submitted payload.
+   * @throws std::invalid_argument If the format requires binary submission or
+   * does not carry a generic program payload.
    * @see QDMI_job_submit
    */
   [[nodiscard]] Job submitJob(
@@ -524,6 +526,8 @@ public:
    * @brief Submits a binary program.
    * @details The bytes are submitted exactly as provided without appending a
    * null byte.
+   * @throws std::invalid_argument If the format does not carry a generic
+   * program payload.
    * @see QDMI_job_submit
    */
   [[nodiscard]] Job submitJob(
@@ -648,12 +652,16 @@ public:
 
   /**
    * @brief Gets a textual program without its terminating null byte.
-   * @throws std::invalid_argument If the device does not return a
-   * null-terminated payload.
+   * @throws std::invalid_argument If the format is not textual or the device
+   * does not return a null-terminated payload.
    */
   [[nodiscard]] std::string getProgram() const;
 
-  /// Gets the submitted program bytes exactly as returned by the device.
+  /**
+   * @brief Gets the submitted program bytes exactly as returned by the device.
+   * @throws std::invalid_argument If the format does not carry a generic
+   * program payload.
+   */
   [[nodiscard]] std::vector<std::byte> getProgramBytes() const;
 
   /// Get the number of shots
