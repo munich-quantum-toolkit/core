@@ -16,6 +16,7 @@
 #include <cassert>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <stdexcept>
 #include <vector>
 
@@ -258,7 +259,7 @@ opToThreeQubitGateMatrix(const qc::OpType t,
   case qc::RCCX: {
     // Relative-phase CCX in DD bit order (qubit index = bit index).
     ThreeQubitGateMatrix matrix{};
-    for (std::size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
+    for (size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
       matrix[i][i] = 1.;
     }
     matrix[3][3] = 0.;
