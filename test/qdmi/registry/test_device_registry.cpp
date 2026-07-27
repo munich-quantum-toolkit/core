@@ -235,6 +235,46 @@ TEST(DeviceRegistry, DisabledEnvironmentEntryMasksExplicitDefinition) {
   EXPECT_EQ(registry.disabledIds().front(), "masked");
 }
 
+TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
+  const TemporaryDirectory directory;
+  const auto path = directory.write("disabled.json", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{"id": "masked", "enabled": false}]}
+  })");
+  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
+                                             path.string());
+
+  {
+    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", R"({
+          "schema-version": 1,
+          "qdmi": {"devices": [{
+            "id": "masked", "library": "device.so", "prefix": "DEVICE"
+          }]}
+        })");
+    const qdmi::detail::DeviceRegistry registry;
+    EXPECT_EQ(findDefinition(registry, "masked"), nullptr);
+    ASSERT_EQ(registry.disabledIds().size(), 1);
+    EXPECT_EQ(registry.disabledIds().front(), "masked");
+  }
+
+  {
+    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", R"({
+          "schema-version": 1,
+          "qdmi": {"devices": [{
+            "id": "masked", "library": "device.so", "prefix": "DEVICE",
+            "enabled": true
+          }]}
+        })");
+    const qdmi::detail::DeviceRegistry registry;
+    const auto* definition = findDefinition(registry, "masked");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(definition->library,
+              std::filesystem::current_path() / "device.so");
+    EXPECT_EQ(definition->prefix, "DEVICE");
+    EXPECT_TRUE(registry.disabledIds().empty());
+  }
+}
+
 TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
   const TemporaryDirectory directory;
   directory.write("config/device.json", R"({

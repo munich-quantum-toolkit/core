@@ -60,10 +60,11 @@ On Unix, file configuration uses `/etc/mqt-core/qdmi.json` and then
 `mqt-core/qdmi.json` files below `PROGRAMDATA` and `APPDATA`.
 
 An entry containing only its ID and `"enabled": false` masks an inherited
-definition. A later complete definition with the same ID enables it again.
-Within one directory, `qdmi.json` takes precedence over `pyproject.toml`. The
-final disabled ID remains reserved, so fallback registration cannot silently
-re-enable a device that an administrator disabled.
+definition. Since definitions are merged field by field, a later definition with
+the same ID must explicitly set `"enabled": true` to enable it again. Within one
+directory, `qdmi.json` takes precedence over `pyproject.toml`. The final
+disabled ID remains reserved, so fallback registration cannot silently re-enable
+a device that an administrator disabled.
 
 `MQT_CORE_QDMI_CONFIG_FILE` replaces the system, user, and project levels while
 retaining packaged built-ins.
