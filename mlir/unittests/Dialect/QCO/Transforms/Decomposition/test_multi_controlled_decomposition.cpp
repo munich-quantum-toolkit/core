@@ -58,7 +58,8 @@ static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
 static constexpr std::array<size_t, 5> K_COHERENT_HP24_CONTROL_COUNTS = {
     10, 11, 21, 22, 23};
 static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
-/// Smoke-only (fully lowered, no DD) for these widths.
+/// Additional fully-lowered/CX smoke checks; k=21…23 also receive coherent DD
+/// coverage above, while k=24 remains smoke-only.
 static constexpr std::array<size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23,
                                                                  24};
 
