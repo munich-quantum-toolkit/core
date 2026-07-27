@@ -1725,22 +1725,13 @@ private:
     }
     const auto* destination = lookup(measurement.target->identifier);
     if (destination != nullptr && destination->kind == SymbolKind::Scalar) {
-      if (measurement.target->index || destination->type != ScalarType::Bool) {
-        fail(location, "measurement assignment requires a bool scalar or bit "
-                       "register destination");
+      if (destination->type == ScalarType::Bool) {
+        fail(location,
+             "measurement results have type 'bit' and cannot be assigned to "
+             "'bool' without an explicit cast");
       }
-      if (qubits.size() != 1) {
-        fail(location, "bool measurement assignment requires one qubit");
-      }
-      const auto condition =
-          addCondition({.kind = ConditionKind::Measurement,
-                        .location = getSourceLocation(location),
-                        .measurement = qubits.front()});
-      initializedScalars[destination->id] = true;
-      ++scalarGenerations[destination->id];
-      return addStatement(location,
-                          ScalarAssignmentStatement{.scalar = destination->id,
-                                                    .condition = condition});
+      fail(location,
+           "measurement assignment requires a bit-register destination");
     }
     auto targets = resolveBits(*measurement.target);
     if (targets.size() != qubits.size()) {

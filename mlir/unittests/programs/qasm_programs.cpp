@@ -1210,7 +1210,7 @@ const std::string conditionMeasurement = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 h q[0];
-bool enabled = measure q[0];
+bit enabled = measure q[0];
 if (enabled) { x q[1]; }
 bit c = measure q[1];
 )qasm";
@@ -1219,7 +1219,7 @@ const std::string conditionAnd = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0]; h q[1];
-bool c0 = measure q[0]; bool c1 = measure q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
 if (c0 && c1) { x q[2]; }
 bit out = measure q[2];
 )qasm";
@@ -1228,7 +1228,7 @@ const std::string conditionOr = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0]; h q[1];
-bool c0 = measure q[0]; bool c1 = measure q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
 if (c0 || c1) { x q[2]; } else { h q[2]; }
 bit out = measure q[2];
 )qasm";
@@ -1237,8 +1237,8 @@ const std::string conditionNotAndOr = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[4] q;
 h q[0]; h q[1]; h q[2];
-bool c0 = measure q[0]; bool c1 = measure q[1];
-bool c2 = measure q[2];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+bit c2 = measure q[2];
 if (!(c0 && c1) || c2) { x q[3]; }
 bit out = measure q[3];
 )qasm";
@@ -1247,7 +1247,7 @@ const std::string conditionBoolVariable = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0]; h q[1];
-bool c0 = measure q[0]; bool c1 = measure q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
 bool both = c0 && c1;
 bool neither = !both;
 if (neither) { x q[2]; }

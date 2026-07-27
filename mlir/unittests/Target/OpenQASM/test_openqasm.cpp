@@ -875,11 +875,11 @@ if (result == 0.0625) { x q; }
   EXPECT_TRUE(foundResult);
 }
 
-TEST(OpenQASMTargetTest, SupportsScalarMeasurementReassignment) {
+TEST(OpenQASMTargetTest, SupportsBitMeasurementReassignment) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
 qubit q;
-bool measured;
+bit measured;
 measured = measure q;
 if (measured) { x q; }
 measured = measure q;
@@ -892,6 +892,39 @@ if (!measured) { h q; }
   std::size_t measurements = 0;
   module->walk([&](qc::MeasureOp) { ++measurements; });
   EXPECT_EQ(measurements, 2);
+}
+
+TEST(OpenQASMFrontendTest, RejectsBoolMeasurementTargetsInAllSourceModes) {
+  constexpr llvm::StringLiteral SOURCES[] = {
+      "qubit q; bool measured = measure q;",
+      "OPENQASM 2.0; qubit q; bool measured = measure q;",
+      "OPENQASM 3.0; qubit q; bool measured = measure q;",
+      "OPENQASM 3.1; qubit q; bool measured = measure q;",
+      "OPENQASM 3.1; qubit q; bool measured; measured = measure q;",
+  };
+  for (const auto source : SOURCES) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(
+                  "measurement results have type 'bit'"),
+              std::string::npos);
+  }
+
+  llvm::SourceMgr sources;
+  sources.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                 "OPENQASM 3.1;\nqubit q;\nbool measured;\n"
+                                 "measured = measure q;\n",
+                                 "bool-measurement.qasm"),
+                             llvm::SMLoc());
+  auto located = oq3::frontend::analyzeOpenQASM(sources);
+  ASSERT_FALSE(located);
+  ASSERT_FALSE(located.diagnostics.empty());
+  EXPECT_EQ(located.diagnostics.front().location.filename,
+            "bool-measurement.qasm");
+  EXPECT_EQ(located.diagnostics.front().location.line, 4);
+  EXPECT_EQ(located.diagnostics.front().location.column, 1);
 }
 
 TEST(OpenQASMFrontendTest, InvalidatesDynamicBitFactsOnIndexChanges) {
@@ -1772,7 +1805,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidProgramsAcrossSemanticFamilies) {
       {"self-initialization", "OPENQASM 3.1; int x = x + 1;"},
       {"uninitialized-condition", "OPENQASM 3.1; bool ready; if (ready) {}"},
       {"partially-initialized-branch",
-       "OPENQASM 3.1; qubit q; bool choose = measure q; int x; if (choose) "
+       "OPENQASM 3.1; qubit q; bit choose = measure q; int x; if (choose) "
        "{ x = 1; } int y = x;"},
       {"forward-gate-call",
        "OPENQASM 3.1; qubit q; later q; gate later a { x a; }"},
@@ -1807,7 +1840,7 @@ int fromTrueBranch;
 if (true) { fromTrueBranch = 1; }
 int fromSelectedElse;
 if (false) { fromSelectedElse = 1; } else { fromSelectedElse = 2; }
-bool choose = measure q[0];
+bit choose = measure q[0];
 int fromBothBranches;
 if (choose) { fromBothBranches = 1; } else { fromBothBranches = 2; }
 int fromNonemptyLoop;
