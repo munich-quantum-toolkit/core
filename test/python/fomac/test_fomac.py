@@ -461,8 +461,20 @@ c = measure q;
     assert job.program_format == ProgramFormat.QASM3
     # The program should be preserved
     assert job.program == qasm3_program
+    assert job.program_bytes == qasm3_program.encode() + b"\0"
     # Num shots should match request
     assert job.num_shots == 100
+
+
+def test_program_format_includes_batch_job() -> None:
+    """Expose every standard QDMI program format."""
+    assert ProgramFormat.BATCH_JOB.value == 9
+
+
+def test_device_rejects_unterminated_text_bytes(ddsim_device: Device) -> None:
+    """Reject byte payloads that do not satisfy QDMI's text contract."""
+    with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
+        ddsim_device.submit_job(b"OPENQASM 3.0;", ProgramFormat.QASM3, num_shots=1)
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
@@ -508,6 +520,8 @@ c = measure q;
 
     job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
     assert job.program_bytes == program_bytes
+    with pytest.raises(ValueError, match="binary or non-text"):
+        _ = job.program
     job.wait()
 
     assert job.check() == Job.Status.DONE

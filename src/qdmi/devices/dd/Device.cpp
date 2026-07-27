@@ -393,6 +393,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
         // Text payloads include the trailing '\0' in `size`.
         // Strip it so it is not counted in the stored string's size.
         const auto* text = static_cast<const char*>(value);
+        if (size == 0 || text[size - 1] != '\0') {
+          return QDMI_ERROR_INVALIDARGUMENT;
+        }
         program_ = std::string(text, size - 1);
       } else {
         // Binary payloads are stored exactly as received.

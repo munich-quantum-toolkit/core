@@ -85,6 +85,23 @@ TEST(JobParameters, SetAndQueryBasics) {
   EXPECT_EQ(program, qdmi_test::QASM3_BELL_SAMPLING);
 }
 
+TEST(JobParameters, RejectsUnterminatedTextProgram) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &fmt),
+            QDMI_SUCCESS);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM,
+                strlen(qdmi_test::QASM3_BELL_SAMPLING),
+                qdmi_test::QASM3_BELL_SAMPLING),
+            QDMI_ERROR_INVALIDARGUMENT);
+}
+
 TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};

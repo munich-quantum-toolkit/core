@@ -455,6 +455,19 @@ std::vector<std::byte> Job::getProgramBytes() const {
 }
 
 std::string Job::getProgram() const {
+  switch (getProgramFormat()) {
+  case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
+  case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
+  case QDMI_PROGRAM_FORMAT_CALIBRATION:
+  case QDMI_PROGRAM_FORMAT_QPY:
+  case QDMI_PROGRAM_FORMAT_BATCHJOB:
+    throw std::invalid_argument(
+        "Cannot decode a binary or non-text program as a string; use "
+        "getProgramBytes()");
+  default:
+    break;
+  }
+
   const auto program = getProgramBytes();
   if (program.empty() || program.back() != std::byte{0}) {
     throw std::invalid_argument(

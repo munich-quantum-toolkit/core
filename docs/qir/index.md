@@ -72,7 +72,9 @@ terminating null byte required by QDMI. Binary module payloads use the
 preserves embedded null bytes and submits exactly the span's size without
 appending a terminator. `Job::getProgramBytes()` retrieves such a payload
 without interpreting its format or removing terminal null bytes; the existing
-`Job::getProgram()` remains the textual, null-terminated accessor.
+`Job::getProgram()` remains the textual, null-terminated accessor. It rejects
+known binary and non-text formats based on their QDMI format identifier, even if
+their payload happens to end in a null byte.
 
 The `MQT::CoreFoMaC` CMake target advertises this API through the exported
 `MQT_CORE_FOMAC_BINARY_PROGRAM_API` target property. The
@@ -84,4 +86,5 @@ configuration.
 The Python API follows the same distinction: pass `str` to `Device.submit_job`
 for a textual program and `bytes` for an exact binary payload.
 `Job.program_bytes` always returns the unmodified payload, while `Job.program`
-expects a null-terminated UTF-8 text payload.
+expects a null-terminated UTF-8 text payload and rejects known binary or
+non-text formats.

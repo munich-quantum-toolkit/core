@@ -219,6 +219,8 @@ class ProgramFormat(enum.Enum):
 
     IQM_JSON = 8
 
+    BATCH_JOB = 9
+
     CUSTOM1 = 999999995
 
     CUSTOM2 = 999999996
