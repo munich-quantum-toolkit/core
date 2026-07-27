@@ -41,6 +41,9 @@ namespace mlir::qco {
 
 namespace {
 
+// The synthesis routines below are independent implementations derived from
+// the publications cited at the respective algorithms.
+
 enum class Hp24DirtyMode : uint8_t { OneDirty, TwoDirty };
 enum class Hp24IncrementerKind : uint8_t { Ripple, Partitioned };
 enum class Hp24HalfMcxKind : uint8_t { RelativePhaseTernary, BorrowedHelper };
