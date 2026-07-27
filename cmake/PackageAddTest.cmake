@@ -19,8 +19,10 @@ macro(PACKAGE_ADD_TEST testname linklibs)
     # discover tests
     gtest_discover_tests(
       ${testname}
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" DISCOVERY_TIMEOUT 60)
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      # Defer the property name so it is not parsed as the discovery working directory.
+      PROPERTIES "$<1:WORKING_DIRECTORY>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                 VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" DISCOVERY_TIMEOUT 60)
     set_target_properties(${testname} PROPERTIES FOLDER tests)
 
     # Set c++ standard
@@ -40,8 +42,10 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
     # discover tests
     gtest_discover_tests(
       ${testname}
-      WORKING_DIRECTORY ${test_working_directory}
-      PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${test_working_directory}" DISCOVERY_TIMEOUT 60)
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      # Defer the property name so it is not parsed as the discovery working directory.
+      PROPERTIES "$<1:WORKING_DIRECTORY>" "${test_working_directory}" VS_DEBUGGER_WORKING_DIRECTORY
+                 "${test_working_directory}" DISCOVERY_TIMEOUT 60)
     set_target_properties(${testname} PROPERTIES FOLDER tests)
 
     # Set c++ standard
