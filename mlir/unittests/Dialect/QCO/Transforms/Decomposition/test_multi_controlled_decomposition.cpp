@@ -326,6 +326,7 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp,
               dd::RealNumber::val(referenceOutput.w.i), 1e-11);
 
   dd->decRef(*decomposedOutput);
+  dd->decRef(referenceOutput);
 }
 
 static void expectMatchesControlledPauliOnCoherentState(func::FuncOp funcOp,
