@@ -98,6 +98,8 @@ static constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
   return small[k];
 }
 
+namespace {
+
 enum class ControlledPauli : uint8_t { X, Z };
 
 class MultiControlledDecompositionTest : public testing::Test {
@@ -129,6 +131,8 @@ class MczSmokeTest : public MultiControlledDecompositionTest,
                      public testing::WithParamInterface<size_t> {};
 class McpSmokeTest : public MultiControlledDecompositionTest,
                      public testing::WithParamInterface<size_t> {};
+
+} // namespace
 
 [[nodiscard]] static OwningOpRef<ModuleOp>
 buildControlledPauliModule(MLIRContext* context, size_t numControls,

@@ -39,6 +39,8 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_DECOMPOSEMULTICONTROLLED
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+namespace {
+
 enum class Hp24DirtyMode : uint8_t { OneDirty, TwoDirty };
 enum class Hp24IncrementerKind : uint8_t { Ripple, Partitioned };
 enum class Hp24HalfMcxKind : uint8_t { RelativePhaseTernary, BorrowedHelper };
@@ -296,6 +298,18 @@ struct CircuitPlan {
   void append(PlanOp op) { ops.push_back(std::move(op)); }
 };
 
+struct ControlledGateSpec {
+  ControlledTarget gate;
+  std::optional<double> theta;
+};
+
+struct BorrowedControlPartition {
+  size_t k1; // ceil(k / 2)
+  size_t k2; // floor(k / 2)
+};
+
+} // namespace
+
 [[nodiscard]] static size_t estimateBorrowedHelperMcxOps(size_t numControls) {
   if (numControls <= 3) {
     return 1;
@@ -399,11 +413,6 @@ static void appendRemapped(CircuitPlan& dest, CircuitPlan src,
     dest.append(std::move(op));
   }
 }
-
-struct ControlledGateSpec {
-  ControlledTarget gate;
-  std::optional<double> theta;
-};
 
 //===----------------------------------------------------------------------===//
 // HP24 MCZ core (Huang & Palsberg, PACMPL 2024, doi:10.1145/3656436)
@@ -1031,11 +1040,6 @@ static CircuitPlan planMcp(double theta, size_t numControls);
 //===----------------------------------------------------------------------===//
 
 /// Vale control split: top `ceil(k/2)`, bottom `floor(k/2)`.
-struct BorrowedControlPartition {
-  size_t k1; // ceil(k / 2)
-  size_t k2; // floor(k / 2)
-};
-
 static BorrowedControlPartition partitionControls(size_t numControls) {
   return {.k1 = (numControls + 1) / 2, .k2 = numControls / 2};
 }
@@ -1275,6 +1279,8 @@ matchControlledTarget(UnitaryOpInterface inner) {
 // Patterns and pass
 //===----------------------------------------------------------------------===//
 
+namespace {
+
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
                                           uint64_t minControls)
@@ -1385,5 +1391,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir::qco
