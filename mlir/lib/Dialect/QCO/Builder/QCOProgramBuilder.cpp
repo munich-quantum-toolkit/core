@@ -417,6 +417,7 @@ std::pair<Value, Value>
 QCOProgramBuilder::measure(Value qubit, Value reg,
                            const std::variant<int64_t, Value>& index) {
   checkFinalized();
+  validateMemRefIndex(reg, index);
 
   auto measureOp = MeasureOp::create(*this, qubit);
   auto qubitOut = measureOp.getQubitOut();

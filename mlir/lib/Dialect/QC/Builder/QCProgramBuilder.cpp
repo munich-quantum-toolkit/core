@@ -192,6 +192,7 @@ Value QCProgramBuilder::measure(Value qubit) {
 Value QCProgramBuilder::measure(Value qubit, Value reg,
                                 const std::variant<int64_t, Value>& index) {
   checkFinalized();
+  validateMemRefIndex(reg, index);
   auto measureOp = MeasureOp::create(*this, qubit);
   auto result = measureOp.getResult();
   auto indexValue = variantToValue(*this, getLoc(), index);

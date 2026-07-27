@@ -43,6 +43,21 @@
 
 namespace mlir::qir {
 
+static void validateRegisterIndex(const ClassicalRegister& reg,
+                                  const std::variant<int64_t, Value>& index) {
+  const auto* constant = std::get_if<int64_t>(&index);
+  if (constant == nullptr) {
+    return;
+  }
+  if (*constant < 0) {
+    llvm::reportFatalUsageError("Register index must be non-negative");
+  }
+  const auto* size = std::get_if<int64_t>(&reg.size);
+  if (size != nullptr && *constant >= *size) {
+    llvm::reportFatalUsageError("Register index is out of bounds");
+  }
+}
+
 QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qir-program-builder>", 1, 1), context),
@@ -345,6 +360,7 @@ Value QIRProgramBuilder::loadClassicalBit(
   if (it == cregs.end()) {
     llvm::reportFatalUsageError("Register does not belong to this builder");
   }
+  validateRegisterIndex(it->second, index);
 
   auto indexValue = resolveIntVariant(*this, getLoc(), index);
   auto elementptr =
@@ -397,6 +413,7 @@ Value QIRProgramBuilder::measure(Value qubit, const ClassicalRegister& reg,
     llvm::reportFatalUsageError("Register does not belong to this builder");
   }
   auto& live = it->second;
+  validateRegisterIndex(live, index);
 
   Value result;
   if (profile == Profile::Adaptive) {
