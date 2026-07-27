@@ -28,8 +28,12 @@ For local development, you can configure `MLIR_DIR` once in a repository-local
 Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
 otherwise provided.
 
-The MLIR components can still be manually disabled by passing
-`-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
+The MQT Core compiler dialects can still be manually disabled by passing
+`-DBUILD_MQT_CORE_MLIR=OFF` to CMake. The QIR runner and DDSIM QIR support
+follow that option by default, but can now be selected independently through
+`BUILD_MQT_CORE_QIR_RUNNER` and `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR`. To remove
+the LLVM/MLIR dependency from an existing build directory, explicitly disable
+all three options.
 
 Known limitations:
 

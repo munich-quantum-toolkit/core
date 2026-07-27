@@ -99,7 +99,14 @@ project(
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-if(BUILD_MQT_CORE_MLIR)
+option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project"
+       ${BUILD_MQT_CORE_MLIR})
+option(BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+       "Enable QIR program format support for the DDSIM QDMI Device" ${BUILD_MQT_CORE_MLIR})
+
+if(BUILD_MQT_CORE_MLIR
+   OR BUILD_MQT_CORE_QIR_RUNNER
+   OR BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR)
   include(SetupMLIR)
 endif()
 
@@ -119,13 +126,6 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
-
-cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
-                       "BUILD_MQT_CORE_MLIR" OFF)
-
-cmake_dependent_option(
-  BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR "Enable QIR program format support for the DDSIM QDMI Device"
-  ON "BUILD_MQT_CORE_MLIR" OFF)
 
 # add main library code
 add_subdirectory(src)
