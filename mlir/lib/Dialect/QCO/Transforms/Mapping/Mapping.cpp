@@ -81,12 +81,6 @@ private:
 
   enum class RoutingMode : bool { Cold, Hot };
 
-  /// Return the qubit values in `values`, preserving their relative order.
-  static SmallVector<Value> getQubitValues(ValueRange values) {
-    return to_vector(llvm::make_filter_range(
-        values, [](Value value) { return isa<QubitType>(value.getType()); }));
-  }
-
   class AugmentedDevice {
   public:
     explicit AugmentedDevice(
@@ -410,6 +404,12 @@ protected:
   }
 
 private:
+  /// Return the qubit values in `values`, preserving their relative order.
+  static SmallVector<Value> getQubitValues(ValueRange values) {
+    return to_vector(llvm::make_filter_range(
+        values, [](Value value) { return isa<QubitType>(value.getType()); }));
+  }
+
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
