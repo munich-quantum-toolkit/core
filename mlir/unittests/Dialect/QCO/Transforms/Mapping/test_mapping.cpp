@@ -1187,7 +1187,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
         arith::IndexCastOp::create(builder, builder.getIndexType(), cnt);
 
     const auto cases = to_vector(llvm::seq<int64_t>(1, size));
-    
+
     SmallVector<std::function<SmallVector<Value>(ValueRange)>> bodies;
     for (size_t i = 0; i < cases.size(); ++i) {
       bodies.emplace_back([&](ValueRange initArgs) {
