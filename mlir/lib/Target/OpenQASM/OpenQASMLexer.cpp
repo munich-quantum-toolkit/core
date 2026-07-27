@@ -329,13 +329,27 @@ Token Lexer::lexNumber(const char* start) {
 Token Lexer::lexString(const char* start, const char quote) {
   ++cur; // consume opening quote
   const char* contentStart = cur;
+  const char* invalidCharacter = nullptr;
   while (!atEnd() && *cur != quote) {
+    if (invalidCharacter == nullptr &&
+        (*cur == '\r' || *cur == '\n' || *cur == '\t')) {
+      invalidCharacter = cur;
+    }
     ++cur;
   }
   Token token;
   token.loc = SMLoc::getFromPointer(start);
   if (atEnd()) {
     token.kind = TokenKind::Error;
+    return token;
+  }
+  if (contentStart == cur) {
+    invalidCharacter = cur;
+  }
+  if (invalidCharacter != nullptr) {
+    token.kind = TokenKind::Error;
+    token.loc = SMLoc::getFromPointer(invalidCharacter);
+    ++cur; // consume closing quote
     return token;
   }
   token.kind = TokenKind::StringLiteral;

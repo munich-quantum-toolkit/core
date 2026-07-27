@@ -1493,6 +1493,42 @@ TEST(OpenQASMFrontendTest, RejectsIncludesInsideBlocks) {
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest, AcceptsBothIncludeStringQuoteStyles) {
+  EXPECT_TRUE(oq3::frontend::parseOpenQASM(
+      "OPENQASM 3.1; include \"stdgates.inc\";"));
+  EXPECT_TRUE(oq3::frontend::parseOpenQASM(
+      "OPENQASM 3.1; include 'stdgates.inc';"));
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidIncludeStringsAtTheOffendingByte) {
+  struct InvalidInclude {
+    llvm::StringRef source;
+    std::size_t line;
+    std::size_t column;
+  };
+  constexpr InvalidInclude INCLUDES[] = {
+      {"include \"\";", 1, 10},
+      {"include \"bad\tname.inc\";", 1, 13},
+      {"include \"bad\nname.inc\";", 1, 13},
+      {"include \"bad\rname.inc\";", 1, 13},
+  };
+
+  for (const auto& include : INCLUDES) {
+    SCOPED_TRACE(include.source.str());
+    llvm::SourceMgr sources;
+    sources.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                   include.source, "invalid-include.qasm"),
+                               llvm::SMLoc());
+    auto parsed = oq3::frontend::parseOpenQASM(sources);
+    ASSERT_FALSE(parsed);
+    ASSERT_FALSE(parsed.diagnostics.empty());
+    EXPECT_EQ(parsed.diagnostics.front().location.filename,
+              "invalid-include.qasm");
+    EXPECT_EQ(parsed.diagnostics.front().location.line, include.line);
+    EXPECT_EQ(parsed.diagnostics.front().location.column, include.column);
+  }
+}
+
 TEST(OpenQASMFrontendTest, CollectsMultipleRecoverableSyntaxDiagnostics) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
