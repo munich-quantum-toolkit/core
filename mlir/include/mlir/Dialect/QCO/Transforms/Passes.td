@@ -69,7 +69,8 @@ def FuseSingleQubitUnitaryRuns
 
 def FuseTwoQubitUnitaryRuns
     : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
   let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
   let description = [{
     Rewrites unitaries to match the comma-separated `native-gates` gateset.

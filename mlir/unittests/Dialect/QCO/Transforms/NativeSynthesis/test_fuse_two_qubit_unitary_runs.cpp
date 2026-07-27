@@ -479,6 +479,15 @@ protected:
   std::unique_ptr<MLIRContext> context;
 };
 
+TEST(FuseTwoQubitUnitaryRunsPassContract, RegistersArithDialectDependency) {
+  DialectRegistry registry;
+  const auto pass = createFuseTwoQubitUnitaryRuns();
+  pass->getDependentDialects(registry);
+
+  EXPECT_TRUE(
+      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
+}
+
 using SynthesisParam = std::tuple<NamedProgram, const char*>;
 
 class FuseTwoQubitSynthesisTest
