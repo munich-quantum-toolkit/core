@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add binary-safe QDMI program handling to FoMaC and support embedding the
+  QIR-enabled DDSIM device with parent-provided LLVM/MLIR and `spdlog`
+  dependencies ([#1957]) ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
@@ -652,6 +655,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935
