@@ -350,6 +350,24 @@ struct BorrowedControlPartition {
   return estimateIncrementerPartitionedOps(n);
 }
 
+[[nodiscard]] static size_t
+estimateBorrowedDirtyIncrementerOps(size_t n, const Hp24Policy& policy,
+                                    bool flagAdd) {
+  const bool oneDirty = policy.dirtyMode == Hp24DirtyMode::OneDirty;
+  const size_t k = oneDirty ? (n + 1) / 2 : (n + 2) / 2;
+  const size_t lowIncrementWidth = oneDirty ? k : (1 + n - k);
+  const size_t incrementerOps =
+      estimateIncrementerOps(lowIncrementWidth, policy);
+  const size_t halfMcxOps =
+      policy.halfMcxKind == Hp24HalfMcxKind::RelativePhaseTernary &&
+              k < policy.halfMcxBorrowedHelperMinControls
+          ? estimateRelativePhaseMcxOps(k)
+          : estimateBorrowedHelperMcxOps(k);
+  const size_t highIncrementOps = estimateIncrementerOps(k, policy);
+  return (2 * incrementerOps) + (2 * halfMcxOps) + highIncrementOps +
+         (2 * (n - k)) + 4 + (flagAdd ? 0 : (2 * n));
+}
+
 static void remapPlanOpInPlace(PlanOp& op, ArrayRef<size_t> map) {
   for (size_t& w : op.wires) {
     assert(w < map.size() && "plan wire out of remap range");
@@ -609,7 +627,7 @@ static CircuitPlan planRelativePhaseMcx(size_t numControls) {
   // Memoize by width: the recursive ladder rebuilds the same sub-widths many
   // times, and half-MCX widths stay well below this bound in practice.
   constexpr size_t kCacheMax = 32;
-  static std::array<std::optional<CircuitPlan>, kCacheMax + 1> cache{};
+  thread_local std::array<std::optional<CircuitPlan>, kCacheMax + 1> cache{};
   if (numControls <= kCacheMax && cache[numControls].has_value()) {
     return *cache[numControls];
   }
@@ -687,16 +705,7 @@ static CircuitPlan planBorrowedDirtyIncrementer(size_t n, bool flagAdd,
   const size_t helper = n;
   const size_t helper2 = n + 1;
   const size_t lowIncrementWidth = oneDirty ? k : (1 + n - k);
-  const size_t incrementerOps =
-      estimateIncrementerOps(lowIncrementWidth, policy);
-  const size_t halfMcxOps =
-      policy.halfMcxKind == Hp24HalfMcxKind::RelativePhaseTernary &&
-              k < policy.halfMcxBorrowedHelperMinControls
-          ? estimateRelativePhaseMcxOps(k)
-          : estimateBorrowedHelperMcxOps(k);
-  const size_t highIncrementOps = estimateIncrementerOps(k, policy);
-  plan.ops.reserve((2 * incrementerOps) + (2 * halfMcxOps) + highIncrementOps +
-                   (2 * (n - k)) + 4 + (flagAdd ? 0 : (2 * n)));
+  plan.ops.reserve(estimateBorrowedDirtyIncrementerOps(n, policy, flagAdd));
 
   const auto flipRegister = [&] {
     for (size_t q = 0; q < n; ++q) {
@@ -791,8 +800,10 @@ static CircuitPlan planHp24Core(size_t n, const Hp24Policy& policy) {
   const size_t registerWidth = policy.dirtyMode == Hp24DirtyMode::OneDirty
                                    ? numControls
                                    : numControls - 1;
-  const size_t incrementerOps = estimateIncrementerRippleOps(registerWidth);
-  plan.ops.reserve((2 * incrementerOps) + (2 * (numControls - 1)) + 1);
+  plan.ops.reserve(
+      estimateBorrowedDirtyIncrementerOps(registerWidth, policy, true) +
+      estimateBorrowedDirtyIncrementerOps(registerWidth, policy, false) +
+      (2 * (numControls - 1)) + 1);
 
   SmallVector<size_t, 16> registerWires(n);
   std::iota(registerWires.begin(), registerWires.end(), 0U);
