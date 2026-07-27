@@ -483,7 +483,7 @@ static void appendUncarry(CircuitPlan& plan, size_t carry, size_t hi,
                           size_t lo) {
   plan.append({.kind = PlanOpKind::CCX, .wires = {hi, lo, carry}});
   plan.append({.kind = PlanOpKind::CX, .wires = {carry, hi}});
-  plan.append({.kind = PlanOpKind::CX, .wires = {hi, lo}});
+  plan.append({.kind = PlanOpKind::CX, .wires = {carry, lo}});
 }
 
 // HP24 Eq. (2) borrowed-helper MCX (controls, target, then dirty helpers).
