@@ -26,21 +26,21 @@ class SourceMgr;
 
 namespace mlir::oq3::frontend {
 
-using ExpressionId = std::uint32_t;
-using BitVectorExpressionId = std::uint32_t;
-using RegisterId = std::uint32_t;
-using ScalarId = std::uint32_t;
-using ConditionId = std::uint32_t;
-using StatementId = std::uint32_t;
+using ExpressionId = uint32_t;
+using BitVectorExpressionId = uint32_t;
+using RegisterId = uint32_t;
+using ScalarId = uint32_t;
+using ConditionId = uint32_t;
+using StatementId = uint32_t;
 
 struct SourceLocation {
   std::string filename = "<input>";
-  std::uint32_t line = 1;
-  std::uint32_t column = 1;
+  uint32_t line = 1;
+  uint32_t column = 1;
   struct IncludeFrame {
     std::string filename;
-    std::uint32_t line = 1;
-    std::uint32_t column = 1;
+    uint32_t line = 1;
+    uint32_t column = 1;
   };
   /// Include sites from the immediate parent through the main source.
   std::vector<IncludeFrame> includeStack;
@@ -51,7 +51,7 @@ struct Diagnostic {
   std::string message;
 };
 
-enum class GatePolicy : std::uint8_t {
+enum class GatePolicy : uint8_t {
   Strict,
   MQTCompatibility,
 };
@@ -91,14 +91,14 @@ struct ParseResult {
   [[nodiscard]] explicit operator bool() const { return program != nullptr; }
 };
 
-enum class ScalarType : std::uint8_t {
+enum class ScalarType : uint8_t {
   Bool,
   Int,
   Uint,
   Float,
 };
 
-enum class ExpressionKind : std::uint8_t {
+enum class ExpressionKind : uint8_t {
   Constant,
   GateParameter,
   Variable,
@@ -127,14 +127,14 @@ struct ScalarExpression {
   ExpressionKind kind = ExpressionKind::Constant;
   ScalarType type = ScalarType::Float;
   std::variant<bool, int64_t, uint64_t, double> constant = 0.0;
-  std::uint32_t parameter = 0;
+  uint32_t parameter = 0;
   ScalarId variable = 0;
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
 };
 
-enum class BitVectorExpressionKind : std::uint8_t {
+enum class BitVectorExpressionKind : uint8_t {
   Register,
   RotateLeft,
   RotateRight,
@@ -153,7 +153,7 @@ struct ScalarDeclaration {
   std::string name;
 };
 
-enum class RegisterKind : std::uint8_t {
+enum class RegisterKind : uint8_t {
   Qubit,
   Bit,
 };
@@ -166,7 +166,7 @@ struct RegisterDeclaration {
   SourceLocation location;
 };
 
-enum class QubitReferenceKind : std::uint8_t {
+enum class QubitReferenceKind : uint8_t {
   Register,
   GateArgument,
   Hardware,
@@ -174,7 +174,7 @@ enum class QubitReferenceKind : std::uint8_t {
 
 struct QubitReference {
   QubitReferenceKind kind = QubitReferenceKind::Register;
-  std::uint32_t symbol = 0;
+  uint32_t symbol = 0;
   uint64_t index = 0;
   std::optional<ExpressionId> dynamicIndex;
 
@@ -187,7 +187,7 @@ struct BitReference {
   std::optional<ExpressionId> dynamicIndex;
 };
 
-enum class ComparisonKind : std::uint8_t {
+enum class ComparisonKind : uint8_t {
   Equal,
   NotEqual,
   Less,
@@ -196,7 +196,7 @@ enum class ComparisonKind : std::uint8_t {
   GreaterEqual,
 };
 
-enum class ConditionKind : std::uint8_t {
+enum class ConditionKind : uint8_t {
   Literal,
   Scalar,
   Bit,
@@ -221,7 +221,7 @@ struct ConditionExpression {
   ComparisonKind comparison = ComparisonKind::Equal;
 };
 
-enum class ModifierKind : std::uint8_t {
+enum class ModifierKind : uint8_t {
   Inv,
   Ctrl,
   NegCtrl,

@@ -71,7 +71,7 @@ struct GateSignature {
   bool variadicControls = false;
 };
 
-enum class SymbolKind : std::uint8_t {
+enum class SymbolKind : uint8_t {
   Scalar,
   GateLocalScalar,
   Constant,
@@ -83,7 +83,7 @@ enum class SymbolKind : std::uint8_t {
 struct Symbol {
   SymbolKind kind = SymbolKind::Scalar;
   ScalarType type = ScalarType::Int;
-  std::uint32_t id = 0;
+  uint32_t id = 0;
   std::optional<Constant> constant;
 };
 
@@ -519,7 +519,7 @@ private:
     for (const auto [index, gate] : llvm::enumerate(program.gates)) {
       gateIndices[gate.name] = index;
     }
-    enum class VisitState : std::uint8_t { Unvisited, Active, Complete };
+    enum class VisitState : uint8_t { Unvisited, Active, Complete };
     std::vector states(program.gates.size(), VisitState::Unvisited);
     std::vector<size_t> dependencyDepths(program.gates.size());
     const auto visitApplications = [&](auto&& self,
@@ -1863,12 +1863,12 @@ private:
       declare(location, parameter,
               {.kind = SymbolKind::GateParameter,
                .type = ScalarType::Float,
-               .id = static_cast<std::uint32_t>(index)});
+               .id = static_cast<uint32_t>(index)});
     }
     for (const auto [index, qubit] : llvm::enumerate(declaration.qubits)) {
-      declare(location, qubit,
-              {.kind = SymbolKind::GateQubit,
-               .id = static_cast<std::uint32_t>(index)});
+      declare(
+          location, qubit,
+          {.kind = SymbolKind::GateQubit, .id = static_cast<uint32_t>(index)});
     }
     insideGate = true;
     analyzeBody(declaration.body, definition.body, /*global=*/false);

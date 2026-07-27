@@ -36,11 +36,11 @@ namespace mlir::oq3::frontend::detail {
 
 /// An exact OpenQASM version, preserving the decimal minor component.
 struct Version {
-  std::uint32_t major = 0;
-  std::uint32_t minor = 0;
+  uint32_t major = 0;
+  uint32_t minor = 0;
 };
 
-enum class ScalarKind : std::uint8_t { Bool, Int, Uint, Float };
+enum class ScalarKind : uint8_t { Bool, Int, Uint, Float };
 
 /**
  * @defgroup ParseVocabulary Transient parse vocabulary
@@ -468,12 +468,12 @@ private:
     if (!decimalDigits(majorText) || (hasMinor && !decimalDigits(minorText)) ||
         majorText.getAsInteger(10, major) ||
         (!minorText.empty() && minorText.getAsInteger(10, minor)) ||
-        major > std::numeric_limits<std::uint32_t>::max() ||
-        minor > std::numeric_limits<std::uint32_t>::max()) {
+        major > std::numeric_limits<uint32_t>::max() ||
+        minor > std::numeric_limits<uint32_t>::max()) {
       return sink.error(current().loc, "invalid OpenQASM version string");
     }
-    const Version version{.major = static_cast<std::uint32_t>(major),
-                          .minor = static_cast<std::uint32_t>(minor)};
+    const Version version{.major = static_cast<uint32_t>(major),
+                          .minor = static_cast<uint32_t>(minor)};
     advance();
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();

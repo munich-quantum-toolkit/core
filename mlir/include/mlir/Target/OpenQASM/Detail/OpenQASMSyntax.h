@@ -27,8 +27,8 @@
 
 namespace mlir::oq3::frontend::detail {
 
-using SyntaxExpressionId = std::uint32_t;
-using SyntaxStatementId = std::uint32_t;
+using SyntaxExpressionId = uint32_t;
+using SyntaxStatementId = uint32_t;
 using SyntaxIncludeContextId = size_t;
 
 struct SyntaxExpression {
@@ -133,7 +133,7 @@ struct SyntaxWhile {
   std::vector<SyntaxStatementId> body;
 };
 
-enum class StandardLibraryKind : std::uint8_t {
+enum class StandardLibraryKind : uint8_t {
   StdGates,
   QELib1,
 };

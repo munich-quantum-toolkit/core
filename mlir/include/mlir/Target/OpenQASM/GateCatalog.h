@@ -18,7 +18,7 @@
 
 namespace mlir::oq3::frontend {
 
-enum class GateAvailability : std::uint8_t {
+enum class GateAvailability : uint8_t {
   Language,
   StandardLibrary,
   QELib1,
@@ -26,7 +26,7 @@ enum class GateAvailability : std::uint8_t {
   Compatibility,
 };
 
-enum class GateLowering : std::uint8_t {
+enum class GateLowering : uint8_t {
   GPhase,
   Id,
   X,

@@ -18,12 +18,11 @@
 namespace mlir::oq3::frontend::detail {
 
 struct UnicodeRange {
-  constexpr UnicodeRange(const std::uint32_t first,
-                         const std::uint32_t last) noexcept
+  constexpr UnicodeRange(const uint32_t first, const uint32_t last) noexcept
       : first(first), last(last) {}
 
-  std::uint32_t first;
-  std::uint32_t last;
+  uint32_t first;
+  uint32_t last;
 };
 
 // Unicode general categories Lu, Ll, Lt, Lm, Lo, and Nl, as required by the
@@ -259,7 +258,7 @@ inline constexpr auto OPENQASM_IDENTIFIER_RANGES = std::to_array<UnicodeRange>({
 });
 
 [[nodiscard]] constexpr bool
-isOpenQASMIdentifierCodePoint(const std::uint32_t codePoint) noexcept {
+isOpenQASMIdentifierCodePoint(const uint32_t codePoint) noexcept {
   size_t first = 0;
   size_t last = std::size(OPENQASM_IDENTIFIER_RANGES);
   while (first < last) {

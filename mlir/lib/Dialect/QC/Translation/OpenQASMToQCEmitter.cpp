@@ -185,12 +185,12 @@ private:
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
   bool emissionFailed = false;
 
-  enum class StateKind : std::uint8_t { Scalar, Bit };
+  enum class StateKind : uint8_t { Scalar, Bit };
 
   struct StateSlot {
     StateKind kind = StateKind::Scalar;
-    std::uint32_t first = 0;
-    std::uint32_t second = 0;
+    uint32_t first = 0;
+    uint32_t second = 0;
   };
 
   [[nodiscard]] Location
@@ -2163,7 +2163,7 @@ private:
       if (value && mutations.contains(scalarStateKey(
                        static_cast<frontend::ScalarId>(scalar)))) {
         slots.push_back({.kind = StateKind::Scalar,
-                         .first = static_cast<std::uint32_t>(scalar)});
+                         .first = static_cast<uint32_t>(scalar)});
       }
     }
     for (const auto [reg, values] : llvm::enumerate(bitValues)) {
@@ -2171,8 +2171,8 @@ private:
         if (value && mutations.contains(bitStateKey(
                          static_cast<frontend::RegisterId>(reg), bit))) {
           slots.push_back({.kind = StateKind::Bit,
-                           .first = static_cast<std::uint32_t>(reg),
-                           .second = static_cast<std::uint32_t>(bit)});
+                           .first = static_cast<uint32_t>(reg),
+                           .second = static_cast<uint32_t>(bit)});
         }
       }
     }

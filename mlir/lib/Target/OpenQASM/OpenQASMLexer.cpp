@@ -68,7 +68,7 @@ template <class IsDigit>
 
 namespace {
 struct DecodedCodePoint {
-  std::uint32_t value = 0;
+  uint32_t value = 0;
   size_t width = 0;
 };
 } // namespace
