@@ -1080,16 +1080,15 @@ private:
     window.reserve(1 + nlookahead);
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
+        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
 
           for (const auto& [op, indices] : ready) {
-            if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+            if (isa<UnitaryOpInterface>(op)) {
               const auto i0 = indices[0];
               const auto i1 = indices[1];
-
               const auto prog0 = infos.lookupProgram(i0);
               const auto prog1 = infos.lookupProgram(i1);
 
@@ -1099,7 +1098,7 @@ private:
               }
 
               skipQubitPairBlock<Direction>(wires[i0], wires[i1]);
-              released.emplace_back(u);
+              released.emplace_back(op);
               return WalkResult::advance();
             }
 
@@ -1161,41 +1160,40 @@ private:
   template <WireDirection Direction>
   RecursiveRoutingStack advance(Wires& wires, const WireInfos& infos,
                                 const Layout& layout) {
+    DenseSet<Operation*> visited;
     RecursiveRoutingStack stack;
 
     // Advance wires past all executable gates and push operations with
     // nested regions and the respective wire indices of their inputs onto the
     // result stack.
 
-    walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
-          if (ready.empty()) {
-            return WalkResult::advance();
-          }
+    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
+                                           ReleasedOps& released) {
+      if (ready.empty()) {
+        return WalkResult::advance();
+      }
 
-          for (const auto& [readyOp, indices] : ready) {
-            TypeSwitch<Operation*>(readyOp)
-                .template Case<BarrierOp>(
-                    [&](BarrierOp op) { released.emplace_back(op); })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                  const auto prog0 = infos.lookupProgram(indices[0]);
-                  const auto prog1 = infos.lookupProgram(indices[1]);
-                  if (const auto [hw0, hw1] =
-                          layout.getHardwareIndices(prog0, prog1);
-                      device->areAdjacent(hw0, hw1)) {
-                    released.emplace_back(op);
-                  }
-                })
-                .template Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
-                    [&](auto op) { stack.emplace_back(op, indices); });
+      for (const auto& [op, indices] : ready) {
+        if (isa<BarrierOp>(op)) {
+          released.emplace_back(op);
+        } else if (isa<UnitaryOpInterface>(op)) {
+          const auto prog0 = infos.lookupProgram(indices[0]);
+          const auto prog1 = infos.lookupProgram(indices[1]);
+          if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+              device->areAdjacent(hw0, hw1)) {
+            released.emplace_back(op);
           }
+        } else if (visited.insert(op).second) {
+          stack.emplace_back(op, indices);
+        }
+      }
 
-          if (released.empty()) {
-            return WalkResult::interrupt();
-          }
+      if (released.empty()) {
+        return WalkResult::interrupt();
+      }
 
-          return WalkResult::advance();
-        });
+      return WalkResult::advance();
+    });
 
     return stack;
   }
@@ -1482,7 +1480,6 @@ private:
     // mapping to the parent.
 
     if (!isa<scf::ForOp>(op)) {
-
       WireInfos realigendInfos;
       for (size_t i = 0; i < parent.wires.size(); ++i) {
         const auto oldProg = parent.infos.lookupProgram(i);
