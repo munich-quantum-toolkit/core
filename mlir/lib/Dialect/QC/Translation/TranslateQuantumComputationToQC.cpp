@@ -20,12 +20,14 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -71,8 +73,8 @@ struct TranslationState {
   /// Mapping from global bit index to (memref, internal index)
   BitIndexVec bitMap;
 
-  /// Flat vector of measurement results
-  SmallVector<Value> results;
+  /// Classical bits known to have been measured on every current path
+  DenseSet<size_t> measuredBits;
 
   /// Whether the translation is currently within a control modifier
   bool inCtrlOp = false;
@@ -245,8 +247,8 @@ static void addMeasureOp(QCProgramBuilder& builder,
     const auto& qubit = state.getQubit(targets[i]);
     const auto bitIdx = static_cast<size_t>(classics[i]);
     const auto& [memref, localIdx] = state.bitMap[bitIdx];
-    state.results[bitIdx] =
-        builder.measure(qubit, memref, static_cast<int64_t>(localIdx));
+    builder.measure(qubit, memref, static_cast<int64_t>(localIdx));
+    state.measuredBits.insert(bitIdx);
   }
 }
 
@@ -686,11 +688,16 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
 
   assert(ifElse.getControlBit().has_value());
   const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
-  auto controlValue = state.results[bitIdx];
-  if (controlValue == nullptr) {
+  if (!state.measuredBits.contains(bitIdx)) {
     llvm::errs() << "Control bit does not contain a measurement result\n";
     return failure();
   }
+  const auto& [regMemref, localIdx] = state.bitMap[bitIdx];
+  auto index = utils::variantToValue(
+      builder, builder.getLoc(),
+      std::variant<int64_t, Value>{static_cast<int64_t>(localIdx)});
+  auto controlValue =
+      memref::LoadOp::create(builder, regMemref, index).getResult();
   auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
 
   // Define comparison predicate
@@ -714,13 +721,16 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
 
   // Define if-else operation
   auto thenResult = success();
+  const auto measuredBefore = state.measuredBits;
   auto thenBuilder = [&] {
     thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
+    state.measuredBits = measuredBefore;
   };
 
   auto elseResult = success();
   auto elseBuilder = [&] {
     elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
+    state.measuredBits = measuredBefore;
   };
 
   if (ifElse.getElseOp() != nullptr) {
@@ -728,6 +738,7 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   } else {
     builder.scfIf(condition.getResult(), thenBuilder);
   }
+  state.measuredBits = measuredBefore;
 
   if (failed(thenResult)) {
     llvm::errs() << "Failed to translate then branch of IfElseOperation\n";
@@ -883,12 +894,8 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   const auto [memrefs, bitMap] =
       allocateClassicalRegisters(builder, quantumComputation);
 
-  // Allocate result map
-  SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
-
   TranslationState state{.qubits = qubits,
                          .bitMap = bitMap,
-                         .results = std::move(results),
                          .targetArgs = DenseMap<size_t, Value>{}};
 
   // Translate operations

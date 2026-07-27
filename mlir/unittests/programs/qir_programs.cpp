@@ -892,7 +892,8 @@ Value simpleIf(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0, 0);
+  b.measure(q[0], c0, 0);
+  auto cond = b.loadClassicalBit(c0, 0);
   b.scfIf(cond, [&] { b.x(q[0]); });
   b.measure(q[0], c1, 0);
   return b.intConstant(0);
@@ -903,7 +904,8 @@ Value ifElse(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0, 0);
+  b.measure(q[0], c0, 0);
+  auto cond = b.loadClassicalBit(c0, 0);
   b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
   b.measure(q[0], c1, 0);
   return b.intConstant(0);
@@ -914,7 +916,8 @@ Value ifTwoQubits(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(2);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0, 0);
+  b.measure(q[0], c0, 0);
+  auto cond = b.loadClassicalBit(c0, 0);
   b.scfIf(cond, [&] {
     b.x(q[0]);
     b.x(q[1]);
@@ -929,7 +932,8 @@ Value ifWithMeasurement(QIRProgramBuilder& b) {
   const auto c0 = b.allocClassicalBitRegister(1);
   const auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0], c0, 0);
+  b.measure(q[0], c0, 0);
+  auto cond = b.loadClassicalBit(c0, 0);
   b.scfIf(cond, [&] { b.measure(q[0], c1, 0); });
   return b.intConstant(0);
 }
