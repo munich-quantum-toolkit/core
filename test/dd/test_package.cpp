@@ -2287,6 +2287,7 @@ TEST(DDPackageTest, XXPlusYYGateDDConstruction) {
 TEST(DDPackageTest, RCCXGateDDConstruction) {
   constexpr auto nrQubits = 5U;
   const auto dd = std::make_unique<Package>(nrQubits);
+  const auto rccxMatrix = opToThreeQubitGateMatrix(qc::RCCX);
 
   const auto rccxDecomposition = [&](const qc::Controls& extra,
                                      const Qubit control0, const Qubit control1,
@@ -2328,6 +2329,15 @@ TEST(DDPackageTest, RCCXGateDDConstruction) {
           continue;
         }
 
+        // Bare RCCX via the no-control overload.
+        const auto bareOverload =
+            dd->makeThreeQubitGateDD(rccxMatrix, control0, control1, target);
+        const auto bareControls = dd->makeThreeQubitGateDD(
+            rccxMatrix, qc::Controls{}, control0, control1, target);
+        EXPECT_EQ(bareOverload, bareControls);
+        EXPECT_EQ(bareOverload,
+                  rccxDecomposition({}, control0, control1, target));
+
         // Bare RCCX and RCCX with one extra positive/negative control.
         std::vector<qc::Controls> controlSets{{}};
         for (Qubit extra = 0; extra < nrQubits; ++extra) {
@@ -2345,6 +2355,15 @@ TEST(DDPackageTest, RCCXGateDDConstruction) {
                     *dd);
           EXPECT_EQ(rccxGateDD,
                     rccxDecomposition(controls, control0, control1, target));
+
+          // Single-control overload matches Controls{control}.
+          if (controls.size() == 1U) {
+            const auto& control = *controls.begin();
+            EXPECT_EQ(dd->makeThreeQubitGateDD(rccxMatrix, control, control0,
+                                               control1, target),
+                      dd->makeThreeQubitGateDD(rccxMatrix, controls, control0,
+                                               control1, target));
+          }
         }
       }
     }
