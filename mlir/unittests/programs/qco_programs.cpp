@@ -15,6 +15,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -4077,13 +4078,15 @@ SmallVector<Value> nestedTrueIf(QCOProgramBuilder& b) {
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);
   auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
-  auto ifRes = b.qcoIf(measureResult, measuredQubit, [&](ValueRange outerArgs) {
-    auto innerResult =
-        b.qcoIf(measureResult, outerArgs, [&](ValueRange innerArgs) {
-          auto innerQubit = b.x(innerArgs[0]);
-          return SmallVector{innerQubit};
-        });
+  auto measuredQubit = b.measure(q0, c0, 0).first;
+  auto index = arith::ConstantIndexOp::create(b, 0);
+  auto condition =
+      memref::LoadOp::create(b, c0, ValueRange{index.getResult()}).getResult();
+  auto ifRes = b.qcoIf(condition, measuredQubit, [&](ValueRange outerArgs) {
+    auto innerResult = b.qcoIf(condition, outerArgs, [&](ValueRange innerArgs) {
+      auto innerQubit = b.x(innerArgs[0]);
+      return SmallVector{innerQubit};
+    });
     return llvm::to_vector(innerResult);
   });
   b.measure(ifRes[0], c1, 0);
@@ -4095,16 +4098,19 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b) {
   auto c0 = b.allocClassicalBitRegister(1);
   auto c1 = b.allocClassicalBitRegister(1);
   auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0, c0, 0);
+  auto measuredQubit = b.measure(q0, c0, 0).first;
+  auto index = arith::ConstantIndexOp::create(b, 0);
+  auto condition =
+      memref::LoadOp::create(b, c0, ValueRange{index.getResult()}).getResult();
   auto ifRes = b.qcoIf(
-      measureResult, measuredQubit,
+      condition, measuredQubit,
       [&](ValueRange args) {
         auto innerQubit = b.x(args[0]);
         return SmallVector{innerQubit};
       },
       [&](ValueRange outerArgs) {
         auto innerResult = b.qcoIf(
-            measureResult, outerArgs,
+            condition, outerArgs,
             [&](ValueRange innerArgs) { return llvm::to_vector(innerArgs); },
             [&](ValueRange innerArgs) {
               auto innerQubit = b.z(innerArgs[0]);

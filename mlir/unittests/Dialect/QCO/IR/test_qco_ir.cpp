@@ -209,12 +209,12 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto c1 = builder.allocClassicalBitRegister(1);
   auto measureOp = MeasureOp::create(builder, q1);
   memref::StoreOp::create(builder, measureOp.getResult(), c0, ValueRange{zero});
-  auto ifOp =
-      IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
-                   [&](ValueRange qubits) -> SmallVector<Value> {
-                     auto innerQubit = XOp::create(builder, qubits[0]);
-                     return SmallVector<Value>{innerQubit};
-                   });
+  auto condition = memref::LoadOp::create(builder, c0, ValueRange{zero});
+  auto ifOp = IfOp::create(builder, condition, measureOp.getQubitOut(),
+                           [&](ValueRange qubits) -> SmallVector<Value> {
+                             auto innerQubit = XOp::create(builder, qubits[0]);
+                             return SmallVector<Value>{innerQubit};
+                           });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
   memref::StoreOp::create(builder, finalMeasureOp.getResult(), c1,
                           ValueRange{zero});
