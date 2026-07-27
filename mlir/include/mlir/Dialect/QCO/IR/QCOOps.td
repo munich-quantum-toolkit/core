@@ -1097,11 +1097,17 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike, Pure]> {
-  let summary = "Yield from a modifier region";
+def YieldOp
+    : QCOOp<"yield", traits = [Terminator, ReturnLike, Pure,
+                               ParentOneOf<["CtrlOp", "IfOp", "IndexSwitchOp",
+                                            "InvOp", "PowOp"]>]> {
+  let summary = "Yield values from a QCO region";
   let description = [{
-        Terminates a modifier region, yielding the transformed target qubit and qtensor values back to the enclosing modifier operation.
-        The targets must match the expected output signature of the modifier region.
+        Terminates a QCO region. Modifier regions yield their transformed linear
+        values. `qco.if` and `qco.index_switch` regions may additionally yield
+        ordinary classical SSA values before their transformed linear values.
+        The operands must match the expected output signature of the parent
+        operation.
 
         Example:
         ```mlir
@@ -1112,8 +1118,9 @@ def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike, Pure]> {
         ```
     }];
 
-  let arguments = (ins Variadic<LinearType>:$targets);
+  let arguments = (ins Variadic<AnyType>:$targets);
   let assemblyFormat = "attr-dict ($targets^ `:` type($targets))?";
+  let hasVerifier = 1;
 }
 
 def CtrlOp : QCOOp<"ctrl",
@@ -1377,37 +1384,61 @@ def IfOp
           traits = [DeclareOpInterfaceMethods<
                         RegionBranchOpInterface, ["getNumRegionInvocations",
                                                   "getRegionInvocationBounds",
-                                                  "getEntrySuccessorRegions"]>,
+                                                  "getEntrySuccessorRegions",
+                                                  "getEntrySuccessorOperands"]>,
                     SingleBlock, SingleBlockImplicitTerminator<"YieldOp">, Pure,
-                    RecursiveMemoryEffects]> {
+                    RecursiveMemoryEffects, AttrSizedResultSegments]> {
 
-  let summary = "If-then-else operation for linear (qubit) types";
+  let summary = "If-then-else operation with classical and linear results";
   let description = [{
         The `qco.if` operation is an if-then-else construct similar to the standard scf.if operation.
         In addition to the condition, the operation takes a variadic number of qubits and qtensors as inputs that are
         required in the bodies of both branches. These values are passed down to the individual regions
-        as block arguments. The number of results and the type of the results must be equivalent to the
-        number and types of the input qubit and qtensor values.
+        as block arguments. The operation may additionally return ordinary
+        classical SSA values. Classical results precede the linear results.
+        The number and types of the linear results must match the input qubit
+        and qtensor values.
 
         Example:
         ```mlir
-        %result = qco.if %condition args(%arg0 = %q0) {
+        %flag, %result = qco.if %condition args(%arg0 = %q0)
+            -> (i1, !qco.qubit) {
             %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-            qco.yield %q1 : !qco.qubit
+            qco.yield %true, %q1 : i1, !qco.qubit
          } else args(%arg0 = %q0) {
-            qco.yield %arg0 : !qco.qubit
-        } : {i1, !qco.qubit} -> {!qco.qubit}
+            qco.yield %false, %arg0 : i1, !qco.qubit
+        }
         ```
     }];
 
   let arguments = (ins I1:$condition, Variadic<LinearType>:$qubits);
-  let results = (outs Variadic<LinearType>:$results);
+  let results = (outs Variadic<AnyType>:$classicalResults,
+      Variadic<LinearType>:$linearResults);
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
   let hasCustomAssemblyFormat = 1;
+  let skipDefaultBuilders = 1;
 
   let builders =
-      [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
-           build($_builder, $_state, qubits.getTypes(), condition, qubits);
+      [OpBuilder<(ins "TypeRange":$classicalResultTypes,
+                     "TypeRange":$linearResultTypes, "Value":$condition,
+                     "ValueRange":$qubits),
+                 [{
+           $_state.addOperands(condition);
+           $_state.addOperands(qubits);
+           (void)$_state.addRegion();
+           (void)$_state.addRegion();
+           $_state.addTypes(classicalResultTypes);
+           $_state.addTypes(linearResultTypes);
+           ::llvm::copy(
+               ::llvm::ArrayRef<int32_t>({
+                   static_cast<int32_t>(classicalResultTypes.size()),
+                   static_cast<int32_t>(linearResultTypes.size())}),
+               $_state.getOrAddProperties<Properties>()
+                   .resultSegmentSizes.begin());
+        }]>,
+       OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+           build($_builder, $_state, TypeRange{}, qubits.getTypes(), condition,
+                 qubits);
         }]>,
        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
            "function_ref<SmallVector<Value>(ValueRange)"
@@ -1489,18 +1520,21 @@ def IndexSwitchOp
           "index_switch",
           traits = [DeclareOpInterfaceMethods<
                         RegionBranchOpInterface, ["getRegionInvocationBounds",
-                                                  "getEntrySuccessorRegions"]>,
+                                                  "getEntrySuccessorRegions",
+                                                  "getEntrySuccessorOperands"]>,
                     SingleBlockImplicitTerminator<"YieldOp">, Pure,
-                    RecursiveMemoryEffects]> {
+                    RecursiveMemoryEffects, AttrSizedResultSegments]> {
 
-  let summary = "Index-based switch operation for linear (qubit) types";
+  let summary =
+      "Index-based switch operation with classical and linear results";
   let description = [{
         The `qco.index_switch` operation provides multi-way branching based on an index
         value, analogous to `scf.index_switch`. In addition to the index, the operation
         takes a variadic number of qubits and qtensors as inputs that are required in all
         case branches. These values are passed down to each case region as block arguments.
-        The number of results and the type of the results must be equivalent to the number
-        and types of the input qubit and qtensor values.
+        The operation may additionally return ordinary classical SSA values.
+        Classical results precede the linear results. The number and types of
+        the linear results must match the input qubit and qtensor values.
 
         The operation has one region for each case value plus a default region. Each region
         must terminate with a `qco.yield` operation that yields values matching the operation's
@@ -1508,32 +1542,63 @@ def IndexSwitchOp
 
         Example:
         ```mlir
-        %result = qco.index_switch %index -> !qco.qubit
+        %flag, %result = qco.index_switch %index -> (i1, !qco.qubit)
         case 0 args(%arg0 = %q0) {
           %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-          qco.yield %q1 : !qco.qubit
+          qco.yield %true, %q1 : i1, !qco.qubit
         }
         case 1 args(%arg0 = %q0) {
           %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-          qco.yield %q1 : !qco.qubit
+          qco.yield %false, %q1 : i1, !qco.qubit
         }
         default args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
+          qco.yield %false, %arg0 : i1, !qco.qubit
         }
         ```
     }];
 
   let arguments = (ins Index:$arg, DenseI64ArrayAttr:$cases,
       Variadic<LinearType>:$targets);
-  let results = (outs Variadic<LinearType>:$results);
+  let results = (outs Variadic<AnyType>:$classicalResults,
+      Variadic<LinearType>:$linearResults);
   let regions = (region SizedRegion<1>:$defaultRegion,
       VariadicRegion<SizedRegion<1>>:$caseRegions);
   let hasCustomAssemblyFormat = 1;
+  let skipDefaultBuilders = 1;
 
-  let builders = [OpBuilder<(ins "Value":$arg, "Value":$target,
-      "ArrayRef<int64_t>":$cases,
-      "ArrayRef<function_ref<Value(Value)>>":$caseBuilders,
-      "function_ref<Value(Value)>":$defaultBuilder)>];
+  let builders =
+      [OpBuilder<(ins "TypeRange":$classicalResultTypes,
+                     "TypeRange":$linearResultTypes, "Value":$arg,
+                     "ArrayRef<int64_t>":$cases, "ValueRange":$targets,
+                     "unsigned":$numCaseRegions),
+                 [{
+          $_state.addOperands(arg);
+          $_state.addOperands(targets);
+          $_state.addAttribute(
+              "cases", $_builder.getDenseI64ArrayAttr(cases));
+          (void)$_state.addRegion();
+          for (unsigned i = 0; i < numCaseRegions; ++i) {
+            (void)$_state.addRegion();
+          }
+          $_state.addTypes(classicalResultTypes);
+          $_state.addTypes(linearResultTypes);
+          ::llvm::copy(
+              ::llvm::ArrayRef<int32_t>({
+                  static_cast<int32_t>(classicalResultTypes.size()),
+                  static_cast<int32_t>(linearResultTypes.size())}),
+              $_state.getOrAddProperties<Properties>()
+                  .resultSegmentSizes.begin());
+        }]>,
+       OpBuilder<(ins "TypeRange":$linearResultTypes, "Value":$arg,
+                     "ArrayRef<int64_t>":$cases, "ValueRange":$targets,
+                     "unsigned":$numCaseRegions),
+                 [{
+          build($_builder, $_state, TypeRange{}, linearResultTypes, arg, cases,
+                targets, numCaseRegions);
+        }]>,
+       OpBuilder<(ins "Value":$arg, "Value":$target, "ArrayRef<int64_t>":$cases,
+           "ArrayRef<function_ref<Value(Value)>>":$caseBuilders,
+           "function_ref<Value(Value)>":$defaultBuilder)>];
 
   let extraClassDeclaration = [{
         /// Return the number of case regions

@@ -111,7 +111,7 @@ def test_provider_with_token_parameter() -> None:
     # Should not raise an error when creating provider with token
     # Note: The currently available QDMI devices don't support authentication.
     try:
-        provider = QDMIProvider(token="test_token")  # noqa: S106
+        provider = QDMIProvider(token="test_token")  # ruff:ignore[hardcoded-password-func-arg]
         # If device supports token, verify provider was created
         assert provider is not None
     except RuntimeError:
@@ -157,7 +157,7 @@ def test_provider_with_username_password_parameters() -> None:
     # Should not raise an error when creating provider with username and password
     # Note: The currently available QDMI devices don't support authentication.
     try:
-        provider = QDMIProvider(username="test_user", password="test_pass")  # noqa: S106
+        provider = QDMIProvider(username="test_user", password="test_pass")  # ruff:ignore[hardcoded-password-func-arg]
         assert provider is not None
     except RuntimeError:
         # If not supported, that's okay for now
@@ -182,9 +182,9 @@ def test_provider_with_multiple_auth_parameters() -> None:
     # Note: The currently available QDMI devices don't support authentication.
     try:
         provider = QDMIProvider(
-            token="test_token",  # noqa: S106
+            token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
             username="test_user",
-            password="test_pass",  # noqa: S106
+            password="test_pass",  # ruff:ignore[hardcoded-password-func-arg]
             project_id="test_project",
         )
         assert provider is not None
@@ -237,7 +237,7 @@ def test_provider_with_custom_parameters() -> None:
     # Test mixing custom with standard authentication
     try:
         provider = QDMIProvider(
-            token="test_token",  # noqa: S106
+            token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
             custom1="custom_value",
             project_id="project_id",
         )

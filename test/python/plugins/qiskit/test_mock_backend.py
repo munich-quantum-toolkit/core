@@ -266,7 +266,7 @@ class MockQDMIDevice:
         """Return list of supported program formats."""
         return [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3]
 
-    def submit_job(self, program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockJob:  # noqa: ARG002
+    def submit_job(self, program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
         """Submit a mock job to the device.
 
         Args:
@@ -433,7 +433,7 @@ def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: 
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No supported program formats found"):
-        backend._convert_circuit(qc, [])  # noqa: SLF001
+        backend._convert_circuit(qc, [])  # ruff:ignore[private-member-access]
 
 
 def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
@@ -446,7 +446,7 @@ def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
 
     assert fmt == fomac.ProgramFormat.QASM3
     assert "OPENQASM 3" in program
@@ -464,7 +464,7 @@ def test_backend_qasm2_conversion_success(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # ruff:ignore[private-member-access]
 
     assert fmt == fomac.ProgramFormat.QASM2
     assert "OPENQASM 2.0" in program
@@ -482,7 +482,7 @@ def test_backend_qasm3_preferred_over_qasm2(mock_qdmi_device_factory: type[MockQ
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     # When both formats are available, QASM3 should be chosen
-    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
 
     assert fmt == fomac.ProgramFormat.QASM3
     assert "OPENQASM 3" in program
@@ -497,7 +497,7 @@ def test_backend_uses_iqm_json_when_supported(mock_qdmi_device_factory: type[Moc
     def mock_supported_formats() -> list[fomac.ProgramFormat]:
         return [fomac.ProgramFormat.IQM_JSON, fomac.ProgramFormat.QASM3]
 
-    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
+    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # ruff:ignore[unused-function-argument]
         nonlocal submitted_format
         submitted_format = program_format
         return device.MockJob(num_clbits=2, shots=num_shots)
@@ -525,7 +525,7 @@ def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[Moc
     def mock_supported_formats() -> list[fomac.ProgramFormat]:
         return [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3, fomac.ProgramFormat.IQM_JSON]
 
-    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
+    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # ruff:ignore[unused-function-argument]
         nonlocal submitted_format
         submitted_format = program_format
         return device.MockJob(num_clbits=2, shots=num_shots)
@@ -561,7 +561,7 @@ def test_backend_qasm_conversion_failure(
     qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
 
     # Monkeypatch qasm dumps to raise an exception
-    def failing_dumps(circuit: object) -> NoReturn:  # noqa: ARG001
+    def failing_dumps(circuit: object) -> NoReturn:  # ruff:ignore[unused-function-argument]
         msg = f"Simulated {qasm_module_name.upper()} conversion failure"
         raise ValueError(msg)
 
@@ -575,7 +575,7 @@ def test_backend_qasm_conversion_failure(
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(TranslationError, match=f"Failed to convert circuit to {qasm_module_name.upper()}"):
-        backend._convert_circuit(qc, [program_format])  # noqa: SLF001
+        backend._convert_circuit(qc, [program_format])  # ruff:ignore[private-member-access]
 
 
 def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
@@ -591,19 +591,19 @@ def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDM
     with pytest.raises(
         UnsupportedFormatError, match="No conversion from Qiskit to any of the supported program formats"
     ):
-        backend._convert_circuit(qc, [fomac.ProgramFormat.QPY])  # noqa: SLF001
+        backend._convert_circuit(qc, [fomac.ProgramFormat.QPY])  # ruff:ignore[private-member-access]
 
 
 def test_map_operation_returns_none_for_unknown() -> None:
     """Unknown FoMaC operations cannot be mapped to Qiskit gates."""
-    assert QDMIBackend._map_operation_to_gate("unknown_gate") is None  # noqa: SLF001
-    assert QDMIBackend._map_operation_to_gate("custom_op") is None  # noqa: SLF001
-    assert QDMIBackend._map_operation_to_gate("") is None  # noqa: SLF001
+    assert QDMIBackend._map_operation_to_gate("unknown_gate") is None  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_operation_to_gate("custom_op") is None  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_operation_to_gate("") is None  # ruff:ignore[private-member-access]
 
 
 def test_map_operation_to_move_gate() -> None:
     """MOVE operations map to an opaque 2-qubit gate."""
-    gate = QDMIBackend._map_operation_to_gate("move")  # noqa: SLF001
+    gate = QDMIBackend._map_operation_to_gate("move")  # ruff:ignore[private-member-access]
     assert gate is not None
     assert gate.name == "move"
     assert gate.num_qubits == 2
@@ -612,39 +612,39 @@ def test_map_operation_to_move_gate() -> None:
 def test_map_qiskit_gate_to_operation_names() -> None:
     """Test the inverse gate name mapping function comprehensively."""
     # Basic gates map to themselves
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("x") == {"x"}  # noqa: SLF001
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("h") == {"h"}  # noqa: SLF001
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("cz") == {"cz"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("x") == {"x"}  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("h") == {"h"}  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("cz") == {"cz"}  # ruff:ignore[private-member-access]
 
     # Aliases: gates with multiple naming conventions return all possible aliases
-    id_names = QDMIBackend._map_qiskit_gate_to_operation_names("id")  # noqa: SLF001
+    id_names = QDMIBackend._map_qiskit_gate_to_operation_names("id")  # ruff:ignore[private-member-access]
     assert id_names == {"id", "i"}
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("i") == id_names  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("i") == id_names  # ruff:ignore[private-member-access]
 
-    cx_names = QDMIBackend._map_qiskit_gate_to_operation_names("cx")  # noqa: SLF001
+    cx_names = QDMIBackend._map_qiskit_gate_to_operation_names("cx")  # ruff:ignore[private-member-access]
     assert cx_names == {"cx", "cnot"}
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("cnot") == cx_names  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("cnot") == cx_names  # ruff:ignore[private-member-access]
 
     # Device-specific aliases: bidirectional consistency for R/PRX (IQM naming)
-    r_names = QDMIBackend._map_qiskit_gate_to_operation_names("r")  # noqa: SLF001
+    r_names = QDMIBackend._map_qiskit_gate_to_operation_names("r")  # ruff:ignore[private-member-access]
     assert r_names == {"r", "prx"}
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("prx") == r_names  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("prx") == r_names  # ruff:ignore[private-member-access]
 
-    p_names = QDMIBackend._map_qiskit_gate_to_operation_names("p")  # noqa: SLF001
+    p_names = QDMIBackend._map_qiskit_gate_to_operation_names("p")  # ruff:ignore[private-member-access]
     assert p_names == {"p", "phase"}
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("phase") == p_names  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("phase") == p_names  # ruff:ignore[private-member-access]
 
     # Case-insensitive matching
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # noqa: SLF001
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("CX") == {"cx", "cnot"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("CX") == {"cx", "cnot"}  # ruff:ignore[private-member-access]
 
     # MOVE operation is represented as a real gate for IQM devices
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("move") == {"move"}  # noqa: SLF001
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("MOVE") == {"move"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("move") == {"move"}  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("MOVE") == {"move"}  # ruff:ignore[private-member-access]
 
     # Fallback for unknown gates (returns lowercase name)
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("unknown") == {"unknown"}  # noqa: SLF001
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("CUSTOM") == {"custom"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("unknown") == {"unknown"}  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("CUSTOM") == {"custom"}  # ruff:ignore[private-member-access]
 
 
 def test_backend_validation_uses_inverse_mapping(
