@@ -260,8 +260,8 @@ def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Decompose controlled X/Z/phase gates with at least "
-                "min-controls controls";
+  let summary = "Decompose controlled X/Z/phase gates and qco.rccx with at "
+                "least min-controls controls";
   let description = [{
     Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
     a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
@@ -276,7 +276,7 @@ def DecomposeMultiControlled
     - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
       residual at four) for three and four controls; da Silva-Park SP22
       linear-depth decomposition at five and above. A compile-time angle of
-      `±π` is routed through the Z path.
+      `±π` is routed through the Z path for every control count.
 
     Intermediate two- and three-control building blocks may be left as
     `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
@@ -284,8 +284,8 @@ def DecomposeMultiControlled
   }];
   let options = [Option<
       "minControls", "min-controls", "uint64_t", "2",
-      "Decompose controlled X/Z/phase gates with at least this many controls "
-      "(must be at least 2).">];
+      "Decompose controlled X/Z/phase gates and qco.rccx with at least this "
+      "many controls (must be at least 2).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

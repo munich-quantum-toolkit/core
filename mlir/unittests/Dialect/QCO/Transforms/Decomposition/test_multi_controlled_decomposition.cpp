@@ -67,7 +67,7 @@ static constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
     20,   // 4
     72,   // 5
     136,  // 6
-    192,  // 7
+    186,  // 7
     264,  // 8
     344,  // 9
     464,  // 10
@@ -580,14 +580,18 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
-  constexpr double theta = std::numbers::pi;
-  for (const size_t k : {3U, 4U, 5U}) {
-    auto moduleOp = buildMcpModule(context(), k, theta);
-    ASSERT_TRUE(moduleOp) << "k=" << k;
-    ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded())
-        << "k=" << k;
-    expectFullyLowered(moduleOp.get());
-    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectImplementsMcp(funcOp, k, theta);
+  for (const double theta : {std::numbers::pi, -std::numbers::pi}) {
+    for (const size_t k : {2U, 3U, 4U, 5U}) {
+      auto moduleOp = buildMcpModule(context(), k, theta);
+      ASSERT_TRUE(moduleOp) << "k=" << k << " theta=" << theta;
+      ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded())
+          << "k=" << k << " theta=" << theta;
+      expectFullyLowered(moduleOp.get());
+      // ±π must take the Z path, so CX counts match MCZ/MCX.
+      EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
+          << "k=" << k << " theta=" << theta;
+      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+      expectImplementsMcp(funcOp, k, theta);
+    }
   }
 }

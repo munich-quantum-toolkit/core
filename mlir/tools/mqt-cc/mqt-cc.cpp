@@ -177,7 +177,7 @@ parseOutputFormat(const StringRef format) {
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
     llvm::cl::desc(
-        "Decompose controlled X/Z/phase gates with at least "
+        "Decompose controlled X/Z/phase gates and qco.rccx with at least "
         "--decompose-multi-controlled-min-controls controls (default 2)."),
     llvm::cl::init(false));
 
@@ -185,9 +185,9 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
     "decompose-multi-controlled-min-controls",
     llvm::cl::desc(
         "Minimum control count for --decompose-multi-controlled: decompose "
-        "controlled X/Z/phase gates with at least this many controls (default "
-        "2; must be at least 2). Higher values leave smaller controlled gates "
-        "undecomposed."),
+        "controlled X/Z/phase gates and qco.rccx with at least this many "
+        "controls (default 2; must be at least 2). Higher values leave smaller "
+        "controlled gates undecomposed."),
     llvm::cl::init(2));
 
 /**
