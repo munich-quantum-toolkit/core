@@ -291,6 +291,10 @@ TEST(DDPackageTest, InvalidStandardOperation) {
        {qc::Targets{}, qc::SWAP},
        {qc::Targets{0}, qc::SWAP},
        {qc::Targets{0, 1, 2}, qc::SWAP},
+       {qc::Targets{}, qc::RCCX},
+       {qc::Targets{0}, qc::RCCX},
+       {qc::Targets{0, 1}, qc::RCCX},
+       {qc::Targets{0, 1, 2, 3}, qc::RCCX},
        {qc::Targets{0, 1}, qc::OpTypeEnd}}};
   for (const auto& [targets, type] : invalidOps) {
     ASSERT_THROW(getDD(qc::StandardOperation(targets, type), *dd),
@@ -300,6 +304,8 @@ TEST(DDPackageTest, InvalidStandardOperation) {
   ASSERT_THROW(opToSingleQubitGateMatrix(qc::OpTypeEnd), std::invalid_argument);
   ASSERT_THROW(opToTwoQubitGateMatrix(qc::I), std::invalid_argument);
   ASSERT_THROW(opToTwoQubitGateMatrix(qc::OpTypeEnd), std::invalid_argument);
+  ASSERT_THROW(opToThreeQubitGateMatrix(qc::I), std::invalid_argument);
+  ASSERT_THROW(opToThreeQubitGateMatrix(qc::OpTypeEnd), std::invalid_argument);
 }
 
 TEST(DDPackageTest, PrintNoneGateType) {
@@ -2279,33 +2285,70 @@ TEST(DDPackageTest, XXPlusYYGateDDConstruction) {
 }
 
 TEST(DDPackageTest, RCCXGateDDConstruction) {
-  constexpr auto nrQubits = 3U;
+  constexpr auto nrQubits = 5U;
   const auto dd = std::make_unique<Package>(nrQubits);
 
-  const auto rccxGateDD =
-      getDD(qc::StandardOperation(qc::Targets{0, 1, 2}, qc::RCCX), *dd);
-
-  auto gateDD = Package::makeIdent();
-  const auto applySingle = [&](const qc::OpType type, const qc::Qubit target) {
-    gateDD =
-        dd->multiply(getDD(qc::StandardOperation(target, type), *dd), gateDD);
-  };
-  const auto applyCx = [&](const qc::Qubit ctrl, const qc::Qubit target) {
+  const auto rccxDecomposition = [&](const qc::Controls& extra,
+                                     const Qubit control0, const Qubit control1,
+                                     const Qubit target) {
+    const auto withCtrl = [&](const Qubit ctrl) {
+      qc::Controls controls = extra;
+      controls.emplace(ctrl);
+      return controls;
+    };
+    auto gateDD = getDD(qc::StandardOperation(extra, target, qc::H), *dd);
     gateDD = dd->multiply(
-        getDD(qc::StandardOperation(ctrl, target, qc::X), *dd), gateDD);
+        getDD(qc::StandardOperation(extra, target, qc::T), *dd), gateDD);
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(withCtrl(control1), target, qc::X), *dd),
+        gateDD);
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(extra, target, qc::Tdg), *dd), gateDD);
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(withCtrl(control0), target, qc::X), *dd),
+        gateDD);
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(extra, target, qc::T), *dd), gateDD);
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(withCtrl(control1), target, qc::X), *dd),
+        gateDD);
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(extra, target, qc::Tdg), *dd), gateDD);
+    return dd->multiply(getDD(qc::StandardOperation(extra, target, qc::H), *dd),
+                        gateDD);
   };
 
-  applySingle(qc::H, 2);
-  applySingle(qc::T, 2);
-  applyCx(1, 2);
-  applySingle(qc::Tdg, 2);
-  applyCx(0, 2);
-  applySingle(qc::T, 2);
-  applyCx(1, 2);
-  applySingle(qc::Tdg, 2);
-  applySingle(qc::H, 2);
+  for (Qubit control0 = 0; control0 < nrQubits; ++control0) {
+    for (Qubit control1 = 0; control1 < nrQubits; ++control1) {
+      if (control0 == control1) {
+        continue;
+      }
+      for (Qubit target = 0; target < nrQubits; ++target) {
+        if (target == control0 || target == control1) {
+          continue;
+        }
 
-  EXPECT_EQ(rccxGateDD, gateDD);
+        // Bare RCCX and RCCX with one extra positive/negative control.
+        std::vector<qc::Controls> controlSets{{}};
+        for (Qubit extra = 0; extra < nrQubits; ++extra) {
+          if (extra == control0 || extra == control1 || extra == target) {
+            continue;
+          }
+          controlSets.push_back({{extra, qc::Control::Type::Pos}});
+          controlSets.push_back({{extra, qc::Control::Type::Neg}});
+        }
+
+        for (const auto& controls : controlSets) {
+          const auto rccxGateDD =
+              getDD(qc::StandardOperation(
+                        controls, {control0, control1, target}, qc::RCCX),
+                    *dd);
+          EXPECT_EQ(rccxGateDD,
+                    rccxDecomposition(controls, control0, control1, target));
+        }
+      }
+    }
+  }
 }
 
 TEST(DDPackageTest, InnerProductTopNodeConjugation) {

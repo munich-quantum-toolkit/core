@@ -21,8 +21,8 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
-  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
-  ([**@simon1hofmann**])
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
+  [#1950]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -70,12 +70,13 @@ releases may include breaking changes.
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
   [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
   [#1570], [#1572], [#1573], [#1580], [#1602], [#1603], [#1620], [#1623],
-  [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717],
-  [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
-  [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
-  [#1886], [#1914], [#1925], [#1935], [#1936], [#1938]) ([**@burgholzer**],
-  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
-  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700],
+  [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765],
+  [#1780], [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808],
+  [#1823], [#1824], [#1830], [#1869], [#1872], [#1886], [#1914], [#1925],
+  [#1935], [#1936], [#1938]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -652,6 +653,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935
