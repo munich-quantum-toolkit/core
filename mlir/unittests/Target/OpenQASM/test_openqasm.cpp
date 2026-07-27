@@ -1315,6 +1315,50 @@ result = measure q[0];
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 
+TEST(OpenQASMFrontendTest, SelectsKnownBranchStateForWideRegisters) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
+qubit q;
+bit[99998] c;
+int i = 99997;
+int selected;
+if (true) {
+  c[i] = measure q;
+  selected = 1;
+} else {
+  i = 0;
+}
+if (c[i] && selected == 1) {}
+if (false) {
+  i = 0;
+} else {
+  c[i] = measure q;
+}
+if (c[i]) {}
+output bit result;
+result = measure q;
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, DiagnosesUnselectedKnownBranches) {
+  auto analyzed = oq3::frontend::analyzeOpenQASM(R"qasm(
+OPENQASM 3.1;
+if (true) {
+  int valid = 1;
+} else {
+  int invalid = missing;
+}
+)qasm");
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find(
+                "unknown scalar identifier 'missing'"),
+            std::string::npos);
+  EXPECT_EQ(analyzed.diagnostics.front().location.line, 6);
+}
+
 TEST(OpenQASMFrontendTest, ResolvesIncludedNamesWithoutBasenameAliasing) {
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(

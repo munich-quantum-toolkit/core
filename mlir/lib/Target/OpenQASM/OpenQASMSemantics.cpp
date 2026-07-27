@@ -1808,28 +1808,32 @@ private:
     const auto afterElseDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
+    const auto knownCondition = constantCondition(conditional.condition);
+    if (knownCondition) {
+      if (*knownCondition) {
+        restoreStatePrefix(afterThenBitsInitialized, afterThenInitialized,
+                           afterThenGenerations);
+        restoreDynamicFactsPrefix(afterThenDynamicBitFacts);
+      } else {
+        restoreStatePrefix(afterElseBitsInitialized, afterElseInitialized,
+                           afterElseGenerations);
+        restoreDynamicFactsPrefix(afterElseDynamicBitFacts);
+      }
+      return addStatement(location, std::move(result));
+    }
+
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
-    const auto knownCondition = constantCondition(conditional.condition);
     for (std::size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
       for (std::size_t bit = 0; bit < beforeBitsInitialized[reg]->size();
            ++bit) {
-        merged[bit] =
-            knownCondition
-                ? (*knownCondition ? (*afterThenBitsInitialized[reg])[bit]
-                                   : (*afterElseBitsInitialized[reg])[bit])
-                : (*afterThenBitsInitialized[reg])[bit] &&
+        merged[bit] = (*afterThenBitsInitialized[reg])[bit] &&
                       (*afterElseBitsInitialized[reg])[bit];
       }
     }
     for (std::size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
-      if (knownCondition) {
-        dynamicBitFacts[reg] = *knownCondition ? afterThenDynamicBitFacts[reg]
-                                               : afterElseDynamicBitFacts[reg];
-        continue;
-      }
       auto& merged = mutableDynamicBitFacts(static_cast<RegisterId>(reg));
       merged.clear();
       for (const auto& thenFact : *afterThenDynamicBitFacts[reg]) {
@@ -1845,15 +1849,9 @@ private:
     }
     for (std::size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
       initializedScalars[scalar] =
-          knownCondition
-              ? (*knownCondition ? afterThenInitialized[scalar]
-                                 : afterElseInitialized[scalar])
-              : afterThenInitialized[scalar] && afterElseInitialized[scalar];
-      scalarGenerations[scalar] =
-          knownCondition ? (*knownCondition ? afterThenGenerations[scalar]
-                                            : afterElseGenerations[scalar])
-                         : std::max(afterThenGenerations[scalar],
-                                    afterElseGenerations[scalar]);
+          afterThenInitialized[scalar] && afterElseInitialized[scalar];
+      scalarGenerations[scalar] = std::max(afterThenGenerations[scalar],
+                                           afterElseGenerations[scalar]);
     }
     return addStatement(location, std::move(result));
   }
