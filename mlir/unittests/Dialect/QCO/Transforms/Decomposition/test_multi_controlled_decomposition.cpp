@@ -552,7 +552,7 @@ TEST_F(MultiControlledDecompositionTest, CoherentStatesMatchForLargerSp22Mcp) {
 }
 
 //===----------------------------------------------------------------------===//
-// Smoke: k > 20 — fully lowered, pinned CX, no unitary DD
+// Additional smoke checks for k > 20 — fully lowered, pinned CX
 //===----------------------------------------------------------------------===//
 
 TEST_P(McxSmokeTest, FullyLowersWithExpectedCx) {
