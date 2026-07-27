@@ -1380,7 +1380,6 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       {"broadcast-custom-gate", broadcastCompoundGate},
       {"arithmetic-parameters", expressionArithmetic},
       {"math-parameters", expressionMathFunctions},
-      {"bit-vector-builtins", bitVectorBuiltins},
       {"runtime-scalar-rounding", runtimeScalarRounding},
       {"simple-if", conditionLiteral},
       {"nested-static-control-flow", nestedStaticControlFlow},
@@ -1430,6 +1429,13 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
       {"checked-integer-state", checkedIntegerState},
       {"dynamic-range", dynamicRange},
       {"custom-pow-hs", customPowHS},
+      {"bit-vector-builtins", bitVectorBuiltins},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> qirIncompatiblePrograms() {
+  static const OpenQASMProgram programs[]{
       {"bit-vector-builtins", bitVectorBuiltins},
   };
   return programs;

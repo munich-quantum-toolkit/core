@@ -533,6 +533,9 @@ TEST_P(OpenQASMJeffPipelineTest, TraversesTheExplicitJeffRoundTrip) {
 class OpenQASMJeffBoundaryTest
     : public testing::TestWithParam<qasm::OpenQASMProgram> {};
 
+class OpenQASMQIRBoundaryTest
+    : public testing::TestWithParam<qasm::OpenQASMProgram> {};
+
 TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
   const auto& source = GetParam();
   auto qc = QCProgram::fromQASMString(source.source.str());
@@ -545,6 +548,18 @@ TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
   ASSERT_TRUE(qco->cleanup()) << source.name.str() << ": optimized QCO cleanup";
   EXPECT_FALSE(std::move(*qco).intoJeff())
       << source.name.str() << ": unexpectedly converted to jeff";
+}
+
+TEST_P(OpenQASMQIRBoundaryTest, FailsAtSelectedProfileConversion) {
+  const auto& source = GetParam();
+  auto qc = QCProgram::fromQASMString(source.source.str());
+  ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto input = qc->copy();
+    EXPECT_FALSE(std::move(input).intoQIR(profile))
+        << source.name.str() << ": unexpectedly converted to "
+        << (profile == QIRProfile::Base ? "Base" : "Adaptive") << " QIR";
+  }
 }
 
 TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
@@ -577,6 +592,10 @@ INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffPipelineTest,
 
 INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
                          testing::ValuesIn(qasm::jeffIncompatiblePrograms()),
+                         openQASMProgramName);
+
+INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMQIRBoundaryTest,
+                         testing::ValuesIn(qasm::qirIncompatiblePrograms()),
                          openQASMProgramName);
 
 /**
