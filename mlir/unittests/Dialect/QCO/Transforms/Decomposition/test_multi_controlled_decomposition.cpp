@@ -49,11 +49,15 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /// DD for k=2…20: full matrix DD through k=8 (MCX/MCZ) or k=6 (MCP);
-/// basis-state DD for larger MCX/MCZ widths; MCP pins CX only above k=6.
+/// basis-state DD for larger MCX/MCZ widths; coherent-state DD at selected
+/// policy boundaries and representative larger MCP widths.
 static constexpr std::array<size_t, 19> K_DD_CONTROL_COUNTS = {
     2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
 static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
+static constexpr std::array<size_t, 5> K_COHERENT_HP24_CONTROL_COUNTS = {
+    10, 11, 21, 22, 23};
+static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
 /// Smoke-only (fully lowered, no DD) for these widths.
 static constexpr std::array<size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23,
                                                                  24};
@@ -281,6 +285,78 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   }
 }
 
+[[nodiscard]] static dd::VectorDD
+makeCoherentControlInput(size_t numControls, bool targetOne, dd::Package& dd) {
+  const auto numQubits = numControls + 1;
+  const auto coherentControl = numControls / 2;
+  qc::QuantumComputation preparationQc(numQubits);
+  for (size_t control = 0; control < numControls; ++control) {
+    if (control == coherentControl) {
+      preparationQc.h(static_cast<qc::Qubit>(control));
+    } else {
+      preparationQc.x(static_cast<qc::Qubit>(control));
+    }
+  }
+  if (targetOne) {
+    preparationQc.x(static_cast<qc::Qubit>(numControls));
+  }
+  return dd::simulate(preparationQc, dd::makeZeroState(numQubits, dd), dd);
+}
+
+static void expectMatchesReferenceOnCoherentState(
+    func::FuncOp funcOp, const qc::QuantumComputation& referenceQc,
+    size_t numControls, bool targetOne) {
+  const auto numQubits = countStaticQubits(funcOp);
+  ASSERT_EQ(numQubits, numControls + 1);
+  expectFullyDecomposed(funcOp);
+
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto decomposedOutput =
+      simulate(funcOp,
+               makeCoherentControlInput(numControls, targetOne, *dd), *dd);
+  ASSERT_TRUE(succeeded(decomposedOutput));
+  dd->incRef(*decomposedOutput);
+  const auto referenceOutput = dd::simulate(
+      referenceQc, makeCoherentControlInput(numControls, targetOne, *dd), *dd);
+
+  EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
+  EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
+              dd::RealNumber::val(referenceOutput.w.r), 1e-11);
+  EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.i),
+              dd::RealNumber::val(referenceOutput.w.i), 1e-11);
+
+  dd->decRef(*decomposedOutput);
+}
+
+static void expectMatchesControlledPauliOnCoherentState(
+    func::FuncOp funcOp, size_t numControls, ControlledPauli pauli) {
+  const auto numQubits = numControls + 1;
+  qc::QuantumComputation referenceQc(numQubits);
+  qc::Controls controls;
+  for (size_t i = 0; i < numControls; ++i) {
+    controls.emplace(static_cast<qc::Qubit>(i));
+  }
+  const auto target = static_cast<qc::Qubit>(numControls);
+  if (pauli == ControlledPauli::X) {
+    referenceQc.mcx(controls, target);
+  } else {
+    referenceQc.mcz(controls, target);
+  }
+  expectMatchesReferenceOnCoherentState(
+      funcOp, referenceQc, numControls, pauli == ControlledPauli::Z);
+}
+
+static void expectMatchesMcpOnCoherentState(func::FuncOp funcOp,
+                                            size_t numControls, double theta) {
+  qc::QuantumComputation referenceQc(numControls + 1);
+  qc::Controls controls;
+  for (size_t i = 0; i < numControls; ++i) {
+    controls.emplace(static_cast<qc::Qubit>(i));
+  }
+  referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
+  expectMatchesReferenceOnCoherentState(funcOp, referenceQc, numControls, true);
+}
+
 static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
                                 double theta) {
   const auto numQubits = countStaticQubits(funcOp);
@@ -443,6 +519,35 @@ INSTANTIATE_TEST_SUITE_P(DdRange, McpDdTest,
                          [](const testing::TestParamInfo<size_t>& info) {
                            return "k" + std::to_string(info.param);
                          });
+
+TEST_F(MultiControlledDecompositionTest,
+       CoherentStatesMatchAcrossHp24PolicyBoundaries) {
+  for (const auto k : K_COHERENT_HP24_CONTROL_COUNTS) {
+    for (const auto pauli : {ControlledPauli::X, ControlledPauli::Z}) {
+      SCOPED_TRACE(testing::Message()
+                   << "k=" << k
+                   << " pauli=" << (pauli == ControlledPauli::X ? "X" : "Z"));
+      auto moduleOp = buildControlledPauliModule(context(), k, pauli);
+      ASSERT_TRUE(moduleOp);
+      ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+      expectMatchesControlledPauliOnCoherentState(funcOp, k, pauli);
+    }
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       CoherentStatesMatchForLargerSp22Mcp) {
+  constexpr double theta = 0.7;
+  for (const auto k : K_COHERENT_MCP_CONTROL_COUNTS) {
+    SCOPED_TRACE(testing::Message() << "k=" << k);
+    auto moduleOp = buildMcpModule(context(), k, theta);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectMatchesMcpOnCoherentState(funcOp, k, theta);
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // Smoke: k > 20 — fully lowered, pinned CX, no unitary DD
