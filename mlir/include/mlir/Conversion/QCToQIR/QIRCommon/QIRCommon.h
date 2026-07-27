@@ -48,9 +48,8 @@ struct LoweringState {
   /// Map from `memref::AllocOp` to `ClassicalRegister`
   DenseMap<Operation*, qir::ClassicalRegister> cregs;
 
-  /// Metadata for returned classical registers. Each entry is a defining
-  /// `qc::MeasureOp` and its corresponding (`memref::AllocOp`, index) pair
-  DenseMap<Operation*, std::pair<Operation*, Value>> returnedCregs;
+  /// Destination of each measurement stored in a classical register.
+  DenseMap<Operation*, std::pair<Operation*, Value>> cregMeasurements;
 
   /// Map from index to `StaticResult`
   DenseMap<int64_t, qir::StaticResult> staticResults;
@@ -179,7 +178,8 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  * @param moduleOp The top-level module operation to walk
  * @param state The lowering state; `returnedStaticResults` is populated
  */
-void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state);
+[[nodiscard]] LogicalResult stripReturnedMeasurements(Operation* moduleOp,
+                                                      LoweringState& state);
 
 /**
  * @brief Returns a result pointer for a measurement that does not write into a

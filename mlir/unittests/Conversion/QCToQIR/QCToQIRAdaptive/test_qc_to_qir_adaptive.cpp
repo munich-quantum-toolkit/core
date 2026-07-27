@@ -115,6 +115,51 @@ TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   EXPECT_TRUE(hasUnreachableFailure);
 }
 
+TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                   scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  builder.measure(q, c, 0);
+  builder.scfIf(c, 0, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
+  EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(
+      qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                   scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(2);
+  const auto result = builder.measure(q, c, 0);
+  auto one = arith::ConstantIndexOp::create(builder, 1);
+  memref::StoreOp::create(builder, result, c, one.getResult());
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+}
+
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";

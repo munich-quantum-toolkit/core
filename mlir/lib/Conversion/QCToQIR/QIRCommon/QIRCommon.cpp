@@ -444,7 +444,9 @@ Value getResultPtr(LoweringState& state, Operation* op,
   return result;
 }
 
-void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
+LogicalResult stripReturnedMeasurements(Operation* moduleOp,
+                                        LoweringState& state) {
+  bool hasInvalidStores = false;
   moduleOp->walk([&](func::FuncOp funcOp) {
     // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
@@ -459,6 +461,42 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
       return;
     }
 
+    funcOp.walk([&](memref::AllocOp allocOp) {
+      auto type = allocOp.getType();
+      if (type.getRank() != 1 || !isa<IntegerType>(type.getElementType())) {
+        return;
+      }
+
+      auto& reg = state.cregs.try_emplace(allocOp.getOperation()).first->second;
+      reg.record = false;
+      const auto size = type.getShape()[0];
+      if (size != ShapedType::kDynamic) {
+        reg.size = size;
+        reg.results.assign(size, Value{});
+      }
+
+      for (auto* user : allocOp.getResult().getUsers()) {
+        auto storeOp = dyn_cast<memref::StoreOp>(user);
+        if (!storeOp) {
+          continue;
+        }
+        auto measureOp = storeOp.getValueToStore().getDefiningOp<MeasureOp>();
+        if (!measureOp) {
+          continue;
+        }
+        const auto destination = std::pair<Operation*, Value>{
+            allocOp.getOperation(), storeOp.getIndices()[0]};
+        const auto [it, inserted] = state.cregMeasurements.try_emplace(
+            measureOp.getOperation(), destination);
+        if (!inserted && it->second != destination) {
+          storeOp.emitError(
+              "a measurement result cannot be stored in multiple classical "
+              "register locations during QIR conversion");
+          hasInvalidStores = true;
+        }
+      }
+    });
+
     funcOp.walk([&](func::ReturnOp returnOp) {
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
@@ -466,30 +504,15 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
       for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
           state.returnedStaticResults.insert(measureOp.getOperation());
-        } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>()) {
-          const std::string label = "c" + std::to_string(state.cregs.size());
-          auto& reg =
-              state.cregs.try_emplace(allocOp.getOperation()).first->second;
-          reg.label = label;
-          const auto size = allocOp.getType().getShape()[0];
-          if (size != ShapedType::kDynamic) {
-            reg.size = size;
-            reg.results.assign(size, Value{});
-          }
-          for (auto* user : allocOp.getResult().getUsers()) {
-            auto storeOp = dyn_cast<memref::StoreOp>(user);
-            if (!storeOp) {
-              continue;
-            }
-            auto measureOp =
-                storeOp.getValueToStore().getDefiningOp<MeasureOp>();
-            if (!measureOp) {
-              continue;
-            }
-            state.returnedCregs.try_emplace(measureOp.getOperation(),
-                                            allocOp.getOperation(),
-                                            storeOp.getIndices()[0]);
-          }
+        } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>();
+                   allocOp && state.cregs.contains(allocOp.getOperation())) {
+          auto& reg = state.cregs.at(allocOp.getOperation());
+          reg.label =
+              "c" +
+              std::to_string(llvm::count_if(state.cregs, [](const auto& entry) {
+                return entry.second.record;
+              }));
+          reg.record = true;
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());
@@ -511,6 +534,7 @@ void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
           keptReturnTypes));
     });
   });
+  return failure(hasInvalidStores);
 }
 
 } // namespace mlir

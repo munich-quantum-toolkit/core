@@ -49,12 +49,12 @@ using namespace qir;
 
 /**
  * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
- * `nullptr` if it does not write into a returned classical register.
+ * `nullptr` if it does not write into a classical register.
  */
 static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
                                         ConversionPatternRewriter& rewriter) {
-  const auto it = state.returnedCregs.find(op);
-  if (it == state.returnedCregs.end()) {
+  const auto it = state.cregMeasurements.find(op);
+  if (it == state.cregMeasurements.end()) {
     return nullptr;
   }
   const auto [allocOp, index] = it->second;
@@ -661,7 +661,10 @@ protected:
     }
 
     // Stage 2.0: Strip returned measurements from func::ReturnOp
-    stripReturnedMeasurements(moduleOp, state);
+    if (failed(stripReturnedMeasurements(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
 
     // Stage 2.1: Convert func dialect to LLVM
     {
