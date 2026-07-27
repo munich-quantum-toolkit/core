@@ -390,8 +390,9 @@ operations.)pb");
       .def("fuse_two_qubit_unitary_runs",
            &BooleanMemberAdapter<
                &mlir::QCOProgram::fuseTwoQubitUnitaryRuns>::call,
-           nb::kw_only(), "native_gates"_a = "",
-           "Lower unitaries to a native gate menu via two-qubit run fusion.")
+           nb::kw_only(), "native_gates"_a,
+           "Lower unitaries to a non-empty native gate menu via two-qubit run "
+           "fusion.")
       .def("unroll_quantum_loops",
            &BooleanMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
            nb::kw_only(), "unroll_factor"_a = -1,

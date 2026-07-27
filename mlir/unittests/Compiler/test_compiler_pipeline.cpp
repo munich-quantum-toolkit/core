@@ -1080,9 +1080,9 @@ h q[1];
 }
 
 /**
- * @brief Test: an empty or whitespace-only native gateset is a no-op.
+ * @brief Test: the public API rejects an empty native gate menu.
  */
-TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsEmptyMenuIsNoOp) {
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsRejectsEmptyMenu) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -1098,10 +1098,10 @@ h q[1];
   const auto before = qco.str();
   EXPECT_NE(before.find("qco.h"), std::string::npos);
 
-  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns(""));
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns(""));
   EXPECT_EQ(qco.str(), before);
 
-  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("   \t  "));
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns("   \t  "));
   EXPECT_EQ(qco.str(), before);
 }
 

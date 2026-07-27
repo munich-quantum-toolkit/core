@@ -296,6 +296,20 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_two_qubit_fusion_requires_native_gates() -> None:
+    """Require callers to provide a non-empty native gate menu."""
+    qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+
+    with pytest.raises(TypeError, match="incompatible function arguments"):
+        qco.fuse_two_qubit_unitary_runs()  # ty: ignore[missing-argument]
+
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        qco.fuse_two_qubit_unitary_runs(native_gates="")
+
+    qco.fuse_two_qubit_unitary_runs(native_gates="u,cx")
+
+
 def test_compile_program_fails_for_missing_file() -> None:
     """A missing known input file extension raises an error."""
     with pytest.raises(RuntimeError, match="does not exist"):
