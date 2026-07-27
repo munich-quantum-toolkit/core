@@ -68,7 +68,7 @@ using WalkProgramGraphFn =
  *
  * The signature of the callback function is:
  *
- *     (const ReadyRange& ready, ReleasedOps& released) -> WalkResult
+ *     (const ReadyMap& ready, ReleasedOps& released) -> WalkResult
  *
  * The operations inserted into the parameter "released" determine which
  * multi-qubit gates are released in next iteration.
