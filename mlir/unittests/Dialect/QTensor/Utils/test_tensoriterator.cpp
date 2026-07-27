@@ -10,7 +10,9 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <gtest/gtest.h>
@@ -24,6 +26,8 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -255,4 +259,136 @@ TEST_F(TensorIteratorTest, Traversal) {
   --recIt;
   ASSERT_EQ(recIt.operation(), nullptr);
   ASSERT_EQ(recIt.tensor(), tensorElse0);
+}
+
+TEST_F(TensorIteratorTest, TraversesMixedResultConditionals) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1, %selector: index) -> i64 {
+        %c1 = arith.constant 1 : index
+        %tensor0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %if_state, %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (i64, tensor<1x!qco.qubit>) {
+          %then = arith.constant 1 : i64
+          qco.yield %then, %arg0 : i64, tensor<1x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          %else = arith.constant 2 : i64
+          qco.yield %else, %arg0 : i64, tensor<1x!qco.qubit>
+        }
+        %switch_state, %tensor2 = qco.index_switch %selector
+            -> (i64, tensor<1x!qco.qubit>)
+        case 0 args(%arg0 = %tensor1) {
+          qco.yield %if_state, %arg0 : i64, tensor<1x!qco.qubit>
+        }
+        default args(%arg0 = %tensor1) {
+          %default = arith.constant 3 : i64
+          qco.yield %default, %arg0 : i64, tensor<1x!qco.qubit>
+        }
+        qtensor.dealloc %tensor2 : tensor<1x!qco.qubit>
+        return %switch_state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  qtensor::AllocOp alloc;
+  module->walk([&](qtensor::AllocOp candidate) { alloc = candidate; });
+  ASSERT_TRUE(alloc);
+
+  TensorIterator iterator(alloc.getResult());
+  EXPECT_EQ(iterator.operation(), alloc.getOperation());
+  ++iterator;
+  ASSERT_TRUE(isa<qco::IfOp>(iterator.operation()));
+  auto ifOp = cast<qco::IfOp>(iterator.operation());
+  EXPECT_EQ(iterator.tensor(), ifOp.getLinearResults().front());
+  ++iterator;
+  ASSERT_TRUE(isa<qco::IndexSwitchOp>(iterator.operation()));
+  auto switchOp = cast<qco::IndexSwitchOp>(iterator.operation());
+  EXPECT_EQ(iterator.tensor(), switchOp.getLinearResults().front());
+  ++iterator;
+  EXPECT_TRUE(isa<qtensor::DeallocOp>(iterator.operation()));
+  EXPECT_EQ(iterator.tensor(), nullptr);
+
+  --iterator;
+  EXPECT_EQ(iterator.operation(), switchOp.getOperation());
+  EXPECT_EQ(iterator.tensor(), switchOp.getLinearResults().front());
+  --iterator;
+  EXPECT_EQ(iterator.operation(), ifOp.getOperation());
+  EXPECT_EQ(iterator.tensor(), ifOp.getLinearResults().front());
+  --iterator;
+  EXPECT_EQ(iterator.operation(), alloc.getOperation());
+  EXPECT_EQ(iterator.tensor(), alloc.getResult());
+}
+
+TEST_F(TensorIteratorTest, TraversesWhileCarriedTensors) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto scalar0 = builder.floatConstant(1.0);
+  auto tensor0 = builder.qtensorAlloc(2);
+  auto tensor1 = builder.qtensorAlloc(3);
+  auto loop = scf::WhileOp::create(
+      builder, builder.getLoc(),
+      TypeRange{builder.getI64Type(), tensor1.getType(), tensor0.getType()},
+      ValueRange{scalar0, tensor0, tensor1});
+  const SmallVector locations(3, builder.getLoc());
+  auto* before = builder.createBlock(
+      &loop.getBefore(), {}, ValueRange{scalar0, tensor0, tensor1}.getTypes(),
+      locations);
+  builder.setInsertionPointToStart(before);
+  auto scalar1 = builder.intConstant(1);
+  scf::ConditionOp::create(
+      builder, builder.getLoc(), builder.boolConstant(false),
+      ValueRange{scalar1, before->getArgument(2), before->getArgument(1)});
+  auto* after = builder.createBlock(&loop.getAfter(), {}, loop.getResultTypes(),
+                                    locations);
+  builder.setInsertionPointToStart(after);
+  scf::YieldOp::create(builder, builder.getLoc(),
+                       ValueRange{builder.floatConstant(2.0),
+                                  after->getArgument(2),
+                                  after->getArgument(1)});
+  builder.setInsertionPointAfter(loop);
+  auto tensor0Result = loop.getResult(2);
+  auto tensor1Result = loop.getResult(1);
+  qtensor::DeallocOp::create(builder, builder.getLoc(), tensor0Result);
+  qtensor::DeallocOp::create(builder, builder.getLoc(), tensor1Result);
+  ASSERT_TRUE(succeeded(verify(loop)));
+
+  TensorIterator iterator(cast<TypedValue<RankedTensorType>>(tensor0));
+  ASSERT_EQ(iterator.operation(), tensor0.getDefiningOp());
+  ASSERT_EQ(iterator.tensor(), tensor0);
+
+  ++iterator;
+  ASSERT_TRUE(isa<scf::WhileOp>(iterator.operation()));
+  ASSERT_EQ(iterator.tensor(), tensor0Result);
+
+  ++iterator;
+  ASSERT_TRUE(isa<qtensor::DeallocOp>(iterator.operation()));
+  ASSERT_EQ(iterator.tensor(), nullptr);
+
+  ++iterator;
+  ASSERT_EQ(iterator, std::default_sentinel);
+
+  --iterator;
+  ASSERT_TRUE(isa<qtensor::DeallocOp>(iterator.operation()));
+  ASSERT_EQ(iterator.tensor(), nullptr);
+
+  --iterator;
+  ASSERT_TRUE(isa<scf::WhileOp>(iterator.operation()));
+  ASSERT_EQ(iterator.tensor(), tensor0Result);
+
+  --iterator;
+  ASSERT_EQ(iterator.operation(), tensor0.getDefiningOp());
+  ASSERT_EQ(iterator.tensor(), tensor0);
+
+  TensorIterator swapped(cast<TypedValue<RankedTensorType>>(tensor1));
+  ++swapped;
+  ASSERT_TRUE(isa<scf::WhileOp>(swapped.operation()));
+  ASSERT_EQ(swapped.tensor(), tensor1Result);
+  --swapped;
+  ASSERT_EQ(swapped.operation(), tensor1.getDefiningOp());
+  ASSERT_EQ(swapped.tensor(), tensor1);
 }
