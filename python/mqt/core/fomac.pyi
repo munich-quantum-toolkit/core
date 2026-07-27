@@ -8,6 +8,7 @@
 
 import enum
 import os
+import pathlib
 from collections.abc import Sequence
 from typing import overload
 
@@ -518,7 +519,7 @@ class DeviceDefinition:
     def __init__(
         self,
         device_id: str,
-        library_path: str,
+        library_path: str | os.PathLike,
         prefix: str,
         *,
         base_url: str | None = None,
@@ -557,7 +558,7 @@ class DeviceDefinition:
         """Stable identifier used to open the device."""
 
     @property
-    def library_path(self) -> str:
+    def library_path(self) -> pathlib.Path:
         """Path to the native QDMI device library."""
 
     @property

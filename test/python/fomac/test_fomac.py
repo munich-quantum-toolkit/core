@@ -907,9 +907,10 @@ def test_session_multiple_instances() -> None:
 
 def test_register_device_does_not_load_nonexistent_library() -> None:
     """Registration stores metadata and opening performs native loading."""
-    definition = DeviceDefinition("python.missing", "/nonexistent/lib.so", "PREFIX")
+    library_path = Path("/nonexistent/lib.so")
+    definition = DeviceDefinition("python.missing", library_path, "PREFIX")
     assert definition.device_id == "python.missing"
-    assert definition.library_path == "/nonexistent/lib.so"
+    assert definition.library_path == library_path
     assert definition.prefix == "PREFIX"
     register_device(definition)
     with pytest.raises(RuntimeError):

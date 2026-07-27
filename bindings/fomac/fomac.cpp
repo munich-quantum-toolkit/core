@@ -600,7 +600,7 @@ when the custom slot is unsupported.)pb");
       .def(
           "__init__",
           [](qdmi::DeviceDefinition* self, std::string deviceId,
-             std::string libraryPath, std::string prefix,
+             std::filesystem::path libraryPath, std::string prefix,
              const std::optional<std::string>& baseUrl = std::nullopt,
              const std::optional<std::string>& token = std::nullopt,
              const std::optional<std::filesystem::path>& authFile =
@@ -647,12 +647,8 @@ Args:
     custom5: Optional custom configuration parameter 5.)pb")
       .def_ro("device_id", &qdmi::DeviceDefinition::id,
               R"pb(Stable identifier used to open the device.)pb")
-      .def_prop_ro(
-          "library_path",
-          [](const qdmi::DeviceDefinition& definition) {
-            return definition.library.string();
-          },
-          R"pb(Path to the native QDMI device library.)pb")
+      .def_ro("library_path", &qdmi::DeviceDefinition::library,
+              R"pb(Path to the native QDMI device library.)pb")
       .def_ro("prefix", &qdmi::DeviceDefinition::prefix,
               R"pb(Prefix used for the QDMI device interface functions.)pb");
 
