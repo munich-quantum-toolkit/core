@@ -115,10 +115,8 @@ void TensorIterator::forward() {
           tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());
         })
         .Case<qco::IfOp>([&](qco::IfOp op) {
-          auto it = llvm::find(op.getQubits(), tensor_);
-          assert(it != op.getQubits().end());
-          const auto idx = std::distance(op.getQubits().begin(), it);
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults()[idx]);
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedResult(&(*tensor_.use_begin())));
         })
         .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
@@ -183,10 +181,8 @@ void TensorIterator::backward() {
       })
       .Case<qco::IfOp>([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
-          auto it = llvm::find(op.getResults(), res);
-          assert(it != op->result_end());
-          const auto idx = std::distance(op.result_begin(), it);
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits()[idx]);
+          tensor_ =
+              cast<TypedValue<RankedTensorType>>(op.getTiedQubit(res)->get());
           return;
         }
 

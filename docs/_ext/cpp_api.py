@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
-from xml.etree import ElementTree as ET  # noqa: S405
+from xml.etree import ElementTree as ET  # ruff:ignore[suspicious-xml-etree-import]
 
 from docutils import nodes
 from sphinx.domains import Domain
@@ -74,7 +74,7 @@ def read_tagfile(path: Path, base_uri: str) -> dict[str, ApiTarget]:
     Returns:
         The API targets indexed by their qualified and unqualified names.
     """
-    root = ET.parse(path).getroot()  # noqa: S314
+    root = ET.parse(path).getroot()  # ruff:ignore[suspicious-xml-element-tree-usage]
     targets: dict[str, ApiTarget] = {}
 
     for compound in root.findall("compound"):
@@ -118,7 +118,7 @@ def read_xml_inventory(path: Path, base_uri: str) -> dict[str, ApiTarget]:
         The API targets indexed by their qualified and unqualified names.
     """
     targets: dict[str, ApiTarget] = {}
-    index = ET.parse(path / "index.xml").getroot()  # noqa: S314
+    index = ET.parse(path / "index.xml").getroot()  # ruff:ignore[suspicious-xml-element-tree-usage]
     member_targets: dict[str, ApiTarget] = {}
 
     for compound in index.findall("compound"):
@@ -148,7 +148,7 @@ def read_xml_inventory(path: Path, base_uri: str) -> dict[str, ApiTarget]:
         compound_xml = path / f"{refid}.xml"
         if not compound_xml.is_file():
             continue
-        root = ET.parse(compound_xml).getroot()  # noqa: S314
+        root = ET.parse(compound_xml).getroot()  # ruff:ignore[suspicious-xml-element-tree-usage]
         for member in root.findall(".//memberdef"):
             member_refid = member.get("id", "")
             member_name = member.findtext("name", "")
@@ -294,9 +294,9 @@ def build_doxygen(app: Sphinx) -> None:
         msg = "Doxygen is required to build the native C++ API documentation"
         raise ExtensionError(msg)
     try:
-        with urlopen(app.config.qdmi_api_tagfile_url, timeout=30) as response:  # noqa: S310
+        with urlopen(app.config.qdmi_api_tagfile_url, timeout=30) as response:  # ruff:ignore[suspicious-url-open-usage]
             tagfile.write_bytes(response.read())
-        subprocess.run([doxygen, "Doxyfile"], cwd=app.srcdir, check=True)  # noqa: S603
+        subprocess.run([doxygen, "Doxyfile"], cwd=app.srcdir, check=True)  # ruff:ignore[subprocess-without-shell-equals-true]
     except (OSError, subprocess.CalledProcessError) as error:
         msg = "Unable to generate the native C++ API documentation"
         raise ExtensionError(msg) from error
