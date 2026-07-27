@@ -226,6 +226,11 @@ threads or publishing new PR text.
       successfully. The latest clean coverage result remains 89 percent
       (3537/3958); a new coverage run and behavior-driven expansion are still
       required before claiming the requested greater-than-90-percent margin.
+- [x] (2026-07-27) Made the FU-02 QIR boundary explicit: constant-folded scalar
+      rounding remains convertible, while retained `math.ceil`, `math.floor`,
+      `math.ctpop`, `llvm.fshl`, and `llvm.fshr` operations produce
+      feature-named diagnostics in both the Base and Adaptive profile
+      conversions.
 
 ## Surprises & Discoveries
 
@@ -484,6 +489,13 @@ threads or publishing new PR text.
   accurately document implemented productions without vendoring a second grammar
   ground truth. Date/Author: 2026-07-25 / Codex.
 
+- Decision: implement constant conversions according to the released OpenQASM
+  3.1 matrix while upstream issues 527, 594, 610, 612, 613, 614, and 617 and
+  pull requests 624 and 666 remain open. Rationale: the proposals explore
+  broader or clarified conversion behavior but do not supersede the released
+  specification; following them preemptively would make this frontend depend on
+  unsettled semantics. Date/Author: 2026-07-27 / Codex.
+
 - Decision: preserve compatibility leniency around standard-library spelling
   while retaining `stdgates.inc` and `qelib1.inc` identity internally.
   Rationale: strict mode can enforce the actual gate membership, while the
@@ -535,13 +547,12 @@ threads or publishing new PR text.
   while the lazy emitted representation avoids redundant pack/unpack chains.
   Date/Author: 2026-07-27 / Codex.
 
-- Decision: keep retained scalar and bit-vector builtin operations out of the
-  QC-to-QIR lowering until those conversions have explicit, independently
-  tested support. Rationale: foldable calls already traverse optimized
-  Standard, `jeff`, and Base paths, while retained ceiling, floor,
-  population-count, and funnel-shift operations now fail explicitly at the QIR
-  boundary. `jeff` and QIR maintain separate incompatibility corpora.
-  Date/Author: 2026-07-27 / Codex.
+- Decision: retain runtime rounding, population count, and funnel shifts in
+  their native MLIR dialects in QC, but reject them explicitly at both current
+  QIR profile boundaries. Rationale: the released Base and Adaptive profiles do
+  not admit these retained operations; constant-folded scalar rounding still
+  converts normally, while both QIR and `jeff` keep explicit incompatibility
+  fixtures for the unsupported runtime forms. Date/Author: 2026-07-27 / Codex.
 
 - Decision: add one `isScalar` flag to typed register declarations and require a
   non-scalar bit register when constructing a bit-vector expression. Rationale:
@@ -1065,7 +1076,8 @@ Revision note (2026-07-27): the second selected FU-02 slice added typed
 whole-bit-register `popcount()`, `rotl()`, and `rotr()`. Emission uses a lazy
 bits-or-packed representation, includes linear packing work in the existing
 construction budget, invalidates constant facts through bit-register
-generations, and lowers retained Math operations through both QIR profiles.
+generations, and preserves retained Math and LLVM operations until an owning
+target conversion either supports or explicitly diagnoses them.
 
 Revision note (2026-07-27): the FU-02 source correction retained scalar-versus-
 register bit type identity, enforced the register-only builtin signatures, and
@@ -1079,3 +1091,9 @@ type spelling, renamed the internal logarithm kind to `Log`, and added a
 2,048-definition custom-gate indexing stress test. Foldable builtins remain in
 the positive optimized corpora; retained operations are tracked as explicit
 `jeff` and QC-to-QIR boundary failures.
+
+Revision note (2026-07-27): the QIR boundary correction keeps foldable scalar
+rounding in the positive corpus and adds direct Base and Adaptive diagnostics
+for retained rounding, population-count, and funnel-shift operations. It does
+not broaden either profile or turn `jeff` compatibility into a prerequisite for
+successful OpenQASM-to-QC translation.
