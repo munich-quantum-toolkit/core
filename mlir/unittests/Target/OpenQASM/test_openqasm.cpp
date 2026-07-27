@@ -1616,14 +1616,70 @@ if (mixed_order) { x q; }
   EXPECT_TRUE(sawFalseCondition);
 }
 
-TEST(OpenQASMFrontendTest, AppliesC99ScalarAssignmentConversions) {
+TEST(OpenQASMFrontendTest, PromotesReleasedConstInitializerSubset) {
   constexpr llvm::StringLiteral SOURCE = R"qasm(
 OPENQASM 3.1;
-const int truncated = 1.75;
-const bool truthy = -2;
-const int from_bool = true;
-const uint wrapped = -1;
-const int signed_wrap = 9223372036854775808;
+const bool bool_value = true;
+const bool bool_copy = bool_value;
+const int int_from_bool = bool_value;
+const uint uint_from_bool = bool_value;
+const float float_from_bool = bool_value;
+const int int_value = 4;
+const int int_copy = int_value;
+const uint uint_from_int = int_value;
+const float float_from_int = int_value;
+const uint u = 4;
+const uint uint_copy = u;
+const int int_from_uint = u;
+const uint largest_representable_uint = 9223372036854775807;
+const int largest_representable_int = largest_representable_uint;
+const float float_from_uint = u;
+const float float_value = 4.0;
+const float float_copy = float_value;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(analyzed.program->body.empty());
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidConstInitializerPromotions) {
+  struct InvalidPromotion {
+    llvm::StringRef source;
+    llvm::StringRef diagnostic;
+  };
+  constexpr InvalidPromotion PROMOTIONS[] = {
+      {"OPENQASM 3.1; const bool value = 1;", "'int' cannot"},
+      {"OPENQASM 3.1; const bool value = 1.0;", "'float' cannot"},
+      {"OPENQASM 3.1; const int value = 1.0;", "'float' cannot"},
+      {"OPENQASM 3.1; const uint value = 1.0;", "'float' cannot"},
+      {"OPENQASM 3.1; const uint value = -1;", "'int' cannot"},
+      {"OPENQASM 3.1; const uint source = 9223372036854775808; const int "
+       "value = source;",
+       "'uint' cannot"},
+  };
+
+  for (const auto& promotion : PROMOTIONS) {
+    SCOPED_TRACE(promotion.source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(promotion.source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(promotion.diagnostic),
+              std::string::npos);
+  }
+
+  auto nonConstant = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; int source = 1; const int value = source;");
+  ASSERT_FALSE(nonConstant);
+  ASSERT_FALSE(nonConstant.diagnostics.empty());
+  EXPECT_NE(nonConstant.diagnostics.front().message.find(
+                "requires a constant initializer"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, AppliesScalarAssignmentConversions) {
+  constexpr llvm::StringLiteral SOURCE = R"qasm(
+OPENQASM 3.1;
 int mutable_int = 2.5;
 bool mutable_bool = 3;
 float mutable_float = true;
@@ -1633,9 +1689,8 @@ mutable_bool = mutable_int;
 mutable_float = mutable_uint;
 mutable_uint = mutable_bool;
 qubit q;
-rx(truncated + from_bool + wrapped + signed_wrap + mutable_int + mutable_float)
-    q;
-if (truthy && mutable_bool) { x q; }
+rx(mutable_int + mutable_float) q;
+if (mutable_bool) { x q; }
 )qasm";
 
   auto analyzed = oq3::frontend::analyzeOpenQASM(SOURCE);

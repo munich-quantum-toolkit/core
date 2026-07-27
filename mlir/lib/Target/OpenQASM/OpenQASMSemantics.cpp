@@ -21,7 +21,6 @@
 #include <llvm/Support/MemoryBuffer.h>
 
 #include <algorithm>
-#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -100,6 +99,20 @@ struct Symbol {
   return type == ScalarType::Int || type == ScalarType::Uint;
 }
 
+[[nodiscard]] StringRef scalarTypeName(const ScalarType type) {
+  switch (type) {
+  case ScalarType::Bool:
+    return "bool";
+  case ScalarType::Int:
+    return "int";
+  case ScalarType::Uint:
+    return "uint";
+  case ScalarType::Float:
+    return "float";
+  }
+  llvm_unreachable("unknown scalar type");
+}
+
 [[nodiscard]] bool belongsToStdGates(const GateAvailability availability) {
   return availability == GateAvailability::StandardLibrary ||
          availability == GateAvailability::StandardLibraryAndQELib1;
@@ -125,6 +138,32 @@ struct Symbol {
     return static_cast<std::int64_t>(value);
   }
   return std::get<std::int64_t>(constant.value);
+}
+
+[[nodiscard]] bool canImplicitlyPromote(const Constant& initializer,
+                                        const ScalarType destination) {
+  if (initializer.type == destination) {
+    return true;
+  }
+  switch (initializer.type) {
+  case ScalarType::Bool:
+    return destination == ScalarType::Int ||
+           destination == ScalarType::Uint ||
+           destination == ScalarType::Float;
+  case ScalarType::Int:
+    return destination == ScalarType::Float ||
+           (destination == ScalarType::Uint &&
+            std::get<std::int64_t>(initializer.value) >= 0);
+  case ScalarType::Uint:
+    return destination == ScalarType::Float ||
+           (destination == ScalarType::Int &&
+            std::get<std::uint64_t>(initializer.value) <=
+                static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()));
+  case ScalarType::Float:
+    return false;
+  }
+  llvm_unreachable("unknown scalar type");
 }
 
 [[nodiscard]] int compareNumericConstants(const Constant& lhs,
@@ -513,54 +552,44 @@ private:
                           .constant = constant.value});
   }
 
-  [[nodiscard]] Constant coerceConstant(Constant constant,
-                                        const ScalarType type,
-                                        const SMLoc location) const {
-    if (type == ScalarType::Bool) {
-      if (constant.type == ScalarType::Bool) {
-        return constant;
-      }
-      return {.type = ScalarType::Bool, .value = asDouble(constant) != 0.0};
+  [[nodiscard]] Constant
+  promoteConstInitializer(const Constant& initializer,
+                          const ScalarType destination,
+                          const SMLoc location) const {
+    if (!canImplicitlyPromote(initializer, destination)) {
+      fail(location, "constant initializer of type '" +
+                         scalarTypeName(initializer.type) +
+                         "' cannot be implicitly promoted to '" +
+                         scalarTypeName(destination) + "'");
     }
-    if (type == ScalarType::Float) {
-      return {.type = ScalarType::Float, .value = asDouble(constant)};
+    if (initializer.type == destination) {
+      return initializer;
     }
-    if (constant.type == ScalarType::Bool) {
-      constant = {.type = ScalarType::Int,
-                  .value = std::int64_t{std::get<bool>(constant.value)}};
-    } else if (constant.type == ScalarType::Float) {
-      const auto value = std::get<double>(constant.value);
-      const auto withinTargetRange =
-          type == ScalarType::Int
-              ? value >= static_cast<double>(
-                             std::numeric_limits<std::int64_t>::min()) &&
-                    value < std::ldexp(1.0, 63)
-              : value > -1.0 && value < std::ldexp(1.0, 64);
-      if (!std::isfinite(value) || !withinTargetRange) {
-        fail(location, "floating-point value is outside the integer range");
-      }
-      if (type == ScalarType::Int) {
-        constant = {.type = ScalarType::Int,
-                    .value = static_cast<std::int64_t>(value)};
-      } else {
-        constant = {.type = ScalarType::Uint,
-                    .value = static_cast<std::uint64_t>(value)};
-      }
-    }
-    if (type == ScalarType::Int) {
-      if (constant.type == ScalarType::Uint) {
+    switch (destination) {
+    case ScalarType::Bool:
+      llvm_unreachable("only bool constants can initialize bool constants");
+    case ScalarType::Int:
+      if (initializer.type == ScalarType::Bool) {
         return {.type = ScalarType::Int,
-                .value = std::bit_cast<std::int64_t>(
-                    std::get<std::uint64_t>(constant.value))};
+                .value = static_cast<std::int64_t>(
+                    std::get<bool>(initializer.value))};
       }
-      return constant;
-    }
-    if (constant.type == ScalarType::Int) {
+      return {.type = ScalarType::Int,
+              .value = static_cast<std::int64_t>(
+                  std::get<std::uint64_t>(initializer.value))};
+    case ScalarType::Uint:
+      if (initializer.type == ScalarType::Bool) {
+        return {.type = ScalarType::Uint,
+                .value = static_cast<std::uint64_t>(
+                    std::get<bool>(initializer.value))};
+      }
       return {.type = ScalarType::Uint,
-              .value = std::bit_cast<std::uint64_t>(
-                  std::get<std::int64_t>(constant.value))};
+              .value = static_cast<std::uint64_t>(
+                  std::get<std::int64_t>(initializer.value))};
+    case ScalarType::Float:
+      return {.type = ScalarType::Float, .value = asDouble(initializer)};
     }
-    return constant;
+    llvm_unreachable("unknown scalar type");
   }
 
   [[nodiscard]] bool expressionProducesBool(const SyntaxExpressionId id) const {
@@ -1479,8 +1508,8 @@ private:
           !isConstantExpression(*declaration.initializer)) {
         fail(location, "const declaration requires a constant initializer");
       }
-      auto constant = coerceConstant(evaluateConstant(*declaration.initializer),
-                                     type, location);
+      auto constant = promoteConstInitializer(
+          evaluateConstant(*declaration.initializer), type, location);
       declare(
           location, declaration.identifier,
           {.kind = SymbolKind::Constant, .type = type, .constant = constant});
