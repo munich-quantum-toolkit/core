@@ -11,4 +11,4 @@
 This module contains all neutral atom related functionality of MQT Core.
 """
 
-from . import fomac as fomac
+from . import qdmi as qdmi

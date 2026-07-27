@@ -237,7 +237,6 @@ convention = "google"
 default.extend-ignore-re = [
   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",  # ignore line
   "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on", # ignore block
-  "FoMaC"
 ]
 
 [tool.typos.default.extend-words]
@@ -247,6 +246,9 @@ mch = "mch"
 ket = "ket"
 optin = "optin"
 nd = "nd"
+
+[tool.typos.default.extend-identifiers]
+FoMaC = "FoMaC"
 
 
 [tool.repo-review.ignore]

@@ -10,13 +10,16 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
-from mqt.core import fomac
+from mqt.core import qdmi
 from mqt.core.plugins.qiskit import QDMIProvider
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_provider_backends_filter_by_name() -> None:
@@ -79,11 +82,15 @@ def test_provider_get_backend_nonexistent() -> None:
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provider raises ValueError when no devices available."""
 
-    # Monkeypatch to return empty device list
-    def mock_get_devices(_self: object) -> list[object]:
-        return []
+    class EmptyManager:
+        def __init__(self) -> None:
+            self.definitions: list[object] = []
 
-    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
+        @staticmethod
+        def open_all(**_kwargs: object) -> object:
+            return SimpleNamespace(devices={}, errors={})
+
+    monkeypatch.setattr(qdmi, "DeviceManager", EmptyManager)
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
@@ -119,25 +126,28 @@ def test_provider_with_token_parameter() -> None:
         pass
 
 
-def test_provider_with_auth_file_parameter() -> None:
-    """Provider accepts auth_file parameter."""
-    # Create a temporary file for testing
-    with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8") as tmp_file:
-        tmp_file.write("test_auth_content")
-        tmp_path = tmp_file.name
+def test_provider_with_auth_file_parameter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Provider accepts and forwards a path-like auth_file parameter."""
+    received_parameters: qdmi.SessionParameters | None = None
 
-    try:
-        # Should not raise an error when creating provider with auth_file
-        # Note: The currently available QDMI devices don't support authentication.
-        try:
-            provider = QDMIProvider(auth_file=tmp_path)
-            assert provider is not None
-        except RuntimeError:
-            # If not supported, that's okay for now
-            pass
-    finally:
-        # Clean up
-        Path(tmp_path).unlink(missing_ok=True)
+    class EmptyManager:
+        def __init__(self) -> None:
+            self.definitions: list[object] = []
+
+        @staticmethod
+        def open_all(*, session_overrides: qdmi.SessionParameters) -> object:
+            nonlocal received_parameters
+            received_parameters = session_overrides
+            return SimpleNamespace(devices={}, errors={})
+
+    monkeypatch.setattr(qdmi, "DeviceManager", EmptyManager)
+    auth_file = tmp_path / "credentials.json"
+
+    provider = QDMIProvider(auth_file=auth_file)
+
+    assert provider.backends() == []
+    assert received_parameters is not None
+    assert received_parameters.auth_file == auth_file
 
 
 def test_provider_with_auth_url_parameter() -> None:
@@ -164,18 +174,6 @@ def test_provider_with_username_password_parameters() -> None:
         pass
 
 
-def test_provider_with_project_id_parameter() -> None:
-    """Provider accepts project_id parameter."""
-    # Should not raise an error when creating provider with project_id
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(project_id="test_project")
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
 def test_provider_with_multiple_auth_parameters() -> None:
     """Provider accepts multiple authentication parameters."""
     # Should not raise an error when creating provider with multiple auth parameters
@@ -185,7 +183,6 @@ def test_provider_with_multiple_auth_parameters() -> None:
             token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
             username="test_user",
             password="test_pass",  # ruff:ignore[hardcoded-password-func-arg]
-            project_id="test_project",
         )
         assert provider is not None
     except RuntimeError:
@@ -239,7 +236,6 @@ def test_provider_with_custom_parameters() -> None:
         provider = QDMIProvider(
             token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
             custom1="custom_value",
-            project_id="project_id",
         )
         assert provider is not None
     except (RuntimeError, ValueError):

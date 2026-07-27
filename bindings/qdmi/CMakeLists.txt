@@ -6,11 +6,11 @@
 #
 # Licensed under the MIT License
 
-set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-na-bindings")
+set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-qdmi-bindings")
 
 if(NOT TARGET ${TARGET_NAME})
   # collect source files
-  file(GLOB_RECURSE SOURCES *.cpp)
+  file(GLOB_RECURSE SOURCES **.cpp)
 
   # declare the Python module
   add_mqt_python_binding_nanobind(
@@ -18,18 +18,17 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     ${SOURCES}
     MODULE_NAME
-    na
+    qdmi
     INSTALL_DIR
     .
     LINK_LIBS
-    MQT::CoreNAQDMI)
+    MQT::CoreQDMI)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
-    file(GLOB_RECURSE NA_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/na/*.pyi)
     install(
-      FILES ${NA_PYI_FILES}
-      DESTINATION ./na
+      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/qdmi.pyi
+      DESTINATION .
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
 endif()
