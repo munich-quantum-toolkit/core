@@ -36,10 +36,6 @@ public:
   /// where mapping[prog] = hw.
   static Layout fromMapping(ArrayRef<size_t> mapping);
 
-  /// Construct a layout with `nqubits`.
-  explicit Layout(const size_t nqubits)
-      : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
-
   /// Insert program:hardware index mapping.
   void add(size_t prog, size_t hw);
 
@@ -80,6 +76,10 @@ public:
   }
 
 protected:
+  /// Construct a layout with `nqubits`.
+  explicit Layout(const size_t nqubits)
+      : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
+
   /// Maps a program qubit index to its hardware index.
   SmallVector<size_t> programToHardware_;
   /// Maps a hardware qubit index to its program index.

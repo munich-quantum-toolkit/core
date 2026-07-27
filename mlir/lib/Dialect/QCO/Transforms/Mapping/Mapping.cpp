@@ -1282,6 +1282,10 @@ private:
               return SmallVector<RoutingBundle, 0>(
                   switchOp.getNumRegions(),
                   RoutingBundle{.layout = parent.layout});
+            })
+            .Default([](Operation* op) -> SmallVector<RoutingBundle, 0> {
+              report_fatal_error("unhandled region op in dispatch: " +
+                                 op->getName().getStringRef());
             });
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
@@ -1441,16 +1445,16 @@ private:
                   converge(children[0].layout, children[1].layout);
               insertSWAPs<Mode>(fst, children[0], stats, rewriter);
               insertSWAPs<Mode>(snd, children[1], stats, rewriter);
-              return std::move(convergedLayout);
+              return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
-              const auto winner = vote(map_range(
+              auto winner = vote(map_range(
                   children, [&](const RoutingBundle& b) { return b.layout; }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, winner);
                 insertSWAPs<Mode>(swaps, child, stats, rewriter);
               }
-              return std::move(winner);
+              return winner;
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
