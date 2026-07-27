@@ -10,7 +10,7 @@ mystnb:
 
 The {py:mod}`mqt.core.plugins.qiskit` module provides a Qiskit
 {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via
-FoMaC. This integration allows you to execute Qiskit circuits on QDMI-compliant
+QDMI. This integration allows you to execute Qiskit circuits on QDMI-compliant
 quantum devices using a familiar Qiskit workflow.
 
 ## Installation
@@ -69,7 +69,7 @@ print(f"Results: {counts}")
 ### Using the Provider
 
 The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` discovers QDMI
-devices available through the FoMaC layer. Backends should always be obtained
+devices available through the QDMI layer. Backends should always be obtained
 through the provider rather than instantiated directly.
 
 ```{code-cell} ipython3
@@ -126,8 +126,6 @@ The provider supports multiple authentication methods:
   authentication
 - **File-based authentication**: Reading credentials from a file
 - **URL-based authentication**: Connecting to an authentication server
-- **Project-based authentication**: Associating sessions with specific projects,
-  e.g., for accounting or quota management
 
 ### Using Authentication Tokens
 
@@ -162,9 +160,11 @@ backend = provider.get_backend("RemoteQuantumDevice")
 Store credentials in a secure file for better security:
 
 ```python
+from pathlib import Path
+
 # Authenticate using a credentials file
 # The file should contain authentication information in the format expected by the service
-provider = QDMIProvider(auth_file="/path/to/credentials.txt")
+provider = QDMIProvider(auth_file=Path("/path/to/credentials.txt"))
 ```
 
 ### Authentication Server URL
@@ -176,13 +176,13 @@ Connect to a custom authentication server:
 provider = QDMIProvider(auth_url="https://auth.quantum-service.com/api/v1/auth")
 ```
 
-### Project-Based Authentication
+### Device-Specific Session Parameters
 
-Associate your session with a specific project or organization:
+QDMI reserves five custom session slots for device-specific settings. Consult
+the device documentation to determine their meaning:
 
 ```python
-# Specify a project ID
-provider = QDMIProvider(token="your_api_token", project_id="quantum-research-project-2024")
+provider = QDMIProvider(token="your_api_token", custom1="device-project")
 ```
 
 ### Combining Authentication Parameters
@@ -196,29 +196,33 @@ provider = QDMIProvider(
     token="your_api_token",
     username="your_username",
     password="your_password",
-    project_id="your_project_id",
+    custom1="device-specific-value",
     auth_url="https://custom-auth.example.com",
 )
 ```
 
-### Authentication Error Handling
+### Authentication and Device-Opening Errors
 
-When authentication fails, the provider raises a `RuntimeError`:
+The provider tries to open every configured device independently. Devices that
+cannot be opened, for example because their credentials are invalid or missing,
+are omitted from `provider.backends()`. Other available devices remain usable.
+
+For diagnostics, use the lower-level QDMI manager. Its bulk-open result keeps
+the successfully opened devices and records each failure by device ID:
 
 ```python
-try:
-    provider = QDMIProvider(token="invalid_token")
-    backends = provider.backends()
-except RuntimeError as e:
-    print(f"Authentication failed: {e}")
-    # Handle authentication error (e.g., prompt for valid credentials)
+from mqt.core import qdmi
+
+parameters = qdmi.SessionParameters(token="your_api_token")
+result = qdmi.DeviceManager().open_all(session_overrides=parameters)
+for device_id, error in result.errors.items():
+    print(f"{device_id}: {error}")
 ```
 
 ## Device Capabilities and Target
 
-The backend automatically introspects the FoMaC (QDMI) device and constructs a
-Qiskit {py:class}`~qiskit.transpiler.Target` object describing device
-capabilities.
+The backend automatically introspects the QDMI device and constructs a Qiskit
+{py:class}`~qiskit.transpiler.Target` object describing device capabilities.
 
 ```{code-cell} ipython3
 # Access device properties via the Target
@@ -306,8 +310,8 @@ job = backend.run(circuits, parameter_values=param_values, shots=100)
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a FoMaC (QDMI) job
-and provides status tracking:
+The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a QDMI job and
+provides status tracking:
 
 ```python
 from qiskit.providers import JobStatus
@@ -535,7 +539,7 @@ When you run a circuit, the backend:
 
 The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
-1. Querying the FoMaC (QDMI) device for available operations
+1. Querying the QDMI device for available operations
 2. Mapping each operation to the corresponding Qiskit gate
 3. Determining qubit connectivity from the device's coupling map
 4. Including operation properties (duration, fidelity) if available

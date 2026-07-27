@@ -8,9 +8,9 @@ Quantum-circuit representation and algorithms.
 
 Decision-diagram data structures and simulation algorithms.
 
-@namespace fomac
+@namespace qdmi
 
-C++ interface for FoMaC quantum-device management.
+C++ interface for QDMI quantum-device management.
 
 @namespace na
 
