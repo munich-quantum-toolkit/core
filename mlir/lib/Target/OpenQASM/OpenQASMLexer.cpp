@@ -54,7 +54,7 @@ namespace mlir::oq3::frontend::detail {
 template <class IsDigit>
 [[nodiscard]] static bool hasValidSeparators(const StringRef text,
                                              IsDigit isValidDigit) {
-  for (std::size_t index = 0; index < text.size(); ++index) {
+  for (size_t index = 0; index < text.size(); ++index) {
     if (text[index] != '_') {
       continue;
     }
@@ -69,7 +69,7 @@ template <class IsDigit>
 namespace {
 struct DecodedCodePoint {
   std::uint32_t value = 0;
-  std::size_t width = 0;
+  size_t width = 0;
 };
 } // namespace
 
@@ -84,7 +84,7 @@ decodeCodePoint(const char* position, const char* end) {
     return std::nullopt;
   }
   return DecodedCodePoint{.value = codePoint,
-                          .width = static_cast<std::size_t>(source - begin)};
+                          .width = static_cast<size_t>(source - begin)};
 }
 
 [[nodiscard]] static TokenKind keywordKind(StringRef text) {
@@ -257,7 +257,7 @@ Token Lexer::lexNumber(const char* start) {
       radix = 8;
     }
     const char* digits = cur;
-    while (!atEnd() && (std::isalnum(static_cast<unsigned char>(*cur)) ||
+    while (!atEnd() && ((std::isalnum(static_cast<unsigned char>(*cur)) != 0) ||
                         isSeparator(*cur))) {
       ++cur;
     }
@@ -405,8 +405,8 @@ Token Lexer::next() {
   if (canStartIdentifier(c)) {
     return lexIdentifierOrKeyword(start);
   }
-  const auto remaining = static_cast<std::size_t>(end - cur);
-  std::size_t unsupportedHashKeywordWidth = 0;
+  const auto remaining = static_cast<size_t>(end - cur);
+  size_t unsupportedHashKeywordWidth = 0;
   if (c == '#' && remaining >= 4 && StringRef(cur, 4) == "#dim" &&
       (remaining == 4 || !canContinueIdentifier(cur[4]))) {
     unsupportedHashKeywordWidth = 4;
@@ -427,7 +427,7 @@ Token Lexer::next() {
     }
     cur += codePoint ? codePoint->width : 1;
     token.kind = TokenKind::Error;
-    token.spelling = StringRef(start, static_cast<std::size_t>(cur - start));
+    token.spelling = StringRef(start, static_cast<size_t>(cur - start));
     return token;
   }
   // A float literal may lead with a dot

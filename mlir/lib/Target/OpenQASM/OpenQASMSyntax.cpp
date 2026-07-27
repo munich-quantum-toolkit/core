@@ -76,7 +76,7 @@ SyntaxStatementId SyntaxBuilder::addStatement(SMLoc location,
 }
 
 SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
-  DenseMap<const Expr*, SyntaxExpressionId> copies;
+  llvm::DenseMap<const Expr*, SyntaxExpressionId> copies;
   SmallVector<std::pair<const Expr*, bool>> worklist{{&expression, false}};
   while (!worklist.empty()) {
     const auto [current, expanded] = worklist.pop_back_val();

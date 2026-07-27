@@ -260,8 +260,8 @@ inline constexpr auto OPENQASM_IDENTIFIER_RANGES = std::to_array<UnicodeRange>({
 
 [[nodiscard]] constexpr bool
 isOpenQASMIdentifierCodePoint(const std::uint32_t codePoint) noexcept {
-  std::size_t first = 0;
-  std::size_t last = std::size(OPENQASM_IDENTIFIER_RANGES);
+  size_t first = 0;
+  size_t last = std::size(OPENQASM_IDENTIFIER_RANGES);
   while (first < last) {
     const auto middle = first + ((last - first) / 2);
     const auto range = OPENQASM_IDENTIFIER_RANGES[middle];

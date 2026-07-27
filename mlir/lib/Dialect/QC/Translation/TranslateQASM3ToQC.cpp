@@ -13,26 +13,25 @@
 #include "OpenQASMToQCEmitter.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mlir::qc {
-namespace {
 
-void emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
-                     MLIRContext& context) {
+static void
+emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
+                MLIRContext& context) {
   for (const auto& diagnostic : diagnostics) {
     emitError(detail::getOpenQASMLocation(diagnostic.location, context))
         << "OpenQASM frontend error: " << diagnostic.message;
   }
 }
-
-} // namespace
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
                                          MLIRContext* context) {

@@ -258,9 +258,9 @@ public:
   }
 
 private:
-  static constexpr std::size_t BLOCK_DEPTH_LIMIT = 64;
-  static constexpr std::size_t RECURSIVE_EXPRESSION_DEPTH_LIMIT = 256;
-  static constexpr std::size_t MODIFIER_DEPTH_LIMIT = 64;
+  static constexpr size_t BLOCK_DEPTH_LIMIT = 64;
+  static constexpr size_t RECURSIVE_EXPRESSION_DEPTH_LIMIT = 256;
+  static constexpr size_t MODIFIER_DEPTH_LIMIT = 64;
 
   //===--- Token scaffolding --------------------------------------------===//
 
@@ -463,8 +463,8 @@ private:
         return value >= '0' && value <= '9';
       });
     };
-    std::uint64_t major = 0;
-    std::uint64_t minor = 0;
+    uint64_t major = 0;
+    uint64_t minor = 0;
     if (!decimalDigits(majorText) || (hasMinor && !decimalDigits(minorText)) ||
         majorText.getAsInteger(10, major) ||
         (!minorText.empty() && minorText.getAsInteger(10, minor)) ||
@@ -1597,8 +1597,8 @@ private:
       allocator; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   Token currentToken;
   Token nextToken;
-  std::size_t blockDepth = 0;
-  std::size_t recursiveExpressionDepth = 0;
+  size_t blockDepth = 0;
+  size_t recursiveExpressionDepth = 0;
 };
 
 } // namespace mlir::oq3::frontend::detail

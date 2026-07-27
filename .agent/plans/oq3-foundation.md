@@ -207,6 +207,25 @@ threads or publishing new PR text.
       the distinction between scalar `bit` and `bit[1]`, rejecting scalar bits
       from `popcount()`, `rotl()`, and `rotr()`, and adding result-level
       constant and runtime rotation and population-count oracles.
+- [x] (2026-07-27) Audited OpenQASM issues #527, #594, #610, #612, #613,
+      #614, and #617 and pull requests #624 and #666. None is a merged
+      specification change that supersedes the released OpenQASM 3.1
+      constant-initializer rules, so the frontend implements the released
+      same-type and promotable-constant matrix and treats the broader draft
+      tables in #666 as non-normative follow-up work.
+- [x] (2026-07-27) Completed the selected MF-06 and Q-01 cleanup. An exact
+      Clang-Tidy 22.1.8 audit of the ten changed OpenQASM translation units and
+      their headers fell from 1,376 diagnostics to zero without changing the
+      repository policy. The pass also adopted project-style unqualified
+      `size_t`, `int64_t`, and `uint64_t` names and renamed the internal
+      logarithm expression kind from `Ln` to `Log`.
+- [x] (2026-07-27) Added a deterministic PE-01 structural stress regression
+      with 2,048 indexed custom-gate definitions and applications. Rebuilt the
+      frontend, QC translation, and compiler-driver targets and ran 131
+      OpenQASM frontend/target tests plus 257 QC translation tests
+      successfully. The latest clean coverage result remains 89 percent
+      (3537/3958); a new coverage run and behavior-driven expansion are still
+      required before claiming the requested greater-than-90-percent margin.
 
 ## Surprises & Discoveries
 
@@ -334,6 +353,13 @@ threads or publishing new PR text.
   but retains LLVM funnel shifts even when their operands are constants. A small
   test-only integer evaluator can inspect the returned bits without routing
   source correctness through QCO or QIR conversions.
+
+- Observation: foldable scalar builtins pass the optimized Standard, `jeff`,
+  and Base paths, but retained `math.ceil`, `math.floor`, population-count, and
+  funnel-shift operations are explicit QC-to-QIR boundary failures. The
+  bit-vector fixture is tracked independently in both the `jeff` and QIR
+  boundary corpora; source acceptance must not imply retained-operation QIR
+  support.
 
 ## Decision Log
 
@@ -509,12 +535,13 @@ threads or publishing new PR text.
   while the lazy emitted representation avoids redundant pack/unpack chains.
   Date/Author: 2026-07-27 / Codex.
 
-- Decision: lower Math-dialect integer population count through the standard
-  Math-to-LLVM conversion seam in both Adaptive and Base QIR pipelines.
-  Rationale: QC legitimately contains the standard operation; the QIR
-  conversions, rather than the source parser, own its LLVM realization. `jeff`
-  retains an explicit incompatibility fixture for population count and funnel
-  shifts. Date/Author: 2026-07-27 / Codex.
+- Decision: keep retained scalar and bit-vector builtin operations out of the
+  QC-to-QIR lowering until those conversions have explicit, independently
+  tested support. Rationale: foldable calls already traverse optimized
+  Standard, `jeff`, and Base paths, while retained ceiling, floor,
+  population-count, and funnel-shift operations now fail explicitly at the QIR
+  boundary. `jeff` and QIR maintain separate incompatibility corpora.
+  Date/Author: 2026-07-27 / Codex.
 
 - Decision: add one `isScalar` flag to typed register declarations and require a
   non-scalar bit register when constructing a bit-vector expression. Rationale:
@@ -528,6 +555,18 @@ threads or publishing new PR text.
   and over-width distances, source bit-index ordering, and
   `rotl(a, n) == rotr(a, -n)` without coupling the source contract to unrelated
   downstream conversions. Date/Author: 2026-07-27 / Codex.
+
+- Decision: implement the released OpenQASM 3.1 constant-initializer matrix,
+  not the broader draft conversion tables proposed in upstream pull request
+  #666. Rationale: the related upstream issues and pull requests remain open,
+  and no merged specification revision supersedes the released same-type and
+  promotable-constant rules. Date/Author: 2026-07-27 / Codex.
+
+- Decision: name the internal natural-logarithm expression kind `Log`, matching
+  the accepted OpenQASM spelling `log()`; retain `ln()` only in the negative
+  diagnostic regression. Rationale: this removes a misleading internal
+  abbreviation without changing the public source contract. Date/Author:
+  2026-07-27 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -1032,3 +1071,11 @@ Revision note (2026-07-27): the FU-02 source correction retained scalar-versus-
 register bit type identity, enforced the register-only builtin signatures, and
 added returned-value rotation and population-count oracles without changing QIR
 conversion code or widening support to casts, bit strings, or sized integers.
+
+Revision note (2026-07-27): the final selected cleanup reconciled the released
+constant-initializer contract with still-open upstream proposals, made the
+changed OpenQASM surface clean under Clang-Tidy 22.1.8, adopted project integer
+type spelling, renamed the internal logarithm kind to `Log`, and added a
+2,048-definition custom-gate indexing stress test. Foldable builtins remain in
+the positive optimized corpora; retained operations are tracked as explicit
+`jeff` and QC-to-QIR boundary failures.

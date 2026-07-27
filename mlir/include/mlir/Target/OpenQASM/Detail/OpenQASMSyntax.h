@@ -29,16 +29,16 @@ namespace mlir::oq3::frontend::detail {
 
 using SyntaxExpressionId = std::uint32_t;
 using SyntaxStatementId = std::uint32_t;
-using SyntaxIncludeContextId = std::size_t;
+using SyntaxIncludeContextId = size_t;
 
 struct SyntaxExpression {
   Expr::Kind kind = Expr::Kind::Int;
   SMLoc location;
-  std::uint64_t integer = 0;
+  uint64_t integer = 0;
   double floatingPoint = 0.0;
   bool boolean = false;
   StringRef identifier;
-  std::optional<std::uint64_t> hardwareQubit;
+  std::optional<uint64_t> hardwareQubit;
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;
 };
@@ -47,7 +47,7 @@ struct SyntaxOperand {
   SMLoc location;
   StringRef identifier;
   std::optional<SyntaxExpressionId> index;
-  std::optional<std::uint64_t> hardwareQubit;
+  std::optional<uint64_t> hardwareQubit;
 };
 
 struct SyntaxBitReference {
@@ -156,7 +156,7 @@ struct SyntaxStatement {
 struct SyntaxInclude {
   SMLoc location;
   StringRef filename;
-  std::size_t bodyOffset = 0;
+  size_t bodyOffset = 0;
 };
 
 struct SyntaxIncludeContext {

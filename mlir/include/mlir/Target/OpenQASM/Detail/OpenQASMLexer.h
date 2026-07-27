@@ -152,7 +152,7 @@ private:
     if (atEnd()) {
       return '\0';
     }
-    const auto next = std::next(cur);
+    const auto* const next = std::next(cur);
     return next != end ? *next : '\0';
   }
 

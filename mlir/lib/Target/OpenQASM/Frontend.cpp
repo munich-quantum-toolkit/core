@@ -56,11 +56,14 @@ struct ParseArtifacts {
   std::vector<Diagnostic> diagnostics;
 };
 
-constexpr std::size_t INCLUDE_NESTING_LIMIT = 64;
-constexpr std::size_t EXPANDED_STATEMENT_LIMIT = 100'000;
+constexpr size_t INCLUDE_NESTING_LIMIT = 64;
+constexpr size_t EXPANDED_STATEMENT_LIMIT = 100'000;
 
-[[nodiscard]] static std::optional<detail::StandardLibraryKind>
-standardLibraryKind(const llvm::StringRef filename) {
+} // namespace
+
+[[nodiscard]] std::
+    optional<detail::StandardLibraryKind> static standardLibraryKind(
+        const llvm::StringRef filename) {
   if (filename == "stdgates.inc") {
     return detail::StandardLibraryKind::StdGates;
   }
@@ -110,10 +113,10 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
     failedParsing = true;
   };
   struct ParsedSource {
-    std::size_t bodyBegin = 0;
-    std::size_t bodyEnd = 0;
-    std::size_t includeBegin = 0;
-    std::size_t includeEnd = 0;
+    size_t bodyBegin = 0;
+    size_t bodyEnd = 0;
+    size_t includeBegin = 0;
+    size_t includeEnd = 0;
   };
   llvm::DenseMap<unsigned, ParsedSource> parsedSources;
   llvm::StringMap<unsigned> includeBuffers;
@@ -135,10 +138,10 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
 
   llvm::SmallSet<unsigned, 8> parsedBuffers;
   llvm::SmallVector<unsigned> includeTargets;
-  llvm::SmallVector<std::size_t> includeDepths(builder.getIncludes().size(), 1);
+  llvm::SmallVector<size_t> includeDepths(builder.getIncludes().size(), 1);
   parsedBuffers.insert(mainBufferId);
-  for (std::size_t includeIndex = 0;
-       includeIndex < builder.getIncludes().size(); ++includeIndex) {
+  for (size_t includeIndex = 0; includeIndex < builder.getIncludes().size();
+       ++includeIndex) {
     includeTargets.resize(builder.getIncludes().size());
     const auto include = builder.getIncludes()[includeIndex];
     if (includeDepths[includeIndex] > INCLUDE_NESTING_LIMIT) {
@@ -202,25 +205,24 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   std::vector<detail::SyntaxIncludeContext> includeContexts;
   llvm::SmallSet<unsigned, 8> activeBuffers;
   const auto appendBodyRange =
-      [&](const std::size_t begin, const std::size_t end,
-          const llvm::SMLoc location,
+      [&](const size_t begin, const size_t end, const llvm::SMLoc location,
           const std::optional<detail::SyntaxIncludeContextId> includeContext) {
         const auto count = end - begin;
         if (count > EXPANDED_STATEMENT_LIMIT - expandedBody.size()) {
           reportStatementLimit(location);
           return false;
         }
-        const auto bodyBegin = std::next(builder.getBody().begin(),
-                                         static_cast<std::ptrdiff_t>(begin));
-        const auto bodyEnd = std::next(builder.getBody().begin(),
-                                       static_cast<std::ptrdiff_t>(end));
+        const auto* const bodyBegin = std::next(
+            builder.getBody().begin(), static_cast<std::ptrdiff_t>(begin));
+        const auto* const bodyEnd = std::next(builder.getBody().begin(),
+                                              static_cast<std::ptrdiff_t>(end));
         expandedBody.insert(expandedBody.end(), bodyBegin, bodyEnd);
         expandedIncludeContexts.insert(expandedIncludeContexts.end(), count,
                                        includeContext);
         return true;
       };
   const auto appendSource =
-      [&](auto&& self, const unsigned bufferId, const std::size_t depth,
+      [&](auto&& self, const unsigned bufferId, const size_t depth,
           const std::optional<detail::SyntaxIncludeContextId> includeContext)
       -> bool {
     activeBuffers.insert(bufferId);
@@ -296,8 +298,6 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   result.syntax = builder.takeProgram();
   return result;
 }
-
-} // namespace
 
 ParseResult parseOpenQASM(llvm::SourceMgr& sourceMgr) {
   const auto* source = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());

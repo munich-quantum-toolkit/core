@@ -112,7 +112,7 @@ enum class ExpressionKind : std::uint8_t {
   Floor,
   Tan,
   Exp,
-  Ln,
+  Log,
   Sqrt,
   PopCount,
   Add,
@@ -126,7 +126,7 @@ enum class ExpressionKind : std::uint8_t {
 struct ScalarExpression {
   ExpressionKind kind = ExpressionKind::Constant;
   ScalarType type = ScalarType::Float;
-  std::variant<bool, std::int64_t, std::uint64_t, double> constant = 0.0;
+  std::variant<bool, int64_t, uint64_t, double> constant = 0.0;
   std::uint32_t parameter = 0;
   ScalarId variable = 0;
   ExpressionId lhs = 0;
@@ -142,7 +142,7 @@ enum class BitVectorExpressionKind : std::uint8_t {
 
 struct BitVectorExpression {
   BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
-  std::uint64_t width = 0;
+  uint64_t width = 0;
   RegisterId reg = 0;
   BitVectorExpressionId operand = 0;
   ExpressionId distance = 0;
@@ -161,7 +161,7 @@ enum class RegisterKind : std::uint8_t {
 struct RegisterDeclaration {
   RegisterKind kind = RegisterKind::Qubit;
   std::string name;
-  std::uint64_t width = 0;
+  uint64_t width = 0;
   bool isScalar = false;
   SourceLocation location;
 };
@@ -175,7 +175,7 @@ enum class QubitReferenceKind : std::uint8_t {
 struct QubitReference {
   QubitReferenceKind kind = QubitReferenceKind::Register;
   std::uint32_t symbol = 0;
-  std::uint64_t index = 0;
+  uint64_t index = 0;
   std::optional<ExpressionId> dynamicIndex;
 
   bool operator==(const QubitReference&) const = default;
@@ -183,7 +183,7 @@ struct QubitReference {
 
 struct BitReference {
   RegisterId reg = 0;
-  std::uint64_t index = 0;
+  uint64_t index = 0;
   std::optional<ExpressionId> dynamicIndex;
 };
 
@@ -242,8 +242,8 @@ struct GateApplication {
 
 struct GateDefinition {
   std::string name;
-  std::size_t parameterCount = 0;
-  std::size_t qubitCount = 0;
+  size_t parameterCount = 0;
+  size_t qubitCount = 0;
   std::vector<StatementId> body;
   SourceLocation location;
 };
@@ -275,22 +275,22 @@ struct BitVectorAssignmentStatement {
 };
 
 struct MeasurementStatement {
-  std::vector<BitReference> targets{};
-  std::vector<QubitReference> qubits{};
+  std::vector<BitReference> targets;
+  std::vector<QubitReference> qubits;
 };
 
 struct ResetStatement {
-  std::vector<QubitReference> qubits{};
+  std::vector<QubitReference> qubits;
 };
 
 struct BarrierStatement {
-  std::vector<QubitReference> qubits{};
+  std::vector<QubitReference> qubits;
 };
 
 struct IfStatement {
   ConditionId condition = 0;
-  std::vector<StatementId> thenStatements{};
-  std::vector<StatementId> elseStatements{};
+  std::vector<StatementId> thenStatements;
+  std::vector<StatementId> elseStatements;
 };
 
 struct ForStatement {
@@ -298,12 +298,12 @@ struct ForStatement {
   ExpressionId start = 0;
   ExpressionId step = 0;
   ExpressionId stop = 0;
-  std::vector<StatementId> body{};
+  std::vector<StatementId> body;
 };
 
 struct WhileStatement {
   ConditionId condition = 0;
-  std::vector<StatementId> body{};
+  std::vector<StatementId> body;
 };
 
 using StatementData =
@@ -322,20 +322,20 @@ struct TypedProgram {
   bool openQASM2 = false;
   bool stdGatesIncluded = false;
   bool qelib1Included = false;
-  std::vector<ScalarExpression> expressions{};
-  std::vector<BitVectorExpression> bitVectorExpressions{};
-  std::vector<ConditionExpression> conditions{};
-  std::vector<ScalarDeclaration> scalars{};
-  std::vector<RegisterDeclaration> registers{};
-  std::vector<GateDefinition> gates{};
-  std::vector<Statement> statements{};
-  std::vector<StatementId> body{};
-  std::vector<RegisterId> outputs{};
+  std::vector<ScalarExpression> expressions;
+  std::vector<BitVectorExpression> bitVectorExpressions;
+  std::vector<ConditionExpression> conditions;
+  std::vector<ScalarDeclaration> scalars;
+  std::vector<RegisterDeclaration> registers;
+  std::vector<GateDefinition> gates;
+  std::vector<Statement> statements;
+  std::vector<StatementId> body;
+  std::vector<RegisterId> outputs;
 };
 
 struct AnalysisResult {
-  std::unique_ptr<TypedProgram> program{};
-  std::vector<Diagnostic> diagnostics{};
+  std::unique_ptr<TypedProgram> program;
+  std::vector<Diagnostic> diagnostics;
 
   [[nodiscard]] explicit operator bool() const { return program != nullptr; }
 };

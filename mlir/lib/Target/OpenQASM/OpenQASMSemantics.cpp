@@ -10,21 +10,27 @@
 
 #include "mlir/Target/OpenQASM/Detail/OpenQASMSemantics.h"
 
+#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
+#include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/MathExtras.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
+#include <mlir/Support/LLVM.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <numbers>
@@ -32,6 +38,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -39,11 +46,11 @@
 namespace mlir::oq3::frontend::detail {
 namespace {
 
-constexpr std::uint64_t registerWidthLimit = 100'000;
-constexpr std::uint64_t totalRegisterElementLimit = 100'000;
-constexpr std::size_t expressionDepthLimit = 256;
-constexpr std::size_t gateDependencyDepthLimit = 64;
-constexpr std::size_t typedStatementLimit = 100'000;
+constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
+constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
+constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
+constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
+constexpr size_t TYPED_STATEMENT_LIMIT = 100'000;
 
 class SemanticError final : public std::runtime_error {
 public:
@@ -55,13 +62,12 @@ public:
 
 struct Constant {
   ScalarType type = ScalarType::Int;
-  std::variant<bool, std::int64_t, std::uint64_t, double> value =
-      std::int64_t{0};
+  std::variant<bool, int64_t, uint64_t, double> value = int64_t{0};
 };
 
 struct GateSignature {
-  std::size_t parameterCount = 0;
-  std::size_t qubitCount = 0;
+  size_t parameterCount = 0;
+  size_t qubitCount = 0;
   bool variadicControls = false;
 };
 
@@ -81,7 +87,9 @@ struct Symbol {
   std::optional<Constant> constant;
 };
 
-[[nodiscard]] ScalarType scalarType(const ScalarKind kind) {
+} // namespace
+
+[[nodiscard]] static ScalarType scalarType(const ScalarKind kind) {
   switch (kind) {
   case ScalarKind::Bool:
     return ScalarType::Bool;
@@ -95,11 +103,11 @@ struct Symbol {
   llvm_unreachable("unknown syntax scalar kind");
 }
 
-[[nodiscard]] bool isInteger(const ScalarType type) {
+[[nodiscard]] static bool isInteger(const ScalarType type) {
   return type == ScalarType::Int || type == ScalarType::Uint;
 }
 
-[[nodiscard]] StringRef scalarTypeName(const ScalarType type) {
+[[nodiscard]] static StringRef scalarTypeName(const ScalarType type) {
   switch (type) {
   case ScalarType::Bool:
     return "bool";
@@ -113,35 +121,35 @@ struct Symbol {
   llvm_unreachable("unknown scalar type");
 }
 
-[[nodiscard]] bool belongsToStdGates(const GateAvailability availability) {
+[[nodiscard]] static bool
+belongsToStdGates(const GateAvailability availability) {
   return availability == GateAvailability::StandardLibrary ||
          availability == GateAvailability::StandardLibraryAndQELib1;
 }
 
-[[nodiscard]] bool belongsToQELib1(const GateAvailability availability) {
+[[nodiscard]] static bool belongsToQELib1(const GateAvailability availability) {
   return availability == GateAvailability::QELib1 ||
          availability == GateAvailability::StandardLibraryAndQELib1;
 }
 
-[[nodiscard]] double asDouble(const Constant& constant) {
+[[nodiscard]] static double asDouble(const Constant& constant) {
   return std::visit([](const auto value) { return static_cast<double>(value); },
                     constant.value);
 }
 
-[[nodiscard]] std::int64_t asSigned(const Constant& constant) {
+[[nodiscard]] static int64_t asSigned(const Constant& constant) {
   if (constant.type == ScalarType::Uint) {
-    const auto value = std::get<std::uint64_t>(constant.value);
-    if (value >
-        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+    const auto value = std::get<uint64_t>(constant.value);
+    if (value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
       throw std::overflow_error("unsigned value does not fit in signed i64");
     }
-    return static_cast<std::int64_t>(value);
+    return static_cast<int64_t>(value);
   }
-  return std::get<std::int64_t>(constant.value);
+  return std::get<int64_t>(constant.value);
 }
 
-[[nodiscard]] bool canImplicitlyPromote(const Constant& initializer,
-                                        const ScalarType destination) {
+[[nodiscard]] static bool canImplicitlyPromote(const Constant& initializer,
+                                               const ScalarType destination) {
   if (initializer.type == destination) {
     return true;
   }
@@ -152,41 +160,51 @@ struct Symbol {
   case ScalarType::Int:
     return destination == ScalarType::Float ||
            (destination == ScalarType::Uint &&
-            std::get<std::int64_t>(initializer.value) >= 0);
+            std::get<int64_t>(initializer.value) >= 0);
   case ScalarType::Uint:
     return destination == ScalarType::Float ||
            (destination == ScalarType::Int &&
-            std::get<std::uint64_t>(initializer.value) <=
-                static_cast<std::uint64_t>(
-                    std::numeric_limits<std::int64_t>::max()));
+            std::get<uint64_t>(initializer.value) <=
+                static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
   case ScalarType::Float:
     return false;
   }
   llvm_unreachable("unknown scalar type");
 }
 
-[[nodiscard]] int compareNumericConstants(const Constant& lhs,
-                                          const Constant& rhs) {
+[[nodiscard]] static int compareNumericConstants(const Constant& lhs,
+                                                 const Constant& rhs) {
   if (lhs.type == ScalarType::Float || rhs.type == ScalarType::Float) {
     const auto left = asDouble(lhs);
     const auto right = asDouble(rhs);
-    return left < right ? -1 : left > right ? 1 : 0;
+    if (left < right) {
+      return -1;
+    }
+    return left > right ? 1 : 0;
   }
   if (lhs.type == ScalarType::Uint || rhs.type == ScalarType::Uint) {
     const auto asUnsigned = [](const Constant& constant) {
-      return constant.type == ScalarType::Uint
-                 ? std::get<std::uint64_t>(constant.value)
-                 : static_cast<std::uint64_t>(
-                       std::get<std::int64_t>(constant.value));
+      if (constant.type == ScalarType::Uint) {
+        return std::get<uint64_t>(constant.value);
+      }
+      return static_cast<uint64_t>(std::get<int64_t>(constant.value));
     };
     const auto left = asUnsigned(lhs);
     const auto right = asUnsigned(rhs);
-    return left < right ? -1 : left > right ? 1 : 0;
+    if (left < right) {
+      return -1;
+    }
+    return left > right ? 1 : 0;
   }
-  const auto left = std::get<std::int64_t>(lhs.value);
-  const auto right = std::get<std::int64_t>(rhs.value);
-  return left < right ? -1 : left > right ? 1 : 0;
+  const auto left = std::get<int64_t>(lhs.value);
+  const auto right = std::get<int64_t>(rhs.value);
+  if (left < right) {
+    return -1;
+  }
+  return left > right ? 1 : 0;
 }
+
+namespace {
 
 class SemanticAnalyzer {
 public:
@@ -216,13 +234,16 @@ public:
 private:
   struct DynamicBitFact {
     ExpressionId expression = 0;
-    std::vector<std::pair<std::uint64_t, std::uint64_t>> dependencies;
+    std::vector<std::pair<uint64_t, uint64_t>> dependencies;
   };
   using BitInitialization = std::vector<bool>;
   using DynamicBitFactSet = std::vector<DynamicBitFact>;
 
-  const SyntaxProgram& syntax;
-  const llvm::SourceMgr& sources;
+  // The analyzed syntax and source manager are mandatory and outlive this run.
+  const SyntaxProgram&
+      syntax; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  const llvm::SourceMgr&
+      sources; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   FrontendOptions options;
   TypedProgram program;
   SmallVector<llvm::StringMap<Symbol>> scopes;
@@ -230,15 +251,15 @@ private:
   std::vector<std::shared_ptr<BitInitialization>> initializedBits;
   std::vector<std::shared_ptr<DynamicBitFactSet>> dynamicBitFacts;
   std::vector<bool> initializedScalars;
-  std::vector<std::uint64_t> scalarGenerations;
-  std::vector<std::uint64_t> bitGenerations;
+  std::vector<uint64_t> scalarGenerations;
+  std::vector<uint64_t> bitGenerations;
   std::vector<RegisterId> bitRegisters;
   std::vector<RegisterId> explicitOutputs;
   bool insideGate = false;
   bool hasVirtualQubits = false;
   bool hasHardwareQubits = false;
-  std::set<std::uint64_t> hardwareQubits;
-  std::uint64_t totalRegisterElements = 0;
+  std::set<uint64_t> hardwareQubits;
+  uint64_t totalRegisterElements = 0;
   std::optional<SyntaxIncludeContextId> currentIncludeContext;
 
   [[nodiscard]] SourceLocation getSourceLocation(const SMLoc location) const {
@@ -265,19 +286,19 @@ private:
   }
 
   void validateExpressionDepth() const {
-    std::vector<std::size_t> depths(syntax.expressions.size(), 1);
+    std::vector<size_t> depths(syntax.expressions.size(), 1);
     for (const auto [id, expression] : llvm::enumerate(syntax.expressions)) {
-      auto depth = std::size_t{1};
+      auto depth = size_t{1};
       if (expression.lhs) {
         depth = std::max(depth, depths[*expression.lhs] + 1);
       }
       if (expression.rhs) {
         depth = std::max(depth, depths[*expression.rhs] + 1);
       }
-      if (depth > expressionDepthLimit) {
+      if (depth > EXPRESSION_DEPTH_LIMIT) {
         fail(expression.location,
              Twine("expression depth exceeds the limit of ") +
-                 Twine(static_cast<unsigned>(expressionDepthLimit)));
+                 Twine(static_cast<unsigned>(EXPRESSION_DEPTH_LIMIT)));
       }
       depths[id] = depth;
     }
@@ -286,26 +307,26 @@ private:
   void restoreStatePrefix(
       const std::vector<std::shared_ptr<BitInitialization>>& bitsInitialized,
       const std::vector<bool>& scalarsInitialized,
-      const std::vector<std::uint64_t>& generations,
-      const std::vector<std::uint64_t>& registerGenerations) {
-    for (std::size_t reg = 0; reg < bitsInitialized.size(); ++reg) {
+      const std::vector<uint64_t>& generations,
+      const std::vector<uint64_t>& registerGenerations) {
+    for (size_t reg = 0; reg < bitsInitialized.size(); ++reg) {
       initializedBits[reg] = bitsInitialized[reg];
     }
-    for (std::size_t scalar = 0; scalar < scalarsInitialized.size(); ++scalar) {
+    for (size_t scalar = 0; scalar < scalarsInitialized.size(); ++scalar) {
       initializedScalars[scalar] = scalarsInitialized[scalar];
       scalarGenerations[scalar] = generations[scalar];
     }
-    for (std::size_t reg = 0; reg < registerGenerations.size(); ++reg) {
+    for (size_t reg = 0; reg < registerGenerations.size(); ++reg) {
       bitGenerations[reg] = registerGenerations[reg];
     }
   }
 
   void restoreDynamicFactsPrefix(
       const std::vector<std::shared_ptr<DynamicBitFactSet>>& facts) {
-    for (std::size_t reg = 0; reg < facts.size(); ++reg) {
+    for (size_t reg = 0; reg < facts.size(); ++reg) {
       dynamicBitFacts[reg] = facts[reg];
     }
-    for (std::size_t reg = facts.size(); reg < dynamicBitFacts.size(); ++reg) {
+    for (size_t reg = facts.size(); reg < dynamicBitFacts.size(); ++reg) {
       dynamicBitFacts[reg] = std::make_shared<DynamicBitFactSet>();
     }
   }
@@ -354,7 +375,7 @@ private:
     case ExpressionKind::Floor:
     case ExpressionKind::Tan:
     case ExpressionKind::Exp:
-    case ExpressionKind::Ln:
+    case ExpressionKind::Log:
     case ExpressionKind::Sqrt:
       return sameExpression(left.lhs, right.lhs);
     default:
@@ -380,8 +401,7 @@ private:
 
   void collectBitVectorDependencies(
       const BitVectorExpressionId expression,
-      std::vector<std::pair<std::uint64_t, std::uint64_t>>& dependencies)
-      const {
+      std::vector<std::pair<uint64_t, uint64_t>>& dependencies) const {
     const auto& value = program.bitVectorExpressions[expression];
     if (value.kind == BitVectorExpressionKind::Register) {
       dependencies.emplace_back(value.reg, bitGenerations[value.reg]);
@@ -391,12 +411,12 @@ private:
     collectDependencies(value.distance, dependencies);
   }
 
-  void collectDependencies(const ExpressionId expression,
-                           std::vector<std::pair<std::uint64_t, std::uint64_t>>&
-                               dependencies) const {
+  void collectDependencies(
+      const ExpressionId expression,
+      std::vector<std::pair<uint64_t, uint64_t>>& dependencies) const {
     const auto& value = program.expressions[expression];
     if (value.kind == ExpressionKind::Variable) {
-      dependencies.emplace_back((std::uint64_t{1} << 63U) | value.variable,
+      dependencies.emplace_back((uint64_t{1} << 63U) | value.variable,
                                 scalarGenerations[value.variable]);
       return;
     }
@@ -418,7 +438,8 @@ private:
         value.kind != ExpressionKind::Cos &&
         value.kind != ExpressionKind::Floor &&
         value.kind != ExpressionKind::Tan &&
-        value.kind != ExpressionKind::Exp && value.kind != ExpressionKind::Ln &&
+        value.kind != ExpressionKind::Exp &&
+        value.kind != ExpressionKind::Log &&
         value.kind != ExpressionKind::Sqrt) {
       collectDependencies(value.rhs, dependencies);
     }
@@ -494,13 +515,13 @@ private:
   }
 
   void validateGateCallGraph() const {
-    llvm::StringMap<std::size_t> gateIndices;
+    llvm::StringMap<size_t> gateIndices;
     for (const auto [index, gate] : llvm::enumerate(program.gates)) {
       gateIndices[gate.name] = index;
     }
     enum class VisitState : std::uint8_t { Unvisited, Active, Complete };
     std::vector states(program.gates.size(), VisitState::Unvisited);
-    std::vector<std::size_t> dependencyDepths(program.gates.size());
+    std::vector<size_t> dependencyDepths(program.gates.size());
     const auto visitApplications = [&](auto&& self,
                                        ArrayRef<StatementId> statements,
                                        const auto& callback) -> void {
@@ -522,13 +543,12 @@ private:
             statement.data);
       }
     };
-    const auto visit = [&](auto&& self,
-                           const std::size_t index) -> std::size_t {
+    const auto visit = [&](auto&& self, const size_t index) -> size_t {
       if (states[index] == VisitState::Complete) {
         return dependencyDepths[index];
       }
       states[index] = VisitState::Active;
-      std::size_t dependencyDepth = 1;
+      size_t dependencyDepth = 1;
       visitApplications(
           visitApplications, program.gates[index].body,
           [&](const GateApplication& application,
@@ -544,12 +564,12 @@ private:
                               application.callee + "'"});
             }
             const auto calleeDepth = self(self, callee->second);
-            if (calleeDepth >= gateDependencyDepthLimit) {
+            if (calleeDepth >= GATE_DEPENDENCY_DEPTH_LIMIT) {
               throw SemanticError(
                   {.location = location,
                    .message =
                        "custom gate dependency depth exceeds the limit of " +
-                       std::to_string(gateDependencyDepthLimit)});
+                       std::to_string(GATE_DEPENDENCY_DEPTH_LIMIT)});
             }
             dependencyDepth = std::max(dependencyDepth, calleeDepth + 1);
           });
@@ -557,7 +577,7 @@ private:
       dependencyDepths[index] = dependencyDepth;
       return dependencyDepth;
     };
-    for (std::size_t index = 0; index < program.gates.size(); ++index) {
+    for (size_t index = 0; index < program.gates.size(); ++index) {
       if (states[index] == VisitState::Unvisited) {
         (void)visit(visit, index);
       }
@@ -565,10 +585,10 @@ private:
   }
 
   [[nodiscard]] StatementId addStatement(SMLoc location, StatementData data) {
-    if (program.statements.size() >= typedStatementLimit) {
+    if (program.statements.size() >= TYPED_STATEMENT_LIMIT) {
       fail(location, Twine("typed OpenQASM program exceeds the statement "
                            "limit of ") +
-                         Twine(static_cast<unsigned>(typedStatementLimit)));
+                         Twine(static_cast<unsigned>(TYPED_STATEMENT_LIMIT)));
     }
     const auto id = static_cast<StatementId>(program.statements.size());
     program.statements.push_back(
@@ -620,21 +640,21 @@ private:
     case ScalarType::Int:
       if (initializer.type == ScalarType::Bool) {
         return {.type = ScalarType::Int,
-                .value = static_cast<std::int64_t>(
-                    std::get<bool>(initializer.value))};
+                .value =
+                    static_cast<int64_t>(std::get<bool>(initializer.value))};
       }
       return {.type = ScalarType::Int,
-              .value = static_cast<std::int64_t>(
-                  std::get<std::uint64_t>(initializer.value))};
+              .value =
+                  static_cast<int64_t>(std::get<uint64_t>(initializer.value))};
     case ScalarType::Uint:
       if (initializer.type == ScalarType::Bool) {
         return {.type = ScalarType::Uint,
-                .value = static_cast<std::uint64_t>(
-                    std::get<bool>(initializer.value))};
+                .value =
+                    static_cast<uint64_t>(std::get<bool>(initializer.value))};
       }
       return {.type = ScalarType::Uint,
-              .value = static_cast<std::uint64_t>(
-                  std::get<std::int64_t>(initializer.value))};
+              .value =
+                  static_cast<uint64_t>(std::get<int64_t>(initializer.value))};
     case ScalarType::Float:
       return {.type = ScalarType::Float, .value = asDouble(initializer)};
     }
@@ -686,12 +706,13 @@ private:
     }
     const auto value = analyzeExpression(syntaxId);
     const auto type = program.expressions[value].type;
-    const auto zero = addConstant(
-        type == ScalarType::Float
-            ? Constant{.type = ScalarType::Float, .value = 0.0}
-        : type == ScalarType::Uint
-            ? Constant{.type = ScalarType::Uint, .value = std::uint64_t{0}}
-            : Constant{.type = ScalarType::Int, .value = std::int64_t{0}});
+    auto zeroValue = Constant{.type = ScalarType::Int, .value = int64_t{0}};
+    if (type == ScalarType::Float) {
+      zeroValue = Constant{.type = ScalarType::Float, .value = 0.0};
+    } else if (type == ScalarType::Uint) {
+      zeroValue = Constant{.type = ScalarType::Uint, .value = uint64_t{0}};
+    }
+    const auto zero = addConstant(zeroValue);
     return addCondition({.kind = ConditionKind::Comparison,
                          .location = sourceLocation(
                              sources, syntax.expressions[syntaxId].location),
@@ -700,8 +721,8 @@ private:
                          .comparison = ComparisonKind::NotEqual});
   }
 
-  [[nodiscard]] std::optional<Constant>
-  builtinConstant(StringRef identifier) const {
+  [[nodiscard]] static std::optional<Constant>
+  builtinConstant(StringRef identifier) {
     if (identifier == "pi" || identifier == "π") {
       return Constant{.type = ScalarType::Float, .value = std::numbers::pi};
     }
@@ -719,10 +740,10 @@ private:
     const auto& expression = syntax.expressions[id];
     switch (expression.kind) {
     case Expr::Kind::Int:
-      if (expression.integer <= static_cast<std::uint64_t>(
-                                    std::numeric_limits<std::int64_t>::max())) {
+      if (expression.integer <=
+          static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
         return {.type = ScalarType::Int,
-                .value = static_cast<std::int64_t>(expression.integer)};
+                .value = static_cast<int64_t>(expression.integer)};
       }
       return {.type = ScalarType::Uint, .value = expression.integer};
     case Expr::Kind::Float:
@@ -750,18 +771,18 @@ private:
         return {.type = ScalarType::Float, .value = -asDouble(operand)};
       }
       if (operand.type == ScalarType::Uint) {
-        const auto value = std::get<std::uint64_t>(operand.value);
+        const auto value = std::get<uint64_t>(operand.value);
         if (syntax.expressions[*expression.lhs].kind == Expr::Kind::Int) {
           if (value > (1ULL << 63)) {
             fail(expression.location, "integer negation overflows i64");
           }
           return {.type = ScalarType::Int,
-                  .value = std::numeric_limits<std::int64_t>::min()};
+                  .value = std::numeric_limits<int64_t>::min()};
         }
         return {.type = ScalarType::Uint, .value = 0ULL - value};
       }
-      const auto value = std::get<std::int64_t>(operand.value);
-      if (value == std::numeric_limits<std::int64_t>::min()) {
+      const auto value = std::get<int64_t>(operand.value);
+      if (value == std::numeric_limits<int64_t>::min()) {
         fail(expression.location, "integer negation overflows i64");
       }
       return {.type = ScalarType::Int, .value = -value};
@@ -939,8 +960,8 @@ private:
     const auto& expression = syntax.expressions[id];
     switch (expression.kind) {
     case Expr::Kind::Int:
-      return expression.integer <= static_cast<std::uint64_t>(
-                                       std::numeric_limits<std::int64_t>::max())
+      return expression.integer <=
+                     static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
                  ? ScalarType::Int
                  : ScalarType::Uint;
     case Expr::Kind::Float:
@@ -1071,7 +1092,7 @@ private:
     }
     const bool builtinFloatPower = expression.kind == Expr::Kind::BuiltinPow &&
                                    rhs.type == ScalarType::Int &&
-                                   std::get<std::int64_t>(rhs.value) < 0;
+                                   std::get<int64_t>(rhs.value) < 0;
     if (lhs.type == ScalarType::Float || rhs.type == ScalarType::Float ||
         builtinFloatPower) {
       if (expression.kind == Expr::Kind::Mod) {
@@ -1121,13 +1142,12 @@ private:
     if (lhs.type == ScalarType::Uint || rhs.type == ScalarType::Uint) {
       const auto asUnsigned = [](const Constant& constant) {
         return constant.type == ScalarType::Uint
-                   ? std::get<std::uint64_t>(constant.value)
-                   : static_cast<std::uint64_t>(
-                         std::get<std::int64_t>(constant.value));
+                   ? std::get<uint64_t>(constant.value)
+                   : static_cast<uint64_t>(std::get<int64_t>(constant.value));
       };
       const auto left = asUnsigned(lhs);
       const auto right = asUnsigned(rhs);
-      std::uint64_t result = 0;
+      uint64_t result = 0;
       switch (expression.kind) {
       case Expr::Kind::Add:
         result = left + right;
@@ -1167,25 +1187,25 @@ private:
       return {.type = ScalarType::Uint, .value = result};
     }
 
-    const auto left = std::get<std::int64_t>(lhs.value);
-    const auto right = std::get<std::int64_t>(rhs.value);
-    std::int64_t result = 0;
+    const auto left = std::get<int64_t>(lhs.value);
+    const auto right = std::get<int64_t>(rhs.value);
+    int64_t result = 0;
     bool overflow = false;
     switch (expression.kind) {
     case Expr::Kind::Add:
-      overflow = llvm::AddOverflow(left, right, result);
+      overflow = llvm::AddOverflow(left, right, result) != 0;
       break;
     case Expr::Kind::Sub:
-      overflow = llvm::SubOverflow(left, right, result);
+      overflow = llvm::SubOverflow(left, right, result) != 0;
       break;
     case Expr::Kind::Mul:
-      overflow = llvm::MulOverflow(left, right, result);
+      overflow = llvm::MulOverflow(left, right, result) != 0;
       break;
     case Expr::Kind::Div:
       if (right == 0) {
         fail(expression.location, "division by zero");
       }
-      if (left == std::numeric_limits<std::int64_t>::min() && right == -1) {
+      if (left == std::numeric_limits<int64_t>::min() && right == -1) {
         overflow = true;
       } else {
         result = left / right;
@@ -1196,7 +1216,7 @@ private:
       if (right == 0) {
         fail(expression.location, "modulo by zero");
       }
-      if (left == std::numeric_limits<std::int64_t>::min() && right == -1) {
+      if (left == std::numeric_limits<int64_t>::min() && right == -1) {
         overflow = true;
       } else {
         result = left % right;
@@ -1212,14 +1232,14 @@ private:
       }
       result = 1;
       auto base = left;
-      auto exponent = static_cast<std::uint64_t>(right);
+      auto exponent = static_cast<uint64_t>(right);
       while (exponent != 0 && !overflow) {
         if ((exponent & 1U) != 0) {
-          overflow = llvm::MulOverflow(result, base, result);
+          overflow = llvm::MulOverflow(result, base, result) != 0;
         }
         exponent >>= 1U;
         if (exponent != 0 && !overflow) {
-          overflow = llvm::MulOverflow(base, base, base);
+          overflow = llvm::MulOverflow(base, base, base) != 0;
         }
       }
       break;
@@ -1295,7 +1315,7 @@ private:
              "bit-vector expression requires a bit register, not scalar bit");
       }
       const auto width = program.registers[reg].width;
-      for (std::uint64_t bit = 0; bit < width; ++bit) {
+      for (uint64_t bit = 0; bit < width; ++bit) {
         ensureBitInitialized({.reg = reg, .index = bit}, expression.location);
       }
       return addBitVectorExpression({.kind = BitVectorExpressionKind::Register,
@@ -1362,7 +1382,7 @@ private:
                             .variable = symbol->id});
     }
 
-    ExpressionKind kind;
+    auto kind = ExpressionKind::Constant;
     switch (expression.kind) {
     case Expr::Kind::Neg:
       kind = ExpressionKind::Negate;
@@ -1427,7 +1447,7 @@ private:
       kind = ExpressionKind::Floor;
       break;
     case Expr::Kind::Log:
-      kind = ExpressionKind::Ln;
+      kind = ExpressionKind::Log;
       break;
     case Expr::Kind::Sin:
       kind = ExpressionKind::Sin;
@@ -1476,7 +1496,7 @@ private:
     if (kind == ExpressionKind::ArcCos || kind == ExpressionKind::ArcSin ||
         kind == ExpressionKind::ArcTan || kind == ExpressionKind::Ceiling ||
         kind == ExpressionKind::Cos || kind == ExpressionKind::Exp ||
-        kind == ExpressionKind::Floor || kind == ExpressionKind::Ln ||
+        kind == ExpressionKind::Floor || kind == ExpressionKind::Log ||
         kind == ExpressionKind::Sin || kind == ExpressionKind::Sqrt ||
         kind == ExpressionKind::Tan || type == ScalarType::Float ||
         (expression.kind == Expr::Kind::BuiltinPow && rhs &&
@@ -1491,7 +1511,7 @@ private:
         {.kind = kind, .type = type, .lhs = lhs, .rhs = rhs.value_or(0)});
   }
 
-  [[nodiscard]] std::uint64_t
+  [[nodiscard]] uint64_t
   constantWidth(const std::optional<SyntaxExpressionId> size,
                 SMLoc location) const {
     if (!size) {
@@ -1504,23 +1524,23 @@ private:
     if (!isInteger(constant.type)) {
       fail(location, "register width must be an integer expression");
     }
-    const auto value = constant.type == ScalarType::Uint
-                           ? std::get<std::uint64_t>(constant.value)
-                           : static_cast<std::uint64_t>(
-                                 std::get<std::int64_t>(constant.value));
+    const auto value =
+        constant.type == ScalarType::Uint
+            ? std::get<uint64_t>(constant.value)
+            : static_cast<uint64_t>(std::get<int64_t>(constant.value));
     if (value == 0 || (constant.type == ScalarType::Int &&
-                       std::get<std::int64_t>(constant.value) < 0)) {
+                       std::get<int64_t>(constant.value) < 0)) {
       fail(location, "register width must be greater than zero");
     }
-    if (value > registerWidthLimit) {
+    if (value > REGISTER_WIDTH_LIMIT) {
       fail(location, Twine("register width exceeds the limit of ") +
-                         Twine(registerWidthLimit));
+                         Twine(REGISTER_WIDTH_LIMIT));
     }
     return value;
   }
 
-  [[nodiscard]] std::optional<std::uint64_t>
-  constantIndex(const SyntaxExpressionId id, const std::uint64_t width,
+  [[nodiscard]] std::optional<uint64_t>
+  constantIndex(const SyntaxExpressionId id, const uint64_t width,
                 SMLoc location) const {
     if (!isConstantExpression(id)) {
       return std::nullopt;
@@ -1531,12 +1551,12 @@ private:
     }
     auto value = asSigned(constant);
     if (value < 0) {
-      value += static_cast<std::int64_t>(width);
+      value += static_cast<int64_t>(width);
     }
     if (value < 0) {
       fail(location, "index is out of bounds");
     }
-    return static_cast<std::uint64_t>(value);
+    return static_cast<uint64_t>(value);
   }
 
   void analyzeTopLevelBody() {
@@ -1726,8 +1746,7 @@ private:
           program.registers[targetReg].width) {
         fail(location, "bit-register assignment widths must match");
       }
-      for (std::uint64_t bit = 0; bit < program.registers[targetReg].width;
-           ++bit) {
+      for (uint64_t bit = 0; bit < program.registers[targetReg].width; ++bit) {
         markBitInitialized({.reg = targetReg, .index = bit});
       }
       destination.push_back(
@@ -1776,9 +1795,9 @@ private:
         return declaration.output;
       }
     }();
-    if (width > totalRegisterElementLimit - totalRegisterElements) {
+    if (width > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
       fail(location, Twine("total register elements exceed the limit of ") +
-                         Twine(totalRegisterElementLimit));
+                         Twine(TOTAL_REGISTER_ELEMENT_LIMIT));
     }
     totalRegisterElements += width;
     program.registers.push_back(
@@ -1903,7 +1922,7 @@ private:
         if (declaration.kind != RegisterKind::Qubit) {
           continue;
         }
-        for (std::uint64_t index = 0; index < declaration.width; ++index) {
+        for (uint64_t index = 0; index < declaration.width; ++index) {
           qubits.push_back({.kind = QubitReferenceKind::Register,
                             .symbol = static_cast<RegisterId>(registerId),
                             .index = index});
@@ -1970,15 +1989,14 @@ private:
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations, beforeBitGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
-    for (std::size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
+    for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
-      for (std::size_t bit = 0; bit < beforeBitsInitialized[reg]->size();
-           ++bit) {
+      for (size_t bit = 0; bit < beforeBitsInitialized[reg]->size(); ++bit) {
         merged[bit] = (*afterThenBitsInitialized[reg])[bit] &&
                       (*afterElseBitsInitialized[reg])[bit];
       }
     }
-    for (std::size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
+    for (size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
       auto& merged = mutableDynamicBitFacts(static_cast<RegisterId>(reg));
       merged.clear();
       for (const auto& thenFact : *afterThenDynamicBitFacts[reg]) {
@@ -1992,13 +2010,13 @@ private:
         }
       }
     }
-    for (std::size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
+    for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
       initializedScalars[scalar] =
           afterThenInitialized[scalar] && afterElseInitialized[scalar];
       scalarGenerations[scalar] =
           std::max(afterThenGenerations[scalar], afterElseGenerations[scalar]);
     }
-    for (std::size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
+    for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
       bitGenerations[reg] =
           std::max(afterThenBitGenerations[reg], afterElseBitGenerations[reg]);
     }
@@ -2016,8 +2034,8 @@ private:
     }
     const auto constantIsZero = [](const Constant& value) {
       return value.type == ScalarType::Uint
-                 ? std::get<std::uint64_t>(value.value) == 0
-                 : std::get<std::int64_t>(value.value) == 0;
+                 ? std::get<uint64_t>(value.value) == 0
+                 : std::get<int64_t>(value.value) == 0;
     };
     if (isConstantExpression(loop.step) &&
         constantIsZero(evaluateConstant(loop.step))) {
@@ -2062,39 +2080,44 @@ private:
       const auto compareRangeValues = [&](const Constant& lhs,
                                           const Constant& rhs) {
         if (!unsignedEndpoints) {
-          const auto left = std::get<std::int64_t>(lhs.value);
-          const auto right = std::get<std::int64_t>(rhs.value);
-          return left < right ? -1 : left > right ? 1 : 0;
+          const auto left = std::get<int64_t>(lhs.value);
+          const auto right = std::get<int64_t>(rhs.value);
+          if (left < right) {
+            return -1;
+          }
+          return left > right ? 1 : 0;
         }
         const auto asUnsigned = [](const Constant& value) {
-          return value.type == ScalarType::Uint
-                     ? std::get<std::uint64_t>(value.value)
-                     : static_cast<std::uint64_t>(
-                           std::get<std::int64_t>(value.value));
+          if (value.type == ScalarType::Uint) {
+            return std::get<uint64_t>(value.value);
+          }
+          return static_cast<uint64_t>(std::get<int64_t>(value.value));
         };
         const auto left = asUnsigned(lhs);
         const auto right = asUnsigned(rhs);
-        return left < right ? -1 : left > right ? 1 : 0;
+        if (left < right) {
+          return -1;
+        }
+        return left > right ? 1 : 0;
       };
       const bool positiveStep = stepConstant.type == ScalarType::Uint ||
-                                std::get<std::int64_t>(stepConstant.value) > 0;
+                                std::get<int64_t>(stepConstant.value) > 0;
       const auto endpointOrder =
           compareRangeValues(startConstant, stopConstant);
       const bool nonempty =
           positiveStep ? endpointOrder <= 0 : endpointOrder >= 0;
       if (nonempty) {
-        for (std::size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
+        for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
           initializedBits[reg] = afterBodyBitsInitialized[reg];
         }
-        for (std::size_t scalar = 0; scalar < beforeInitialized.size();
-             ++scalar) {
+        for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
           initializedScalars[scalar] = afterBodyInitialized[scalar];
           scalarGenerations[scalar] = afterBodyGenerations[scalar];
         }
-        for (std::size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
+        for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
           bitGenerations[reg] = afterBodyBitGenerations[reg];
         }
-        for (std::size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
+        for (size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
           dynamicBitFacts[reg] = afterBodyDynamicBitFacts[reg];
         }
       }
@@ -2118,11 +2141,11 @@ private:
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations, beforeBitGenerations);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
-    for (std::size_t scalar = 0; scalar < beforeGenerations.size(); ++scalar) {
+    for (size_t scalar = 0; scalar < beforeGenerations.size(); ++scalar) {
       scalarGenerations[scalar] =
           std::max(beforeGenerations[scalar], afterBodyGenerations[scalar]);
     }
-    for (std::size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
+    for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
       bitGenerations[reg] =
           std::max(beforeBitGenerations[reg], afterBodyBitGenerations[reg]);
     }
@@ -2217,15 +2240,14 @@ private:
         const auto expected = evaluateConstant(*condition.rhs);
         if (!isInteger(expected.type) ||
             (expected.type == ScalarType::Int &&
-             std::get<std::int64_t>(expected.value) < 0)) {
+             std::get<int64_t>(expected.value) < 0)) {
           fail(condition.location,
                "OpenQASM 2 register conditions require an unsigned integer");
         }
         const auto expectedValue =
             expected.type == ScalarType::Uint
-                ? std::get<std::uint64_t>(expected.value)
-                : static_cast<std::uint64_t>(
-                      std::get<std::int64_t>(expected.value));
+                ? std::get<uint64_t>(expected.value)
+                : static_cast<uint64_t>(std::get<int64_t>(expected.value));
         auto bits = resolveBits({.location = lhsSyntax.location,
                                  .identifier = lhsSyntax.identifier});
         for (const auto& bit : bits) {
@@ -2335,7 +2357,7 @@ private:
     std::string callee = call.identifier.str();
     const GateCatalogEntry* standard = lookupGate(callee);
     auto custom = customGates.find(callee);
-    std::uint64_t compatibilityControls = 0;
+    uint64_t compatibilityControls = 0;
     if (standard == nullptr && custom == customGates.end() &&
         program.openQASM2) {
       auto stripped = callee;
@@ -2378,7 +2400,7 @@ private:
     }
 
     std::vector<GateModifier> modifiers;
-    std::size_t addedControls = compatibilityControls;
+    size_t addedControls = compatibilityControls;
     if (addedControls > call.operands.size()) {
       fail(call.location, "Invalid number of qubit operands for gate '" +
                               call.identifier + "'.");
@@ -2402,7 +2424,7 @@ private:
         break;
       case Modifier::Kind::Ctrl:
       case Modifier::Kind::NegCtrl: {
-        std::uint64_t count = 1;
+        uint64_t count = 1;
         std::optional<ExpressionId> operand;
         if (modifier.argument) {
           if (!isConstantExpression(*modifier.argument)) {
@@ -2413,15 +2435,15 @@ private:
           if (!isInteger(constant.type) || asSigned(constant) <= 0) {
             fail(call.location, "gate control count must be positive");
           }
-          count = static_cast<std::uint64_t>(asSigned(constant));
-          operand = addConstant({.type = ScalarType::Int,
-                                 .value = static_cast<std::int64_t>(count)});
+          count = static_cast<uint64_t>(asSigned(constant));
+          operand = addConstant(
+              {.type = ScalarType::Int, .value = static_cast<int64_t>(count)});
         }
         if (count > call.operands.size() - addedControls) {
           fail(call.location, "Invalid number of qubit operands for gate '" +
                                   call.identifier + "'.");
         }
-        addedControls += static_cast<std::size_t>(count);
+        addedControls += static_cast<size_t>(count);
         modifiers.push_back({.kind = modifier.kind == Modifier::Kind::Ctrl
                                          ? ModifierKind::Ctrl
                                          : ModifierKind::NegCtrl,
@@ -2431,12 +2453,11 @@ private:
       }
     }
     if (compatibilityControls != 0) {
-      modifiers.insert(
-          modifiers.begin(),
-          {.kind = ModifierKind::Ctrl,
-           .operand = addConstant(
-               {.type = ScalarType::Int,
-                .value = static_cast<std::int64_t>(compatibilityControls)})});
+      modifiers.insert(modifiers.begin(),
+                       {.kind = ModifierKind::Ctrl,
+                        .operand = addConstant({.type = ScalarType::Int,
+                                                .value = static_cast<int64_t>(
+                                                    compatibilityControls)})});
     }
 
     const auto baseOperandCount = call.operands.size() - addedControls;
@@ -2446,9 +2467,9 @@ private:
                               call.identifier + "'.");
     }
 
-    std::size_t emittedOperandCount = call.operands.size();
+    size_t emittedOperandCount = call.operands.size();
     if (standard != nullptr && standard->variadicControls) {
-      std::size_t activeBaseOperands = baseOperandCount;
+      size_t activeBaseOperands = baseOperandCount;
       if (standard->name == "mcx_vchain") {
         if (baseOperandCount < 5) {
           fail(call.location,
@@ -2468,13 +2489,13 @@ private:
           {.kind = ModifierKind::Ctrl,
            .operand = addConstant(
                {.type = ScalarType::Int,
-                .value = static_cast<std::int64_t>(intrinsicControls)})});
+                .value = static_cast<int64_t>(intrinsicControls)})});
       callee = canonicalGateName(standard->lowering).str();
       emittedOperandCount = addedControls + activeBaseOperands;
     }
 
     std::vector<std::vector<QubitReference>> selections;
-    std::size_t broadcastWidth = 1;
+    size_t broadcastWidth = 1;
     for (const auto& operand : call.operands) {
       auto selection = resolveQubitOperand(operand);
       if (selection.size() > 1) {
@@ -2489,7 +2510,7 @@ private:
 
     std::vector<GateApplication> applications;
     applications.reserve(broadcastWidth);
-    for (std::size_t index = 0; index < broadcastWidth; ++index) {
+    for (size_t index = 0; index < broadcastWidth; ++index) {
       GateApplication application{
           .callee = callee, .parameters = parameters, .modifiers = modifiers};
       for (const auto& selection :
@@ -2548,7 +2569,7 @@ private:
     if (!operand.index) {
       std::vector<QubitReference> selection;
       selection.reserve(width);
-      for (std::uint64_t index = 0; index < width; ++index) {
+      for (uint64_t index = 0; index < width; ++index) {
         selection.push_back({.kind = QubitReferenceKind::Register,
                              .symbol = reg,
                              .index = index});
@@ -2586,7 +2607,7 @@ private:
     if (!reference.index) {
       std::vector<frontend::BitReference> result;
       result.reserve(width);
-      for (std::uint64_t index = 0; index < width; ++index) {
+      for (uint64_t index = 0; index < width; ++index) {
         result.push_back({.reg = reg, .index = index});
       }
       return result;
@@ -2613,7 +2634,7 @@ private:
                        [](const bool initialized) { return initialized; })) {
         return;
       }
-      std::vector<std::pair<std::uint64_t, std::uint64_t>> dependencies;
+      std::vector<std::pair<uint64_t, uint64_t>> dependencies;
       collectDependencies(*bit.dynamicIndex, dependencies);
       if (llvm::any_of(*dynamicBitFacts[bit.reg], [&](const auto& fact) {
             return fact.dependencies == dependencies &&

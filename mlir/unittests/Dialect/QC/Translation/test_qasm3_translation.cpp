@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Support/IRVerification.h"
@@ -24,6 +25,7 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
@@ -34,6 +36,8 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -136,7 +140,9 @@ static SmallVector<Value> legacyMultipleControlledU(qc::QCProgramBuilder& b) {
 
 using Complex = std::complex<double>;
 
-template <std::size_t Dimension> struct TestMatrix {
+namespace {
+
+template <size_t Dimension> struct TestMatrix {
   std::array<Complex, Dimension * Dimension> data{};
 
   template <typename... Elements>
@@ -147,27 +153,26 @@ template <std::size_t Dimension> struct TestMatrix {
 
   [[nodiscard]] static TestMatrix identity() {
     TestMatrix result;
-    for (std::size_t diagonal = 0; diagonal < Dimension; ++diagonal) {
+    for (size_t diagonal = 0; diagonal < Dimension; ++diagonal) {
       result(diagonal, diagonal) = 1.0;
     }
     return result;
   }
 
-  [[nodiscard]] Complex& operator()(const std::size_t row,
-                                    const std::size_t column) {
-    return data[row * Dimension + column];
+  [[nodiscard]] Complex& operator()(const size_t row, const size_t column) {
+    return data[(row * Dimension) + column];
   }
 
-  [[nodiscard]] Complex operator()(const std::size_t row,
-                                   const std::size_t column) const {
-    return data[row * Dimension + column];
+  [[nodiscard]] Complex operator()(const size_t row,
+                                   const size_t column) const {
+    return data[(row * Dimension) + column];
   }
 
   [[nodiscard]] TestMatrix operator*(const TestMatrix& rhs) const {
     TestMatrix result;
-    for (std::size_t row = 0; row < Dimension; ++row) {
-      for (std::size_t column = 0; column < Dimension; ++column) {
-        for (std::size_t inner = 0; inner < Dimension; ++inner) {
+    for (size_t row = 0; row < Dimension; ++row) {
+      for (size_t column = 0; column < Dimension; ++column) {
+        for (size_t inner = 0; inner < Dimension; ++inner) {
           result(row, column) += (*this)(row, inner) * rhs(inner, column);
         }
       }
@@ -190,9 +195,9 @@ template <std::size_t Dimension> struct TestMatrix {
 
   [[nodiscard]] TestMatrix adjoint() const {
     TestMatrix result;
-    for (std::size_t row = 0; row < Dimension; ++row) {
-      for (std::size_t column = 0; column < Dimension; ++column) {
-        result(row, column) = std::conj((*this)(column, row));
+    for (size_t row = 0; row < Dimension; ++row) {
+      for (size_t column = 0; column < Dimension; ++column) {
+        result(row, column) = std::conj(data[(column * Dimension) + row]);
       }
     }
     return result;
@@ -210,8 +215,10 @@ template <std::size_t Dimension> struct TestMatrix {
 using Matrix2 = TestMatrix<2>;
 using Matrix4 = TestMatrix<4>;
 
+} // namespace
+
 [[nodiscard]] static Matrix4 embedInTwoQubit(const Matrix2& gate,
-                                             const std::size_t qubit) {
+                                             const size_t qubit) {
   EXPECT_LT(qubit, 2U);
   if (qubit == 0) {
     return Matrix4::fromElements(
@@ -228,7 +235,7 @@ openQASM3UMatrix(const double theta, const double phi, const double lambda) {
   using namespace std::complex_literals;
   const auto thetaPhase = std::exp(1i * theta);
   const auto common = 0.5 * (1.0 + thetaPhase);
-  const auto difference = 0.5i * (1.0 - thetaPhase);
+  const auto difference = Complex{0.0, 0.5} * (1.0 - thetaPhase);
   return Matrix2::fromElements(common, -std::exp(1i * lambda) * difference,
                                std::exp(1i * phi) * difference,
                                std::exp(1i * (phi + lambda)) * common);
@@ -248,7 +255,7 @@ conventionalUMatrix(const double theta, const double phi, const double lambda) {
 openQASM2UMatrix(const double theta, const double phi, const double lambda) {
   using namespace std::complex_literals;
   return conventionalUMatrix(theta, phi, lambda) *
-         std::exp(-0.5i * (phi + lambda));
+         std::exp(Complex{0.0, -0.5} * (phi + lambda));
 }
 
 [[nodiscard]] static Matrix4 controlledMatrix(const Matrix2& body,
@@ -289,7 +296,7 @@ openQASM2UMatrix(const double theta, const double phi, const double lambda) {
   return std::nullopt;
 }
 
-[[nodiscard]] static Matrix2 integerPower(Matrix2 base, std::int64_t exponent) {
+[[nodiscard]] static Matrix2 integerPower(Matrix2 base, int64_t exponent) {
   if (exponent < 0) {
     base = base.adjoint();
     exponent = -exponent;
@@ -344,7 +351,7 @@ evaluateOneQubitOperation(Operation* operation) {
     const auto exponent = evaluateScalar(power.getExponent());
     const auto body = evaluateOneQubitRegion(power.getRegion());
     if (exponent && body && std::trunc(*exponent) == *exponent) {
-      return integerPower(*body, static_cast<std::int64_t>(*exponent));
+      return integerPower(*body, static_cast<int64_t>(*exponent));
     }
   }
   return std::nullopt;
@@ -366,7 +373,7 @@ evaluateOneQubitRegion(Region& region) {
   return result;
 }
 
-[[nodiscard]] static std::optional<std::size_t>
+[[nodiscard]] static std::optional<size_t>
 topLevelQubitIndex(const Value qubit) {
   auto load = qubit.getDefiningOp<memref::LoadOp>();
   if (!load || load.getIndices().size() != 1) {
@@ -380,7 +387,7 @@ topLevelQubitIndex(const Value qubit) {
   if (!value || value.getInt() < 0) {
     return std::nullopt;
   }
-  return static_cast<std::size_t>(value.getInt());
+  return static_cast<size_t>(value.getInt());
 }
 
 [[nodiscard]] static Matrix2
@@ -454,24 +461,28 @@ TEST(QASM3TranslationTest, PreservesOpenQASMGatePhaseConventions) {
   const auto qasm3U = openQASM3UMatrix(theta, phi, lambda);
   const auto qasm2U = openQASM2UMatrix(theta, phi, lambda);
 
-  const struct {
+  struct OneQubitCase {
     llvm::StringRef source;
     Matrix2 expected;
-  } oneQubitCases[] = {
-      {"OPENQASM 3.1; qubit q; U(0.37, -0.29, 0.83) q;", qasm3U},
-      {"OPENQASM 2.0; qreg q[1]; U(0.37, -0.29, 0.83) q[0];", qasm2U},
-      {"OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
-       "u2(-0.29, 0.83) q;",
-       openQASM2UMatrix(std::numbers::pi / 2.0, phi, lambda)},
-      {"OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
-       "u3(0.37, -0.29, 0.83) q;",
-       qasm2U},
-      {"OPENQASM 3.1; qubit q; u(0.37, -0.29, 0.83) q;", qasm2U},
-      {"OPENQASM 3.1; qubit q; inv @ U(0.37, -0.29, 0.83) q;",
-       qasm3U.adjoint()},
-      {"OPENQASM 3.1; qubit q; pow(2) @ U(0.37, -0.29, 0.83) q;",
-       qasm3U * qasm3U},
   };
+  const auto oneQubitCases = std::to_array<OneQubitCase>({
+      {.source = "OPENQASM 3.1; qubit q; U(0.37, -0.29, 0.83) q;",
+       .expected = qasm3U},
+      {.source = "OPENQASM 2.0; qreg q[1]; U(0.37, -0.29, 0.83) q[0];",
+       .expected = qasm2U},
+      {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
+                 "u2(-0.29, 0.83) q;",
+       .expected = openQASM2UMatrix(std::numbers::pi / 2.0, phi, lambda)},
+      {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
+                 "u3(0.37, -0.29, 0.83) q;",
+       .expected = qasm2U},
+      {.source = "OPENQASM 3.1; qubit q; u(0.37, -0.29, 0.83) q;",
+       .expected = qasm2U},
+      {.source = "OPENQASM 3.1; qubit q; inv @ U(0.37, -0.29, 0.83) q;",
+       .expected = qasm3U.adjoint()},
+      {.source = "OPENQASM 3.1; qubit q; pow(2) @ U(0.37, -0.29, 0.83) q;",
+       .expected = qasm3U * qasm3U},
+  });
   for (const auto& test : oneQubitCases) {
     SCOPED_TRACE(test.source.str());
     EXPECT_TRUE(
@@ -481,23 +492,24 @@ TEST(QASM3TranslationTest, PreservesOpenQASMGatePhaseConventions) {
   const auto controlledQASM3 = controlledMatrix(qasm3U);
   const auto controlledQASM2 = controlledMatrix(qasm2U);
   const auto phasedQASM3 = qasm3U * std::exp(std::complex<double>{0.0, gamma});
-  const struct {
+  struct TwoQubitCase {
     llvm::StringRef source;
     Matrix4 expected;
-  } twoQubitCases[] = {
-      {"OPENQASM 3.1; qubit[2] q; "
-       "ctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
-       controlledQASM3},
-      {"OPENQASM 3.1; qubit[2] q; "
-       "negctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
-       controlledMatrix(qasm3U, true)},
-      {"OPENQASM 3.1; include \"stdgates.inc\"; qubit[2] q; "
-       "cu(0.37, -0.29, 0.83, -0.41) q[0], q[1];",
-       controlledMatrix(phasedQASM3)},
-      {"OPENQASM 3.1; include \"qelib1.inc\"; qubit[2] q; "
-       "cu3(0.37, -0.29, 0.83) q[0], q[1];",
-       controlledQASM2},
   };
+  const auto twoQubitCases = std::to_array<TwoQubitCase>({
+      {.source = "OPENQASM 3.1; qubit[2] q; "
+                 "ctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
+       .expected = controlledQASM3},
+      {.source = "OPENQASM 3.1; qubit[2] q; "
+                 "negctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
+       .expected = controlledMatrix(qasm3U, true)},
+      {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit[2] q; "
+                 "cu(0.37, -0.29, 0.83, -0.41) q[0], q[1];",
+       .expected = controlledMatrix(phasedQASM3)},
+      {.source = "OPENQASM 3.1; include \"qelib1.inc\"; qubit[2] q; "
+                 "cu3(0.37, -0.29, 0.83) q[0], q[1];",
+       .expected = controlledQASM2},
+  });
   for (const auto& test : twoQubitCases) {
     SCOPED_TRACE(test.source.str());
     EXPECT_TRUE(
