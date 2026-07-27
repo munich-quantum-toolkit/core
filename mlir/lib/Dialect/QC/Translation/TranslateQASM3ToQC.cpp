@@ -13,7 +13,6 @@
 #include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/Utils/Utils.h"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Gate.hpp"
 #include "qasm3/InstVisitor.hpp"
@@ -1024,9 +1023,9 @@ public:
     }
     const auto reg = classicalRegisters.find(regName);
     assert(reg != classicalRegisters.end());
-    auto indexValue = utils::variantToValue(
-        builder, builder.getLoc(),
-        std::variant<int64_t, Value>{static_cast<int64_t>(index)});
+    auto indexValue =
+        arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index))
+            .getResult();
     return memref::LoadOp::create(builder, reg->second.memref, indexValue)
         .getResult();
   }

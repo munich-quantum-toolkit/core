@@ -20,7 +20,6 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -693,9 +692,9 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
     return failure();
   }
   const auto& [regMemref, localIdx] = state.bitMap[bitIdx];
-  auto index = utils::variantToValue(
-      builder, builder.getLoc(),
-      std::variant<int64_t, Value>{static_cast<int64_t>(localIdx)});
+  auto index =
+      arith::ConstantIndexOp::create(builder, static_cast<int64_t>(localIdx))
+          .getResult();
   auto controlValue =
       memref::LoadOp::create(builder, regMemref, index).getResult();
   auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
@@ -738,7 +737,6 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   } else {
     builder.scfIf(condition.getResult(), thenBuilder);
   }
-  state.measuredBits = measuredBefore;
 
   if (failed(thenResult)) {
     llvm::errs() << "Failed to translate then branch of IfElseOperation\n";
