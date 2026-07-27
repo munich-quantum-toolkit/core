@@ -482,8 +482,8 @@ public:
    * @param definition The definition to validate and store.
    * @returns Whether the definition was inserted.
    * @throws std::invalid_argument If the definition is incomplete.
-   * @details An existing ID is the only ignored condition. The complete
-   * definition is validated before checking for that ID.
+   * @details Existing and explicitly disabled IDs are not inserted. The
+   * complete definition is validated before checking for either condition.
    */
   auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
 

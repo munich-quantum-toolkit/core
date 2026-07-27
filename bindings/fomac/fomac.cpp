@@ -677,7 +677,8 @@ Raises:
       "definition"_a,
       R"pb(Register a valid QDMI device definition if its ID is absent.
 
-An existing ID is the only ignored condition. Invalid definitions still raise.
+Existing and explicitly disabled IDs are not inserted. Invalid definitions
+still raise.
 
 Args:
     definition: Definition to validate and store.

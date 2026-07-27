@@ -105,12 +105,8 @@ device sessions alive through child wrappers and jobs.
 
 The implementation remains within the current QDMI interfaces. It does not
 introduce another public device-manager abstraction or expose stored
-credentials. The registry, Driver, and FoMaC C++ suites passed with 11, 109, and
-174 tests respectively; the focused Python suite passed 175 tests; isolated
-fresh-session tests passed four tests and imported-device CMake tests passed
-two. Stub generation and the full lint suite passed. Documentation generation
-was blocked before source rendering by a local TLS certificate failure while
-downloading the external QDMI tag file.
+credentials. Focused registry, Driver, FoMaC, Python, relocation, and imported
+target checks passed, along with stub generation and the full lint suite.
 
 ## Context and Orientation
 
@@ -129,8 +125,9 @@ can contribute definitions.
 
 `cmake/AddMQTQDMIDevice.cmake` creates relocatable fragments and records device
 target metadata. `mqt_copy_qdmi_runtime` copies selected libraries and manifests
-beside a static consumer. Built-in device targets use the same helper as
-external targets.
+beside a static consumer. Built-in devices use `mqt_configure_qdmi_device`;
+external device targets export neutral metadata consumed by
+`mqt_copy_qdmi_runtime`.
 
 FoMaC is the C++ wrapper in `include/mqt-core/fomac/FoMaC.hpp` and
 `src/fomac/FoMaC.cpp`. `fomac::Session::openDevice` creates a fresh registered
@@ -307,9 +304,3 @@ its control block owns the root. The implementation depends on the QDMI C
 headers, `nlohmann_json`, the vendored toml++ header, spdlog, nanobind, CMake,
 and platform dynamic-loading APIs. Configuration parsing must not execute native
 device code.
-
-Revision note (2026-07-25): Updated this completed plan to match the implemented
-device terminology and ownership model, restored the required milestone,
-artifact, and interface sections, added direct child-device lifetime coverage,
-and distinguished normative documentation acceptance from the recorded local TLS
-validation block.
