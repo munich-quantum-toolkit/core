@@ -726,15 +726,15 @@ static SmallVector<Value> conditionLiteral(qc::QCProgramBuilder& b) {
   return {b.measure(q[0]), b.measure(q[1])};
 }
 
-static Value conditionMeasurement(qc::QCProgramBuilder& b) {
+static SmallVector<Value> conditionMeasurement(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
   auto condition = b.measure(q[0]);
   b.scfIf(condition, [&] { b.x(q[1]); });
-  return b.measure(q[1]);
+  return {condition, b.measure(q[1])};
 }
 
-static Value conditionAnd(qc::QCProgramBuilder& b) {
+static SmallVector<Value> conditionAnd(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
@@ -742,10 +742,10 @@ static Value conditionAnd(qc::QCProgramBuilder& b) {
   auto c1 = b.measure(q[1]);
   auto condition = arith::SelectOp::create(b, c0, c1, b.boolConstant(false));
   b.scfIf(condition, [&] { b.x(q[2]); });
-  return b.measure(q[2]);
+  return {c0, c1, b.measure(q[2])};
 }
 
-static Value conditionOr(qc::QCProgramBuilder& b) {
+static SmallVector<Value> conditionOr(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
@@ -753,10 +753,10 @@ static Value conditionOr(qc::QCProgramBuilder& b) {
   auto c1 = b.measure(q[1]);
   auto condition = arith::SelectOp::create(b, c0, b.boolConstant(true), c1);
   b.scfIf(condition, [&] { b.x(q[2]); }, [&] { b.h(q[2]); });
-  return b.measure(q[2]);
+  return {c0, c1, b.measure(q[2])};
 }
 
-static Value conditionNotAndOr(qc::QCProgramBuilder& b) {
+static SmallVector<Value> conditionNotAndOr(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.h(q[0]);
   b.h(q[1]);
@@ -769,10 +769,10 @@ static Value conditionNotAndOr(qc::QCProgramBuilder& b) {
   auto condition =
       arith::SelectOp::create(b, notBoth, b.boolConstant(true), c2);
   b.scfIf(condition, [&] { b.x(q[3]); });
-  return b.measure(q[3]);
+  return {c0, c1, c2, b.measure(q[3])};
 }
 
-static Value conditionBoolVariable(qc::QCProgramBuilder& b) {
+static SmallVector<Value> conditionBoolVariable(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
@@ -781,7 +781,7 @@ static Value conditionBoolVariable(qc::QCProgramBuilder& b) {
   auto both = arith::SelectOp::create(b, c0, c1, b.boolConstant(false));
   auto neither = arith::XOrIOp::create(b, both, b.boolConstant(true));
   b.scfIf(neither, [&] { b.x(q[2]); });
-  return b.measure(q[2]);
+  return {c0, c1, b.measure(q[2])};
 }
 
 static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
