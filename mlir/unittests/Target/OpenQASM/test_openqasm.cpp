@@ -1494,10 +1494,10 @@ TEST(OpenQASMFrontendTest, RejectsIncludesInsideBlocks) {
 }
 
 TEST(OpenQASMFrontendTest, AcceptsBothIncludeStringQuoteStyles) {
-  EXPECT_TRUE(oq3::frontend::parseOpenQASM(
-      "OPENQASM 3.1; include \"stdgates.inc\";"));
-  EXPECT_TRUE(oq3::frontend::parseOpenQASM(
-      "OPENQASM 3.1; include 'stdgates.inc';"));
+  EXPECT_TRUE(
+      oq3::frontend::parseOpenQASM("OPENQASM 3.1; include \"stdgates.inc\";"));
+  EXPECT_TRUE(
+      oq3::frontend::parseOpenQASM("OPENQASM 3.1; include 'stdgates.inc';"));
 }
 
 TEST(OpenQASMFrontendTest, RejectsInvalidIncludeStringsAtTheOffendingByte) {

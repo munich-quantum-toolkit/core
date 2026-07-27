@@ -147,8 +147,7 @@ struct Symbol {
   }
   switch (initializer.type) {
   case ScalarType::Bool:
-    return destination == ScalarType::Int ||
-           destination == ScalarType::Uint ||
+    return destination == ScalarType::Int || destination == ScalarType::Uint ||
            destination == ScalarType::Float;
   case ScalarType::Int:
     return destination == ScalarType::Float ||
@@ -552,10 +551,9 @@ private:
                           .constant = constant.value});
   }
 
-  [[nodiscard]] Constant
-  promoteConstInitializer(const Constant& initializer,
-                          const ScalarType destination,
-                          const SMLoc location) const {
+  [[nodiscard]] Constant promoteConstInitializer(const Constant& initializer,
+                                                 const ScalarType destination,
+                                                 const SMLoc location) const {
     if (!canImplicitlyPromote(initializer, destination)) {
       fail(location, "constant initializer of type '" +
                          scalarTypeName(initializer.type) +
@@ -1850,8 +1848,8 @@ private:
     for (std::size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
       initializedScalars[scalar] =
           afterThenInitialized[scalar] && afterElseInitialized[scalar];
-      scalarGenerations[scalar] = std::max(afterThenGenerations[scalar],
-                                           afterElseGenerations[scalar]);
+      scalarGenerations[scalar] =
+          std::max(afterThenGenerations[scalar], afterElseGenerations[scalar]);
     }
     return addStatement(location, std::move(result));
   }
