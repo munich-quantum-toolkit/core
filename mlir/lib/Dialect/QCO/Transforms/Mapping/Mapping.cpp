@@ -1108,16 +1108,15 @@ private:
     window.reserve(1 + nlookahead);
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
+        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
 
           for (const auto& [op, indices] : ready) {
-            if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+            if (isa<UnitaryOpInterface>(op)) {
               const auto i0 = indices[0];
               const auto i1 = indices[1];
-
               const auto prog0 = infos.lookupProgram(i0);
               const auto prog1 = infos.lookupProgram(i1);
 
@@ -1127,7 +1126,7 @@ private:
               }
 
               skipQubitPairBlock<Direction>(wires[i0], wires[i1]);
-              released.emplace_back(u);
+              released.emplace_back(op);
               return WalkResult::advance();
             }
 
@@ -1189,13 +1188,14 @@ private:
   template <WireDirection Direction>
   RecursiveRoutingStack advance(Wires& wires, const WireInfos& infos,
                                 const Layout& layout) {
+    DenseSet<Operation*> visited;
     RecursiveRoutingStack stack;
 
     // Advance wires past all executable gates and push operations with
     // nested regions and the respective wire indices of their inputs onto the
     // result stack.
 
-    walkProgramGraph<Direction>(wires, [&](const ReadyRange& ready,
+    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
                                            ReleasedOps& released) {
       if (ready.empty()) {
         return WalkResult::advance();
@@ -1217,14 +1217,11 @@ private:
           continue;
         }
 
-        if (op->getNumRegions() > 0) {
+        if (op->getNumRegions() > 0 && visited.insert(op).second) {
           assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
           stack.emplace_back(op, indices);
           continue;
         }
-
-        llvm::reportFatalInternalError("unhandled op type");
-        llvm_unreachable("unhandled op type");
       }
 
       if (released.empty()) {
