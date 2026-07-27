@@ -242,6 +242,7 @@ known-first-party = ["mqt.core"]
 "python/mqt/core/_compat/**.py" = ["TID251", "A005"]
 "python/mqt/core/__main__.py" = ["T201"]
 "eval/dd_evaluation.py" = ["T201"]
+"eval/mapping_evaluation.py" = ["INP001"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
