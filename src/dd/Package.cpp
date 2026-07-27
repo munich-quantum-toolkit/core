@@ -166,6 +166,11 @@ namespace {
       " qubits. Please allocate a larger package instance."};
 }
 
+[[noreturn]] void throwGateQubitsNotDistinct() {
+  throw std::runtime_error{
+      "Requested gate has duplicate or overlapping control/target qubits."};
+}
+
 void ensureGateQubitsInRange(const std::size_t nqubits,
                              const qc::Controls& controls,
                              const std::initializer_list<qc::Qubit> targets) {
@@ -178,6 +183,18 @@ void ensureGateQubitsInRange(const std::size_t nqubits,
         return static_cast<std::size_t>(target) >= nqubits;
       })) {
     throwGateQubitOutOfRange(nqubits);
+  }
+
+  std::vector<Qubit> sortedTargets(targets.begin(), targets.end());
+  std::ranges::sort(sortedTargets);
+  if (std::ranges::adjacent_find(sortedTargets) != sortedTargets.end()) {
+    throwGateQubitsNotDistinct();
+  }
+
+  if (std::ranges::any_of(controls, [&targets](const auto& control) {
+        return std::ranges::find(targets, control.qubit) != targets.end();
+      })) {
+    throwGateQubitsNotDistinct();
   }
 }
 

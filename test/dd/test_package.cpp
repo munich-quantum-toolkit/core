@@ -937,6 +937,37 @@ TEST(DDPackageTest, RejectsGateConstructionInEmptyPackage) {
       std::runtime_error);
 }
 
+TEST(DDPackageTest, RejectsOverlappingGateQubits) {
+  auto dd = std::make_unique<Package>(5U);
+  const auto rccxMatrix = opToThreeQubitGateMatrix(qc::RCCX);
+
+  // Duplicate two-qubit targets
+  EXPECT_THROW(dd->makeTwoQubitGateDD(opToTwoQubitGateMatrix(qc::SWAP), 1U, 1U),
+               std::runtime_error);
+
+  // Control coincides with single-qubit target
+  EXPECT_THROW(
+      dd->makeGateDD(opToSingleQubitGateMatrix(qc::X), qc::Controls{{1}}, 1U),
+      std::runtime_error);
+
+  // Duplicate three-qubit targets (cases skipped by RCCXGateDDConstruction)
+  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 0U, 0U, 1U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 0U, 1U, 0U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 2U, 1U, 2U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 1U, 1U, 1U),
+               std::runtime_error);
+
+  // Extra control coincides with an RCCX target
+  EXPECT_THROW(
+      dd->makeThreeQubitGateDD(rccxMatrix, qc::Controls{{1}}, 0U, 1U, 2U),
+      std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, qc::Control{0}, 0U, 1U, 2U),
+               std::runtime_error);
+}
+
 TEST(DDPackageTest, PackageReset) {
   auto dd = std::make_unique<Package>(1);
 
