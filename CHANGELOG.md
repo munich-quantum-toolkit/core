@@ -23,6 +23,9 @@ releases may include breaking changes.
 - ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
   unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
   [**@burgholzer**])
+- ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
+  RCCX, and constant-angle phase gates with a configurable `min-controls`
+  threshold ([#1810]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
   ([**@simon1hofmann**])
@@ -691,6 +694,7 @@ changelogs._
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
 [#1815]: https://github.com/munich-quantum-toolkit/core/pull/1815
 [#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
+[#1810]: https://github.com/munich-quantum-toolkit/core/pull/1810
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
 [#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807

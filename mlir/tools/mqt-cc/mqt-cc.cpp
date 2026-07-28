@@ -182,6 +182,22 @@ parseOutputFormat(const StringRef format) {
   return std::nullopt;
 }
 
+static llvm::cl::opt<bool> enableDecomposeMultiControlled(
+    "decompose-multi-controlled",
+    llvm::cl::desc(
+        "Decompose controlled X/Z/phase gates and qco.rccx with at least "
+        "--decompose-multi-controlled-min-controls controls (default 2)."),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
+    "decompose-multi-controlled-min-controls",
+    llvm::cl::desc(
+        "Minimum control count for --decompose-multi-controlled: decompose "
+        "controlled X/Z/phase gates and qco.rccx with at least this many "
+        "controls (default 2; must be at least 2). Higher values leave smaller "
+        "controlled gates undecomposed."),
+    llvm::cl::init(2));
+
 /**
  * @brief Load and parse a `.qasm` file
  */
@@ -384,6 +400,14 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  if (enableDecomposeMultiControlled &&
+      !isDecomposeMultiControlledConfigValid(
+          decomposeMultiControlledMinControls.getValue())) {
+    llvm::errs()
+        << "decompose-multi-controlled-min-controls must be at least 2 when "
+           "--decompose-multi-controlled is enabled.\n";
+    return 1;
+  }
 
   const auto runPasses =
       [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
@@ -418,6 +442,10 @@ int main(int argc, char** argv) {
               return failure();
             }
           } else {
+            if (enableDecomposeMultiControlled) {
+              populateDecomposeMultiControlledPipeline(
+                  pm, decomposeMultiControlledMinControls.getValue());
+            }
             populateDefaultQCOOptimizationPipeline(pm);
           }
           populateQCOCleanupPipeline(pm);

@@ -153,6 +153,9 @@ class QCOProgram(Program):
     def lift_hadamards(self) -> None:
         """Move Hadamard gates through compatible operations."""
 
+    def decompose_multi_controlled(self, *, min_controls: int = 2) -> None:
+        """Decompose controlled X/Z gates, qco.rccx, and constant-angle phase gates with at least min_controls controls (min_controls must be at least 2)."""
+
     def place_and_route(
         self,
         coupling: Sequence[tuple[int, int]],
