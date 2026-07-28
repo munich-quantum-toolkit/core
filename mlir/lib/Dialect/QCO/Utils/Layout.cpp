@@ -24,10 +24,18 @@
 
 namespace mlir::qco {
 
-Layout Layout::random(const size_t nqubits, const size_t seed) {
-  auto mapping = llvm::to_vector(llvm::seq(nqubits));
-  llvm::shuffle(mapping.begin(), mapping.end(), std::mt19937_64{seed});
-  return fromMapping(mapping);
+Layout Layout::random(const size_t nProgramQubits, const size_t nHardwareQubits,
+                      const size_t seed) {
+  assert(nProgramQubits <= nHardwareQubits &&
+         "cannot place more program qubits than hardware qubits");
+  auto hwIndices = llvm::to_vector(llvm::seq(nHardwareQubits));
+  llvm::shuffle(hwIndices.begin(), hwIndices.end(), std::mt19937_64{seed});
+
+  Layout layout(nProgramQubits, nHardwareQubits);
+  for (size_t prog = 0; prog < nProgramQubits; ++prog) {
+    layout.add(prog, hwIndices[prog]);
+  }
+  return layout;
 }
 
 Layout Layout::fromMapping(ArrayRef<size_t> mapping) {
@@ -39,7 +47,7 @@ Layout Layout::fromMapping(ArrayRef<size_t> mapping) {
     seen.set(hw);
   }
 
-  Layout layout(mapping.size());
+  Layout layout(mapping.size(), mapping.size());
   for (const auto [prog, hw] : enumerate(mapping)) {
     layout.add(prog, hw);
   }
@@ -47,8 +55,8 @@ Layout Layout::fromMapping(ArrayRef<size_t> mapping) {
 }
 
 void Layout::add(const size_t prog, const size_t hw) {
-  assert(prog < nqubits_ && "program index out of bounds");
-  assert(hw < nqubits_ && "hardware index out of bounds");
+  assert(prog < nProgramQubits_ && "program index out of bounds");
+  assert(hw < nHardwareQubits_ && "hardware index out of bounds");
   assert(!programToHardware_.contains(prog) && "program index already mapped");
   assert(!hardwareToProgram_.contains(hw) && "hardware index already mapped");
   programToHardware_[prog] = hw;
@@ -67,24 +75,43 @@ size_t Layout::getHardwareIndex(const size_t prog) const {
   return it->second;
 }
 
-void Layout::swap(const size_t hwA, const size_t hwB) {
-  const auto itA = hardwareToProgram_.find(hwA);
-  const auto itB = hardwareToProgram_.find(hwB);
-  assert(itA != hardwareToProgram_.end() && "hardware index not mapped");
-  assert(itB != hardwareToProgram_.end() && "hardware index not mapped");
-  const auto progA = itA->second;
-  const auto progB = itB->second;
-  itA->second = progB;
-  itB->second = progA;
-  programToHardware_[progA] = hwB;
-  programToHardware_[progB] = hwA;
+bool Layout::hasProgramAt(const size_t hw) const {
+  return hardwareToProgram_.contains(hw);
 }
 
-size_t Layout::nqubits() const { return nqubits_; }
+void Layout::swap(const size_t hwA, const size_t hwB) {
+  assert(hwA < nHardwareQubits_ && "hardware index out of bounds");
+  assert(hwB < nHardwareQubits_ && "hardware index out of bounds");
+  if (hwA == hwB) {
+    return;
+  }
+  // Read the current value on each side (may be empty), then write each to the
+  // other side. Empty is treated as a legitimate value.
+  const auto itA = hardwareToProgram_.find(hwA);
+  const auto itB = hardwareToProgram_.find(hwB);
+  const bool hasA = itA != hardwareToProgram_.end();
+  const bool hasB = itB != hardwareToProgram_.end();
+  const size_t progA = hasA ? itA->second : 0;
+  const size_t progB = hasB ? itB->second : 0;
+  hardwareToProgram_.erase(hwA);
+  hardwareToProgram_.erase(hwB);
+  if (hasA) {
+    hardwareToProgram_[hwB] = progA;
+    programToHardware_[progA] = hwB;
+  }
+  if (hasB) {
+    hardwareToProgram_[hwA] = progB;
+    programToHardware_[progB] = hwA;
+  }
+}
+
+size_t Layout::nProgramQubits() const { return nProgramQubits_; }
+
+size_t Layout::nHardwareQubits() const { return nHardwareQubits_; }
 
 SmallVector<size_t> Layout::getProgramToHardware() const {
-  SmallVector<size_t> result(nqubits_);
-  for (size_t prog = 0; prog < nqubits_; ++prog) {
+  SmallVector<size_t> result(nProgramQubits_);
+  for (size_t prog = 0; prog < nProgramQubits_; ++prog) {
     result[prog] = getHardwareIndex(prog);
   }
   return result;
