@@ -70,9 +70,9 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
     mlir::SmallVector<mlir::Operation*> toVisit{startingOp};
     mlir::SetVector<mlir::Operation*> visited;
 
-    while (!toVisit.empty()) {
-      auto* op = *toVisit.begin();
-      toVisit.erase(toVisit.begin());
+    size_t head = 0;
+    while (head < toVisit.size()) {
+      auto* op = toVisit[head++];
       visited.insert(op);
       for (auto* user : op->getUsers()) {
         // Move the user operation after the current operation.
