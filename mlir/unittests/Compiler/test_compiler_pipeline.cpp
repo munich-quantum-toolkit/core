@@ -75,7 +75,7 @@ struct CompilerPipelineTestCase {
   QIRProgramBuilderFn qirReferenceBuilder;
   bool startFromQuantumComputation = true;
   bool convertToQIR = true;
-  std::vector<std::string> pipelineParams = {};
+  std::vector<std::string> pipelineParams;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const CompilerPipelineTestCase& info);

@@ -1024,7 +1024,7 @@ Value reusedCX(QIRProgramBuilder& b) {
   auto c1 = b.measure(q, 0);
   b.reset(q);
   b.scfIf(c1, [&] { b.x(q); });
-  auto c2 = b.measure(q, 1);
+  b.measure(q, 1);
   return b.intConstant(0);
 }
 
