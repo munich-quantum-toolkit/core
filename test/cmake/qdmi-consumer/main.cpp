@@ -10,10 +10,12 @@
 
 #include "fomac/FoMaC.hpp"
 
+#include <qdmi/constants.h>
+
 #include <array>
 #include <cstddef>
 
-int main(const int argc, char**) {
+int main(const int argc, [[maybe_unused]] char** argv) {
   fomac::Session session;
   const auto devices = session.getDevices();
   if (argc > 1 && !devices.empty()) {

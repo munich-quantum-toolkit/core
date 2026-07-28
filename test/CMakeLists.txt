@@ -25,6 +25,7 @@ if(MLIR_FOUND)
       -S
       "${MQT_CORE_QDMI_CONSUMER_SOURCE_DIR}"
       "-DMQT_CORE_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+      "-DCMAKE_BUILD_TYPE=$<CONFIG>"
       "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
       "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
       "-DMLIR_DIR=${MLIR_DIR}")
@@ -48,7 +49,7 @@ if(MLIR_FOUND)
 
   add_test(NAME mqt-core-cmake-qdmi-consumer-build
            COMMAND ${CMAKE_COMMAND} --build "${MQT_CORE_QDMI_CONSUMER_BINARY_DIR}" --target
-                   mqt-core-qdmi-consumer)
+                   mqt-core-qdmi-consumer --config $<CONFIG>)
   set_tests_properties(mqt-core-cmake-qdmi-consumer-build PROPERTIES FIXTURES_REQUIRED
                                                                      mqt-core-cmake-qdmi-consumer)
 
@@ -68,7 +69,7 @@ if(MLIR_FOUND)
 
   add_test(NAME mqt-core-cmake-spdlog-package-install
            COMMAND ${CMAKE_COMMAND} --build "${MQT_CORE_SPDLOG_PACKAGE_BINARY_DIR}" --target
-                   install)
+                   install --config $<CONFIG>)
   set_tests_properties(
     mqt-core-cmake-spdlog-package-install
     PROPERTIES FIXTURES_REQUIRED mqt-core-cmake-spdlog-package-configure FIXTURES_SETUP
@@ -91,7 +92,7 @@ if(MLIR_FOUND)
 
   add_test(NAME mqt-core-cmake-qdmi-package-consumer-build
            COMMAND ${CMAKE_COMMAND} --build "${MQT_CORE_QDMI_PACKAGE_CONSUMER_BINARY_DIR}" --target
-                   mqt-core-qdmi-consumer)
+                   mqt-core-qdmi-consumer --config $<CONFIG>)
   set_tests_properties(mqt-core-cmake-qdmi-package-consumer-build
                        PROPERTIES FIXTURES_REQUIRED mqt-core-cmake-qdmi-package-consumer)
 
@@ -108,6 +109,12 @@ if(MLIR_FOUND)
     mqt-core-cmake-qdmi-incompatible-spdlog
     PROPERTIES FIXTURES_REQUIRED mqt-core-cmake-spdlog-package WILL_FAIL TRUE
                PASS_REGULAR_EXPRESSION "requires at least 2.0.0")
+
+  # Give static-analysis builds a compile command for the standalone consumer source. The nested
+  # CMake tests above remain responsible for exercising the actual add_subdirectory integration.
+  add_executable(mqt-core-qdmi-consumer-compile-check EXCLUDE_FROM_ALL cmake/qdmi-consumer/main.cpp)
+  target_link_libraries(mqt-core-qdmi-consumer-compile-check PRIVATE MQT::CoreFoMaC
+                                                                     MQT::CoreQDMI_DDSIM_Device)
 endif()
 
 # copy test circuits to build directory

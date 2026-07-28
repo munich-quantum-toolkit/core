@@ -89,8 +89,7 @@ for a textual program and `bytes` for an exact binary payload.
 expects a null-terminated UTF-8 text payload and rejects known binary or
 non-text formats.
 
-The generic submission and program-access APIs intentionally reject QDMI
-calibration and batch-job formats. Calibration jobs do not carry a program,
-while batch jobs contain job handles rather than serialized program bytes. Their
-format identifiers remain available for capability discovery; they require
-dedicated typed APIs.
+The generic submission APIs intentionally reject QDMI calibration and batch-job
+formats. Calibration jobs do not carry a program, while batch jobs contain job
+handles rather than serialized program bytes. Their format identifiers remain
+available for capability discovery; they require dedicated typed APIs.

@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 #include <cstring>
 #include <string>
@@ -112,11 +113,11 @@ TEST(JobParameters, RejectsInteriorNullInTextProgram) {
                 sizeof(QDMI_Program_Format), &fmt),
             QDMI_SUCCESS);
 
-  constexpr char program[] = "OPENQASM 3.0;\0garbage";
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_job_set_parameter(
-          j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, sizeof(program), program),
-      QDMI_ERROR_INVALIDARGUMENT);
+  constexpr auto program = std::to_array("OPENQASM 3.0;\0garbage");
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, program.size(),
+                program.data()),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(JobParameters, ProgramFormatSupport) {

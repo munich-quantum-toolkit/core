@@ -467,11 +467,6 @@ QDMI_Program_Format Job::getProgramFormat() const {
 }
 
 std::vector<std::byte> Job::getProgramBytes() const {
-  if (hasNoGenericProgramPayload(getProgramFormat())) {
-    throw std::invalid_argument(
-        "Calibration and batch jobs do not expose a generic program payload");
-  }
-
   size_t size = 0;
   qdmi::throwIfError(QDMI_job_query_property(job_.get(),
                                              QDMI_JOB_PROPERTY_PROGRAM, 0,
@@ -493,10 +488,6 @@ std::string Job::getProgram() const {
   if (isBinaryProgramFormat(format)) {
     throw std::invalid_argument(
         "Cannot decode a binary program as a string; use getProgramBytes()");
-  }
-  if (hasNoGenericProgramPayload(format)) {
-    throw std::invalid_argument(
-        "Calibration and batch jobs do not expose a generic program payload");
   }
 
   const auto program = getProgramBytes();

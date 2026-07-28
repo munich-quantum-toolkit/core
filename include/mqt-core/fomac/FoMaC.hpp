@@ -659,8 +659,6 @@ public:
 
   /**
    * @brief Gets the submitted program bytes exactly as returned by the device.
-   * @throws std::invalid_argument If the format does not carry a generic
-   * program payload.
    */
   [[nodiscard]] std::vector<std::byte> getProgramBytes() const;
 

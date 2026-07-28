@@ -732,6 +732,21 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
+TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
+  const std::string textProgram = "OPENQASM 3.0;";
+  constexpr std::array bytes{std::byte{0}};
+
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   textProgram, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore =
+                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
+               std::invalid_argument);
+}
+
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
   constexpr auto qasm3Program = "OPENQASM 3.0;";
 
