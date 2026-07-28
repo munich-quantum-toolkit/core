@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -41,45 +42,20 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
    * qubit.
    * @param allocQubit The starting qubit to check (e.g. a newly  allocated
    * qubit).
-   * @return A set of all SinkOp operations reachable from the given
+   * @return A set of all SinkOp operations reachable from the given qubit
    */
   static llvm::DenseSet<mlir::Operation*>
   findAllReachableDeallocs(mlir::Value allocQubit) {
-    // Traverse def-use chain using BFS.
-    llvm::DenseSet<mlir::Operation*> reachableSinks;
-    llvm::SmallVector<mlir::Operation*> toVisit{allocQubit.getUsers().begin(),
-                                                allocQubit.getUsers().end()};
-    llvm::DenseSet<mlir::Operation*> visited;
-    while (!toVisit.empty()) {
-      auto* current = toVisit.back();
-      toVisit.pop_back();
-      visited.insert(current);
+    SetVector<mlir::Operation*> slice;
+    getForwardSlice(allocQubit, &slice);
 
-      // If we reach the dealloc operation, we add it to the list of sinks.
-      if (mlir::isa<SinkOp>(current)) {
-        reachableSinks.insert(current);
-        continue;
-      }
-
-      if (auto yieldOp = mlir::dyn_cast<qco::YieldOp>(current)) {
-        // If we reach a yield operation, we continue from the corresponding
-        // `parent` (e.g. `scf.if`).
-        toVisit.push_back(yieldOp->getParentOp());
-        continue;
-      }
-
-      // Add all users of the current operation to the visit list.
-      for (auto result : current->getResults()) {
-        for (auto* user : result.getUsers()) {
-          if (visited.contains(user)) {
-            continue;
-          }
-          toVisit.push_back(user);
-        }
+    llvm::DenseSet<mlir::Operation*> sinkOps;
+    for (Operation* op : slice) {
+      if (isa<mlir::qco::SinkOp>(op)) {
+        sinkOps.insert(op);
       }
     }
-
-    return reachableSinks;
+    return sinkOps;
   }
 
   /**
