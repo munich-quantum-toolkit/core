@@ -1272,4 +1272,7 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
 /// Creates a circuit with two qubits and a H gate applied to both.
 SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b);
 
+/// Creates a circuit with a single controlled X gate on two individual qubits.
+SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b);
+
 } // namespace mlir::qc

@@ -414,10 +414,9 @@ Value x(QCProgramBuilder& b) {
 }
 
 SmallVector<Value> singleControlledX(QCProgramBuilder& b) {
-  auto q1 = b.allocQubit();
-  auto q2 = b.allocQubit();
-  b.cx(q1, q2);
-  return measureAndReturn(b, {q1, q2});
+  auto q = b.allocQubitRegister(2);
+  b.cx(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
 SmallVector<Value> multipleControlledX(QCProgramBuilder& b) {
@@ -2655,6 +2654,13 @@ SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b) {
   auto q2 = b.allocQubit();
   b.h(q1);
   b.h(q2);
+  return measureAndReturn(b, {q1, q2});
+}
+
+SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b) {
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.cx(q1, q2);
   return measureAndReturn(b, {q1, q2});
 }
 
