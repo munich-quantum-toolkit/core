@@ -1451,9 +1451,9 @@ private:
 
     if constexpr (Mode == RoutingMode::Hot) {
       // Realign terminator values to ensure that i-th input qubit and the
-      // i-th output qubit represent the equivalent hardware qubit. Note:
-      // Because we restore the layout at the end of the scf::ForOp, we don't
-      // require this procedure.
+      // i-th output qubit represent the equivalent hardware qubit. This is
+      // redundant for scf::ForOp because its layout is restored, but handling
+      // every supported region operation uniformly keeps this path simple.
 
       for (const auto& [region, child] :
            llvm::zip_equal(op->getRegions(), children)) {
