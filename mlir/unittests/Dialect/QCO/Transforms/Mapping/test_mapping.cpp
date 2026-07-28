@@ -43,9 +43,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <functional>
 #include <memory>
+#include <random>
 #include <tuple>
 #include <utility>
 
@@ -1144,6 +1144,9 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   const auto& device = GetParam();
   const auto size = 9;
 
+  std::random_device rd;
+  std::mt19937 gen(rd());
+
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
@@ -1195,7 +1198,8 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
         cases.size());
     for (auto& body : bodies) {
       body = [&](ValueRange initArgs) {
-        const auto n = rand() % initArgs.size();
+        std::uniform_int_distribution<size_t> distrib(1UL, initArgs.size());
+        const auto n = distrib(gen);
         SmallVector<Value> caseArgs(initArgs);
         for (size_t j = 1; j < n; ++j) {
           std::tie(caseArgs[0], caseArgs[j]) =
@@ -1225,12 +1229,12 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  // auto res =
-  //     runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
-  // auto entry = getEntryPoint(m.get());
+  auto res =
+      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
+  auto entry = getEntryPoint(m.get());
 
-  // ASSERT_TRUE(res.succeeded());
-  // EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
 INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,
