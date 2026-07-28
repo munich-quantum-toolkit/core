@@ -20,6 +20,7 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 #include <utility>
 
