@@ -253,9 +253,7 @@ def ReplaceClassicalControls
 }
 
 def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect",
-                           "::mlir::arith::ArithDialect",
-  ];
+  let dependentDialects = ["mlir::qco::QCODialect"];
   let summary =
       "This pass attempts to utilize qubit reuse to reduce the number of "
       "resources required for a quantum program. "
