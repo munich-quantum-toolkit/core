@@ -115,6 +115,20 @@ custom = compile_program(
 )
 ```
 
+For example, the compiler driver can enable qubit reuse directly:
+
+```console
+mqt-cc input.qasm --emit=qco-optimized --reuse-qubits
+mqt-cc input.qasm --emit=qco-optimized --reuse-qubits-full
+```
+
+The second form also lifts measurements and replaces classical controls before
+reusing qubits. Both convenience options run before the default QCO optimization
+pipeline. They are mutually exclusive and cannot be combined with custom pass
+options. Use {code}`--pass-pipeline='builtin.module(reuse-qubits)'` or
+{code}`--pass-pipeline='builtin.module(reuse-qubits-full)'` when composing a
+custom pipeline instead.
+
 The {code}`qco_pipeline` argument replaces the default QCO optimization
 pipeline. It is applied when compilation proceeds beyond the raw
 {code}`OutputFormat.QCO` checkpoint.

@@ -34,6 +34,12 @@ void registerMQTCompilerPasses();
 /// Populate the default QCO optimization pipeline.
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 
+/// Populate the qubit reuse pipeline.
+void populateQubitReusePipeline(mlir::OpPassManager& pm);
+
+/// Populate the qubit reuse pipeline including its helper passes.
+void populateFullQubitReusePipeline(mlir::OpPassManager& pm);
+
 /// Return whether @p minControls is valid for multi-controlled decomposition.
 [[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minControls);
 

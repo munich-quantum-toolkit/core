@@ -190,6 +190,19 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
         "controlled gates undecomposed."),
     llvm::cl::init(2));
 
+static llvm::cl::opt<bool> enableReuseQubits(
+    "reuse-qubits",
+    llvm::cl::desc("Reuse independent qubits before running the default QCO "
+                   "optimization pipeline."),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> enableReuseQubitsFull(
+    "reuse-qubits-full",
+    llvm::cl::desc("Lift measurements, replace classical controls, and reuse "
+                   "qubits before running the default QCO optimization "
+                   "pipeline."),
+    llvm::cl::init(false));
+
 /**
  * @brief Load and parse a `.qasm` file
  */
@@ -344,6 +357,17 @@ int main(int argc, char** argv) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
   }
+  if (enableReuseQubits && enableReuseQubitsFull) {
+    llvm::errs()
+        << "--reuse-qubits and --reuse-qubits-full are mutually exclusive.\n";
+    return 1;
+  }
+  if ((enableReuseQubits || enableReuseQubitsFull) &&
+      passPipeline.hasAnyOccurrences()) {
+    llvm::errs() << "--reuse-qubits and --reuse-qubits-full cannot be combined "
+                    "with custom pass options.\n";
+    return 1;
+  }
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
@@ -379,11 +403,12 @@ int main(int argc, char** argv) {
     llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
     return 1;
   }
-  if (passPipeline.hasAnyOccurrences() &&
+  if ((passPipeline.hasAnyOccurrences() || enableReuseQubits ||
+       enableReuseQubitsFull) &&
       (*parsedOutputFormat == OutputFormat::QCImport ||
        *parsedOutputFormat == OutputFormat::QCO)) {
-    llvm::errs() << "--pass-pipeline requires an output that passes through "
-                    "QCO optimization.\n";
+    llvm::errs() << "QCO optimization options require an output that passes "
+                    "through QCO optimization.\n";
     return 1;
   }
   if (enableDecomposeMultiControlled &&
@@ -431,6 +456,11 @@ int main(int argc, char** argv) {
             if (enableDecomposeMultiControlled) {
               populateDecomposeMultiControlledPipeline(
                   pm, decomposeMultiControlledMinControls.getValue());
+            }
+            if (enableReuseQubitsFull) {
+              populateFullQubitReusePipeline(pm);
+            } else if (enableReuseQubits) {
+              populateQubitReusePipeline(pm);
             }
             populateDefaultQCOOptimizationPipeline(pm);
           }
