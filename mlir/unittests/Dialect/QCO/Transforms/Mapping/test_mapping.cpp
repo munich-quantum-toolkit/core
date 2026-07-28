@@ -1234,5 +1234,47 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
+TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
+  const DenseSet<std::pair<size_t, size_t>> line = {
+      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(3);
+  SmallVector<Value> qubits(3);
+  for (int64_t i = 0; i < 3; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  const auto routeTriangle = [&](ValueRange initArgs) {
+    SmallVector<Value> args(initArgs);
+    std::tie(args[0], args[1]) = builder.cx(args[0], args[1]);
+    std::tie(args[1], args[2]) = builder.cx(args[1], args[2]);
+    std::tie(args[0], args[2]) = builder.cx(args[0], args[2]);
+    return args;
+  };
+  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies(
+      3, routeTriangle);
+  qubits = llvm::to_vector(builder.qcoIndexSwitch(
+      0, qubits, SmallVector<int64_t>{0, 1, 2}, caseBodies,
+      [](ValueRange args) { return llvm::to_vector(args); }));
+
+  for (int64_t i = 0; i < 3; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(
+      runPass(m.get(), line, MappingPassOptions{.ntrials = 1}).succeeded());
+
+  size_t numSwaps = 0;
+  m->walk([&](SWAPOp) { ++numSwaps; });
+  // The three routed cases agree on the voted exit layout; only the default
+  // case must be restored to it. Restoring every case to the parent needs 12.
+  EXPECT_EQ(numSwaps, 4UL);
+}
+
 INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,
                          testing::Values(getNineQubitSquareGrid()));
