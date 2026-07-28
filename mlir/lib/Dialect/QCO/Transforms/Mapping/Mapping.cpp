@@ -1313,62 +1313,52 @@ private:
       const auto resNum = res.getResultNumber();
       const auto qubitResNum = *resultToQubitIndex[resNum];
 
+      const auto append = [&](RoutingBundle& child, Value arg, Value yielded) {
+        child.infos.insertOrUpdate(child.infos.size(), prog);
+        child.wires.emplace_back([&] -> Value {
+          if constexpr (Direction == WireDirection::Forward) {
+            return arg;
+          } else {
+            return yielded;
+          }
+        }());
+      };
+
       TypeSwitch<Operation*>(op)
           .template Case<scf::ForOp>([&](scf::ForOp forOp) {
-            children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
-            children[0].wires.emplace_back([&] -> Value {
-              const auto arg = forOp.getTiedLoopRegionIterArg(res);
-              if constexpr (Direction == WireDirection::Forward) {
-                return arg;
-              } else {
-                return forOp.getTiedLoopYieldedValue(arg)->get();
-              }
-            }());
+            const auto arg = forOp.getTiedLoopRegionIterArg(res);
+            const auto yielded = forOp.getTiedLoopYieldedValue(arg)->get();
+            append(children[0], arg, yielded);
           })
           .template Case<scf::WhileOp>([&](scf::WhileOp) {
-            children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
-            children[0].wires.emplace_back([&] -> Value {
-              const auto arg = whileBeforeQubits[qubitResNum];
-              if constexpr (Direction == WireDirection::Forward) {
-                return arg;
-              } else {
-                return whileConditionQubits[qubitResNum];
-              }
-            }());
+            const auto arg = whileBeforeQubits[qubitResNum];
+            const auto yielded = whileConditionQubits[qubitResNum];
+            append(children[0], arg, yielded);
           })
           .template Case<IfOp>([&](IfOp ifOp) {
             OpOperand* const qubit = ifOp.getTiedQubit(res);
-            for (size_t r = 0; r < 2; ++r) {
-              const auto arg = r == 0 ? ifOp.getTiedThenBlockArgument(qubit)
-                                      : ifOp.getTiedElseBlockArgument(qubit);
-              children[r].infos.insertOrUpdate(children[r].infos.size(), prog);
-              children[r].wires.emplace_back([&] -> Value {
-                if constexpr (Direction == WireDirection::Forward) {
-                  return arg;
-                } else {
-                  return r == 0 ? ifOp.getTiedThenYieldedValue(arg)->get()
-                                : ifOp.getTiedElseYieldedValue(arg)->get();
-                }
-              }());
-            }
+            const auto thenArg = ifOp.getTiedThenBlockArgument(qubit);
+            const auto thenYielded =
+                ifOp.getTiedThenYieldedValue(thenArg)->get();
+            const auto elseArg = ifOp.getTiedElseBlockArgument(qubit);
+            const auto elseYielded =
+                ifOp.getTiedElseYieldedValue(elseArg)->get();
+
+            append(children[0], thenArg, thenYielded);
+            append(children[1], elseArg, elseYielded);
           })
           .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
             OpOperand* const qubit = switchOp.getTiedTarget(res);
-            for (size_t r = 0; r < switchOp.getNumRegions(); ++r) {
-              const auto arg =
-                  r == 0 ? switchOp.getTiedDefaultBlockArgument(qubit)
-                         : switchOp.getTiedCaseBlockArgument(qubit, r - 1);
-              children[r].infos.insertOrUpdate(children[r].infos.size(), prog);
-              children[r].wires.emplace_back([&] -> Value {
-                if constexpr (Direction == WireDirection::Forward) {
-                  return arg;
-                } else {
-                  return r == 0
-                             ? switchOp.getTiedDefaultYieldedValue(arg)->get()
-                             : switchOp.getTiedCaseYieldedValue(arg, r - 1)
-                                   ->get();
-                }
-              }());
+            const auto defaultArg = switchOp.getTiedDefaultBlockArgument(qubit);
+            const auto defaultYielded =
+                switchOp.getTiedDefaultYieldedValue(defaultArg)->get();
+            append(children[0], defaultArg, defaultYielded);
+
+            for (size_t r = 1; r < switchOp.getNumRegions(); ++r) {
+              const auto arg = switchOp.getTiedCaseBlockArgument(qubit, r - 1);
+              const auto yielded =
+                  switchOp.getTiedCaseYieldedValue(arg, r - 1)->get();
+              append(children[r], arg, yielded);
             }
           });
 
@@ -1423,8 +1413,8 @@ private:
     }
 
     // Find (insert) the epilogue SWAP sequence for (into) the child region
-    // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote and
-    // restore (IndexSwitchOp) strategies.
+    // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
+    // and restore (IndexSwitchOp) strategies.
 
     const Layout exit =
         TypeSwitch<Operation*, Layout>(op)
@@ -1458,11 +1448,10 @@ private:
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
-
-      // Realign terminator values to ensure that i-th input qubit and the i-th
-      // output qubit represent the equivalent hardware qubit. Note: Because
-      // we restore the layout at the end of the scf::ForOp, we don't require
-      // this procedure.
+      // Realign terminator values to ensure that i-th input qubit and the
+      // i-th output qubit represent the equivalent hardware qubit. Note:
+      // Because we restore the layout at the end of the scf::ForOp, we don't
+      // require this procedure.
 
       for (const auto& [region, child] :
            llvm::zip_equal(op->getRegions(), children)) {
@@ -1495,9 +1484,9 @@ private:
       }
     }
 
-    // If the operation is a scf::ForOp, where the parent.layout = child.layout,
-    // we are done. Otherwise, propagate the final layout and index-to-program
-    // mapping to the parent.
+    // If the operation is a scf::ForOp, where the parent.layout =
+    // child.layout, we are done. Otherwise, propagate the final layout and
+    // index-to-program mapping to the parent.
 
     if (!isa<scf::ForOp>(op)) {
       WireInfos realigendInfos;
