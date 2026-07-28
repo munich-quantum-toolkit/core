@@ -12,6 +12,8 @@
 
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
+
 namespace mlir {
 class ModuleOp;
 class OpPassManager;
@@ -31,6 +33,13 @@ void registerMQTCompilerPasses();
 
 /// Populate the default QCO optimization pipeline.
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
+
+/// Return whether @p minControls is valid for multi-controlled decomposition.
+[[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minControls);
+
+/// Populate the multi-controlled decomposition pass sequence.
+void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
+                                              uint64_t minControls);
 
 /// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult
