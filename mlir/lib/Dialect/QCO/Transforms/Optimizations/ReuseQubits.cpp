@@ -16,6 +16,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
@@ -57,6 +58,30 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
       }
     }
     return sinkOps;
+  }
+
+  /**
+   * @brief Checks whether the users of an allocation may be moved after a
+   * prospective reuse point without reordering observable side effects.
+   * @param alloc The allocation whose users may need to move.
+   * @param reusePoint The sink after which the replacement reset is inserted.
+   * @return Whether every operation that may need to move is side-effect-free.
+   */
+  static bool canSafelyReorderUsers(AllocOp alloc, SinkOp reusePoint) {
+    SetVector<mlir::Operation*> slice;
+    getForwardSlice(alloc.getResult(), &slice);
+
+    for (auto* op : slice) {
+      while (op->getBlock() != reusePoint->getBlock()) {
+        op = op->getParentOp();
+      }
+      if (reusePoint->isBeforeInBlock(op) || isa<SinkOp>(op) ||
+          isMemoryEffectFree(op)) {
+        continue;
+      }
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -128,8 +153,9 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
     auto reusableDeallocs =
         llvm::find_if(llvm::reverse(deallocs), [&](SinkOp dealloc) {
           // Check if the qubit to be deallocated is disjoint from the qubit to
-          // be allocated.
-          return !reachableDeallocs.contains(dealloc);
+          // be allocated and if its users can be reordered safely.
+          return !reachableDeallocs.contains(dealloc) &&
+                 canSafelyReorderUsers(op, dealloc);
         });
 
     if (reusableDeallocs == llvm::reverse(deallocs).end()) {

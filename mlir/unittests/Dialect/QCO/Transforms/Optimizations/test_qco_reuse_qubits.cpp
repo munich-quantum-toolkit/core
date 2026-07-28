@@ -20,6 +20,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -179,6 +180,46 @@ TEST_F(QCOQubitReuseTest, noReuse) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Qubit reuse must not reorder effectful users of independent qubits.
+ */
+TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
+  module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @record0(i1)
+      func.func private @record1(i1)
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q1_h = qco.h %q1 : !qco.qubit -> !qco.qubit
+        %q1_m, %c1 = qco.measure %q1_h : !qco.qubit
+        func.call @record1(%c1) : (i1) -> ()
+        %q0_h = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q0_m, %c0 = qco.measure %q0_h : !qco.qubit
+        func.call @record0(%c0) : (i1) -> ()
+        qco.sink %q0_m : !qco.qubit
+        qco.sink %q1_m : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                       &context);
+  ASSERT_TRUE(module);
+
+  ASSERT_TRUE(runQubitReusePass(module.get()).succeeded());
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  SmallVector<StringRef> callees;
+  main.walk([&callees](func::CallOp call) {
+    callees.emplace_back(call.getCallee());
+  });
+
+  ASSERT_EQ(callees.size(), 2);
+  EXPECT_EQ(callees[0], "record1");
+  EXPECT_EQ(callees[1], "record0");
 }
 
 /**
