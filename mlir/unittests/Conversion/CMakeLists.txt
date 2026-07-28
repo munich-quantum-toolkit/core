@@ -9,4 +9,5 @@
 add_subdirectory(QCToQCO)
 add_subdirectory(QCToQIR)
 add_subdirectory(QCOToQC)
+add_subdirectory(QCQCORoundTrip)
 add_subdirectory(JeffRoundTrip)

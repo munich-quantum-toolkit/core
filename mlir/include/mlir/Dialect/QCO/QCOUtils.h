@@ -44,6 +44,24 @@ static bool checkDeadGate(mlir::Operation* op) {
 
 namespace mlir::qco {
 
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by sinks
+ * or resets and has no memory effects).
+ *
+ * @param op The operation to check.
+ * @return bool True if the operation is unused, false otherwise.
+ */
+inline bool checkDeadGate(Operation* op) {
+  if (!isMemoryEffectFree(op)) {
+    // This ignores operations and regions that have children with memory
+    // effects, which should never be considered dead.
+    return false;
+  }
+  return llvm::all_of(op->getUsers(), [](Operation* user) {
+    return isa<SinkOp, ResetOp>(user);
+  });
+}
+
 /// Maximum number of modifier targets supported by @ref
 /// composeBodyMatrix.
 inline constexpr size_t kMaxModifierTargetQubits = 10;
@@ -141,6 +159,29 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
     return success();
   }
   return failure();
+}
+
+/**
+ * @brief Remove a pair of inverse three-target, zero-parameter operations.
+ *
+ * @tparam InverseOpType The type of the inverse operation.
+ * @tparam OpType The type of the operation to be checked.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename InverseOpType, typename OpType>
+LogicalResult
+removeInversePairThreeTargetZeroParameter(OpType op,
+                                          PatternRewriter& rewriter) {
+  auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp || op.getOutputQubits() != nextOp.getInputQubits()) {
+    return failure();
+  }
+
+  rewriter.replaceOp(op, op.getInputQubits());
+  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+  return success();
 }
 
 /**
@@ -290,8 +331,7 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
  * @brief Search for and remove gates when their outputs are no longer used
  * before the next `ResetOp` or `SinkOp`.
  *
- *
- * @tparam qubit The value that was an input to a `ResetOp` or `SinkOp` from
+ * @param qubit The value that was an input to a `ResetOp` or `SinkOp` from
  * which the search is started.
  * @param rewriter The pattern rewriter.
  * @return LogicalResult Success or failure of the elimination.
@@ -316,7 +356,9 @@ inline LogicalResult tryEliminateDeadGateValue(Value qubit,
             .Case<IfOp>([&](auto ifOp) {
               auto* tiedQubit = ifOp.getTiedQubit(cast<OpResult>(qubit));
               auto newValue = tiedQubit->get();
-              rewriter.replaceOp(ifOp, ifOp.getQubits());
+              rewriter.replaceAllUsesWith(ifOp.getLinearResults(),
+                                          ifOp.getQubits());
+              rewriter.eraseOp(ifOp);
               return newValue;
             })
             .Case<ResetOp>([&](auto resetOp) {

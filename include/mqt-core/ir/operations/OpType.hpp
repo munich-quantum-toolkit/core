@@ -71,6 +71,15 @@ std::string shortName(OpType opType);
   }
 }
 
+[[nodiscard]] constexpr bool isThreeQubitGate(const OpType opType) {
+  switch (opType) {
+  case RCCX:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /**
  * @brief Checks if given OpType is a single qubit gate
  */

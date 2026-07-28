@@ -15,11 +15,11 @@ import sys
 from pathlib import Path
 
 # under Windows, make sure to add the appropriate DLL directory to the PATH
-if sys.platform == "win32":  # noqa: RUF067 This is actually required on Windows
+if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] This is actually required on Windows
 
     def _dll_patch() -> None:
         """Add the DLL directory to the PATH."""
-        import sysconfig  # noqa: PLC0415 only used in Windows
+        import sysconfig  # ruff:ignore[import-outside-top-level] only used in Windows
 
         bin_dir = Path(sysconfig.get_paths()["purelib"]) / "mqt" / "core" / "bin"
         os.add_dll_directory(str(bin_dir))

@@ -12,6 +12,17 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add and improve QIR generation support in the MQT Compiler Collection
+  ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
+  [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
+  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933])
+  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
+- ✨ Add decision diagram-based construction and simulation of static unitary
+  QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
+  ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -45,7 +56,8 @@ releases may include breaking changes.
   rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836]) ([**@denialhaag**], [**@burgholzer**])
+  [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
+  [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
   [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
@@ -57,13 +69,13 @@ releases may include breaking changes.
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
   [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
-  [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624],
-  [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
-  [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780],
-  [#1781], [#1782], [#1787], [#1806], [#1807], [#1815], [#1808], [#1823],
-  [#1824], [#1830], [#1869], [#1872], [#1914]) ([**@burgholzer**],
+  [#1570], [#1572], [#1573], [#1580], [#1602], [#1603], [#1620], [#1623],
+  [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717],
+  [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
+  [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
+  [#1886], [#1914], [#1925], [#1935], [#1936], [#1938]) ([**@burgholzer**],
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
-  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -640,13 +652,22 @@ changelogs._
 
 <!-- PR links -->
 
+[#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
+[#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
+[#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935
+[#1934]: https://github.com/munich-quantum-toolkit/core/pull/1934
+[#1933]: https://github.com/munich-quantum-toolkit/core/pull/1933
+[#1925]: https://github.com/munich-quantum-toolkit/core/pull/1925
+[#1924]: https://github.com/munich-quantum-toolkit/core/pull/1924
 [#1923]: https://github.com/munich-quantum-toolkit/core/pull/1923
+[#1915]: https://github.com/munich-quantum-toolkit/core/pull/1915
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
+[#1886]: https://github.com/munich-quantum-toolkit/core/pull/1886
 [#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
@@ -713,6 +734,7 @@ changelogs._
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
+[#1648]: https://github.com/munich-quantum-toolkit/core/pull/1648
 [#1638]: https://github.com/munich-quantum-toolkit/core/pull/1638
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
 [#1635]: https://github.com/munich-quantum-toolkit/core/pull/1635
@@ -722,6 +744,7 @@ changelogs._
 [#1623]: https://github.com/munich-quantum-toolkit/core/pull/1623
 [#1620]: https://github.com/munich-quantum-toolkit/core/pull/1620
 [#1605]: https://github.com/munich-quantum-toolkit/core/pull/1605
+[#1603]: https://github.com/munich-quantum-toolkit/core/pull/1603
 [#1602]: https://github.com/munich-quantum-toolkit/core/pull/1602
 [#1600]: https://github.com/munich-quantum-toolkit/core/pull/1600
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
@@ -831,6 +854,7 @@ changelogs._
 [#1164]: https://github.com/munich-quantum-toolkit/core/pull/1164
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
+[#1150]: https://github.com/munich-quantum-toolkit/core/pull/1150
 [#1148]: https://github.com/munich-quantum-toolkit/core/pull/1148
 [#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1140]: https://github.com/munich-quantum-toolkit/core/pull/1140

@@ -15,7 +15,7 @@ import warnings
 
 import pytest
 
-from mqt.core._compat.optional import OptionalDependencyTester  # noqa: PLC2701
+from mqt.core._compat.optional import OptionalDependencyTester  # ruff:ignore[import-private-name]
 
 
 def test_available_module() -> None:
@@ -40,7 +40,7 @@ def test_caching() -> None:
     assert tester
 
     # Cache should be set now
-    assert tester._bool  # noqa: SLF001
+    assert tester._bool  # ruff:ignore[private-member-access]
 
     # Second check should use cache
     assert tester
@@ -107,13 +107,13 @@ def test_disable_locally_preserves_state() -> None:
     """Test disable_locally preserves original state including None."""
     tester = OptionalDependencyTester("sys")
     # Don't check yet, so _bool is None
-    assert tester._bool is None  # noqa: SLF001
+    assert tester._bool is None  # ruff:ignore[private-member-access]
 
     with tester.disable_locally():
         assert not tester
 
     # Should be None again (not True)
-    assert tester._bool is None  # noqa: SLF001
+    assert tester._bool is None  # ruff:ignore[private-member-access]
 
 
 def test_disable_locally_with_unavailable() -> None:

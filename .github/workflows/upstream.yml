@@ -18,11 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [ubuntu-24.04, macos-14, windows-2022]
+        runs-on: [ubuntu-24.04, macos-15, windows-2025]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
+      setup-mlir: true
+      llvm-version: "22.1.7"
 
   create-issue-on-failure:
     name: Create issue on failure

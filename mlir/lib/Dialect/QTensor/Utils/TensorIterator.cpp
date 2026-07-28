@@ -22,6 +22,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 
 namespace mlir::qtensor {
@@ -32,6 +33,51 @@ TypedValue<RankedTensorType> TensorIterator::tensor() const {
   }
 
   return tensor_;
+}
+
+[[nodiscard]] static TypedValue<RankedTensorType>
+whileResultForInit(scf::WhileOp op, OpOperand& init) {
+  auto current = cast<TypedValue<RankedTensorType>>(
+      op.getBeforeBody()->getArgument(init.getOperandNumber()));
+  TensorIterator iterator(current);
+  while (true) {
+    assert(current.hasOneUse() && "expected linear typing");
+    auto* user = *current.user_begin();
+    if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
+      const auto result = llvm::find(condition.getArgs(), current);
+      if (result == condition.getArgs().end()) {
+        llvm::reportFatalInternalError(
+            "expected scf.while tensor in condition arguments");
+      }
+      const auto resultNumber = static_cast<std::size_t>(
+          std::distance(condition.getArgs().begin(), result));
+      return cast<TypedValue<RankedTensorType>>(op.getResult(resultNumber));
+    }
+    ++iterator;
+    if (iterator == std::default_sentinel) {
+      llvm::reportFatalInternalError(
+          "expected scf.while tensor to reach its condition");
+    }
+    current = iterator.tensor();
+  }
+}
+
+[[nodiscard]] static TypedValue<RankedTensorType>
+whileInitForResult(scf::WhileOp op, const OpResult result) {
+  auto condition = cast<scf::ConditionOp>(op.getBeforeBody()->getTerminator());
+  auto current = cast<TypedValue<RankedTensorType>>(
+      condition.getArgs()[result.getResultNumber()]);
+  TensorIterator iterator(current);
+  while (iterator.operation() != nullptr) {
+    --iterator;
+  }
+  auto argument = dyn_cast<BlockArgument>(iterator.tensor());
+  if (!argument || argument.getOwner() != op.getBeforeBody()) {
+    llvm::reportFatalInternalError(
+        "expected scf.while tensor to originate from a before-region argument");
+  }
+  return cast<TypedValue<RankedTensorType>>(
+      op.getInits()[argument.getArgNumber()]);
 }
 
 void TensorIterator::forward() {
@@ -65,11 +111,16 @@ void TensorIterator::forward() {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedLoopResult(&*(tensor_.use_begin())));
         })
+        .Case<scf::WhileOp>([&](scf::WhileOp op) {
+          tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());
+        })
         .Case<qco::IfOp>([&](qco::IfOp op) {
-          auto it = llvm::find(op.getQubits(), tensor_);
-          assert(it != op.getQubits().end());
-          const auto idx = std::distance(op.getQubits().begin(), it);
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults()[idx]);
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedResult(&(*tensor_.use_begin())));
+        })
+        .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedResult(&(*tensor_.use_begin())));
         })
         .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
@@ -119,17 +170,34 @@ void TensorIterator::backward() {
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
       })
+      .Case<scf::WhileOp>([&](scf::WhileOp op) {
+        if (auto result = dyn_cast<OpResult>(tensor_)) {
+          tensor_ = whileInitForResult(op, result);
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected scf.while result for tied init lookup");
+      })
       .Case<qco::IfOp>([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
-          auto it = llvm::find(op.getResults(), res);
-          assert(it != op->result_end());
-          const auto idx = std::distance(op.result_begin(), it);
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits()[idx]);
+          tensor_ =
+              cast<TypedValue<RankedTensorType>>(op.getTiedQubit(res)->get());
           return;
         }
 
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
+      })
+      .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+        if (auto result = dyn_cast<OpResult>(tensor_)) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedTarget(result)->get());
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected qco.index_switch result for tied target lookup");
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +

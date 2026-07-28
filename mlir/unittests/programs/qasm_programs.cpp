@@ -219,6 +219,96 @@ inv @ ctrl(2) @ x q[0], q[1], q[2];
 bit[3] c = measure q;
 )qasm";
 
+const std::string powTwoX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit c;
+pow(2) @ x q;
+c = measure q;
+)qasm";
+
+const std::string powZeroX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit c;
+pow(0) @ x q;
+c = measure q;
+)qasm";
+
+const std::string negativePowS = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit c;
+pow(-2) @ s q;
+c = measure q;
+)qasm";
+
+const std::string controlledInversePowS = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+ctrl @ pow(2) @ inv @ s q[0], q[1];
+c = measure q;
+)qasm";
+
+const std::string nestedPowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit c;
+pow(2) @ pow(3) @ x q;
+c = measure q;
+)qasm";
+
+const std::string customPowHS = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+gate hs q0 {
+  h q0;
+  s q0;
+}
+qubit q;
+bit c;
+pow(2) @ hs q;
+c = measure q;
+)qasm";
+
+const std::string broadcastPowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+pow(2) @ x q;
+c = measure q;
+)qasm";
+
+const std::string floatingPowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(0.5) @ x q;
+)qasm";
+
+const std::string booleanPowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(true) @ x q;
+)qasm";
+
+const std::string exactLargePowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(9007199254740992) @ x q;
+)qasm";
+
+const std::string inexactLargePowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(9007199254740993) @ x q;
+)qasm";
+
+const std::string overflowingNestedPowX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+pow(4294967296) @ pow(4294967296) @ x q;
+)qasm";
+
 const std::string y = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
@@ -784,6 +874,27 @@ include "stdgates.inc";
 qubit[4] q;
 ctrl(2) @ xx_minus_yy(0.123, 0.456) q[0], q[1], q[2], q[3];
 bit[4] c = measure q;
+)qasm";
+
+const std::string rccx = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+rccx q[0], q[1], q[2];
+bit[3] c = measure q;
+)qasm";
+
+const std::string singleControlledRccx = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+ctrl @ rccx q[0], q[1], q[2], q[3];
+bit[4] c = measure q;
+)qasm";
+
+const std::string multipleControlledRccx = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[5] q;
+ctrl(2) @ rccx q[0], q[1], q[2], q[3], q[4];
+bit[5] c = measure q;
 )qasm";
 
 const std::string barrier = R"qasm(OPENQASM 3.0;

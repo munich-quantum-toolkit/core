@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -467,6 +468,32 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                  \
+  QCProgramBuilder& QCProgramBuilder::OP_NAME(Value qubit0, Value qubit1,      \
+                                              Value qubit2) {                  \
+    checkFinalized();                                                          \
+    OP_CLASS::create(*this, qubit0, qubit1, qubit2);                           \
+    return *this;                                                              \
+  }                                                                            \
+  QCProgramBuilder& QCProgramBuilder::c##OP_NAME(Value control, Value qubit0,  \
+                                                 Value qubit1, Value qubit2) { \
+    return mc##OP_NAME({control}, qubit0, qubit1, qubit2);                     \
+  }                                                                            \
+  QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
+      ValueRange controls, Value qubit0, Value qubit1, Value qubit2) {         \
+    ctrl(controls, ValueRange{qubit0, qubit1, qubit2},                         \
+         [&](ValueRange targets) {                                             \
+           OP_CLASS::create(*this, targets[0], targets[1], targets[2]);        \
+         });                                                                   \
+    return *this;                                                              \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
+
 // BarrierOp
 
 QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
@@ -508,6 +535,23 @@ QCProgramBuilder::inv(ValueRange qubits,
                       const function_ref<void(ValueRange)>& body) {
   checkFinalized();
   InvOp::create(*this, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                      ValueRange qubits,
+                      const function_ref<void(ValueRange)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent, Value qubit,
+                      const function_ref<void(Value)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubit, body);
   return *this;
 }
 
@@ -596,6 +640,42 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
     scf::IfOp::create(*this, condition, buildRegion(thenBody),
                       buildRegion(elseBody));
   }
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                 ArrayRef<int64_t> cases,
+                                 ArrayRef<function_ref<void()>> caseBodies,
+                                 const function_ref<void()>& defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp =
+      scf::IndexSwitchOp::create(*this, {}, argValue, cases, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
+    Block* block = createBlock(&region); // Implicitly sets the insertion point.
+    regionStack.emplace_back(&region);
+    f();
+    scf::YieldOp::create(*this, getLoc());
+    regionStack.pop_back();
+  };
+
+  for (auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), defaultBody);
+
   return *this;
 }
 

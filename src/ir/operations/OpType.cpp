@@ -123,6 +123,7 @@ constexpr std::array OP_NAME_TO_TYPE{
     NameToType{.name = "phase", .type = P},
     NameToType{.name = "prx", .type = R},
     NameToType{.name = "r", .type = R},
+    NameToType{.name = "rccx", .type = RCCX},
     NameToType{.name = "reset", .type = Reset},
     NameToType{.name = "rx", .type = RX},
     NameToType{.name = "rxx", .type = RXX},

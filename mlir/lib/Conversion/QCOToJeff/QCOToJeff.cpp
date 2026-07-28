@@ -1069,6 +1069,12 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
   LogicalResult
   matchAndRewrite(IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (!op.getClassicalResults().empty()) {
+      op.emitError("classical qco.if results are not supported by the "
+                   "QCO-to-Jeff conversion");
+      return failure();
+    }
+
     auto loc = op.getLoc();
 
     SetVector<Value> aboveValues;
@@ -1079,8 +1085,8 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
     llvm::append_range(initArgs, adaptor.getQubits());
 
     SmallVector<Type> outTypes;
-    if (failed(
-            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
+    if (failed(getTypeConverter()->convertTypes(
+            op.getLinearResults().getTypes(), outTypes))) {
       return failure();
     }
 
@@ -1526,6 +1532,8 @@ protected:
         patterns, typeConverter, context, state, "xx_plus_yy");
     addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_minus_yy");
+    addQCOToJeffGatePattern<JK::Custom, 3, 0, RCCXOp, void, false>(
+        patterns, typeConverter, context, state, "rccx");
 
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,

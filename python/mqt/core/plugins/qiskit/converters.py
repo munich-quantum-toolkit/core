@@ -78,7 +78,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
         """
         raise exception_type(message)
 
-    try:  # noqa: PLW0717
+    try:  # ruff:ignore[too-many-statements-in-try-clause]
         # Check for unbound parameters
         if circuit.parameters:
             param_names = ", ".join(sorted(p.name for p in circuit.parameters))
