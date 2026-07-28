@@ -1144,8 +1144,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   const auto& device = GetParam();
   const auto size = 9;
 
-  std::random_device rd;
-  std::mt19937 gen(rd());
+  std::mt19937 gen(42);
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -1217,7 +1216,6 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
 
     return llvm::to_vector(
         builder.qcoIndexSwitch(index, args, cases, caseBodies, defaultCase));
-    return to_vector(args);
   });
 
   qubits = builder.barrier(qubits);
@@ -1230,7 +1228,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
 
   auto m = builder.finalize();
   auto res =
-      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
+      runPass(m.get(), device.couplingSet, MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());

@@ -1338,15 +1338,15 @@ private:
           })
           .template Case<IfOp>([&](IfOp ifOp) {
             OpOperand* const qubit = ifOp.getTiedQubit(res);
-            for (size_t i = 0; i < 2; ++i) {
-              const auto arg = i == 0 ? ifOp.getTiedThenBlockArgument(qubit)
+            for (size_t r = 0; r < 2; ++r) {
+              const auto arg = r == 0 ? ifOp.getTiedThenBlockArgument(qubit)
                                       : ifOp.getTiedElseBlockArgument(qubit);
-              children[i].infos.insertOrUpdate(children[i].infos.size(), prog);
-              children[i].wires.emplace_back([&] -> Value {
+              children[r].infos.insertOrUpdate(children[r].infos.size(), prog);
+              children[r].wires.emplace_back([&] -> Value {
                 if constexpr (Direction == WireDirection::Forward) {
                   return arg;
                 } else {
-                  return i == 0 ? ifOp.getTiedThenYieldedValue(arg)->get()
+                  return r == 0 ? ifOp.getTiedThenYieldedValue(arg)->get()
                                 : ifOp.getTiedElseYieldedValue(arg)->get();
                 }
               }());
@@ -1354,18 +1354,18 @@ private:
           })
           .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
             OpOperand* const qubit = switchOp.getTiedTarget(res);
-            for (size_t i = 0; i < switchOp.getNumRegions(); ++i) {
+            for (size_t r = 0; r < switchOp.getNumRegions(); ++r) {
               const auto arg =
-                  i == 0 ? switchOp.getTiedDefaultBlockArgument(qubit)
-                         : switchOp.getTiedCaseBlockArgument(qubit, i - 1);
-              children[i].infos.insertOrUpdate(children[i].infos.size(), prog);
-              children[i].wires.emplace_back([&] -> Value {
+                  r == 0 ? switchOp.getTiedDefaultBlockArgument(qubit)
+                         : switchOp.getTiedCaseBlockArgument(qubit, r - 1);
+              children[r].infos.insertOrUpdate(children[r].infos.size(), prog);
+              children[r].wires.emplace_back([&] -> Value {
                 if constexpr (Direction == WireDirection::Forward) {
                   return arg;
                 } else {
-                  return i == 0
+                  return r == 0
                              ? switchOp.getTiedDefaultYieldedValue(arg)->get()
-                             : switchOp.getTiedCaseYieldedValue(arg, i - 1)
+                             : switchOp.getTiedCaseYieldedValue(arg, r - 1)
                                    ->get();
                 }
               }());
@@ -1406,7 +1406,7 @@ private:
             .getResults();
       }();
 
-      for (const auto& [i, arg] : llvm::enumerate(getQubitValues(values))) {
+      for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
         const auto hw = permutation[i];
         const auto prog = children[0].layout.getProgramIndex(hw);
         children[1].wires.emplace_back(arg);
