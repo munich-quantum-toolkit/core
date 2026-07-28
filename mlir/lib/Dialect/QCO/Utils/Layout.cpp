@@ -12,7 +12,9 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
@@ -28,6 +30,14 @@ Layout Layout::random(const size_t nqubits, const size_t seed) {
 }
 
 Layout Layout::fromMapping(ArrayRef<size_t> mapping) {
+  llvm::SmallBitVector seen(mapping.size());
+  for (const size_t hw : mapping) {
+    if (hw >= mapping.size() || seen.test(hw)) {
+      llvm::reportFatalUsageError("mapping must be a permutation");
+    }
+    seen.set(hw);
+  }
+
   Layout layout(mapping.size());
   for (const auto [prog, hw] : enumerate(mapping)) {
     layout.add(prog, hw);
