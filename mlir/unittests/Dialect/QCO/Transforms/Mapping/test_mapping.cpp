@@ -1227,8 +1227,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res =
-      runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
