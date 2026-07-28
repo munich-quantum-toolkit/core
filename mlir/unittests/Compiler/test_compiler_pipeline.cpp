@@ -75,6 +75,7 @@ struct CompilerPipelineTestCase {
   QIRProgramBuilderFn qirReferenceBuilder;
   bool startFromQuantumComputation = true;
   bool convertToQIR = true;
+  std::vector<std::string> pipelineParams = {};
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const CompilerPipelineTestCase& info);
@@ -92,6 +93,16 @@ std::ostream& operator<<(std::ostream& os,
   os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
   if (info.convertToQIR) {
     os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
+  }
+  if (!info.pipelineParams.empty()) {
+    os << ", pipelineParams=[";
+    for (size_t i = 0; i < info.pipelineParams.size(); ++i) {
+      if (i > 0) {
+        os << ", ";
+      }
+      os << info.pipelineParams[i];
+    }
+    os << "]";
   }
   return os << "}";
 }
@@ -172,9 +183,15 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   module->print(sourceStream);
   auto input = QCProgram::fromMLIRString(source);
   ASSERT_TRUE(input);
+  std::string pipeline = "mqt-qco-default";
+  for (const auto& param : testCase.pipelineParams) {
+    pipeline += "," + param;
+  }
+
   auto compiled = runDefaultPipeline(
       CompilerInput{std::move(*input)},
-      testCase.convertToQIR ? ProgramFormat::QIRAdaptive : ProgramFormat::QC);
+      testCase.convertToQIR ? ProgramFormat::QIRAdaptive : ProgramFormat::QC,
+      pipeline);
   ASSERT_TRUE(compiled);
 
   OwningOpRef<ModuleOp> expected;
@@ -1006,6 +1023,32 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRccx<true>)},
         CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(::qc::ctrlTwo),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
-                                 MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));
+                                 MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)},
+        CompilerPipelineTestCase{
+            "QubitReuse",
+            nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::hGateOnMultipleQubits),
+            nullptr,
+            MQT_NAMED_BUILDER(mlir::qir::hGatesAndResetsOnOneQubit),
+            false,
+            true,
+            {"reuse-qubits"}},
+        CompilerPipelineTestCase{"QubitReuseWithLifting",
+                                 nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::singleControlledX),
+                                 nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qir::reusedCX),
+                                 false,
+                                 true,
+                                 {"reuse-qubits-full"}},
+        CompilerPipelineTestCase{
+            "QubitReuseWithoutLifting",
+            nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledX),
+            nullptr,
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledXOnIndividualQubits),
+            false,
+            true,
+            {"reuse-qubits"}}));
 
 } // namespace mqt::test::compiler

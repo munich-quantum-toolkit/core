@@ -414,9 +414,10 @@ Value x(QCProgramBuilder& b) {
 }
 
 SmallVector<Value> singleControlledX(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cx(q[0], q[1]);
-  return measureAndReturn(b, q.qubits);
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.cx(q1, q2);
+  return measureAndReturn(b, {q1, q2});
 }
 
 SmallVector<Value> multipleControlledX(QCProgramBuilder& b) {
@@ -2647,6 +2648,14 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
     b.cx(reg[0], q0);
   });
   return b.measure(reg[0]);
+}
+
+SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b) {
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.h(q1);
+  b.h(q2);
+  return measureAndReturn(b, {q1, q2});
 }
 
 } // namespace mlir::qc

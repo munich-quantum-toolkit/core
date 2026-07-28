@@ -47,11 +47,22 @@ void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerHadamardLifting();
+    qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
+    qco::registerReplaceClassicalControls();
+    qco::registerReuseQubits();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
+    PassPipelineRegistration<>(
+        "reuse-qubits-full",
+        "Run the qubit reuse optimization pass with helper passes.",
+        [](OpPassManager& pm) {
+          pm.addPass(qco::createMeasurementLifting());
+          pm.addPass(qco::createReplaceClassicalControls());
+          pm.addPass(qco::createReuseQubits());
+        });
     return true;
   }();
   static_cast<void>(REGISTERED);
