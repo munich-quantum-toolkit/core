@@ -1439,7 +1439,9 @@ private:
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
               auto winner = vote(map_range(
-                  children, [&](const RoutingBundle& b) { return b.layout; }));
+                  children, [](const RoutingBundle& b) -> const Layout& {
+                    return b.layout;
+                  }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, winner);
                 insertSWAPs<Mode>(swaps, child, stats, rewriter);
