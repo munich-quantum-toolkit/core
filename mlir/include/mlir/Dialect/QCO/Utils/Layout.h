@@ -75,7 +75,7 @@ public:
     return programToHardware_ == other.programToHardware_;
   }
 
-protected:
+private:
   /// Construct a layout with `nqubits`.
   explicit Layout(const size_t nqubits)
       : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
