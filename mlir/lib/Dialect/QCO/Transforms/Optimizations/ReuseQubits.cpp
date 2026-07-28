@@ -67,12 +67,12 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
   static void reorderUsers(mlir::Operation* startingOp,
                            mlir::PatternRewriter& rewriter) {
     // Search for operations that need re-ordering using BFS.
-    mlir::DenseSet<mlir::Operation*> toVisit{startingOp};
-    mlir::DenseSet<mlir::Operation*> visited;
+    mlir::SmallVector<mlir::Operation*> toVisit{startingOp};
+    mlir::SetVector<mlir::Operation*> visited;
 
     while (!toVisit.empty()) {
       auto* op = *toVisit.begin();
-      toVisit.erase(op);
+      toVisit.erase(toVisit.begin());
       visited.insert(op);
       for (auto* user : op->getUsers()) {
         // Move the user operation after the current operation.
@@ -86,7 +86,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
         rewriter.moveOpAfter(user, op);
 
         if (!visited.contains(user)) {
-          toVisit.insert(user);
+          toVisit.emplace_back(user);
         }
       }
     }

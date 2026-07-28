@@ -52,8 +52,12 @@ protected:
   }
 
   /**
-   * @brief Adds the replaceClassicalControls pass to the current context and
+   * @brief Adds the qubit reuse pass(es) to the current context and
    * runs it.
+   *
+   * @param module The module to run the pass on.
+   * @param liftMeasurements Whether to lift measurements before applying qubit
+   * reuse.
    */
   static LogicalResult runQubitReusePass(ModuleOp module,
                                          bool liftMeasurements = false) {
