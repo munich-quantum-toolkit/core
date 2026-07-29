@@ -67,6 +67,67 @@ def FuseSingleQubitUnitaryRuns
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
+def FuseTwoQubitUnitaryRuns
+    : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Lower supported one- and two-qubit QCO unitaries to a "
+                "user-specified native gate menu.";
+  let description = [{
+    Rewrites supported one- and two-qubit unitaries to match the comma-separated
+    `native-gates` gateset. Fusion and synthesis require unitary matrices that
+    are available at compile time. Already-native runtime-parameterized
+    operations remain valid, but an off-gateset operation without a compile-time
+    matrix cannot be synthesized and causes the pass to fail.
+
+    `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
+    two-qubit scope only when it has a single control and a single target. It is
+    considered a native entangler only when it additionally contains exactly
+    one `qco.x` or `qco.z` body operation matching the selected `cx` or `cz`
+    token. Gates acting on more than two qubits (e.g. multi-controlled
+    `qco.ctrl`) are out of scope and left untouched for a dedicated
+    multi-controlled synthesis pass.
+
+    The gateset is a comma-separated list of gate tokens (order not
+    significant) from which the pass resolves a single-qubit Euler basis
+    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
+    `x`, `sx`, and `rz` are present; IQM-style `qco.r` when `r` is present;
+    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus the
+    two-qubit entangler `cx` or `cz`.
+
+    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `cx`,
+    `cz`. An empty or whitespace-only gateset is a no-op, which is the intended
+    pipeline default when synthesis is not needed. An unrecognised token causes
+    the pass to fail.
+
+    Example gatesets (each line is one illustrative gateset; pick either `cx`
+    or `cz` as the entangler, or list both if both are native):
+    - IBM: `x,sx,rz,cx` or `x,sx,rz,cz`
+    - Generic single-qubit U: `u,cx` or `u,cz`
+    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
+    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
+      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
+
+    Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
+    which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
+    and lower any remaining off-gateset two-qubit ops via Weyl synthesis; fuse
+    the single-qubit seams introduced by that synthesis. The pass fails if any
+    single- or two-qubit op remains off the native gateset afterwards; gates on
+    more than two qubits are left untouched and do not cause a failure.
+
+    Lowering is deterministic: `cz` is preferred over `cx`, single-qubit
+    factors use the resolved Euler basis, and two-qubit run replacement uses
+    the minimal entangler count from the synthesizer.
+  }];
+  let options = [Option<
+      "nativeGates", "native-gates", "std::string", "\"\"",
+      "Comma-separated native gateset. Empty or whitespace-only is "
+      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, cx, cz. "
+      "Examples: x,sx,rz,cx; u,cx; r,cz; rx,rz,cx.">];
+}
+
+//===----------------------------------------------------------------------===//
+
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
@@ -168,6 +229,7 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
     circuit, in order to improve the results provided by measurement lifting.
 
     Hadamard lifting uses the following commutation rules:
+    ```text
          ┌───┐ ┌───┐      ┌───┐ ┌───┐
         ─┤ X ├─┤ H ├─ => ─┤ H ├─┤ Z ├─
          └───┘ └───┘      └───┘ └───┘
@@ -177,26 +239,33 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
          ┌───┐ ┌───┐      ┌───┐ ┌───┐                                ┌───────┐
         ─┤ Y ├─┤ H ├─ => ─┤ H ├─┤ Y ├─, while adding a global phase: │ G(pi) │
          └───┘ └───┘      └───┘ └───┘                                └───────┘
+    ```
+
     Hadamard lifting is only applied to commute Hadamard gates further in front in the circuit, not the other way
     around. A global phase is added if the Hadamard gate is commuted with a Pauli-Y gate, as YH = -HY.
 
     The routine is only applied to non-controlled Pauli and Hadamard gates.
 
     In order to reduce multi-qubit gates, a second transformation routine is applied. Using the commutation rule
+    ```text
                  ┌───┐┌───┐┌───┐
         ──■──    ┤ H ├┤ X ├┤ H ├
         ┌─┴─┐ => │───│└─┬─┘│───│
         ┤ X ├    ┤ H ├──■──┤ H ├
         └───┘    └───┘     └───┘
+    ```
+
     the following transformation is applied to circuits where a Hadamard gate follows a target gate of a controlled
     Pauli-X gate, which is followed by a measurement:
+    ```text
                               ┌───┐┌───┐┌───┐
         ──■─────────────      ┤ H ├┤ X ├┤ H ├──
         ┌─┴─┐┌───┐┌──────┐ => │───│└─┬─┘│───┘──┐
         ┤ X ├┤ H ├┤ Meas │    ┤ H ├──■──┤ Meas │
         └───┘└───┘└──────┘    └───┘     └──────┘
+    ```
 
-     Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
+    Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
 
   }];
 }
@@ -213,24 +282,30 @@ def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
     circuit to reuse them and to potentially remove some quantum gates.
 
     Measurement lifting uses the following commutation rules:
-                 ┌──────┐             ┌──────┐
-            ──■──┤ Meas │──────      ─┤ Meas ├──■───
-              │  └──────┘             └──────┘  │
-            ┌─┴─┐                 =>          ┌─┴─┐
-            ┤ U ├────────────────    ─────────┤ U ├─
-            └───┘                             └───┘
-            (Where U is any (controlled) unitary gate)
+    ```text
+         ┌──────┐             ┌──────┐
+    ──■──┤ Meas │──────      ─┤ Meas ├──■───
+      │  └──────┘             └──────┘  │
+    ┌─┴─┐                 =>          ┌─┴─┐
+    ┤ U ├────────────────    ─────────┤ U ├─
+    └───┘                             └───┘
+    ```
+    Here, U is any (controlled) unitary gate.
 
-            ┌───┐┌──────┐    ┌──────┐┌───┐
-            ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
-            └───┘└──────┘    └──────┘└───┘
-            (Where P is any diagonal gate, e.g., `z`, `s`, ...)
+    ```text
+    ┌───┐┌──────┐    ┌──────┐┌───┐
+    ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
+    └───┘└──────┘    └──────┘└───┘
+    ```
+    Here, P is any diagonal gate, for example `z` or `s`.
 
-            ┌───┐┌──────┐    ┌───────┐┌───┐
-            ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
-            └───┘└──────┘    └───────┘└───┘
-            (Where Meas* is a measurement after which the outcome is classically negated and X can be replaced by Y, which is also anti-diagonal)
-
+    ```text
+    ┌───┐┌──────┐    ┌───────┐┌───┐
+    ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
+    └───┘└──────┘    └───────┘└───┘
+    ```
+    Here, Meas* is a measurement after which the outcome is classically negated. X can also be replaced by Y, which
+    is likewise anti-diagonal.
   }];
 }
 
@@ -250,6 +325,42 @@ def ReplaceClassicalControls
     with classically controlled operations, represented by `qco.if` operations.
     This reduces quantum interactions and allows for more optimizations, e.g., by enabling qubit reuse.
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// Decomposition Passes
+//===----------------------------------------------------------------------===//
+
+def DecomposeMultiControlled
+    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Decompose controlled X/Z/phase gates and qco.rccx with at "
+                "least min-controls controls";
+  let description = [{
+    Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
+    a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
+    `min-controls` controls.
+
+    - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
+      when `min-controls` is at most 2.
+    - Four or five controls (X/Z): specialized ancilla-free cores (relative-
+      phase `C^4(Z)`; Vale MCP(π) hybrid residual).
+    - Six or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
+      synthesis with a compile-time CX policy table.
+    - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
+      residual at four) for three and four controls; da Silva-Park SP22
+      linear-depth decomposition at five and above. A compile-time angle of
+      `±π` is routed through the Z path for every control count.
+
+    Intermediate two- and three-control building blocks may be left as
+    `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
+    lowers further when the threshold allows.
+  }];
+  let options = [Option<
+      "minControls", "min-controls", "uint64_t", "2",
+      "Decompose controlled X/Z/phase gates and qco.rccx with at least this "
+      "many controls (must be at least 2).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

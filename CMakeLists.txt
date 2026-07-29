@@ -64,27 +64,18 @@ option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(BUILD_MQT_CORE_MLIR
-      OFF
-      CACHE BOOL
-            "Disable MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++"
-            FORCE)
   message(
-    WARNING "Disabling MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++")
+    FATAL_ERROR
+      "MQT Core cannot be built with GCC on macOS because its required MLIR dependency uses an incompatible C++ standard library"
+  )
 endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0.0")
-    set(BUILD_MQT_CORE_MLIR
-        OFF
-        CACHE
-          BOOL
-          "Disable MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support"
-          FORCE)
     message(
-      WARNING
-        "Disabling MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support")
+      FATAL_ERROR
+        "MQT Core requires AppleClang 17 or newer because its required MLIR dependency needs complete C++20 support"
+    )
   endif()
 endif()
 
@@ -100,9 +91,7 @@ project(
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-if(BUILD_MQT_CORE_MLIR)
-  include(SetupMLIR)
-endif()
+include(SetupMLIR)
 
 include(cmake/ExternalDependencies.cmake)
 
@@ -120,13 +109,6 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
-
-cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
-                       "BUILD_MQT_CORE_MLIR" OFF)
-
-cmake_dependent_option(
-  BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR "Enable QIR program format support for the DDSIM QDMI Device"
-  ON "BUILD_MQT_CORE_MLIR" OFF)
 
 # add main library code
 add_subdirectory(src)
@@ -148,26 +130,24 @@ if(BUILD_MQT_CORE_BENCHMARKS)
   add_subdirectory(eval)
 endif()
 
-if(BUILD_MQT_CORE_MLIR)
-  add_subdirectory(mlir)
+add_subdirectory(mlir)
 
-  # copy generated MLIR documentation
-  add_custom_command(
-    TARGET mlir-doc
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
-            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
-    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
-            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
-    COMMENT "Copying and cleaning up generated MLIR documentation"
-    VERBATIM)
+# copy generated MLIR documentation
+add_custom_command(
+  TARGET mlir-doc
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+          ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+  COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+          ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+  COMMENT "Copying and cleaning up generated MLIR documentation"
+  VERBATIM)
 
-  if(BUILD_MQT_CORE_DOCUMENTATION)
-    add_custom_target(mqt-core-docs DEPENDS mlir-doc)
-    foreach(binding ir dd fomac na)
-      add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
-    endforeach()
-  endif()
+if(BUILD_MQT_CORE_DOCUMENTATION)
+  add_custom_target(mqt-core-docs DEPENDS mlir-doc)
+  foreach(binding ir dd fomac na)
+    add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
+  endforeach()
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)

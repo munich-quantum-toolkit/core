@@ -349,6 +349,21 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
       "failed to fuse single-qubit unitary runs"));
 }
 
+bool QCOProgram::fuseTwoQubitUnitaryRuns(const std::string_view nativeGates) {
+  if (StringRef(nativeGates).trim().empty()) {
+    mod().emitError("the native gate menu must not be empty");
+    return false;
+  }
+  qco::FuseTwoQubitUnitaryRunsOptions options;
+  options.nativeGates = nativeGates;
+  return succeeded(runPasses(
+      mod(),
+      [&options](OpPassManager& pm) {
+        pm.addPass(qco::createFuseTwoQubitUnitaryRuns(options));
+      },
+      "failed to fuse two-qubit unitary runs"));
+}
+
 bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
@@ -365,6 +380,15 @@ bool QCOProgram::liftHadamards() {
       mod(),
       [](OpPassManager& pm) { pm.addPass(qco::createHadamardLifting()); },
       "failed to lift Hadamard gates"));
+}
+
+bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {
+  return succeeded(runPasses(
+      mod(),
+      [minControls](OpPassManager& pm) {
+        populateDecomposeMultiControlledPipeline(pm, minControls);
+      },
+      "failed to decompose multi-controlled gates"));
 }
 
 bool QCOProgram::placeAndRoute(

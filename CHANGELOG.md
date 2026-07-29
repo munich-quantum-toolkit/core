@@ -24,13 +24,19 @@ releases may include breaking changes.
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
+  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
+  [**@burgholzer**])
+- ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
+  RCCX, and constant-angle phase gates with a configurable `min-controls`
+  threshold ([#1810]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
-  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
-  ([**@simon1hofmann**])
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
+  [#1950]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
-  ([#1897]) ([**@burgholzer**])
+  ([#1897], [#1952]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
   libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
@@ -40,7 +46,7 @@ releases may include breaking changes.
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1826]) ([**@ystade**])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
@@ -83,6 +89,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
+  corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -659,6 +667,9 @@ changelogs._
 
 <!-- PR links -->
 
+[#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
+[#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
+[#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935
@@ -680,6 +691,7 @@ changelogs._
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
 [#1870]: https://github.com/munich-quantum-toolkit/core/pull/1870
 [#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
+[#1865]: https://github.com/munich-quantum-toolkit/core/pull/1865
 [#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
@@ -695,6 +707,7 @@ changelogs._
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
 [#1815]: https://github.com/munich-quantum-toolkit/core/pull/1815
 [#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
+[#1810]: https://github.com/munich-quantum-toolkit/core/pull/1810
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
 [#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807

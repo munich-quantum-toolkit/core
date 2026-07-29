@@ -22,14 +22,12 @@ if(BUILD_MQT_CORE_BINDINGS)
   find_package(nanobind CONFIG REQUIRED)
 endif()
 
-if(BUILD_MQT_CORE_MLIR)
-  # Fetch jeff-mlir
-  FetchContent_Declare(
-    jeff-mlir
-    GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG v0.3.0)
-  list(APPEND FETCH_PACKAGES jeff-mlir)
-endif()
+# Fetch jeff-mlir
+FetchContent_Declare(
+  jeff-mlir
+  GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
+  GIT_TAG v0.3.0)
+list(APPEND FETCH_PACKAGES jeff-mlir)
 
 set(JSON_VERSION
     3.12.0
