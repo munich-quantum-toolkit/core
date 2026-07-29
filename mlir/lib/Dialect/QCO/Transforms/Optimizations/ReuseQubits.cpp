@@ -62,7 +62,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
   /**
    * @brief Reorders the users of the given operation to ensure that they are
    * after it.
-   * @param op The operation whose users should be reordered.
+   * @param startingOp The operation whose users should be reordered.
    * @param rewriter The pattern rewriter to use for moving operations.
    */
   static void reorderUsers(mlir::Operation* startingOp,
@@ -125,14 +125,15 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
         findAllReachableDeallocs(op.getResult());
     // We search `reverse(deallocs)` rather than `deallocs` because this tends
     // to give more readable results.
+    auto reversedDeallocs = llvm::reverse(deallocs);
     auto reusableDeallocs =
-        llvm::find_if(llvm::reverse(deallocs), [&](SinkOp dealloc) {
+        llvm::find_if(reversedDeallocs, [&](SinkOp dealloc) {
           // Check if the qubit to be deallocated is disjoint from the qubit to
           // be allocated.
           return !reachableDeallocs.contains(dealloc);
         });
 
-    if (reusableDeallocs == llvm::reverse(deallocs).end()) {
+    if (reusableDeallocs == reversedDeallocs.end()) {
       return mlir::failure();
       // No reusable dealloc found.
       // We could also check `reset` operations next, which would

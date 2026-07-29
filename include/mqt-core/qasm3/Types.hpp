@@ -198,6 +198,8 @@ public:
       return "bool";
     case Duration:
       return "duration";
+    case SingleQubit:
+      return "qubit";
     }
     throw std::runtime_error("Unhandled type");
   }
