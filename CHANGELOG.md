@@ -113,7 +113,8 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Allow MQT Core to be embedded as a CMake subproject without target
-  collisions or unwanted bundled QDMI devices ([#1965]) ([**@burgholzer**])
+  collisions and make its bundled QDMI devices individually configurable
+  ([#1965]) ([**@burgholzer**])
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
 
 ## [3.7.0] - 2026-07-09

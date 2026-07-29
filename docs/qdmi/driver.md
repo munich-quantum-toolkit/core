@@ -28,15 +28,22 @@ registered through
 Standalone MQT Core builds include the DDSIM, superconducting, and neutral-atom
 QDMI device libraries by default. When MQT Core is embedded in another CMake
 project using {code}`FetchContent` or {code}`add_subdirectory`, these device
-libraries are disabled by default so the consumer does not build device
-implementations it may not use. Set {code}`BUILD_MQT_CORE_QDMI_DEVICES=ON`
-before making MQT Core available to include them.
+libraries are disabled by default so the consumer does not build implementations
+it may not use. They can be selected independently before making MQT Core
+available:
 
-The QDMI driver and FoMaC libraries are available in either configuration.
-Device-free builds can register external device libraries through
+- {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
+- {code}`BUILD_MQT_CORE_QDMI_NA_DEVICE`
+- {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
+
+For example, an embedded simulator consumer can enable only the DDSIM device,
+while CUDA-Q can enable the DDSIM and superconducting devices used by its
+integration tests.
+
+The QDMI driver and FoMaC libraries are available independently. Device-free
+builds can register external device libraries through
 [QDMI device configuration](configuration.md). When MQT Core's C++ tests are
-enabled, tests that require the bundled devices are omitted if
-{code}`BUILD_MQT_CORE_QDMI_DEVICES` is disabled.
+enabled, device-specific tests are omitted with their corresponding device.
 
 ## Python Bindings
 

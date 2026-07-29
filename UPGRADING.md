@@ -8,12 +8,13 @@ of changes including minor and patch releases, please refer to the
 
 ### Bundled QDMI devices in embedded builds
 
-When MQT Core is consumed through CMake's `FetchContent` or `add_subdirectory`,
-its bundled DDSIM, superconducting, and neutral-atom QDMI device libraries are
-no longer built by default. Existing consumers that rely on these devices must
-set `BUILD_MQT_CORE_QDMI_DEVICES=ON` before making MQT Core available. The QDMI
-driver and FoMaC libraries remain available when the bundled devices are
-disabled.
+The bundled QDMI devices now have individual CMake options:
+`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
+`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
+standalone MQT Core build. They default to disabled when MQT Core is consumed
+through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
+enable only the devices they need before making MQT Core available. The QDMI
+driver and FoMaC libraries remain available independently.
 
 ### LLVM/MLIR required for all source builds
 

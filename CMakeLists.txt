@@ -62,7 +62,11 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJ
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
-option(BUILD_MQT_CORE_QDMI_DEVICES "Build the bundled MQT Core QDMI devices"
+option(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE "Build the MQT Core DDSIM QDMI device"
+       ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_MQT_CORE_QDMI_NA_DEVICE "Build the MQT Core neutral-atom QDMI device"
+       ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
@@ -180,9 +184,14 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-fomac-bindings
       mqt-core-mlir-bindings
       mqt-core-na-bindings)
-  if(BUILD_MQT_CORE_QDMI_DEVICES)
-    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device mqt-core-qdmi-na-device
-         mqt-core-qdmi-sc-device)
+  if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
+  endif()
+  if(BUILD_MQT_CORE_QDMI_NA_DEVICE)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-na-device)
+  endif()
+  if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-sc-device)
   endif()
   add_custom_target(mqt-core-wheel)
   add_dependencies(mqt-core-wheel ${MQT_CORE_WHEEL_TARGETS})

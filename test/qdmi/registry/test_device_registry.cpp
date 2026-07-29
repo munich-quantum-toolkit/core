@@ -310,7 +310,7 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
                 "auth.json");
 }
 
-#if MQT_CORE_QDMI_HAS_BUILTIN_DEVICES
+#if MQT_CORE_QDMI_HAS_ALL_BUILTIN_DEVICES
 TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const TemporaryDirectory directory;
   const auto configFile = emptyConfig(directory);
