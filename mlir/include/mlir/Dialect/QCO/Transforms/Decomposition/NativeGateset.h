@@ -82,11 +82,10 @@ struct NativeGateset {
    * `qco.barrier` and `qco.gphase` are always allowed. Single-qubit primitives
    * are checked against @p gates. Single-control, single-target `qco.ctrl`
    * shells with an `X`/`Z` body are accepted when `cx`/`cz` is present.
-   * `qco.rxx`, `qco.ryy`, `qco.rzx`, and `qco.rzz` are accepted when the token
-   * is present and the angle is a compile-time constant (including the π/2
-   * basis used by synthesis); runtime angles are rejected. Bare `qco.iswap` and
-   * `qco.ecr` are accepted when the corresponding token is present. All other
-   * ops are rejected.
+   * `qco.rxx`, `qco.ryy`, `qco.rzx`, and `qco.rzz` are accepted when the
+   * corresponding token is present, including runtime-parameterized forms.
+   * Bare `qco.iswap` and `qco.ecr` are accepted when the corresponding token is
+   * present. All other ops are rejected.
    */
   [[nodiscard]] bool allowsOp(Operation* op) const;
 };

@@ -85,13 +85,14 @@ def FuseTwoQubitUnitaryRuns
     entangler token listed in the menu is accepted as already native: bare
     `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`, `qco.iswap`, or `qco.ecr`, or a
     `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz` is
-    listed. For `rxx`/`ryy`/`rzx`/`rzz`, only compile-time-constant angles are
-    accepted; runtime-parameterized forms are rejected. Entangler preference
-    (below) selects the Weyl synthesis basis only and does not restrict which
-    menu tokens count as native. Weyl synthesis emits `rxx`/`ryy`/`rzx`/`rzz`
-    at a fixed angle of π/2. Gates acting on more than two qubits (e.g.
-    multi-controlled `qco.ctrl`) are out of scope and left untouched for a
-    dedicated multi-controlled synthesis pass.
+    listed. Runtime-parameterized `rxx`/`ryy`/`rzx`/`rzz` operations remain
+    valid when their token is listed, although only operations with compile-time
+    matrices can participate in fusion or off-gateset synthesis. Entangler
+    preference (below) selects the Weyl synthesis basis only and does not
+    restrict which menu tokens count as native. Weyl synthesis emits
+    `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of π/2. Gates acting on more than
+    two qubits (e.g. multi-controlled `qco.ctrl`) are out of scope and left
+    untouched for a dedicated multi-controlled synthesis pass.
 
     The gateset is a comma-separated list of gate tokens (order not
     significant) from which the pass resolves a single-qubit Euler basis

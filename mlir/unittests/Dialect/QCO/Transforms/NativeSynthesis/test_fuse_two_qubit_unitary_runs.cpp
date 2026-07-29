@@ -618,6 +618,40 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest,
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,
+       PreservesRuntimeParameterizedNativeTwoQubitRotations) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %q2, %q3 = qco.rxx(%theta) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q4, %q5 = qco.ryy(%theta) %q2, %q3 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q6, %q7 = qco.rzx(%theta) %q4, %q5 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q8, %q9 = qco.rzz(%theta) %q6, %q7 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        return %q8, %q9 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+
+  std::string before;
+  llvm::raw_string_ostream osBefore(before);
+  module->print(osBefore);
+
+  PassManager pm(module->getContext());
+  pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
+      .nativeGates = "u,rxx,ryy,rzx,rzz",
+  }));
+  ASSERT_TRUE(succeeded(pm.run(*module)));
+
+  std::string after;
+  llvm::raw_string_ostream osAfter(after);
+  module->print(osAfter);
+  EXPECT_EQ(before, after);
+}
+
+TEST_F(FuseTwoQubitUnitaryRunsPassTest,
        FailsLocallyForRuntimeParameterizedResidual) {
   // A runtime-angle `qco.rz` cannot be Euler-fused under `u,cx` and is not on
   // the menu, so the convergence check must fail on that op (not the module).

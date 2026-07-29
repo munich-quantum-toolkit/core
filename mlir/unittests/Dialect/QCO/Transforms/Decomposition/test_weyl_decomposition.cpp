@@ -889,8 +889,10 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   const Type f64Ty = Type::getFromOpaquePointer(f64Float.getAsOpaquePointer());
   const auto funcTyTheta =
       builder.getFunctionType({f64Ty, qubitTy, qubitTy}, {qubitTy, qubitTy});
-  auto funcTheta =
-      func::FuncOp::create(builder, loc, "allows_op_runtime_rxx", funcTyTheta);
+  OpBuilder::InsertionGuard guard(builder);
+  builder.clearInsertionPoint();
+  auto funcTheta = func::FuncOp::create(
+      builder, loc, "allows_op_runtime_two_qubit_rotations", funcTyTheta);
   auto* entryTheta = funcTheta.addEntryBlock();
   builder.setInsertionPointToStart(entryTheta);
   Value runtimeTheta = entryTheta->getArgument(0);
@@ -898,5 +900,21 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   Value runtimeQ1 = entryTheta->getArgument(2);
   auto runtimeRxx =
       RXXOp::create(builder, loc, runtimeQ0, runtimeQ1, runtimeTheta);
-  EXPECT_FALSE(rxxSpec->allowsOp(runtimeRxx.getOperation()));
+  EXPECT_TRUE(rxxSpec->allowsOp(runtimeRxx.getOperation()));
+  EXPECT_FALSE(spec->allowsOp(runtimeRxx.getOperation()));
+  auto runtimeRyy = RYYOp::create(builder, loc, runtimeRxx.getOutputQubit(0),
+                                  runtimeRxx.getOutputQubit(1), runtimeTheta);
+  EXPECT_TRUE(ryySpec->allowsOp(runtimeRyy.getOperation()));
+  auto runtimeRzx = RZXOp::create(builder, loc, runtimeRyy.getOutputQubit(0),
+                                  runtimeRyy.getOutputQubit(1), runtimeTheta);
+  EXPECT_TRUE(rzxSpec->allowsOp(runtimeRzx.getOperation()));
+  auto runtimeRzz = RZZOp::create(builder, loc, runtimeRzx.getOutputQubit(0),
+                                  runtimeRzx.getOutputQubit(1), runtimeTheta);
+  EXPECT_TRUE(rzzSpec->allowsOp(runtimeRzz.getOperation()));
+  func::ReturnOp::create(
+      builder, loc,
+      ValueRange{runtimeRzz.getOutputQubit(0), runtimeRzz.getOutputQubit(1)});
+  auto module = ModuleOp::create(loc);
+  module.getBody()->push_back(funcTheta);
+  EXPECT_TRUE(succeeded(verify(module)));
 }

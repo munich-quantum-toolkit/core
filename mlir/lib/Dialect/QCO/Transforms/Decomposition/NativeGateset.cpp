@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -234,22 +233,10 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
 bool NativeGateset::allowsOp(Operation* op) const {
   return TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
-      .Case<RXXOp>([&](RXXOp op) {
-        return gates.contains(NativeGateKind::RXX) &&
-               utils::valueToDouble(op.getTheta()).has_value();
-      })
-      .Case<RYYOp>([&](RYYOp op) {
-        return gates.contains(NativeGateKind::RYY) &&
-               utils::valueToDouble(op.getTheta()).has_value();
-      })
-      .Case<RZXOp>([&](RZXOp op) {
-        return gates.contains(NativeGateKind::RZX) &&
-               utils::valueToDouble(op.getTheta()).has_value();
-      })
-      .Case<RZZOp>([&](RZZOp op) {
-        return gates.contains(NativeGateKind::RZZ) &&
-               utils::valueToDouble(op.getTheta()).has_value();
-      })
+      .Case<RXXOp>([&](RXXOp) { return gates.contains(NativeGateKind::RXX); })
+      .Case<RYYOp>([&](RYYOp) { return gates.contains(NativeGateKind::RYY); })
+      .Case<RZXOp>([&](RZXOp) { return gates.contains(NativeGateKind::RZX); })
+      .Case<RZZOp>([&](RZZOp) { return gates.contains(NativeGateKind::RZZ); })
       .Case<iSWAPOp>(
           [&](iSWAPOp) { return gates.contains(NativeGateKind::ISWAP); })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
