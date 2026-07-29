@@ -296,6 +296,27 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_decomposes_multi_controlled() -> None:
+    """Decompose multi-controlled gates through the typed QCOProgram API."""
+    qc = QuantumComputation(3)
+    qc.mcx({0, 1}, 2)
+    qco = compile_program(qc, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+    before = qco.ir
+    assert "qco.ctrl" in before
+
+    retained = qco.copy()
+    retained.decompose_multi_controlled(min_controls=3)
+    assert "controls_out:2" in retained.ir
+
+    qco.decompose_multi_controlled()
+    assert qco.ir != before
+    assert "controls_out:2" not in qco.ir
+
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        qco.decompose_multi_controlled(min_controls=1)
+
+
 def test_compile_program_fails_for_missing_file() -> None:
     """A missing known input file extension raises an error."""
     with pytest.raises(RuntimeError, match="does not exist"):
