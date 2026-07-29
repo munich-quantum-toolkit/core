@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/Utils/Layout.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/ArrayRef.h>
 
 #include <array>
 #include <cstddef>
