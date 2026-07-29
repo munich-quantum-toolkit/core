@@ -154,7 +154,7 @@ public:
   std::string designatorToString();
 };
 
-enum UnsizedTy : uint8_t { Bool, Duration };
+enum UnsizedTy : uint8_t { Bool, Duration, SingleQubit };
 
 template <typename T> class UnsizedType final : public Type<T> {
 public:
@@ -177,6 +177,9 @@ public:
   }
   static std::shared_ptr<Type<T>> getDurationTy() {
     return std::make_shared<UnsizedType>(Duration);
+  }
+  static std::shared_ptr<Type<T>> getSingleQubitTy() {
+    return std::make_shared<UnsizedType>(SingleQubit);
   }
 
   T getDesignator() override {

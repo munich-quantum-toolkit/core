@@ -375,7 +375,9 @@ InferredType TypeCheckPass::visitMeasureExpression(
     error("Unknown identifier '" + indexedIdentifier->identifier + "'.");
     return InferredType::error();
   }
-  const auto width = it->second.type->getDesignator();
+  const auto width = it->second.type->allowsDesignator()
+                         ? it->second.type->getDesignator()
+                         : 1;
   return InferredType{std::dynamic_pointer_cast<ResolvedType>(
       DesignatedType<uint64_t>::getBitTy(width))};
 }

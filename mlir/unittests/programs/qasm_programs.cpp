@@ -221,7 +221,7 @@ bit[3] c = measure q;
 
 const std::string powTwoX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
-qubit q;
+qubit[1] q;
 bit c;
 pow(2) @ x q;
 c = measure q;
@@ -229,7 +229,7 @@ c = measure q;
 
 const std::string powZeroX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
-qubit q;
+qubit[1] q;
 bit c;
 pow(0) @ x q;
 c = measure q;
@@ -237,7 +237,7 @@ c = measure q;
 
 const std::string negativePowS = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
-qubit q;
+qubit[1] q;
 bit c;
 pow(-2) @ s q;
 c = measure q;
@@ -253,7 +253,7 @@ c = measure q;
 
 const std::string nestedPowX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
-qubit q;
+qubit[1] q;
 bit c;
 pow(2) @ pow(3) @ x q;
 c = measure q;
@@ -265,7 +265,7 @@ gate hs q0 {
   h q0;
   s q0;
 }
-qubit q;
+qubit[1] q;
 bit c;
 pow(2) @ hs q;
 c = measure q;
