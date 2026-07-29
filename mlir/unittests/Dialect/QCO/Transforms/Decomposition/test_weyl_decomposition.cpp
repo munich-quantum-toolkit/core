@@ -750,6 +750,57 @@ TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
   EXPECT_FALSE(NativeGateset::parse("rx,cx").has_value());
 }
 
+TEST(NativeGatesetFromNamesTest, DerivesIbmLikeMenu) {
+  const SmallVector<StringRef> names = {"x", "sx", "rz", "cx", "h", "measure"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::ZSXX);
+  EXPECT_EQ(gs->entangler, NativeGateKind::CX);
+  EXPECT_EQ(gs->toMenuString(), "x,sx,rz,cx");
+}
+
+TEST(NativeGatesetFromNamesTest, PrefersCzAndMapsPrxAlias) {
+  const SmallVector<StringRef> names = {"prx", "cz", "cx"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::R);
+  EXPECT_EQ(gs->entangler, NativeGateKind::CZ);
+  EXPECT_EQ(gs->toMenuString(), "r,cz");
+}
+
+TEST(NativeGatesetFromNamesTest, PrefersUAndCz) {
+  const SmallVector<StringRef> names = {"u", "u3", "cx", "cz"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::U);
+  EXPECT_EQ(gs->entangler, NativeGateKind::CZ);
+  EXPECT_EQ(gs->toMenuString(), "u,cz");
+}
+
+TEST(NativeGatesetFromNamesTest, RotationPairXzx) {
+  const SmallVector<StringRef> names = {"rx", "rz", "cx"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::XZX);
+  EXPECT_EQ(gs->toMenuString(), "rx,rz,cx");
+}
+
+TEST(NativeGatesetFromNamesTest, RejectsInsufficientMenus) {
+  EXPECT_FALSE(NativeGateset::fromOperationNames(
+      SmallVector<StringRef>{"h", "measure"}));
+  EXPECT_FALSE(NativeGateset::fromOperationNames(SmallVector<StringRef>{"cx"}));
+  EXPECT_FALSE(
+      NativeGateset::fromOperationNames(SmallVector<StringRef>{"cnot"}));
+}
+
+TEST(NativeGatesetFromNamesTest, MapsCnotAlias) {
+  const SmallVector<StringRef> names = {"u", "cnot"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->entangler, NativeGateKind::CX);
+  EXPECT_EQ(gs->toMenuString(), "u,cx");
+}
+
 TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
   const auto uGateset = NativeGateset::parse("u,cx");
   ASSERT_TRUE(uGateset);

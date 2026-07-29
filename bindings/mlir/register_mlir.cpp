@@ -10,7 +10,10 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
@@ -235,6 +238,31 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
   return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
                                              output, qcoPipeline, enableTiming,
                                              enableStatistics));
+}
+
+[[nodiscard]] std::string
+nativeGatesMenuOrThrow(const std::vector<std::string>& names) {
+  llvm::SmallVector<llvm::StringRef> refs;
+  refs.reserve(names.size());
+  for (const auto& name : names) {
+    refs.emplace_back(name);
+  }
+  const auto gateset =
+      mlir::qco::decomposition::NativeGateset::fromOperationNames(refs);
+  if (!gateset) {
+    throw nb::value_error(
+        "cannot derive a supported native-gates menu from the given "
+        "operation names");
+  }
+  return gateset->toMenuString();
+}
+
+[[nodiscard]] std::string nativeGatesMenuFromDevice(const nb::object& device) {
+  std::vector<std::string> names;
+  for (const auto& op : device.attr("operations")()) {
+    names.push_back(nb::cast<std::string>(nb::handle(op).attr("name")()));
+  }
+  return nativeGatesMenuOrThrow(names);
 }
 
 } // namespace
@@ -512,6 +540,22 @@ LLVM bitcode.)pb");
       .def("write_bitcode",
            &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
            "path"_a, "Write this program as LLVM bitcode.");
+
+  m.def("native_gates_from_operation_names", &nativeGatesMenuOrThrow, "names"_a,
+        "Derive a comma-separated native-gates menu from operation name "
+        "strings.");
+
+  m.def("native_gates_from_device", &nativeGatesMenuFromDevice, "device"_a,
+        R"pb(Derive a comma-separated native-gates menu from a FoMaC device.
+
+Args:
+    device: A FoMaC device exposing ``operations()`` with ``name()``.
+
+Returns:
+    Comma-separated native gate menu string.
+
+Raises:
+    ValueError: When no supported menu can be derived.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,

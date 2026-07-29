@@ -24,6 +24,7 @@
 
 #include <numbers>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace mlir::qco::decomposition {
@@ -269,6 +270,122 @@ std::optional<NativeGateset> NativeGateset::parse(StringRef nativeGates) {
       .eulerBasis = euler,
       .entangler = entangler,
   };
+}
+
+static StringRef normalizeGateAlias(StringRef token) {
+  token = token.trim();
+  if (token.equals_insensitive("prx")) {
+    return "r";
+  }
+  if (token.equals_insensitive("u3")) {
+    return "u";
+  }
+  if (token.equals_insensitive("cnot")) {
+    return "cx";
+  }
+  return token;
+}
+
+static void insertEulerConstituents(DenseSet<NativeGateKind>& selected,
+                                    EulerBasis euler) {
+  switch (euler) {
+  case EulerBasis::U:
+    selected.insert(NativeGateKind::U);
+    break;
+  case EulerBasis::ZSXX:
+    selected.insert(NativeGateKind::X);
+    selected.insert(NativeGateKind::SX);
+    selected.insert(NativeGateKind::RZ);
+    break;
+  case EulerBasis::R:
+    selected.insert(NativeGateKind::R);
+    break;
+  case EulerBasis::XZX:
+    selected.insert(NativeGateKind::RX);
+    selected.insert(NativeGateKind::RZ);
+    break;
+  case EulerBasis::XYX:
+    selected.insert(NativeGateKind::RX);
+    selected.insert(NativeGateKind::RY);
+    break;
+  case EulerBasis::ZYZ:
+    selected.insert(NativeGateKind::RY);
+    selected.insert(NativeGateKind::RZ);
+    break;
+  }
+}
+
+std::optional<NativeGateset>
+NativeGateset::fromOperationNames(ArrayRef<StringRef> names) {
+  DenseSet<NativeGateKind> recognized;
+  for (StringRef name : names) {
+    std::string lowered = name.trim().lower();
+    if (lowered.empty()) {
+      continue;
+    }
+    const StringRef token = normalizeGateAlias(lowered);
+    const auto gate = parseGateToken(token);
+    if (gate) {
+      recognized.insert(*gate);
+    }
+  }
+  const auto euler = resolveEulerBasis(recognized);
+  const auto entangler = selectEntangler(recognized);
+  if (!euler || !entangler) {
+    return std::nullopt;
+  }
+  DenseSet<NativeGateKind> selected;
+  insertEulerConstituents(selected, *euler);
+  selected.insert(*entangler);
+  return NativeGateset{
+      .gates = std::move(selected),
+      .eulerBasis = euler,
+      .entangler = entangler,
+  };
+}
+
+std::string NativeGateset::toMenuString() const {
+  if (!eulerBasis || !entangler) {
+    return {};
+  }
+  std::string out;
+  auto append = [&](StringRef tok) {
+    if (!out.empty()) {
+      out.push_back(',');
+    }
+    out.append(tok.str());
+  };
+  switch (*eulerBasis) {
+  case EulerBasis::U:
+    append("u");
+    break;
+  case EulerBasis::ZSXX:
+    append("x");
+    append("sx");
+    append("rz");
+    break;
+  case EulerBasis::R:
+    append("r");
+    break;
+  case EulerBasis::XZX:
+    append("rx");
+    append("rz");
+    break;
+  case EulerBasis::XYX:
+    append("rx");
+    append("ry");
+    break;
+  case EulerBasis::ZYZ:
+    append("ry");
+    append("rz");
+    break;
+  }
+  if (*entangler == NativeGateKind::CZ) {
+    append("cz");
+  } else {
+    append("cx");
+  }
+  return out;
 }
 
 } // namespace mlir::qco::decomposition

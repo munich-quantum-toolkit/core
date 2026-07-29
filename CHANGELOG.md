@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Derive a native-gates menu from device/backend operation names
+  (`NativeGateset::fromOperationNames`) ([**@simon1hofmann**])
 - ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
   ([**@burgholzer**])
 - ✨ Add versioned, relocatable configuration and stable-ID registration for
