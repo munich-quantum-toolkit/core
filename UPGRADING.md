@@ -6,12 +6,15 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### MLIR enabled by default for C++ and Python package builds
+### LLVM/MLIR required for all source builds
 
-The MLIR-based functionality within MQT Core has long been experimental and
-opt-in. Starting with this release, MLIR is enabled by default for C++ library
-builds. This means that LLVM 22.1+ (including MLIR) is now a required dependency
-for building MQT Core from source.
+MQT Core now builds its MLIR-based compiler infrastructure unconditionally. LLVM
+22.1+ (including MLIR) is therefore required when building MQT Core from source,
+including as a CMake dependency or Python package. The `BUILD_MQT_CORE_MLIR`
+CMake option has been removed. The QIR runner and QIR support in the DDSIM QDMI
+Device are also built unconditionally, so the `BUILD_MQT_CORE_QIR_RUNNER` and
+`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` options have been removed. Remove these
+three options from build scripts and presets.
 
 We offer pre-built distributions for all supported platforms as part of the
 `setup-mlir` project at
@@ -20,29 +23,18 @@ Please follow the instructions there to install the distribution for your
 platform. You can then point CMake to the installation directory using the
 `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
 
-As of this release, MLIR is also enabled for Python package builds, since the
-package now exposes an MLIR-based compiler entry point in `mqt.core.mlir`.
-
 For local development, you can configure `MLIR_DIR` once in a repository-local
 `.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
 Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
 otherwise provided.
-
-The MQT Core compiler dialects can still be manually disabled by passing
-`-DBUILD_MQT_CORE_MLIR=OFF` to CMake. The QIR runner and DDSIM QIR support
-follow that option by default, but can now be selected independently through
-`BUILD_MQT_CORE_QIR_RUNNER` and `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR`. To remove
-the LLVM/MLIR dependency from an existing build directory, explicitly disable
-all three options.
 
 Known limitations:
 
 - Our pre-built distributions are incompatible with GCC on macOS. Use
   (Apple)Clang instead or compile LLVM from source using your preferred
   compiler.
-- AppleClang 17+ is required to build MQT Core with MLIR enabled due to some
-  C++20 features being used that are not yet properly supported by older
-  versions.
+- AppleClang 17+ is required to build MQT Core due to some C++20 features that
+  are not yet properly supported by older versions.
 
 ### Removal of the density matrix support from the DD package
 

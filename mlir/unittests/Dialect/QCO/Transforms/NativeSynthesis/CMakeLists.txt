@@ -6,24 +6,25 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-decomposition)
-add_executable(${target_name} test_euler_decomposition.cpp test_multi_controlled_decomposition.cpp
-                              test_weyl_decomposition.cpp)
+set(target_name mqt-core-mlir-unittest-fuse-two-qubit-unitary-runs)
+add_executable(${target_name} test_fuse_two_qubit_unitary_runs.cpp)
 
 target_link_libraries(
   ${target_name}
-  PRIVATE GTest::gtest_main
+  PRIVATE MLIRParser
+          GTest::gtest_main
+          MLIRQCPrograms
           MLIRQCOProgramBuilder
           MLIRQCODDFunctionality
-          MLIRQCOTransforms
           MLIRQCOUtils
-          MQT::CoreDD
+          MLIRQCToQCO
+          MLIRQCOTransforms
           MLIRPass
           MLIRFuncDialect
           MLIRArithDialect
           MLIRIR
           MLIRSupport
-          MLIRQTensorDialect)
+          LLVMSupport)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

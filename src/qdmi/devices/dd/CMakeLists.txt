@@ -38,18 +38,15 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer
-                                               MQT::CoreQDMICommon spdlog::spdlog)
-  if(BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR)
-    target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT MQT::CoreQIRRuntime)
-    target_compile_definitions(${TARGET_NAME} PRIVATE BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR)
-  endif()
-  set_property(TARGET ${TARGET_NAME} PROPERTY MQT_CORE_QDMI_DDSIM_WITH_QIR
-                                              ${BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR})
-  set_property(
-    TARGET ${TARGET_NAME}
-    APPEND
-    PROPERTY EXPORT_PROPERTIES MQT_CORE_QDMI_DDSIM_WITH_QIR)
+  target_link_libraries(
+    ${TARGET_NAME}
+    PRIVATE MQT::CoreDD
+            MQT::CoreQASM
+            MQT::CoreCircuitOptimizer
+            MQT::CoreQDMICommon
+            MQT::CoreQIRJIT
+            MQT::CoreQIRRuntime
+            spdlog::spdlog)
 
   # Make QDMI version available and ensure symbols are exported when building the library
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"

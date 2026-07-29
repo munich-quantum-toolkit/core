@@ -181,11 +181,19 @@ public:
   /// Fuse single-qubit unitary runs into the selected Euler basis.
   [[nodiscard]] bool fuseSingleQubitUnitaryRuns(std::string_view basis = "zyz");
 
+  /// Lower unitaries to a non-empty native gate menu via two-qubit run fusion.
+  [[nodiscard]] bool fuseTwoQubitUnitaryRuns(std::string_view nativeGates);
+
   /// Unroll loops containing quantum operations.
   [[nodiscard]] bool unrollQuantumLoops(int64_t factor = -1);
 
   /// Lift Hadamard gates away from measurements.
   [[nodiscard]] bool liftHadamards();
+
+  /// Decompose controlled X/Z gates, `qco.rccx`, and constant-angle phase
+  /// gates with at least @p minControls controls (@p minControls must be at
+  /// least 2).
+  [[nodiscard]] bool decomposeMultiControlled(uint64_t minControls = 2);
 
   /// Place and route the program on a coupling graph.
   [[nodiscard]] bool

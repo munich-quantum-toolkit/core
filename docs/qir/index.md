@@ -21,14 +21,11 @@ See {cite:p}`stadeTowardsSupportingQIR2025` for more details.
 
 ### Building the Runner
 
-To build this tool, the CMake option `BUILD_MQT_CORE_QIR_RUNNER` has to be
-enabled. It follows `BUILD_MQT_CORE_MLIR` by default, but can be enabled
-independently when the project already provides a compatible LLVM/MLIR
-installation. From the root of the repository, you can build the runner as
-follows:
+The runner is part of every MQT Core build. From the root of the repository, you
+can build it as follows:
 
 ```bash
-cmake -S . -B build -DBUILD_MQT_CORE_QIR_RUNNER=ON -DBUILD_MQT_CORE_MLIR=ON
+cmake -S . -B build
 cmake --build build --target mqt-core-qir-runner
 ```
 
@@ -59,11 +56,7 @@ Ordered; anything else, or a missing attribute, selects Labeled.
 
 The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR
 Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
-String (LLVM assembly). These QIR formats are only supported when the
-`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled. It is enabled by
-default when `BUILD_MQT_CORE_MLIR` is enabled, but can be selected
-independently. This lets an embedding project reuse its existing LLVM/MLIR
-installation for the QIR JIT without building MQT Core's compiler dialects.
+String (LLVM assembly).
 
 FoMaC C++ applications submit textual programs through the
 `Device::submitJob(const std::string&, ...)` overload, which includes the
@@ -77,11 +70,7 @@ known binary and non-text formats based on their QDMI format identifier, even if
 their payload happens to end in a null byte.
 
 The `MQT::CoreFoMaC` CMake target advertises this API through the exported
-`MQT_CORE_FOMAC_BINARY_PROGRAM_API` target property. The
-`MQT::CoreQDMI_DDSIM_Device` target similarly reports whether it was built with
-QIR support through `MQT_CORE_QDMI_DDSIM_WITH_QIR`. Embedding projects can use
-these properties to reject an incompatible pre-existing MQT Core target during
-configuration.
+`MQT_CORE_FOMAC_BINARY_PROGRAM_API` target property.
 
 The Python API follows the same distinction: pass `str` to `Device.submit_job`
 for a textual program and `bytes` for an exact binary payload.

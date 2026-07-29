@@ -40,30 +40,11 @@ set(BUILD_MQT_CORE_BENCHMARKS
 set(BUILD_MQT_CORE_DOCUMENTATION
     OFF
     CACHE BOOL "")
-set(BUILD_MQT_CORE_MLIR
-    OFF
-    CACHE BOOL "")
-set(BUILD_MQT_CORE_QIR_RUNNER
-    OFF
-    CACHE BOOL "")
-set(BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
-    ON
-    CACHE BOOL "")
-
 add_subdirectory("${MQT_CORE_SOURCE_DIR}" mqt-core EXCLUDE_FROM_ALL)
-
-if(TARGET MLIRSupportMQT)
-  message(FATAL_ERROR "DDSIM QIR support unexpectedly added the MQT Core MLIR targets")
-endif()
 
 get_target_property(fomac_binary_program_api MQT::CoreFoMaC MQT_CORE_FOMAC_BINARY_PROGRAM_API)
 if(NOT fomac_binary_program_api)
   message(FATAL_ERROR "FoMaC does not advertise exact-byte program submission")
-endif()
-
-get_target_property(ddsim_with_qir MQT::CoreQDMI_DDSIM_Device MQT_CORE_QDMI_DDSIM_WITH_QIR)
-if(NOT ddsim_with_qir)
-  message(FATAL_ERROR "DDSIM does not advertise QIR support")
 endif()
 
 add_executable(mqt-core-qdmi-consumer main.cpp)

@@ -346,6 +346,8 @@ TEST(FoMaCTest, DevicePropertyToString) {
                "MIN ATOM DISTANCE");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS),
                "SUPPORTED PROGRAM FORMATS");
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CHILDDEVICES),
+               "CHILD DEVICES");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_MAX), "MAX");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM1), "CUSTOM1");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM2), "CUSTOM2");
@@ -356,6 +358,11 @@ TEST(FoMaCTest, DevicePropertyToString) {
 
 TEST(FoMaCTest, SessionPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PROPERTY_DEVICES), "DEVICES");
+}
+
+TEST(FoMaCTest, DeviceSessionParameterToString) {
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE),
+               "CHILD DEVICE");
 }
 
 TEST(FoMaCTest, ThrowIfError) {

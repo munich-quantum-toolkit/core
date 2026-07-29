@@ -38,6 +38,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
@@ -432,6 +433,9 @@ cx q[0], q[2];
 
   EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
   EXPECT_NE(qco.str(), beforeFusion);
+  const auto beforeTwoQubitFusion = qco.str();
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("u,cx"));
+  EXPECT_NE(qco.str(), beforeTwoQubitFusion);
   const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
       {0, 1}, {1, 0}, {1, 2}, {2, 1}};
   EXPECT_TRUE(qco.placeAndRoute(coupling));
@@ -534,6 +538,90 @@ h q;
       runDefaultPipeline(CompilerInput{std::move(*jeff)}, ProgramFormat::QC);
   ASSERT_TRUE(fromJeff);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromJeff));
+}
+
+/**
+ * @brief Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
+ *
+ * @details Correctness of the decomposition is tested in a dedicated suite.
+ */
+TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  const auto before = qco->copy();
+  ASSERT_TRUE(qco->decomposeMultiControlled(2));
+  EXPECT_NE(qco->str(), before.str());
+}
+
+TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledZ);
+  ASSERT_TRUE(module);
+
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  const auto before = qco->copy();
+  ASSERT_TRUE(
+      qco->runPassPipeline("decompose-multi-controlled{min-controls=2}"));
+  EXPECT_NE(qco->str(), before.str());
+}
+
+TEST_F(CompilerPipelineTest,
+       RejectsDecomposeMultiControlledMinControlsBelowTwo) {
+  EXPECT_FALSE(isDecomposeMultiControlledConfigValid(1U));
+  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(2U));
+
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_FALSE(qco->decomposeMultiControlled(1));
+}
+
+TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
+  auto module =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+        builder.mcx({builder.staticQubit(0), builder.staticQubit(1),
+                     builder.staticQubit(2)},
+                    builder.staticQubit(3));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(module);
+
+  std::string before;
+  llvm::raw_string_ostream beforeStream(before);
+  module->print(beforeStream);
+
+  PassManager pm(module->getContext());
+  populateDecomposeMultiControlledPipeline(pm, 2);
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+
+  std::string after;
+  llvm::raw_string_ostream afterStream(after);
+  module->print(afterStream);
+  EXPECT_NE(after, before);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1007,5 +1095,107 @@ INSTANTIATE_TEST_SUITE_P(
         CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(::qc::ctrlTwo),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));
+
+/**
+ * @brief Test: fuseTwoQubitUnitaryRuns lowers one- and two-qubit operations
+ *        into native menus.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsLowersToNativeMenu) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+swap q[0], q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  EXPECT_NE(qco.str().find("qco.h"), std::string::npos);
+  EXPECT_NE(qco.str().find("qco.swap"), std::string::npos);
+
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("x,sx,rz,cx"));
+  EXPECT_EQ(qco.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qco.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qco.str().find("qco.ctrl"), std::string::npos);
+
+  auto qcU = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcU);
+  auto qcoUResult = std::move(*qcU).intoQCO();
+  ASSERT_TRUE(qcoUResult);
+  auto qcoU = std::move(*qcoUResult);
+  ASSERT_TRUE(qcoU.cleanup());
+  EXPECT_TRUE(qcoU.fuseTwoQubitUnitaryRuns("u,cx"));
+  EXPECT_EQ(qcoU.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qcoU.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qcoU.str().find("qco.u"), std::string::npos);
+  EXPECT_NE(qcoU.str().find("qco.ctrl"), std::string::npos);
+
+  auto qcExpanded = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcExpanded);
+  auto qcoExpandedResult = std::move(*qcExpanded).intoQCO();
+  ASSERT_TRUE(qcoExpandedResult);
+  auto qcoExpanded = std::move(*qcoExpandedResult);
+  ASSERT_TRUE(qcoExpanded.cleanup());
+  EXPECT_TRUE(qcoExpanded.fuseTwoQubitUnitaryRuns("u,rx,rz,cx,cz"));
+  EXPECT_EQ(qcoExpanded.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qcoExpanded.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qcoExpanded.str().find("qco.ctrl"), std::string::npos);
+}
+
+/**
+ * @brief Test: fuseTwoQubitUnitaryRuns rejects invalid native gate menus.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsRejectsInvalidMenus) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns("cx,cz"));
+
+  auto qcInvalid = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcInvalid);
+  auto qcoInvalidResult = std::move(*qcInvalid).intoQCO();
+  ASSERT_TRUE(qcoInvalidResult);
+  auto qcoInvalid = std::move(*qcoInvalidResult);
+  ASSERT_TRUE(qcoInvalid.cleanup());
+  EXPECT_FALSE(qcoInvalid.fuseTwoQubitUnitaryRuns("not-a-gate"));
+}
+
+/**
+ * @brief Test: the public API rejects an empty native gate menu.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsRejectsEmptyMenu) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  const auto before = qco.str();
+  EXPECT_NE(before.find("qco.h"), std::string::npos);
+
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns(""));
+  EXPECT_EQ(qco.str(), before);
+
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns("   \t  "));
+  EXPECT_EQ(qco.str(), before);
+}
 
 } // namespace mqt::test::compiler
