@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
+  ([**@burgholzer**])
 - ✨ Add versioned, relocatable configuration and stable-ID registration for
   QDMI device libraries, including disabled-ID reservations, fresh device
   sessions, idempotent registration, and external-device target metadata
@@ -668,6 +670,7 @@ changelogs._
 <!-- PR links -->
 
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
+[#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
