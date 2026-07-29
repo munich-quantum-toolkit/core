@@ -407,7 +407,7 @@ public:
             std::get<1>(stmt->type));
     if (!sizedType) {
       const auto unsizedType =
-          std::dynamic_pointer_cast<qasm3::UnsizedType<unsigned long>>(
+          std::dynamic_pointer_cast<qasm3::UnsizedType<uint64_t>>(
               std::get<1>(stmt->type));
       if (!unsizedType || unsizedType->type != qasm3::SingleQubit) {
         throw qasm3::CompilerError(
