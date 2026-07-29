@@ -12,9 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add binary-safe QDMI program handling to FoMaC and support embedding the
-  DDSIM QDMI device with parent-provided LLVM/MLIR and `spdlog` dependencies
-  ([#1957]) ([**@burgholzer**])
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
+  ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],

@@ -99,9 +99,6 @@ FetchContent_Declare(
   FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
-set(SPDLOG_MINIMUM_VERSION
-    1.15.3
-    CACHE STRING "Minimum spdlog version")
 set(MQT_CORE_MANAGES_SPDLOG OFF)
 if(NOT TARGET spdlog::spdlog)
   set(SPDLOG_VERSION
@@ -120,27 +117,13 @@ if(NOT TARGET spdlog::spdlog)
       CACHE BOOL "Disable upstream spdlog install rules; handled by mqt-core" FORCE)
   cmake_dependent_option(SPDLOG_BUILD_SHARED "Build spdlog as shared library" ON
                          "BUILD_MQT_CORE_SHARED_LIBS" OFF)
-  FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_MINIMUM_VERSION})
+  FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
   list(APPEND FETCH_PACKAGES spdlog)
   set(MQT_CORE_MANAGES_SPDLOG ON)
 endif()
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
-
-get_target_property(MQT_CORE_SPDLOG_TARGET_VERSION spdlog::spdlog VERSION)
-if(NOT MQT_CORE_SPDLOG_TARGET_VERSION OR MQT_CORE_SPDLOG_TARGET_VERSION MATCHES "-NOTFOUND$")
-  set(MQT_CORE_SPDLOG_TARGET_VERSION "${spdlog_VERSION}")
-endif()
-if(NOT MQT_CORE_SPDLOG_TARGET_VERSION)
-  message(FATAL_ERROR "Cannot determine the version of the existing spdlog::spdlog target. "
-                      "Set spdlog_VERSION to a version compatible with MQT Core.")
-endif()
-if(MQT_CORE_SPDLOG_TARGET_VERSION VERSION_LESS SPDLOG_MINIMUM_VERSION)
-  message(
-    FATAL_ERROR "The spdlog::spdlog target provides version ${MQT_CORE_SPDLOG_TARGET_VERSION}, "
-                "but MQT Core requires at least ${SPDLOG_MINIMUM_VERSION}.")
-endif()
 
 # Install nlohmann_json with explicit MQT components.
 if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)

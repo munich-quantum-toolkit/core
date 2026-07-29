@@ -25,14 +25,6 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver
     PRIVATE spdlog::spdlog)
 
-  # Allow embedding projects to reject a pre-existing FoMaC target that predates exact-byte program
-  # submission.
-  set_property(TARGET ${TARGET_NAME} PROPERTY MQT_CORE_FOMAC_BINARY_PROGRAM_API ON)
-  set_property(
-    TARGET ${TARGET_NAME}
-    APPEND
-    PROPERTY EXPORT_PROPERTIES MQT_CORE_FOMAC_BINARY_PROGRAM_API)
-
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
       ${MQT_CORE_TARGETS} ${TARGET_NAME}
