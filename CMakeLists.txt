@@ -63,6 +63,12 @@ option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
+option(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE "Build the MQT Core DDSIM QDMI device"
+       ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_MQT_CORE_QDMI_NA_DEVICE "Build the MQT Core neutral-atom QDMI device"
+       ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI device"
+       ${PROJECT_IS_TOP_LEVEL})
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(BUILD_MQT_CORE_MLIR
       OFF
@@ -149,16 +155,19 @@ endif()
 if(BUILD_MQT_CORE_MLIR)
   add_subdirectory(mlir)
 
-  # copy generated MLIR documentation
-  add_custom_command(
-    TARGET mlir-doc
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
-            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
-    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
-            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
-    COMMENT "Copying and cleaning up generated MLIR documentation"
-    VERBATIM)
+  # Preserve the top-level `mlir-doc` behavior without modifying a target owned by an embedding
+  # project.
+  if(PROJECT_IS_TOP_LEVEL)
+    add_custom_command(
+      TARGET mlir-doc
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+              ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+      COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+              ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+      COMMENT "Copying and cleaning up generated MLIR documentation"
+      VERBATIM)
+  endif()
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)
