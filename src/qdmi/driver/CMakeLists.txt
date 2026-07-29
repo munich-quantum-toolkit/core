@@ -13,7 +13,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
 
   # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Driver.cpp)
+  target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 
   # Add headers using file sets
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
@@ -23,41 +23,22 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
-    PRIVATE qdmi::qdmi_project_warnings spdlog::spdlog ${CMAKE_DL_LIBS})
+    PRIVATE qdmi::qdmi_project_warnings nlohmann_json::nlohmann_json spdlog::spdlog
+            ${CMAKE_DL_LIBS})
+  target_include_directories(${TARGET_NAME} SYSTEM
+                             PRIVATE ${PROJECT_SOURCE_DIR}/vendor/tomlplusplus)
 
-  add_dependencies(${TARGET_NAME} MQT::CoreQDMINaDevice MQT::CoreQDMIScDevice
-                   MQT::CoreQDMI_DDSIM_Device)
-  target_compile_definitions(
-    ${TARGET_NAME}
-    PRIVATE
-      "DYN_DEV_LIBS=std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMINaDevice>\", \"MQT_NA\"}, std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"}"
-  )
+  mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 
   # Ensure the driver can find the device libraries at runtime
   if(WIN32)
-    # On Windows, we need to copy the device DLLs to the library directory
-    add_custom_command(
-      TARGET ${TARGET_NAME}
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMIScDevice>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
-    add_custom_command(
-      TARGET ${TARGET_NAME}
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMINaDevice>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
-    add_custom_command(
-      TARGET ${TARGET_NAME}
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+    mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
   else()
-    target_link_options(
-      ${TARGET_NAME}
-      INTERFACE
-      $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:MQT::CoreQDMINaDevice>>
-      $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:MQT::CoreQDMIScDevice>>
-      $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:MQT::CoreQDMI_DDSIM_Device>>)
+    add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
+    foreach(device IN LISTS QDMI_DEVICE_TARGETS)
+      target_link_options(${TARGET_NAME} INTERFACE
+                          $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
+    endforeach()
   endif()
 
   # add to list of MQT core targets

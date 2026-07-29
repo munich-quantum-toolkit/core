@@ -728,28 +728,17 @@ TEST_F(QCOMatrixTest, POpMatrix) {
 /// \name QCO/Operations/StandardGates/RCCXOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RCCXOpMatrix) {
+  // Get the (static) matrix from the operation
   const auto matrix = RCCXOp::getUnitaryMatrix();
 
-  qc::QuantumComputation comp;
-  comp.addQubitRegister(3, "q");
-  comp.h(2);
-  comp.t(2);
-  comp.cx(1, 2);
-  comp.tdg(2);
-  comp.cx(0, 2);
-  comp.t(2);
-  comp.cx(1, 2);
-  comp.tdg(2);
-  comp.h(2);
+  // Get the definition of the matrix from the DD library
+  const auto definition = dd::opToThreeQubitGateMatrix(qc::OpType::RCCX);
 
-  const auto package = std::make_unique<dd::Package>(3);
-  const auto& definition = dd::buildFunctionality(comp, *package).getMatrix(3);
-  const auto dim = static_cast<int64_t>(definition.size());
-  DynamicMatrix expected(dim);
-  for (int64_t row = 0; row < dim; ++row) {
-    for (int64_t col = 0; col < dim; ++col) {
-      expected(row, col) = definition[static_cast<std::size_t>(row)]
-                                     [static_cast<std::size_t>(col)];
+  DynamicMatrix expected(static_cast<int64_t>(dd::THREE_QUBIT_GATE_DIM));
+  for (std::size_t row = 0; row < dd::THREE_QUBIT_GATE_DIM; ++row) {
+    for (std::size_t col = 0; col < dd::THREE_QUBIT_GATE_DIM; ++col) {
+      expected(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
+          definition[row][col];
     }
   }
 

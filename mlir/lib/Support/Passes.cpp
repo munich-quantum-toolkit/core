@@ -23,6 +23,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstdint>
+
 using namespace mlir;
 
 static void addSimplificationPasses(OpPassManager& pm) {
@@ -45,7 +47,9 @@ runWithPassManager(ModuleOp mod,
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerFuseTwoQubitUnitaryRuns();
     qco::registerHadamardLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
@@ -59,6 +63,17 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
+  return minControls >= 2;
+}
+
+void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
+                                              const uint64_t minControls) {
+  qco::DecomposeMultiControlledOptions options;
+  options.minControls = minControls;
+  pm.addPass(qco::createDecomposeMultiControlled(options));
 }
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,

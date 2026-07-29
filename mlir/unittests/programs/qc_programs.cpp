@@ -2069,6 +2069,7 @@ Value inverseMultipleControlledRccx(QCProgramBuilder& b) {
   });
   return measureAndReturn(b, q.qubits);
 }
+
 Value barrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.barrier(q[0]);
