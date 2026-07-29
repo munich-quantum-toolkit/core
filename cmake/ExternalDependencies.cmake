@@ -92,24 +92,28 @@ FetchContent_Declare(
   FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
-set(SPDLOG_VERSION
-    1.17.0
-    CACHE STRING "spdlog version")
-set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
-# Add position independent code for spdlog, this is required for python bindings on linux
-set(SPDLOG_BUILD_PIC ON)
-set(SPDLOG_SYSTEM_INCLUDES
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-cmake_dependent_option(MQT_CORE_SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
-# Disable upstream spdlog install rules and install with explicit MQT components below.
-set(SPDLOG_INSTALL
-    OFF
-    CACHE BOOL "Disable upstream spdlog install rules; handled by mqt-core" FORCE)
-cmake_dependent_option(SPDLOG_BUILD_SHARED "Build spdlog as shared library" ON
-                       "BUILD_MQT_CORE_SHARED_LIBS" OFF)
-FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
-list(APPEND FETCH_PACKAGES spdlog)
+set(MQT_CORE_MANAGES_SPDLOG OFF)
+if(NOT TARGET spdlog::spdlog)
+  set(SPDLOG_VERSION
+      1.17.0
+      CACHE STRING "spdlog version")
+  set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
+  # Add position independent code for spdlog, this is required for Python bindings on Linux.
+  set(SPDLOG_BUILD_PIC ON)
+  set(SPDLOG_SYSTEM_INCLUDES
+      ON
+      CACHE INTERNAL "Treat the library headers like system headers")
+  cmake_dependent_option(MQT_CORE_SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
+  # Disable upstream spdlog install rules and install with explicit MQT components below.
+  set(SPDLOG_INSTALL
+      OFF
+      CACHE BOOL "Disable upstream spdlog install rules; handled by mqt-core" FORCE)
+  cmake_dependent_option(SPDLOG_BUILD_SHARED "Build spdlog as shared library" ON
+                         "BUILD_MQT_CORE_SHARED_LIBS" OFF)
+  FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
+  list(APPEND FETCH_PACKAGES spdlog)
+  set(MQT_CORE_MANAGES_SPDLOG ON)
+endif()
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
@@ -173,7 +177,7 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
 endif()
 
 # Ensure external shared libraries end up in a common lib layout used by our RUNPATH
-if(TARGET spdlog)
+if(MQT_CORE_MANAGES_SPDLOG AND TARGET spdlog)
   set_target_properties(
     spdlog
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
@@ -182,7 +186,8 @@ if(TARGET spdlog)
 endif()
 
 # Install spdlog with explicit MQT components.
-if(MQT_CORE_SPDLOG_INSTALL
+if(MQT_CORE_MANAGES_SPDLOG
+   AND MQT_CORE_SPDLOG_INSTALL
    AND TARGET spdlog
    AND TARGET spdlog_header_only)
   include(CMakePackageConfigHelpers)

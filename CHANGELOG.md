@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
+  ([**@burgholzer**])
 - ✨ Add versioned, relocatable configuration and stable-ID registration for
   QDMI device libraries, including disabled-ID reservations, fresh device
   sessions, idempotent registration, and external-device target metadata
@@ -34,6 +36,7 @@ releases may include breaking changes.
 
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
+
 ### Removed
 
 - 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
@@ -599,6 +602,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
