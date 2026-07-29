@@ -168,6 +168,7 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
     circuit, in order to improve the results provided by measurement lifting.
 
     Hadamard lifting uses the following commutation rules:
+    ```text
          ┌───┐ ┌───┐      ┌───┐ ┌───┐
         ─┤ X ├─┤ H ├─ => ─┤ H ├─┤ Z ├─
          └───┘ └───┘      └───┘ └───┘
@@ -177,26 +178,33 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
          ┌───┐ ┌───┐      ┌───┐ ┌───┐                                ┌───────┐
         ─┤ Y ├─┤ H ├─ => ─┤ H ├─┤ Y ├─, while adding a global phase: │ G(pi) │
          └───┘ └───┘      └───┘ └───┘                                └───────┘
+    ```
+
     Hadamard lifting is only applied to commute Hadamard gates further in front in the circuit, not the other way
     around. A global phase is added if the Hadamard gate is commuted with a Pauli-Y gate, as YH = -HY.
 
     The routine is only applied to non-controlled Pauli and Hadamard gates.
 
     In order to reduce multi-qubit gates, a second transformation routine is applied. Using the commutation rule
+    ```text
                  ┌───┐┌───┐┌───┐
         ──■──    ┤ H ├┤ X ├┤ H ├
         ┌─┴─┐ => │───│└─┬─┘│───│
         ┤ X ├    ┤ H ├──■──┤ H ├
         └───┘    └───┘     └───┘
+    ```
+
     the following transformation is applied to circuits where a Hadamard gate follows a target gate of a controlled
     Pauli-X gate, which is followed by a measurement:
+    ```text
                               ┌───┐┌───┐┌───┐
         ──■─────────────      ┤ H ├┤ X ├┤ H ├──
         ┌─┴─┐┌───┐┌──────┐ => │───│└─┬─┘│───┘──┐
         ┤ X ├┤ H ├┤ Meas │    ┤ H ├──■──┤ Meas │
         └───┘└───┘└──────┘    └───┘     └──────┘
+    ```
 
-     Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
+    Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
 
   }];
 }
@@ -213,24 +221,30 @@ def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
     circuit to reuse them and to potentially remove some quantum gates.
 
     Measurement lifting uses the following commutation rules:
-                 ┌──────┐             ┌──────┐
-            ──■──┤ Meas │──────      ─┤ Meas ├──■───
-              │  └──────┘             └──────┘  │
-            ┌─┴─┐                 =>          ┌─┴─┐
-            ┤ U ├────────────────    ─────────┤ U ├─
-            └───┘                             └───┘
-            (Where U is any (controlled) unitary gate)
+    ```text
+         ┌──────┐             ┌──────┐
+    ──■──┤ Meas │──────      ─┤ Meas ├──■───
+      │  └──────┘             └──────┘  │
+    ┌─┴─┐                 =>          ┌─┴─┐
+    ┤ U ├────────────────    ─────────┤ U ├─
+    └───┘                             └───┘
+    ```
+    Here, U is any (controlled) unitary gate.
 
-            ┌───┐┌──────┐    ┌──────┐┌───┐
-            ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
-            └───┘└──────┘    └──────┘└───┘
-            (Where P is any diagonal gate, e.g., `z`, `s`, ...)
+    ```text
+    ┌───┐┌──────┐    ┌──────┐┌───┐
+    ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
+    └───┘└──────┘    └──────┘└───┘
+    ```
+    Here, P is any diagonal gate, for example `z` or `s`.
 
-            ┌───┐┌──────┐    ┌───────┐┌───┐
-            ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
-            └───┘└──────┘    └───────┘└───┘
-            (Where Meas* is a measurement after which the outcome is classically negated and X can be replaced by Y, which is also anti-diagonal)
-
+    ```text
+    ┌───┐┌──────┐    ┌───────┐┌───┐
+    ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
+    └───┘└──────┘    └───────┘└───┘
+    ```
+    Here, Meas* is a measurement after which the outcome is classically negated. X can also be replaced by Y, which
+    is likewise anti-diagonal.
   }];
 }
 
@@ -250,6 +264,42 @@ def ReplaceClassicalControls
     with classically controlled operations, represented by `qco.if` operations.
     This reduces quantum interactions and allows for more optimizations, e.g., by enabling qubit reuse.
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// Decomposition Passes
+//===----------------------------------------------------------------------===//
+
+def DecomposeMultiControlled
+    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Decompose controlled X/Z/phase gates and qco.rccx with at "
+                "least min-controls controls";
+  let description = [{
+    Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
+    a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
+    `min-controls` controls.
+
+    - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
+      when `min-controls` is at most 2.
+    - Four or five controls (X/Z): specialized ancilla-free cores (relative-
+      phase `C^4(Z)`; Vale MCP(π) hybrid residual).
+    - Six or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
+      synthesis with a compile-time CX policy table.
+    - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
+      residual at four) for three and four controls; da Silva-Park SP22
+      linear-depth decomposition at five and above. A compile-time angle of
+      `±π` is routed through the Z path for every control count.
+
+    Intermediate two- and three-control building blocks may be left as
+    `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
+    lowers further when the threshold allows.
+  }];
+  let options = [Option<
+      "minControls", "min-controls", "uint64_t", "2",
+      "Decompose controlled X/Z/phase gates and qco.rccx with at least this "
+      "many controls (must be at least 2).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

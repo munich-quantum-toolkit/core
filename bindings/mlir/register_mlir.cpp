@@ -394,6 +394,13 @@ operations.)pb");
       .def("lift_hadamards",
            &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
            "Move Hadamard gates through compatible operations.")
+      .def("decompose_multi_controlled",
+           &BooleanMemberAdapter<
+               &mlir::QCOProgram::decomposeMultiControlled>::call,
+           nb::kw_only(), "min_controls"_a = 2,
+           "Decompose controlled X/Z gates, qco.rccx, and constant-angle phase "
+           "gates with at least min_controls controls (min_controls must be at "
+           "least 2).")
       .def(
           "place_and_route",
           [](mlir::QCOProgram& value,
