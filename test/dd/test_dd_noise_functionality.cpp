@@ -199,7 +199,7 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
       fabs(tmp2["000"] - 1) < tolerance || fabs(tmp2["001"] - 1) < tolerance ||
       fabs(tmp2["010"] - 1) < tolerance || fabs(tmp2["011"] - 1) < tolerance ||
       fabs(tmp2["100"] - 1) < tolerance || fabs(tmp2["101"] - 1) < tolerance ||
-      fabs(tmp2["111"] - 1) < tolerance);
+      fabs(tmp2["110"] - 1) < tolerance || fabs(tmp2["111"] - 1) < tolerance);
 }
 
 TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
