@@ -16,8 +16,11 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -27,6 +30,8 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -61,12 +66,53 @@ using namespace mlir;
 using namespace mlir::qc;
 using namespace mlir::qco;
 using namespace mlir::qir;
+using namespace mlir::utils;
 
 using QCProgramBuilderFn = NamedMLIRBuilder<QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedMLIRBuilder<QIRProgramBuilder>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
 namespace {
+
+/// Return true if two-qubit unitaries in a straight-line entry point obey
+/// coupling constraints.
+static bool isExecutableStraightLine(
+    func::FuncOp entry,
+    const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
+  DenseMap<Value, size_t> m;
+  for (Operation& op : entry.getFunctionBody().getOps()) {
+    if (auto staticOp = dyn_cast<StaticOp>(op)) {
+      m.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+      continue;
+    }
+
+    if (auto unitaryOp = dyn_cast<UnitaryOpInterface>(op)) {
+      if (!isa<BarrierOp>(op) && unitaryOp.getNumQubits() > 1) {
+        assert(unitaryOp.getNumQubits() <= 2 && "expected two-qubit decomp.");
+        const auto hwA = m.at(unitaryOp.getInputQubit(0));
+        const auto hwB = m.at(unitaryOp.getInputQubit(1));
+        if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+          return false;
+        }
+      }
+      for (const auto [pred, succ] : llvm::zip_equal(
+               unitaryOp.getInputQubits(), unitaryOp.getOutputQubits())) {
+        m.try_emplace(succ, m.at(pred));
+      }
+      continue;
+    }
+
+    if (auto resetOp = dyn_cast<ResetOp>(op)) {
+      m.try_emplace(resetOp.getQubitOut(), m.at(resetOp.getQubitIn()));
+      continue;
+    }
+
+    if (auto measOp = dyn_cast<MeasureOp>(op)) {
+      m.try_emplace(measOp.getQubitOut(), m.at(measOp.getQubitIn()));
+    }
+  }
+  return true;
+}
 
 struct CompilerPipelineTestCase {
   std::string name;
@@ -452,6 +498,69 @@ cx q[0], q[2];
   EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
   EXPECT_TRUE(loopProgram->unrollQuantumLoops());
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetBackendMenuOnlyFuses) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  ASSERT_TRUE(qco->targetBackend("u,cx"));
+  const auto ir = qco->str();
+  EXPECT_EQ(ir.find("qco.h"), std::string::npos);
+  EXPECT_NE(ir.find("qco.u"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetBackendWithCouplingLowersSwaps) {
+  // CX on (0,2) needs routing on a line 0-1-2.
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+cx q[0], q[2];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
+      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+  ASSERT_TRUE(qco->targetBackend("u,cx", coupling));
+  const auto ir = qco->str();
+  EXPECT_EQ(ir.find("qco.swap"), std::string::npos);
+  EXPECT_NE(ir.find("qco.ctrl"), std::string::npos);
+  EXPECT_EQ(ir.find("qco.ctrl(%0) targets (%arg0 = %2)"), std::string::npos);
+
+  auto module = parseRecordedModule(ir);
+  ASSERT_TRUE(module);
+  const DenseSet<std::pair<size_t, size_t>> couplingSet(coupling.begin(),
+                                                        coupling.end());
+  EXPECT_TRUE(
+      isExecutableStraightLine(getEntryPoint(module.get()), couplingSet));
+}
+
+TEST_F(CompilerPipelineTest, TargetBackendRejectsEmptyMenu) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_FALSE(qco->targetBackend(""));
+  EXPECT_FALSE(qco->targetBackend("   "));
+  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
+                                                                     {1, 0}};
+  EXPECT_FALSE(qco->targetBackend("", coupling));
 }
 
 /**

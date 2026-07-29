@@ -413,6 +413,22 @@ bool QCOProgram::placeAndRoute(
       "failed to place and route the QCO program"));
 }
 
+bool QCOProgram::targetBackend(
+    const std::string_view nativeGates,
+    const std::span<const std::pair<std::size_t, std::size_t>> coupling) {
+  if (StringRef(nativeGates).trim().empty()) {
+    mod().emitError("the native gate menu must not be empty");
+    return false;
+  }
+  if (!decomposeMultiControlled(/*minControls=*/2)) {
+    return false;
+  }
+  if (!coupling.empty() && !placeAndRoute(coupling)) {
+    return false;
+  }
+  return fuseTwoQubitUnitaryRuns(nativeGates);
+}
+
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },

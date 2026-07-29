@@ -265,6 +265,25 @@ nativeGatesMenuOrThrow(const std::vector<std::string>& names) {
   return nativeGatesMenuOrThrow(names);
 }
 
+[[nodiscard]] std::vector<std::pair<std::size_t, std::size_t>>
+couplingFromDevice(const nb::object& device) {
+  std::vector<std::pair<std::size_t, std::size_t>> edges;
+  const nb::object cmap = device.attr("coupling_map")();
+  if (cmap.is_none()) {
+    return edges;
+  }
+  for (const auto& pair : cmap) {
+    const auto edge = nb::cast<nb::tuple>(nb::handle(pair));
+    const auto a =
+        static_cast<std::size_t>(nb::cast<int>(edge[0].attr("index")()));
+    const auto b =
+        static_cast<std::size_t>(nb::cast<int>(edge[1].attr("index")()));
+    edges.emplace_back(a, b);
+    edges.emplace_back(b, a);
+  }
+  return edges;
+}
+
 } // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
@@ -449,6 +468,34 @@ operations.)pb");
           "coupling"_a, nb::kw_only(), "nlookahead"_a = 1, "alpha"_a = 1.F,
           "lambda_"_a = 0.5F, "niterations"_a = 1, "ntrials"_a = 4,
           "seed"_a = 42, "Place and route the program for a coupling graph.")
+      .def(
+          "target_backend",
+          [](mlir::QCOProgram& value, const std::string& nativeGates,
+             const nb::object& coupling) {
+            if (coupling.is_none()) {
+              requireSuccess(value.targetBackend(nativeGates));
+            } else {
+              const auto edges =
+                  nb::cast<std::vector<std::pair<std::size_t, std::size_t>>>(
+                      coupling);
+              requireSuccess(
+                  value.targetBackend(nativeGates, std::span(edges)));
+            }
+          },
+          nb::kw_only(), "native_gates"_a, "coupling"_a = nb::none(),
+          "Decompose multi-controlled gates, optionally place/route, then fuse "
+          "to "
+          "native_gates.")
+      .def(
+          "target_device",
+          [](mlir::QCOProgram& value, const nb::object& device) {
+            const auto menu = nativeGatesMenuFromDevice(device);
+            const auto coupling = couplingFromDevice(device);
+            requireSuccess(value.targetBackend(menu, std::span(coupling)));
+          },
+          "device"_a,
+          "Target a FoMaC device: derive native menu and coupling, then run "
+          "target_backend.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

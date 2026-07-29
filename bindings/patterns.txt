@@ -169,3 +169,12 @@ mqt.core.mlir.compile_program:
         enable_statistics: bool = False,
     ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
         \doc
+
+mqt.core.mlir.QCOProgram.target_backend:
+    def target_backend(
+        self,
+        *,
+        native_gates: str,
+        coupling: Sequence[tuple[int, int]] | None = None,
+    ) -> None:
+        \doc

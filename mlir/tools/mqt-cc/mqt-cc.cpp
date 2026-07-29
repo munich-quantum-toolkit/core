@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
@@ -24,6 +25,7 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -89,6 +91,12 @@ static llvm::cl::opt<std::string> nativeGates(
         "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
         "pass"),
     llvm::cl::value_desc("csv"), llvm::cl::init(""));
+
+static llvm::cl::opt<std::string> couplingMap(
+    "coupling-map",
+    llvm::cl::desc("Undirected coupling edges as comma-separated pairs 'u-v' "
+                   "(requires --native-gates). Example: 0-1,1-2"),
+    llvm::cl::value_desc("edges"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
@@ -180,6 +188,38 @@ parseOutputFormat(const StringRef format) {
     return OutputFormat::Jeff;
   }
   return std::nullopt;
+}
+
+static LogicalResult
+parseCouplingMap(StringRef text,
+                 SmallVectorImpl<std::pair<size_t, size_t>>& out) {
+  out.clear();
+  text = text.trim();
+  if (text.empty()) {
+    return success();
+  }
+  while (!text.empty()) {
+    auto [piece, rest] = text.split(',');
+    text = rest;
+    piece = piece.trim();
+    if (piece.empty()) {
+      continue;
+    }
+    auto [left, right] = piece.split('-');
+    left = left.trim();
+    right = right.trim();
+    size_t a = 0;
+    size_t b = 0;
+    if (left.getAsInteger(10, a) || right.getAsInteger(10, b) || left.empty() ||
+        right.empty()) {
+      llvm::errs() << "invalid --coupling-map entry '" << piece
+                   << "' (expected u-v)\n";
+      return failure();
+    }
+    out.emplace_back(a, b);
+    out.emplace_back(b, a);
+  }
+  return success();
 }
 
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
@@ -407,6 +447,25 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  SmallVector<std::pair<size_t, size_t>> couplingEdges;
+  if (failed(parseCouplingMap(couplingMap.getValue(), couplingEdges))) {
+    return 1;
+  }
+  if (couplingMap.getNumOccurrences() > 0 && couplingEdges.empty()) {
+    llvm::errs() << "--coupling-map must not be empty.\n";
+    return 1;
+  }
+  if (!couplingEdges.empty() && nativeGateMenu.empty()) {
+    llvm::errs() << "--coupling-map requires --native-gates.\n";
+    return 1;
+  }
+  if (couplingMap.getNumOccurrences() > 0 &&
+      (*parsedOutputFormat == OutputFormat::QCImport ||
+       *parsedOutputFormat == OutputFormat::QCO)) {
+    llvm::errs() << "--coupling-map requires an output that passes through "
+                    "QCO optimization.\n";
+    return 1;
+  }
   if (enableDecomposeMultiControlled &&
       !isDecomposeMultiControlledConfigValid(
           decomposeMultiControlledMinControls.getValue())) {
@@ -457,6 +516,15 @@ int main(int argc, char** argv) {
           }
           populateQCOCleanupPipeline(pm);
           if (!nativeGateMenu.empty()) {
+            if (!enableDecomposeMultiControlled) {
+              populateDecomposeMultiControlledPipeline(pm, /*minControls=*/2);
+            }
+            if (!couplingEdges.empty()) {
+              DenseSet<std::pair<std::size_t, std::size_t>> couplingSet(
+                  couplingEdges.begin(), couplingEdges.end());
+              pm.addPass(qco::createMappingPass(couplingSet,
+                                                qco::MappingPassOptions{}));
+            }
             pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
                 qco::FuseTwoQubitUnitaryRunsOptions{
                     .nativeGates = nativeGateMenu.str(),

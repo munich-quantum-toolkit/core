@@ -14,6 +14,9 @@ releases may include breaking changes.
 
 - ✨ Derive a native-gates menu from device/backend operation names
   (`NativeGateset::fromOperationNames`) ([**@simon1hofmann**])
+- ✨ Add progressive backend targeting (`QCOProgram::targetBackend` / Python
+  `target_backend` / `target_device`, `mqt-cc --coupling-map`)
+  ([**@simon1hofmann**])
 - ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
   ([**@burgholzer**])
 - ✨ Add versioned, relocatable configuration and stable-ID registration for

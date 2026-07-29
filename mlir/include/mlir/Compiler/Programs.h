@@ -202,6 +202,13 @@ public:
                 float lambda = 0.5F, std::size_t niterations = 1,
                 std::size_t ntrials = 4, std::size_t seed = 42);
 
+  /// Progressive backend targeting: decompose multi-controlled gates,
+  /// optionally place/route on @p coupling, then fuse to @p nativeGates
+  /// (required, non-empty).
+  [[nodiscard]] bool targetBackend(
+      std::string_view nativeGates,
+      std::span<const std::pair<std::size_t, std::size_t>> coupling = {});
+
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
 

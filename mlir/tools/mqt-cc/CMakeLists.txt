@@ -27,3 +27,45 @@ mqt_mlir_target_use_project_options(mqt-cc)
 llvm_update_compile_flags(mqt-cc)
 mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)
+
+if(BUILD_MQT_CORE_TESTS)
+  set_target_properties(mqt-cc PROPERTIES EXCLUDE_FROM_ALL FALSE)
+  set(MQT_CC_NATIVE_GATES_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-gates.qasm)
+
+  add_test(NAME mqt-cc-native-gates-qco-optimized
+           COMMAND $<TARGET_FILE:mqt-cc> ${MQT_CC_NATIVE_GATES_INPUT} --emit=qco-optimized
+                   --native-gates=u,cx)
+  set_tests_properties(
+    mqt-cc-native-gates-qco-optimized
+    PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION "qco\\.ctrl"
+               FAIL_REGULAR_EXPRESSION "qco\\.swap|qco\\.u2|qc\\.h")
+
+  add_test(
+    NAME mqt-cc-native-gates-raw-qco
+    COMMAND ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc> -DINPUT=${MQT_CC_NATIVE_GATES_INPUT} -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-native-gates-raw-qco.cmake)
+  set_tests_properties(mqt-cc-native-gates-raw-qco PROPERTIES LABELS mqt-mlir-unittests)
+
+  add_test(
+    NAME mqt-cc-native-gates-empty
+    COMMAND ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc> -DINPUT=${MQT_CC_NATIVE_GATES_INPUT} -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-native-gates-empty.cmake)
+  set_tests_properties(mqt-cc-native-gates-empty PROPERTIES LABELS mqt-mlir-unittests)
+
+  add_test(NAME mqt-cc-coupling-map-qco-optimized
+           COMMAND $<TARGET_FILE:mqt-cc> ${CMAKE_CURRENT_SOURCE_DIR}/tests/coupling-line.qasm
+                   --emit=qco-optimized --native-gates=u,cx --coupling-map=0-1,1-2)
+  set_tests_properties(
+    mqt-cc-coupling-map-qco-optimized
+    PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION "qco\\.ctrl"
+               FAIL_REGULAR_EXPRESSION "qco\\.swap;qco\\.ctrl\\(%0\\).*targets.*%2")
+
+  add_test(
+    NAME mqt-cc-coupling-map-requires-native-gates
+    COMMAND
+      ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc>
+      -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/coupling-line.qasm -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-coupling-map-requires-native-gates.cmake)
+  set_tests_properties(mqt-cc-coupling-map-requires-native-gates PROPERTIES LABELS
+                                                                            mqt-mlir-unittests)
+endif()
