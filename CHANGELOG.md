@@ -27,8 +27,8 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
-  [**@burgholzer**])
+  unitary windows via Weyl/KAK resynthesis ([#1865], [#1961])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
@@ -669,6 +669,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
