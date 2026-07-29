@@ -8,3 +8,4 @@
 
 add_subdirectory(devices)
 add_subdirectory(driver)
+add_subdirectory(registry)
