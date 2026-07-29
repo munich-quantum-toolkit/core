@@ -16,9 +16,11 @@
 
 #include "mqt_na_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/devices/na/Configuration.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,72 +28,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-
-namespace qdmi::na {
-class Device final : public Singleton<Device> {
-  friend class Singleton;
-
-  /// @brief Provides access to the device name.
-  std::string name_;
-
-  /// @brief The number of qubits in the device.
-  size_t qubitsNum_ = 0;
-
-  /// @brief A struct representing a unit.
-  struct Unit {
-    /// @brief The unit used to interpret values.
-    std::string unit;
-    /**
-     * @brief The scale factor of the unit.
-     * @details This factor must be multiplied with all values before
-     * interpreting them in the unit specified by @c unit.
-     */
-    double scaleFactor = 1.0;
-  };
-  /// @brief The unit used to interpret length values.
-  Unit lengthUnit_;
-
-  /// @brief The unit used to interpret duration values.
-  Unit durationUnit_;
-
-  /// @brief The minimum atom distance that must be maintained.
-  uint64_t minAtomDistance_;
-
-  /// @brief The list of sites.
-  std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites_;
-
-  /// @brief The list of operations.
-  std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>> operations_;
-
-  /// @brief The list of device sessions.
-  std::unordered_map<MQT_NA_QDMI_Device_Session,
-                     std::unique_ptr<MQT_NA_QDMI_Device_Session_impl_d>>
-      sessions_;
-
-  /// @brief Private constructor to enforce the singleton pattern.
-  Device();
-
-public:
-  /**
-   * @brief Allocates a new device session.
-   * @see MQT_NA_QDMI_device_session_alloc
-   */
-  auto sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int;
-
-  /**
-   * @brief Frees a device session.
-   * @see MQT_NA_QDMI_device_session_free
-   */
-  auto sessionFree(MQT_NA_QDMI_Device_Session session) -> void;
-
-  /**
-   * @brief Query a device property.
-   * @see MQT_NA_QDMI_device_session_query_device_property
-   */
-  auto queryProperty(QDMI_Device_Property prop, size_t size, void* value,
-                     size_t* sizeRet) -> int;
-};
-} // namespace qdmi::na
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Session structure.
@@ -105,6 +41,17 @@ private:
   };
   /// @brief The current status of the session.
   Status status_ = Status::ALLOCATED;
+  std::optional<std::string> inlineConfiguration_;
+  std::optional<std::filesystem::path> fileConfiguration_;
+  std::string name_;
+  size_t qubitsNum_ = 0;
+  na::Device::Unit lengthUnit_;
+  na::Device::Unit durationUnit_;
+  uint64_t minAtomDistance_ = 0;
+  std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> siteStorage_;
+  std::vector<MQT_NA_QDMI_Site> sites_;
+  std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>> operationStorage_;
+  std::vector<MQT_NA_QDMI_Operation> operations_;
   /// @brief The device jobs associated with this session.
   std::unordered_map<MQT_NA_QDMI_Device_Job,
                      std::unique_ptr<MQT_NA_QDMI_Device_Job_impl_d>>
@@ -122,7 +69,7 @@ public:
    * @see MQT_NA_QDMI_device_session_set_parameter
    */
   auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
-                    const void* value) const -> int;
+                    const void* value) -> int;
 
   /**
    * @brief Create a new device job.
@@ -237,6 +184,7 @@ struct MQT_NA_QDMI_Site_impl_d {
   friend MQT_NA_QDMI_Operation_impl_d;
 
 private:
+  MQT_NA_QDMI_Device_Session_impl_d* owner_ = nullptr;
   uint64_t id_ = 0;       ///< Unique identifier of the site
   uint64_t moduleId_ = 0; ///< Identifier of the module the site belongs to
   /// Identifier of the submodule the site belongs to
@@ -255,21 +203,26 @@ private:
   bool isZone = false; ///< Indicates if the site is a zone site
 
   /// @brief Constructor for regular sites.
-  MQT_NA_QDMI_Site_impl_d(uint64_t id, uint64_t moduleId, uint64_t subModuleId,
-                          int64_t x, int64_t y);
+  MQT_NA_QDMI_Site_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
+                          uint64_t moduleId, uint64_t subModuleId, int64_t x,
+                          int64_t y, uint64_t t1, uint64_t t2);
   /// @brief Constructor for zone sites.
-  MQT_NA_QDMI_Site_impl_d(uint64_t id, int64_t x, int64_t y, uint64_t width,
-                          uint64_t height);
+  MQT_NA_QDMI_Site_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
+                          int64_t x, int64_t y, uint64_t width, uint64_t height,
+                          uint64_t t1, uint64_t t2);
 
 public:
   /// @brief Factory function for regular sites.
-  [[nodiscard]] static auto makeUniqueSite(uint64_t id, uint64_t moduleId,
-                                           uint64_t subModuleId, int64_t x,
-                                           int64_t y)
+  [[nodiscard]] static auto
+  makeUniqueSite(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
+                 uint64_t moduleId, uint64_t subModuleId, int64_t x, int64_t y,
+                 uint64_t t1, uint64_t t2)
       -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d>;
   /// @brief Factory function for zone sites.
-  [[nodiscard]] static auto makeUniqueZone(uint64_t id, int64_t x, int64_t y,
-                                           uint64_t width, uint64_t height)
+  [[nodiscard]] static auto
+  makeUniqueZone(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
+                 int64_t x, int64_t y, uint64_t width, uint64_t height,
+                 uint64_t t1, uint64_t t2)
       -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d>;
   /**
    * @brief Queries a property of the site.
@@ -277,6 +230,10 @@ public:
    */
   auto queryProperty(QDMI_Site_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> int;
+  [[nodiscard]] auto
+  ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const -> bool {
+    return owner_ == session;
+  }
 };
 
 /**
@@ -284,6 +241,7 @@ public:
  */
 struct MQT_NA_QDMI_Operation_impl_d {
 private:
+  MQT_NA_QDMI_Device_Session_impl_d* owner_ = nullptr;
   std::string name_;     ///< Name of the operation
   size_t numParameters_; ///< Number of parameters for the operation
   /**
@@ -357,6 +315,11 @@ private:
   auto sortSites() -> void;
 
 public:
+  void setOwner(MQT_NA_QDMI_Device_Session_impl_d* owner) { owner_ = owner; }
+  [[nodiscard]] auto
+  ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const -> bool {
+    return owner_ == session;
+  }
   /// @brief Factory function for the global single-qubit operations.
   [[nodiscard]] static auto
   makeUniqueGlobalSingleQubit(const std::string& name, size_t numParameters,

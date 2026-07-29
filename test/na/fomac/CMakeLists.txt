@@ -12,7 +12,8 @@ if(TARGET MQT::CoreNAFoMaC)
   # Add the test executable
   package_add_test(${TARGET_NAME} MQT::CoreNAFoMaC test_fomac.cpp)
   # Set the device json path
-  target_compile_definitions(${TARGET_NAME}
-                             PRIVATE NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/device.json")
+  target_compile_definitions(
+    ${TARGET_NAME}
+    PRIVATE NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json")
   mqt_copy_qdmi_runtime(${TARGET_NAME})
 endif()

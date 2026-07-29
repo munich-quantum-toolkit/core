@@ -26,7 +26,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC MQT::CoreFoMaC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog MQT::CoreQDMINaDeviceGen)
+    PRIVATE spdlog::spdlog MQT::CoreQDMINaDeviceConfig)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
