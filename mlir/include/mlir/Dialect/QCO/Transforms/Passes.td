@@ -82,10 +82,10 @@ def FuseTwoQubitUnitaryRuns
 
     `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
     two-qubit scope only when it has a single control and a single target. Native
-    two-qubit entanglers may be bare `qco.ecr`, `qco.iswap`, `qco.rxx`,
-    `qco.ryy`, `qco.rzz`, or `qco.rzx` matching the selected token, or such a
+    two-qubit entanglers may be bare `qco.rxx`, `qco.ryy`, `qco.rzx`,
+    `qco.rzz`, `qco.iswap`, or `qco.ecr` matching the selected token, or such a
     `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz` is
-    selected. Weyl synthesis emits `rxx`/`ryy`/`rzz`/`rzx` at a fixed angle of
+    selected. Weyl synthesis emits `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of
     π/2. Gates acting on more than two qubits (e.g. multi-controlled
     `qco.ctrl`) are out of scope and left untouched for a dedicated
     multi-controlled synthesis pass.

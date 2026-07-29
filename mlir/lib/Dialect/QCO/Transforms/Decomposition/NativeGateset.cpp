@@ -38,14 +38,14 @@ static std::optional<NativeGateKind> parseGateToken(StringRef name) {
       .Case("rx", NativeGateKind::RX)
       .Case("ry", NativeGateKind::RY)
       .Case("r", NativeGateKind::R)
-      .Case("cx", NativeGateKind::CX)
-      .Case("cz", NativeGateKind::CZ)
-      .Case("ecr", NativeGateKind::ECR)
-      .Case("iswap", NativeGateKind::ISWAP)
-      .Case("rzx", NativeGateKind::RZX)
-      .Case("ryy", NativeGateKind::RYY)
       .Case("rxx", NativeGateKind::RXX)
+      .Case("ryy", NativeGateKind::RYY)
+      .Case("rzx", NativeGateKind::RZX)
       .Case("rzz", NativeGateKind::RZZ)
+      .Case("iswap", NativeGateKind::ISWAP)
+      .Case("cz", NativeGateKind::CZ)
+      .Case("cx", NativeGateKind::CX)
+      .Case("ecr", NativeGateKind::ECR)
       .Default(std::nullopt);
 }
 
@@ -148,30 +148,10 @@ static constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
 static const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(NativeGateKind entangler) {
   switch (entangler) {
-  case NativeGateKind::CX: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_X, 1.0);
-    return DECOMPOSER;
-  }
-  case NativeGateKind::CZ: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
-    return DECOMPOSER;
-  }
-  case NativeGateKind::ECR: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(ECROp::getUnitaryMatrix(), 1.0);
-    return DECOMPOSER;
-  }
-  case NativeGateKind::ISWAP: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(iSWAPOp::getUnitaryMatrix(), 1.0);
-    return DECOMPOSER;
-  }
-  case NativeGateKind::RZX: {
+  case NativeGateKind::RXX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(
-            RZXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
+            RXXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
     return DECOMPOSER;
   }
   case NativeGateKind::RYY: {
@@ -180,10 +160,10 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
             RYYOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
     return DECOMPOSER;
   }
-  case NativeGateKind::RXX: {
+  case NativeGateKind::RZX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(
-            RXXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
+            RZXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
     return DECOMPOSER;
   }
   case NativeGateKind::RZZ: {
@@ -192,9 +172,29 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
             RZZOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
     return DECOMPOSER;
   }
+  case NativeGateKind::ISWAP: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(iSWAPOp::getUnitaryMatrix(), 1.0);
+    return DECOMPOSER;
+  }
+  case NativeGateKind::CZ: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
+    return DECOMPOSER;
+  }
+  case NativeGateKind::CX: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_X, 1.0);
+    return DECOMPOSER;
+  }
+  case NativeGateKind::ECR: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(ECROp::getUnitaryMatrix(), 1.0);
+    return DECOMPOSER;
+  }
   default:
     llvm_unreachable(
-        "only CX/CZ/ECR/ISWAP/RZX/RYY/RXX/RZZ are valid entanglers");
+        "only RXX/RYY/RZX/RZZ/ISWAP/CZ/CX/ECR are valid entanglers");
   }
 }
 
@@ -234,29 +234,29 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
 bool NativeGateset::allowsOp(Operation* op) const {
   return TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
-      .Case<ECROp>([&](ECROp) { return gates.contains(NativeGateKind::ECR); })
-      .Case<iSWAPOp>(
-          [&](iSWAPOp) { return gates.contains(NativeGateKind::ISWAP); })
-      .Case<RZXOp>([&](RZXOp op) {
-        return gates.contains(NativeGateKind::RZX) &&
+      .Case<RXXOp>([&](RXXOp op) {
+        return gates.contains(NativeGateKind::RXX) &&
                utils::valueToDouble(op.getTheta()).has_value();
       })
       .Case<RYYOp>([&](RYYOp op) {
         return gates.contains(NativeGateKind::RYY) &&
                utils::valueToDouble(op.getTheta()).has_value();
       })
-      .Case<RXXOp>([&](RXXOp op) {
-        return gates.contains(NativeGateKind::RXX) &&
+      .Case<RZXOp>([&](RZXOp op) {
+        return gates.contains(NativeGateKind::RZX) &&
                utils::valueToDouble(op.getTheta()).has_value();
       })
       .Case<RZZOp>([&](RZZOp op) {
         return gates.contains(NativeGateKind::RZZ) &&
                utils::valueToDouble(op.getTheta()).has_value();
       })
+      .Case<iSWAPOp>(
+          [&](iSWAPOp) { return gates.contains(NativeGateKind::ISWAP); })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
         const auto kind = entanglerKindFor(ctrl);
         return kind && gates.contains(*kind);
       })
+      .Case<ECROp>([&](ECROp) { return gates.contains(NativeGateKind::ECR); })
       .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
         if (!unitary.isSingleQubit()) {
           return false;

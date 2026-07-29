@@ -35,14 +35,14 @@ enum class NativeGateKind : std::uint8_t {
   RX,
   RY,
   R,
-  CX,
-  CZ,
-  ECR,
-  ISWAP,
-  RZX,
-  RYY,
   RXX,
+  RYY,
+  RZX,
   RZZ,
+  ISWAP,
+  CZ,
+  CX,
+  ECR,
 };
 
 struct TwoQubitNativeDecomposition;
@@ -54,7 +54,7 @@ struct TwoQubitNativeDecomposition;
  * resolved from @p gates. When several entanglers appear, preference is
  * **RXX > RYY > RZX > RZZ > iSWAP > CZ > CX > ECR** (alphabetic among two-qubit
  * rotations; then discrete named gates; ECR last). Weyl synthesis emits
- * `rxx`/`ryy`/`rzz`/`rzx` at a fixed angle of π/2.
+ * `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of π/2.
  */
 struct NativeGateset {
   llvm::DenseSet<NativeGateKind> gates;
@@ -82,10 +82,10 @@ struct NativeGateset {
    * `qco.barrier` and `qco.gphase` are always allowed. Single-qubit primitives
    * are checked against @p gates. Single-control, single-target `qco.ctrl`
    * shells with an `X`/`Z` body are accepted when `cx`/`cz` is present.
-   * Bare `qco.ecr` and `qco.iswap` are accepted when the corresponding token is
-   * present. `qco.rxx`, `qco.ryy`, `qco.rzz`, and `qco.rzx` are accepted when
-   * the token is present and the angle is a compile-time constant (including
-   * the π/2 basis used by synthesis); runtime angles are rejected. All other
+   * `qco.rxx`, `qco.ryy`, `qco.rzx`, and `qco.rzz` are accepted when the token
+   * is present and the angle is a compile-time constant (including the π/2
+   * basis used by synthesis); runtime angles are rejected. Bare `qco.iswap` and
+   * `qco.ecr` are accepted when the corresponding token is present. All other
    * ops are rejected.
    */
   [[nodiscard]] bool allowsOp(Operation* op) const;

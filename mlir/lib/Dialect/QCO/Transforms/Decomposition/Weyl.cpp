@@ -704,22 +704,10 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     wire = *synthesized;
   };
   const auto emitEntangler = [&]() {
-    if (spec.entangler == NativeGateKind::ISWAP) {
-      auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
-      wire0 = iswapOp.getOutputQubit(0);
-      wire1 = iswapOp.getOutputQubit(1);
-      return;
-    }
-    if (spec.entangler == NativeGateKind::ECR) {
-      auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
-      wire0 = ecrOp.getOutputQubit(0);
-      wire1 = ecrOp.getOutputQubit(1);
-      return;
-    }
-    if (spec.entangler == NativeGateKind::RZX) {
-      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
-      wire0 = rzxOp.getOutputQubit(0);
-      wire1 = rzxOp.getOutputQubit(1);
+    if (spec.entangler == NativeGateKind::RXX) {
+      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rxxOp.getOutputQubit(0);
+      wire1 = rxxOp.getOutputQubit(1);
       return;
     }
     if (spec.entangler == NativeGateKind::RYY) {
@@ -728,10 +716,10 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
       wire1 = ryyOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RXX) {
-      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
-      wire0 = rxxOp.getOutputQubit(0);
-      wire1 = rxxOp.getOutputQubit(1);
+    if (spec.entangler == NativeGateKind::RZX) {
+      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rzxOp.getOutputQubit(0);
+      wire1 = rzxOp.getOutputQubit(1);
       return;
     }
     if (spec.entangler == NativeGateKind::RZZ) {
@@ -740,16 +728,31 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
       wire1 = rzzOp.getOutputQubit(1);
       return;
     }
-    const bool emitCz = spec.entangler == NativeGateKind::CZ;
-    auto ctrlOp =
-        CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
-          if (emitCz) {
-            return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
-          }
-          return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
-        });
-    wire0 = ctrlOp.getOutputControl(0);
-    wire1 = ctrlOp.getOutputTarget(0);
+    if (spec.entangler == NativeGateKind::ISWAP) {
+      auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
+      wire0 = iswapOp.getOutputQubit(0);
+      wire1 = iswapOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::CZ ||
+        spec.entangler == NativeGateKind::CX) {
+      const bool emitCz = spec.entangler == NativeGateKind::CZ;
+      auto ctrlOp =
+          CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
+            if (emitCz) {
+              return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
+            }
+            return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
+          });
+      wire0 = ctrlOp.getOutputControl(0);
+      wire1 = ctrlOp.getOutputTarget(0);
+      return;
+    }
+    assert(spec.entangler == NativeGateKind::ECR &&
+           "emitEntangler: unexpected NativeGateKind");
+    auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
+    wire0 = ecrOp.getOutputQubit(0);
+    wire1 = ecrOp.getOutputQubit(1);
   };
 
   for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {

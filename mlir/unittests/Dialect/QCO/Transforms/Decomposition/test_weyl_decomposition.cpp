@@ -551,31 +551,31 @@ INSTANTIATE_TEST_SUITE_P(
                                    Matrix4x4::kron(RZOp::unitaryMatrix(0.2),
                                                    RYOp::unitaryMatrix(0.1));
                           }},
-        WeylSynthesisCase{"CzGeneric", "u,cz",
-                          [] { return TWO_QUBIT_CONTROLLED_Z; }},
-        WeylSynthesisCase{"EcrGeneric", "u,ecr",
-                          [] { return ECROp::getUnitaryMatrix(); }},
-        WeylSynthesisCase{"IswapGeneric", "u,iswap",
-                          [] { return iSWAPOp::getUnitaryMatrix(); }},
-        WeylSynthesisCase{
-            "RzxGeneric", "u,rzx",
-            [] { return RZXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
-        WeylSynthesisCase{
-            "RyyGeneric", "u,ryy",
-            [] { return RYYOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
             "RxxGeneric", "u,rxx",
             [] { return RXXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
+            "RyyGeneric", "u,ryy",
+            [] { return RYYOp::unitaryMatrix(std::numbers::pi / 2.0); }},
+        WeylSynthesisCase{
+            "RzxGeneric", "u,rzx",
+            [] { return RZXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
+        WeylSynthesisCase{
             "RzzGeneric", "u,rzz",
-            [] { return RZZOp::unitaryMatrix(std::numbers::pi / 2.0); }}),
+            [] { return RZZOp::unitaryMatrix(std::numbers::pi / 2.0); }},
+        WeylSynthesisCase{"IswapGeneric", "u,iswap",
+                          [] { return iSWAPOp::getUnitaryMatrix(); }},
+        WeylSynthesisCase{"CzGeneric", "u,cz",
+                          [] { return TWO_QUBIT_CONTROLLED_Z; }},
+        WeylSynthesisCase{"EcrGeneric", "u,ecr",
+                          [] { return ECROp::getUnitaryMatrix(); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* gateset : {"u,cx", "u,cz", "u,ecr", "u,iswap", "u,rzx",
-                              "u,ryy", "u,rxx", "u,rzz"}) {
+  for (const char* gateset : {"u,rxx", "u,ryy", "u,rzx", "u,rzz", "u,iswap",
+                              "u,cz", "u,cx", "u,ecr"}) {
     const auto spec = NativeGateset::parse(gateset);
     ASSERT_TRUE(spec) << gateset;
     const auto native = spec->decomposeTarget(Matrix4x4::identity());
@@ -678,7 +678,7 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   EXPECT_EQ(ecrOnly->entangler, NativeGateKind::ECR);
 
   // With CX/CZ also listed, CX/CZ win over ECR.
-  const auto cxCzOverEcr = NativeGateset::parse("u,cx,cz,ecr");
+  const auto cxCzOverEcr = NativeGateset::parse("u,cz,cx,ecr");
   ASSERT_TRUE(cxCzOverEcr);
   EXPECT_EQ(cxCzOverEcr->entangler, NativeGateKind::CZ);
 
@@ -688,7 +688,7 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   EXPECT_EQ(iswapOnly->entangler, NativeGateKind::ISWAP);
 
   // iSWAP beats CZ/CX/ECR; two-qubit rotations still win when present.
-  const auto iswapOverCtrlEcr = NativeGateset::parse("u,cx,cz,ecr,iswap");
+  const auto iswapOverCtrlEcr = NativeGateset::parse("u,iswap,cz,cx,ecr");
   ASSERT_TRUE(iswapOverCtrlEcr);
   EXPECT_EQ(iswapOverCtrlEcr->entangler, NativeGateKind::ISWAP);
 
@@ -850,28 +850,6 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   EXPECT_TRUE(czSpec->allowsOp(cz.getOperation()));
   EXPECT_FALSE(czSpec->allowsOp(cx.getOperation()));
 
-  const auto ecrSpec = NativeGateset::parse("u,ecr");
-  ASSERT_TRUE(ecrSpec);
-  auto ecr = ECROp::create(builder, loc, q0, q1);
-  EXPECT_TRUE(ecrSpec->allowsOp(ecr.getOperation()));
-  EXPECT_FALSE(ecrSpec->allowsOp(cx.getOperation()));
-
-  const auto iswapSpec = NativeGateset::parse("u,iswap");
-  ASSERT_TRUE(iswapSpec);
-  auto iswap = iSWAPOp::create(builder, loc, q0, q1);
-  EXPECT_TRUE(iswapSpec->allowsOp(iswap.getOperation()));
-  EXPECT_FALSE(iswapSpec->allowsOp(cx.getOperation()));
-
-  const auto rzxSpec = NativeGateset::parse("u,rzx");
-  ASSERT_TRUE(rzxSpec);
-  EXPECT_TRUE(rzxSpec->allowsOp(
-      RZXOp::create(builder, loc, q0, q1, 0.25).getOperation()));
-
-  const auto ryySpec = NativeGateset::parse("u,ryy");
-  ASSERT_TRUE(ryySpec);
-  EXPECT_TRUE(ryySpec->allowsOp(
-      RYYOp::create(builder, loc, q0, q1, 0.25).getOperation()));
-
   const auto rxxSpec = NativeGateset::parse("u,rxx");
   ASSERT_TRUE(rxxSpec);
   EXPECT_TRUE(rxxSpec->allowsOp(
@@ -880,10 +858,32 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
       RXXOp::create(builder, loc, q0, q1, std::numbers::pi / 2.0)
           .getOperation()));
 
+  const auto ryySpec = NativeGateset::parse("u,ryy");
+  ASSERT_TRUE(ryySpec);
+  EXPECT_TRUE(ryySpec->allowsOp(
+      RYYOp::create(builder, loc, q0, q1, 0.25).getOperation()));
+
+  const auto rzxSpec = NativeGateset::parse("u,rzx");
+  ASSERT_TRUE(rzxSpec);
+  EXPECT_TRUE(rzxSpec->allowsOp(
+      RZXOp::create(builder, loc, q0, q1, 0.25).getOperation()));
+
   const auto rzzSpec = NativeGateset::parse("u,rzz");
   ASSERT_TRUE(rzzSpec);
   EXPECT_TRUE(rzzSpec->allowsOp(
       RZZOp::create(builder, loc, q0, q1, 0.3).getOperation()));
+
+  const auto iswapSpec = NativeGateset::parse("u,iswap");
+  ASSERT_TRUE(iswapSpec);
+  auto iswap = iSWAPOp::create(builder, loc, q0, q1);
+  EXPECT_TRUE(iswapSpec->allowsOp(iswap.getOperation()));
+  EXPECT_FALSE(iswapSpec->allowsOp(cx.getOperation()));
+
+  const auto ecrSpec = NativeGateset::parse("u,ecr");
+  ASSERT_TRUE(ecrSpec);
+  auto ecr = ECROp::create(builder, loc, q0, q1);
+  EXPECT_TRUE(ecrSpec->allowsOp(ecr.getOperation()));
+  EXPECT_FALSE(ecrSpec->allowsOp(cx.getOperation()));
 
   const FloatType f64Float = builder.getF64Type();
   const Type f64Ty = Type::getFromOpaquePointer(f64Float.getAsOpaquePointer());

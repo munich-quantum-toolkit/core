@@ -326,36 +326,35 @@ struct NamedProgram {
 };
 
 /// Native gatesets spanning every supported single-qubit basis and all
-/// entangler families (CX/CZ/ECR/iSWAP/RZX/RYY/RXX/RZZ, plus multi-entangler
+/// entangler families (RXX/RYY/RZX/RZZ/iSWAP/CZ/CX/ECR, plus multi-entangler
 /// menus). Because the pass re-synthesizes each two-qubit window into the
 /// target basis, every circuit is valid input for every gateset.
 constexpr std::array<const char*, 20> GATESETS = {
-    // CX entangler family
-    "x,sx,rz,cx", // ZSXX
-    "u,cx",       // U
-    "rx,rz,cx",   // XZX
-    "rx,ry,cx",   // XYX
-    // CZ entangler family
+    "u,rxx",
+    "u,ryy",
+    "u,rzx",
+    "u,rzz",
+    "x,sx,rz,rzz",
+    // iSWAP
+    "u,iswap",
+    "x,sx,rz,iswap",
+    // CZ
     "r,cz",       // R
     "ry,rz,cz",   // ZYZ
     "x,sx,rz,cz", // ZSXX
     "u,cz",       // U
-    // ECR entangler family
+    // CX
+    "x,sx,rz,cx", // ZSXX
+    "u,cx",       // U
+    "rx,rz,cx",   // XZX
+    "rx,ry,cx",   // XYX
+    // ECR
     "u,ecr",
     "x,sx,rz,ecr",
-    // iSWAP entangler family
-    "u,iswap",
-    "x,sx,rz,iswap",
-    // Two-qubit rotation entangler family
-    "u,rzx",
-    "u,ryy",
-    "u,rxx",
-    "u,rzz",
-    "x,sx,rz,rzz",
-    // Multiple entanglers (rxx preferred over the rest)
-    "u,cx,cz,ecr,iswap",
-    "u,cx,cz,rzx,rzz,ryy,rxx",
-    "u,cx,cz",
+    // Multiple entanglers (listed in preference order; rxx / iswap / cz win)
+    "u,rxx,ryy,rzx,rzz,iswap,cz,cx,ecr",
+    "u,iswap,cz,cx,ecr",
+    "u,cz,cx",
 };
 
 /// Gateset used for the fusion-window suite, which asserts on structure rather
