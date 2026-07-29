@@ -901,8 +901,10 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   EXPECT_TRUE(rzzSpec->allowsOp(
       RZZOp::create(builder, loc, q0, q1, 0.3).getOperation()));
 
-  const auto funcTyTheta = builder.getFunctionType(
-      {builder.getF64Type(), qubitTy, qubitTy}, {qubitTy, qubitTy});
+  const FloatType f64Float = builder.getF64Type();
+  const Type f64Ty = Type::getFromOpaquePointer(f64Float.getAsOpaquePointer());
+  const auto funcTyTheta =
+      builder.getFunctionType({f64Ty, qubitTy, qubitTy}, {qubitTy, qubitTy});
   auto funcTheta =
       func::FuncOp::create(builder, loc, "allows_op_runtime_rxx", funcTyTheta);
   auto* entryTheta = funcTheta.addEntryBlock();
