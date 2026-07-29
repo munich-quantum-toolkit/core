@@ -46,6 +46,7 @@ HANDLE_OP_TYPE(25, RZZ, OpTypeDiag, "rzz")
 HANDLE_OP_TYPE(26, RZX, OpTypeNone, "rzx")
 HANDLE_OP_TYPE(27, XXminusYY, OpTypeNone, "xx_minus_yy")
 HANDLE_OP_TYPE(28, XXplusYY, OpTypeNone, "xx_plus_yy")
+HANDLE_OP_TYPE(33, RCCX, OpTypeNone, "rccx")
 
 // Compound Operation
 HANDLE_OP_TYPE(29, Compound, OpTypeNone, "compound")

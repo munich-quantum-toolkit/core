@@ -131,6 +131,113 @@ TEST_F(Qasm3ParserTest, ImportQasm3CtrlModifier) {
   EXPECT_EQ(out, expected);
 }
 
+TEST_F(Qasm3ParserTest, ImportQasm3PowModifier) {
+  const std::string testfile = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+pow(0) @ h q[0];
+pow(2) @ s q[0];
+pow(-2) @ s q[0];
+inv @ pow(-2) @ s q[0];
+pow(2) @ pow(3) @ x q[0];
+pow(2) @ ctrl @ s q[0], q[1];
+)";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  EXPECT_EQ(qc.getNindividualOps(), 14U);
+  const std::string out = qc.toQASM();
+  const std::string expected = R"(// i 0 1
+// o 0 1
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+s q[0];
+s q[0];
+sdg q[0];
+sdg q[0];
+s q[0];
+s q[0];
+x q[0];
+x q[0];
+x q[0];
+x q[0];
+x q[0];
+x q[0];
+ctrl @ p(pi/2) q[0], q[1];
+ctrl @ p(pi/2) q[0], q[1];
+)";
+  EXPECT_EQ(out, expected);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowModifierForCustomAndBroadcastGates) {
+  const std::string testfile = R"(OPENQASM 3.0;
+include "stdgates.inc";
+gate hs q0 {
+  h q0;
+  s q0;
+}
+qubit[2] q;
+pow(2) @ hs q[0];
+pow(2) @ x q;
+)";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  const std::string out = qc.toQASM();
+  const std::string expected = R"(// i 0 1
+// o 0 1
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+s q[0];
+h q[0];
+s q[0];
+x q[0];
+x q[0];
+x q[1];
+x q[1];
+)";
+  EXPECT_EQ(out, expected);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowModifierSkipsEmptyCustomGate) {
+  const std::string testfile = R"(OPENQASM 3.0;
+include "stdgates.inc";
+gate empty q0 {
+  pow(0) @ x q0;
+}
+qubit q;
+pow(2) @ empty q;
+x q;
+)";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  EXPECT_EQ(qc.getNindividualOps(), 1U);
+  EXPECT_EQ(qc.front()->getType(), qc::X);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowModifierRejectsNonIntegerExponent) {
+  const auto expectRejected = [](const std::string& exponent) {
+    EXPECT_THROW(
+        {
+          try {
+            const auto qc = qasm3::Importer::imports(
+                "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; pow(" +
+                exponent + ") @ x q;");
+          } catch (const qasm3::CompilerError& e) {
+            EXPECT_EQ(e.message,
+                      "Only constant integer expressions are supported as "
+                      "power modifier exponents.");
+            throw;
+          }
+        },
+        qasm3::CompilerError);
+  };
+
+  expectRejected("0.5");
+  expectRejected("true");
+}
+
 TEST_F(Qasm3ParserTest, ImportQasm3InvModifier) {
   const std::string testfile = "OPENQASM 3.0;\n"
                                "include \"stdgates.inc\";\n"

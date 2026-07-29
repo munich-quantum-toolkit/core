@@ -69,7 +69,8 @@ def FuseSingleQubitUnitaryRuns
 
 def FuseTwoQubitUnitaryRuns
     : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
   let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
   let description = [{
     Rewrites unitaries to match the comma-separated `native-gates` gateset.
@@ -105,7 +106,7 @@ def FuseTwoQubitUnitaryRuns
     single- or two-qubit op remains off the native gateset afterwards; gates on
     more than two qubits are left untouched and do not cause a failure.
 
-    Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
+    Lowering is deterministic: `cz` is preferred over `cx`, single-qubit
     factors use the resolved Euler basis, and two-qubit run replacement uses
     the minimal entangler count from the synthesizer.
   }];
@@ -250,6 +251,93 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
      Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
 
   }];
+}
+
+def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "This pass attempts to move measurements as far up as "
+                "possible, shifting them above gates that commute with them. "
+                "This is done to enable qubit reuse and other optimizations.";
+  let description = [{
+    This pass applies measurement lifting, moving measurements up the code as far as possible.
+    Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
+    circuit to reuse them and to potentially remove some quantum gates.
+
+    Measurement lifting uses the following commutation rules:
+                 ┌──────┐             ┌──────┐
+            ──■──┤ Meas │──────      ─┤ Meas ├──■───
+              │  └──────┘             └──────┘  │
+            ┌─┴─┐                 =>          ┌─┴─┐
+            ┤ U ├────────────────    ─────────┤ U ├─
+            └───┘                             └───┘
+            (Where U is any (controlled) unitary gate)
+
+            ┌───┐┌──────┐    ┌──────┐┌───┐
+            ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
+            └───┘└──────┘    └──────┘└───┘
+            (Where P is any diagonal gate, e.g., `z`, `s`, ...)
+
+            ┌───┐┌──────┐    ┌───────┐┌───┐
+            ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
+            └───┘└──────┘    └───────┘└───┘
+            (Where Meas* is a measurement after which the outcome is classically negated and X can be replaced by Y, which is also anti-diagonal)
+
+  }];
+}
+
+def ReplaceClassicalControls
+    : Pass<"replace-classical-controls", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+  ];
+  let summary =
+      "This pass attempts to replace controlled gates that are controlled by "
+      "values that are in a computational basis state and available as "
+      "measurement outcome by a classical "
+      "`qco.if` instruction. This is done to enable qubit reuse and other "
+      "optimizations.";
+  let description = [{
+    This pass searches for control operations that immediately follow measurements and replaces them
+    with classically controlled operations, represented by `qco.if` operations.
+    This reduces quantum interactions and allows for more optimizations, e.g., by enabling qubit reuse.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Decomposition Passes
+//===----------------------------------------------------------------------===//
+
+def DecomposeMultiControlled
+    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Decompose controlled X/Z/phase gates and qco.rccx with at "
+                "least min-controls controls";
+  let description = [{
+    Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
+    a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
+    `min-controls` controls.
+
+    - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
+      when `min-controls` is at most 2.
+    - Four or five controls (X/Z): specialized ancilla-free cores (relative-
+      phase `C^4(Z)`; Vale MCP(π) hybrid residual).
+    - Six or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
+      synthesis with a compile-time CX policy table.
+    - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
+      residual at four) for three and four controls; da Silva-Park SP22
+      linear-depth decomposition at five and above. A compile-time angle of
+      `±π` is routed through the Z path for every control count.
+
+    Intermediate two- and three-control building blocks may be left as
+    `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
+    lowers further when the threshold allows.
+  }];
+  let options = [Option<
+      "minControls", "min-controls", "uint64_t", "2",
+      "Decompose controlled X/Z/phase gates and qco.rccx with at least this "
+      "many controls (must be at least 2).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

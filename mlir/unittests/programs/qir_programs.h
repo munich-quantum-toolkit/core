@@ -517,6 +517,19 @@ Value singleControlledXxMinusYY(QIRProgramBuilder& b);
 template <bool IntoRegister = false>
 Value multipleControlledXxMinusYY(QIRProgramBuilder& b);
 
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+template <bool IntoRegister = false> Value rccx(QIRProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+template <bool IntoRegister = false>
+Value singleControlledRccx(QIRProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+template <bool IntoRegister = false>
+Value multipleControlledRccx(QIRProgramBuilder& b);
+
 // --- IfOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.

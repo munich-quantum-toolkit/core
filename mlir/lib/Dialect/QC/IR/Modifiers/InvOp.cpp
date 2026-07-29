@@ -24,6 +24,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -80,6 +81,51 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 };
 
 /**
+ * @brief Eliminate inv by negating the pow exponent, i.e.,
+ * `inv(pow(p){U}) => pow(-p){U}`.
+ *
+ * @details This is always valid for unitaries: `(U^p)† = U^{-p}`.
+ * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
+ * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
+ */
+struct InvPowToNegPow final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto inner =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
+    if (!innerPow) {
+      return failure();
+    }
+
+    // Move supporting ops (constants, arithmetic) out of the body so their
+    // Values are accessible from outside and survive InvOp erasure.
+    utils::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
+                                    invOp, rewriter);
+    Value negExponent =
+        arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
+    // The inner pow's operands alias the inv's block args; translate them back
+    // to the outer qubits the inv aliases so the new pow is valid in the inv's
+    // parent scope.
+    auto outerQubits = invOp.getQubits();
+    const auto qubits = llvm::map_to_vector(innerPow.getQubits(), [&](Value v) {
+      return utils::getValueFromBlockArgument(v, outerQubits);
+    });
+    rewriter.replaceOpWithNewOp<PowOp>(
+        invOp, negExponent, qubits, [&](ValueRange powArgs) {
+          // Inner pow body args now match the new pow's args positionally.
+          utils::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
+                                           rewriter);
+        });
+    return success();
+  }
+};
+
+/**
  * @brief Remove inverse modifiers around self-adjoint gates.
  *
  * For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
@@ -94,7 +140,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, RCCXOp, SWAPOp, BarrierOp>(
             inner.getOperation())) {
       return failure();
     }
@@ -360,6 +406,6 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutside, InlineSelfAdjoint,
-              ReplaceWithKnownGates, EraseEmptyInv>(context);
+  results.add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow,
+              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv>(context);
 }

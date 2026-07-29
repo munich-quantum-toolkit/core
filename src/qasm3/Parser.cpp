@@ -280,6 +280,9 @@ void Parser::parseInclude() {
   if (in->fail()) {
     if (filename == "stdgates.inc") {
       // stdgates.inc has already been included implicitly, so we just return
+      if (includeDebugInfo) {
+        includeDebugInfo = includeDebugInfo->parent;
+      }
       return;
     }
     if (filename == "qelib1.inc") {

@@ -64,7 +64,7 @@ INSTANTIATE_TEST_SUITE_P(
     Parameters, DDFunctionality,
     testing::Values(GPhase, I, H, X, Y, Z, S, Sdg, T, Tdg, SX, SXdg, V, Vdg, U,
                     U2, P, R, RX, RY, RZ, Peres, Peresdg, SWAP, iSWAP, iSWAPdg,
-                    DCX, ECR, RXX, RYY, RZZ, RZX, XXminusYY, XXplusYY),
+                    DCX, ECR, RXX, RYY, RZZ, RZX, RCCX, XXminusYY, XXplusYY),
     [](const testing::TestParamInfo<DDFunctionality::ParamType>& inf) {
       const auto gate = inf.param;
       return toString(gate);
@@ -115,6 +115,9 @@ TEST_P(DDFunctionality, StandardOpBuildInverseBuild) {
   case XXplusYY:
     op = StandardOperation(Controls{}, 0, 1, gate,
                            std::vector{dist(mt), dist(mt)});
+    break;
+  case RCCX:
+    op = StandardOperation(Targets{0, 1, 2}, gate);
     break;
   default:
     op = StandardOperation(0, gate);
@@ -172,6 +175,9 @@ TEST_P(DDFunctionality, ControlledStandardOpBuildInverseBuild) {
   case XXplusYY:
     op = StandardOperation(Controls{0}, 1, 2, gate,
                            std::vector{dist(mt), dist(mt)});
+    break;
+  case RCCX:
+    op = StandardOperation(Controls{0}, Targets{1, 2, 3}, gate);
     break;
   default:
     op = StandardOperation(0, 1, gate);
@@ -231,6 +237,9 @@ TEST_P(DDFunctionality, ControlledStandardNegOpBuildInverseBuild) {
   case XXplusYY:
     op = StandardOperation(Controls{0_nc}, 1, 2, gate,
                            std::vector{dist(mt), dist(mt)});
+    break;
+  case RCCX:
+    op = StandardOperation(Controls{0_nc}, Targets{1, 2, 3}, gate);
     break;
   default:
     op = StandardOperation(Controls{0_nc}, 1, gate);

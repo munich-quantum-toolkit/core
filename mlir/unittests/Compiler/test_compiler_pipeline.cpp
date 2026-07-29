@@ -43,6 +43,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
@@ -140,7 +141,7 @@ protected:
   }
 
   void expectEquivalent(const std::string& stage, const std::string& ir,
-                        const ModuleOp expected) const {
+                        ModuleOp expected) const {
     auto actual = parseRecordedModule(ir);
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
@@ -439,7 +440,9 @@ cx q[0], q[2];
 
   EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
   EXPECT_NE(qco.str(), beforeFusion);
+  const auto beforeTwoQubitFusion = qco.str();
   EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("u,cx"));
+  EXPECT_NE(qco.str(), beforeTwoQubitFusion);
   const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
       {0, 1}, {1, 0}, {1, 2}, {2, 1}};
   EXPECT_TRUE(qco.placeAndRoute(coupling));
@@ -542,6 +545,90 @@ h q;
       runDefaultPipeline(CompilerInput{std::move(*jeff)}, ProgramFormat::QC);
   ASSERT_TRUE(fromJeff);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromJeff));
+}
+
+/**
+ * @brief Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
+ *
+ * @details Correctness of the decomposition is tested in a dedicated suite.
+ */
+TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  const auto before = qco->copy();
+  ASSERT_TRUE(qco->decomposeMultiControlled(2));
+  EXPECT_NE(qco->str(), before.str());
+}
+
+TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledZ);
+  ASSERT_TRUE(module);
+
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  const auto before = qco->copy();
+  ASSERT_TRUE(
+      qco->runPassPipeline("decompose-multi-controlled{min-controls=2}"));
+  EXPECT_NE(qco->str(), before.str());
+}
+
+TEST_F(CompilerPipelineTest,
+       RejectsDecomposeMultiControlledMinControlsBelowTwo) {
+  EXPECT_FALSE(isDecomposeMultiControlledConfigValid(1U));
+  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(2U));
+
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  module->print(stream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto qco = std::move(*input).intoQCO();
+  ASSERT_TRUE(qco);
+  EXPECT_FALSE(qco->decomposeMultiControlled(1));
+}
+
+TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
+  auto module =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+        builder.mcx({builder.staticQubit(0), builder.staticQubit(1),
+                     builder.staticQubit(2)},
+                    builder.staticQubit(3));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(module);
+
+  std::string before;
+  llvm::raw_string_ostream beforeStream(before);
+  module->print(beforeStream);
+
+  PassManager pm(module->getContext());
+  populateDecomposeMultiControlledPipeline(pm, 2);
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+
+  std::string after;
+  llvm::raw_string_ostream afterStream(after);
+  module->print(afterStream);
+  EXPECT_NE(after, before);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -999,6 +1086,19 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(::qc::multipleControlledXxMinusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY<true>)},
+        CompilerPipelineTestCase{"RCCX", MQT_NAMED_BUILDER(::qc::rccx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rccx),
+                                 MQT_NAMED_BUILDER(mlir::qir::rccx<true>)},
+        CompilerPipelineTestCase{
+            "SingleControlledRCCX",
+            MQT_NAMED_BUILDER(::qc::singleControlledRccx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRccx<true>)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRCCX",
+            MQT_NAMED_BUILDER(::qc::multipleControlledRccx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRccx<true>)},
         CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(::qc::ctrlTwo),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));

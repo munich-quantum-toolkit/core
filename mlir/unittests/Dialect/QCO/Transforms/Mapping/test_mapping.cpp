@@ -14,10 +14,12 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
@@ -30,11 +32,13 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -51,6 +55,12 @@ struct Device {
   size_t nqubits{};
   DenseSet<std::pair<size_t, size_t>> couplingSet;
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+SmallVector<Value> getQubitValues(ValueRange values) {
+  return to_vector(llvm::make_filter_range(
+      values, [](Value value) { return isa<QubitType>(value.getType()); }));
+}
 } // namespace
 
 /// Return true, if the operations within a region fulfill the given coupling
@@ -58,142 +68,119 @@ struct Device {
 static bool
 isExecutable(Region& body, DenseMap<Value, size_t>& m,
              const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
-  for (Operation& rop : body.getOps()) {
-    const bool executable =
-        TypeSwitch<Operation*, bool>(&rop)
-            .Case<StaticOp>([&](StaticOp op) {
-              m.try_emplace(op.getQubit(), op.getIndex());
-              return true;
-            })
-            .Case<BarrierOp>([&](BarrierOp op) {
-              for (const auto [pred, succ] :
-                   llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
-                m.try_emplace(succ, /*hw= */ m.at(pred));
-              }
-              return true;
-            })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
-              assert(op.getNumQubits() <= 2 && "expected two-qubit decomp.");
+  for (Operation& op : body.getOps()) {
+    if (auto staticOp = dyn_cast<StaticOp>(op)) {
+      m.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+      continue;
+    }
 
-              if (op.getNumQubits() > 1) {
-                const auto hwA = m.at(op.getInputQubit(0));
-                const auto hwB = m.at(op.getInputQubit(1));
-                if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
-                  llvm::dbgs() << "The two-qubit gate (" << hwA << ", " << hwB
-                               << ") is not executable: \n";
-                  op->dump();
-                  return false;
-                }
-              }
+    if (auto unitaryOp = dyn_cast<UnitaryOpInterface>(op)) {
+      if (!isa<BarrierOp>(op) && unitaryOp.getNumQubits() > 1) {
+        assert(unitaryOp.getNumQubits() <= 2 && "expected two-qubit decomp.");
 
-              for (const auto [pred, succ] :
-                   llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
-                m.try_emplace(succ, /*hw= */ m.at(pred));
-              }
+        const auto hwA = m.at(unitaryOp.getInputQubit(0));
+        const auto hwB = m.at(unitaryOp.getInputQubit(1));
+        if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+          llvm::dbgs() << "The two-qubit gate (" << hwA << ", " << hwB
+                       << ") is not executable: \n";
+          unitaryOp->dump();
+          return false;
+        }
+      }
 
-              return true;
-            })
-            .Case<scf::ForOp>([&](scf::ForOp forOp) {
-              DenseMap<Value, size_t> bodyM;
-              for (const auto [init, arg] : llvm::zip_equal(
-                       forOp.getInits(), forOp.getRegionIterArgs())) {
-                const auto hw = m.at(init);
-                bodyM.try_emplace(arg, hw);
-              }
+      for (const auto [pred, succ] : llvm::zip_equal(
+               unitaryOp.getInputQubits(), unitaryOp.getOutputQubits())) {
+        m.try_emplace(succ, m.at(pred));
+      }
 
-              SmallVector<size_t> initialHardwareOrder;
-              initialHardwareOrder.reserve(forOp.getInits().size());
+      continue;
+    }
 
-              for (OpOperand& operand : forOp.getInitsMutable()) {
-                const auto pred = operand.get();
-                const auto succ = forOp.getTiedLoopResult(&operand);
-                const auto hw = m.at(pred);
+    if (auto resetOp = dyn_cast<ResetOp>(op)) {
+      m.try_emplace(resetOp.getQubitOut(), m.at(resetOp.getQubitIn()));
+      continue;
+    }
 
-                m.try_emplace(succ, hw);
-                initialHardwareOrder.emplace_back(hw);
-              }
+    if (auto measOp = dyn_cast<MeasureOp>(op)) {
+      m.try_emplace(measOp.getQubitOut(), m.at(measOp.getQubitIn()));
+      continue;
+    }
 
-              if (!isExecutable(forOp.getRegion(), bodyM, couplingSet)) {
-                return false;
-              }
+    if (!isa<scf::ForOp, scf::WhileOp, qco::IfOp>(op)) {
+      continue;
+    }
 
-              auto yield = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
+    for (Region& region : op.getRegions()) {
+      const ValueRange initArgs =
+          TypeSwitch<Operation*, ValueRange>(region.getParentOp())
+              .Case<qco::IfOp>([&](qco::IfOp ifOp) { return ifOp.getQubits(); })
+              .Case<scf::WhileOp>(
+                  [&](scf::WhileOp whileOp) { return whileOp.getInits(); })
+              .Case<scf::ForOp>(
+                  [&](scf::ForOp forOp) { return forOp.getInits(); })
+              .Default([](Operation*) -> ValueRange { return {}; });
 
-              const SmallVector<size_t> bodyHardwareOrder(llvm::map_range(
-                  yield.getResults(), [&](auto v) { return bodyM.at(v); }));
+      const auto initialHardwareOrder = to_vector(llvm::map_range(
+          getQubitValues(initArgs), [&](auto v) { return m.at(v); }));
 
-              if (bodyHardwareOrder != initialHardwareOrder) {
-                llvm::dbgs()
-                    << "The hardware indices of the yielded qubit values "
-                       "must be in the same order as the scf::ForOp's "
-                       "iteration qubit values!\n";
-                return false;
-              }
+      const auto qubitArgs =
+          llvm::make_filter_range(region.getArguments(), [](auto& arg) {
+            return isa<QubitType>(arg.getType());
+          });
 
-              return true;
-            })
-            .Case<qco::IfOp>([&](qco::IfOp ifOp) {
-              std::array mappings{DenseMap<Value, size_t>{},
-                                  DenseMap<Value, size_t>{}};
+      DenseMap<Value, size_t> localM;
+      for (const auto [i, arg] : llvm::enumerate(qubitArgs)) {
+        localM.try_emplace(arg, initialHardwareOrder[i]);
+      }
 
-              const std::array regions{&ifOp.getThenRegion(),
-                                       &ifOp.getElseRegion()};
+      if (!isExecutable(region, localM, couplingSet)) {
+        return false;
+      }
 
-              for (size_t i = 0; i < 2; ++i) {
-                for (const auto [init, arg] : llvm::zip_equal(
-                         ifOp.getQubits(), regions[i]->getArguments())) {
-                  mappings[i].try_emplace(arg, /*hw = */ m.at(init));
-                }
-              }
+      Operation* terminator = region.front().getTerminator();
+      const ValueRange finalOrderArgs =
+          TypeSwitch<Operation*, ValueRange>(region.getParentOp())
+              .Case<qco::IfOp>([&](qco::IfOp) {
+                return cast<qco::YieldOp>(terminator).getTargets();
+              })
+              .Case<scf::WhileOp>([&](auto) {
+                // Choose between "before" and "after" terminator.
+                return region.getRegionNumber() == 0
+                           ? cast<scf::ConditionOp>(terminator).getArgs()
+                           : cast<scf::YieldOp>(terminator).getResults();
+              })
+              .Case<scf::ForOp>([&](scf::ForOp) {
+                return cast<scf::YieldOp>(terminator).getResults();
+              })
+              .Default([](Operation*) -> ValueRange { return {}; });
 
-              SmallVector<size_t> initialHardwareOrder;
-              initialHardwareOrder.reserve(ifOp.getQubits().size());
+      const auto finalOrder =
+          to_vector(llvm::map_range(getQubitValues(finalOrderArgs),
+                                    [&](auto v) { return localM.at(v); }));
 
-              for (OpOperand& operand : ifOp.getQubitsMutable()) {
-                const auto pred = operand.get();
-                const auto succ = ifOp.getTiedResult(&operand);
-                const auto hw = m.at(pred);
+      if (finalOrder != initialHardwareOrder) {
+        llvm::dbgs()
+            << "The hardware indices of the yielded terminator qubit values "
+               "must be in the same order as parent's op input qubit values!\n";
+        return false;
+      }
+    }
 
-                m.try_emplace(succ, hw);
-                initialHardwareOrder.emplace_back(hw);
-              }
-
-              for (const auto [body, mapping] :
-                   llvm::zip_equal(regions, mappings)) {
-                if (!isExecutable(*body, mapping, couplingSet)) {
-                  llvm::dbgs()
-                      << "One of the qco::IfOp's branches is not executable!\n";
-                  return false;
-                }
-
-                auto& block = body->getBlocks().front();
-                auto yield = cast<qco::YieldOp>(block.getTerminator());
-
-                const SmallVector<size_t> branchHardwareOrder(llvm::map_range(
-                    yield.getTargets(), [&](auto v) { return mapping.at(v); }));
-
-                if (branchHardwareOrder != initialHardwareOrder) {
-                  llvm::dbgs()
-                      << "The hardware indices of the yielded qubit values "
-                         "must be in the same order as the qco::IfOp's input "
-                         "qubit "
-                         "values! This ensures that qco::IfOp's act like a "
-                         "large, program-to-hardware mapping change, "
-                         "unitary.\n";
-                  return false;
-                }
-              }
-
-              return true;
-            })
-            .Case<ResetOp, MeasureOp>([&](auto op) {
-              m.try_emplace(op.getQubitOut(), /*hw= */ m.at(op.getQubitIn()));
-              return true;
-            })
-            .Default([](Operation*) { return true; });
-
-    if (!executable) {
-      return false;
+    for (OpResult res : op.getResults()) {
+      if (!isa<QubitType>(res.getType())) {
+        continue;
+      }
+      const Value init = TypeSwitch<Operation*, Value>(&op)
+                             .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+                               return whileOp.getInits()[res.getResultNumber()];
+                             })
+                             .Case<scf::ForOp>([&](scf::ForOp forOp) {
+                               return forOp.getTiedLoopInit(res)->get();
+                             })
+                             .Case<qco::IfOp>([&](qco::IfOp ifOp) {
+                               return ifOp.getTiedQubit(res)->get();
+                             });
+      m.try_emplace(res, m.at(init));
     }
   }
 
@@ -217,8 +204,8 @@ static Device getNineQubitSquareGrid() {
                           {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}}};
 }
 
-/// Creates an N-qubit GHZ state, where N = `qubits.size()` using straight-line
-/// programming.
+/// Creates an N-qubit GHZ state, where N = `qubits.size()` using
+/// straight-line programming.
 static void flatGHZ(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
   qubits[0] = builder.h(qubits[0]);
   for (size_t i = 1; i < qubits.size(); ++i) {
@@ -265,8 +252,8 @@ class MappingPassTest : public testing::Test,
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, scf::SCFDialect, arith::ArithDialect,
-                    func::FuncDialect>();
+    registry.insert<QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
+                    arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -579,7 +566,6 @@ TEST_P(MappingPassTest, MapParallelLoops) {
 
   for (int64_t i = 0; i < size; ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
-    qubits[i] = builder.h(qubits[i]);
   }
 
   for (int64_t i = 0; i < size; ++i) {
@@ -594,6 +580,355 @@ TEST_P(MappingPassTest, MapParallelLoops) {
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %state = arith.constant 0 : i64
+        %one = arith.constant 1 : i64
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1] : tensor<2x!qco.qubit>
+        %next_state, %next_q0, %next_q1 =
+            scf.for %iv = %c0 to %c2 step %c1
+                iter_args(%iter_state = %state, %iter_q0 = %q0,
+                          %iter_q1 = %q1)
+                -> (i64, !qco.qubit, !qco.qubit) {
+          %updated_state = arith.addi %iter_state, %one : i64
+          %updated_q0, %updated_q1 =
+              qco.swap %iter_q0, %iter_q1
+                  : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.yield %updated_state, %updated_q0, %updated_q1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %next_q0 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %next_q1 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %next_state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %false = arith.constant false
+        %state = arith.constant 0 : i32
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1] : tensor<2x!qco.qubit>
+        %next_state, %next_q0, %next_q1 =
+            scf.while (%iter_state = %state, %iter_q0 = %q0,
+                       %iter_q1 = %q1)
+                : (i32, !qco.qubit, !qco.qubit)
+                  -> (i64, !qco.qubit, !qco.qubit) {
+          %extended_state = arith.extsi %iter_state : i32 to i64
+          %updated_q0, %updated_q1 =
+              qco.swap %iter_q0, %iter_q1
+                  : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.condition(%false) %extended_state, %updated_q0, %updated_q1
+              : i64, !qco.qubit, !qco.qubit
+        } do {
+        ^bb0(%after_state: i64, %after_q0: !qco.qubit,
+             %after_q1: !qco.qubit):
+          %truncated_state = arith.trunci %after_state : i64 to i32
+          scf.yield %truncated_state, %after_q0, %after_q1
+              : i32, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %next_q0 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %next_q1 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %next_state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapIfWithClassicalResult) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<2x!qco.qubit>
+        %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q3, %condition = qco.measure %q2 : !qco.qubit
+        %state, %q4, %q5 = qco.if %condition
+            args(%arg0 = %q3, %arg1 = %q1)
+            -> (i64, !qco.qubit, !qco.qubit) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %then = arith.constant 1 : i64
+          qco.yield %then, %next0, %next1
+              : i64, !qco.qubit, !qco.qubit
+        } else args(%arg0 = %q3, %arg1 = %q1) {
+          %else = arith.constant 2 : i64
+          qco.yield %else, %arg0, %arg1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %q4 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %q5 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(64));
+  for (YieldOp yield : {ifOp.thenYield(), ifOp.elseYield()}) {
+    ASSERT_EQ(yield.getNumOperands(), ifOp.getNumResults());
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+  }
+}
+
+TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<2x!qco.qubit>
+        %state, %q2, %q3 = qco.index_switch %selector
+            -> (i64, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %case = arith.constant 1 : i64
+          qco.yield %case, %next0, %next1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %case = arith.constant 2 : i64
+          qco.yield %case, %next0, %next1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          %default = arith.constant 3 : i64
+          qco.yield %default, %arg0, %arg1
+              : i64, !qco.qubit, !qco.qubit
+        }
+        %tensor3 = qtensor.insert %q2 into %tensor2[%c0]
+            : tensor<2x!qco.qubit>
+        %tensor4 = qtensor.insert %q3 into %tensor3[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor4 : tensor<2x!qco.qubit>
+        return %state : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+
+  IndexSwitchOp switchOp;
+  module->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
+  for (Region* region : switchOp.getRegions()) {
+    auto yield = cast<YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getNumOperands(), switchOp.getNumResults());
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+  }
+}
+
+TEST_P(MappingPassTest, RouteIndexSwitchRegions) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c3 = arith.constant 3 : index
+        %tensor0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<3x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<3x!qco.qubit>
+        %tensor3, %q2 = qtensor.extract %tensor2[%c2]
+            : tensor<3x!qco.qubit>
+        %q3, %q4, %q5 = qco.index_switch %selector
+            -> (!qco.qubit, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1, %arg2 = %q2) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %next0, %next1, %arg2
+              : !qco.qubit, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1, %arg2 = %q2) {
+          %next1, %next2 = qco.swap %arg1, %arg2
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %arg0, %next1, %next2
+              : !qco.qubit, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1, %arg2 = %q2) {
+          %next0, %next2 = qco.swap %arg0, %arg2
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %next0, %arg1, %next2
+              : !qco.qubit, !qco.qubit, !qco.qubit
+        }
+        %tensor4 = qtensor.insert %q3 into %tensor3[%c0]
+            : tensor<3x!qco.qubit>
+        %tensor5 = qtensor.insert %q4 into %tensor4[%c1]
+            : tensor<3x!qco.qubit>
+        %tensor6 = qtensor.insert %q5 into %tensor5[%c2]
+            : tensor<3x!qco.qubit>
+        qtensor.dealloc %tensor6 : tensor<3x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t numSwaps = 0;
+  module->walk([&](SWAPOp) { ++numSwaps; });
+  EXPECT_GT(numSwaps, 3);
+}
+
+TEST_P(MappingPassTest, RouteNestedOperationOnceWhileIndependentWiresAdvance) {
+  const auto& device = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c3 = arith.constant 3 : index
+        %c4 = arith.constant 4 : index
+        %tensor0 = qtensor.alloc(%c4) : tensor<4x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<4x!qco.qubit>
+        %tensor2, %q1 = qtensor.extract %tensor1[%c1]
+            : tensor<4x!qco.qubit>
+        %tensor3, %q2 = qtensor.extract %tensor2[%c2]
+            : tensor<4x!qco.qubit>
+        %tensor4, %q3 = qtensor.extract %tensor3[%c3]
+            : tensor<4x!qco.qubit>
+        %q4, %q5 = qco.index_switch %selector
+            -> (!qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %next0, %next1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %next0, %next1 : !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          qco.yield %arg0, %arg1 : !qco.qubit, !qco.qubit
+        }
+        %q6, %q7 = qco.barrier %q2, %q3
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q8, %q9 = qco.barrier %q6, %q7
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %tensor5 = qtensor.insert %q4 into %tensor4[%c0]
+            : tensor<4x!qco.qubit>
+        %tensor6 = qtensor.insert %q5 into %tensor5[%c1]
+            : tensor<4x!qco.qubit>
+        %tensor7 = qtensor.insert %q8 into %tensor6[%c2]
+            : tensor<4x!qco.qubit>
+        %tensor8 = qtensor.insert %q9 into %tensor7[%c3]
+            : tensor<4x!qco.qubit>
+        qtensor.dealloc %tensor8 : tensor<4x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
+                      MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  size_t numIndexSwitches = 0;
+  module->walk([&](IndexSwitchOp) { ++numIndexSwitches; });
+  EXPECT_EQ(numIndexSwitches, 1);
 }
 
 TEST_P(MappingPassTest, MapSABRECircuit) {
@@ -714,6 +1049,69 @@ TEST_P(MappingPassTest, MapBranchingGHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
+  auto res =
+      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
+  auto entry = getEntryPoint(m.get());
+
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
+TEST_P(MappingPassTest, MapDoUntil) {
+  const auto& device = GetParam();
+  const auto size = 4;
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(size);
+  SmallVector<Value> qubits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  qubits = builder.scfWhile(
+      qubits,
+      [&](ValueRange args) {
+        SmallVector<Value> beforeArgs(args);
+        SmallVector<Value> beforeBits(args);
+
+        flatGHZ(builder, beforeArgs);
+
+        beforeArgs = builder.barrier(beforeArgs);
+
+        for (int64_t i = 0; i < size; ++i) {
+          std::tie(beforeArgs[i], beforeBits[i]) =
+              builder.measure(beforeArgs[i]);
+        }
+
+        for (int64_t i = 0; i < size - 1; ++i) {
+          beforeBits[i + 1] =
+              arith::AndIOp::create(builder, beforeBits[i], beforeBits[i + 1])
+                  .getResult();
+        }
+
+        builder.scfCondition(beforeBits[size - 1], beforeArgs);
+        return beforeArgs;
+      },
+      [&](ValueRange args) {
+        SmallVector<Value> afterArgs(args);
+        flatGHZ(builder, afterArgs);
+        return afterArgs;
+      });
+
+  flatGHZ(builder, qubits);
+
+  qubits = builder.barrier(qubits);
+
+  for (int64_t i = 0; i < size; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
   auto res =
       runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
   auto entry = getEntryPoint(m.get());

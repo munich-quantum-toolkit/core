@@ -28,6 +28,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -79,6 +80,116 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(module);
+}
+
+TEST(QCOToQCRegressionTest, PreservesClassicalIfResult) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) -> i64
+      attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %then = arith.constant 1 : i64
+    %else = arith.constant 2 : i64
+    %result, %q1 = qco.if %condition args(%arg = %q0)
+        -> (i64, !qco.qubit) {
+      %q2 = qco.h %arg : !qco.qubit -> !qco.qubit
+      qco.yield %then, %q2 : i64, !qco.qubit
+    } else args(%arg = %q0) {
+      %q2 = qco.x %arg : !qco.qubit -> !qco.qubit
+      qco.yield %else, %q2 : i64, !qco.qubit
+    }
+    qco.sink %q1 : !qco.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::IfOp ifOp;
+  module->walk([&](scf::IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getNumResults(), 1);
+  EXPECT_TRUE(ifOp.getResult(0).getType().isInteger(64));
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), ifOp.getResult(0));
+
+  bool containsQCOOperations = false;
+  module->walk([&](Operation* operation) {
+    containsQCOOperations |=
+        operation->getDialect() == context.getLoadedDialect<qco::QCODialect>();
+  });
+  EXPECT_FALSE(containsQCOOperations);
+}
+
+TEST(QCOToQCRegressionTest, PreservesClassicalIndexSwitchResult) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%index: index) -> i64
+      attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %result, %q1 = qco.index_switch %index -> (i64, !qco.qubit)
+    case 0 args(%arg0 = %q0) {
+      %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+      %case = arith.constant 1 : i64
+      qco.yield %case, %q2 : i64, !qco.qubit
+    }
+    default args(%arg0 = %q0) {
+      %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+      %default = arith.constant 2 : i64
+      qco.yield %default, %q2 : i64, !qco.qubit
+    }
+    qco.sink %q1 : !qco.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::IndexSwitchOp switchOp;
+  module->walk([&](scf::IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getNumResults(), 1);
+  EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(64));
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), switchOp.getResult(0));
+
+  bool containsQCOOperations = false;
+  module->walk([&](Operation* operation) {
+    containsQCOOperations |=
+        operation->getDialect() == context.getLoadedDialect<qco::QCODialect>();
+  });
+  EXPECT_FALSE(containsQCOOperations);
 }
 
 TEST_P(QCOToQCTest, ProgramEquivalence) {
@@ -141,6 +252,18 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"AllocDeallocPair",
                         MQT_NAMED_BUILDER(qco::allocSinkPair),
                         MQT_NAMED_BUILDER(qc::allocDeallocPair)}));
+/// @}
+
+/// \name QCOToQC/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOPowOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"CtrlPowSx",
+                                    MQT_NAMED_BUILDER(qco::ctrlPowSx),
+                                    MQT_NAMED_BUILDER(qc::ctrlPowSx)},
+                    QCOToQCTestCase{"PowTwo", MQT_NAMED_BUILDER(qco::powTwo),
+                                    MQT_NAMED_BUILDER(qc::powTwo)}));
+
 /// @}
 
 /// \name QCOToQC/Modifiers/CtrlOp.cpp
@@ -276,6 +399,21 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledP",
                         MQT_NAMED_BUILDER(qco::multipleControlledP),
                         MQT_NAMED_BUILDER(qc::multipleControlledP)}));
+/// @}
+
+/// \name QCOToQC/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORCCXOpTest, QCOToQCTest,
+    testing::Values(
+        QCOToQCTestCase{"RCCX", MQT_NAMED_BUILDER(qco::rccx),
+                        MQT_NAMED_BUILDER(qc::rccx)},
+        QCOToQCTestCase{"SingleControlledRCCX",
+                        MQT_NAMED_BUILDER(qco::singleControlledRccx),
+                        MQT_NAMED_BUILDER(qc::singleControlledRccx)},
+        QCOToQCTestCase{"MultipleControlledRCCX",
+                        MQT_NAMED_BUILDER(qco::multipleControlledRccx),
+                        MQT_NAMED_BUILDER(qc::multipleControlledRccx)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/ROp.cpp
@@ -669,6 +807,19 @@ INSTANTIATE_TEST_SUITE_P(
                                     MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
 /// @}
 
+/// \name QCOToQC/Operations/IndexSwitchOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOIndexSwitchOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"SimpleIndexSwitchOp",
+                                    MQT_NAMED_BUILDER(qco::simpleIndexSwitch),
+                                    MQT_NAMED_BUILDER(qc::simpleIndexSwitch)},
+                    QCOToQCTestCase{
+                        "IndexSwitchMultiCase",
+                        MQT_NAMED_BUILDER(qco::indexSwitchMultiCase),
+                        MQT_NAMED_BUILDER(qc::indexSwitchMultiCase)}));
+/// @}
+
 /// \name QCOToQC/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -694,6 +845,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"NestedForLoopWhileOp",
                         MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)},
+        QCOToQCTestCase{"NestedForLoopSwitchOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp)},
         QCOToQCTestCase{
             "nestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),

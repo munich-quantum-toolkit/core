@@ -170,6 +170,7 @@ def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
+def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
@@ -870,6 +871,32 @@ def XXMinusYYOp : QCOp<"xx_minus_yy",
       "const std::variant<double, Value>&":$beta)>];
 }
 
+def RCCXOp
+    : QCOp<"rccx", traits = [UnitaryOpInterface, ThreeTargetZeroParameter]> {
+  let summary = "Apply a relative-phase CCX gate to three qubits";
+  let description = [{
+        Applies a relative-phase CCX (`RCCX`) gate to three qubits, modifying
+        them in place.
+
+        Example:
+        ```mlir
+        qc.rccx %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<QubitType, "the first target qubit",
+                           [MemRead, MemWrite]>:$qubit0_in,
+      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+      Arg<QubitType, "the third target qubit", [MemRead, MemWrite]>:$qubit2_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in `,` $qubit2_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in) `,` "
+                       "type($qubit2_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rccx"; }
+    }];
+}
+
 def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
   let summary = "Apply a barrier gate to a set of qubits";
   let description = [{
@@ -919,10 +946,10 @@ def CtrlOp
            traits = [UnitaryOpInterface, AttrSizedOperandSegments,
                      SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
                      RecursiveMemoryEffects]> {
-  let summary = "Add control qubits to a unitary operation";
+  let summary = "Apply a control modifier to a collection of gates";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation defined in its body region.
-        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+        A modifier operation that adds control qubits to the gates defined in its body region.
+        The controlled operation applies the controlled gates only when all control qubits are in the $|1\rangle$ state.
 
         Note that control qubits are logically unmodified by this operation in that their quantum state remains unchanged.
         However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
@@ -982,9 +1009,10 @@ def InvOp : QCOp<"inv",
                  traits = [UnitaryOpInterface,
                            SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
                            RecursiveMemoryEffects]> {
-  let summary = "Invert a unitary operation";
+  let summary =
+      "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body region.
+        A modifier operation that inverts the gates defined in its body region.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
@@ -1028,6 +1056,76 @@ def InvOp : QCOp<"inv",
                       "const function_ref<void(ValueRange)>&":$body)>,
                   OpBuilder<(ins "Value":$qubit,
                       "const function_ref<void(Value)>&":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def PowOp : QCOp<"pow",
+                 traits = [UnitaryOpInterface,
+                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                           RecursiveMemoryEffects]> {
+  let summary = "Apply a power modifier to a collection of gates";
+  let description = [{
+          A modifier operation that raises the gates defined in its body region to a given power.
+
+          The exponent can be an integer or a floating-point number.
+
+          - r > 0: apply the gate raised to the r-th power.
+          - r = 0: identity (no-op).
+          - r < 0: equivalent to inv @ pow(-r) @ g.
+
+          The body region may contain an arbitrary amount of unitary and classical operations.
+          Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+
+          Example:
+          ```mlir
+          qc.pow(%exponent) (%a0 = %q0) {
+            qc.s %a0 : !qc.qubit
+          } : !qc.qubit
+          ```
+      }];
+
+  let arguments = (ins F64:$exponent,
+      Arg<Variadic<QubitType>,
+          "the qubits involved in the operation", [MemRead, MemWrite]>:$qubits);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = [{
+        `(` $exponent `)`
+        custom<TargetAliasing>($region, $qubits)
+        attr-dict ( `:` type($qubits)^ )?
+    }];
+
+  let extraClassDeclaration = [{
+          size_t getNumBodyUnitaries();
+          [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+          size_t getNumQubits() { return getNumTargets(); }
+          size_t getNumTargets() { return getQubits().size(); }
+          size_t getNumControls() { return 0; }
+          Value getQubit(size_t i) { return getQubits()[i]; }
+          Value getTarget(size_t i) { return getQubits()[i]; }
+          OperandRange getTargets() { return getQubits(); }
+          Value getControl(size_t i) { llvm::reportFatalUsageError("PowOp does not have controls"); }
+          OperandRange getControls() { return {nullptr, 0}; }
+          static size_t getNumParams() { return 1; }
+          Value getParameter(size_t i) {
+            if (i != 0) {
+              llvm::reportFatalUsageError("Parameter index out of bounds");
+            }
+            return getExponent();
+          }
+          OperandRange getParameters() { return getOperation()->getOperands().slice(0, 1); }
+          std::optional<double> getExponentValue();
+          static StringRef getBaseSymbol() { return "pow"; }
+      }];
+
+  let builders =
+      [OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
+           "ValueRange":$qubits,
+           "const llvm::function_ref<void(mlir::ValueRange)>&":$bodyBuilder)>,
+       OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
+           "Value":$qubit,
+           "const llvm::function_ref<void(mlir::Value)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

@@ -249,28 +249,63 @@ template <bool IntoRegister>
 Value resetQubitAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
-  b.reset(q[0]);
-  return measureAndRecord(b, q.qubits, IntoRegister);
+  if constexpr (IntoRegister) {
+    auto c = b.allocClassicalBitRegister(static_cast<int64_t>(2), "c");
+    b.measure(q[0], c[0]);
+    b.reset(q[0]);
+    b.measure(q[0], c[1]);
+  } else {
+    b.measure(q[0], 0);
+    b.reset(q[0]);
+    b.measure(q[0], 1);
+  }
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister>
 Value resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
-  b.reset(q[0]);
-  b.h(q[1]);
-  b.reset(q[1]);
-  return measureAndRecord(b, q.qubits, IntoRegister);
+  if constexpr (IntoRegister) {
+    auto c = b.allocClassicalBitRegister(static_cast<int64_t>(4), "c");
+    b.measure(q[0], c[0]);
+    b.reset(q[0]);
+    b.measure(q[0], c[1]);
+    b.h(q[1]);
+    b.measure(q[1], c[2]);
+    b.reset(q[1]);
+    b.measure(q[1], c[3]);
+  } else {
+    b.measure(q[0], 0);
+    b.reset(q[0]);
+    b.measure(q[0], 1);
+    b.h(q[1]);
+    b.measure(q[1], 2);
+    b.reset(q[1]);
+    b.measure(q[1], 3);
+  }
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister>
 Value repeatedResetAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
-  b.reset(q[0]);
-  b.reset(q[0]);
-  b.reset(q[0]);
-  return measureAndRecord(b, q.qubits, IntoRegister);
+  if constexpr (IntoRegister) {
+    auto c = b.allocClassicalBitRegister(static_cast<int64_t>(2), "c");
+    b.measure(q[0], c[0]);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.measure(q[0], c[1]);
+  } else {
+    b.measure(q[0], 0);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.measure(q[0], 1);
+  }
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister> Value globalPhase(QIRProgramBuilder& b) {
@@ -817,6 +852,25 @@ Value multipleControlledXxMinusYY(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
+template <bool IntoRegister> Value rccx(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.rccx(q[0], q[1], q[2]);
+  return measureAndRecord(b, q.qubits, IntoRegister);
+}
+
+template <bool IntoRegister> Value singleControlledRccx(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.crccx(q[0], q[1], q[2], q[3]);
+  return measureAndRecord(b, q.qubits, IntoRegister);
+}
+
+template <bool IntoRegister>
+Value multipleControlledRccx(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
+  return measureAndRecord(b, q.qubits, IntoRegister);
+}
+
 template <bool IntoRegister> Value simpleIf(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
@@ -1065,6 +1119,9 @@ template Value multipleControlledXxPlusYY<false>(QIRProgramBuilder& b);
 template Value xxMinusYY<false>(QIRProgramBuilder& b);
 template Value singleControlledXxMinusYY<false>(QIRProgramBuilder& b);
 template Value multipleControlledXxMinusYY<false>(QIRProgramBuilder& b);
+template Value rccx<false>(QIRProgramBuilder& b);
+template Value singleControlledRccx<false>(QIRProgramBuilder& b);
+template Value multipleControlledRccx<false>(QIRProgramBuilder& b);
 template Value simpleIf<false>(QIRProgramBuilder& b);
 template Value ifElse<false>(QIRProgramBuilder& b);
 template Value ifTwoQubits<false>(QIRProgramBuilder& b);
@@ -1190,6 +1247,9 @@ template Value multipleControlledXxPlusYY<true>(QIRProgramBuilder& b);
 template Value xxMinusYY<true>(QIRProgramBuilder& b);
 template Value singleControlledXxMinusYY<true>(QIRProgramBuilder& b);
 template Value multipleControlledXxMinusYY<true>(QIRProgramBuilder& b);
+template Value rccx<true>(QIRProgramBuilder& b);
+template Value singleControlledRccx<true>(QIRProgramBuilder& b);
+template Value multipleControlledRccx<true>(QIRProgramBuilder& b);
 template Value simpleIf<true>(QIRProgramBuilder& b);
 template Value ifElse<true>(QIRProgramBuilder& b);
 template Value ifTwoQubits<true>(QIRProgramBuilder& b);

@@ -12,6 +12,8 @@
 
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
+
 namespace mlir {
 class ModuleOp;
 class OpPassManager;
@@ -26,13 +28,20 @@ mlir::LogicalResult runWithPassManager(
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
     mlir::StringRef errorMessage);
 
-/** @brief Register the QCO passes and named compiler pipelines. */
+/// Register the QCO passes and named compiler pipelines.
 void registerMQTCompilerPasses();
 
-/** @brief Populate the default QCO optimization pipeline. */
+/// Populate the default QCO optimization pipeline.
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 
-/** @brief Parse and run a module-level MLIR textual pass pipeline. */
+/// Return whether @p minControls is valid for multi-controlled decomposition.
+[[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minControls);
+
+/// Populate the multi-controlled decomposition pass sequence.
+void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
+                                              uint64_t minControls);
+
+/// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult
 runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
                 bool enableTiming = false, bool enableStatistics = false);

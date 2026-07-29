@@ -23,6 +23,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstdint>
+
 using namespace mlir;
 
 static void addSimplificationPasses(OpPassManager& pm) {
@@ -31,12 +33,12 @@ static void addSimplificationPasses(OpPassManager& pm) {
 }
 
 LogicalResult
-runWithPassManager(ModuleOp module,
+runWithPassManager(ModuleOp mod,
                    const function_ref<void(OpPassManager&)> populatePasses,
                    const StringRef errorMessage) {
-  PassManager pm(module.getContext());
+  PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(module).failed()) {
+  if (pm.run(mod).failed()) {
     llvm::errs() << errorMessage << "\n";
     return failure();
   }
@@ -45,6 +47,7 @@ runWithPassManager(ModuleOp module,
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerFuseTwoQubitUnitaryRuns();
     qco::registerHadamardLifting();
@@ -62,12 +65,23 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
 }
 
-LogicalResult runPassPipeline(ModuleOp module, const StringRef pipeline,
+bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
+  return minControls >= 2;
+}
+
+void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
+                                              const uint64_t minControls) {
+  qco::DecomposeMultiControlledOptions options;
+  options.minControls = minControls;
+  pm.addPass(qco::createDecomposeMultiControlled(options));
+}
+
+LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
                               const bool enableTiming,
                               const bool enableStatistics) {
   registerMQTCompilerPasses();
   registerTransformsPasses();
-  PassManager pm(module.getContext());
+  PassManager pm(mod.getContext());
   if (enableTiming) {
     pm.enableTiming();
   }
@@ -75,10 +89,10 @@ LogicalResult runPassPipeline(ModuleOp module, const StringRef pipeline,
     pm.enableStatistics();
   }
   if (failed(parsePassPipeline(pipeline, pm))) {
-    return module.emitError()
-           << "failed to parse pass pipeline '" << pipeline << "'";
+    return mod.emitError() << "failed to parse pass pipeline '" << pipeline
+                           << "'";
   }
-  return pm.run(module);
+  return pm.run(mod);
 }
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
@@ -105,25 +119,25 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQCCleanupPipeline,
-                            "Failed to run QC cleanup pipeline.");
+[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp mod) {
+  return runWithPassManager(mod, populateQCCleanupPipeline,
+                            "Failed to run the QC cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQCOCleanupPipeline,
-                            "Failed to run QCO cleanup pipeline.");
+[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
+  return runWithPassManager(mod, populateQCOCleanupPipeline,
+                            "Failed to run the QCO cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module,
+[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,
                                                   bool useAdaptive) {
   return runWithPassManager(
-      module,
+      mod,
       [&](OpPassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
-      "Failed to run QIR cleanup pipeline.");
+      "Failed to run the QIR cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp module) {
   return runWithPassManager(module, populateJeffCleanupPipeline,
-                            "Failed to run Jeff cleanup pipeline.");
+                            "Failed to run the jeff cleanup pipeline.");
 }

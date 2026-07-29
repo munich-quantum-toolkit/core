@@ -468,7 +468,7 @@ c = measure q;
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
     """Compile and execute a QIR program with the DDSIM device."""
     # Keep this lazy to cover loading MLIR after the QIR-enabled device.
-    from mqt.core.mlir import OutputFormat, compile_program  # noqa: PLC0415
+    from mqt.core.mlir import OutputFormat, compile_program  # ruff:ignore[import-outside-top-level]
 
     qasm3_program = """
 OPENQASM 3.0;
@@ -699,11 +699,11 @@ def test_session_construction_with_token() -> None:
     assert session is not None
 
     # Non-empty token should be accepted
-    session = Session(token="test_token_123")  # noqa: S106
+    session = Session(token="test_token_123")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
     # Token with special characters should be accepted
-    session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # noqa: S106
+    session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
 
@@ -785,11 +785,11 @@ def test_session_construction_with_username_password() -> None:
     assert session is not None
 
     # Password only
-    session = Session(password="secure_password")  # noqa: S106
+    session = Session(password="secure_password")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
     # Both username and password
-    session = Session(username="user123", password="secure_password")  # noqa: S106
+    session = Session(username="user123", password="secure_password")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
 
@@ -808,9 +808,9 @@ def test_session_construction_with_multiple_parameters() -> None:
     Unsupported parameters are skipped, so construction should succeed.
     """
     session = Session(
-        token="test_token",  # noqa: S106
+        token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
         username="test_user",
-        password="test_pass",  # noqa: S106
+        password="test_pass",  # ruff:ignore[hardcoded-password-func-arg]
         project_id="test_project",
     )
     assert session is not None
@@ -853,7 +853,7 @@ def test_session_construction_with_custom_parameters() -> None:
     # Test mixing custom parameters with standard authentication
     try:
         session = Session(
-            token="test_token",  # noqa: S106
+            token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
             custom1="custom_value",
             project_id="project_id",
         )

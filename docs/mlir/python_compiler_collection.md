@@ -9,9 +9,11 @@ mystnb:
 # Using the MQT Compiler Collection from Python
 
 The {py:mod}`mqt.core.mlir` module provides Python access to the MQT Compiler
-Collection. It accepts OpenQASM, MQT {py:class}`~mqt.core.ir.QuantumComputation`
-objects, Qiskit circuits, and typed compiler programs. The requested output
-format determines where compilation stops and which program type is returned.
+Collection. It accepts source strings, {code}`.qasm`, {code}`.mlir`, and
+{code}`.jeff` files, MQT {py:class}`~mqt.core.ir.QuantumComputation` objects,
+Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler
+programs. The requested output format determines where compilation stops and
+which program type is returned.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -41,13 +43,14 @@ print(compiled.ir)
 ```
 
 By default, `compile_program()` runs the standard optimization pipeline and
-returns a {py:class}`~mqt.core.mlir.QCProgram`. Its `ir` property exposes the
-textual MLIR representation for inspection and debugging. Programs do not need
-to be written in MLIR to use the compiler.
+returns a {py:class}`~mqt.core.mlir.QCProgram`. Its
+{py:attr}`~mqt.core.mlir.Program.ir` property exposes the textual MLIR
+representation for inspection and debugging. Programs do not need to be written
+in MLIR to use the compiler.
 
 :::{important}
 The compiler removes dead code. A circuit that only prepares a state has no
-observable effect and can be removed by optimization. Programs intended for
+observable effect and will be removed by optimizations. Programs intended for
 execution should measure the relevant qubits and return the measurement results.
 
 In OpenQASM 3, assigning measurements to a classical register, as in the example
@@ -58,18 +61,16 @@ operations.
 
 ## Select an output format
 
-The compiler accepts source strings, `.qasm`, `.mlir`, and `.jeff` files, MQT
-and Qiskit circuit objects, and typed compiler programs. Select an output format
-to stop the pipeline at a particular representation:
+Select an output format to stop the pipeline at a particular representation:
 
-| Purpose | Output format | Result type |
-| --- | --- | --- |
-| Inspect frontend translation | `OutputFormat.QC_IMPORT` | `QCProgram` |
-| Inspect QCO immediately after conversion | `OutputFormat.QCO` | `QCOProgram` |
-| Inspect QCO after optimization | `OutputFormat.QCO_OPTIMIZED` | `QCOProgram` |
-| Obtain the optimized circuit | `OutputFormat.QC` (default) | `QCProgram` |
-| Serialize a compiler program | `OutputFormat.JEFF` | `JeffProgram` |
-| Generate QIR | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram` |
+| Purpose                                  | Output format                                          | Result type   |
+| ---------------------------------------- | ------------------------------------------------------ | ------------- |
+| Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`   |
+| Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`  |
+| Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`  |
+| Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`   |
+| Serialize a compiler program             | `OutputFormat.JEFF`                                    | `JeffProgram` |
+| Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`  |
 
 For example, select optimized QCO to inspect the representation after the
 default QCO pass pipeline:
@@ -81,10 +82,10 @@ print(optimized.ir)
 
 ## Run passes explicitly
 
-`QCProgram`, `QCOProgram`, `JeffProgram`, and `QIRProgram` own their MLIR
-modules. A conversion consumes its source program by default, avoiding an
-implicit copy of a potentially large module. Pass `copy=True` when the source
-must remain available.
+{code}`QCProgram`, {code}`QCOProgram`, {code}`JeffProgram`, and
+{code}`QIRProgram` own their MLIR modules. A conversion consumes its source
+program by default, avoiding an implicit copy of a potentially large module.
+Pass {code}`copy=True` when the source must remain available.
 
 The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:
@@ -104,7 +105,7 @@ print(final_qc.ir)
 
 Architecture-independent QCO transformations can also be composed with MLIR's
 textual pass-pipeline syntax. The same pass names and options are accepted by
-`mqt-cc`:
+{code}`mqt-cc`:
 
 ```{code-cell} ipython3
 custom = compile_program(
@@ -114,14 +115,14 @@ custom = compile_program(
 )
 ```
 
-The `qco_pipeline` argument replaces the default QCO optimization pipeline. It
-is applied when compilation proceeds beyond the raw `OutputFormat.QCO`
-checkpoint.
+The {code}`qco_pipeline` argument replaces the default QCO optimization
+pipeline. It is applied when compilation proceeds beyond the raw
+{code}`OutputFormat.QCO` checkpoint.
 
 ## Serialize programs and generate QIR
 
-Jeff is a serializable representation that can be stored and compiled again in a
-later process.
+{code}`jeff` is a serializable representation that can be stored and compiled
+again in a later process.
 
 ```{code-cell} ipython3
 from pathlib import Path
@@ -136,8 +137,9 @@ with TemporaryDirectory() as directory:
 assert restored.is_valid
 ```
 
-To generate QIR, select a target profile. `QIRProgram` provides the QIR MLIR
-through `ir` and the translated LLVM IR through `llvm_ir`.
+To generate QIR, select a target profile. {py:class}`~mqt.core.mlir.QIRProgram`
+provides the QIR MLIR through {py:attr}`~mqt.core.mlir.Program.ir` and the
+translated LLVM IR through {py:attr}`~mqt.core.mlir.QIRProgram.llvm_ir`.
 
 ```{code-cell} ipython3
 qir = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)
@@ -145,8 +147,9 @@ assert qir.profile is QIRProfile.BASE
 print(qir.llvm_ir)
 ```
 
-Use `qir.to_bitcode()` to obtain LLVM bitcode as `bytes`, or
-`qir.write_bitcode(path)` to write a `.bc` file directly.
+Use {py:meth}`~mqt.core.mlir.QIRProgram.to_bitcode` to obtain LLVM bitcode as
+{code}`bytes`, or {py:meth}`~mqt.core.mlir.QIRProgram.write_bitcode` to write a
+{code}`.bc` file directly.
 
 The {doc}`QC <QC>`, {doc}`QCO <QCO>`, and {doc}`QTensor <QTensor>` references
 describe the underlying operations. See {doc}`Conversions` for the lowering

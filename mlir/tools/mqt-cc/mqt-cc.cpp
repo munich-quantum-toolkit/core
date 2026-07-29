@@ -64,13 +64,12 @@ using namespace mlir;
 // Command-line options
 static llvm::cl::opt<std::string>
     inputFilename(llvm::cl::Positional,
-                  llvm::cl::desc("<input .jeff/.mlir/.qco/.qasm file>"),
+                  llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
                   llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> inputFormat(
     "input-format",
-    llvm::cl::desc(
-        "Input format: auto, jeff, mlir, qco, or qasm (default: auto)"),
+    llvm::cl::desc("Input format: auto, jeff, mlir, or qasm (default: auto)"),
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
 static llvm::cl::opt<std::string>
@@ -93,7 +92,7 @@ static llvm::cl::opt<std::string> nativeGates(
     llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 namespace {
-enum class InputFormat : std::uint8_t { MLIR, QCO, QASM, Jeff };
+enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
 enum class InputDialect : std::uint8_t { QC, QCO };
 enum class OutputFormat : std::uint8_t {
   QCImport,
@@ -106,7 +105,7 @@ enum class OutputFormat : std::uint8_t {
 };
 
 struct ParsedProgram {
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> mod;
   InputDialect dialect = InputDialect::QC;
 };
 } // namespace
@@ -119,9 +118,6 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
     return InputFormat::MLIR;
   }
-  if (format == "qco" || (format == "auto" && filename.ends_with(".qco"))) {
-    return InputFormat::QCO;
-  }
   if (format == "qasm" || (format == "auto" && filename.ends_with(".qasm"))) {
     return InputFormat::QASM;
   }
@@ -132,6 +128,30 @@ parseInputFormat(const StringRef format, const StringRef filename) {
     return InputFormat::MLIR;
   }
   return std::nullopt;
+}
+
+/**
+ * @brief Check whether a module contains an operation from a dialect.
+ */
+[[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
+                                            const StringRef dialect) {
+  auto found = false;
+  mod->walk([&](Operation* operation) {
+    found |= operation->getDialect()->getNamespace() == dialect;
+  });
+  return found;
+}
+
+/**
+ * @brief Detect the input dialect of a module.
+ *
+ * @details Defaults to QC if no QCO operation is found.
+ */
+[[nodiscard]] static InputDialect detectInputDialect(ModuleOp mod) {
+  if (moduleUsesDialect(mod, "qco")) {
+    return InputDialect::QCO;
+  }
+  return InputDialect::QC;
 }
 
 /**
@@ -162,6 +182,22 @@ parseOutputFormat(const StringRef format) {
   }
   return std::nullopt;
 }
+
+static llvm::cl::opt<bool> enableDecomposeMultiControlled(
+    "decompose-multi-controlled",
+    llvm::cl::desc(
+        "Decompose controlled X/Z/phase gates and qco.rccx with at least "
+        "--decompose-multi-controlled-min-controls controls (default 2)."),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
+    "decompose-multi-controlled-min-controls",
+    llvm::cl::desc(
+        "Minimum control count for --decompose-multi-controlled: decompose "
+        "controlled X/Z/phase gates and qco.rccx with at least this many "
+        "controls (default 2; must be at least 2). Higher values leave smaller "
+        "controlled gates undecomposed."),
+    llvm::cl::init(2));
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -200,12 +236,12 @@ static OwningOpRef<ModuleOp> loadMLIRFile(const StringRef filename,
 }
 
 /**
- * @brief Load and lower a `.jeff` file to QCO.
+ * @brief Load a `.jeff` file and convert the program to QCO.
  */
 static ParsedProgram loadJeffFile(const StringRef filename,
                                   MLIRContext* const context) {
   if (filename == "-") {
-    llvm::errs() << "Reading `jeff` from standard input is not supported.\n";
+    llvm::errs() << "Reading jeff from standard input is not supported.\n";
     return {};
   }
 
@@ -216,26 +252,25 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     return {};
   }
 
-  auto module = deserializeFromFile(context, filename);
-  if (!module) {
+  auto mod = deserializeFromFile(context, filename);
+  if (!mod) {
     llvm::errs() << "Failed to deserialize jeff file '" << filename << "'.\n";
     return {};
   }
 
   PassManager pm(context);
   pm.addPass(createJeffToQCO());
-  if (pm.run(*module).failed()) {
+  if (pm.run(*mod).failed()) {
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
-  return {.module = std::move(module), .dialect = InputDialect::QCO};
+  return {.mod = std::move(mod), .dialect = InputDialect::QCO};
 }
 
 /**
  * @brief Write serialized `jeff` bytes to an output file or standard output.
  */
-static LogicalResult writeJeffOutput(const ModuleOp module,
-                                     const StringRef filename) {
+static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -243,7 +278,7 @@ static LogicalResult writeJeffOutput(const ModuleOp module,
     return failure();
   }
 
-  const auto serialized = serialize(module);
+  const auto serialized = serialize(mod);
   const auto bytes = serialized.asBytes();
   output->os().write(reinterpret_cast<const char*>(bytes.begin()),
                      bytes.size());
@@ -258,7 +293,7 @@ static LogicalResult writeJeffOutput(const ModuleOp module,
 }
 
 /**
- * @brief Write a module to an output file
+ * @brief Write a module to an output file.
  */
 template <typename ModuleType>
 static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
@@ -313,12 +348,13 @@ int main(int argc, char** argv) {
                  << inputFilename << "'. Use --input-format.\n";
     return 1;
   }
-  auto parsedOutputFormat = parseOutputFormat(outputFormat);
+  const auto parsedOutputFormat = parseOutputFormat(outputFormat);
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
   }
-  // Set up MLIR context with all required dialects.
+
+  // Set up MLIR context with all required dialects
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
@@ -333,20 +369,17 @@ int main(int argc, char** argv) {
   ParsedProgram program;
   switch (*parsedInputFormat) {
   case InputFormat::MLIR:
-    program.module = loadMLIRFile(inputFilename, &context);
-    break;
-  case InputFormat::QCO:
-    program.module = loadMLIRFile(inputFilename, &context);
-    program.dialect = InputDialect::QCO;
+    program.mod = loadMLIRFile(inputFilename, &context);
+    program.dialect = detectInputDialect(*program.mod);
     break;
   case InputFormat::QASM:
-    program.module = loadQASMFile(inputFilename, &context);
+    program.mod = loadQASMFile(inputFilename, &context);
     break;
   case InputFormat::Jeff:
     program = loadJeffFile(inputFilename, &context);
     break;
   }
-  if (!program.module) {
+  if (!program.mod) {
     return 1;
   }
 
@@ -362,6 +395,21 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  if (nativeGates.getNumOccurrences() > 0 &&
+      (*parsedOutputFormat == OutputFormat::QCImport ||
+       *parsedOutputFormat == OutputFormat::QCO)) {
+    llvm::errs() << "--native-gates requires an output that passes through "
+                    "QCO optimization.\n";
+    return 1;
+  }
+  if (enableDecomposeMultiControlled &&
+      !isDecomposeMultiControlledConfigValid(
+          decomposeMultiControlledMinControls.getValue())) {
+    llvm::errs()
+        << "decompose-multi-controlled-min-controls must be at least 2 when "
+           "--decompose-multi-controlled is enabled.\n";
+    return 1;
+  }
 
   const auto runPasses =
       [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
@@ -372,7 +420,7 @@ int main(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return pm.run(*program.module);
+        return pm.run(*program.mod);
       };
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
@@ -396,6 +444,10 @@ int main(int argc, char** argv) {
               return failure();
             }
           } else {
+            if (enableDecomposeMultiControlled) {
+              populateDecomposeMultiControlledPipeline(
+                  pm, decomposeMultiControlledMinControls.getValue());
+            }
             populateDefaultQCOOptimizationPipeline(pm);
           }
           if (!nativeGates.empty()) {
@@ -411,52 +463,54 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (*parsedOutputFormat == OutputFormat::Jeff) {
-    if (failed(runPasses([](OpPassManager& pm) {
-          pm.addPass(createQCOToJeff());
-          populateJeffCleanupPipeline(pm);
-          return success();
-        }))) {
-      return 1;
-    }
-  } else if (*parsedOutputFormat != OutputFormat::QCImport &&
-             *parsedOutputFormat != OutputFormat::QCO &&
-             *parsedOutputFormat != OutputFormat::QCOOptimized) {
-    if (failed(runPasses([](OpPassManager& pm) {
-          pm.addPass(createQCOToQC());
-          populateQCCleanupPipeline(pm);
-          return success();
-        }))) {
-      return 1;
-    }
-    if (*parsedOutputFormat == OutputFormat::QIRBase &&
-        failed(runPasses([](OpPassManager& pm) {
-          pm.addPass(createQCToQIRBase());
-          populateQIRCleanupPipeline(pm, false);
-          return success();
-        }))) {
-      return 1;
-    }
-    if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
-        failed(runPasses([](OpPassManager& pm) {
-          pm.addPass(createQCToQIRAdaptive());
-          populateQIRCleanupPipeline(pm, true);
-          return success();
-        }))) {
-      return 1;
-    }
+  if (*parsedOutputFormat == OutputFormat::Jeff &&
+      failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(createQCOToJeff());
+        populateJeffCleanupPipeline(pm);
+        return success();
+      }))) {
+    return 1;
   }
 
-  // Write the output.
+  if ((*parsedOutputFormat == OutputFormat::QC ||
+       *parsedOutputFormat == OutputFormat::QIRBase ||
+       *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
+      failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(createQCOToQC());
+        populateQCCleanupPipeline(pm);
+        return success();
+      }))) {
+    return 1;
+  }
+
+  if (*parsedOutputFormat == OutputFormat::QIRBase &&
+      failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(createQCToQIRBase());
+        populateQIRCleanupPipeline(pm, false);
+        return success();
+      }))) {
+    return 1;
+  }
+
+  if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
+      failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(createQCToQIRAdaptive());
+        populateQIRCleanupPipeline(pm, true);
+        return success();
+      }))) {
+    return 1;
+  }
+
+  // Write the output
   if (*parsedOutputFormat == OutputFormat::Jeff) {
-    if (writeJeffOutput(*program.module, outputFilename).failed()) {
+    if (writeJeffOutput(*program.mod, outputFilename).failed()) {
       return 1;
     }
   } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
              *parsedOutputFormat == OutputFormat::QIRAdaptive) {
     llvm::LLVMContext llvmContext;
     std::unique_ptr<llvm::Module> llvmMod =
-        translateModuleToLLVMIR(*program.module, llvmContext);
+        translateModuleToLLVMIR(*program.mod, llvmContext);
     if (!llvmMod) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
@@ -464,7 +518,7 @@ int main(int argc, char** argv) {
     if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
       return 1;
     }
-  } else if (writeOutput<ModuleOp>(program.module.get(), outputFilename)
+  } else if (writeOutput<ModuleOp>(program.mod.get(), outputFilename)
                  .failed()) {
     return 1;
   }

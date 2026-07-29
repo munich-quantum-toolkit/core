@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <fstream>
 #include <istream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -46,6 +47,28 @@
 #include <vector>
 
 namespace qasm3 {
+namespace {
+
+std::unique_ptr<qc::Operation>
+applyPowerModifier(std::unique_ptr<qc::Operation> operation,
+                   const std::size_t repetitions) {
+  if (operation == nullptr || repetitions == 0) {
+    return nullptr;
+  }
+  if (repetitions == 1) {
+    return operation;
+  }
+
+  auto poweredOperation = std::make_unique<qc::CompoundOperation>();
+  poweredOperation->getOps().reserve(repetitions);
+  for (std::size_t i = 1; i < repetitions; ++i) {
+    poweredOperation->getOps().emplace_back(operation->clone());
+  }
+  poweredOperation->getOps().emplace_back(std::move(operation));
+  return poweredOperation;
+}
+
+} // namespace
 
 auto Importer::importf(const std::string& filename) -> qc::QuantumComputation {
   std::ifstream file(filename);
@@ -548,6 +571,7 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
   }
 
   bool invertOperation = false;
+  std::size_t repetitions = 1;
   for (const auto& modifier : gateCallStatement->modifiers) {
     if (auto ctrlModifier =
             std::dynamic_pointer_cast<CtrlGateModifier>(modifier);
@@ -574,8 +598,33 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
       // if we have an even number of inv modifiers, they cancel each other
       // out
       invertOperation = !invertOperation;
+    } else if (auto powModifier =
+                   std::dynamic_pointer_cast<PowGateModifier>(modifier);
+               powModifier != nullptr) {
+      const auto exponent =
+          std::dynamic_pointer_cast<Constant>(powModifier->expression);
+      if (exponent == nullptr || !exponent->isInt() || exponent->isBool()) {
+        throw CompilerError(
+            "Only constant integer expressions are supported as power "
+            "modifier exponents.",
+            gateCallStatement->debugInfo);
+      }
+
+      uint64_t magnitude = exponent->getUInt();
+      if (exponent->isSInt() && exponent->getSInt() < 0) {
+        const auto signedExponent = exponent->getSInt();
+        magnitude = static_cast<uint64_t>(-(signedExponent + 1)) + 1;
+        invertOperation = !invertOperation;
+      }
+
+      if (magnitude != 0 &&
+          repetitions > std::numeric_limits<std::size_t>::max() / magnitude) {
+        throw CompilerError("Power modifier exponent is too large.",
+                            gateCallStatement->debugInfo);
+      }
+      repetitions *= static_cast<std::size_t>(magnitude);
     } else {
-      throw CompilerError("Only ctrl/negctrl/inv modifiers are supported.",
+      throw CompilerError("Only ctrl/negctrl/inv/pow modifiers are supported.",
                           gateCallStatement->debugInfo);
     }
   }
@@ -673,9 +722,11 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
     }
 
     // first we apply the operation
-    auto nestedOp = applyQuantumOperation(gate, targetBits, controlBits,
-                                          evaluatedParameters, invertOperation,
-                                          gateCallStatement->debugInfo);
+    auto nestedOp = applyPowerModifier(
+        applyQuantumOperation(gate, targetBits, controlBits,
+                              evaluatedParameters, invertOperation,
+                              gateCallStatement->debugInfo),
+        repetitions);
     if (nestedOp == nullptr || broadcastingWidth == 1) {
       return nestedOp;
     }
@@ -808,10 +859,9 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
             evaluateGateCall(gateCallStatement, gateCallStatement->identifier,
                              gateCallStatement->arguments,
                              gateCallStatement->operands, nestedQubits);
-        if (nestedOp == nullptr) {
-          return nullptr;
+        if (nestedOp != nullptr) {
+          op->getOps().emplace_back(std::move(nestedOp));
         }
-        op->getOps().emplace_back(std::move(nestedOp));
       } else {
         throw CompilerError("Unhandled quantum statement.", debugInfo);
       }
@@ -823,6 +873,9 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
 
     constEvalPass.popEnv();
 
+    if (op->getOps().empty()) {
+      return nullptr;
+    }
     if (op->getOps().size() == 1) {
       return std::move(op->getOps()[0]);
     }
@@ -940,9 +993,14 @@ std::unique_ptr<qc::Operation> Importer::translateBlockOperations(
       return op;
     }
 
-    blockOps->emplace_back(std::move(op));
+    if (op != nullptr) {
+      blockOps->emplace_back(std::move(op));
+    }
   }
 
+  if (blockOps->getOps().empty()) {
+    return nullptr;
+  }
   return blockOps;
 }
 

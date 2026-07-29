@@ -31,14 +31,7 @@ const std::string STDGATES =
 
 // Non-natively supported gates from
 // https://github.com/Qiskit/qiskit/blob/main/qiskit/qasm/libs/qelib1.inc
-const std::string QE1LIB = "gate rccx a, b, c {\n"
-                           "  u2(0, pi) c; u1(pi/4) c; \n"
-                           "  cx b, c; u1(-pi/4) c; \n"
-                           "  cx a, c; u1(pi/4) c; \n"
-                           "  cx b, c; u1(-pi/4) c; \n"
-                           "  u2(0, pi) c; \n"
-                           "}\n"
-                           "gate rc3x a,b,c,d {\n"
+const std::string QE1LIB = "gate rc3x a,b,c,d {\n"
                            "  u2(0,pi) d; u1(pi/4) d; \n"
                            "  cx c,d; u1(-pi/4) d; u2(0,pi) d; \n"
                            "  cx a,d; u1(pi/4) d; \n"
@@ -235,5 +228,8 @@ const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
                                                   .nTargets = 2,
                                                   .nParameters = 2,
                                                   .type = qc::XXplusYY}))},
+    {"rccx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 3, .nParameters = 0, .type = qc::RCCX}))},
 };
 } // namespace qasm3
