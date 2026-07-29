@@ -264,7 +264,6 @@ private:
   /// State-extraction path for a QASM program (@c numShots_ == 0).
   auto submitQASMProgramStateExtraction() -> QDMI_STATUS;
 
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
   /// Submit a QIR Base/Adaptive Module or String program.
   /// Dispatches to the sampling or the state-extraction helper depending on
   /// @c numShots_.
@@ -273,7 +272,6 @@ private:
   auto submitQIRProgramSampling() -> QDMI_STATUS;
   /// State-extraction path for a QIR Base Profile program (@c numShots_ == 0).
   auto submitQIRProgramStateExtraction() -> QDMI_STATUS;
-#endif
 
 public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.

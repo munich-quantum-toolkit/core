@@ -85,6 +85,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
+  corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -658,6 +660,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
