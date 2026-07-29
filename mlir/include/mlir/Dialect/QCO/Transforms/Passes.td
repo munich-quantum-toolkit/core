@@ -71,13 +71,22 @@ def FuseTwoQubitUnitaryRuns
     : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
+  let summary = "Lower supported one- and two-qubit QCO unitaries to a "
+                "user-specified native gate menu.";
   let description = [{
-    Rewrites unitaries to match the comma-separated `native-gates` gateset.
-    `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is treated as a
-    two-qubit gate only when it has a single control and a single target; gates
-    acting on more than two qubits (e.g. multi-controlled `qco.ctrl`) are out of
-    scope and left untouched for a dedicated multi-controlled synthesis pass.
+    Rewrites supported one- and two-qubit unitaries to match the comma-separated
+    `native-gates` gateset. Fusion and synthesis require unitary matrices that
+    are available at compile time. Already-native runtime-parameterized
+    operations remain valid, but an off-gateset operation without a compile-time
+    matrix cannot be synthesized and causes the pass to fail.
+
+    `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
+    two-qubit scope only when it has a single control and a single target. It is
+    considered a native entangler only when it additionally contains exactly
+    one `qco.x` or `qco.z` body operation matching the selected `cx` or `cz`
+    token. Gates acting on more than two qubits (e.g. multi-controlled
+    `qco.ctrl`) are out of scope and left untouched for a dedicated
+    multi-controlled synthesis pass.
 
     The gateset is a comma-separated list of gate tokens (order not
     significant) from which the pass resolves a single-qubit Euler basis
