@@ -1099,7 +1099,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
   }
 
   SessionConfig config2;
-  config2.authFile = tmpPath.string();
+  config2.authFile = tmpPath;
   EXPECT_NO_THROW({ const Session session(config2); });
 
   // Clean up
@@ -1227,6 +1227,34 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
   // Should return the same number of devices
   EXPECT_EQ(devices1.size(), devices2.size());
+}
+
+TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
+  const auto site = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    return device.getSites().front();
+  }();
+
+  EXPECT_EQ(site.getIndex(), 0);
+}
+
+TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
+  const auto operation = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    return device.getOperations().front();
+  }();
+
+  EXPECT_FALSE(operation.getName().empty());
+}
+
+TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
+  const auto site = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    const auto operation = device.getOperations().front();
+    return operation.getSites().value().front();
+  }();
+
+  EXPECT_TRUE(site.isZone());
 }
 
 namespace {

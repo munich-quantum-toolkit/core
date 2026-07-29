@@ -12,6 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add versioned, relocatable configuration and stable-ID registration for
+  QDMI device libraries, including disabled-ID reservations, fresh device
+  sessions, idempotent registration, and external-device target metadata
+  ([#1912]) ([**@burgholzer**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
   ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
   [#1950]) ([**@simon1hofmann**])
@@ -30,6 +34,11 @@ releases may include breaking changes.
 
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
+### Removed
+
+- 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
+  `add_dynamic_device_library` APIs with definition registration and stable-ID
+  opening ([#1912]) ([**@burgholzer**])
 
 ### Fixed
 
@@ -592,6 +601,7 @@ changelogs._
 
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
+[#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
