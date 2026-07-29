@@ -413,6 +413,11 @@ public:
 
     switch (sizedType->type) {
     case qasm3::Qubit: {
+      if (size == 1) {
+        const auto qubit = builder.allocQubit();
+        qubitRegisters[id] = {qubit};
+        break;
+      }
       const auto& reg = builder.allocQubitRegister(size);
       qubitRegisters[id] = reg.qubits;
       break;
