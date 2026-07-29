@@ -102,8 +102,8 @@ resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
 /**
  * @brief Picks the two-qubit entangler for Weyl synthesis.
  *
- * When multiple entanglers appear in the gateset, preference is **iSWAP > ECR >
- * RZZ > RXX > CZ > CX**.
+ * When multiple entanglers appear in the gateset, preference is
+ * **iSWAP > ECR > RZZ > RXX > CZ > CX**.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
 selectEntangler(const DenseSet<NativeGateKind>& gates) {

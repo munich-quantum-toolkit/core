@@ -49,8 +49,9 @@ struct TwoQubitNativeDecomposition;
  * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
  * Use @ref parse to obtain a gateset with @p eulerBasis and @p entangler
- * resolved from @p gates. When `cx`, `cz`, `rxx`, `rzz`, `ecr`, and/or `iswap`
- * appear, preference is **iSWAP > ECR > RZZ > RXX > CZ > CX**.
+ * resolved from @p gates. When several of `iswap`, `ecr`, `rzz`, `rxx`, `cz`,
+ * and `cx` appear, preference is **iSWAP > ECR > RZZ > RXX > CZ > CX**.
+ * Weyl synthesis emits `rxx`/`rzz` at a fixed angle of π/2.
  */
 struct NativeGateset {
   llvm::DenseSet<NativeGateKind> gates;
@@ -80,8 +81,8 @@ struct NativeGateset {
    * shells with an `X`/`Z` body are accepted when `cx`/`cz` is present.
    * Bare `qco.ecr` and `qco.iswap` are accepted when the corresponding token
    * is present. `qco.rxx` and `qco.rzz` are accepted when the token is present
-   * and the angle is a compile-time constant; runtime angles are rejected. All
-   * other ops are rejected.
+   * and the angle is a compile-time constant (including the π/2 basis used by
+   * synthesis); runtime angles are rejected. All other ops are rejected.
    */
   [[nodiscard]] bool allowsOp(Operation* op) const;
 };
