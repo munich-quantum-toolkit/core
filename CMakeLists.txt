@@ -66,9 +66,6 @@ option(BUILD_MQT_CORE_QDMI_DEVICES "Build the bundled MQT Core QDMI devices"
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
-if(BUILD_MQT_CORE_TESTS AND NOT BUILD_MQT_CORE_QDMI_DEVICES)
-  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires BUILD_MQT_CORE_QDMI_DEVICES")
-endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR

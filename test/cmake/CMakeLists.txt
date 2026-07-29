@@ -1,4 +1,5 @@
-# Copyright (c) 2026 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -30,10 +31,16 @@ endforeach()
 
 foreach(build_devices OFF ON)
   string(TOLOWER "${build_devices}" build_devices_lower)
-  add_test(
-    NAME mqt-core-embedded-configure-devices-${build_devices_lower}
-    COMMAND
-      ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/embedded -B
+  set(embedded_configure_command
+      ${CMAKE_COMMAND} --fresh -S ${CMAKE_CURRENT_SOURCE_DIR}/embedded -B
       ${CMAKE_CURRENT_BINARY_DIR}/embedded-devices-${build_devices_lower} -G "${CMAKE_GENERATOR}"
       ${MQT_CORE_EMBEDDED_CONFIGURE_ARGS} -DEMBEDDED_BUILD_MQT_CORE_QDMI_DEVICES=${build_devices})
+  if(CMAKE_GENERATOR_PLATFORM)
+    list(APPEND embedded_configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
+  endif()
+  if(CMAKE_GENERATOR_TOOLSET)
+    list(APPEND embedded_configure_command -T "${CMAKE_GENERATOR_TOOLSET}")
+  endif()
+  add_test(NAME mqt-core-embedded-configure-devices-${build_devices_lower}
+           COMMAND ${embedded_configure_command})
 endforeach()

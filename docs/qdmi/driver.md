@@ -23,6 +23,21 @@ used directly. Other devices can be loaded dynamically at runtime via
 registered through
 [versioned QDMI device configuration](configuration.md).
 
+## Building the Bundled Devices
+
+Standalone MQT Core builds include the DDSIM, superconducting, and neutral-atom
+QDMI device libraries by default. When MQT Core is embedded in another CMake
+project using {code}`FetchContent` or {code}`add_subdirectory`, these device
+libraries are disabled by default so the consumer does not build device
+implementations it may not use. Set {code}`BUILD_MQT_CORE_QDMI_DEVICES=ON`
+before making MQT Core available to include them.
+
+The QDMI driver and FoMaC libraries are available in either configuration.
+Device-free builds can register external device libraries through
+[QDMI device configuration](configuration.md). When MQT Core's C++ tests are
+enabled, tests that require the bundled devices are omitted if
+{code}`BUILD_MQT_CORE_QDMI_DEVICES` is disabled.
+
 ## Python Bindings
 
 The QDMI Driver is implemented in C++ and exposed to Python via
