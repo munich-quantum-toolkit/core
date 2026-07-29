@@ -207,17 +207,6 @@ def stubs(session: nox.Session) -> None:
 
     package_root = Path(__file__).parent / "python" / "mqt" / "core"
 
-    modules = ["mqt.core.ir", "mqt.core.dd", "mqt.core.fomac", "mqt.core.na"]
-    mlir_available = session.run(
-        "python",
-        "-c",
-        "import importlib.util; print(importlib.util.find_spec('mqt.core.mlir') is not None)",
-        silent=True,
-    )
-    if mlir_available and mlir_available.strip() == "True":
-        modules.append("mqt.core.mlir")
-    module_args = [arg for module in modules for arg in ("--module", module)]
-
     session.run(
         "python",
         "-m",
@@ -226,7 +215,16 @@ def stubs(session: nox.Session) -> None:
         "--include-private",
         "--output-dir",
         str(package_root),
-        *module_args,
+        "--module",
+        "mqt.core.ir",
+        "--module",
+        "mqt.core.dd",
+        "--module",
+        "mqt.core.fomac",
+        "--module",
+        "mqt.core.mlir",
+        "--module",
+        "mqt.core.na",
         "--pattern-file",
         "bindings/patterns.txt",
     )

@@ -161,13 +161,11 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-ir-bindings
       mqt-core-dd-bindings
       mqt-core-fomac-bindings
+      mqt-core-mlir-bindings
       mqt-core-na-bindings
       mqt-core-qdmi-ddsim-device
       mqt-core-qdmi-na-device
       mqt-core-qdmi-sc-device)
-  if(BUILD_MQT_CORE_MLIR)
-    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-mlir-bindings)
-  endif()
   add_custom_target(mqt-core-wheel)
   add_dependencies(mqt-core-wheel ${MQT_CORE_WHEEL_TARGETS})
 endif()
