@@ -112,6 +112,8 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Allow MQT Core to be embedded as a CMake subproject without target
+  collisions or unwanted bundled QDMI devices ([#1965]) ([**@burgholzer**])
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
 
 ## [3.7.0] - 2026-07-09
@@ -669,6 +671,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952

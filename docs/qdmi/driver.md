@@ -16,9 +16,9 @@ A QDMI Driver manages the communication between QDMI devices, such as
 [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
 It is responsible for loading the device, forwarding requests from the client to
 the device, and sending back the results. MQT Core's QDMI Driver,
-{cpp-api:class}`qdmi::Driver`, comes with several preloaded devices that can be
-used directly. Other devices can be loaded dynamically at runtime via
-{cpp-api:func}`qdmi::Driver::registerDevice` and
+{cpp-api:class}`qdmi::Driver`, comes with several preloaded devices when the
+bundled devices are enabled. Other devices can be loaded dynamically at runtime
+via {cpp-api:func}`qdmi::Driver::registerDevice` and
 {cpp-api:func}`qdmi::Driver::open`. Built-in and external devices can also be
 registered through
 [versioned QDMI device configuration](configuration.md).
