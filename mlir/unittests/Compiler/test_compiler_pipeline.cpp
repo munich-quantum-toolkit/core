@@ -1097,14 +1097,15 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));
 
 /**
- * @brief Test: fuseTwoQubitUnitaryRuns lowers Hadamards into native menus.
+ * @brief Test: fuseTwoQubitUnitaryRuns lowers one- and two-qubit operations
+ *        into native menus.
  */
-TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsLowersHadamard) {
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsLowersToNativeMenu) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 h q[0];
-h q[1];
+swap q[0], q[1];
 )";
   auto qc = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(qc);
@@ -1113,9 +1114,12 @@ h q[1];
   auto qco = std::move(*qcoResult);
   ASSERT_TRUE(qco.cleanup());
   EXPECT_NE(qco.str().find("qco.h"), std::string::npos);
+  EXPECT_NE(qco.str().find("qco.swap"), std::string::npos);
 
   EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("x,sx,rz,cx"));
   EXPECT_EQ(qco.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qco.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qco.str().find("qco.ctrl"), std::string::npos);
 
   auto qcU = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(qcU);
@@ -1125,7 +1129,9 @@ h q[1];
   ASSERT_TRUE(qcoU.cleanup());
   EXPECT_TRUE(qcoU.fuseTwoQubitUnitaryRuns("u,cx"));
   EXPECT_EQ(qcoU.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qcoU.str().find("qco.swap"), std::string::npos);
   EXPECT_NE(qcoU.str().find("qco.u"), std::string::npos);
+  EXPECT_NE(qcoU.str().find("qco.ctrl"), std::string::npos);
 
   auto qcExpanded = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(qcExpanded);
@@ -1135,6 +1141,8 @@ h q[1];
   ASSERT_TRUE(qcoExpanded.cleanup());
   EXPECT_TRUE(qcoExpanded.fuseTwoQubitUnitaryRuns("u,rx,rz,cx,cz"));
   EXPECT_EQ(qcoExpanded.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qcoExpanded.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qcoExpanded.str().find("qco.ctrl"), std::string::npos);
 }
 
 /**
