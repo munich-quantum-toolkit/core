@@ -39,8 +39,6 @@ releases may include breaking changes.
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
 - ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
   ([**@rturrado**])
-- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1655]) ([**@simon1hofmann**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
@@ -743,7 +741,6 @@ changelogs._
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
-[#1655]: https://github.com/munich-quantum-toolkit/core/pull/1655
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1648]: https://github.com/munich-quantum-toolkit/core/pull/1648
 [#1638]: https://github.com/munich-quantum-toolkit/core/pull/1638
