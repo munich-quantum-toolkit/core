@@ -134,7 +134,7 @@ TEST(DeviceProperties, SupportedProgramFormats) {
                 formats.data(), nullptr),
             QDMI_SUCCESS);
 
-  std::vector<QDMI_Program_Format> expected = {
+  const std::vector<QDMI_Program_Format> expected = {
       QDMI_PROGRAM_FORMAT_QASM2,
       QDMI_PROGRAM_FORMAT_QASM3,
       QDMI_PROGRAM_FORMAT_QIRBASESTRING,
