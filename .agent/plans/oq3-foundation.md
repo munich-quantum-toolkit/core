@@ -239,6 +239,33 @@ threads or publishing new PR text.
       frontend and emitter files reached 4149/4542 lines (91.35 percent) and
       3283/5195 branches (63.20 percent); changed production C++ reached
       4256/4651 lines (91.51 percent) against `origin/main`.
+- [x] (2026-07-29 23:06Z) Refreshed the exact live revisions for this branch
+      and pull request #1927. Confirmed that #1927 replaces per-measurement
+      scalar results with allocated classical-register memrefs returned from
+      the QC entry function, and identified the overlapping translation,
+      compiler-corpus, and QIR conversion files.
+- [ ] Integrate the classical-register contract from pull request #1927 while
+      preserving the staged OpenQASM frontend and direct emitter. Resolve the
+      old translator conflict in favor of the staged adapter, and adapt the
+      emitter and tests to return declared scalar and bit-register outputs in
+      source order.
+- [ ] Add explicit resolved conversion expressions and context-sensitive
+      builtin overload resolution, including the specified signed result for
+      `pow(int, uint)` and the distinct angle type of gate parameters.
+- [ ] Make semantic expression analysis one bottom-up traversal rather than
+      recursively revalidating and reevaluating the same syntax subtree.
+- [ ] Split the monolithic OpenQASM unit-test source by frontend, semantic, and
+      target-emission responsibility; fix the Windows iterator declaration,
+      remaining Clang-Tidy diagnostics, frontend declaration style, and
+      float-to-integer conversion documentation.
+- [ ] Extract the OpenQASM-independent QIR builtin-profile diagnostics and
+      native tests into a separate local task branch. The OpenQASM branch must
+      then rely on the QIR behavior supplied by its base and by #1927 rather
+      than carrying those conversion changes itself.
+- [ ] Rebuild and run the affected frontend, translation, compiler, QIR, and
+      legacy-parser suites, full repository lint, warning-as-error
+      documentation, diff checks, and behavior-driven coverage. Then perform a
+      fresh read-only verification of the complete effective diff.
 
 ## Surprises & Discoveries
 
@@ -586,6 +613,38 @@ threads or publishing new PR text.
   diagnostic regression. Rationale: this removes a misleading internal
   abbreviation without changing the public source contract. Date/Author:
   2026-07-27 / Codex.
+
+- Decision: treat pull request #1927's memref-backed classical registers as the
+  incoming QC contract while remediating this branch. Rationale: implementing
+  implicit scalar outputs against the old per-bit result convention would
+  immediately require another rewrite and would not compose with the conversion
+  and QIR changes already reviewed in #1927. The staged parser and semantic
+  model remain authoritative; only the direct emitter and integration tests
+  adopt the new QC storage and result representation. Date/Author: 2026-07-29 /
+  Codex.
+
+- Decision: represent every source-level implicit or explicit output with one
+  ordered typed output descriptor. Rationale: OpenQASM's default output rule
+  applies to classical scalars as well as bit registers, whereas a
+  `vector<RegisterId>` cannot retain scalar outputs, declared ordering, or the
+  conversion required to materialize each result. Bit registers map to the
+  memref result convention from #1927; scalar results retain their builtin MLIR
+  scalar types. Date/Author: 2026-07-29 / Codex.
+
+- Decision: record semantic conversions as typed expression nodes rather than
+  asking the emitter to rediscover promotions. Rationale: overload resolution,
+  assignment compatibility, gate-angle conversion, and constant folding are
+  source-language decisions. Recording them once keeps the QC emitter
+  mechanical and prevents parser acceptance from depending on target-specific
+  type guesses. Date/Author: 2026-07-29 / Codex.
+
+- Decision: remove the QIR builtin-profile validation changes from this
+  OpenQASM branch and preserve them on an independent local branch with
+  parser-independent tests. Rationale: those conversions validate retained MLIR
+  operations regardless of how QC was produced, and #1927 substantially
+  changes the same QIR conversion surface. Separating them reduces conflicts
+  and lets each change be reviewed against its actual contract. Date/Author:
+  2026-07-29 / Codex.
 
 ## Outcomes & Retrospective
 
