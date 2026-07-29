@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-# ruff: noqa: INP001
+# ruff:file-ignore[implicit-namespace-package]
 
 """LIT Configuration file for the MQT MLIR test suite.
 

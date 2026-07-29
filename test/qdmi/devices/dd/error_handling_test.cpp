@@ -294,7 +294,7 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   {
     const qdmi_test::JobGuard j{s.session};
     ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                    qdmi_test::MALFORMED_PROGRAM),
+                                    qdmi_test::QASM3_MALFORMED),
               QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(j.job, 128), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
@@ -306,7 +306,7 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   {
     const qdmi_test::JobGuard j{s.session};
     ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                    qdmi_test::MALFORMED_PROGRAM),
+                                    qdmi_test::QASM3_MALFORMED),
               QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);

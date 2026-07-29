@@ -250,7 +250,7 @@ void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
 }
 
 [[nodiscard]] mCachedEdge makeControlledNode(Package& dd,
-                                             const Qubit controlQubit,
+                                             const qc::Qubit controlQubit,
                                              const qc::Control::Type type,
                                              const mCachedEdge& gate,
                                              const bool identity) {
@@ -265,7 +265,7 @@ void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
     edges[0] = idEdge;
     edges[3] = gate;
   }
-  return dd.makeDDNode(controlQubit, edges);
+  return dd.makeDDNode(static_cast<Qubit>(controlQubit), edges);
 }
 
 /// Diagonal entries of a flattened 2×2 edge block (indices 0 and 3).
@@ -276,7 +276,7 @@ void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
 template <std::size_t Dim>
 void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
                        const qc::Controls::const_iterator end,
-                       const Qubit bound,
+                       const qc::Qubit bound,
                        std::array<std::array<mCachedEdge, Dim>, Dim>& em) {
   for (; it != end && it->qubit < bound; ++it) {
     for (std::size_t row = 0; row < Dim; ++row) {
@@ -290,7 +290,8 @@ void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
 
 void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
                        const qc::Controls::const_iterator end,
-                       const Qubit bound, std::array<mCachedEdge, NEDGE>& em) {
+                       const qc::Qubit bound,
+                       std::array<mCachedEdge, NEDGE>& em) {
   for (; it != end && it->qubit < bound; ++it) {
     for (std::size_t i = 0; i < NEDGE; ++i) {
       em[i] = makeControlledNode(dd, it->qubit, it->type, em[i],
@@ -432,9 +433,9 @@ mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
 
   // process targets in ascending qubit order; matrix bits are MSB-first
   // (2 -> target0, 1 -> target1, 0 -> target2)
-  std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
+  std::array<std::pair<qc::Qubit, std::uint8_t>, 3> ordered{
       {{target0, 2}, {target1, 1}, {target2, 0}}};
-  std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
+  std::ranges::sort(ordered, {}, &std::pair<qc::Qubit, std::uint8_t>::first);
   const auto qLow = ordered[0].first;
   const auto qMid = ordered[1].first;
   const auto qHigh = ordered[2].first;

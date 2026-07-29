@@ -56,10 +56,10 @@ Ordered; anything else, or a missing attribute, selects Labeled.
 ### QIR Support in the DDSIM QDMI Device
 
 The QDMI device accepts jobs in the following program formats: QASM2, QASM3, QIR
-Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile String
-(LLVM assembly).
-These QIR formats are only supported when the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled.
-It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being set.
+Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
+String (LLVM assembly). These QIR formats are only supported when the
+`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled. It is enabled by
+default, but depends on `BUILD_MQT_CORE_MLIR` being set.
 
 FoMaC C++ applications submit textual programs through the
 `Device::submitJob(const std::string&, ...)` overload, which includes the

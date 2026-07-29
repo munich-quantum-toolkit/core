@@ -277,13 +277,13 @@ TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
 
 TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
   const TemporaryDirectory directory;
-  directory.write("config/device.json", R"({
+  static_cast<void>(directory.write("config/device.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "relative", "library": "libdevice.so", "prefix": "RELATIVE",
       "session": {"auth-file": "auth.json"}
     }]}
-  })");
+  })"));
 
   std::filesystem::path library;
   std::filesystem::path authFile;
@@ -327,10 +327,10 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
   const TemporaryDirectory directory;
-  directory.write("pyproject.toml", R"(
+  static_cast<void>(directory.write("pyproject.toml", R"(
     [tool.qdmi]
     devices = [{ id = "toml", library = "device.so", prefix = "TOML" }]
-  )");
+  )"));
   const ScopedCurrentPath currentPath(directory.path());
   const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
@@ -351,16 +351,16 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
 
 TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
   const TemporaryDirectory directory;
-  directory.write("pyproject.toml", R"(
+  static_cast<void>(directory.write("pyproject.toml", R"(
     [tool.qdmi]
     devices = [{ id = "toml", library = "toml.so", prefix = "TOML" }]
-  )");
-  directory.write("qdmi.json", R"({
+  )"));
+  static_cast<void>(directory.write("qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [
       {"id": "json", "library": "json.so", "prefix": "JSON"}
     ]}
-  })");
+  })"));
   const ScopedCurrentPath currentPath(directory.path());
   const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
@@ -372,17 +372,17 @@ TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
 
 TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
   const TemporaryDirectory directory;
-  directory.write("user/mqt-core/qdmi.json", R"({
+  static_cast<void>(directory.write("user/mqt-core/qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "layered", "library": "user.so", "prefix": "USER",
       "session": {"custom1": "user-default"}
     }]}
-  })");
-  directory.write("project/qdmi.json", R"({
+  })"));
+  static_cast<void>(directory.write("project/qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{"id": "layered", "prefix": "PROJECT"}]}
-  })");
+  })"));
   const ScopedCurrentPath currentPath(directory.path() / "project");
   const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
@@ -443,7 +443,7 @@ TEST(DeviceRegistry, ReportsInvalidExplicitJsonAndToml) {
                  std::invalid_argument);
   }
   {
-    directory.write("pyproject.toml", "[tool.qdmi\n");
+    static_cast<void>(directory.write("pyproject.toml", "[tool.qdmi\n"));
     const ScopedCurrentPath currentPath(directory.path());
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
     EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),

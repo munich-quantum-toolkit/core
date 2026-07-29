@@ -167,9 +167,9 @@ breathe_default_project = "mqt.core"
 
 read_the_docs_build = os.environ.get("READTHEDOCS", None) == "True"
 if read_the_docs_build:
-    subprocess.call("mkdir -p _build/doxygen && doxygen", shell=True)  # noqa: S602, S607
-    subprocess.call(  # noqa: S602
-        "mkdir -p api/cpp && breathe-apidoc -o api/cpp -m -f -g namespace _build/doxygen/xml/",  # noqa: S607
+    subprocess.call("mkdir -p _build/doxygen && doxygen", shell=True)  # ruff:ignore[subprocess-popen-with-shell-equals-true, start-process-with-partial-path]
+    subprocess.call(  # ruff:ignore[subprocess-popen-with-shell-equals-true]
+        "mkdir -p api/cpp && breathe-apidoc -o api/cpp -m -f -g namespace _build/doxygen/xml/",  # ruff:ignore[start-process-with-partial-path]
         shell=True,
     )
 
