@@ -31,7 +31,7 @@ jobs:
           token: ${{ steps.create-token.outputs.token }}
           name: Core
           organization: ${{ github.repository_owner }}
-          project-type: c++-mlir-python
+          project-type: c++-python
           repository: ${{ github.event.repository.name }}
           base-branch: v3.x
           synchronize-agents-md: false

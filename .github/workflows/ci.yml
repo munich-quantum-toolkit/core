@@ -15,9 +15,6 @@ jobs:
   change-detection:
     name: 🔍 Change
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@973217bac3ad300d9982fffdd3b37a9b5b3a51ea # v2.2.1
-    with:
-      additional-python-files: "mlir/**"
-
   cpp-tests-ubuntu:
     name: 🇨‌ Test 🐧
     needs: change-detection
