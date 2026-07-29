@@ -557,6 +557,14 @@ INSTANTIATE_TEST_SUITE_P(
                           [] { return ECROp::getUnitaryMatrix(); }},
         WeylSynthesisCase{"IswapGeneric", "u,iswap",
                           [] { return iSWAPOp::getUnitaryMatrix(); }},
+        WeylSynthesisCase{"DcxGeneric", "u,dcx",
+                          [] { return DCXOp::getUnitaryMatrix(); }},
+        WeylSynthesisCase{
+            "RzxGeneric", "u,rzx",
+            [] { return RZXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
+        WeylSynthesisCase{
+            "RyyGeneric", "u,ryy",
+            [] { return RYYOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
             "RxxGeneric", "u,rxx",
             [] { return RXXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
@@ -568,8 +576,8 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* gateset :
-       {"u,cx", "u,cz", "u,ecr", "u,iswap", "u,rxx", "u,rzz"}) {
+  for (const char* gateset : {"u,cx", "u,cz", "u,ecr", "u,iswap", "u,dcx",
+                              "u,rzx", "u,ryy", "u,rxx", "u,rzz"}) {
     const auto spec = NativeGateset::parse(gateset);
     ASSERT_TRUE(spec) << gateset;
     const auto native = spec->decomposeTarget(Matrix4x4::identity());
@@ -671,40 +679,79 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   EXPECT_TRUE(ecrOnly->gates.contains(NativeGateKind::ECR));
   EXPECT_EQ(ecrOnly->entangler, NativeGateKind::ECR);
 
-  const auto ecrPreferred = NativeGateset::parse("u,cx,cz,ecr");
-  ASSERT_TRUE(ecrPreferred);
-  EXPECT_EQ(ecrPreferred->entangler, NativeGateKind::ECR);
+  // With CX/CZ also listed, CX/CZ win over ECR.
+  const auto cxCzOverEcr = NativeGateset::parse("u,cx,cz,ecr");
+  ASSERT_TRUE(cxCzOverEcr);
+  EXPECT_EQ(cxCzOverEcr->entangler, NativeGateKind::CZ);
 
   const auto iswapOnly = NativeGateset::parse("u,iswap");
   ASSERT_TRUE(iswapOnly);
   EXPECT_TRUE(iswapOnly->gates.contains(NativeGateKind::ISWAP));
   EXPECT_EQ(iswapOnly->entangler, NativeGateKind::ISWAP);
 
-  const auto iswapPreferred = NativeGateset::parse("u,cx,cz,ecr,iswap");
-  ASSERT_TRUE(iswapPreferred);
-  EXPECT_EQ(iswapPreferred->entangler, NativeGateKind::ISWAP);
+  // iSWAP beats CZ/CX/ECR; continuous Pauli still wins when present.
+  const auto iswapOverCtrlEcr = NativeGateset::parse("u,cx,cz,ecr,iswap");
+  ASSERT_TRUE(iswapOverCtrlEcr);
+  EXPECT_EQ(iswapOverCtrlEcr->entangler, NativeGateKind::ISWAP);
+
+  const auto dcxOnly = NativeGateset::parse("u,dcx");
+  ASSERT_TRUE(dcxOnly);
+  EXPECT_EQ(dcxOnly->entangler, NativeGateKind::DCX);
+
+  const auto iswapOverDcx = NativeGateset::parse("u,iswap,dcx,ecr");
+  ASSERT_TRUE(iswapOverDcx);
+  EXPECT_EQ(iswapOverDcx->entangler, NativeGateKind::ISWAP);
+
+  const auto dcxOverCtrlEcr = NativeGateset::parse("u,dcx,ecr,cx,cz");
+  ASSERT_TRUE(dcxOverCtrlEcr);
+  EXPECT_EQ(dcxOverCtrlEcr->entangler, NativeGateKind::DCX);
+
+  const auto rzxOnly = NativeGateset::parse("u,rzx");
+  ASSERT_TRUE(rzxOnly);
+  EXPECT_EQ(rzxOnly->entangler, NativeGateKind::RZX);
+
+  // Continuous Pauli/CR: RZZ > RYY > RXX > RZX.
+  const auto rzzOverRest =
+      NativeGateset::parse("u,dcx,rzx,rzz,ryy,rxx,iswap,cx,cz,ecr");
+  ASSERT_TRUE(rzzOverRest);
+  EXPECT_EQ(rzzOverRest->entangler, NativeGateKind::RZZ);
+
+  const auto ryyOverRxxRzx = NativeGateset::parse("u,rzx,ryy,rxx,iswap,cx");
+  ASSERT_TRUE(ryyOverRxxRzx);
+  EXPECT_EQ(ryyOverRxxRzx->entangler, NativeGateKind::RYY);
+
+  const auto rxxOverRzx = NativeGateset::parse("u,rzx,rxx,iswap,cx,cz");
+  ASSERT_TRUE(rxxOverRzx);
+  EXPECT_EQ(rxxOverRzx->entangler, NativeGateKind::RXX);
+
+  const auto rzxOverDiscrete =
+      NativeGateset::parse("u,rzx,iswap,dcx,cx,cz,ecr");
+  ASSERT_TRUE(rzxOverDiscrete);
+  EXPECT_EQ(rzxOverDiscrete->entangler, NativeGateKind::RZX);
 
   const auto rzzOnly = NativeGateset::parse("u,rzz");
   ASSERT_TRUE(rzzOnly);
   EXPECT_EQ(rzzOnly->entangler, NativeGateKind::RZZ);
 
+  const auto ryyOnly = NativeGateset::parse("u,ryy");
+  ASSERT_TRUE(ryyOnly);
+  EXPECT_EQ(ryyOnly->entangler, NativeGateKind::RYY);
+
   const auto rxxOnly = NativeGateset::parse("u,rxx");
   ASSERT_TRUE(rxxOnly);
   EXPECT_EQ(rxxOnly->entangler, NativeGateKind::RXX);
 
-  const auto rzzOverRxx = NativeGateset::parse("u,rxx,rzz,cx,cz");
-  ASSERT_TRUE(rzzOverRxx);
-  EXPECT_EQ(rzzOverRxx->entangler, NativeGateKind::RZZ);
+  const auto reviewerOrder = NativeGateset::parse("u,rzz,rxx,iswap,cz,cx,ecr");
+  ASSERT_TRUE(reviewerOrder);
+  EXPECT_EQ(reviewerOrder->entangler, NativeGateKind::RZZ);
 
-  const auto fullPreferIswap =
-      NativeGateset::parse("u,cx,cz,rxx,rzz,ecr,iswap");
-  ASSERT_TRUE(fullPreferIswap);
-  EXPECT_EQ(fullPreferIswap->entangler, NativeGateKind::ISWAP);
+  const auto reviewerWithoutRzz = NativeGateset::parse("u,rxx,iswap,cz,cx,ecr");
+  ASSERT_TRUE(reviewerWithoutRzz);
+  EXPECT_EQ(reviewerWithoutRzz->entangler, NativeGateKind::RXX);
 
-  const auto preferEcrWithoutIswap =
-      NativeGateset::parse("u,cx,cz,rxx,rzz,ecr");
-  ASSERT_TRUE(preferEcrWithoutIswap);
-  EXPECT_EQ(preferEcrWithoutIswap->entangler, NativeGateKind::ECR);
+  const auto reviewerWithoutPauli = NativeGateset::parse("u,iswap,cz,cx,ecr");
+  ASSERT_TRUE(reviewerWithoutPauli);
+  EXPECT_EQ(reviewerWithoutPauli->entangler, NativeGateKind::ISWAP);
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
@@ -824,6 +871,22 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   auto iswap = iSWAPOp::create(builder, loc, q0, q1);
   EXPECT_TRUE(iswapSpec->allowsOp(iswap.getOperation()));
   EXPECT_FALSE(iswapSpec->allowsOp(cx.getOperation()));
+
+  const auto dcxSpec = NativeGateset::parse("u,dcx");
+  ASSERT_TRUE(dcxSpec);
+  auto dcx = DCXOp::create(builder, loc, q0, q1);
+  EXPECT_TRUE(dcxSpec->allowsOp(dcx.getOperation()));
+  EXPECT_FALSE(dcxSpec->allowsOp(cx.getOperation()));
+
+  const auto rzxSpec = NativeGateset::parse("u,rzx");
+  ASSERT_TRUE(rzxSpec);
+  EXPECT_TRUE(rzxSpec->allowsOp(
+      RZXOp::create(builder, loc, q0, q1, 0.25).getOperation()));
+
+  const auto ryySpec = NativeGateset::parse("u,ryy");
+  ASSERT_TRUE(ryySpec);
+  EXPECT_TRUE(ryySpec->allowsOp(
+      RYYOp::create(builder, loc, q0, q1, 0.25).getOperation()));
 
   const auto rxxSpec = NativeGateset::parse("u,rxx");
   ASSERT_TRUE(rxxSpec);
