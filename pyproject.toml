@@ -81,7 +81,7 @@ wheel.py-api = "cp312"
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "build/{wheel_tag}/{build_type}"
+build-dir = "build/python/{build_type}"
 
 # All the targets to build
 build.targets = [
@@ -178,8 +178,10 @@ testpaths = ["test/python"]
 
 [tool.coverage]
 run.source = ["mqt.core"]
+run.core = "sysmon"
+run.parallel = true
 run.omit = [
-    '*/_compat/*',
+  '*/_compat/*',
 ]
 run.disable_warnings = [
   "no-sysmon",
@@ -351,7 +353,7 @@ docs = [
 test = [
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
-  "pytest-cov>=7.0.0",
+  "pytest-cov>=7.1.0",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8.0",
   "qiskit[qasm3-import]>=1.1.0",
