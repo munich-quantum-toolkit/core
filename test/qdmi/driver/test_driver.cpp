@@ -825,13 +825,15 @@ constexpr std::array DEVICES{"MQT NA Default QDMI Device",
 
 namespace {
 void registerSessionTestDevice() {
+  qdmi::DeviceSessionConfig sessionConfig;
+  sessionConfig.baseUrl = "registered-base";
+  sessionConfig.token = "registered-token";
+  sessionConfig.custom1 = "registered-custom";
   static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
       {.id = "test.session-overrides",
        .library = MQT_CORE_QDMI_SESSION_DEVICE,
        .prefix = "TEST_SESSION",
-       .session = {.baseUrl = "registered-base",
-                   .token = "registered-token",
-                   .custom1 = "registered-custom"}}));
+       .session = std::move(sessionConfig)}));
 }
 } // namespace
 
@@ -855,8 +857,11 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(ConfiguredDriverTest, ConstructionRegistersWithoutOpeningDevices) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  EXPECT_NO_THROW(qdmi::Driver::get().registerDevice(
-      {.id = "mqt.na.default", .library = library, .prefix = prefix}, true));
+  EXPECT_NO_THROW(qdmi::Driver::get().registerDevice({.id = "mqt.na.default",
+                                                      .library = library,
+                                                      .prefix = prefix,
+                                                      .session = {}},
+                                                     true));
 }
 
 TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
@@ -890,8 +895,10 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   EXPECT_THROW(driver.open("test.unknown"), std::out_of_range);
 
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  const qdmi::DeviceDefinition original{
-      .id = "test.replaceable", .library = library, .prefix = prefix};
+  const qdmi::DeviceDefinition original{.id = "test.replaceable",
+                                        .library = library,
+                                        .prefix = prefix,
+                                        .session = {}};
   driver.registerDevice(original);
   EXPECT_THROW(driver.registerDevice(original), std::invalid_argument);
 
@@ -902,16 +909,21 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   ASSERT_NE(opened, nullptr);
   EXPECT_EQ(driver.open(original.id), opened);
   EXPECT_THROW(driver.registerDevice(original, true), std::runtime_error);
-  EXPECT_NO_THROW(driver.registerDevice(
-      {.id = "test.upserted", .library = library, .prefix = prefix}, true));
+  EXPECT_NO_THROW(driver.registerDevice({.id = "test.upserted",
+                                         .library = library,
+                                         .prefix = prefix,
+                                         .session = {}},
+                                        true));
   EXPECT_NE(driver.open("test.upserted"), nullptr);
 }
 
 TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
   auto& driver = qdmi::Driver::get();
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  const qdmi::DeviceDefinition definition{
-      .id = "test.insert-if-absent", .library = library, .prefix = prefix};
+  const qdmi::DeviceDefinition definition{.id = "test.insert-if-absent",
+                                          .library = library,
+                                          .prefix = prefix,
+                                          .session = {}};
   EXPECT_TRUE(driver.registerDeviceIfAbsent(definition));
   EXPECT_FALSE(driver.registerDeviceIfAbsent(definition));
 
@@ -921,8 +933,10 @@ TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
                    driver.registerDeviceIfAbsent(std::move(invalidDuplicate))),
                std::invalid_argument);
 
-  const qdmi::DeviceDefinition disabled{
-      .id = "test.disabled", .library = library, .prefix = prefix};
+  const qdmi::DeviceDefinition disabled{.id = "test.disabled",
+                                        .library = library,
+                                        .prefix = prefix,
+                                        .session = {}};
   EXPECT_FALSE(driver.registerDeviceIfAbsent(disabled));
   EXPECT_THROW(static_cast<void>(driver.open(disabled.id)), std::runtime_error);
   EXPECT_THROW(driver.registerDevice(disabled), std::invalid_argument);
@@ -932,7 +946,8 @@ TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
   auto& driver = qdmi::Driver::get();
   driver.registerDevice({.id = "test.missing-library",
                          .library = "/nonexistent/device-library",
-                         .prefix = "MISSING"});
+                         .prefix = "MISSING",
+                         .session = {}});
   EXPECT_THROW(static_cast<void>(driver.open("test.missing-library")),
                std::runtime_error);
 }
@@ -1044,8 +1059,10 @@ TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {
             QDMI_SUCCESS);
 
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  driver.registerDevice(
-      {.id = "test.snapshot", .library = library, .prefix = prefix});
+  driver.registerDevice({.id = "test.snapshot",
+                         .library = library,
+                         .prefix = prefix,
+                         .session = {}});
   ASSERT_NE(driver.open("test.snapshot"), nullptr);
 
   size_t existingSize = 0;
@@ -1201,13 +1218,16 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
 
 TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  auto* const first =
-      openTestDevice(library, prefix, {.custom1 = "first-session"});
+  qdmi::DeviceSessionConfig firstSessionConfig;
+  firstSessionConfig.custom1 = "first-session";
+  auto* const first = openTestDevice(library, prefix, firstSessionConfig);
   const auto equivalentLibrary = std::filesystem::path(library).parent_path() /
                                  "." /
                                  std::filesystem::path(library).filename();
-  auto* const second = openTestDevice(equivalentLibrary.string(), prefix,
-                                      {.custom1 = "second-session"});
+  qdmi::DeviceSessionConfig secondSessionConfig;
+  secondSessionConfig.custom1 = "second-session";
+  auto* const second =
+      openTestDevice(equivalentLibrary.string(), prefix, secondSessionConfig);
 
   ASSERT_NE(first, second);
   EXPECT_EQ(&first->getLibrary(), &second->getLibrary());

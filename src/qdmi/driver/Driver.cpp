@@ -185,7 +185,7 @@ struct DynamicLibraryCache {
                                            const std::string& prefix)
     -> std::shared_ptr<DynamicDeviceLibrary> {
   auto& cache = dynamicLibraryCache();
-  const std::scoped_lock lock(cache.mutex);
+  const std::scoped_lock<std::mutex> lock(cache.mutex);
   std::error_code error;
   auto canonicalPath = std::filesystem::weakly_canonical(
       std::filesystem::absolute(std::filesystem::path(libName), error), error);
