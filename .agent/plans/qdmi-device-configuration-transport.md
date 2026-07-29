@@ -73,11 +73,11 @@ transport in later changes with their own ExecPlans.
 
 ## Outcomes & Retrospective
 
-PR A is reconstructed as an independently buildable transport layer. The
-release build and documentation build succeeded. Focused validation passed:
-15/15 DeviceRegistry tests, 111/111 Driver tests, the selected Python test, and
-6/6 CMake imported-target/runtime-file fixture tests. Stub generation changed
-only the expected FoMaC `.pyi`, the full repository lint session passed, and
+PR A is reconstructed as an independently buildable transport layer. The release
+build and documentation build succeeded. Focused validation passed: 15/15
+DeviceRegistry tests, 111/111 Driver tests, the selected Python test, and 6/6
+CMake imported-target/runtime-file fixture tests. Stub generation changed only
+the expected FoMaC `.pyi`, the full repository lint session passed, and
 `git diff --check` reported no whitespace errors.
 
 The final scope audit found changes only in the public configuration type,
@@ -162,10 +162,8 @@ is committed. No command in this plan publishes remote state.
 ## Artifacts and Notes
 
 The CTest fixture names are `mqt-core-qdmi-imported-device-configure`,
-`mqt-core-qdmi-imported-device-build`,
-`mqt-core-qdmi-runtime-file-configure`,
-`mqt-core-qdmi-runtime-file-build`,
-`mqt-core-qdmi-runtime-file-install`, and
+`mqt-core-qdmi-imported-device-build`, `mqt-core-qdmi-runtime-file-configure`,
+`mqt-core-qdmi-runtime-file-build`, `mqt-core-qdmi-runtime-file-install`, and
 `mqt-core-qdmi-runtime-file-install-verify`. The exported runtime-file list is
 `metadata-runtime.json`; both the imported consumer and isolated install
 verified byte-identical copies beside their runtime artifacts.
