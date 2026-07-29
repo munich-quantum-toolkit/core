@@ -34,9 +34,9 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Place tests with the subsystem that owns the behavior. Within MLIR, prefer
   pass, compiler, or dialect unit tests for semantic contracts; reserve
   `mlir/tools/` subprocess tests for irreducible driver-level CLI behavior.
-  Normal test targets and dependencies belong in the test build; avoid
-  promoting an otherwise optional production tool into the default build solely
-  for subprocess testing.
+  Normal test targets and dependencies belong in the test build; avoid promoting
+  an otherwise optional production tool into the default build solely for
+  subprocess testing.
 - Update `CHANGELOG.md` and `UPGRADING.md` for user-facing, breaking, or
   otherwise noteworthy changes.
 - Format changelog entries with the pull request reference and every
