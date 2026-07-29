@@ -704,10 +704,28 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     wire = *synthesized;
   };
   const auto emitEntangler = [&]() {
+    if (spec.entangler == NativeGateKind::ISWAP) {
+      auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
+      wire0 = iswapOp.getOutputQubit(0);
+      wire1 = iswapOp.getOutputQubit(1);
+      return;
+    }
     if (spec.entangler == NativeGateKind::ECR) {
       auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
       wire0 = ecrOp.getOutputQubit(0);
       wire1 = ecrOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::RXX) {
+      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rxxOp.getOutputQubit(0);
+      wire1 = rxxOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::RZZ) {
+      auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rzzOp.getOutputQubit(0);
+      wire1 = rzzOp.getOutputQubit(1);
       return;
     }
     const bool emitCz = spec.entangler == NativeGateKind::CZ;

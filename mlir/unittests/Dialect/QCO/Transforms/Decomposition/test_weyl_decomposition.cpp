@@ -554,13 +554,22 @@ INSTANTIATE_TEST_SUITE_P(
         WeylSynthesisCase{"CzGeneric", "u,cz",
                           [] { return TWO_QUBIT_CONTROLLED_Z; }},
         WeylSynthesisCase{"EcrGeneric", "u,ecr",
-                          [] { return ECROp::getUnitaryMatrix(); }}),
+                          [] { return ECROp::getUnitaryMatrix(); }},
+        WeylSynthesisCase{"IswapGeneric", "u,iswap",
+                          [] { return iSWAPOp::getUnitaryMatrix(); }},
+        WeylSynthesisCase{
+            "RxxGeneric", "u,rxx",
+            [] { return RXXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
+        WeylSynthesisCase{
+            "RzzGeneric", "u,rzz",
+            [] { return RZZOp::unitaryMatrix(std::numbers::pi / 2.0); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* gateset : {"u,cx", "u,cz", "u,ecr"}) {
+  for (const char* gateset :
+       {"u,cx", "u,cz", "u,ecr", "u,iswap", "u,rxx", "u,rzz"}) {
     const auto spec = NativeGateset::parse(gateset);
     ASSERT_TRUE(spec) << gateset;
     const auto native = spec->decomposeTarget(Matrix4x4::identity());
@@ -665,6 +674,37 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   const auto ecrPreferred = NativeGateset::parse("u,cx,cz,ecr");
   ASSERT_TRUE(ecrPreferred);
   EXPECT_EQ(ecrPreferred->entangler, NativeGateKind::ECR);
+
+  const auto iswapOnly = NativeGateset::parse("u,iswap");
+  ASSERT_TRUE(iswapOnly);
+  EXPECT_TRUE(iswapOnly->gates.contains(NativeGateKind::ISWAP));
+  EXPECT_EQ(iswapOnly->entangler, NativeGateKind::ISWAP);
+
+  const auto iswapPreferred = NativeGateset::parse("u,cx,cz,ecr,iswap");
+  ASSERT_TRUE(iswapPreferred);
+  EXPECT_EQ(iswapPreferred->entangler, NativeGateKind::ISWAP);
+
+  const auto rzzOnly = NativeGateset::parse("u,rzz");
+  ASSERT_TRUE(rzzOnly);
+  EXPECT_EQ(rzzOnly->entangler, NativeGateKind::RZZ);
+
+  const auto rxxOnly = NativeGateset::parse("u,rxx");
+  ASSERT_TRUE(rxxOnly);
+  EXPECT_EQ(rxxOnly->entangler, NativeGateKind::RXX);
+
+  const auto rzzOverRxx = NativeGateset::parse("u,rxx,rzz,cx,cz");
+  ASSERT_TRUE(rzzOverRxx);
+  EXPECT_EQ(rzzOverRxx->entangler, NativeGateKind::RZZ);
+
+  const auto fullPreferIswap =
+      NativeGateset::parse("u,cx,cz,rxx,rzz,ecr,iswap");
+  ASSERT_TRUE(fullPreferIswap);
+  EXPECT_EQ(fullPreferIswap->entangler, NativeGateKind::ISWAP);
+
+  const auto preferEcrWithoutIswap =
+      NativeGateset::parse("u,cx,cz,rxx,rzz,ecr");
+  ASSERT_TRUE(preferEcrWithoutIswap);
+  EXPECT_EQ(preferEcrWithoutIswap->entangler, NativeGateKind::ECR);
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
@@ -778,4 +818,36 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   auto ecr = ECROp::create(builder, loc, q0, q1);
   EXPECT_TRUE(ecrSpec->allowsOp(ecr.getOperation()));
   EXPECT_FALSE(ecrSpec->allowsOp(cx.getOperation()));
+
+  const auto iswapSpec = NativeGateset::parse("u,iswap");
+  ASSERT_TRUE(iswapSpec);
+  auto iswap = iSWAPOp::create(builder, loc, q0, q1);
+  EXPECT_TRUE(iswapSpec->allowsOp(iswap.getOperation()));
+  EXPECT_FALSE(iswapSpec->allowsOp(cx.getOperation()));
+
+  const auto rxxSpec = NativeGateset::parse("u,rxx");
+  ASSERT_TRUE(rxxSpec);
+  EXPECT_TRUE(rxxSpec->allowsOp(
+      RXXOp::create(builder, loc, q0, q1, 0.2).getOperation()));
+  EXPECT_TRUE(rxxSpec->allowsOp(
+      RXXOp::create(builder, loc, q0, q1, std::numbers::pi / 2.0)
+          .getOperation()));
+
+  const auto rzzSpec = NativeGateset::parse("u,rzz");
+  ASSERT_TRUE(rzzSpec);
+  EXPECT_TRUE(rzzSpec->allowsOp(
+      RZZOp::create(builder, loc, q0, q1, 0.3).getOperation()));
+
+  const auto funcTyTheta = builder.getFunctionType(
+      {builder.getF64Type(), qubitTy, qubitTy}, {qubitTy, qubitTy});
+  auto funcTheta =
+      func::FuncOp::create(builder, loc, "allows_op_runtime_rxx", funcTyTheta);
+  auto* entryTheta = funcTheta.addEntryBlock();
+  builder.setInsertionPointToStart(entryTheta);
+  Value runtimeTheta = entryTheta->getArgument(0);
+  Value runtimeQ0 = entryTheta->getArgument(1);
+  Value runtimeQ1 = entryTheta->getArgument(2);
+  auto runtimeRxx =
+      RXXOp::create(builder, loc, runtimeQ0, runtimeQ1, runtimeTheta);
+  EXPECT_FALSE(rxxSpec->allowsOp(runtimeRxx.getOperation()));
 }

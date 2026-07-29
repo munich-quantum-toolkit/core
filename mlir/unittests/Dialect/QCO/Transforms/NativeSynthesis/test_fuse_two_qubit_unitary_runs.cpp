@@ -325,11 +325,11 @@ struct NamedProgram {
   ProgramFn program;
 };
 
-/// Native gatesets spanning every supported single-qubit basis and all three
-/// entangler families (plus a multi-entangler menu). Because the pass
-/// re-synthesizes each two-qubit window into the target basis, every circuit is
-/// valid input for every gateset.
-constexpr std::array<const char*, 12> GATESETS = {
+/// Native gatesets spanning every supported single-qubit basis and all six
+/// entangler families (CX/CZ/ECR/iSWAP/RXX/RZZ, plus multi-entangler menus).
+/// Because the pass re-synthesizes each two-qubit window into the target
+/// basis, every circuit is valid input for every gateset.
+constexpr std::array<const char*, 18> GATESETS = {
     // CX entangler family
     "x,sx,rz,cx", // ZSXX
     "u,cx",       // U
@@ -343,8 +343,16 @@ constexpr std::array<const char*, 12> GATESETS = {
     // ECR entangler family
     "u,ecr",
     "x,sx,rz,ecr",
-    // Multiple entanglers (ecr preferred)
-    "u,cx,cz,ecr",
+    // iSWAP entangler family
+    "u,iswap",
+    "x,sx,rz,iswap",
+    // RXX / RZZ entangler family
+    "u,rxx",
+    "u,rzz",
+    "x,sx,rz,rzz",
+    // Multiple entanglers (rzz preferred over rxx/cx/cz)
+    "u,cx,cz,ecr,iswap",
+    "u,cx,cz,rxx,rzz",
     "u,cx,cz",
 };
 

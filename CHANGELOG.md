@@ -23,8 +23,9 @@ releases may include breaking changes.
 - ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
   unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
   [**@burgholzer**])
-- ✨ Support `ecr` as a native two-qubit basis for `fuse-two-qubit-unitary-runs`
-  ([**@simon1hofmann**])
+- ✨ Support `iswap`, `rxx`, and `rzz` as native two-qubit bases for
+  `fuse-two-qubit-unitary-runs` (with `ecr`; preference iSWAP > ECR > RZZ >
+  RXX > CZ > CX) ([**@simon1hofmann**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
