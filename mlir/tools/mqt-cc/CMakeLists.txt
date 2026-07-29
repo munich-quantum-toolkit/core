@@ -45,4 +45,10 @@ if(BUILD_MQT_CORE_TESTS)
     COMMAND ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc> -DINPUT=${MQT_CC_NATIVE_GATES_INPUT} -P
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-native-gates-raw-qco.cmake)
   set_tests_properties(mqt-cc-native-gates-raw-qco PROPERTIES LABELS mqt-mlir-unittests)
+
+  add_test(
+    NAME mqt-cc-native-gates-empty
+    COMMAND ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc> -DINPUT=${MQT_CC_NATIVE_GATES_INPUT} -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-native-gates-empty.cmake)
+  set_tests_properties(mqt-cc-native-gates-empty PROPERTIES LABELS mqt-mlir-unittests)
 endif()

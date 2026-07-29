@@ -394,6 +394,12 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  const llvm::StringRef nativeGateMenu =
+      llvm::StringRef(nativeGates.getValue()).trim();
+  if (nativeGates.getNumOccurrences() > 0 && nativeGateMenu.empty()) {
+    llvm::errs() << "--native-gates must not be empty.\n";
+    return 1;
+  }
   if (nativeGates.getNumOccurrences() > 0 &&
       (*parsedOutputFormat == OutputFormat::QCImport ||
        *parsedOutputFormat == OutputFormat::QCO)) {
@@ -450,10 +456,10 @@ int main(int argc, char** argv) {
             populateDefaultQCOOptimizationPipeline(pm);
           }
           populateQCOCleanupPipeline(pm);
-          if (!nativeGates.empty()) {
+          if (!nativeGateMenu.empty()) {
             pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
                 qco::FuseTwoQubitUnitaryRunsOptions{
-                    .nativeGates = nativeGates.getValue(),
+                    .nativeGates = nativeGateMenu.str(),
                 }));
           }
           return success();
