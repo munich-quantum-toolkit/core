@@ -36,8 +36,9 @@ if(BUILD_MQT_CORE_TESTS)
            COMMAND $<TARGET_FILE:mqt-cc> ${MQT_CC_NATIVE_GATES_INPUT} --emit=qco-optimized
                    --native-gates=u,cx)
   set_tests_properties(
-    mqt-cc-native-gates-qco-optimized PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION
-                                                 "qco\\.u\\(" FAIL_REGULAR_EXPRESSION "qco\\.u2")
+    mqt-cc-native-gates-qco-optimized
+    PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION "qco\\.ctrl"
+               FAIL_REGULAR_EXPRESSION "qco\\.swap|qco\\.u2|qc\\.h")
 
   add_test(
     NAME mqt-cc-native-gates-raw-qco
