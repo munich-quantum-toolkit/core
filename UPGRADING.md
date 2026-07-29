@@ -11,7 +11,10 @@ of changes including minor and patch releases, please refer to the
 MQT Core now builds its MLIR-based compiler infrastructure unconditionally. LLVM
 22.1+ (including MLIR) is therefore required when building MQT Core from source,
 including as a CMake dependency or Python package. The `BUILD_MQT_CORE_MLIR`
-CMake option has been removed; remove it from build scripts and presets.
+CMake option has been removed. The QIR runner and QIR support in the DDSIM QDMI
+Device are also built unconditionally, so the `BUILD_MQT_CORE_QIR_RUNNER` and
+`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` options have been removed. Remove these
+three options from build scripts and presets.
 
 We offer pre-built distributions for all supported platforms as part of the
 `setup-mlir` project at

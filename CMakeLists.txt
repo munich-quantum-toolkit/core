@@ -109,10 +109,6 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
-option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON)
-option(BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
-       "Enable QIR program format support for the DDSIM QDMI Device" ON)
-
 # add main library code
 add_subdirectory(src)
 

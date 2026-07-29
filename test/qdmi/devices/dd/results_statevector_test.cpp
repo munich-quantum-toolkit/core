@@ -15,21 +15,17 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
-
-#include <gtest/gtest.h>
-
-#include <complex>
-#include <cstddef>
-#include <vector>
-
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 #include "qir/helpers/test_utils.hpp"
 #include "qir/runtime/Runtime.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
+#include <complex>
+#include <cstddef>
 #include <numbers>
 #include <sstream>
-#endif
+#include <vector>
 
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
   const qdmi_test::SessionGuard s{};
@@ -113,7 +109,6 @@ TEST(ResultsStatevector, HistogramRequestsInvalidWithShotsZero) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 namespace {
 
 class QIRStateExtractionTest : public testing::Test {
@@ -145,4 +140,3 @@ TEST_F(QIRStateExtractionTest, BellPairStaticBaseStringYieldsBellState) {
 }
 
 } // namespace
-#endif
