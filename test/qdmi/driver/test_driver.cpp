@@ -1110,6 +1110,79 @@ TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   EXPECT_NE(first, second);
 }
 
+TEST(DeviceRegistrationTest,
+     ScRuntimeConfigurationSeparatesModelsUsingOneProviderLibrary) {
+  auto& driver = qdmi::Driver::get();
+  static_cast<void>(driver.registerDeviceIfAbsent(
+      {.id = "test.sc.runtime-one",
+       .library = MQT_CORE_QDMI_SC_LIBRARY,
+       .prefix = "MQT_SC",
+       .session = {.deviceConfiguration =
+                       qdmi::InlineDeviceConfiguration{.json = R"({
+                 "schema-version":1,
+                 "name":"SC runtime one",
+                 "numQubits":1,
+                 "durationUnit":{"unit":"ns","scaleFactor":1},
+                 "qubitProperties":{"defaults":{"t1":10,"t2":20},"overrides":[]},
+                 "couplings":[],
+                 "operations":[{
+                   "name":"r",
+                   "numParameters":2,
+                   "numQubits":1,
+                   "duration":7,
+                   "fidelity":0.8
+                 }]
+               })"}}}));
+  static_cast<void>(driver.registerDeviceIfAbsent(
+      {.id = "test.sc.runtime-two",
+       .library = MQT_CORE_QDMI_SC_LIBRARY,
+       .prefix = "MQT_SC",
+       .session = {.deviceConfiguration =
+                       qdmi::InlineDeviceConfiguration{.json = R"({
+                 "schema-version":1,
+                 "name":"SC runtime two",
+                 "numQubits":2,
+                 "durationUnit":{"unit":"us","scaleFactor":0.5},
+                 "qubitProperties":{"defaults":{},"overrides":[]},
+                 "couplings":[[1,0]],
+                 "operations":[]
+               })"}}}));
+
+  const auto first = fomac::Session::openDevice("test.sc.runtime-one");
+  const auto second = fomac::Session::openDevice("test.sc.runtime-two");
+  EXPECT_EQ(first.getName(), "SC runtime one");
+  EXPECT_EQ(first.getQubitsNum(), 1);
+  const auto firstSites = first.getSites();
+  ASSERT_EQ(firstSites.size(), 1);
+  EXPECT_EQ(firstSites[0].getT1(), 10);
+  EXPECT_EQ(firstSites[0].getT2(), 20);
+  const auto firstOperations = first.getOperations();
+  ASSERT_EQ(firstOperations.size(), 1);
+  EXPECT_EQ(firstOperations[0].getName(), "r");
+  EXPECT_EQ(firstOperations[0].getDuration({firstSites[0]}), 7);
+  EXPECT_EQ(firstOperations[0].getFidelity({firstSites[0]}), 0.8);
+  EXPECT_EQ(second.getName(), "SC runtime two");
+  EXPECT_EQ(second.getQubitsNum(), 2);
+  const auto secondCouplingMap = second.getCouplingMap();
+  ASSERT_TRUE(secondCouplingMap.has_value());
+  ASSERT_EQ(secondCouplingMap->size(), 1);
+
+  qdmi::DeviceSessionConfig override;
+  override.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+        "schema-version":1,
+        "name":"SC per-open override",
+        "numQubits":3,
+        "durationUnit":{"unit":"ms","scaleFactor":2},
+        "qubitProperties":{"defaults":{},"overrides":[]},
+        "couplings":[[0,2]],
+        "operations":[]
+      })"};
+  const auto overridden =
+      fomac::Session::openDevice("test.sc.runtime-one", override);
+  EXPECT_EQ(overridden.getName(), "SC per-open override");
+  EXPECT_EQ(overridden.getQubitsNum(), 3);
+}
+
 TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   registerSessionTestDevice();
   std::optional<fomac::Job> job;
