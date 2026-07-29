@@ -62,8 +62,13 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJ
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
+option(BUILD_MQT_CORE_QDMI_DEVICES "Build the bundled MQT Core QDMI devices"
+       ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
+if(BUILD_MQT_CORE_TESTS AND NOT BUILD_MQT_CORE_QDMI_DEVICES)
+  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires BUILD_MQT_CORE_QDMI_DEVICES")
+endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR
@@ -132,19 +137,34 @@ endif()
 
 add_subdirectory(mlir)
 
-# copy generated MLIR documentation
-add_custom_command(
-  TARGET mlir-doc
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
-          ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
-  COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
-          ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
-  COMMENT "Copying and cleaning up generated MLIR documentation"
-  VERBATIM)
+# Preserve the top-level `mlir-doc` behavior without modifying a target owned by an embedding
+# project.
+if(PROJECT_IS_TOP_LEVEL)
+  add_custom_command(
+    TARGET mlir-doc
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+    COMMENT "Copying and cleaning up generated MLIR documentation"
+    VERBATIM)
+endif()
 
 if(BUILD_MQT_CORE_DOCUMENTATION)
-  add_custom_target(mqt-core-docs DEPENDS mlir-doc)
+  if(PROJECT_IS_TOP_LEVEL)
+    add_custom_target(mqt-core-docs DEPENDS mlir-doc)
+  else()
+    add_custom_target(
+      mqt-core-docs
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+              ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+      COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+              ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+      DEPENDS mlir-doc
+      COMMENT "Copying and cleaning up generated MLIR documentation"
+      VERBATIM)
+  endif()
   foreach(binding ir dd fomac na)
     add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
   endforeach()
@@ -162,10 +182,11 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-dd-bindings
       mqt-core-fomac-bindings
       mqt-core-mlir-bindings
-      mqt-core-na-bindings
-      mqt-core-qdmi-ddsim-device
-      mqt-core-qdmi-na-device
-      mqt-core-qdmi-sc-device)
+      mqt-core-na-bindings)
+  if(BUILD_MQT_CORE_QDMI_DEVICES)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device mqt-core-qdmi-na-device
+         mqt-core-qdmi-sc-device)
+  endif()
   add_custom_target(mqt-core-wheel)
   add_dependencies(mqt-core-wheel ${MQT_CORE_WHEEL_TARGETS})
 endif()

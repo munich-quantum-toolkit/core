@@ -40,6 +40,13 @@ if(NOT TARGET ${TARGET_NAME})
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 endif()
 
+if(NOT BUILD_MQT_CORE_QDMI_DEVICES)
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS}
+      PARENT_SCOPE)
+  return()
+endif()
+
 # Set target name
 set(TARGET_NAME mqt-core-qdmi-na-device-generator)
 
