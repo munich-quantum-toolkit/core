@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
 
@@ -83,6 +84,13 @@ static llvm::cl::opt<std::string> outputFormat(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
         "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
+
+static llvm::cl::opt<std::string> nativeGates(
+    "native-gates",
+    llvm::cl::desc(
+        "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
+        "pass"),
+    llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
@@ -175,6 +183,22 @@ parseOutputFormat(const StringRef format) {
   }
   return std::nullopt;
 }
+
+static llvm::cl::opt<bool> enableDecomposeMultiControlled(
+    "decompose-multi-controlled",
+    llvm::cl::desc(
+        "Decompose controlled X/Z/phase gates and qco.rccx with at least "
+        "--decompose-multi-controlled-min-controls controls (default 2)."),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
+    "decompose-multi-controlled-min-controls",
+    llvm::cl::desc(
+        "Minimum control count for --decompose-multi-controlled: decompose "
+        "controlled X/Z/phase gates and qco.rccx with at least this many "
+        "controls (default 2; must be at least 2). Higher values leave smaller "
+        "controlled gates undecomposed."),
+    llvm::cl::init(2));
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -372,6 +396,27 @@ static int runCompiler(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  const llvm::StringRef nativeGateMenu =
+      llvm::StringRef(nativeGates.getValue()).trim();
+  if (nativeGates.getNumOccurrences() > 0 && nativeGateMenu.empty()) {
+    llvm::errs() << "--native-gates must not be empty.\n";
+    return 1;
+  }
+  if (nativeGates.getNumOccurrences() > 0 &&
+      (*parsedOutputFormat == OutputFormat::QCImport ||
+       *parsedOutputFormat == OutputFormat::QCO)) {
+    llvm::errs() << "--native-gates requires an output that passes through "
+                    "QCO optimization.\n";
+    return 1;
+  }
+  if (enableDecomposeMultiControlled &&
+      !isDecomposeMultiControlledConfigValid(
+          decomposeMultiControlledMinControls.getValue())) {
+    llvm::errs()
+        << "decompose-multi-controlled-min-controls must be at least 2 when "
+           "--decompose-multi-controlled is enabled.\n";
+    return 1;
+  }
 
   const auto runPasses =
       [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
@@ -406,9 +451,19 @@ static int runCompiler(int argc, char** argv) {
               return failure();
             }
           } else {
+            if (enableDecomposeMultiControlled) {
+              populateDecomposeMultiControlledPipeline(
+                  pm, decomposeMultiControlledMinControls.getValue());
+            }
             populateDefaultQCOOptimizationPipeline(pm);
           }
           populateQCOCleanupPipeline(pm);
+          if (!nativeGateMenu.empty()) {
+            pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
+                qco::FuseTwoQubitUnitaryRunsOptions{
+                    .nativeGates = nativeGateMenu.str(),
+                }));
+          }
           return success();
         }))) {
       return 1;
