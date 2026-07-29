@@ -20,6 +20,7 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -43,6 +44,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 
@@ -81,13 +83,33 @@ protected:
 
 } // namespace
 
+static Value measureToRegister(qc::QCProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, q] : llvm::enumerate(qubits)) {
+    b.measure(q, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
+
+static Value loadBit(qc::QCProgramBuilder& b, Value reg,
+                     const int64_t index = 0) {
+  auto indexValue = arith::ConstantIndexOp::create(b, index);
+  return memref::LoadOp::create(b, reg, indexValue.getResult());
+}
+
+static SmallVector<Value> allocMultipleQubitRegisters(qc::QCProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  auto c0 = measureToRegister(b, {q0[0], q0[1]});
+  auto c1 = measureToRegister(b, {q1[0], q1[1], q1[2]});
+  return {c0, c1};
+}
+
 static SmallVector<Value> twoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.x(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  return {c0, c1};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static void legacyU2(qc::QCProgramBuilder& b, const Value target) {
@@ -98,20 +120,20 @@ static void legacyU2(qc::QCProgramBuilder& b, const Value target) {
 static Value legacyU2(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   legacyU2(b, q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value> legacySingleControlledU2(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](const Value target) { legacyU2(b, target); });
-  return {b.measure(q[0]), b.measure(q[1])};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> legacyMultipleControlledU2(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(ValueRange{q[0], q[1]}, q[2],
          [&](const Value target) { legacyU2(b, target); });
-  return {b.measure(q[0]), b.measure(q[1]), b.measure(q[2])};
+  return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
 static void legacyU(qc::QCProgramBuilder& b, const Value target) {
@@ -122,20 +144,20 @@ static void legacyU(qc::QCProgramBuilder& b, const Value target) {
 static Value legacyU(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   legacyU(b, q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value> legacySingleControlledU(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](const Value target) { legacyU(b, target); });
-  return {b.measure(q[0]), b.measure(q[1])};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> legacyMultipleControlledU(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(ValueRange{q[0], q[1]}, q[2],
          [&](const Value target) { legacyU(b, target); });
-  return {b.measure(q[0]), b.measure(q[1]), b.measure(q[2])};
+  return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
 using Complex = std::complex<double>;
@@ -522,19 +544,13 @@ static SmallVector<Value> singleNegControlledX(qc::QCProgramBuilder& b) {
   b.x(q[0]);
   b.cx(q[0], q[1]);
   b.x(q[0]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  return {c0, c1};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> tripleControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcx({q[0], q[1], q[2]}, q[3]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto c2 = b.measure(q[2]);
-  auto c3 = b.measure(q[3]);
-  return {c0, c1, c2, c3};
+  return {measureToRegister(b, {q[0], q[1], q[2], q[3]})};
 }
 
 static SmallVector<Value> mixedControlledX(qc::QCProgramBuilder& b) {
@@ -542,10 +558,7 @@ static SmallVector<Value> mixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q[1]);
   b.mcx({q[0], q[1]}, q[2]);
   b.x(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto c2 = b.measure(q[2]);
-  return {c0, c1, c2};
+  return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
 static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
@@ -558,36 +571,84 @@ static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q2[1]);
   b.mcx({q1[1], q2[1]}, q3[1]);
   b.x(q2[1]);
-  auto c0 = b.measure(q1[0]);
-  auto c1 = b.measure(q1[1]);
-  auto c2 = b.measure(q2[0]);
-  auto c3 = b.measure(q2[1]);
-  auto c4 = b.measure(q3[0]);
-  auto c5 = b.measure(q3[1]);
-  return {c0, c1, c2, c3, c4, c5};
+  auto c1 = measureToRegister(b, {q1[0], q1[1]});
+  auto c2 = measureToRegister(b, {q2[0], q2[1]});
+  auto c3 = measureToRegister(b, {q3[0], q3[1]});
+  return {c1, c2, c3};
 }
 
 static Value ifNot(qc::QCProgramBuilder& b) {
+  // Only `out` is declared `output` in the QASM source, so the non-output
+  // condition bit `c` is not returned.
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto c = b.measure(q[0]);
-  auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
+  b.measure(q[0], c, 0);
+  auto loaded = memref::LoadOp::create(
+      b, c, arith::ConstantIndexOp::create(b, 0).getResult());
+  auto cond = arith::XOrIOp::create(b, loaded, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
-  auto out = b.measure(q[0]);
+  auto out = b.allocClassicalBitRegister(1);
+  b.measure(q[0], out, 0);
   return out;
+}
+
+static SmallVector<Value> ifWithMeasurement(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(1);
+  auto measurement = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  b.measure(q[0], c, 0);
+  b.scfIf(
+      c, 0, [&] { b.measure(q[0], measurement, 0); },
+      [&] { b.measure(q[0], measurement, 0); });
+  return {c, measurement};
+}
+
+template <typename ThenBuilder, typename ElseBuilder>
+static Value buildShortCircuitCondition(qc::QCProgramBuilder& b, Value lhs,
+                                        ThenBuilder&& thenBuilder,
+                                        ElseBuilder&& elseBuilder) {
+  auto ifOp = scf::IfOp::create(b, b.getI1Type(), lhs, true);
+  OpBuilder::InsertionGuard guard(b);
+  auto& thenBlock = ifOp.getThenRegion().front();
+  if (!thenBlock.empty()) {
+    thenBlock.back().erase();
+  }
+  b.setInsertionPointToEnd(&thenBlock);
+  scf::YieldOp::create(b, std::forward<ThenBuilder>(thenBuilder)());
+  auto& elseBlock = ifOp.getElseRegion().front();
+  if (!elseBlock.empty()) {
+    elseBlock.back().erase();
+  }
+  b.setInsertionPointToEnd(&elseBlock);
+  scf::YieldOp::create(b, std::forward<ElseBuilder>(elseBuilder)());
+  return ifOp.getResult(0);
+}
+
+static Value shortCircuitAnd(qc::QCProgramBuilder& b, Value lhs,
+                             const function_ref<Value()>& rhs) {
+  return buildShortCircuitCondition(
+      b, lhs, rhs, [&] { return b.boolConstant(false); });
+}
+
+static Value shortCircuitOr(qc::QCProgramBuilder& b, Value lhs,
+                            const function_ref<Value()>& rhs) {
+  return buildShortCircuitCondition(
+      b, lhs, [&] { return b.boolConstant(true); }, rhs);
 }
 
 static Value powTwoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.pow(2.0, q[0], [&](Value qubit) { b.x(qubit); });
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value powZeroX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.pow(0.0, q[0], [&](Value qubit) { b.x(qubit); });
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value negativePowS(qc::QCProgramBuilder& b) {
@@ -595,7 +656,7 @@ static Value negativePowS(qc::QCProgramBuilder& b) {
   b.pow(2.0, q[0], [&](Value powQubit) {
     b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
   });
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
@@ -605,13 +666,13 @@ static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
       b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
     });
   });
-  return {b.measure(q[0]), b.measure(q[1])};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static Value nestedPowX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.pow(6.0, q[0], [&](Value qubit) { b.x(qubit); });
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value customPowHS(qc::QCProgramBuilder& b) {
@@ -620,7 +681,7 @@ static Value customPowHS(qc::QCProgramBuilder& b) {
     b.h(qubit);
     b.s(qubit);
   });
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value> broadcastPowX(qc::QCProgramBuilder& b) {
@@ -628,7 +689,7 @@ static SmallVector<Value> broadcastPowX(qc::QCProgramBuilder& b) {
   for (auto qubit : q.qubits) {
     b.pow(2.0, qubit, [&](Value argument) { b.x(argument); });
   }
-  return {b.measure(q[0]), b.measure(q[1])};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
@@ -638,8 +699,9 @@ static SmallVector<Value> broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
   b.cx(reg[0], q);
   b.cx(reg[1], q);
   b.cx(reg[2], q);
-  return {b.measure(reg[0]), b.measure(reg[1]), b.measure(reg[2]),
-          b.measure(q)};
+  auto left = measureToRegister(b, {reg[0], reg[1], reg[2]});
+  auto right = measureToRegister(b, {q});
+  return {left, right};
 }
 
 static SmallVector<Value> broadcastCompoundGate(qc::QCProgramBuilder& b) {
@@ -650,15 +712,16 @@ static SmallVector<Value> broadcastCompoundGate(qc::QCProgramBuilder& b) {
     b.x(qubit);
     b.cx(qubit, q);
   }
-  return {b.measure(reg[0]), b.measure(reg[1]), b.measure(reg[2]),
-          b.measure(q)};
+  auto left = measureToRegister(b, {reg[0], reg[1], reg[2]});
+  auto right = measureToRegister(b, {q});
+  return {left, right};
 }
 
 static Value expressionArithmetic(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   b.rx((((1.0 + 2.0) * 3.0) / 2.0) - 0.5, q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value expressionUnaryMinus(qc::QCProgramBuilder& b) {
@@ -667,7 +730,7 @@ static Value expressionUnaryMinus(qc::QCProgramBuilder& b) {
   b.rx(-0.5, q[0]);
   b.ry(-(1.0 + 2.0), q[0]);
   b.rz(-(-0.25), q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value expressionBuiltinConstants(qc::QCProgramBuilder& b) {
@@ -676,7 +739,7 @@ static Value expressionBuiltinConstants(qc::QCProgramBuilder& b) {
   b.rx(std::numbers::pi / 2.0, q[0]);
   b.ry((2.0 * std::numbers::pi) / 4.0, q[0]);
   b.rz(std::numbers::e, q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value expressionMathFunctions(qc::QCProgramBuilder& b) {
@@ -693,7 +756,7 @@ static Value expressionMathFunctions(qc::QCProgramBuilder& b) {
   b.rx(std::sin(0.5), q[0]);
   b.rx(std::numbers::sqrt2, q[0]);
   b.rx(std::tan(0.5), q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value expressionNestedMathFunctions(qc::QCProgramBuilder& b) {
@@ -701,7 +764,7 @@ static Value expressionNestedMathFunctions(qc::QCProgramBuilder& b) {
   b.h(q[0]);
   b.rx(std::sqrt(std::pow(std::sin(0.5), 2.0) + std::pow(std::cos(0.5), 2.0)),
        q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value expressionConstFloat(qc::QCProgramBuilder& b) {
@@ -710,7 +773,7 @@ static Value expressionConstFloat(qc::QCProgramBuilder& b) {
   b.h(q[0]);
   b.rx(theta, q[0]);
   b.ry(theta * 2.0, q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static Value expressionMutableFloat(qc::QCProgramBuilder& b) {
@@ -718,7 +781,7 @@ static Value expressionMutableFloat(qc::QCProgramBuilder& b) {
   b.h(q[0]);
   b.rx(0.5, q[0]);
   b.ry(0.75, q[0]);
-  return b.measure(q[0]);
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value>
@@ -727,7 +790,7 @@ expressionConstIntArithmetic(qc::QCProgramBuilder& b) {
   b.h(q[3]);
   b.h(q[5]);
   b.rx(8.0, q[3]);
-  return {b.measure(q[3]), b.measure(q[5])};
+  return {measureToRegister(b, {q[3], q[5]})};
 }
 
 static SmallVector<Value> conditionLiteral(qc::QCProgramBuilder& b) {
@@ -735,37 +798,45 @@ static SmallVector<Value> conditionLiteral(qc::QCProgramBuilder& b) {
   b.h(q[0]);
   b.scfIf(true, [&] { b.x(q[0]); });
   b.scfIf(false, [&] { b.x(q[1]); });
-  return {b.measure(q[0]), b.measure(q[1])};
+  return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> conditionMeasurement(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
-  auto condition = b.measure(q[0]);
-  b.scfIf(condition, [&] { b.x(q[1]); });
-  return {condition, b.measure(q[1])};
+  auto enabled = b.allocClassicalBitRegister(1);
+  b.measure(q[0], enabled, 0);
+  b.scfIf(loadBit(b, enabled), [&] { b.x(q[1]); });
+  auto c = measureToRegister(b, {q[1]});
+  return {enabled, c};
 }
 
 static SmallVector<Value> conditionAnd(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto condition = arith::SelectOp::create(b, c0, c1, b.boolConstant(false));
+  auto c0Reg = measureToRegister(b, {q[0]});
+  auto c1Reg = measureToRegister(b, {q[1]});
+  auto c0 = loadBit(b, c0Reg);
+  auto condition =
+      shortCircuitAnd(b, c0, [&] { return loadBit(b, c1Reg); });
   b.scfIf(condition, [&] { b.x(q[2]); });
-  return {c0, c1, b.measure(q[2])};
+  auto out = measureToRegister(b, {q[2]});
+  return {c0Reg, c1Reg, out};
 }
 
 static SmallVector<Value> conditionOr(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto condition = arith::SelectOp::create(b, c0, b.boolConstant(true), c1);
+  auto c0Reg = measureToRegister(b, {q[0]});
+  auto c1Reg = measureToRegister(b, {q[1]});
+  auto c0 = loadBit(b, c0Reg);
+  auto condition =
+      shortCircuitOr(b, c0, [&] { return loadBit(b, c1Reg); });
   b.scfIf(condition, [&] { b.x(q[2]); }, [&] { b.h(q[2]); });
-  return {c0, c1, b.measure(q[2])};
+  auto out = measureToRegister(b, {q[2]});
+  return {c0Reg, c1Reg, out};
 }
 
 static SmallVector<Value> conditionNotAndOr(qc::QCProgramBuilder& b) {
@@ -773,37 +844,43 @@ static SmallVector<Value> conditionNotAndOr(qc::QCProgramBuilder& b) {
   b.h(q[0]);
   b.h(q[1]);
   b.h(q[2]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto c2 = b.measure(q[2]);
-  auto both = arith::SelectOp::create(b, c0, c1, b.boolConstant(false));
+  auto c0Reg = measureToRegister(b, {q[0]});
+  auto c1Reg = measureToRegister(b, {q[1]});
+  auto c2Reg = measureToRegister(b, {q[2]});
+  auto c0 = loadBit(b, c0Reg);
+  auto both = shortCircuitAnd(b, c0, [&] { return loadBit(b, c1Reg); });
   auto notBoth = arith::XOrIOp::create(b, both, b.boolConstant(true));
   auto condition =
-      arith::SelectOp::create(b, notBoth, b.boolConstant(true), c2);
+      shortCircuitOr(b, notBoth, [&] { return loadBit(b, c2Reg); });
   b.scfIf(condition, [&] { b.x(q[3]); });
-  return {c0, c1, c2, b.measure(q[3])};
+  auto out = measureToRegister(b, {q[3]});
+  return {c0Reg, c1Reg, c2Reg, out};
 }
 
 static SmallVector<Value> conditionBoolVariable(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  auto both = arith::SelectOp::create(b, c0, c1, b.boolConstant(false));
+  auto c0Reg = measureToRegister(b, {q[0]});
+  auto c1Reg = measureToRegister(b, {q[1]});
+  auto c0 = loadBit(b, c0Reg);
+  auto both = shortCircuitAnd(b, c0, [&] { return loadBit(b, c1Reg); });
   auto neither = arith::XOrIOp::create(b, both, b.boolConstant(true));
   b.scfIf(neither, [&] { b.x(q[2]); });
-  return {c0, c1, b.measure(q[2])};
+  auto out = measureToRegister(b, {q[2]});
+  return {c0Reg, c1Reg, out};
 }
 
 static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
-  auto c0 = b.measure(q[0]);
-  auto c1 = b.measure(q[1]);
-  b.scfIf(c1, [&] { b.x(q[2]); });
-  return {c0, c1, b.measure(q[2])};
+  auto c = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c, 0);
+  b.measure(q[1], c, 1);
+  b.scfIf(loadBit(b, c, 1), [&] { b.x(q[2]); });
+  auto out = measureToRegister(b, {q[2]});
+  return {c, out};
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -881,6 +958,29 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
   }
 }
 
+TEST(QASM3TranslationRegression, ReloadsConditionAfterBranchMeasurement) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr auto source = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit c = measure q;
+if (c) {
+  c = measure q;
+}
+if (c) {
+  x q;
+}
+)qasm";
+  auto translated = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(succeeded(verify(*translated)));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     QASM3TranslationProgramsTest, QASM3TranslationTest,
     testing::Values(
@@ -891,7 +991,7 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::allocQubitRegister)},
         QASM3TranslationTestCase{
             "AllocMultipleQubitRegisters", qasm::allocMultipleQubitRegisters,
-            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters)},
+            MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
         QASM3TranslationTestCase{"AllocLargeRegister", qasm::allocLargeRegister,
                                  MQT_NAMED_BUILDER(qc::allocLargeRegister)},
         QASM3TranslationTestCase{
@@ -1171,14 +1271,14 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
         QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
                                  MQT_NAMED_BUILDER(qc::simpleIf)},
-        QASM3TranslationTestCase{"IfNot", qasm::ifNot,
-                                 MQT_NAMED_BUILDER(ifNot)},
-        QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
-                                 MQT_NAMED_BUILDER(qc::ifTwoQubits)},
-        QASM3TranslationTestCase{"IfEmptyThen", qasm::ifEmptyThen,
-                                 MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
                                  MQT_NAMED_BUILDER(qc::ifElse)},
+        QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
+                                 MQT_NAMED_BUILDER(qc::ifTwoQubits)},
+        QASM3TranslationTestCase{"IfWithMeasurement", qasm::ifWithMeasurement,
+                                 MQT_NAMED_BUILDER(ifWithMeasurement)},
+        QASM3TranslationTestCase{"IfNot", qasm::ifNot,
+                                 MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"BroadcastRegisterAndQubit",
                                  qasm::broadcastRegisterAndQubit,
                                  MQT_NAMED_BUILDER(broadcastRegisterAndQubit)},

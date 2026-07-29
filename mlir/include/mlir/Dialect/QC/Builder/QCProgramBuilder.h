@@ -138,7 +138,7 @@ public:
    * @brief Represents a qubit register with its qubits.
    */
   struct QubitRegister {
-    /// The MemRef value representing the qubit register
+    /// The memref value representing the qubit register
     Value value;
     /// The allocated qubit values
     SmallVector<Value> qubits;
@@ -151,8 +151,8 @@ public:
     Value operator[](size_t index) const;
 
     /**
-     * @brief Conversion to the backing MemRef value
-     * @return The MemRef value representing the qubit register
+     * @brief Conversion to the backing memref value
+     * @return The memref value representing the qubit register
      */
     explicit operator Value() const { return value; }
   };
@@ -218,57 +218,32 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto q0 = builder.memrefLoad(memref, index);
+   * auto q0 = builder.loadQubit(memref, index);
    * ```
    * ```mlir
    * %q0 = memref.load %memref[%index] : memref<3x!qc.qubit>
    * ```
    */
-  Value memrefLoad(Value memref, Value index);
-
-  /**
-   * @brief A small structure representing a single classical bit within a
-   * classical register.
-   */
-  struct Bit {
-    /// Name of the register containing this bit
-    std::string registerName;
-    /// Size of the register containing this bit
-    int64_t registerSize{};
-    /// Index of this bit within the register
-    int64_t registerIndex{};
-  };
-
-  /**
-   * @brief A small structure representing a classical bit register.
-   */
-  struct ClassicalRegister {
-    /// Name of the classical register
-    std::string name;
-    /// Size of the classical register
-    int64_t size;
-
-    /**
-     * @brief Access a specific bit in the classical register
-     * @param index The index of the bit to access (must be less than size)
-     * @return A Bit structure representing the specified bit
-     */
-    Bit operator[](const int64_t index) const;
-  };
+  Value loadQubit(Value memref, Value index);
 
   /**
    * @brief Allocate a classical bit register
-   * @param size Number of bits
-   * @param name Register name (default: "c")
-   * @return A `ClassicalRegister` structure
+   *
+   * @details The register is backed by a memref of `i1` elements. It is not
+   * deallocated automatically so that it can be returned from the program.
+   *
+   * @param size Number of bits (must be positive)
+   * @return The memref value representing the classical register
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(3, "c");
+   * auto c = builder.allocClassicalBitRegister(3);
+   * ```
+   * ```mlir
+   * %c = memref.alloc() : memref<3xi1>
    * ```
    */
-  [[nodiscard]] ClassicalRegister
-  allocClassicalBitRegister(int64_t size, std::string name = "c") const;
+  Value allocClassicalBitRegister(int64_t size);
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -277,11 +252,11 @@ public:
   /**
    * @brief Measure a qubit in the computational basis
    *
-   * @details
-   * Measures a qubit in place and returns the classical measurement result.
+   * @details Measures a qubit in place and returns the classical measurement
+   * result.
    *
    * @param qubit The qubit to measure
-   * @return Classical measurement result (i1)
+   * @return Classical measurement result (`i1`)
    *
    * @par Example:
    * ```c++
@@ -294,21 +269,27 @@ public:
   Value measure(Value qubit);
 
   /**
-   * @brief Measure a qubit and store the result in a bit of a register
+   * @brief Measure a qubit and store the result in a classical bit register
+   *
+   * @details Measures the qubit and stores the classical result in the given
+   * classical register at the given index, in addition to returning it.
    *
    * @param qubit The qubit to measure
-   * @param bit The classical bit to store the result
-   * @return Classical measurement result (i1)
+   * @param reg The memref representing the classical register
+   * @param index The index within the classical register
+   * @return Classical measurement result (`i1`)
    *
    * @par Example:
    * ```c++
-   * builder.measure(q0, c[0]);
+   * builder.measure(q0, c, 0);
    * ```
    * ```mlir
-   * %r0 = qc.measure("c", 3, 0) %q0 : !qc.qubit -> i1
+   * %r0 = qc.measure %q0 : !qc.qubit -> i1
+   * memref.store %r0, %c[%c0] : memref<3xi1>
    * ```
    */
-  Value measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, Value reg,
+                const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1165,7 +1146,7 @@ public:
    * @par Example:
    * ```c++
    * builder.scfFor(lb, ub, step, [&](Value iv) {
-   *   auto q0 = builder.memrefLoad(memref, iv);
+   *   auto q0 = builder.loadQubit(memref, iv);
    *   builder.h(q0);
    * });
    * ```
@@ -1240,6 +1221,22 @@ public:
                           const function_ref<void()>& elseBody = nullptr);
 
   /**
+   * @brief Construct an scf.if operation conditioned on a classical bit
+   *
+   * @details Loads the classical bit from the given classical register at the
+   * given index and uses it as the condition of the if operation.
+   *
+   * @param reg The memref representing the classical register
+   * @param index The index within the register to load the condition from
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Reference to this builder for method chaining
+   */
+  QCProgramBuilder& scfIf(Value reg, const std::variant<int64_t, Value>& index,
+                          const function_ref<void()>& thenBody,
+                          const function_ref<void()>& elseBody = nullptr);
+
+  /**
    * @brief Construct an scf.index_switch operation
    *
    * @param arg Index argument.
@@ -1285,6 +1282,19 @@ public:
    * ```
    */
   QCProgramBuilder& scfCondition(Value condition);
+
+  /**
+   * @brief Construct an scf.condition operation conditioned on a classical bit
+   *
+   * @details Loads the classical bit from the given classical register at the
+   * given index and uses it as the condition of the condition operation.
+   *
+   * @param reg The memref representing the classical register
+   * @param index The index within the register to load the condition from
+   * @return Reference to this builder for method chaining
+   */
+  QCProgramBuilder& scfCondition(Value reg,
+                                 const std::variant<int64_t, Value>& index);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -1357,8 +1367,8 @@ private:
   /// Track allocated qubits for automatic deallocation
   DenseSet<Value> allocatedQubits;
 
-  /// Track allocated MemRefs for automatic deallocation
-  DenseSet<Value> allocatedMemrefs;
+  /// Track allocated memrefs for automatic deallocation
+  DenseSet<Value> allocatedQregs;
 
   /// Per-region map of memrefs and their loaded indices
   DenseMap<Region*, DenseMap<Value, DenseSet<Value>>> loadedQubits;

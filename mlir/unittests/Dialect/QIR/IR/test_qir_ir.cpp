@@ -109,6 +109,28 @@ TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, -1);
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, 1);
+      },
+      "Register index is out of bounds");
+}
+
 /// \name QIR/Operations/StandardGates/DcxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -523,14 +545,14 @@ INSTANTIATE_TEST_SUITE_P(
     QIRMeasureOpTest, QIRTest,
     testing::Values(
         QIRTestCase{"SingleMeasurementToSingleBit",
-                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit<>),
-                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit<>)},
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit),
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit)},
         QIRTestCase{"RepeatedMeasurementToSameBit",
-                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit<>),
-                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit<>)},
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit)},
         QIRTestCase{"RepeatedMeasurementToDifferentBits",
-                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits<>),
-                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits<>)}));
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits)}));
 /// @}
 
 /// \name QIR/Operations/ResetOp.cpp

@@ -142,15 +142,22 @@ public:
 
     SmallVector<Value> results;
     for (const auto output : program.outputs) {
-      for (auto bit : bitValues[output]) {
+      auto reg = classicalRegisters[output];
+      if (!reg) {
+        emitError(getLocation(program.registers[output].location))
+            << "OpenQASM QC emission error: output register '"
+            << program.registers[output].name << "' has no classical storage";
+        return nullptr;
+      }
+      for (const auto bit : bitValues[output]) {
         if (!bit) {
           emitError(getLocation(program.registers[output].location))
               << "OpenQASM QC emission error: output register '"
               << program.registers[output].name << "' is not fully initialized";
           return nullptr;
         }
-        results.push_back(bit);
       }
+      results.push_back(reg);
     }
     OwningOpRef<ModuleOp> module;
     if (results.empty()) {
@@ -174,8 +181,7 @@ private:
   EmissionBudget emissionBudget;
   qc::QCProgramBuilder builder;
   std::vector<SmallVector<Value>> registerValues;
-  std::vector<std::optional<qc::QCProgramBuilder::ClassicalRegister>>
-      classicalRegisters;
+  std::vector<Value> classicalRegisters;
   std::vector<SmallVector<Value>> bitValues;
   std::vector<Value> scalarValues;
   mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
@@ -1943,26 +1949,18 @@ private:
   }
 
   [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
-    auto& values = bitValues.at(reference.reg);
+    const auto reg = classicalRegisters.at(reference.reg);
     if (!reference.dynamicIndex) {
-      return values[reference.index];
+      auto index = arith::ConstantIndexOp::create(
+          builder, static_cast<int64_t>(reference.index));
+      return memref::LoadOp::create(builder, reg, index.getResult());
     }
 
     const auto width =
         static_cast<int64_t>(program.registers.at(reference.reg).width);
     auto index = emitCheckedIndex(*reference.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
-    if (!emissionBudget.canConstruct(3 * static_cast<size_t>(width - 1))) {
-      return {};
-    }
-
-    Value selected = values.front();
-    for (int64_t i = 1; i < width; ++i) {
-      auto isIndex = arith::CmpIOp::create(builder, arith::CmpIPredicate::eq,
-                                           index, builder.intConstant(i));
-      selected = arith::SelectOp::create(builder, isIndex, values[i], selected);
-    }
-    return selected;
+    return memref::LoadOp::create(builder, reg, index);
   }
 
   [[nodiscard]] Value
@@ -2309,8 +2307,9 @@ private:
       registerValues[statement.reg] = std::move(allocation.qubits);
       return;
     }
-    classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(declaration.width), declaration.name);
+    classicalRegisters[statement.reg] =
+        builder.allocClassicalBitRegister(
+            static_cast<int64_t>(declaration.width));
     bitValues[statement.reg].resize(declaration.width);
     auto poison =
         ub::PoisonOp::create(builder, builder.getI1Type()).getResult();
@@ -2318,14 +2317,26 @@ private:
   }
 
   void assignBit(const frontend::BitReference& target, Value value) {
+    const auto reg = classicalRegisters[target.reg];
+    if (!reg) {
+      emitError(getLocation(program.registers[target.reg].location))
+          << "OpenQASM QC emission error: bit assignment target has no "
+             "classical storage";
+      emissionFailed = true;
+      return;
+    }
     if (!target.dynamicIndex) {
       bitValues[target.reg][target.index] = value;
+      auto index = arith::ConstantIndexOp::create(
+          builder, static_cast<int64_t>(target.index));
+      memref::StoreOp::create(builder, value, reg, index.getResult());
       return;
     }
     const auto width =
         static_cast<int64_t>(program.registers.at(target.reg).width);
     auto index = emitCheckedIndex(*target.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
+    memref::StoreOp::create(builder, value, reg, index);
     if (!emissionBudget.canConstruct(3 * static_cast<size_t>(width))) {
       return;
     }
@@ -2348,6 +2359,12 @@ private:
     auto value = emitBitVectorExpression(builder, assignment.value);
     const auto bits = ensureBits(builder, value);
     bitValues[assignment.target].assign(bits.begin(), bits.end());
+    const auto reg = classicalRegisters[assignment.target];
+    for (const auto [index, bit] : llvm::enumerate(bits)) {
+      auto indexValue = arith::ConstantIndexOp::create(
+          builder, static_cast<int64_t>(index));
+      memref::StoreOp::create(builder, bit, reg, indexValue.getResult());
+    }
   }
 
   void emitMeasurement(const frontend::MeasurementStatement& measurement,
@@ -2363,7 +2380,7 @@ private:
     }
     for (const auto [target, qubit] :
          llvm::zip_equal(measurement.targets, measurement.qubits)) {
-      const auto& reg = classicalRegisters[target.reg];
+      const auto reg = classicalRegisters[target.reg];
       if (!reg) {
         emitError(loc) << "OpenQASM QC emission error: measurement target has "
                           "no classical storage";
@@ -2371,19 +2388,11 @@ private:
         return;
       }
       const auto emitMeasurement = [&](Value resolved) {
-        if (target.dynamicIndex) {
-          return builder.measure(resolved);
-        }
-        return builder.measure(resolved,
-                               (*reg)[static_cast<int64_t>(target.index)]);
+        return builder.measure(resolved);
       };
       auto measured = emitQubitOperation(qubit, gateQubits, emitMeasurement);
       if (!measured) {
         return;
-      }
-      if (!target.dynamicIndex) {
-        bitValues[target.reg][target.index] = measured;
-        continue;
       }
       assignBit(target, measured);
     }

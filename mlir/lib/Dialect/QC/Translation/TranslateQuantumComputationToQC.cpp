@@ -26,10 +26,10 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -58,8 +58,8 @@ struct QregInfo {
   SmallVector<Value> qubits;
 };
 
-// (register ref, localIdx)
-using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister, size_t>;
+// (memref, internal index)
+using BitMemInfo = std::pair<Value, size_t>;
 using BitIndexVec = SmallVector<BitMemInfo>;
 
 /**
@@ -69,14 +69,11 @@ struct TranslationState {
   /// Flat vector of qubit values indexed by physical qubit index
   SmallVector<Value> qubits;
 
-  /// Mapping from global bit index to (register, local_index)
+  /// Mapping from global bit index to (memref, internal index)
   BitIndexVec bitMap;
 
-  /// Flat vector of measurement results
-  SmallVector<Value> results;
-
-  /// Whether the translation is currently processing an IfElseOperation
-  bool inIfElse = false;
+  /// Classical bits known to have been measured on every current path
+  DenseSet<size_t> measuredBits;
 
   /// Whether the translation is currently within a control modifier
   bool inCtrlOp = false;
@@ -181,18 +178,17 @@ buildQubitMap(const ::qc::QuantumComputation& quantumComputation,
 }
 
 /**
- * @brief Allocates classical registers using the QCProgramBuilder
+ * @brief Allocates classical registers using the `QCProgramBuilder`
  *
  * @details
- * Creates classical bit registers and builds a mapping from global classical
- * bit indices to (register, local_index) pairs. This is used for measurement
- * result storage.
+ * Creates classical bit registers and builds a mapping from global bit index to
+ * (memref, internal index) pairs. This is used for measurement result storage.
  *
- * @param builder The QCProgramBuilder used to create operations
- * @param quantumComputation The quantum computation to translate
- * @return Vector mapping global bit indices to register and local indices
+ * @param builder The `QCProgramBuilder` used to create operations
+ * @param quantumComputation The `QuantumComputation` to translate
+ * @return A pair containing all allocated memrefs and the mapping
  */
-static BitIndexVec
+static std::pair<SmallVector<Value>, BitIndexVec>
 allocateClassicalRegisters(QCProgramBuilder& builder,
                            const ::qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
@@ -209,19 +205,22 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
     return a->getStartIndex() < b->getStartIndex();
   });
 
-  // Build mapping using the builder
+  // Allocate one memref per register and build the mapping
+  SmallVector<Value> memrefs;
+  memrefs.reserve(cregPtrs.size());
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    const auto& mem = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(reg->getSize()), reg->getName());
+    auto memref =
+        builder.allocClassicalBitRegister(static_cast<int64_t>(reg->getSize()));
+    memrefs.emplace_back(memref);
     for (size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
-      bitMap[globalIdx] = {mem, i};
+      bitMap[globalIdx] = {memref, i};
     }
   }
 
-  return bitMap;
+  return {std::move(memrefs), std::move(bitMap)};
 }
 
 /**
@@ -238,12 +237,6 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
 static void addMeasureOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
                          TranslationState& state) {
-  if (state.inIfElse) {
-    llvm::reportFatalInternalError(
-        "Measurement operations inside IfElseOperations cannot be translated "
-        "to QC at the moment");
-  }
-
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -252,9 +245,9 @@ static void addMeasureOp(QCProgramBuilder& builder,
   for (size_t i = 0; i < targets.size(); ++i) {
     const auto& qubit = state.getQubit(targets[i]);
     const auto bitIdx = static_cast<size_t>(classics[i]);
-    const auto& [mem, localIdx] = state.bitMap[bitIdx];
-    const auto& bit = mem[static_cast<int64_t>(localIdx)];
-    state.results[bitIdx] = builder.measure(qubit, bit);
+    const auto& [memref, localIdx] = state.bitMap[bitIdx];
+    builder.measure(qubit, memref, static_cast<int64_t>(localIdx));
+    state.measuredBits.insert(bitIdx);
   }
 }
 
@@ -694,11 +687,16 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
 
   assert(ifElse.getControlBit().has_value());
   const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
-  auto controlValue = state.results[bitIdx];
-  if (controlValue == nullptr) {
+  if (!state.measuredBits.contains(bitIdx)) {
     llvm::errs() << "Control bit does not contain a measurement result\n";
     return failure();
   }
+  const auto& [regMemref, localIdx] = state.bitMap[bitIdx];
+  auto index =
+      arith::ConstantIndexOp::create(builder, static_cast<int64_t>(localIdx))
+          .getResult();
+  auto controlValue =
+      memref::LoadOp::create(builder, regMemref, index).getResult();
   auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
 
   // Define comparison predicate
@@ -722,17 +720,16 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
 
   // Define if-else operation
   auto thenResult = success();
+  const auto measuredBefore = state.measuredBits;
   auto thenBuilder = [&] {
-    state.inIfElse = true;
     thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
-    state.inIfElse = false;
+    state.measuredBits = measuredBefore;
   };
 
   auto elseResult = success();
   auto elseBuilder = [&] {
-    state.inIfElse = true;
     elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
-    state.inIfElse = false;
+    state.measuredBits = measuredBefore;
   };
 
   if (ifElse.getElseOp() != nullptr) {
@@ -883,13 +880,7 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
   QCProgramBuilder builder(context);
-  SmallVector<Type> resultTypes(quantumComputation.getNcbits(),
-                                builder.getI1Type());
-  if (quantumComputation.getNcbits() == 0) {
-    // Without classical bits, we instead return an exit code 0.
-    resultTypes.push_back(builder.getI64Type());
-  }
-  builder.initialize(resultTypes);
+  builder.initialize();
 
   // Allocate quantum registers using the builder
   const auto qregs = allocateQregs(builder, quantumComputation);
@@ -898,14 +889,11 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   const auto qubits = buildQubitMap(quantumComputation, qregs);
 
   // Allocate classical registers using the builder
-  const auto bitMap = allocateClassicalRegisters(builder, quantumComputation);
-
-  // Allocate result map
-  SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
+  const auto [memrefs, bitMap] =
+      allocateClassicalRegisters(builder, quantumComputation);
 
   TranslationState state{.qubits = qubits,
                          .bitMap = bitMap,
-                         .results = std::move(results),
                          .targetArgs = DenseMap<size_t, Value>{}};
 
   // Translate operations
@@ -914,14 +902,10 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
         "Failed to translate QuantumComputation to QC");
   }
 
-  // Finalize and return the module (adds return statement and transfers
-  // ownership)
-  if (quantumComputation.getNcbits() > 0) {
-    if (llvm::any_of(state.results, [](Value v) { return !v; })) {
-      llvm::errs() << "Not all classical bits were measured.\n";
-      return nullptr;
-    }
-    return builder.finalize(state.results);
+  // Finalize and return the module
+  if (!memrefs.empty()) {
+    builder.retype(ValueRange(memrefs).getTypes());
+    return builder.finalize(memrefs);
   }
   return builder.finalize();
 }

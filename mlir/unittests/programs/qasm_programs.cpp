@@ -953,16 +953,17 @@ if (c) {
 bit[1] out = measure q;
 )qasm";
 
-const std::string ifNot = R"qasm(OPENQASM 3.0;
+const std::string ifElse = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
 h q[0];
 bit c = measure q[0];
-if (!c) {
+if (c) {
   x q[0];
+} else {
+  z q[0];
 }
-output bit[1] out;
-out = measure q;
+bit[1] out = measure q;
 )qasm";
 
 const std::string ifTwoQubits = R"qasm(OPENQASM 3.0;
@@ -977,6 +978,32 @@ if (c) {
 bit[2] out = measure q;
 )qasm";
 
+const std::string ifWithMeasurement = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[1] q;
+bit c;
+bit meas;
+h q[0];
+c = measure q[0];
+if (c) {
+  meas = measure q[0];
+} else {
+  meas = measure q[0];
+}
+)qasm";
+
+const std::string ifNot = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[1] q;
+h q[0];
+bit c = measure q[0];
+if (!c) {
+  x q[0];
+}
+output bit[1] out;
+out = measure q;
+)qasm";
+
 const std::string ifEmptyThen = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
@@ -988,19 +1015,6 @@ if (c) {
 }
 output bit[1] out;
 out = measure q;
-)qasm";
-
-const std::string ifElse = R"qasm(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[1] q;
-h q[0];
-bit c = measure q[0];
-if (c) {
-  x q[0];
-} else {
-  z q[0];
-}
-bit[1] out = measure q;
 )qasm";
 
 const std::string nestedIfOpForLoop = R"qasm(OPENQASM 3.0;

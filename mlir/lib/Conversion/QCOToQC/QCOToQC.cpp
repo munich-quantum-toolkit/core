@@ -483,15 +483,13 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
  * alongside the measurement bit. MLIR's conversion infrastructure automatically
  * routes subsequent uses of the QCO output qubit to this QC reference.
  *
- * Register metadata (name, size, index) for output recording is preserved
- * during conversion.
- *
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %q_out, %c = qco.measure("c", 2, 0) %q_in : !qco.qubit
- * // becomes:
- * %c = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
- * // %q_out uses are replaced with %q (the adaptor-converted input)
+ * %q_out, %c = qco.measure %q_in : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %c = qc.measure %q : !qc.qubit -> i1
  * ```
  */
 struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
@@ -504,10 +502,7 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
     auto qcQubit = adaptor.getQubitIn();
 
     // Create qc.measure (in-place operation, returns only bit)
-    // Preserve register metadata for output recording
-    auto qcOp = qc::MeasureOp::create(
-        rewriter, op.getLoc(), qcQubit, op.getRegisterNameAttr(),
-        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
+    auto qcOp = qc::MeasureOp::create(rewriter, op.getLoc(), qcQubit);
 
     auto measureBit = qcOp.getResult();
 

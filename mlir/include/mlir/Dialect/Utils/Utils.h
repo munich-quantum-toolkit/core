@@ -18,6 +18,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -80,12 +81,29 @@ inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
  * @return Value The parameter as a Value.
  */
 template <typename T>
-[[nodiscard]] Value variantToValue(OpBuilder& builder, Location loc,
-                                   const std::variant<T, Value>& parameter) {
-  if (std::holds_alternative<Value>(parameter)) {
-    return std::get<Value>(parameter);
+[[nodiscard]] inline Value
+variantToValue(OpBuilder& builder, Location loc,
+               const std::variant<T, Value>& parameter) {
+  if (const auto* value = std::get_if<Value>(&parameter)) {
+    return *value;
   }
   return constantFromScalar(builder, loc, std::get<T>(parameter));
+}
+
+inline void validateMemRefIndex(Value memref,
+                                const std::variant<int64_t, Value>& index) {
+  const auto* constant = std::get_if<int64_t>(&index);
+  if (constant == nullptr) {
+    return;
+  }
+  if (*constant < 0) {
+    llvm::reportFatalUsageError("Register index must be non-negative");
+  }
+  const auto type = dyn_cast<MemRefType>(memref.getType());
+  if (type && type.getRank() == 1 && !type.isDynamicDim(0) &&
+      *constant >= type.getDimSize(0)) {
+    llvm::reportFatalUsageError("Register index is out of bounds");
+  }
 }
 
 /**
