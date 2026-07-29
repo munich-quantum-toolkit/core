@@ -97,15 +97,15 @@ resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
  * @brief Picks the two-qubit entangler for Weyl synthesis.
  *
  * Only `cx` and `cz` are supported by @ref TwoQubitBasisDecomposer. When both
- * appear in the gateset, `cx` is preferred.
+ * appear in the gateset, `cz` is preferred.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
 selectEntangler(const DenseSet<NativeGateKind>& gates) {
-  if (gates.contains(NativeGateKind::CX)) {
-    return NativeGateKind::CX;
-  }
   if (gates.contains(NativeGateKind::CZ)) {
     return NativeGateKind::CZ;
+  }
+  if (gates.contains(NativeGateKind::CX)) {
+    return NativeGateKind::CX;
   }
   return std::nullopt;
 }

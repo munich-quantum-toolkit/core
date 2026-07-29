@@ -337,7 +337,7 @@ constexpr std::array<const char*, 9> GATESETS = {
     "ry,rz,cz",   // ZYZ
     "x,sx,rz,cz", // ZSXX
     "u,cz",       // U
-    // Multiple entanglers (cx preferred)
+    // Multiple entanglers (cz preferred)
     "u,cx,cz",
 };
 

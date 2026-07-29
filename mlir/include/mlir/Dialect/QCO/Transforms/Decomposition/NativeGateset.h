@@ -45,7 +45,7 @@ struct TwoQubitNativeDecomposition;
  * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
  * Use @ref parse to obtain a gateset with @p eulerBasis and @p entangler
- * resolved from @p gates. When both `cx` and `cz` appear, `cx` is preferred as
+ * resolved from @p gates. When both `cx` and `cz` appear, `cz` is preferred as
  * the entangler.
  */
 struct NativeGateset {

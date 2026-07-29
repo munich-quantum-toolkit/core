@@ -653,7 +653,7 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   ASSERT_TRUE(both);
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
-  EXPECT_EQ(both->entangler, NativeGateKind::CX);
+  EXPECT_EQ(both->entangler, NativeGateKind::CZ);
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {

@@ -106,7 +106,7 @@ def FuseTwoQubitUnitaryRuns
     single- or two-qubit op remains off the native gateset afterwards; gates on
     more than two qubits are left untouched and do not cause a failure.
 
-    Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
+    Lowering is deterministic: `cz` is preferred over `cx`, single-qubit
     factors use the resolved Euler basis, and two-qubit run replacement uses
     the minimal entangler count from the synthesizer.
   }];
