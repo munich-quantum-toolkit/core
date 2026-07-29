@@ -214,6 +214,87 @@ TEST(DeviceRegistry, MergesEnvironmentJsonOverExplicitFile) {
   EXPECT_EQ(definition->session.custom2, "preserved");
 }
 
+TEST(DeviceRegistry, DeviceConfigurationSourceReplacesAtomically) {
+  const TemporaryDirectory directory;
+  const ScopedCurrentPath currentPath(directory.path());
+  const auto path = directory.write("environment.json", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "environment", "library": "file.so", "prefix": "FILE",
+      "session": {"device-config": {"inline": {
+        "schema-version": 1, "name": "inline"
+      }}}
+    }]}
+  })");
+  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
+                                             path.string());
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "environment",
+      "session": {"device-config": {"file": "overrides/device.json"}}
+    }]}
+  })");
+
+  const qdmi::detail::DeviceRegistry registry;
+  const auto* definition = findDefinition(registry, "environment");
+  ASSERT_NE(definition, nullptr);
+  ASSERT_TRUE(definition->session.deviceConfiguration);
+  const auto* file = std::get_if<qdmi::FileDeviceConfiguration>(
+      &*definition->session.deviceConfiguration);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(std::filesystem::weakly_canonical(file->path),
+            std::filesystem::weakly_canonical(directory.path()) /
+                "overrides/device.json");
+}
+
+TEST(DeviceRegistry, SerializesInlineDeviceConfigurationCompactly) {
+  const TemporaryDirectory directory;
+  const auto configFile = emptyConfig(directory);
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "inline", "library": "file.so", "prefix": "FILE",
+      "session": {"device-config": {"inline": {
+        "schema-version": 1, "name": "inline"
+      }}}
+    }]}
+  })");
+
+  const qdmi::detail::DeviceRegistry registry;
+  const auto* definition = findDefinition(registry, "inline");
+  ASSERT_NE(definition, nullptr);
+  ASSERT_TRUE(definition->session.deviceConfiguration);
+  const auto* inlineConfig = std::get_if<qdmi::InlineDeviceConfiguration>(
+      &*definition->session.deviceConfiguration);
+  ASSERT_NE(inlineConfig, nullptr);
+  EXPECT_EQ(inlineConfig->json, R"({"name":"inline","schema-version":1})");
+}
+
+TEST(DeviceRegistry, RejectsInvalidDeviceConfigurationSources) {
+  const TemporaryDirectory directory;
+  const auto configFile = emptyConfig(directory);
+  const std::vector<std::string_view> invalidSources{
+      R"({})",
+      R"({"unknown": true})",
+      R"({"inline": []})",
+      R"({"file": ""})",
+      R"({"file": 1})",
+      R"({"inline": {"schema-version": 1}, "file": "device.json"})",
+  };
+  for (const auto source : invalidSources) {
+    SCOPED_TRACE(source);
+    const auto json =
+        R"({"schema-version":1,"qdmi":{"devices":[{"id":"invalid",)"
+        R"("library":"file.so","prefix":"FILE","session":{"device-config":)" +
+        std::string(source) + "}}]}}";
+    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                               json);
+    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+                 std::invalid_argument);
+  }
+}
+
 TEST(DeviceRegistry, DisabledEnvironmentEntryMasksExplicitDefinition) {
   const TemporaryDirectory directory;
   const auto path = directory.write("complete.json", R"({
