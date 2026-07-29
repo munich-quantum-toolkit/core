@@ -14,7 +14,7 @@
   ],
   "🐛 Bug Fixes": ["bug", "fix"],
   "📄 Documentation": ["documentation"],
-  "🤖 CI": ["continuous integration"],
+  "🤖 CI & Tooling": ["continuous integration", "tooling"],
   "📦 Packaging": ["packaging"],
   "🧹 Code Quality": ["code quality"],
   "⬆️ Dependencies": [
