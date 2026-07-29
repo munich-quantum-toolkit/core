@@ -38,6 +38,7 @@ static std::optional<NativeGateKind> parseGateToken(StringRef name) {
       .Case("r", NativeGateKind::R)
       .Case("cx", NativeGateKind::CX)
       .Case("cz", NativeGateKind::CZ)
+      .Case("ecr", NativeGateKind::ECR)
       .Default(std::nullopt);
 }
 
@@ -96,11 +97,14 @@ resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
 /**
  * @brief Picks the two-qubit entangler for Weyl synthesis.
  *
- * Only `cx` and `cz` are supported by @ref TwoQubitBasisDecomposer. When both
- * appear in the gateset, `cz` is preferred.
+ * When multiple entanglers appear in the gateset, preference is **ECR > CZ >
+ * CX**.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
 selectEntangler(const DenseSet<NativeGateKind>& gates) {
+  if (gates.contains(NativeGateKind::ECR)) {
+    return NativeGateKind::ECR;
+  }
   if (gates.contains(NativeGateKind::CZ)) {
     return NativeGateKind::CZ;
   }
@@ -132,8 +136,13 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
         TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
     return DECOMPOSER;
   }
+  case NativeGateKind::ECR: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(ECROp::getUnitaryMatrix(), 1.0);
+    return DECOMPOSER;
+  }
   default:
-    llvm_unreachable("only CX/CZ are valid entanglers");
+    llvm_unreachable("only CX/CZ/ECR are valid entanglers");
   }
 }
 
@@ -173,6 +182,7 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
 bool NativeGateset::allowsOp(Operation* op) const {
   return TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
+      .Case<ECROp>([&](ECROp) { return gates.contains(NativeGateKind::ECR); })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
         const auto kind = entanglerKindFor(ctrl);
         return kind && gates.contains(*kind);

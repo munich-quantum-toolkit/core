@@ -37,6 +37,7 @@ enum class NativeGateKind : std::uint8_t {
   R,
   CX,
   CZ,
+  ECR,
 };
 
 struct TwoQubitNativeDecomposition;
@@ -45,8 +46,8 @@ struct TwoQubitNativeDecomposition;
  * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
  * Use @ref parse to obtain a gateset with @p eulerBasis and @p entangler
- * resolved from @p gates. When both `cx` and `cz` appear, `cz` is preferred as
- * the entangler.
+ * resolved from @p gates. When `cx`, `cz`, and/or `ecr` appear, preference is
+ * **ECR > CZ > CX**.
  */
 struct NativeGateset {
   llvm::DenseSet<NativeGateKind> gates;

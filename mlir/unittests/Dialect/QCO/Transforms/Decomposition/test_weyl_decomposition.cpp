@@ -552,13 +552,15 @@ INSTANTIATE_TEST_SUITE_P(
                                                    RYOp::unitaryMatrix(0.1));
                           }},
         WeylSynthesisCase{"CzGeneric", "u,cz",
-                          [] { return TWO_QUBIT_CONTROLLED_Z; }}),
+                          [] { return TWO_QUBIT_CONTROLLED_Z; }},
+        WeylSynthesisCase{"EcrGeneric", "u,ecr",
+                          [] { return ECROp::getUnitaryMatrix(); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* gateset : {"u,cx", "u,cz"}) {
+  for (const char* gateset : {"u,cx", "u,cz", "u,ecr"}) {
     const auto spec = NativeGateset::parse(gateset);
     ASSERT_TRUE(spec) << gateset;
     const auto native = spec->decomposeTarget(Matrix4x4::identity());
@@ -654,6 +656,15 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
   EXPECT_EQ(both->entangler, NativeGateKind::CZ);
+
+  const auto ecrOnly = NativeGateset::parse("u,ecr");
+  ASSERT_TRUE(ecrOnly);
+  EXPECT_TRUE(ecrOnly->gates.contains(NativeGateKind::ECR));
+  EXPECT_EQ(ecrOnly->entangler, NativeGateKind::ECR);
+
+  const auto ecrPreferred = NativeGateset::parse("u,cx,cz,ecr");
+  ASSERT_TRUE(ecrPreferred);
+  EXPECT_EQ(ecrPreferred->entangler, NativeGateKind::ECR);
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
@@ -725,6 +736,8 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   EXPECT_FALSE(spec->allowsOp(XOp::create(builder, loc, q0).getOperation()));
   EXPECT_FALSE(
       spec->allowsOp(RXXOp::create(builder, loc, q0, q1, 0.2).getOperation()));
+  EXPECT_FALSE(
+      spec->allowsOp(ECROp::create(builder, loc, q0, q1).getOperation()));
 
   const auto rzSpec = NativeGateset::parse("x,sx,rz,cx");
   ASSERT_TRUE(rzSpec);
@@ -759,4 +772,10 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   });
   EXPECT_TRUE(czSpec->allowsOp(cz.getOperation()));
   EXPECT_FALSE(czSpec->allowsOp(cx.getOperation()));
+
+  const auto ecrSpec = NativeGateset::parse("u,ecr");
+  ASSERT_TRUE(ecrSpec);
+  auto ecr = ECROp::create(builder, loc, q0, q1);
+  EXPECT_TRUE(ecrSpec->allowsOp(ecr.getOperation()));
+  EXPECT_FALSE(ecrSpec->allowsOp(cx.getOperation()));
 }

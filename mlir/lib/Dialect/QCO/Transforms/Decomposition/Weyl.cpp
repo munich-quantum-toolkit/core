@@ -691,7 +691,6 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
         "numBasisUses = {1}, got {2}",
         requiredFactors, numBasisUses, factors.size()));
   }
-  const bool emitCz = spec.entangler == NativeGateKind::CZ;
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
@@ -705,6 +704,13 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     wire = *synthesized;
   };
   const auto emitEntangler = [&]() {
+    if (spec.entangler == NativeGateKind::ECR) {
+      auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
+      wire0 = ecrOp.getOutputQubit(0);
+      wire1 = ecrOp.getOutputQubit(1);
+      return;
+    }
+    const bool emitCz = spec.entangler == NativeGateKind::CZ;
     auto ctrlOp =
         CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
           if (emitCz) {
