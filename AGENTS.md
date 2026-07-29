@@ -31,6 +31,12 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Add or update automated tests for every behavioral code change. During
   development, run the narrowest relevant test first, then the required lint
   checks before handoff.
+- Place tests with the subsystem that owns the behavior. Within MLIR, prefer
+  pass, compiler, or dialect unit tests for semantic contracts; reserve
+  `mlir/tools/` subprocess tests for irreducible driver-level CLI behavior.
+  Normal test targets and dependencies belong in the test build; avoid
+  promoting an otherwise optional production tool into the default build solely
+  for subprocess testing.
 - Update `CHANGELOG.md` and `UPGRADING.md` for user-facing, breaking, or
   otherwise noteworthy changes.
 - Format changelog entries with the pull request reference and every
@@ -118,6 +124,10 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
   `./.agent/run.sh uvx nox --non-interactive -s docs`.
 - Check documentation links with
   `./.agent/run.sh uvx nox -s docs -- -b linkcheck`.
+- When changing MLIR passes, pipelines, or command-line options, keep summaries
+  and descriptions aligned with the implementation's actual scope, defaults,
+  supported operation shapes, compile-time or runtime limitations, failure
+  modes, and deliberately out-of-scope behavior.
 
 ## Generated Files and Validation
 
@@ -153,8 +163,9 @@ task's decisions and progress.
   generate spam, repetitive reviews, or unreviewed contributions.
 - Do not push, open or merge a pull request, post on GitHub, or otherwise change
   remote state unless the human has explicitly authorized that action.
-- Every commit prepared with AI assistance must include the trailer
-  `Assisted-by: [Model Name] via [Tool Name]`, using the actual model and tool.
+- Review findings should focus on substantive correctness, contracts,
+  maintainability, tests, documentation, licensing, and validation rather than
+  optional process metadata.
 
 ## Handoff Checklist
 
