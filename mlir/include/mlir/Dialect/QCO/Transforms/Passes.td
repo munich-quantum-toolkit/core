@@ -81,14 +81,17 @@ def FuseTwoQubitUnitaryRuns
     matrix cannot be synthesized and causes the pass to fail.
 
     `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
-    two-qubit scope only when it has a single control and a single target. Native
-    two-qubit entanglers may be bare `qco.rxx`, `qco.ryy`, `qco.rzx`,
-    `qco.rzz`, `qco.iswap`, or `qco.ecr` matching the selected token, or such a
+    two-qubit scope only when it has a single control and a single target. Every
+    entangler token listed in the menu is accepted as already native: bare
+    `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`, `qco.iswap`, or `qco.ecr`, or a
     `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz` is
-    selected. Weyl synthesis emits `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of
-    π/2. Gates acting on more than two qubits (e.g. multi-controlled
-    `qco.ctrl`) are out of scope and left untouched for a dedicated
-    multi-controlled synthesis pass.
+    listed. For `rxx`/`ryy`/`rzx`/`rzz`, only compile-time-constant angles are
+    accepted; runtime-parameterized forms are rejected. Entangler preference
+    (below) selects the Weyl synthesis basis only and does not restrict which
+    menu tokens count as native. Weyl synthesis emits `rxx`/`ryy`/`rzx`/`rzz`
+    at a fixed angle of π/2. Gates acting on more than two qubits (e.g.
+    multi-controlled `qco.ctrl`) are out of scope and left untouched for a
+    dedicated multi-controlled synthesis pass.
 
     The gateset is a comma-separated list of gate tokens (order not
     significant) from which the pass resolves a single-qubit Euler basis
@@ -112,9 +115,9 @@ def FuseTwoQubitUnitaryRuns
     - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
       Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
 
-    When several entanglers are listed, preference is `rxx` > `ryy` > `rzx` >
-    `rzz` > `iswap` > `cz` > `cx` > `ecr` (alphabetic among two-qubit rotations;
-    then discrete named gates; ECR last).
+    When several entanglers are listed, synthesis preference is `rxx` > `ryy` >
+    `rzx` > `rzz` > `iswap` > `cz` > `cx` > `ecr` (alphabetic among two-qubit
+    rotations; then discrete named gates; ECR last).
 
     Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
     which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
