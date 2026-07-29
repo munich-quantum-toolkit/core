@@ -30,7 +30,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -38,47 +37,6 @@
 #include <vector>
 
 namespace dd {
-
-namespace {
-
-MatrixDD getRccxDD(Package& dd, const qc::Controls& controls,
-                   const std::vector<qc::Qubit>& targets) {
-  // Builds the RCCX DD by multiplying the relative-phase Toffoli
-  // decomposition. Could be improved to a direct bottom-up DD construction
-  // like makeGateDD / makeTwoQubitGateDD.
-  const auto q0 = targets[0];
-  const auto q1 = targets[1];
-  const auto q2 = targets[2];
-
-  const auto applySingle = [&](const qc::OpType type) {
-    return getStandardOperationDD(dd, type, {}, controls, {q2});
-  };
-  const auto applyControlledX = [&](const qc::Qubit ctrl) {
-    qc::Controls mergedControls = controls;
-    mergedControls.emplace(ctrl, qc::Control::Type::Pos);
-    return getStandardOperationDD(dd, qc::X, {}, mergedControls, {q2});
-  };
-
-  const std::vector<std::function<MatrixDD()>> steps = {
-      [&] { return applySingle(qc::H); },
-      [&] { return applySingle(qc::T); },
-      [&] { return applyControlledX(q1); },
-      [&] { return applySingle(qc::Tdg); },
-      [&] { return applyControlledX(q0); },
-      [&] { return applySingle(qc::T); },
-      [&] { return applyControlledX(q1); },
-      [&] { return applySingle(qc::Tdg); },
-      [&] { return applySingle(qc::H); },
-  };
-
-  auto result = Package::makeIdent();
-  for (const auto& step : steps) {
-    result = dd.multiply(step(), result);
-  }
-  return result;
-}
-
-} // namespace
 
 MatrixDD getStandardOperationDD(Package& dd, const qc::OpType type,
                                 const std::vector<fp>& params,
@@ -105,9 +63,9 @@ MatrixDD getStandardOperationDD(Package& dd, const qc::OpType type,
       throw std::invalid_argument(
           "Expected three target qubits for three-qubit gate");
     }
-    if (type == qc::RCCX) {
-      return getRccxDD(dd, controls, targets);
-    }
+    return dd.makeThreeQubitGateDD(opToThreeQubitGateMatrix(type, params),
+                                   controls, targets[0U], targets[1U],
+                                   targets[2U]);
   }
   throw std::runtime_error("Unexpected operation type");
 }
