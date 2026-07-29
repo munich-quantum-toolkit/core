@@ -27,8 +27,8 @@ releases may include breaking changes.
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
 - ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
-  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
-  ([**@simon1hofmann**])
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
+  [#1950]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
@@ -85,6 +85,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
+  corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -659,7 +661,9 @@ changelogs._
 <!-- PR links -->
 
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
+[#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
+[#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935

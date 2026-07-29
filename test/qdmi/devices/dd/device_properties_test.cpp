@@ -134,14 +134,13 @@ TEST(DeviceProperties, SupportedProgramFormats) {
                 formats.data(), nullptr),
             QDMI_SUCCESS);
 
-  std::vector<QDMI_Program_Format> expected = {QDMI_PROGRAM_FORMAT_QASM2,
-                                               QDMI_PROGRAM_FORMAT_QASM3};
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
-  expected.insert(expected.end(), {QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-                                   QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-                                   QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-                                   QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE});
-#endif
+  const std::vector<QDMI_Program_Format> expected = {
+      QDMI_PROGRAM_FORMAT_QASM2,
+      QDMI_PROGRAM_FORMAT_QASM3,
+      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE};
   EXPECT_EQ(formats, expected);
 }
 

@@ -43,10 +43,10 @@ void RCCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 DynamicMatrix RCCXOp::getUnitaryMatrix() {
   DynamicMatrix unitary = DynamicMatrix::identity(8);
-  unitary(3, 3) = 0.0;
   unitary(5, 5) = -1.0;
+  unitary(6, 6) = 0.0;
   unitary(7, 7) = 0.0;
-  unitary(3, 7) = {0.0, -1.0};
-  unitary(7, 3) = {0.0, 1.0};
+  unitary(6, 7) = {0.0, -1.0};
+  unitary(7, 6) = {0.0, 1.0};
   return unitary;
 }
