@@ -267,20 +267,25 @@ static void eraseFusableRun(PatternRewriter& rewriter,
   }
 }
 
-/// Whether any single- or two-qubit unitary (including `ctrl` shells) remains
-/// off the native gateset. Used as the pass' convergence check. Gates acting on
-/// more than two qubits are out of scope here (a dedicated multi-controlled
-/// synthesis pass possibly lowers those) and are left untouched rather than
-/// reported.
-static bool hasNonNativeOps(Operation* root, const NativeGateset& spec) {
-  const WalkResult walkResult = root->walk([&](Operation* op) {
+/// First single- or two-qubit unitary (including `ctrl` shells) still off the
+/// native gateset, or `nullptr` if none. Used as the pass' convergence check.
+/// Gates acting on more than two qubits are out of scope here (a dedicated
+/// multi-controlled synthesis pass possibly lowers those) and are left
+/// untouched rather than reported.
+static Operation* findNonNativeOp(Operation* root, const NativeGateset& spec) {
+  Operation* found = nullptr;
+  root->walk([&](Operation* op) {
     auto unitary = dyn_cast<UnitaryOpInterface>(op);
     if (!unitary || !isWalkableUnitaryShell(op) || unitary.getNumQubits() > 2) {
       return WalkResult::advance();
     }
-    return spec.allowsOp(op) ? WalkResult::advance() : WalkResult::interrupt();
+    if (spec.allowsOp(op)) {
+      return WalkResult::advance();
+    }
+    found = op;
+    return WalkResult::interrupt();
   });
-  return walkResult.wasInterrupted();
+  return found;
 }
 
 namespace {
@@ -447,10 +452,11 @@ protected:
       return;
     }
 
-    if (hasNonNativeOps(module, *spec)) {
-      module.emitError() << "native gate synthesis: operations remain outside "
-                            "the native gateset (native-gates='"
-                         << nativeGates << "')";
+    if (Operation* leftover = findNonNativeOp(module, *spec)) {
+      leftover->emitError()
+          << "native gate synthesis: operation remains outside the native "
+             "gateset (native-gates='"
+          << nativeGates << "')";
       signalPassFailure();
     }
   }

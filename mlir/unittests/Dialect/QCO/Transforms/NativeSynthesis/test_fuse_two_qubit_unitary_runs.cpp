@@ -28,11 +28,13 @@
 #include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
 #include <mlir/Dialect/QC/IR/QCDialect.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -599,6 +601,50 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForInvalidNativeGateMenu) {
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,
        FailsForNativeGateMenuWithoutSingleQEmitter) {
   expectSynthesisFailure(mlir::qc::singleControlledX, "cx,cz");
+}
+
+TEST_F(FuseTwoQubitUnitaryRunsPassTest,
+       FailsLocallyForRuntimeParameterizedResidual) {
+  // A runtime-angle `qco.rz` cannot be Euler-fused under `u,cx` and is not on
+  // the menu, so the convergence check must fail on that op (not the module).
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q = qco.static 0 : !qco.qubit
+        %q1 = qco.rz(%theta) %q : !qco.qubit -> !qco.qubit
+        return %q1 : !qco.qubit
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+
+  Location rzLoc = UnknownLoc::get(context.get());
+  module->walk([&](RZOp op) {
+    rzLoc = op.getLoc();
+    return WalkResult::interrupt();
+  });
+  ASSERT_FALSE(isa<UnknownLoc>(rzLoc));
+
+  bool sawLocalizedDiagnostic = false;
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    if (StringRef(diagnostic.str())
+            .contains("native gate synthesis: operation remains outside the "
+                      "native gateset") &&
+        diagnostic.getLocation() == rzLoc) {
+      sawLocalizedDiagnostic = true;
+    }
+    return success();
+  });
+
+  PassManager pm(module->getContext());
+  pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
+      .nativeGates = "u,cx",
+  }));
+  EXPECT_TRUE(failed(pm.run(*module)));
+  EXPECT_TRUE(sawLocalizedDiagnostic) << diagnostics;
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, LeavesMultiControlledGateUntouched) {
