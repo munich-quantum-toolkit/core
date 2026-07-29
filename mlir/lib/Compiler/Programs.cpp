@@ -350,6 +350,10 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
 }
 
 bool QCOProgram::fuseTwoQubitUnitaryRuns(const std::string_view nativeGates) {
+  if (StringRef(nativeGates).trim().empty()) {
+    mod().emitError("the native gate menu must not be empty");
+    return false;
+  }
   qco::FuseTwoQubitUnitaryRunsOptions options;
   options.nativeGates = nativeGates;
   return succeeded(runPasses(

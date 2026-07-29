@@ -296,17 +296,16 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
-def test_qco_program_two_qubit_fusion_native_gates() -> None:
-    """Empty native gate menus are a no-op; non-empty menus lower unitaries."""
+def test_qco_program_two_qubit_fusion_requires_native_gates() -> None:
+    """Require callers to provide a non-empty native gate menu."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
-    before = qco.ir
 
-    qco.fuse_two_qubit_unitary_runs()
-    assert qco.ir == before
+    with pytest.raises(TypeError, match="incompatible function arguments"):
+        qco.fuse_two_qubit_unitary_runs()  # ty: ignore[missing-argument]
 
-    qco.fuse_two_qubit_unitary_runs(native_gates="")
-    assert qco.ir == before
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        qco.fuse_two_qubit_unitary_runs(native_gates="")
 
     qco.fuse_two_qubit_unitary_runs(native_gates="u,cx")
 

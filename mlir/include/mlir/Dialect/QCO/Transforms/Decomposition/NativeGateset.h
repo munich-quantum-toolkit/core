@@ -72,8 +72,8 @@ struct NativeGateset {
    * @brief Whether @p op is already on this native gateset.
    *
    * `qco.barrier` and `qco.gphase` are always allowed. Single-qubit primitives
-   * and single-target `qco.ctrl` shells (with an `X`/`Z` body) are checked
-   * against @p gates. All other ops are rejected.
+   * and single-control/single-target `qco.ctrl` shells with one `X`/`Z` body
+   * are checked against @p gates. All other ops are rejected.
    */
   [[nodiscard]] bool allowsOp(Operation* op) const;
 };

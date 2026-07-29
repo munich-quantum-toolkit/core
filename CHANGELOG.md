@@ -32,7 +32,7 @@ releases may include breaking changes.
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
-  ([#1897]) ([**@burgholzer**])
+  ([#1897], [#1952]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
   libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
@@ -660,6 +660,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935

@@ -87,8 +87,7 @@ static llvm::cl::opt<std::string> nativeGates(
     "native-gates",
     llvm::cl::desc(
         "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
-        "pass (appended after the default or custom QCO optimization "
-        "pipeline)"),
+        "pass"),
     llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 namespace {
@@ -395,6 +394,12 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
+  const llvm::StringRef nativeGateMenu =
+      llvm::StringRef(nativeGates.getValue()).trim();
+  if (nativeGates.getNumOccurrences() > 0 && nativeGateMenu.empty()) {
+    llvm::errs() << "--native-gates must not be empty.\n";
+    return 1;
+  }
   if (nativeGates.getNumOccurrences() > 0 &&
       (*parsedOutputFormat == OutputFormat::QCImport ||
        *parsedOutputFormat == OutputFormat::QCO)) {
@@ -450,13 +455,13 @@ int main(int argc, char** argv) {
             }
             populateDefaultQCOOptimizationPipeline(pm);
           }
-          if (!nativeGates.empty()) {
+          populateQCOCleanupPipeline(pm);
+          if (!nativeGateMenu.empty()) {
             pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
                 qco::FuseTwoQubitUnitaryRunsOptions{
-                    .nativeGates = nativeGates.getValue(),
+                    .nativeGates = nativeGateMenu.str(),
                 }));
           }
-          populateQCOCleanupPipeline(pm);
           return success();
         }))) {
       return 1;

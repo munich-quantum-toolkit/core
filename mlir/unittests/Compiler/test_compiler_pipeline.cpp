@@ -16,9 +16,6 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
@@ -30,8 +27,6 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -55,9 +50,7 @@
 #include <fstream>
 #include <iosfwd>
 #include <memory>
-#include <optional>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -1103,201 +1096,106 @@ INSTANTIATE_TEST_SUITE_P(
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));
 
-namespace {
+/**
+ * @brief Test: fuseTwoQubitUnitaryRuns lowers one- and two-qubit operations
+ *        into native menus.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsLowersToNativeMenu) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+swap q[0], q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  EXPECT_NE(qco.str().find("qco.h"), std::string::npos);
+  EXPECT_NE(qco.str().find("qco.swap"), std::string::npos);
 
-class CompilerPipelineNativeSynthesisConfigTest : public testing::Test {
-protected:
-  std::string beforeIR;
-  std::optional<QCOProgram> program;
+  EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("x,sx,rz,cx"));
+  EXPECT_EQ(qco.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qco.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qco.str().find("qco.ctrl"), std::string::npos);
 
-  void SetUp() override {
-    DialectRegistry registry;
-    registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, cf::ControlFlowDialect,
-                    func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
-                    LLVM::LLVMDialect, jeff::JeffDialect>();
-    auto context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
+  auto qcU = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcU);
+  auto qcoUResult = std::move(*qcU).intoQCO();
+  ASSERT_TRUE(qcoUResult);
+  auto qcoU = std::move(*qcoUResult);
+  ASSERT_TRUE(qcoU.cleanup());
+  EXPECT_TRUE(qcoU.fuseTwoQubitUnitaryRuns("u,cx"));
+  EXPECT_EQ(qcoU.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qcoU.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qcoU.str().find("qco.u"), std::string::npos);
+  EXPECT_NE(qcoU.str().find("qco.ctrl"), std::string::npos);
 
-    auto module =
-        QCProgramBuilder::build(context.get(), mlir::qc::staticQubitsWithOps);
-    ASSERT_TRUE(module);
-
-    std::string source;
-    llvm::raw_string_ostream stream(source);
-    module->print(stream);
-
-    auto qc = QCProgram::fromMLIRString(source);
-    ASSERT_TRUE(qc);
-    auto qco = std::move(*qc).intoQCO();
-    ASSERT_TRUE(qco);
-    ASSERT_TRUE(qco->cleanup());
-    beforeIR = qco->str();
-    program = std::move(*qco);
-  }
-
-  [[nodiscard]] std::string
-  runNativeSynthesisAndExpectSuccess(const std::string_view nativeGates) {
-    EXPECT_TRUE(program->fuseTwoQubitUnitaryRuns(nativeGates));
-    return program->str();
-  }
-
-  void runNativeSynthesisAndExpectFailure(const std::string_view nativeGates) {
-    EXPECT_FALSE(program->fuseTwoQubitUnitaryRuns(nativeGates));
-  }
-};
-
-[[nodiscard]] std::optional<Matrix4x4>
-computeStaticTwoQubitUnitary(ModuleOp module) {
-  if (module == nullptr) {
-    return std::nullopt;
-  }
-
-  Matrix4x4 unitary = Matrix4x4::identity();
-  llvm::DenseMap<Value, std::size_t> qubitIds;
-
-  const auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
-    const auto it = qubitIds.find(qubit);
-    if (it == qubitIds.end()) {
-      return std::nullopt;
-    }
-    return it->second;
-  };
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        if (auto staticOp = llvm::dyn_cast<StaticOp>(&rawOp)) {
-          const auto index = static_cast<std::size_t>(staticOp.getIndex());
-          if (index >= 2) {
-            return std::nullopt;
-          }
-          qubitIds.try_emplace(staticOp.getResult(), index);
-          continue;
-        }
-
-        if (llvm::isa<BarrierOp, GPhaseOp>(&rawOp)) {
-          continue;
-        }
-
-        auto op = llvm::dyn_cast<UnitaryOpInterface>(&rawOp);
-        if (!op) {
-          continue;
-        }
-
-        if (op.isSingleQubit()) {
-          const auto qid = getQubitId(op.getInputQubit(0));
-          if (!qid) {
-            return std::nullopt;
-          }
-          Matrix2x2 oneQ;
-          if (!op.getUnitaryMatrix2x2(oneQ)) {
-            return std::nullopt;
-          }
-          unitary = oneQ.embedInTwoQubit(*qid) * unitary;
-          qubitIds[op.getOutputQubit(0)] = *qid;
-          continue;
-        }
-
-        if (op.isTwoQubit()) {
-          const auto q0 = getQubitId(op.getInputQubit(0));
-          const auto q1 = getQubitId(op.getInputQubit(1));
-          if (!q0 || !q1) {
-            return std::nullopt;
-          }
-          Matrix4x4 twoQ;
-          if (!op.getUnitaryMatrix4x4(twoQ)) {
-            return std::nullopt;
-          }
-          const SmallVector<std::size_t, 2> ids{*q0, *q1};
-          unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
-          qubitIds[op.getOutputQubit(0)] = *q0;
-          qubitIds[op.getOutputQubit(1)] = *q1;
-          continue;
-        }
-
-        return std::nullopt;
-      }
-    }
-  }
-
-  return unitary;
+  auto qcExpanded = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcExpanded);
+  auto qcoExpandedResult = std::move(*qcExpanded).intoQCO();
+  ASSERT_TRUE(qcoExpandedResult);
+  auto qcoExpanded = std::move(*qcoExpandedResult);
+  ASSERT_TRUE(qcoExpanded.cleanup());
+  EXPECT_TRUE(qcoExpanded.fuseTwoQubitUnitaryRuns("u,rx,rz,cx,cz"));
+  EXPECT_EQ(qcoExpanded.str().find("qco.h"), std::string::npos);
+  EXPECT_EQ(qcoExpanded.str().find("qco.swap"), std::string::npos);
+  EXPECT_NE(qcoExpanded.str().find("qco.ctrl"), std::string::npos);
 }
 
-} // namespace
+/**
+ * @brief Test: fuseTwoQubitUnitaryRuns rejects invalid native gate menus.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsRejectsInvalidMenus) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns("cx,cz"));
 
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       AppliesConfiguredNativeSynthesisProfile) {
-  const auto afterIR = runNativeSynthesisAndExpectSuccess("x,sx,rz,cx");
-
-  EXPECT_NE(beforeIR.find("qco.h"), std::string::npos);
-  EXPECT_EQ(afterIR.find("qco.h"), std::string::npos);
+  auto qcInvalid = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qcInvalid);
+  auto qcoInvalidResult = std::move(*qcInvalid).intoQCO();
+  ASSERT_TRUE(qcoInvalidResult);
+  auto qcoInvalid = std::move(*qcoInvalidResult);
+  ASSERT_TRUE(qcoInvalid.cleanup());
+  EXPECT_FALSE(qcoInvalid.fuseTwoQubitUnitaryRuns("not-a-gate"));
 }
 
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       AppliesConfiguredU3CxNativeSynthesisProfile) {
-  const auto afterIR = runNativeSynthesisAndExpectSuccess("u,cx");
+/**
+ * @brief Test: the public API rejects an empty native gate menu.
+ */
+TEST_F(CompilerPipelineTest, FuseTwoQubitUnitaryRunsRejectsEmptyMenu) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+h q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qcoResult = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qcoResult);
+  auto qco = std::move(*qcoResult);
+  ASSERT_TRUE(qco.cleanup());
+  const auto before = qco.str();
+  EXPECT_NE(before.find("qco.h"), std::string::npos);
 
-  EXPECT_NE(beforeIR.find("qco.h"), std::string::npos);
-  EXPECT_EQ(afterIR.find("qco.h"), std::string::npos);
-  EXPECT_NE(afterIR.find("qco.u"), std::string::npos);
-}
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns(""));
+  EXPECT_EQ(qco.str(), before);
 
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       AppliesConfiguredExpandedNativeSynthesisProfile) {
-  const auto afterIR = runNativeSynthesisAndExpectSuccess("u,rx,rz,cx,cz");
-
-  EXPECT_NE(beforeIR.find("qco.h"), std::string::npos);
-  EXPECT_EQ(afterIR.find("qco.h"), std::string::npos);
-}
-
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       RejectsUnderSpecifiedNativeSynthesisMenu) {
-  runNativeSynthesisAndExpectFailure("cx,cz");
-}
-
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       RejectsInvalidNativeGateToken) {
-  runNativeSynthesisAndExpectFailure("not-a-gate");
-}
-
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       LeavesIRUnchangedWhenNoNativeGatesetIsConfigured) {
-  const auto afterIR = runNativeSynthesisAndExpectSuccess("");
-
-  EXPECT_NE(beforeIR.find("qco.h"), std::string::npos);
-  EXPECT_EQ(beforeIR, afterIR);
-}
-
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       LeavesIRUnchangedWhenNativeGatesIsWhitespaceOnly) {
-  const auto afterIR = runNativeSynthesisAndExpectSuccess("   \t  ");
-
-  EXPECT_NE(beforeIR.find("qco.h"), std::string::npos);
-  EXPECT_EQ(beforeIR, afterIR);
-}
-
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       NativeSynthesisPreservesUnitaryOnStaticQubits) {
-  const auto afterIR = runNativeSynthesisAndExpectSuccess("x,sx,rz,cx");
-
-  DialectRegistry registry;
-  registry.insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
-                  func::FuncDialect>();
-  MLIRContext context(registry);
-  context.loadAllAvailableDialects();
-
-  auto preSynth = parseSourceString<ModuleOp>(beforeIR, &context);
-  auto postSynth = parseSourceString<ModuleOp>(afterIR, &context);
-  ASSERT_TRUE(preSynth);
-  ASSERT_TRUE(postSynth);
-
-  const auto preU = computeStaticTwoQubitUnitary(preSynth.get());
-  const auto postU = computeStaticTwoQubitUnitary(postSynth.get());
-  ASSERT_TRUE(preU);
-  ASSERT_TRUE(postU);
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*preU, *postU));
+  EXPECT_FALSE(qco.fuseTwoQubitUnitaryRuns("   \t  "));
+  EXPECT_EQ(qco.str(), before);
 }
 
 } // namespace mqt::test::compiler

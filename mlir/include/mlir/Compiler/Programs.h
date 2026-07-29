@@ -181,13 +181,8 @@ public:
   /// Fuse single-qubit unitary runs into the selected Euler basis.
   [[nodiscard]] bool fuseSingleQubitUnitaryRuns(std::string_view basis = "zyz");
 
-  /**
-   * @brief Lower unitaries to a comma-separated native gate menu.
-   *
-   * @details An empty or whitespace-only menu is a no-op. Unrecognised tokens
-   * cause the pass to fail.
-   */
-  [[nodiscard]] bool fuseTwoQubitUnitaryRuns(std::string_view nativeGates = "");
+  /// Lower unitaries to a non-empty native gate menu via two-qubit run fusion.
+  [[nodiscard]] bool fuseTwoQubitUnitaryRuns(std::string_view nativeGates);
 
   /// Unroll loops containing quantum operations.
   [[nodiscard]] bool unrollQuantumLoops(int64_t factor = -1);
