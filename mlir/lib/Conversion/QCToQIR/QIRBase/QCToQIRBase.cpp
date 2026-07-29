@@ -20,6 +20,7 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -70,39 +71,6 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op) {
 
 namespace {
 
-/**
- * @brief Reject newly introduced classical operations outside the QIR Base
- * Profile.
- *
- * Ceiling, floor, population-count, and funnel-shift operations are not in the
- * Base Profile's closed instruction list. Broader validation of pre-existing
- * classical operations remains outside this focused conversion boundary.
- */
-static LogicalResult validateBaseClassicalOperations(Operation* module) {
-  const auto result = module->walk([](Operation* operation) {
-    StringRef operationName;
-    if (isa<math::CeilOp>(operation)) {
-      operationName = "ceiling";
-    } else if (isa<math::FloorOp>(operation)) {
-      operationName = "floor";
-    } else if (isa<math::CtPopOp>(operation)) {
-      operationName = "population count";
-    } else if (isa<LLVM::FshlOp>(operation)) {
-      operationName = "funnel shift left";
-    } else if (isa<LLVM::FshrOp>(operation)) {
-      operationName = "funnel shift right";
-    } else {
-      return WalkResult::advance();
-    }
-
-    operation->emitError() << operationName
-                           << " is not supported by the QIR Base Profile";
-    return WalkResult::interrupt();
-  });
-  return failure(result.wasInterrupted());
-}
-
-/**
  * @brief Converts a classical-bit-register `memref.alloc` to static result
  * pointers represented by `llvm.inttoptr` operations.
  *
@@ -464,11 +432,6 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
-    if (failed(validateBaseClassicalOperations(moduleOp))) {
-      signalPassFailure();
-      return;
-    }
-
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
 
@@ -535,6 +498,7 @@ protected:
                                                       stdPatterns);
       cf::populateAssertToLLVMConversionPattern(typeConverter, stdPatterns);
       arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+      populateMathToLLVMConversionPatterns(typeConverter, stdPatterns);
 
       if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
               .failed()) {

@@ -20,7 +20,6 @@
 #include "qir_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -29,7 +28,6 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -37,7 +35,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -89,62 +86,6 @@ static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
   return pm.run(module);
 }
 
-enum class UnsupportedAdaptiveOperation : std::uint8_t {
-  Ceiling,
-  Floor,
-  PopulationCount,
-  FunnelShiftLeft,
-  FunnelShiftRight,
-};
-
-static void
-expectUnsupportedAdaptiveOperation(const UnsupportedAdaptiveOperation operation,
-                                   const llvm::StringRef expectedDiagnostic) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect, math::MathDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  const auto loc = builder.getUnknownLoc();
-
-  if (operation == UnsupportedAdaptiveOperation::Ceiling ||
-      operation == UnsupportedAdaptiveOperation::Floor) {
-    auto value = LLVM::UndefOp::create(builder, loc, builder.getF64Type());
-    if (operation == UnsupportedAdaptiveOperation::Ceiling) {
-      (void)math::CeilOp::create(builder, loc, value);
-    } else {
-      (void)math::FloorOp::create(builder, loc, value);
-    }
-  } else {
-    auto value = LLVM::UndefOp::create(builder, loc, builder.getIntegerType(5));
-    if (operation == UnsupportedAdaptiveOperation::PopulationCount) {
-      (void)math::CtPopOp::create(builder, loc, value);
-    } else {
-      auto shift = arith::ConstantIntOp::create(builder, loc, 2, 5);
-      if (operation == UnsupportedAdaptiveOperation::FunnelShiftLeft) {
-        (void)LLVM::FshlOp::create(builder, loc, value, value, shift);
-      } else {
-        (void)LLVM::FshrOp::create(builder, loc, value, value, shift);
-      }
-    }
-  }
-
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(expectedDiagnostic);
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-}
-
 TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   MLIRContext context;
   context
@@ -176,22 +117,28 @@ TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   EXPECT_TRUE(hasUnreachableFailure);
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedClassicalOperations) {
-  expectUnsupportedAdaptiveOperation(
-      UnsupportedAdaptiveOperation::Ceiling,
-      "ceiling is not supported by the QIR Adaptive Profile");
-  expectUnsupportedAdaptiveOperation(
-      UnsupportedAdaptiveOperation::Floor,
-      "floor is not supported by the QIR Adaptive Profile");
-  expectUnsupportedAdaptiveOperation(
-      UnsupportedAdaptiveOperation::PopulationCount,
-      "population count is not supported by the QIR Adaptive Profile");
-  expectUnsupportedAdaptiveOperation(
-      UnsupportedAdaptiveOperation::FunnelShiftLeft,
-      "funnel shift left is not supported by the QIR Adaptive Profile");
-  expectUnsupportedAdaptiveOperation(
-      UnsupportedAdaptiveOperation::FunnelShiftRight,
-      "funnel shift right is not supported by the QIR Adaptive Profile");
+TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
+                      math::MathDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
+  (void)math::CtPopOp::create(builder, value);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  std::size_t mathPopulationCounts = 0;
+  std::size_t llvmPopulationCounts = 0;
+  module->walk([&](Operation* operation) {
+    mathPopulationCounts += isa<math::CtPopOp>(operation);
+    llvmPopulationCounts += isa<LLVM::CtPopOp>(operation);
+  });
+  EXPECT_EQ(mathPopulationCounts, 0);
+  EXPECT_EQ(llvmPopulationCounts, 1);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {

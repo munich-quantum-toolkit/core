@@ -19,7 +19,6 @@
 #include "qir_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -28,7 +27,6 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -85,32 +83,6 @@ static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   return pm.run(module);
 }
 
-static void expectBaseBoundaryFailure(
-    const llvm::function_ref<void(qc::QCProgramBuilder&)> buildOperation,
-    const llvm::StringRef expectedDiagnostic) {
-  MLIRContext context;
-  context
-      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
-                   func::FuncDialect, LLVM::LLVMDialect, math::MathDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  buildOperation(builder);
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(expectedDiagnostic);
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-}
-
 TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
   MLIRContext context;
   context
@@ -142,39 +114,28 @@ TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
   EXPECT_TRUE(hasUnreachableFailure);
 }
 
-TEST(QCToQIRBaseNativeTest, RejectsUnsupportedBuiltinOperationsIndividually) {
-  expectBaseBoundaryFailure(
-      [](qc::QCProgramBuilder& builder) {
-        auto value = LLVM::UndefOp::create(builder, builder.getF64Type());
-        (void)math::CeilOp::create(builder, value);
-      },
-      "ceiling is not supported by the QIR Base Profile");
-  expectBaseBoundaryFailure(
-      [](qc::QCProgramBuilder& builder) {
-        auto value = LLVM::UndefOp::create(builder, builder.getF64Type());
-        (void)math::FloorOp::create(builder, value);
-      },
-      "floor is not supported by the QIR Base Profile");
-  expectBaseBoundaryFailure(
-      [](qc::QCProgramBuilder& builder) {
-        auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
-        (void)math::CtPopOp::create(builder, value);
-      },
-      "population count is not supported by the QIR Base Profile");
-  expectBaseBoundaryFailure(
-      [](qc::QCProgramBuilder& builder) {
-        auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
-        auto shift = arith::ConstantIntOp::create(builder, 2, 5);
-        (void)LLVM::FshlOp::create(builder, value, value, shift);
-      },
-      "funnel shift left is not supported by the QIR Base Profile");
-  expectBaseBoundaryFailure(
-      [](qc::QCProgramBuilder& builder) {
-        auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
-        auto shift = arith::ConstantIntOp::create(builder, 2, 5);
-        (void)LLVM::FshrOp::create(builder, value, value, shift);
-      },
-      "funnel shift right is not supported by the QIR Base Profile");
+TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
+                      math::MathDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
+  (void)math::CtPopOp::create(builder, value);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  std::size_t mathPopulationCounts = 0;
+  std::size_t llvmPopulationCounts = 0;
+  module->walk([&](Operation* operation) {
+    mathPopulationCounts += isa<math::CtPopOp>(operation);
+    llvmPopulationCounts += isa<LLVM::CtPopOp>(operation);
+  });
+  EXPECT_EQ(mathPopulationCounts, 0);
+  EXPECT_EQ(llvmPopulationCounts, 1);
 }
 
 TEST_P(QCToQIRBaseTest, ProgramEquivalence) {

@@ -21,6 +21,7 @@ add_mlir_library(
   MLIRLLVMDialect
   MLIRLLVMCommonConversion
   MLIRFuncToLLVM
+  MLIRMathToLLVM
   MLIRControlFlowToLLVM
   MLIRArithToLLVM
   MLIRMemRefDialect
