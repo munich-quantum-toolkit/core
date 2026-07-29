@@ -18,6 +18,10 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir {
+class Operation;
+} // namespace mlir
+
 namespace mlir::qco::decomposition {
 
 /**
@@ -41,7 +45,7 @@ struct TwoQubitNativeDecomposition;
  * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
  * Use @ref parse to obtain a gateset with @p eulerBasis and @p entangler
- * resolved from @p gates. When both `cx` and `cz` appear, `cx` is preferred as
+ * resolved from @p gates. When both `cx` and `cz` appear, `cz` is preferred as
  * the entangler.
  */
 struct NativeGateset {
@@ -63,6 +67,15 @@ struct NativeGateset {
    */
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   decomposeTarget(const Matrix4x4& target) const;
+
+  /**
+   * @brief Whether @p op is already on this native gateset.
+   *
+   * `qco.barrier` and `qco.gphase` are always allowed. Single-qubit primitives
+   * and single-control/single-target `qco.ctrl` shells with one `X`/`Z` body
+   * are checked against @p gates. All other ops are rejected.
+   */
+  [[nodiscard]] bool allowsOp(Operation* op) const;
 };
 
 } // namespace mlir::qco::decomposition
