@@ -557,8 +557,6 @@ INSTANTIATE_TEST_SUITE_P(
                           [] { return ECROp::getUnitaryMatrix(); }},
         WeylSynthesisCase{"IswapGeneric", "u,iswap",
                           [] { return iSWAPOp::getUnitaryMatrix(); }},
-        WeylSynthesisCase{"DcxGeneric", "u,dcx",
-                          [] { return DCXOp::getUnitaryMatrix(); }},
         WeylSynthesisCase{
             "RzxGeneric", "u,rzx",
             [] { return RZXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
@@ -576,8 +574,8 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* gateset : {"u,cx", "u,cz", "u,ecr", "u,iswap", "u,dcx",
-                              "u,rzx", "u,ryy", "u,rxx", "u,rzz"}) {
+  for (const char* gateset : {"u,cx", "u,cz", "u,ecr", "u,iswap", "u,rzx",
+                              "u,ryy", "u,rxx", "u,rzz"}) {
     const auto spec = NativeGateset::parse(gateset);
     ASSERT_TRUE(spec) << gateset;
     const auto native = spec->decomposeTarget(Matrix4x4::identity());
@@ -689,45 +687,36 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   EXPECT_TRUE(iswapOnly->gates.contains(NativeGateKind::ISWAP));
   EXPECT_EQ(iswapOnly->entangler, NativeGateKind::ISWAP);
 
-  // iSWAP beats CZ/CX/ECR; continuous Pauli still wins when present.
+  // iSWAP beats CZ/CX/ECR; two-qubit rotations still win when present.
   const auto iswapOverCtrlEcr = NativeGateset::parse("u,cx,cz,ecr,iswap");
   ASSERT_TRUE(iswapOverCtrlEcr);
   EXPECT_EQ(iswapOverCtrlEcr->entangler, NativeGateKind::ISWAP);
 
-  const auto dcxOnly = NativeGateset::parse("u,dcx");
-  ASSERT_TRUE(dcxOnly);
-  EXPECT_EQ(dcxOnly->entangler, NativeGateKind::DCX);
-
-  const auto iswapOverDcx = NativeGateset::parse("u,iswap,dcx,ecr");
-  ASSERT_TRUE(iswapOverDcx);
-  EXPECT_EQ(iswapOverDcx->entangler, NativeGateKind::ISWAP);
-
-  const auto dcxOverCtrlEcr = NativeGateset::parse("u,dcx,ecr,cx,cz");
-  ASSERT_TRUE(dcxOverCtrlEcr);
-  EXPECT_EQ(dcxOverCtrlEcr->entangler, NativeGateKind::DCX);
+  // DCX is not a supported native-basis token.
+  EXPECT_FALSE(NativeGateset::parse("u,dcx").has_value());
+  EXPECT_FALSE(NativeGateset::parse("u,cx,dcx").has_value());
 
   const auto rzxOnly = NativeGateset::parse("u,rzx");
   ASSERT_TRUE(rzxOnly);
   EXPECT_EQ(rzxOnly->entangler, NativeGateKind::RZX);
 
-  // Continuous Pauli/CR: RZZ > RYY > RXX > RZX.
-  const auto rzzOverRest =
-      NativeGateset::parse("u,dcx,rzx,rzz,ryy,rxx,iswap,cx,cz,ecr");
-  ASSERT_TRUE(rzzOverRest);
-  EXPECT_EQ(rzzOverRest->entangler, NativeGateKind::RZZ);
+  // Two-qubit rotations: RXX > RYY > RZX > RZZ (alphabetic).
+  const auto rxxOverRest =
+      NativeGateset::parse("u,rzx,rzz,ryy,rxx,iswap,cx,cz,ecr");
+  ASSERT_TRUE(rxxOverRest);
+  EXPECT_EQ(rxxOverRest->entangler, NativeGateKind::RXX);
 
-  const auto ryyOverRxxRzx = NativeGateset::parse("u,rzx,ryy,rxx,iswap,cx");
-  ASSERT_TRUE(ryyOverRxxRzx);
-  EXPECT_EQ(ryyOverRxxRzx->entangler, NativeGateKind::RYY);
+  const auto ryyOverRzxRzz = NativeGateset::parse("u,rzx,ryy,rzz,iswap,cx");
+  ASSERT_TRUE(ryyOverRzxRzz);
+  EXPECT_EQ(ryyOverRzxRzz->entangler, NativeGateKind::RYY);
 
-  const auto rxxOverRzx = NativeGateset::parse("u,rzx,rxx,iswap,cx,cz");
-  ASSERT_TRUE(rxxOverRzx);
-  EXPECT_EQ(rxxOverRzx->entangler, NativeGateKind::RXX);
+  const auto rzxOverRzz = NativeGateset::parse("u,rzx,rzz,iswap,cx,cz");
+  ASSERT_TRUE(rzxOverRzz);
+  EXPECT_EQ(rzxOverRzz->entangler, NativeGateKind::RZX);
 
-  const auto rzxOverDiscrete =
-      NativeGateset::parse("u,rzx,iswap,dcx,cx,cz,ecr");
-  ASSERT_TRUE(rzxOverDiscrete);
-  EXPECT_EQ(rzxOverDiscrete->entangler, NativeGateKind::RZX);
+  const auto rzzOverDiscrete = NativeGateset::parse("u,rzz,iswap,cx,cz,ecr");
+  ASSERT_TRUE(rzzOverDiscrete);
+  EXPECT_EQ(rzzOverDiscrete->entangler, NativeGateKind::RZZ);
 
   const auto rzzOnly = NativeGateset::parse("u,rzz");
   ASSERT_TRUE(rzzOnly);
@@ -741,17 +730,18 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   ASSERT_TRUE(rxxOnly);
   EXPECT_EQ(rxxOnly->entangler, NativeGateKind::RXX);
 
-  const auto reviewerOrder = NativeGateset::parse("u,rzz,rxx,iswap,cz,cx,ecr");
-  ASSERT_TRUE(reviewerOrder);
-  EXPECT_EQ(reviewerOrder->entangler, NativeGateKind::RZZ);
+  const auto rotationThenDiscrete =
+      NativeGateset::parse("u,rzz,rxx,iswap,cz,cx,ecr");
+  ASSERT_TRUE(rotationThenDiscrete);
+  EXPECT_EQ(rotationThenDiscrete->entangler, NativeGateKind::RXX);
 
-  const auto reviewerWithoutRzz = NativeGateset::parse("u,rxx,iswap,cz,cx,ecr");
-  ASSERT_TRUE(reviewerWithoutRzz);
-  EXPECT_EQ(reviewerWithoutRzz->entangler, NativeGateKind::RXX);
+  const auto withoutRxx = NativeGateset::parse("u,ryy,iswap,cz,cx,ecr");
+  ASSERT_TRUE(withoutRxx);
+  EXPECT_EQ(withoutRxx->entangler, NativeGateKind::RYY);
 
-  const auto reviewerWithoutPauli = NativeGateset::parse("u,iswap,cz,cx,ecr");
-  ASSERT_TRUE(reviewerWithoutPauli);
-  EXPECT_EQ(reviewerWithoutPauli->entangler, NativeGateKind::ISWAP);
+  const auto withoutRotations = NativeGateset::parse("u,iswap,cz,cx,ecr");
+  ASSERT_TRUE(withoutRotations);
+  EXPECT_EQ(withoutRotations->entangler, NativeGateKind::ISWAP);
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
@@ -871,12 +861,6 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   auto iswap = iSWAPOp::create(builder, loc, q0, q1);
   EXPECT_TRUE(iswapSpec->allowsOp(iswap.getOperation()));
   EXPECT_FALSE(iswapSpec->allowsOp(cx.getOperation()));
-
-  const auto dcxSpec = NativeGateset::parse("u,dcx");
-  ASSERT_TRUE(dcxSpec);
-  auto dcx = DCXOp::create(builder, loc, q0, q1);
-  EXPECT_TRUE(dcxSpec->allowsOp(dcx.getOperation()));
-  EXPECT_FALSE(dcxSpec->allowsOp(cx.getOperation()));
 
   const auto rzxSpec = NativeGateset::parse("u,rzx");
   ASSERT_TRUE(rzxSpec);

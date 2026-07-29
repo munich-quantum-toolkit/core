@@ -82,11 +82,11 @@ def FuseTwoQubitUnitaryRuns
 
     `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
     two-qubit scope only when it has a single control and a single target. Native
-    two-qubit entanglers may be bare `qco.ecr`, `qco.iswap`, `qco.dcx`,
-    `qco.rxx`, `qco.ryy`, `qco.rzz`, or `qco.rzx` matching the selected token, or
-    such a `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz`
-    is selected. Weyl synthesis emits `rxx`/`ryy`/`rzz`/`rzx` at a fixed angle
-    of π/2. Gates acting on more than two qubits (e.g. multi-controlled
+    two-qubit entanglers may be bare `qco.ecr`, `qco.iswap`, `qco.rxx`,
+    `qco.ryy`, `qco.rzz`, or `qco.rzx` matching the selected token, or such a
+    `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz` is
+    selected. Weyl synthesis emits `rxx`/`ryy`/`rzz`/`rzx` at a fixed angle of
+    π/2. Gates acting on more than two qubits (e.g. multi-controlled
     `qco.ctrl`) are out of scope and left untouched for a dedicated
     multi-controlled synthesis pass.
 
@@ -95,26 +95,26 @@ def FuseTwoQubitUnitaryRuns
     (generic `qco.u` when `u` is present; IBM-style surface gates when all of
     `x`, `sx`, and `rz` are present; IQM-style `qco.r` when `r` is present;
     or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus one
-    two-qubit entangler from `rzz`, `ryy`, `rxx`, `rzx`, `iswap`, `dcx`, `cz`,
-    `cx`, or `ecr`.
+    two-qubit entangler from `rxx`, `ryy`, `rzx`, `rzz`, `iswap`, `cz`, `cx`, or
+    `ecr`.
 
-    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `rzz`, `ryy`,
-    `rxx`, `rzx`, `iswap`, `dcx`, `cz`, `cx`, `ecr`. An empty or whitespace-only
+    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `rxx`, `ryy`,
+    `rzx`, `rzz`, `iswap`, `cz`, `cx`, `ecr`. An empty or whitespace-only
     gateset is a no-op, which is the intended pipeline default when synthesis is
     not needed. An unrecognised token causes the pass to fail.
 
     Example gatesets (each line is one illustrative gateset; pick one entangler
     or list several if multiple are native):
     - IBM: `x,sx,rz,cx`, `x,sx,rz,cz`, or `x,sx,rz,ecr`
-    - Generic single-qubit U: `u,rzz`, `u,ryy`, `u,rxx`, `u,rzx`, `u,iswap`,
-      `u,dcx`, `u,cz`, `u,cx`, or `u,ecr`
+    - Generic single-qubit U: `u,rxx`, `u,ryy`, `u,rzx`, `u,rzz`, `u,iswap`,
+      `u,cz`, `u,cx`, or `u,ecr`
     - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
     - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
       Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
 
-    When several entanglers are listed, preference is `rzz` > `ryy` > `rxx` >
-    `rzx` > `iswap` > `dcx` > `cz` > `cx` > `ecr` (continuous Pauli/CR
-    interactions before discrete named gates; ECR last).
+    When several entanglers are listed, preference is `rxx` > `ryy` > `rzx` >
+    `rzz` > `iswap` > `cz` > `cx` > `ecr` (alphabetic among two-qubit rotations;
+    then discrete named gates; ECR last).
 
     Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
     which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
@@ -123,18 +123,18 @@ def FuseTwoQubitUnitaryRuns
     single- or two-qubit op remains off the native gateset afterwards; gates on
     more than two qubits are left untouched and do not cause a failure.
 
-    Lowering is deterministic: entangler preference is `rzz` > `ryy` > `rxx` >
-    `rzx` > `iswap` > `dcx` > `cz` > `cx` > `ecr`; single-qubit factors use the
-    resolved Euler basis; and two-qubit run replacement uses the minimal
-    entangler count from the synthesizer.
+    Lowering is deterministic: entangler preference is `rxx` > `ryy` > `rzx` >
+    `rzz` > `iswap` > `cz` > `cx` > `ecr`; single-qubit factors use the resolved
+    Euler basis; and two-qubit run replacement uses the minimal entangler count
+    from the synthesizer.
   }];
   let options = [Option<
       "nativeGates", "native-gates", "std::string", "\"\"",
       "Comma-separated native gateset. Empty or whitespace-only is "
-      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, rzz, ryy, rxx, rzx, iswap, "
-      "dcx, cz, cx, ecr. "
-      "Examples: x,sx,rz,cx; x,sx,rz,ecr; u,rzz; u,ryy; u,rxx; u,rzx; u,iswap; "
-      "u,dcx; u,cx; r,cz; rx,rz,cx; x,sx,rz,rzz.">];
+      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, rxx, ryy, rzx, rzz, iswap, "
+      "cz, cx, ecr. "
+      "Examples: x,sx,rz,cx; x,sx,rz,ecr; u,rxx; u,ryy; u,rzx; u,rzz; u,iswap; "
+      "u,cx; r,cz; rx,rz,cx; x,sx,rz,rzz.">];
 }
 
 //===----------------------------------------------------------------------===//

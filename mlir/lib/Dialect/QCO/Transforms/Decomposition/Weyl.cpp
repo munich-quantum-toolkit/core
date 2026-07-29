@@ -716,12 +716,6 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
       wire1 = ecrOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::DCX) {
-      auto dcxOp = DCXOp::create(builder, loc, wire0, wire1);
-      wire0 = dcxOp.getOutputQubit(0);
-      wire1 = dcxOp.getOutputQubit(1);
-      return;
-    }
     if (spec.entangler == NativeGateKind::RZX) {
       auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
       wire0 = rzxOp.getOutputQubit(0);

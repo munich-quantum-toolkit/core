@@ -42,7 +42,6 @@ static std::optional<NativeGateKind> parseGateToken(StringRef name) {
       .Case("cz", NativeGateKind::CZ)
       .Case("ecr", NativeGateKind::ECR)
       .Case("iswap", NativeGateKind::ISWAP)
-      .Case("dcx", NativeGateKind::DCX)
       .Case("rzx", NativeGateKind::RZX)
       .Case("ryy", NativeGateKind::RYY)
       .Case("rxx", NativeGateKind::RXX)
@@ -106,27 +105,24 @@ resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
  * @brief Picks the two-qubit entangler for Weyl synthesis.
  *
  * When multiple entanglers appear in the gateset, preference is
- * **RZZ > RYY > RXX > RZX > iSWAP > DCX > CZ > CX > ECR**.
+ * **RXX > RYY > RZX > RZZ > iSWAP > CZ > CX > ECR**.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
 selectEntangler(const DenseSet<NativeGateKind>& gates) {
-  if (gates.contains(NativeGateKind::RZZ)) {
-    return NativeGateKind::RZZ;
+  if (gates.contains(NativeGateKind::RXX)) {
+    return NativeGateKind::RXX;
   }
   if (gates.contains(NativeGateKind::RYY)) {
     return NativeGateKind::RYY;
   }
-  if (gates.contains(NativeGateKind::RXX)) {
-    return NativeGateKind::RXX;
-  }
   if (gates.contains(NativeGateKind::RZX)) {
     return NativeGateKind::RZX;
   }
+  if (gates.contains(NativeGateKind::RZZ)) {
+    return NativeGateKind::RZZ;
+  }
   if (gates.contains(NativeGateKind::ISWAP)) {
     return NativeGateKind::ISWAP;
-  }
-  if (gates.contains(NativeGateKind::DCX)) {
-    return NativeGateKind::DCX;
   }
   if (gates.contains(NativeGateKind::CZ)) {
     return NativeGateKind::CZ;
@@ -172,11 +168,6 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
         TwoQubitBasisDecomposer::create(iSWAPOp::getUnitaryMatrix(), 1.0);
     return DECOMPOSER;
   }
-  case NativeGateKind::DCX: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(DCXOp::getUnitaryMatrix(), 1.0);
-    return DECOMPOSER;
-  }
   case NativeGateKind::RZX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(
@@ -203,7 +194,7 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
   }
   default:
     llvm_unreachable(
-        "only CX/CZ/ECR/ISWAP/DCX/RZX/RYY/RXX/RZZ are valid entanglers");
+        "only CX/CZ/ECR/ISWAP/RZX/RYY/RXX/RZZ are valid entanglers");
   }
 }
 
@@ -246,7 +237,6 @@ bool NativeGateset::allowsOp(Operation* op) const {
       .Case<ECROp>([&](ECROp) { return gates.contains(NativeGateKind::ECR); })
       .Case<iSWAPOp>(
           [&](iSWAPOp) { return gates.contains(NativeGateKind::ISWAP); })
-      .Case<DCXOp>([&](DCXOp) { return gates.contains(NativeGateKind::DCX); })
       .Case<RZXOp>([&](RZXOp op) {
         return gates.contains(NativeGateKind::RZX) &&
                utils::valueToDouble(op.getTheta()).has_value();
