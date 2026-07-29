@@ -6,17 +6,22 @@
 #
 # Licensed under the MIT License
 
-execute_process(
-  COMMAND "${MQT_CC}" "${INPUT}" --emit=qco --native-gates=u,cx
-  RESULT_VARIABLE result
-  ERROR_VARIABLE error)
-
-if(result EQUAL 0)
-  message(FATAL_ERROR "mqt-cc accepted --native-gates with raw QCO output")
-endif()
-
 set(expected "--native-gates requires an output that passes through QCO optimization")
-string(FIND "${error}" "${expected}" diagnostic_position)
-if(diagnostic_position EQUAL -1)
-  message(FATAL_ERROR "mqt-cc did not emit the expected diagnostic:\n${error}")
-endif()
+
+foreach(emit_format IN ITEMS qco qc-import)
+  execute_process(
+    COMMAND "${MQT_CC}" "${INPUT}" --emit=${emit_format} --native-gates=u,cx
+    RESULT_VARIABLE result
+    ERROR_VARIABLE error)
+
+  if(result EQUAL 0)
+    message(FATAL_ERROR "mqt-cc accepted --native-gates with --emit=${emit_format} output")
+  endif()
+
+  string(FIND "${error}" "${expected}" diagnostic_position)
+  if(diagnostic_position EQUAL -1)
+    message(
+      FATAL_ERROR "mqt-cc did not emit the expected diagnostic for --emit=${emit_format}:\n${error}"
+    )
+  endif()
+endforeach()

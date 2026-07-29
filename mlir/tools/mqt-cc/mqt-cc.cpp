@@ -395,7 +395,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (nativeGates.getNumOccurrences() > 0 &&
-      *parsedOutputFormat == OutputFormat::QCO) {
+      (*parsedOutputFormat == OutputFormat::QCImport ||
+       *parsedOutputFormat == OutputFormat::QCO)) {
     llvm::errs() << "--native-gates requires an output that passes through "
                     "QCO optimization.\n";
     return 1;
