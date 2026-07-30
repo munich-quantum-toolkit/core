@@ -17,7 +17,6 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -50,10 +49,9 @@ void rejectUnknownKeys(const Json& value,
                        const std::initializer_list<std::string_view> allowed,
                        const std::string_view source,
                        const std::string_view pointer) {
-  const std::set<std::string_view> known(allowed);
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
-    if (!known.contains(key)) {
+    if (std::ranges::find(allowed, std::string_view{key}) == allowed.end()) {
       validationError(source, pointer, "contains unknown key '" + key + "'");
     }
   }
@@ -270,31 +268,13 @@ void validateNestedSchema(const Json& json, const std::string_view source) {
   if (!json.is_object()) {
     validationError(source, "$", "must be an object");
   }
-  rejectUnknownKeys(json,
+  requireObjectKeys(json,
                     {"schema-version", "name", "numQubits", "traps",
                      "minAtomDistance", "globalSingleQubitOperations",
                      "globalMultiQubitOperations", "localSingleQubitOperations",
                      "localMultiQubitOperations", "shuttlingUnits",
                      "decoherenceTimes", "lengthUnit", "durationUnit"},
                     source, "$");
-  constexpr std::array requiredKeys{"schema-version",
-                                    "name",
-                                    "numQubits",
-                                    "traps",
-                                    "minAtomDistance",
-                                    "globalSingleQubitOperations",
-                                    "globalMultiQubitOperations",
-                                    "localSingleQubitOperations",
-                                    "localMultiQubitOperations",
-                                    "shuttlingUnits",
-                                    "decoherenceTimes",
-                                    "lengthUnit",
-                                    "durationUnit"};
-  for (const auto* key : requiredKeys) {
-    if (!json.contains(key)) {
-      validationError(source, "$/" + std::string(key), "is required");
-    }
-  }
   validateNestedSchema(json, source);
   requireString(json, "name", source, "$");
   requireUnsigned(json, "numQubits", source, "$");

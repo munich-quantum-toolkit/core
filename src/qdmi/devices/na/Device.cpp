@@ -22,7 +22,6 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -102,10 +101,6 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
       newSites.emplace_back(handle);
       regularSites.push_back({handle, info.x, info.y});
     });
-    if (regularSites.size() < configuration.numQubits) {
-      throw std::invalid_argument(
-          "generated trap sites do not satisfy numQubits");
-    }
 
     std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>
         newOperationStorage;
@@ -140,26 +135,13 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
           operation.name, operation.numParameters, operation.duration,
           operation.fidelity, supported));
     }
-    constexpr size_t maxLocalPairCandidates = 10'000'000;
-    size_t remainingPairCandidates = maxLocalPairCandidates;
     for (const auto& operation : configuration.localMultiQubitOperations) {
-      if (operation.numQubits != 2) {
-        throw std::invalid_argument(
-            "local multi-qubit operations must have arity two");
-      }
       std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> supported;
       for (size_t first = 0; first < regularSites.size(); ++first) {
         if (!inside(operation.region, regularSites[first].x,
                     regularSites[first].y)) {
           continue;
         }
-        const auto candidates = regularSites.size() - first - 1;
-        if (candidates > remainingPairCandidates) {
-          throw std::invalid_argument(
-              "local multi-qubit operations expand to more than 10000000 "
-              "candidate site pairs");
-        }
-        remainingPairCandidates -= candidates;
         for (size_t second = first + 1; second < regularSites.size();
              ++second) {
           if (inside(operation.region, regularSites[second].x,
