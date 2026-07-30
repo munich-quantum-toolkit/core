@@ -88,7 +88,7 @@ struct NativeGateset {
    * @brief Comma-separated menu for the selected Euler factors and entangler.
    *
    * Token order is deterministic (Euler constituents, then entangler), e.g.
-   * `"x,sx,rz,cz"` or `"u,cx"`.
+   * `"x,sx,rz,cz"`, `"u,rxx"`, or `"u,ecr"`.
    */
   [[nodiscard]] std::string toMenuString() const;
 

@@ -801,6 +801,44 @@ TEST(NativeGatesetFromNamesTest, MapsCnotAlias) {
   EXPECT_EQ(gs->toMenuString(), "u,cx");
 }
 
+TEST(NativeGatesetFromNamesTest, PrefersRxxOverOtherEntanglers) {
+  const SmallVector<StringRef> names = {"u",   "ecr", "cx",  "cz", "iswap",
+                                        "rzz", "rzx", "ryy", "rxx"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->entangler, NativeGateKind::RXX);
+  EXPECT_EQ(gs->toMenuString(), "u,rxx");
+}
+
+TEST(NativeGatesetFromNamesTest, EmitsEachNewEntanglerToken) {
+  const auto ecr = NativeGateset::fromOperationNames(
+      SmallVector<StringRef>{"x", "sx", "rz", "ecr"});
+  ASSERT_TRUE(ecr);
+  EXPECT_EQ(ecr->entangler, NativeGateKind::ECR);
+  EXPECT_EQ(ecr->toMenuString(), "x,sx,rz,ecr");
+
+  const auto iswap =
+      NativeGateset::fromOperationNames(SmallVector<StringRef>{"u", "iswap"});
+  ASSERT_TRUE(iswap);
+  EXPECT_EQ(iswap->entangler, NativeGateKind::ISWAP);
+  EXPECT_EQ(iswap->toMenuString(), "u,iswap");
+
+  const auto ryy =
+      NativeGateset::fromOperationNames(SmallVector<StringRef>{"u", "ryy"});
+  ASSERT_TRUE(ryy);
+  EXPECT_EQ(ryy->toMenuString(), "u,ryy");
+
+  const auto rzx =
+      NativeGateset::fromOperationNames(SmallVector<StringRef>{"u", "rzx"});
+  ASSERT_TRUE(rzx);
+  EXPECT_EQ(rzx->toMenuString(), "u,rzx");
+
+  const auto rzz =
+      NativeGateset::fromOperationNames(SmallVector<StringRef>{"u", "rzz"});
+  ASSERT_TRUE(rzz);
+  EXPECT_EQ(rzz->toMenuString(), "u,rzz");
+}
+
 TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
   const auto uGateset = NativeGateset::parse("u,cx");
   ASSERT_TRUE(uGateset);

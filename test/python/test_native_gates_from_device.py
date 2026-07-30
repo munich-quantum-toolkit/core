@@ -35,6 +35,16 @@ def test_native_gates_from_operation_names_iqm_prx() -> None:
     assert native_gates_from_operation_names(["prx", "cz"]) == "r,cz"
 
 
+def test_native_gates_from_operation_names_prefers_rxx() -> None:
+    """New bases participate; preference picks RXX when present."""
+    assert native_gates_from_operation_names(["u", "cx", "cz", "ecr", "iswap", "rxx", "ryy", "rzx", "rzz"]) == "u,rxx"
+
+
+def test_native_gates_from_operation_names_ecr() -> None:
+    """ECR-only menus are emitted correctly."""
+    assert native_gates_from_operation_names(["x", "sx", "rz", "ecr"]) == "x,sx,rz,ecr"
+
+
 def test_native_gates_from_operation_names_rejects_insufficient() -> None:
     """Reject name lists that lack a supported Euler + entangler pair."""
     with pytest.raises(ValueError, match="native-gates"):

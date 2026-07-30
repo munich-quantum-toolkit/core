@@ -380,10 +380,34 @@ std::string NativeGateset::toMenuString() const {
     append("rz");
     break;
   }
-  if (*entangler == NativeGateKind::CZ) {
+  switch (*entangler) {
+  case NativeGateKind::RXX:
+    append("rxx");
+    break;
+  case NativeGateKind::RYY:
+    append("ryy");
+    break;
+  case NativeGateKind::RZX:
+    append("rzx");
+    break;
+  case NativeGateKind::RZZ:
+    append("rzz");
+    break;
+  case NativeGateKind::ISWAP:
+    append("iswap");
+    break;
+  case NativeGateKind::CZ:
     append("cz");
-  } else {
+    break;
+  case NativeGateKind::CX:
     append("cx");
+    break;
+  case NativeGateKind::ECR:
+    append("ecr");
+    break;
+  default:
+    llvm_unreachable(
+        "only RXX/RYY/RZX/RZZ/ISWAP/CZ/CX/ECR are valid entanglers");
   }
   return out;
 }
