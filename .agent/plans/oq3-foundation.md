@@ -274,6 +274,34 @@ threads or publishing new PR text.
       non-blocking output-coverage observation led to an additional
       QC-to-QCO-to-QC mixed-result regression; the compiler suite now contains
       202 passing tests.
+- [x] (2026-07-30) Merged `origin/main` at `b91a0bf02` after #1927 and the
+      documentation repair landed. Reviewed the exact #1923 head `7c2bbe5e2` as
+      a separate integration input, including its scalar-qubit allocation and
+      qubit-reuse pipeline, without merging that unreviewed PR into this branch.
+- [x] (2026-07-30) Allocated `memref<nxi1>` storage only for actual bit outputs.
+      Local bits now remain SSA values through assignments, measurement, dynamic
+      selection, branches, and loops, while output-backed reads retain the
+      established observable storage contract from #1927.
+- [x] (2026-07-30) Moved rejection of mixed physical and declared qubits from
+      source semantics to QC preflight, and replaced full-program mutation scans
+      with deterministic sparse collection of only the state slots modified by a
+      structured region.
+- [x] (2026-07-30) Removed QCO-to-QC's quantum-only `scf.for` and `scf.while`
+      assumption. Native regressions cover ordinary and type-changing classical
+      loop state, and the restored `scalar-loop-state` fixture now completes
+      both explicit and default QC-to-QCO-to-QC-to-QIR pipelines.
+- [x] (2026-07-30) Completed the post-#1927 validation against `origin/main` at
+      `b91a0bf02`. The 1,432 sequential affected and legacy tests pass, as do
+      warning-as-error documentation, repository lint, and diff checks. A
+      dynamic branch-write regression raised changed production C++ coverage to
+      5,460/6,058 lines (90.1 percent); the five substantive frontend/emitter
+      files cover 4,403/4,903 lines (89.8 percent) and 3,452/5,511 branches
+      (62.6 percent).
+- [x] (2026-07-30) Performed a read-only merge-tree assessment with the exact
+      #1923 head. Its only textual conflict is the legacy
+      `TranslateQASM3ToQC.cpp` implementation replaced by this branch. The
+      scalar-allocation choice can be ported directly into the new emitter after
+      #1923's independent review; no qubit-reuse implementation was copied here.
 
 ## Surprises & Discoveries
 
@@ -366,10 +394,11 @@ threads or publishing new PR text.
   depth; memoizing the computed dependency depth preserves linear validation.
 
 - Observation: QC represents multiple classical values carried through `scf.for`
-  and `scf.while`, but QCO-to-QC still documents and implements a quantum-only
-  loop-result assumption. A direct-QC regression verifies the source behavior;
-  the end-to-end positive corpus must not claim reconstructed QC support until
-  that independent conversion limitation is removed.
+  and `scf.while`, but QCO-to-QC documented and implemented a quantum-only
+  loop-result assumption. Once local OpenQASM bits stopped hiding behind memref
+  loads, the standard pipeline exposed the mismatch as a region argument
+  assertion. Preserving classical loop operands, results, yields, and conditions
+  removes the assumption and restores the full pipeline.
 
 - Observation: `qc.u` implements the conventional phaseful U matrix, while
   OpenQASM 3's language builtin U and OpenQASM 2/qelib U-family gates attach
@@ -428,6 +457,18 @@ threads or publishing new PR text.
   reconstructed QCO and QC functions restored the original memref signature. The
   integration oracle normalizes only this known storage representation at the
   two `jeff` stages and still requires exact types on both sides.
+
+- Observation: #1927's QIR result discovery treats each returned `memref<nxi1>`
+  as a classical result register and requires its stores to come directly from
+  measurements. Allocating the same storage for non-output local bits therefore
+  made a valid measured output fail because an unrelated local initializer
+  looked like output recording.
+
+- Observation: #1923 changes scalar `qubit` declarations from one-element
+  register allocation to scalar allocation so its reuse pass can see individual
+  lifetimes. That representation is relevant to this emitter after #1923 is
+  independently reviewed, but its old-translator patch cannot be merged verbatim
+  after this PR replaces that implementation.
 
 ## Decision Log
 
@@ -698,6 +739,34 @@ threads or publishing new PR text.
   OpenQASM outputs is a separate target decision. Date/Author: 2026-07-30 /
   Codex.
 
+- Decision: allocate classical memrefs only for bit registers selected as
+  program outputs; retain local bit state in SSA and read output-backed bits
+  through their observable storage. Rationale: #1927 identifies returned memrefs
+  as result registers, while local variables are compiler state rather than ABI
+  results. This preserves direct-measurement QIR recording without broadening
+  the QIR output contract. Date/Author: 2026-07-30 / Codex.
+
+- Decision: accept partially constrained programs in source semantics and reject
+  mixed physical and declared qubits during QC preflight. Rationale: mixing is
+  valid OpenQASM but incompatible with the current QC builder's
+  static-versus-dynamic allocation mode; the diagnostic therefore belongs to
+  target capability, before construction begins. Date/Author: 2026-07-30 /
+  Codex.
+
+- Decision: retain classical values in QCO-to-QC `scf.for` and `scf.while` while
+  replacing quantum region arguments and results with QC references. Rationale:
+  the conversion already preserves classical results for `if` and
+  `index_switch`, and SCF natively supports mixed and type-changing loop state.
+  Parser-independent regressions prove the general conversion contract.
+  Date/Author: 2026-07-30 / Codex.
+
+- Decision: do not copy #1923's scalar-allocation change into this branch before
+  that PR is independently reviewed. Rationale: its intent is compatible with
+  the new emitter, but the current #1923 implementation targets the translator
+  removed here and belongs to the qubit-reuse change set. Its eventual rebase
+  should port the allocation choice into `OpenQASMToQCEmitter.cpp` and rerun the
+  combined compiler matrix. Date/Author: 2026-07-30 / Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
@@ -716,9 +785,9 @@ addition to custom gates and structured control flow.
 The downstream production corrections are constrained to demonstrated conversion
 invariants. QC-to-QCO preserves classical results alongside linear quantum state
 through `if`, `for`, and `while` and converts their terminators after region
-contents. QCO-to-QC preserves classical `if` and `index_switch` results, while
-numeric loop results remain an explicitly documented follow-up. `JeffToQCO`
-restores entry-point markers without losing observable results. These areas have
+contents. QCO-to-QC preserves classical `if`, `index_switch`, `for`, and `while`
+state while lowering quantum values to QC references. `JeffToQCO` restores
+entry-point markers without losing observable results. These areas have
 parser-independent native regressions.
 
 Runtime-dynamic indices, multi-iteration induction indices, and non-folded
@@ -774,12 +843,19 @@ the ordered `i64`, `memref<2xi1>`, and `f64` signature through QC-to-QCO-to-QC.
 Arbitrary scalar QIR output recording remains explicitly out of scope until its
 entry-point ABI is defined.
 
-The integration exposed and fixed two source-independent downstream defects:
-QC-to-QCO no longer mistakes classical memref loads for qubit state, and QIR
-output recording follows function-result order rather than hash-map iteration.
-The public compiler corpus also distinguishes the temporary tensor spelling of
-classical registers in `jeff` from the exact memref signature required after
-restoration.
+Only output bit registers now allocate #1927's classical-result memrefs.
+Non-output bits remain SSA state, including across structured control flow, so
+local initialization cannot be mistaken for QIR output recording. A restored
+numeric-and-bit loop fixture demonstrates the explicit and default
+QC-to-QCO-to-QC-to-QIR pipelines, while native QCO regressions cover mixed and
+type-changing SCF loop signatures.
+
+The integration exposed and fixed three source-independent downstream defects:
+QC-to-QCO no longer mistakes classical memref loads for qubit state, QCO-to-QC
+retains classical loop state, and QIR output recording follows function-result
+order rather than hash-map iteration. The public compiler corpus also
+distinguishes the temporary tensor spelling of classical registers in `jeff`
+from the exact memref signature required after restoration.
 
 The monolithic OpenQASM target test has been split into parser, semantics, and
 emitter files with a small namespaced helper header. The resulting suites retain

@@ -2103,6 +2103,43 @@ result = measure q;
   });
 }
 
+TEST(OpenQASMTargetTest, CarriesEveryPotentiallyMutatedDynamicBit) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit q;
+uint index = 0;
+bit[2] state;
+state[0] = false;
+state[1] = false;
+bool choose = true;
+if (choose) {
+  state[index] = measure q;
+} else {
+  state[index] = true;
+}
+if (state[0]) { x q; }
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::IfOp stateUpdate;
+  module->walk([&](scf::IfOp conditional) {
+    if (conditional.getNumResults() == 2) {
+      stateUpdate = conditional;
+    }
+  });
+  ASSERT_TRUE(stateUpdate);
+  EXPECT_TRUE(llvm::all_of(stateUpdate.getResultTypes(),
+                           [](Type type) { return type.isInteger(1); }));
+  EXPECT_EQ(
+      stateUpdate.getThenRegion().front().getTerminator()->getNumOperands(), 2);
+  EXPECT_EQ(
+      stateUpdate.getElseRegion().front().getTerminator()->getNumOperands(), 2);
+}
+
 TEST(OpenQASMTargetTest, HandlesTheMaximumUnsignedSingletonRange) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;

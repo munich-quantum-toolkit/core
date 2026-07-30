@@ -1335,6 +1335,21 @@ if (enabled) { h q; }
 output bit result;
 result = measure q;
 )qasm";
+static const std::string scalarLoopState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+float theta = 0.0;
+for int i in [0:2] { theta += 0.125; }
+bit keep_going = measure q;
+while (keep_going) {
+  theta += 0.25;
+  rx(theta) q;
+  keep_going = measure q;
+}
+rx(theta) q;
+output bit result;
+result = measure q;
+)qasm";
 static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
@@ -1408,6 +1423,7 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       OpenQASMProgram{.name = "nested-static-control-flow",
                       .source = nestedStaticControlFlow},
       OpenQASMProgram{.name = "mutable-loop-state", .source = mutableLoopState},
+      OpenQASMProgram{.name = "scalar-loop-state", .source = scalarLoopState},
       OpenQASMProgram{.name = "measurement-controlled-while",
                       .source = conditionWhileAnd},
       OpenQASMProgram{.name = "resolved-dynamic-index",
