@@ -302,6 +302,12 @@ threads or publishing new PR text.
       `TranslateQASM3ToQC.cpp` implementation replaced by this branch. The
       scalar-allocation choice can be ported directly into the new emitter after
       #1923's independent review; no qubit-reuse implementation was copied here.
+- [x] (2026-07-30) Ported the independent scalar-allocation choice into the new
+      direct emitter: `qubit q;` now emits `qc.alloc`, while explicitly sized
+      declarations, including `qubit[1]`, retain register allocation. The
+      qubit-reuse pass and pipeline remain isolated in #1923. All 265 QC
+      translation tests, 144 OpenQASM frontend/emitter tests, and 204 compiler
+      pipeline tests pass with updated result-level references.
 
 ## Surprises & Discoveries
 
@@ -760,12 +766,12 @@ threads or publishing new PR text.
   Parser-independent regressions prove the general conversion contract.
   Date/Author: 2026-07-30 / Codex.
 
-- Decision: do not copy #1923's scalar-allocation change into this branch before
-  that PR is independently reviewed. Rationale: its intent is compatible with
-  the new emitter, but the current #1923 implementation targets the translator
-  removed here and belongs to the qubit-reuse change set. Its eventual rebase
-  should port the allocation choice into `OpenQASMToQCEmitter.cpp` and rerun the
-  combined compiler matrix. Date/Author: 2026-07-30 / Codex.
+- Decision: port #1923's scalar-allocation representation into the direct
+  emitter, independently of qubit reuse. Rationale: the typed frontend already
+  distinguishes unsized `qubit` from explicitly sized `qubit[1]`, and `qc.alloc`
+  is the faithful scalar QC representation. Register syntax must retain memref
+  allocation. The reuse pass, its pipeline option, and its scheduling policy
+  remain wholly owned by #1923. Date/Author: 2026-07-30 / Codex.
 
 ## Outcomes & Retrospective
 

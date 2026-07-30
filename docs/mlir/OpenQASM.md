@@ -53,6 +53,10 @@ whose elements are assigned directly from measurements. Arbitrary
 classical-valued bit outputs and scalar OpenQASM outputs remain
 target-capability follow-ups.
 
+Scalar `qubit` declarations lower to `qc.alloc`. Explicitly sized declarations
+remain register allocations, so `qubit[1]` retains a one-element
+`memref<1x!qc.qubit>` rather than being conflated with the scalar form.
+
 ## Translation and compiler support
 
 The standard compiler path is OpenQASM to QC, optimized QCO, reconstructed QC,

@@ -720,9 +720,11 @@ private:
                        std::get_if<frontend::DeclarationStatement>(
                            &statement.data)) {
           const auto& reg = program.registers.at(declaration->reg);
-          const auto cost = reg.kind == frontend::RegisterKind::Qubit
-                                ? 1 + (2 * static_cast<size_t>(reg.width))
-                                : 1;
+          const auto cost =
+              reg.kind == frontend::RegisterKind::Qubit
+                  ? (reg.isScalar ? 1
+                                  : 1 + (2 * static_cast<size_t>(reg.width)))
+                  : 1;
           if (!chargeScaledEmission(cost, multiplicity, projectedEmission,
                                     statement.location)) {
             return false;
@@ -2407,6 +2409,13 @@ private:
   void emitDeclaration(const frontend::DeclarationStatement& statement) {
     const auto& declaration = program.registers.at(statement.reg);
     if (declaration.kind == frontend::RegisterKind::Qubit) {
+      if (declaration.isScalar) {
+        if (!emissionBudget.canConstruct(1)) {
+          return;
+        }
+        registerValues[statement.reg] = {builder.allocQubit()};
+        return;
+      }
       const auto width = static_cast<size_t>(declaration.width);
       if (!emissionBudget.canConstruct(1 + (2 * width))) {
         return;
