@@ -25,9 +25,10 @@ from qiskit.circuit import (
     QuantumRegister,
 )
 from qiskit.circuit.classical import expr
-from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
+from qiskit.circuit.library import RCCXGate, U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.qasm3 import dumps
+from qiskit.quantum_info import Operator
 
 from mqt.core.ir.operations import (
     ComparisonKind,
@@ -401,6 +402,7 @@ def test_operations() -> None:
     qc.append(U2Gate(0.5, 0.5), [0])
     qc.append(XXMinusYYGate(0.5, 0.5), [0, 1])
     qc.append(XXPlusYYGate(0.5, 0.5), [0, 1])
+    qc.rccx(0, 1, 2)
     print(qc)
 
     mqt_qc = qiskit_to_mqt(qc)
@@ -415,6 +417,20 @@ def test_operations() -> None:
     print(qiskit_qc)
     assert qiskit_qc.num_qubits == 3
     assert len(qiskit_qc) == len(qc)
+
+
+@pytest.mark.parametrize("ctrl_state", ["0", "1"])
+def test_controlled_rccx(ctrl_state: str) -> None:
+    """Controlled RCCX imports via gate definition and round-trips."""
+    qc = QuantumCircuit(4)
+    qc.append(RCCXGate().control(1, ctrl_state=ctrl_state), [0, 1, 2, 3])
+
+    mqt_qc = qiskit_to_mqt(qc)
+    assert len(mqt_qc) == 1
+    assert isinstance(mqt_qc[0], CompoundOperation)
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    assert Operator(qc).equiv(Operator(qiskit_qc))
 
 
 def test_symbolic() -> None:

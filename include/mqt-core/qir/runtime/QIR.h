@@ -109,13 +109,13 @@ void __quantum__qis__y__body(Qubit*);
 void __quantum__qis__z__body(Qubit*);
 void __quantum__qis__h__body(Qubit*);
 void __quantum__qis__s__body(Qubit*);
-void __quantum__qis__sdg__body(Qubit*);
+void __quantum__qis__s__adj(Qubit*);
 void __quantum__qis__sx__body(Qubit*);
-void __quantum__qis__sxdg__body(Qubit*);
+void __quantum__qis__sx__adj(Qubit*);
 void __quantum__qis__sqrtx__body(Qubit*);
-void __quantum__qis__sqrtxdg__body(Qubit*);
+void __quantum__qis__sqrtx__adj(Qubit*);
 void __quantum__qis__t__body(Qubit*);
-void __quantum__qis__tdg__body(Qubit*);
+void __quantum__qis__t__adj(Qubit*);
 void __quantum__qis__r__body(Qubit*, double, double);
 void __quantum__qis__prx__body(Qubit*, double, double);
 void __quantum__qis__rx__body(Qubit*, double);
@@ -166,6 +166,31 @@ bool __quantum__rt__read_result(Result*);
 /// defines a string label for the result value. Depending on the output schema,
 /// the label is included in the output or omitted.
 void __quantum__rt__result_record_output(Result*, const char*);
+
+/// Adds a boolean value to the generated output. The second parameter defines
+/// a string label for the value. Depending on the output schema, the label is
+/// included in the output or omitted.
+void __quantum__rt__bool_record_output(bool, const char*);
+
+/// Adds an integer value to the generated output. The second parameter defines
+/// a string label for the value. Depending on the output schema, the label is
+/// included in the output or omitted.
+void __quantum__rt__int_record_output(int64_t, const char*);
+
+/// Adds a floating-point value to the generated output. The second parameter
+/// defines a string label for the value. Depending on the output schema, the
+/// label is included in the output or omitted.
+void __quantum__rt__float_record_output(double, const char*);
+
+/// Inserts a marker in the generated output indicating that the next
+/// \p elementCount recorded values form the contents of a tuple. The second
+/// parameter defines a string label for the tuple.
+void __quantum__rt__tuple_record_output(int64_t elementCount, const char*);
+
+/// Inserts a marker in the generated output indicating that the next \p size
+/// recorded values form the contents of an array. The second parameter defines
+/// a string label for the array.
+void __quantum__rt__array_record_output(int64_t size, const char*);
 
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(modernize-deprecated-headers)

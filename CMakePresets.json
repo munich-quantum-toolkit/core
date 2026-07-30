@@ -4,7 +4,14 @@
     {
       "name": "base",
       "hidden": true,
-      "binaryDir": "${sourceDir}/build/${presetName}"
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "CCACHE_DIR": "${sourceDir}/.cache/ccache",
+        "CCACHE_MAXSIZE": "4GiB",
+        "CCACHE_TEMPDIR": "${sourceDir}/.cache/ccache/tmp",
+        "SCCACHE_CACHE_SIZE": "4G",
+        "SCCACHE_DIR": "${sourceDir}/.cache/sccache"
+      }
     },
     {
       "name": "base-mlir",
@@ -26,7 +33,10 @@
         "list": ["Linux", "Darwin"]
       },
       "description": "Default configuration for Linux and macOS builds. Uses the Ninja generator",
-      "generator": "Ninja"
+      "generator": "Ninja",
+      "environment": {
+        "SCCACHE_SERVER_UDS": "${sourceDir}/.cache/sccache.sock"
+      }
     },
     {
       "name": "base-unix-mlir",

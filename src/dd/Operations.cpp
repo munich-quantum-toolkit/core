@@ -58,6 +58,15 @@ MatrixDD getStandardOperationDD(Package& dd, const qc::OpType type,
     return dd.makeTwoQubitGateDD(opToTwoQubitGateMatrix(type, params), controls,
                                  targets[0U], targets[1U]);
   }
+  if (qc::isThreeQubitGate(type)) {
+    if (targets.size() != 3) {
+      throw std::invalid_argument(
+          "Expected three target qubits for three-qubit gate");
+    }
+    return dd.makeThreeQubitGateDD(opToThreeQubitGateMatrix(type, params),
+                                   controls, targets[0U], targets[1U],
+                                   targets[2U]);
+  }
   throw std::runtime_error("Unexpected operation type");
 }
 
@@ -85,6 +94,7 @@ MatrixDD getStandardOperationDD(const qc::StandardOperation& op, Package& dd,
   case qc::Z:
   case qc::SWAP:
   case qc::ECR:
+  case qc::RCCX:
     break;
   // operations that have an inverse gate with the same parameters
   case qc::iSWAP:

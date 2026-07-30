@@ -980,6 +980,13 @@ void QuantumComputation::checkQubitRange(const Qubit qubit0, const Qubit qubit1,
   checkQubitRange(qubit1);
 }
 
+void QuantumComputation::checkQubitRange(const Qubit qubit0, const Qubit qubit1,
+                                         const Qubit qubit2,
+                                         const Controls& controls) const {
+  checkQubitRange(qubit0, qubit1, controls);
+  checkQubitRange(qubit2);
+}
+
 void QuantumComputation::checkQubitRange(
     const std::vector<Qubit>& qubits) const {
   for (const auto& qubit : qubits) {
@@ -1527,6 +1534,27 @@ DEFINE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_minus_yy, theta, beta)
 DEFINE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_plus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER_OPERATION
+
+#define DEFINE_THREE_TARGET_OPERATION(op)                                      \
+  void QuantumComputation::op(const Qubit target0, const Qubit target1,        \
+                              const Qubit target2) {                           \
+    mc##op(Controls{}, target0, target1, target2);                             \
+  }                                                                            \
+  void QuantumComputation::c##op(const Control& control, const Qubit target0,  \
+                                 const Qubit target1, const Qubit target2) {   \
+    mc##op(Controls{control}, target0, target1, target2);                      \
+  }                                                                            \
+  void QuantumComputation::mc##op(const Controls& controls,                    \
+                                  const Qubit target0, const Qubit target1,    \
+                                  const Qubit target2) {                       \
+    checkQubitRange(target0, target1, target2, controls);                      \
+    emplace_back<StandardOperation>(                                           \
+        controls, Targets{target0, target1, target2}, opTypeFromString(#op));  \
+  }
+
+DEFINE_THREE_TARGET_OPERATION(rccx)
+
+#undef DEFINE_THREE_TARGET_OPERATION
 
 void QuantumComputation::measure(const Qubit qubit, const std::size_t bit) {
   checkQubitRange(qubit);

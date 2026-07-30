@@ -40,4 +40,13 @@ GateMatrix opToSingleQubitGateMatrix(qc::OpType t,
 TwoQubitGateMatrix opToTwoQubitGateMatrix(qc::OpType t,
                                           const std::vector<fp>& params = {});
 
+/**
+ * @brief Converts a given quantum operation to a three-qubit gate matrix
+ * @param t The quantum operation to convert
+ * @param params The parameters of the quantum operation
+ * @return The three-qubit gate matrix representation of the quantum operation
+ */
+ThreeQubitGateMatrix
+opToThreeQubitGateMatrix(qc::OpType t, const std::vector<fp>& params = {});
+
 } // namespace dd

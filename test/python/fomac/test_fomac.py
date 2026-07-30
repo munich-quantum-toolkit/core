@@ -16,7 +16,17 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import CustomProperty, Device, Job, ProgramFormat, Session, add_dynamic_device_library
+from mqt.core.fomac import (
+    CustomProperty,
+    Device,
+    DeviceDefinition,
+    Job,
+    ProgramFormat,
+    Session,
+    open_device,
+    register_device,
+    register_device_if_absent,
+)
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
@@ -461,8 +471,85 @@ c = measure q;
     assert job.program_format == ProgramFormat.QASM3
     # The program should be preserved
     assert job.program == qasm3_program
+    assert job.program_bytes == qasm3_program.encode() + b"\0"
     # Num shots should match request
     assert job.num_shots == 100
+
+
+def test_program_format_includes_batch_job() -> None:
+    """Expose every standard QDMI program format."""
+    assert ProgramFormat.BATCH_JOB.value == 9
+
+
+@pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
+def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
+    """Reject payloads that do not satisfy QDMI's text contract."""
+    with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
+        ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
+
+
+def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
+    """Require exact byte submission for known binary formats."""
+    with pytest.raises(ValueError, match="require exact-byte submission"):
+        ddsim_device.submit_job("not bitcode", ProgramFormat.QIR_BASE_MODULE, num_shots=1)
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.CALIBRATION, ProgramFormat.BATCH_JOB])
+def test_device_rejects_formats_without_generic_payload(ddsim_device: Device, program_format: ProgramFormat) -> None:
+    """Keep specialized QDMI formats out of the generic program API."""
+    with pytest.raises(ValueError, match="do not use a generic program payload"):
+        ddsim_device.submit_job(b"", program_format, num_shots=1)
+
+
+def test_device_executes_qir_program(ddsim_device: Device) -> None:
+    """Compile and execute a QIR program with the DDSIM device."""
+    # Keep this lazy to cover loading MLIR after the QIR-enabled device.
+    mlir = pytest.importorskip("mqt.core.mlir")
+
+    qasm3_program = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+"""
+    program = mlir.compile_program(qasm3_program, output=mlir.OutputFormat.QIR_BASE)
+    assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
+
+    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=10)
+    job.wait()
+
+    assert job.check() == Job.Status.DONE
+    assert sum(job.get_counts().values()) == 10
+
+
+def test_device_executes_binary_qir_program(ddsim_device: Device) -> None:
+    """Submit and retrieve an exact QIR module byte payload."""
+    mlir = pytest.importorskip("mqt.core.mlir")
+
+    qasm3_program = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+"""
+    program = mlir.compile_program(qasm3_program, output=mlir.OutputFormat.QIR_BASE)
+    program_bytes = program.to_bitcode()
+    assert ProgramFormat.QIR_BASE_MODULE in ddsim_device.supported_program_formats()
+
+    job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
+    assert job.program_bytes == program_bytes
+    with pytest.raises(ValueError, match="binary program"):
+        _ = job.program
+    job.wait()
+
+    assert job.check() == Job.Status.DONE
+    assert sum(job.get_counts().values()) == 10
 
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
@@ -675,11 +762,11 @@ def test_session_construction_with_token() -> None:
     assert session is not None
 
     # Non-empty token should be accepted
-    session = Session(token="test_token_123")  # noqa: S106
+    session = Session(token="test_token_123")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
     # Token with special characters should be accepted
-    session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # noqa: S106
+    session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
 
@@ -743,9 +830,11 @@ def test_session_construction_with_auth_file() -> None:
         tmp_path = tmp_file.name
 
     try:
-        # Existing file should be accepted (validation passes, parameter may be skipped)
-        session = Session(auth_file=tmp_path)
-        assert session is not None
+        # Both string and pathlib paths should be accepted.
+        string_session = Session(auth_file=tmp_path)
+        path_session = Session(auth_file=Path(tmp_path))
+        assert string_session is not None
+        assert path_session is not None
     finally:
         # Clean up
         Path(tmp_path).unlink(missing_ok=True)
@@ -761,11 +850,11 @@ def test_session_construction_with_username_password() -> None:
     assert session is not None
 
     # Password only
-    session = Session(password="secure_password")  # noqa: S106
+    session = Session(password="secure_password")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
     # Both username and password
-    session = Session(username="user123", password="secure_password")  # noqa: S106
+    session = Session(username="user123", password="secure_password")  # ruff:ignore[hardcoded-password-func-arg]
     assert session is not None
 
 
@@ -784,9 +873,9 @@ def test_session_construction_with_multiple_parameters() -> None:
     Unsupported parameters are skipped, so construction should succeed.
     """
     session = Session(
-        token="test_token",  # noqa: S106
+        token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
         username="test_user",
-        password="test_pass",  # noqa: S106
+        password="test_pass",  # ruff:ignore[hardcoded-password-func-arg]
         project_id="test_project",
     )
     assert session is not None
@@ -829,7 +918,7 @@ def test_session_construction_with_custom_parameters() -> None:
     # Test mixing custom parameters with standard authentication
     try:
         session = Session(
-            token="test_token",  # noqa: S106
+            token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
             custom1="custom_value",
             project_id="project_id",
         )
@@ -869,7 +958,47 @@ def test_session_multiple_instances() -> None:
     assert len(devices1) == len(devices2)
 
 
-def test_add_dynamic_device_library_nonexistent_library() -> None:
-    """Test that loading a non-existent library raises an error."""
+def test_register_device_does_not_load_nonexistent_library() -> None:
+    """Registration stores metadata and opening performs native loading."""
+    library_path = Path("/nonexistent/lib.so")
+    definition = DeviceDefinition("python.missing", library_path, "PREFIX")
+    assert definition.device_id == "python.missing"
+    assert definition.library_path == library_path
+    assert definition.prefix == "PREFIX"
+    register_device(definition)
     with pytest.raises(RuntimeError):
-        add_dynamic_device_library("/nonexistent/lib.so", "PREFIX")
+        open_device("python.missing")
+
+
+def test_register_device_if_absent_only_ignores_existing_id() -> None:
+    """Idempotent registration still validates duplicate definitions."""
+    definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
+    assert register_device_if_absent(definition)
+    assert not register_device_if_absent(definition)
+    with pytest.raises(ValueError, match="library must not be empty"):
+        register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
+
+
+def test_open_device_rejects_unknown_id() -> None:
+    """Opening requires a stable registered ID."""
+    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
+        open_device("python.unknown")
+
+
+def test_open_device_creates_a_fresh_session() -> None:
+    """Stable-ID opens should return separately owned sessions."""
+    first = open_device("mqt.na.default")
+    second = open_device("mqt.na.default")
+    assert first != second
+
+
+def test_site_keeps_fresh_session_alive() -> None:
+    """A site should remain usable after its device wrapper is destroyed."""
+    site = open_device("mqt.na.default").sites()[0]
+    assert site.index() == 0
+
+
+def test_operation_keeps_fresh_session_alive() -> None:
+    """An operation should remain usable after its device wrapper is destroyed."""
+    operation = open_device("mqt.na.default").operations()[0]
+    assert operation.name()

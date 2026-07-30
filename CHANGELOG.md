@@ -12,17 +12,43 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
+  ([**@burgholzer**])
+- ✨ Add versioned, relocatable configuration and stable-ID registration for
+  QDMI device libraries, including disabled-ID reservations, fresh device
+  sessions, idempotent registration, and external-device target metadata
+  ([#1912]) ([**@burgholzer**])
+- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
+  [#1950]) ([**@simon1hofmann**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
-  ([#1897]) ([**@burgholzer**])
+  ([#1897], [#1952]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
   libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
+- ✨ Add QIR output schemas support to the QIR runtime ([#1877])
+  ([**@rturrado**])
+- ✨ Add QIR program format support to the DDSIM QDMI device ([#1766])
+  ([**@rturrado**])
 
 ### Changed
 
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
+  `add_dynamic_device_library` APIs with definition registration and stable-ID
+  opening ([#1912]) ([**@burgholzer**])
+
+### Fixed
+
+- 🐛 Allow MQT Core to be embedded as a CMake subproject without target
+  collisions and make its bundled QDMI devices individually configurable
+  ([#1965]) ([**@burgholzer**])
+- 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
 
 ## [3.7.0] - 2026-07-09
 
@@ -579,17 +605,26 @@ changelogs._
 
 <!-- PR links -->
 
+[#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
+[#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
+[#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
+[#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
+[#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
+[#1886]: https://github.com/munich-quantum-toolkit/core/pull/1886
+[#1877]: https://github.com/munich-quantum-toolkit/core/pull/1877
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
+[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
+[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
@@ -747,6 +782,7 @@ changelogs._
 <!-- Contributor -->
 
 [**@burgholzer**]: https://github.com/burgholzer
+[**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@ystade**]: https://github.com/ystade
 [**@DRovara**]: https://github.com/DRovara
 [**@flowerthrower**]: https://github.com/flowerthrower
@@ -764,6 +800,7 @@ changelogs._
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
 [**@keefehuang**]: https://github.com/keefehuang
+[**@rturrado**]: https://github.com/rturrado
 
 <!-- General links -->
 

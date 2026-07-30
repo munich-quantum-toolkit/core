@@ -16,9 +16,33 @@ A QDMI Driver manages the communication between QDMI devices, such as
 [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
 It is responsible for loading the device, forwarding requests from the client to
 the device, and sending back the results. MQT Core's QDMI Driver,
-{cpp:class}`qdmi::Driver`, comes with several preloaded devices that can be used
-directly. Other devices can be loaded dynamically at runtime via
-{cpp:func}`qdmi::Driver::addDynamicDeviceLibrary`.
+{cpp:class}`qdmi::Driver`, comes with several preloaded devices when the bundled
+devices are enabled. Other devices can be loaded dynamically at runtime via
+{cpp:func}`qdmi::Driver::registerDevice` and {cpp:func}`qdmi::Driver::open`.
+Built-in and external devices can also be registered through
+[versioned QDMI device configuration](configuration.md).
+
+## Building the Bundled Devices
+
+Standalone MQT Core builds include the DDSIM, superconducting, and neutral-atom
+QDMI device libraries by default. When MQT Core is embedded in another CMake
+project using {code}`FetchContent` or {code}`add_subdirectory`, these device
+libraries are disabled by default so the consumer does not build implementations
+it may not use. They can be selected independently before making MQT Core
+available:
+
+- {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
+- {code}`BUILD_MQT_CORE_QDMI_NA_DEVICE`
+- {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
+
+For example, an embedded simulator consumer can enable only the DDSIM device,
+while CUDA-Q can enable the DDSIM and superconducting devices used by its
+integration tests.
+
+The QDMI driver and FoMaC libraries are available independently. Device-free
+builds can register external device libraries through
+[QDMI device configuration](configuration.md). When MQT Core's C++ tests are
+enabled, device-specific tests are omitted with their corresponding device.
 
 ## Python Bindings
 

@@ -9,7 +9,7 @@
 [build-system]
 requires = [
   "nanobind~=2.13.0",
-  "scikit-build-core~=0.12",
+  "scikit-build-core~=1.0.3",
   "setuptools-scm>=9.2.2",
 ]
 build-backend = "scikit_build_core.build"
@@ -81,7 +81,7 @@ wheel.py-api = "cp312"
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "build/{wheel_tag}/{build_type}"
+build-dir = "build/python/{build_type}"
 
 # All the targets to build
 build.targets = [
@@ -178,8 +178,10 @@ testpaths = ["test/python"]
 
 [tool.coverage]
 run.source = ["mqt.core"]
+run.core = "sysmon"
+run.parallel = true
 run.omit = [
-    '*/_compat/*',
+  '*/_compat/*',
 ]
 run.disable_warnings = [
   "no-sysmon",
@@ -272,10 +274,10 @@ PC170 = "We do not use rST files anymore"
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = ["*-musllinux_*", "cp313t-*"]
+skip = ["*-musllinux_*"]
 archs = "auto64"
 test-groups = ["test"]
-test-sources = ["test/python", "json/na"]
+test-sources = ["test/python", "test/circuits", "json/na"]
 test-command = "pytest test/python"
 build-frontend = "uv"
 test-skip = [
@@ -293,12 +295,6 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
-
-[[tool.cibuildwheel.overrides]]
-select = "cp312-*"
-inherit.repair-wheel-command = "append"
-repair-wheel-command = "uvx abi3audit --strict --report {wheel}"
-
 
 [tool.uv]
 required-version = ">=0.5.20"
@@ -327,7 +323,7 @@ exclude = [
 [dependency-groups]
 build = [
   "nanobind~=2.13.0",
-  "scikit-build-core~=0.12",
+  "scikit-build-core~=1.0.3",
   "setuptools-scm>=9.2.2",
 ]
 docs = [
@@ -351,7 +347,7 @@ docs = [
 test = [
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
-  "pytest-cov>=7.0.0",
+  "pytest-cov>=7.1.0",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8.0",
   "qiskit[qasm3-import]>=1.1.0",
