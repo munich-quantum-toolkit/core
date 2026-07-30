@@ -200,6 +200,7 @@ private:
   DecoherenceTimes decoherenceTimes_{};
   bool isZone = false; ///< Indicates if the site is a zone site
 
+public:
   /// @brief Constructor for regular sites.
   MQT_NA_QDMI_Site_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
                           uint64_t moduleId, uint64_t subModuleId, int64_t x,
@@ -209,17 +210,6 @@ private:
                           int64_t x, int64_t y, uint64_t width, uint64_t height,
                           uint64_t t1, uint64_t t2);
 
-public:
-  /// @brief Factory function for regular sites.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Site_impl_d>
-  makeUniqueSite(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
-                 uint64_t moduleId, uint64_t subModuleId, int64_t x, int64_t y,
-                 uint64_t t1, uint64_t t2);
-  /// @brief Factory function for zone sites.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Site_impl_d>
-  makeUniqueZone(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
-                 int64_t x, int64_t y, uint64_t width, uint64_t height,
-                 uint64_t t1, uint64_t t2);
   /**
    * @brief Queries a property of the site.
    * @see MQT_NA_QDMI_device_session_query_site_property
@@ -277,83 +267,51 @@ private:
   /// Indicates if this operation is zoned (global)
   bool isZoned_ = false;
 
+public:
   /// @brief Constructor for the global single-qubit.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+  MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
+                               std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
                                double fidelity, MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the global multi-qubit operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+  MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
+                               std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
                                double fidelity, uint64_t interactionRadius,
                                uint64_t blockingRadius, double idlingFidelity,
                                MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the single-qubit operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+  MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
+                               std::string name, size_t numParameters,
                                uint64_t duration, double fidelity,
                                const std::vector<MQT_NA_QDMI_Site>& sites);
   /// @brief Constructor for the local two-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(
-      std::string name, size_t numParameters, size_t numQubits,
-      uint64_t duration, double fidelity, uint64_t interactionRadius,
-      uint64_t blockingRadius,
+      MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+      size_t numParameters, size_t numQubits, uint64_t duration,
+      double fidelity, uint64_t interactionRadius, uint64_t blockingRadius,
       const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites);
   /// @brief Constructor for load and store operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+  MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
+                               std::string name, size_t numParameters,
                                uint64_t duration, double fidelity,
                                MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the shuttling operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+  MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
+                               std::string name, size_t numParameters,
                                MQT_NA_QDMI_Site zone,
                                uint64_t meanShuttlingSpeed);
 
+private:
   /// @brief Sort the sites such that the occurrence of a given site can be
   /// determined in O(log n) time.
   void sortSites();
 
 public:
-  void setOwner(MQT_NA_QDMI_Device_Session_impl_d* owner) { owner_ = owner; }
   [[nodiscard]] bool
   ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const {
     return owner_ == session;
   }
-  /// @brief Factory function for the global single-qubit operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueGlobalSingleQubit(const std::string& name, size_t numParameters,
-                              uint64_t duration, double fidelity,
-                              MQT_NA_QDMI_Site zone);
-  /// @brief Factory function for the global multi-qubit operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueGlobalMultiQubit(const std::string& name, size_t numParameters,
-                             size_t numQubits, uint64_t duration,
-                             double fidelity, uint64_t interactionRadius,
-                             uint64_t blockingRadius, double idlingFidelity,
-                             MQT_NA_QDMI_Site zone);
-  /// @brief Factory function for the local single-qubit operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueLocalSingleQubit(const std::string& name, size_t numParameters,
-                             uint64_t duration, double fidelity,
-                             const std::vector<MQT_NA_QDMI_Site>& sites);
-  /// @brief Factory function for the local multi-qubit operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueLocalTwoQubit(
-      const std::string& name, size_t numParameters, size_t numQubits,
-      uint64_t duration, double fidelity, uint64_t interactionRadius,
-      uint64_t blockingRadius,
-      const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites);
-  /// @brief Factory function for the shuttling load operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueShuttlingLoad(const std::string& name, size_t numParameters,
-                          uint64_t duration, double fidelity,
-                          MQT_NA_QDMI_Site zone);
-  /// @brief Factory function for the shuttling move operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueShuttlingMove(const std::string& name, size_t numParameters,
-                          MQT_NA_QDMI_Site zone, uint64_t meanShuttlingSpeed);
-  /// @brief Factory function for the shuttling store operations.
-  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
-  makeUniqueShuttlingStore(const std::string& name, size_t numParameters,
-                           uint64_t duration, double fidelity,
-                           MQT_NA_QDMI_Site zone);
 
   /**
    * @brief Queries a property of the operation.

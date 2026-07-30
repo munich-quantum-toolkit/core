@@ -37,6 +37,9 @@ copied-runtime, and wheel layouts remain relocatable.
 - [x] (2026-07-30 14:30Z) Rebased the provider migration onto the merged
       configuration transport from #1967, repeated the affected validation, and
       published draft PR #1974 against `main`.
+- [x] (2026-07-30 17:22Z) Simplified strict key validation and session
+      materialization, then removed the remaining generator-era site and
+      operation factories after independent review.
 
 ## Surprises & Discoveries
 
@@ -63,8 +66,8 @@ copied-runtime, and wheel layouts remain relocatable.
   validator now range-checks unsigned coordinates and has a regression case.
 - Observation: bounding generated sites does not bound local two-qubit
   materialization, which examines site pairs. Evidence: independent review
-  identified the remaining quadratic path; parsing and materialization now both
-  enforce a cumulative ten-million candidate-pair ceiling with a regression
+  identified the remaining quadratic path; parsing now enforces a cumulative
+  ten-million candidate-pair ceiling before materialization, with a regression
   below the site-count ceiling.
 
 ## Decision Log
@@ -86,6 +89,11 @@ copied-runtime, and wheel layouts remain relocatable.
   PR. Rationale: adding it now would either depend on the not-yet-migrated SC
   parser or create a short-lived NA-only interface; the shared parser API
   remains available for validation. Date/Author: 2026-07-30 / Codex.
+- Decision: Construct session-owned sites and operations directly with their
+  owner instead of retaining generated-model factories and post-construction
+  ownership mutation. Rationale: the session is now the sole materialization
+  path, so the factories only added temporary objects and indirection.
+  Date/Author: 2026-07-30 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -199,4 +207,5 @@ directly and receives its bundled JSON through
 `mqt_configure_qdmi_device(... RUNTIME_FILES ...)`.
 
 Revision note: updated on 2026-07-30 after #1967 merged to record the clean
-rebase onto `main`, repeated validation, and publication as draft PR #1974.
+rebase onto `main`, repeated validation, draft PR #1974, and the follow-up
+simplification of validation and session-owned construction.
