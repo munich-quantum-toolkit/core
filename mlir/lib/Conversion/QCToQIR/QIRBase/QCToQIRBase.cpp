@@ -43,8 +43,10 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <variant>
 
 namespace mlir {
 
@@ -56,24 +58,34 @@ using namespace qir;
 
 /**
  * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
- * `nullptr` if it does not write into a classical register.
+ * a null value if it does not write into a classical register.
  */
-static Value resolveRegisterMeasurement(LoweringState& state, Operation* op) {
+static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
+                                                   Operation* op) {
   const auto it = state.cregMeasurements.find(op);
   if (it == state.cregMeasurements.end()) {
-    return nullptr;
+    return Value{};
   }
   const auto [allocOp, index] = it->second;
   const auto indexValue = getConstantIntValue(index);
-  assert(indexValue && "index must be constant");
-  return state.cregs[allocOp].results[*indexValue];
+  if (!indexValue) {
+    op->emitError("QIR Base Profile requires constant classical-register "
+                  "measurement indices");
+    return failure();
+  }
+  const auto& results = state.cregs.at(allocOp).results;
+  if (*indexValue < 0 || static_cast<size_t>(*indexValue) >= results.size()) {
+    op->emitError("classical-register measurement index is out of bounds");
+    return failure();
+  }
+  return results[static_cast<size_t>(*indexValue)];
 }
 
 namespace {
 
 /**
  * @brief Converts a classical-bit-register `memref.alloc` to static result
- * pointers represented by `llvm.inttoptr` operations.
+ * pointers represented by `llvm.inttoptr` operations
  *
  * @details
  * Static qubit pointers are allocated during by `ConvertMemRefLoadOp`.
@@ -92,12 +104,17 @@ struct ConvertMemRefAllocOp final
       return success();
     }
     auto& reg = it->second;
+    const auto* size = std::get_if<int64_t>(&reg.size);
+    if (size == nullptr) {
+      op.emitError(
+          "QIR Base Profile requires statically sized classical registers");
+      return failure();
+    }
 
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
     const auto base = static_cast<int64_t>(state.staticResults.size());
-    const auto size = std::get<int64_t>(reg.size);
-    for (int64_t i = 0; i < size; ++i) {
+    for (int64_t i = 0; i < *size; ++i) {
       const auto index = base + i;
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
       reg.results[i] = result;
@@ -141,6 +158,10 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
+    if (isClassicalBitRegister(op.getMemref().getType())) {
+      return rewriter.notifyMatchFailure(
+          op, "QIR Base Profile does not support classical-result loads");
+    }
     // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
@@ -170,6 +191,12 @@ struct ConvertMemRefStoreOp final
   LogicalResult
   matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto measureOp = op.getValueToStore().getDefiningOp<MeasureOp>();
+    if (!measureOp ||
+        !getState().cregMeasurements.contains(measureOp.getOperation())) {
+      return rewriter.notifyMatchFailure(
+          op, "unsupported classical-register store");
+    }
     rewriter.eraseOp(op);
     return success();
   }
@@ -275,7 +302,11 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
     OpBuilder::InsertionGuard guard(rewriter);
 
-    auto result = resolveRegisterMeasurement(state, op.getOperation());
+    auto registerResult = resolveRegisterMeasurement(state, op.getOperation());
+    if (failed(registerResult)) {
+      return failure();
+    }
+    auto result = *registerResult;
     if (!result) {
       result = getResultPtr(state, op.getOperation(), rewriter);
     }

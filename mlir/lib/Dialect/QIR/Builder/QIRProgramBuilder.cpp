@@ -346,7 +346,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     }
   }
 
-  return {.label = label, .size = size, .array = reg.array};
+  return reg;
 }
 
 Value QIRProgramBuilder::loadClassicalBit(

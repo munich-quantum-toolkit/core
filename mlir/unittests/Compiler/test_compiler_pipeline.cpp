@@ -144,12 +144,39 @@ protected:
     return parseSourceString<ModuleOp>(ir, context.get());
   }
 
+  static void ignoreSingleQIRResultLabel(ModuleOp module) {
+    constexpr llvm::StringLiteral prefix = "qir.result_label_";
+    size_t numLabels = 0;
+    module.walk([&](LLVM::GlobalOp op) {
+      numLabels += op.getSymName().starts_with(prefix);
+    });
+    if (numLabels != 1) {
+      return;
+    }
+    module.walk([&](Operation* op) {
+      if (const auto name = op->getAttrOfType<StringAttr>("sym_name");
+          name && name.getValue().starts_with(prefix)) {
+        op->removeAttr("sym_name");
+        op->removeAttr("value");
+      }
+      if (const auto name = op->getAttrOfType<FlatSymbolRefAttr>("global_name");
+          name && name.getValue().starts_with(prefix)) {
+        op->removeAttr("global_name");
+      }
+    });
+  }
+
   void expectEquivalent(const std::string& stage, const std::string& ir,
                         ModuleOp expected) const {
     auto actual = parseRecordedModule(ir);
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
     EXPECT_TRUE(verify(expected).succeeded());
+    // Dedicated translation and QIR-lowering tests cover exact source labels.
+    // The shared program fixtures use synthesized cN labels, so exclude labels
+    // from their structural program comparison.
+    ignoreSingleQIRResultLabel(actual.get());
+    ignoreSingleQIRResultLabel(expected);
     EXPECT_TRUE(areModulesEquivalentWithPermutations(actual.get(), expected));
   }
 };

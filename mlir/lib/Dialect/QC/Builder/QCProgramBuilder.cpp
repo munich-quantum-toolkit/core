@@ -167,7 +167,8 @@ Value QCProgramBuilder::loadQubit(Value memref, Value index) {
   return loadOp.getResult();
 }
 
-Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size) {
+Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
+                                                  const StringRef name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -175,8 +176,11 @@ Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size) {
   }
 
   auto memrefType = MemRefType::get({size}, getI1Type());
-  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
-  return memref;
+  auto alloc = memref::AllocOp::create(*this, memrefType);
+  if (!name.empty()) {
+    alloc->setAttr(CLASSICAL_REGISTER_NAME_ATTR, getStringAttr(name));
+  }
+  return alloc.getResult();
 }
 
 //===----------------------------------------------------------------------===//

@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -67,8 +68,7 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
   addConversion([ctx](MemRefType type) -> Type {
-    if (isa<QubitType>(type.getElementType()) ||
-        isa<IntegerType>(type.getElementType())) {
+    if (isa<QubitType>(type.getElementType()) || isClassicalBitRegister(type)) {
       return LLVM::LLVMPointerType::get(ctx);
     }
     return type;
@@ -449,7 +449,7 @@ Value getResultPtr(LoweringState& state, Operation* op,
 
 LogicalResult stripReturnedMeasurements(Operation* moduleOp,
                                         LoweringState& state) {
-  bool hasInvalidStores = false;
+  bool hasInvalidMemory = false;
   moduleOp->walk([&](func::FuncOp funcOp) {
     // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
@@ -466,39 +466,70 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
 
     funcOp.walk([&](memref::AllocOp allocOp) {
       auto type = allocOp.getType();
-      if (type.getRank() != 1 || !isa<IntegerType>(type.getElementType())) {
+      if (!isClassicalBitRegister(type)) {
+        if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+          allocOp.emitError(
+              "QIR conversion only supports one-dimensional memrefs of i1 "
+              "classical results or qc.qubit registers");
+          hasInvalidMemory = true;
+        }
         return;
       }
 
       auto& reg = state.cregs.try_emplace(allocOp.getOperation()).first->second;
       reg.record = false;
+      if (const auto name = allocOp->getAttrOfType<StringAttr>(
+              utils::CLASSICAL_REGISTER_NAME_ATTR)) {
+        reg.label = name.str();
+      }
       const auto size = type.getShape()[0];
       if (size != ShapedType::kDynamic) {
         reg.size = size;
         reg.results.assign(size, Value{});
       }
+    });
 
-      for (auto* user : allocOp.getResult().getUsers()) {
-        auto storeOp = dyn_cast<memref::StoreOp>(user);
-        if (!storeOp) {
-          continue;
-        }
-        auto measureOp = storeOp.getValueToStore().getDefiningOp<MeasureOp>();
-        if (!measureOp) {
-          continue;
-        }
-        const auto destination = std::pair<Operation*, Value>{
-            allocOp.getOperation(), storeOp.getIndices()[0]};
-        const auto [it, inserted] = state.cregMeasurements.try_emplace(
-            measureOp.getOperation(), destination);
-        if (!inserted && it->second != destination) {
-          storeOp.emitError(
-              "a measurement result cannot be stored in multiple classical "
-              "register locations during QIR conversion");
-          hasInvalidStores = true;
-        }
+    funcOp.walk([&](memref::StoreOp storeOp) {
+      const auto type = dyn_cast<MemRefType>(storeOp.getMemref().getType());
+      if (!type || !isClassicalBitRegister(type)) {
+        return;
+      }
+      auto allocOp = storeOp.getMemref().getDefiningOp<memref::AllocOp>();
+      auto measureOp = storeOp.getValueToStore().getDefiningOp<MeasureOp>();
+      if (!allocOp || !state.cregs.contains(allocOp.getOperation()) ||
+          !measureOp) {
+        storeOp.emitError(
+            "QIR conversion only supports storing direct measurement results "
+            "in classical result registers");
+        hasInvalidMemory = true;
+        return;
+      }
+      const auto destination = std::pair<Operation*, Value>{
+          allocOp.getOperation(), storeOp.getIndices()[0]};
+      const auto [it, inserted] = state.cregMeasurements.try_emplace(
+          measureOp.getOperation(), destination);
+      if (!inserted && it->second != destination) {
+        storeOp.emitError(
+            "a measurement result cannot be stored in multiple classical "
+            "register locations during QIR conversion");
+        hasInvalidMemory = true;
       }
     });
+
+    const auto markRegisterForRecording = [&](Operation* allocOp) {
+      auto& reg = state.cregs.at(allocOp);
+      if (reg.label.empty()) {
+        reg.label =
+            "c" +
+            std::to_string(llvm::count_if(state.cregs, [](const auto& entry) {
+              return entry.second.record;
+            }));
+      }
+      if (!reg.record) {
+        reg.record = true;
+        state.returnedCregs.push_back(allocOp);
+      }
+    };
 
     funcOp.walk([&](func::ReturnOp returnOp) {
       SmallVector<Value> keptOperands;
@@ -506,15 +537,16 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
 
       for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
-          state.returnedStaticResults.insert(measureOp.getOperation());
+          if (const auto it =
+                  state.cregMeasurements.find(measureOp.getOperation());
+              it != state.cregMeasurements.end()) {
+            markRegisterForRecording(it->second.first);
+          } else {
+            state.returnedStaticResults.insert(measureOp.getOperation());
+          }
         } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>();
                    allocOp && state.cregs.contains(allocOp.getOperation())) {
-          auto& reg = state.cregs.at(allocOp.getOperation());
-          if (!reg.record) {
-            reg.label = "c" + std::to_string(state.returnedCregs.size());
-            reg.record = true;
-            state.returnedCregs.push_back(allocOp.getOperation());
-          }
+          markRegisterForRecording(allocOp.getOperation());
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());
@@ -536,7 +568,7 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
           keptReturnTypes));
     });
   });
-  return failure(hasInvalidStores);
+  return failure(hasInvalidMemory);
 }
 
 } // namespace mlir

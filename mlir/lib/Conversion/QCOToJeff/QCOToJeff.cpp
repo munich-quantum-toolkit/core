@@ -111,6 +111,12 @@ struct LoweringState {
     return it != cregFromBlockArg.end() ? it->second : cregOrBlockArg;
   }
 
+  /// Returns the underlying memref if @p value is a classical register.
+  [[nodiscard]] Value findCreg(Value value) {
+    value = resolveCreg(value);
+    return isClassicalRegister(value) ? value : Value{};
+  }
+
   /// Returns the latest tensor value for a classical-bit-register @p memref in
   /// the region of @p anchor.
   [[nodiscard]] Value getCurrentCreg(Value memref, Operation* anchor) {
@@ -434,9 +440,9 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     auto newArg = newBlock->addArgument(
         typeConverter->convertType(value.getType()), value.getLoc());
     mapping.map(value, newArg);
-    if (isClassicalRegister(value)) {
-      state.cregTensors[&dest][value] = newArg;
-      state.cregFromBlockArg[newArg] = value;
+    if (const auto creg = state.findCreg(value)) {
+      state.cregTensors[&dest][creg] = newArg;
+      state.cregFromBlockArg[newArg] = creg;
     }
   }
 
@@ -477,7 +483,7 @@ struct ConvertMemRefAllocOpToJeff final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto memrefType = op.getType();
     auto elementType = memrefType.getElementType();
@@ -485,7 +491,7 @@ struct ConvertMemRefAllocOpToJeff final
       return rewriter.notifyMatchFailure(op, "unsupported memref type");
     }
     auto loc = op.getLoc();
-    auto dynamicSizes = op.getDynamicSizes();
+    auto dynamicSizes = adaptor.getDynamicSizes();
     RankedTensorType tensorType;
     Value size;
     if (dynamicSizes.empty()) {
@@ -1286,8 +1292,8 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (isClassicalRegister(value)) {
-        remappedValue = state.getCurrentCreg(value, op);
+      if (const auto creg = state.findCreg(value)) {
+        remappedValue = state.getCurrentCreg(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
         }
@@ -1327,8 +1333,8 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
     // Update tensor values
     const auto numResults = op.getNumResults();
     for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (isClassicalRegister(value)) {
-        state.setCurrentCreg(value, jeffSwitch.getResult(numResults + i), op);
+      if (const auto creg = state.findCreg(value)) {
+        state.setCurrentCreg(creg, jeffSwitch.getResult(numResults + i), op);
       }
     }
 
@@ -1386,8 +1392,8 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (isClassicalRegister(value)) {
-        remappedValue = state.getCurrentCreg(value, op);
+      if (const auto creg = state.findCreg(value)) {
+        remappedValue = state.getCurrentCreg(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
         }
@@ -1410,8 +1416,8 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
     // Update tensor values
     const auto numResults = op.getNumResults();
     for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (isClassicalRegister(value)) {
-        state.setCurrentCreg(value, jeffFor.getResult(numResults + i), op);
+      if (const auto creg = state.findCreg(value)) {
+        state.setCurrentCreg(creg, jeffFor.getResult(numResults + i), op);
       }
     }
 
@@ -1470,8 +1476,8 @@ struct ConvertSCFWhileOpToJeff final
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (isClassicalRegister(value)) {
-        remappedValue = state.getCurrentCreg(value, op);
+      if (const auto creg = state.findCreg(value)) {
+        remappedValue = state.getCurrentCreg(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
         }
@@ -1497,8 +1503,8 @@ struct ConvertSCFWhileOpToJeff final
     // Update tensor values
     const auto numResults = op.getNumResults();
     for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (isClassicalRegister(value)) {
-        state.setCurrentCreg(value, jeffWhile.getResult(numResults + i), op);
+      if (const auto creg = state.findCreg(value)) {
+        state.setCurrentCreg(creg, jeffWhile.getResult(numResults + i), op);
       }
     }
 
@@ -1551,6 +1557,11 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
     getState().entryPointName = op.getSymName();
 
     auto funcType = op.getFunctionType();
+    SmallVector<Type> newInputs;
+    if (failed(getTypeConverter()->convertTypes(funcType.getInputs(),
+                                                newInputs))) {
+      return failure();
+    }
     SmallVector<Type> newResults;
     if (failed(getTypeConverter()->convertTypes(funcType.getResults(),
                                                 newResults))) {
@@ -1558,7 +1569,11 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
     }
 
     rewriter.startOpModification(op);
-    op.setType(rewriter.getFunctionType(funcType.getInputs(), newResults));
+    op.setType(rewriter.getFunctionType(newInputs, newResults));
+    for (const auto& [argument, type] :
+         llvm::zip_equal(block->getArguments(), newInputs)) {
+      argument.setType(type);
+    }
     op->removeAttr("passthrough");
     rewriter.finalizeOpModification(op);
 

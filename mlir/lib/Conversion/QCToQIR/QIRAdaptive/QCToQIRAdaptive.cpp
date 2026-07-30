@@ -176,7 +176,7 @@ struct ConvertMemRefAllocOp final
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
-    if (isa<IntegerType>(op.getType().getElementType())) {
+    if (isClassicalBitRegister(op.getType())) {
       return convertClassicalBitMemRefAllocOp(op, adaptor, getState(),
                                               rewriter);
     }
@@ -221,7 +221,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
         LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
 
     // If the loaded value is a measurement result, load the result pointer
-    if (isa<IntegerType>(memrefType.getElementType())) {
+    if (isClassicalBitRegister(memrefType)) {
       auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
       auto fnDec =
           getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
@@ -249,6 +249,12 @@ struct ConvertMemRefStoreOp final
   LogicalResult
   matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto measureOp = op.getValueToStore().getDefiningOp<MeasureOp>();
+    if (!measureOp ||
+        !getState().cregMeasurements.contains(measureOp.getOperation())) {
+      return rewriter.notifyMatchFailure(
+          op, "unsupported classical-register store");
+    }
     rewriter.eraseOp(op);
     return success();
   }
@@ -278,6 +284,10 @@ struct ConvertMemRefDeallocOp final
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
+    if (isClassicalBitRegister(op.getMemref().getType())) {
+      rewriter.eraseOp(op);
+      return success();
+    }
 
     auto& state = getState();
     auto* ctx = getContext();
@@ -296,7 +306,9 @@ struct ConvertMemRefDeallocOp final
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
 
     auto size = state.qregSizes.lookup(op.getMemref());
-    assert(size != nullptr && "Size not found");
+    if (!size) {
+      return rewriter.notifyMatchFailure(op, "unknown qubit register");
+    }
 
     // Create the release call
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,

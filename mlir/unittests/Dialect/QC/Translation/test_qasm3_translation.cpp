@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qasm_programs.h"
@@ -475,7 +476,7 @@ translatedTwoQubitUnitary(const llvm::StringRef source) {
   return result;
 }
 
-TEST(QASM3TranslationTest, PreservesOpenQASMGatePhaseConventions) {
+TEST(QASM3TranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
   constexpr double theta = 0.37;
   constexpr double phi = -0.29;
   constexpr double lambda = 0.83;
@@ -956,6 +957,48 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
     ASSERT_TRUE(power.getExponentValue().has_value());
     EXPECT_DOUBLE_EQ(*power.getExponentValue(), 4294967296.0);
   }
+}
+
+TEST_F(QASM3TranslationTest, RetainsClassicalRegisterName) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+qubit q;
+output bit named_result;
+named_result = measure q;
+)qasm";
+  auto translated = qc::translateQASM3ToQC(source, context.get());
+  ASSERT_TRUE(translated);
+
+  memref::AllocOp classicalRegister;
+  translated->walk([&](memref::AllocOp op) {
+    if (op.getType().getElementType().isInteger(1)) {
+      classicalRegister = op;
+    }
+  });
+  ASSERT_TRUE(classicalRegister);
+  const auto name = classicalRegister->getAttrOfType<StringAttr>(
+      utils::CLASSICAL_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_result");
+}
+
+TEST_F(QASM3TranslationTest, JoinsMeasurementsFromBothBranches) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+qubit[2] q;
+bit condition;
+bit measured_on_all_paths;
+condition = measure q[0];
+if (condition) {
+  measured_on_all_paths = measure q[1];
+} else {
+  measured_on_all_paths = measure q[1];
+}
+if (measured_on_all_paths) {
+  x q[1];
+}
+)qasm";
+  auto translated = qc::translateQASM3ToQC(source, context.get());
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(succeeded(verify(*translated)));
 }
 
 TEST(QASM3TranslationRegression, ReloadsConditionAfterBranchMeasurement) {

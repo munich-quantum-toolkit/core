@@ -211,8 +211,8 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    auto memref =
-        builder.allocClassicalBitRegister(static_cast<int64_t>(reg->getSize()));
+    auto memref = builder.allocClassicalBitRegister(
+        static_cast<int64_t>(reg->getSize()), reg->getName());
     memrefs.emplace_back(memref);
     for (size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
@@ -721,14 +721,18 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   // Define if-else operation
   auto thenResult = success();
   const auto measuredBefore = state.measuredBits;
+  DenseSet<size_t> measuredAfterThen;
   auto thenBuilder = [&] {
     thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
+    measuredAfterThen = state.measuredBits;
     state.measuredBits = measuredBefore;
   };
 
   auto elseResult = success();
+  DenseSet<size_t> measuredAfterElse;
   auto elseBuilder = [&] {
     elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
+    measuredAfterElse = state.measuredBits;
     state.measuredBits = measuredBefore;
   };
 
@@ -745,6 +749,13 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   if (failed(elseResult)) {
     llvm::errs() << "Failed to translate else branch of IfElseOperation\n";
     return failure();
+  }
+  if (ifElse.getElseOp() != nullptr) {
+    for (const auto bit : measuredAfterThen) {
+      if (measuredAfterElse.contains(bit)) {
+        state.measuredBits.insert(bit);
+      }
+    }
   }
 
   return success();

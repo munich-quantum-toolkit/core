@@ -2328,7 +2328,7 @@ private:
       return;
     }
     classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(declaration.width));
+        static_cast<int64_t>(declaration.width), declaration.name);
     bitValues[statement.reg].resize(declaration.width);
     auto poison =
         ub::PoisonOp::create(builder, builder.getI1Type()).getResult();

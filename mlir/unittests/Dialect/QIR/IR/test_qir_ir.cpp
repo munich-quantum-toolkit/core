@@ -10,6 +10,7 @@
 
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qir_programs.h"
@@ -129,6 +130,22 @@ TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
+}
+
+TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
+  ClassicalRegister returnedRegister;
+  auto module = QIRProgramBuilder::build(
+      context.get(),
+      [&](QIRProgramBuilder& builder) {
+        returnedRegister = builder.allocClassicalBitRegister(2, false);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base);
+
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(returnedRegister.record);
+  EXPECT_EQ(returnedRegister.results.size(), 2U);
+  EXPECT_FALSE(returnedRegister.array);
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp

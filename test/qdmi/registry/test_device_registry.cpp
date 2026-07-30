@@ -310,6 +310,7 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
                 "auth.json");
 }
 
+#if MQT_CORE_QDMI_HAS_ALL_BUILTIN_DEVICES
 TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const TemporaryDirectory directory;
   const auto configFile = emptyConfig(directory);
@@ -324,6 +325,7 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
     EXPECT_TRUE(std::filesystem::is_regular_file(definition.library));
   }
 }
+#endif
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
   const TemporaryDirectory directory;

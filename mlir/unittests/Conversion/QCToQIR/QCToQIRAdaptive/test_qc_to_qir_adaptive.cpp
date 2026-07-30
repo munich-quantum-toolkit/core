@@ -20,6 +20,7 @@
 #include "qir_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -28,6 +29,8 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -35,6 +38,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -184,6 +188,93 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1, "named_result");
+  const auto result = builder.measure(q, c, 0);
+  builder.retype(result.getType());
+  auto module = builder.finalize(result);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(
+      qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto c = builder.allocClassicalBitRegister(1);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(true), c,
+                          zero.getResult());
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "only supports storing direct measurement results");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto type = MemRefType::get({1}, builder.getI8Type());
+  const auto memref = memref::AllocOp::create(builder, type).getResult();
+  builder.retype(type);
+  auto module = builder.finalize(memref);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "only supports one-dimensional memrefs of i1");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, IgnoresClassicalRegisterDeallocation) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  builder.measure(q, c, 0);
+  memref::DeallocOp::create(builder, c);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
 }
 
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {

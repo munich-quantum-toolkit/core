@@ -11,6 +11,7 @@
 #pragma once
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -31,6 +32,10 @@
 #include <variant>
 
 namespace mlir::utils {
+
+/// Attribute used to retain a source-level classical-register name.
+inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
+    "mqt.classical_register_name";
 
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {

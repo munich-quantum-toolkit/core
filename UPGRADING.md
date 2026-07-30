@@ -36,6 +36,53 @@ Known limitations:
 - AppleClang 17+ is required to build MQT Core due to some C++20 features that
   are not yet properly supported by older versions.
 
+### Removal of the density matrix support from the DD package
+
+The density matrix support within the DD package has been removed. This change
+was made to reduce the maintenance burden of the package. Any libraries that
+depend on the density matrix functionality, such as [MQT DDSIM], need to
+implement it on their own or use an alternative solution. In a related fashion,
+this PR also removes the noise operations from the MQT Core IR as they no longer
+serve a purpose.
+
+### Removal of the `datastructures` (sub)library
+
+The `datastructures` (sub)library has been removed from the MQT Core repository.
+Its functionality has only ever been used in [MQT QMAP] since its inception. As
+a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
+Core version that includes this change.
+
+### Dev container
+
+A [dev container](https://containers.dev/) configuration is available to provide
+a consistent local development environment. Common IDEs like
+[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
+and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
+open the repository directly inside the container. If you are on Windows, we
+recommend using Docker Desktop with the WSL 2 backend.
+
+## [3.8.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.7` to `3.8`.
+Thus, consuming libraries need to update their wheel repair configuration for
+`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
+wheel repair step.
+
+### QDMI updated to version 1.3.2
+
+MQT Core already bundled QDMI 1.3.2 in the previous release, but now also
+requires at least that version when using a system-provided QDMI installation.
+
+### Bundled QDMI devices in embedded builds
+
+The bundled QDMI devices now have individual CMake options:
+`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
+`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
+standalone MQT Core build. They default to disabled when MQT Core is consumed
+through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
+enable only the devices they need before making MQT Core available. The QDMI
+driver and FoMaC libraries remain available independently.
+
 ### QDMI runtime device registration
 
 The unstable runtime-loading helpers have been replaced with registration by a
@@ -73,30 +120,24 @@ an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
 owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
 behavior for client callers.
 
-### Removal of the density matrix support from the DD package
+See the [QDMI device configuration guide](docs/qdmi/configuration.md) for the
+versioned JSON and TOML formats, configuration precedence, and relocatable
+device manifests.
 
-The density matrix support within the DD package has been removed. This change
-was made to reduce the maintenance burden of the package. Any libraries that
-depend on the density matrix functionality, such as [MQT DDSIM], need to
-implement it on their own or use an alternative solution. In a related fashion,
-this PR also removes the noise operations from the MQT Core IR as they no longer
-serve a purpose.
+### FoMaC program payload handling
 
-### Removal of the `datastructures` (sub)library
+FoMaC now distinguishes textual programs from exact binary payloads. In C++, use
+`Device::submitJob(const std::string&, ...)` for text formats and
+`Device::submitJob(std::span<const std::byte>, ...)` for binary formats. In
+Python, pass `str` for text and `bytes` for binary payloads. In particular, QIR
+`*_STRING` formats are text, while QIR `*_MODULE` formats are LLVM bitcode and
+must be submitted as bytes.
 
-The `datastructures` (sub)library has been removed from the MQT Core repository.
-Its functionality has only ever been used in [MQT QMAP] since its inception. As
-a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
-Core version that includes this change.
-
-### Dev container
-
-A [dev container](https://containers.dev/) configuration is available to provide
-a consistent local development environment. Common IDEs like
-[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
-and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
-open the repository directly inside the container. If you are on Windows, we
-recommend using Docker Desktop with the WSL 2 backend.
+`Job::getProgram()` and Python's `Job.program` remain the textual accessors and
+now reject binary or non-null-terminated payloads. Use `Job::getProgramBytes()`
+or `Job.program_bytes` to retrieve the exact submitted bytes. Calibration and
+batch-job formats cannot be submitted through these generic program APIs because
+their QDMI payloads have specialized representations.
 
 ### QDMI child devices
 
@@ -439,7 +480,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
