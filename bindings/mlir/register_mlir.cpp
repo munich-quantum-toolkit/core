@@ -387,6 +387,12 @@ operations.)pb");
               &mlir::QCOProgram::fuseSingleQubitUnitaryRuns>::call,
           nb::kw_only(), "basis"_a = "zyz",
           "Fuse single-qubit unitary runs into the chosen decomposition basis.")
+      .def("fuse_two_qubit_unitary_runs",
+           &BooleanMemberAdapter<
+               &mlir::QCOProgram::fuseTwoQubitUnitaryRuns>::call,
+           nb::kw_only(), "native_gates"_a,
+           "Lower unitaries to a non-empty native gate menu via two-qubit run "
+           "fusion.")
       .def("unroll_quantum_loops",
            &BooleanMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
            nb::kw_only(), "unroll_factor"_a = -1,
@@ -394,6 +400,13 @@ operations.)pb");
       .def("lift_hadamards",
            &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
            "Move Hadamard gates through compatible operations.")
+      .def("decompose_multi_controlled",
+           &BooleanMemberAdapter<
+               &mlir::QCOProgram::decomposeMultiControlled>::call,
+           nb::kw_only(), "min_controls"_a = 2,
+           "Decompose controlled X/Z gates, qco.rccx, and constant-angle phase "
+           "gates with at least min_controls controls (min_controls must be at "
+           "least 2).")
       .def(
           "place_and_route",
           [](mlir::QCOProgram& value,

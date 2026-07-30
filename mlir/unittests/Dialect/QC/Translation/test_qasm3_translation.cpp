@@ -257,7 +257,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
 
         QASM3TranslationTestCase{"AllocQubit", qasm::allocQubit,
-                                 MQT_NAMED_BUILDER(qc::alloc1QubitRegister)},
+                                 MQT_NAMED_BUILDER(qc::allocQubit)},
         QASM3TranslationTestCase{"AllocQubitRegister", qasm::allocQubitRegister,
                                  MQT_NAMED_BUILDER(qc::allocQubitRegister)},
         QASM3TranslationTestCase{

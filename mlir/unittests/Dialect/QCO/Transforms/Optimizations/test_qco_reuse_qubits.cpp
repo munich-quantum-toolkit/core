@@ -557,8 +557,6 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
 
   r0 = referenceBuilder.h(r0);
   std::tie(r0, cr0) = referenceBuilder.measure(r0);
-  auto xorOp = arith::XOrIOp::create(
-      referenceBuilder, referenceBuilder.getLoc(), cr0, trueConstant);
 
   r0 = referenceBuilder.reset(r0);
   r0 = referenceBuilder.qcoIf(
@@ -566,6 +564,8 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
   std::tie(r0, cr1) = referenceBuilder.measure(r0);
   referenceBuilder.sink(r0);
 
+  auto xorOp = arith::XOrIOp::create(
+      referenceBuilder, referenceBuilder.getLoc(), cr0, trueConstant);
   cr0 = xorOp.getResult();
   reference = referenceBuilder.finalize({cr0, cr1});
 
