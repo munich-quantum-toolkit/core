@@ -13,5 +13,5 @@ if(TARGET MQT::CoreNA)
 endif()
 
 if(BUILD_MQT_CORE_QDMI_NA_DEVICE)
-  add_subdirectory(fomac)
+  add_subdirectory(qdmi)
 endif()

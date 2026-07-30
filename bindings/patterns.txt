@@ -1,4 +1,4 @@
-mqt\.core\.fomac\.(?:Job|Device|Device\.Site)\.query_custom_property$:
+(?:mqt\.core\.)?qdmi\.(?:Job|Device|Device\.Site)\.query_custom_property$:
     \from typing import overload
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -16,7 +16,7 @@ mqt\.core\.fomac\.(?:Job|Device|Device\.Site)\.query_custom_property$:
     ) -> str | bool | int | float | bytes | None:
         \doc
 
-mqt\.core\.fomac\.Job\.get_custom_result$:
+(?:mqt\.core\.)?qdmi\.Job\.get_custom_result$:
     \from typing import overload
     @overload
     def get_custom_result(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -34,7 +34,7 @@ mqt\.core\.fomac\.Job\.get_custom_result$:
     ) -> str | bool | int | float | bytes | None:
         \doc
 
-mqt\.core\.fomac\.Device\.Operation\.query_custom_property$:
+(?:mqt\.core\.)?qdmi\.Device\.Operation\.query_custom_property$:
     \from typing import overload
     @overload
     def query_custom_property(
@@ -84,6 +84,21 @@ mqt\.core\.fomac\.Device\.Operation\.query_custom_property$:
         sites: Sequence[Device.Site] = ...,
         params: Sequence[float] = ...,
     ) -> str | bool | int | float | bytes | None:
+        \doc
+
+(?:mqt\.core\.)?qdmi\.Device\.submit_job$:
+    def submit_job(
+        self,
+        program: str | bytes,
+        program_format: ProgramFormat,
+        num_shots: int,
+        *,
+        custom1: str | bool | int | float | None = None,  # noqa: PYI041
+        custom2: str | bool | int | float | None = None,  # noqa: PYI041
+        custom3: str | bool | int | float | None = None,  # noqa: PYI041
+        custom4: str | bool | int | float | None = None,  # noqa: PYI041
+        custom5: str | bool | int | float | None = None,  # noqa: PYI041
+    ) -> Job:
         \doc
 
 mqt.core.mlir.compile_program:

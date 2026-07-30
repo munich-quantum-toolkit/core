@@ -37,6 +37,14 @@ releases may include breaking changes.
   [#1950]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add a public `qdmi::DeviceRegistry` and lazy
+  `qdmi::DeviceManager`/`mqt.core.qdmi` object model with per-device sessions,
+  failure isolation, and lifetime-safe device objects ([#1901])
+  ([**@burgholzer**])
+- ✨ Add ID-keyed `DeviceManager::openAll`/`DeviceManager.open_all` results for
+  independently opening every configured device ([#1901]) ([**@burgholzer**])
+- ✨ Support keyword-only construction of Python `SessionParameters`, including
+  path-like authentication files ([#1901]) ([**@burgholzer**])
 - ✨ Add support for QDMI child devices to the driver and FoMaC libraries
   ([#1897], [#1952]) ([**@burgholzer**])
 - ✨ Add typed custom property and result queries to the C++ and Python FoMaC
@@ -93,6 +101,24 @@ releases may include breaking changes.
 
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
+- ♻️ Replace the existing device-management layering with the
+  `qdmi::DeviceRegistry` → `qdmi::DeviceManager` → `qdmi::Device` object model.
+  Device libraries now load lazily, sessions are configured per device, child
+  objects retain their required runtime state, and definitions can be inspected
+  without executing device code ([#1901]) ([**@burgholzer**])
+- ♻️ Load device libraries through one private `DeviceApi` that owns the library
+  and stores the exact QDMI function pointer types. The public C++ API uses
+  QDMI's existing device-status, job-status, and program-format enums directly
+  instead of redefining them, while client handles remain private ([#1901])
+  ([**@burgholzer**])
+- 📝 Add binding-local docstrings for the complete public Python QDMI API
+  ([#1901]) ([**@burgholzer**])
+- ♻️ Use `device_id` for the Python `DeviceDefinition` property and constructor
+  argument, avoiding collisions with Python's built-in `id` while retaining `id`
+  in configuration and C++ ([#1901]) ([**@burgholzer**])
+- ♻️ Migrate the Qiskit provider and neutral-atom adapter to lazily opened
+  configured QDMI devices and the unified `mqt.core.qdmi` API ([#1901])
+  ([**@burgholzer**])
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -102,6 +128,11 @@ releases may include breaking changes.
 
 ### Removed
 
+- 🔥 Remove the former device-management namespace, Python module, global
+  session API, source/include/test trees, and compatibility CMake targets
+  ([#1901]) ([**@burgholzer**])
+- 🔥 Remove the QDMI client-interface implementation and the `Driver` singleton
+  ([#1901]) ([**@burgholzer**])
 - 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
   `add_dynamic_device_library` APIs with definition registration and stable-ID
   opening ([#1912]) ([**@burgholzer**])
@@ -115,6 +146,8 @@ releases may include breaking changes.
 - 🐛 Allow MQT Core to be embedded as a CMake subproject without target
   collisions and make its bundled QDMI devices individually configurable
   ([#1965]) ([**@burgholzer**])
+- 🐛 Reuse live QDMI device libraries across device managers and reject
+  operation sites from another device session ([#1901]) ([**@burgholzer**])
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
 
 ## [3.7.0] - 2026-07-09
@@ -690,6 +723,7 @@ changelogs._
 [#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
+[#1901]: https://github.com/munich-quantum-toolkit/core/pull/1901
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887

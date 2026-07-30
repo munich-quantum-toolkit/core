@@ -207,6 +207,9 @@ def stubs(session: nox.Session) -> None:
 
     package_root = Path(__file__).parent / "python" / "mqt" / "core"
 
+    modules = ["mqt.core.ir", "mqt.core.dd", "mqt.core.qdmi", "mqt.core.mlir", "mqt.core.na"]
+    module_args = [arg for module in modules for arg in ("--module", module)]
+
     session.run(
         "python",
         "-m",
@@ -215,16 +218,7 @@ def stubs(session: nox.Session) -> None:
         "--include-private",
         "--output-dir",
         str(package_root),
-        "--module",
-        "mqt.core.ir",
-        "--module",
-        "mqt.core.dd",
-        "--module",
-        "mqt.core.fomac",
-        "--module",
-        "mqt.core.mlir",
-        "--module",
-        "mqt.core.na",
+        *module_args,
         "--pattern-file",
         "bindings/patterns.txt",
     )

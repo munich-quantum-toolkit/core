@@ -10,6 +10,9 @@ add_subdirectory(devices)
 if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE
    AND BUILD_MQT_CORE_QDMI_NA_DEVICE
    AND BUILD_MQT_CORE_QDMI_SC_DEVICE)
-  add_subdirectory(driver)
+  add_subdirectory(device)
+endif()
+if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
+  add_subdirectory(manager)
 endif()
 add_subdirectory(registry)

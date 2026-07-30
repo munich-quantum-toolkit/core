@@ -8,9 +8,8 @@
 
 set(TARGET_NAME mqt-core-qdmi-registry-test)
 
-if(TARGET MQT::CoreQDMIDriver)
-  package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_device_registry.cpp)
-  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
+if(TARGET MQT::CoreQDMI)
+  package_add_test(${TARGET_NAME} MQT::CoreQDMI test_device_registry.cpp)
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE

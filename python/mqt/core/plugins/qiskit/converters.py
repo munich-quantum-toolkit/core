@@ -26,7 +26,7 @@ from .gates import MoveGate
 if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
 
-    from ... import fomac
+    from ... import qdmi
 
 __all__ = ["qiskit_to_iqm_json"]
 
@@ -35,7 +35,7 @@ def __dir__() -> list[str]:
     return __all__
 
 
-def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
+def qiskit_to_iqm_json(circuit: QuantumCircuit, device: qdmi.Device) -> str:
     """Convert a Qiskit :class:`~qiskit.circuit.QuantumCircuit` to IQM JSON format.
 
     The IQM JSON format is a device-specific format that encodes quantum operations
@@ -48,7 +48,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
 
     Args:
         circuit: The Qiskit quantum circuit to convert.
-        device: The FoMaC device providing site mapping and metadata.
+        device: The QDMI device providing site mapping and metadata.
 
     Returns:
         JSON string representation of the circuit in IQM format.
