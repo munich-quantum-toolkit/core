@@ -739,6 +739,21 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
+TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
+  const std::string textProgram = "OPENQASM 3.0;";
+  constexpr std::array bytes{std::byte{0}};
+
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   textProgram, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore =
+                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
+               std::invalid_argument);
+}
+
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
   constexpr auto qasm3Program = "OPENQASM 3.0;";
 
@@ -1097,7 +1112,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
   }
 
   SessionConfig config2;
-  config2.authFile = tmpPath.string();
+  config2.authFile = tmpPath;
   EXPECT_NO_THROW({ const Session session(config2); });
 
   // Clean up
@@ -1225,6 +1240,34 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
   // Should return the same number of devices
   EXPECT_EQ(devices1.size(), devices2.size());
+}
+
+TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
+  const auto site = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    return device.getSites().front();
+  }();
+
+  EXPECT_EQ(site.getIndex(), 0);
+}
+
+TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
+  const auto operation = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    return device.getOperations().front();
+  }();
+
+  EXPECT_FALSE(operation.getName().empty());
+}
+
+TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
+  const auto site = [] {
+    auto device = Session::openDevice("mqt.na.default");
+    const auto operation = device.getOperations().front();
+    return operation.getSites().value().front();
+  }();
+
+  EXPECT_TRUE(site.isZone());
 }
 
 namespace {
