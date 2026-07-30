@@ -38,6 +38,9 @@ transport in later changes with their own ExecPlans.
   validation.
 - [x] (2026-07-30 01:15 CEST) Audited the complete diff against the PR A
   boundary; it contains no neutral-atom or superconducting provider changes.
+- [x] (2026-07-30 15:20 CEST) Published the transport layer as draft PR #1967,
+      added its changelog entry, merged the latest `origin/main`, and corrected
+      the upgrade-guide cross-reference reported by Read the Docs.
 
 ## Surprises & Discoveries
 
@@ -54,6 +57,10 @@ transport in later changes with their own ExecPlans.
   part of MQT Core. Evidence: a nested CMake fixture now builds and installs an
   isolated dummy provider, covering the helper without altering the product
   install surface.
+- Observation: root-level Markdown files included in the Sphinx documentation
+  must address documents relative to the Sphinx source tree. Evidence: Read the
+  Docs could not resolve `docs/qdmi/configuration.md`; the explicit MyST `{doc}`
+  target is `qdmi/configuration`.
 
 ## Decision Log
 
@@ -84,8 +91,9 @@ The final scope audit found changes only in the public configuration type,
 registry and Driver transport, Python bindings/stub, generic CMake runtime-file
 helper, documentation, and their focused tests. No NA or SC provider
 implementation, schema, default configuration, calibration logic, or unified
-validation CLI is present. The changelog remains intentionally deferred until a
-PR number exists, per the repository PR workflow.
+validation CLI is present. Draft PR #1967 and its changelog entry now identify
+this transport layer as the independently reviewable prerequisite for the
+provider-specific follow-ups.
 
 ## Context and Orientation
 
@@ -178,5 +186,6 @@ implementation uses existing nlohmann JSON, TOML, nanobind, and CMake facilities
 and adds no dependency. QDMI v1 CUSTOM1 and CUSTOM2 remain confined to
 `Driver.cpp` and provider ABI adapters.
 
-Revision note: reconstructed as an independently reviewable additive change on
-2026-07-30; provider migrations remain in the later NA and SC changes.
+Revision note: reconstructed as an independently reviewable additive change,
+published as draft PR #1967, and refreshed onto `origin/main` on 2026-07-30;
+provider migrations remain in the later NA and SC changes.
