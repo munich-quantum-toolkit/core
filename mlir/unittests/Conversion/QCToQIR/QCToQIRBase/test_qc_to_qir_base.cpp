@@ -26,6 +26,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -115,6 +116,30 @@ TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
   EXPECT_FALSE(retainsAssertion);
   EXPECT_TRUE(hasConditionalBranch);
   EXPECT_TRUE(hasUnreachableFailure);
+}
+
+TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
+                      math::MathDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
+  (void)math::CtPopOp::create(builder, value);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  bool retainsMathPopulationCount = false;
+  bool hasLLVMPopulationCount = false;
+  module->walk([&](Operation* operation) {
+    retainsMathPopulationCount |= isa<math::CtPopOp>(operation);
+    hasLLVMPopulationCount |= isa<LLVM::CtPopOp>(operation);
+  });
+  EXPECT_FALSE(retainsMathPopulationCount);
+  EXPECT_TRUE(hasLLVMPopulationCount);
 }
 
 TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {

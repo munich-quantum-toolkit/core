@@ -552,7 +552,9 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
       auto& qubitInfoMap = state->qubitInfoMap[&region];
       auto& regionRegisterMap = state->regionRegisterMap[op];
       // Track qubits from loadOp
-      if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
+      if (auto loadOp = dyn_cast<memref::LoadOp>(operation);
+          loadOp &&
+          isa<qc::QubitType>(loadOp.getMemRefType().getElementType())) {
         QubitInfo info{.reg = loadOp.getMemRef(),
                        .index = loadOp.getIndices()[0]};
         qubitInfoMap.try_emplace(loadOp.getResult(), info);
