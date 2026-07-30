@@ -13,7 +13,6 @@
 #include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Gate.hpp"
 #include "qasm3/InstVisitor.hpp"
@@ -26,12 +25,14 @@
 #include "qasm3/passes/TypeCheckPass.hpp"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -212,6 +213,19 @@ const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 /// Map of qubits in the current scope.
 using QubitScope = llvm::StringMap<SmallVector<Value>>;
 
+/// A classical bit register: its backing memref and its number of bits.
+struct RegisterInfo {
+  Value memref;
+  int64_t size = 0;
+};
+
+/// A resolved classical bit: the register it belongs to and its index.
+struct ResolvedBit {
+  StringRef registerName;
+  Value memref;
+  int64_t index = 0;
+};
+
 /**
  * @brief AST visitor that translates an OpenQASM 3 program to a QC program.
  *
@@ -246,30 +260,16 @@ public:
       return builder.finalize();
     }
 
-    // Collect measurement results for all output bit registers
+    // Return the memref of each output bit register. Its bits are recorded
+    // downstream; unmeasured bits stay part of the register.
     SmallVector<Value> returnValues;
     for (const auto& regName : outputRegisters) {
-      auto it = bitValues.find(regName);
-      if (it == bitValues.end()) {
-        llvm::errs() << "Output register '" << regName
-                     << "' was never measured.\n";
+      auto it = classicalRegisters.find(regName);
+      if (it == classicalRegisters.end()) {
+        llvm::errs() << "Output register '" << regName << "' does not exist.\n";
         return nullptr;
       }
-
-      auto expectedSize = classicalRegisters[regName].size;
-      if (it->second.size() < expectedSize) {
-        llvm::errs() << "Not all bits of output register '" << regName
-                     << "' have been measured.\n";
-        return nullptr;
-      }
-      for (auto bit : it->second) {
-        if (!bit) {
-          llvm::errs() << "Not all bits of output register '" << regName
-                       << "' have been measured.\n";
-          return nullptr;
-        }
-        returnValues.push_back(bit);
-      }
+      returnValues.push_back(it->second.memref);
     }
 
     builder.retype(ValueRange(returnValues).getTypes());
@@ -286,11 +286,11 @@ private:
   /// Map from qubit-register name to allocated qubit values.
   QubitScope qubitRegisters;
 
-  /// Map from classical-register name to ClassicalRegister.
-  llvm::StringMap<QCProgramBuilder::ClassicalRegister> classicalRegisters;
+  /// Map from classical-bit-register name to its memref and size.
+  llvm::StringMap<RegisterInfo> classicalRegisters;
 
-  /// Map from classical-register name to measurement results.
-  llvm::StringMap<SmallVector<Value>> bitValues;
+  /// Map from classical-bit-register name to definitely measured bits.
+  llvm::StringMap<SmallVector<bool>> measuredBits;
 
   /// Names of all bit registers, in declaration order.
   SmallVector<std::string> allBitRegisters;
@@ -420,7 +420,8 @@ public:
     case qasm3::Bit:
     case qasm3::Int:
     case qasm3::Uint: {
-      classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
+      classicalRegisters[id] = {
+          .memref = builder.allocClassicalBitRegister(size, id), .size = size};
       if (sizedType->type == qasm3::Bit) {
         allBitRegisters.push_back(id);
         if (stmt->isOutput || openQASM2CompatMode) {
@@ -496,17 +497,13 @@ public:
                                  debugInfo);
     }
     for (const auto& [bit, qubit] : llvm::zip_equal(bits, qubits)) {
-      auto result = MeasureOp::create(
-                        builder, qubit, builder.getStringAttr(bit.registerName),
-                        builder.getI64IntegerAttr(bit.registerSize),
-                        builder.getI64IntegerAttr(bit.registerIndex))
-                        .getResult();
-      auto& regBits = bitValues[bit.registerName];
-      const auto index = static_cast<size_t>(bit.registerIndex);
+      builder.measure(qubit, bit.memref, bit.index);
+      auto& regBits = measuredBits[bit.registerName];
+      const auto index = static_cast<size_t>(bit.index);
       if (regBits.size() <= index) {
         regBits.resize(index + 1);
       }
-      regBits[index] = result;
+      regBits[index] = true;
     }
   }
 
@@ -562,15 +559,35 @@ public:
 
     // Save current insertion point
     OpBuilder::InsertionGuard guard(builder);
+    const auto measuredBefore = measuredBits;
+    decltype(measuredBits) measuredAfterThen;
+    decltype(measuredBits) measuredAfterElse;
 
     // Then block
     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
     emitBlockStatements(thenStatements, stmt->debugInfo);
+    measuredAfterThen = measuredBits;
+    measuredBits = measuredBefore;
 
     // Else block
     if (hasElse) {
       builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
       emitBlockStatements(stmt->elseStatements, stmt->debugInfo);
+      measuredAfterElse = measuredBits;
+      measuredBits = measuredBefore;
+
+      for (const auto& [name, thenBits] : measuredAfterThen) {
+        const auto elseIt = measuredAfterElse.find(name);
+        if (elseIt == measuredAfterElse.end()) {
+          continue;
+        }
+        auto& joinedBits = measuredBits[name];
+        joinedBits.resize(thenBits.size());
+        for (const auto i : llvm::seq<size_t>(0, thenBits.size())) {
+          joinedBits[i] =
+              thenBits[i] && i < elseIt->second.size() && elseIt->second[i];
+        }
+      }
     }
   }
 
@@ -940,9 +957,13 @@ public:
         applyGateCallStatement(gateCall, qubitRegisters);
         continue;
       }
-      throw qasm3::CompilerError(
-          "If statements with non-quantum statements are not supported.",
-          debugInfo);
+      if (const auto assignment =
+              std::dynamic_pointer_cast<qasm3::AssignmentStatement>(stmt)) {
+        visitAssignmentStatement(assignment);
+        continue;
+      }
+      throw qasm3::CompilerError("Unsupported statement in if statement.",
+                                 debugInfo);
     }
   }
 
@@ -953,7 +974,7 @@ public:
     // Single bit (c[0])
     if (const auto& id =
             std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(condition)) {
-      return lookupBitValue(id, debugInfo);
+      return loadBitValue(id, debugInfo);
     }
 
     // Unary negation (!c[0] or ~c[0])
@@ -970,7 +991,7 @@ public:
         throw qasm3::CompilerError("Unary expression has unsupported operand.",
                                    debugInfo);
       }
-      auto value = lookupBitValue(id, debugInfo);
+      auto value = loadBitValue(id, debugInfo);
       auto trueValue = builder.boolConstant(true);
       return arith::XOrIOp::create(builder, value, trueValue).getResult();
     }
@@ -986,38 +1007,45 @@ public:
         "Unsupported condition expression in if statement.", debugInfo);
   }
 
-  /// Look up the most recent measurement result for a classical bit.
+  /// Load a definitely initialized classical bit.
   [[nodiscard]] Value
-  lookupBitValue(const std::shared_ptr<qasm3::IndexedIdentifier>& id,
-                 const std::shared_ptr<qasm3::DebugInfo>& debugInfo) const {
+  loadBitValue(const std::shared_ptr<qasm3::IndexedIdentifier>& id,
+               const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     const auto& regName = id->identifier;
-    auto it = bitValues.find(regName);
-    if (it == bitValues.end()) {
+    auto it = measuredBits.find(regName);
+    if (it == measuredBits.end()) {
       throw qasm3::CompilerError("No classical bit of register '" + regName +
                                      "' has been measured yet.",
                                  debugInfo);
     }
     const auto& regBits = it->second;
+    size_t index = 0;
 
-    if (id->indices.empty()) {
+    if (!id->indices.empty()) {
+      if (id->indices.size() != 1 ||
+          id->indices[0]->indexExpressions.size() != 1) {
+        throw qasm3::CompilerError(
+            "Only single-index expressions are supported.", debugInfo);
+      }
+      const auto& indexExpression = id->indices[0]->indexExpressions[0];
+      index = evaluatePositiveConstant(indexExpression, debugInfo);
+    } else {
       assert(regBits.size() == 1);
-      return regBits[0];
     }
 
-    if (id->indices.size() != 1 ||
-        id->indices[0]->indexExpressions.size() != 1) {
-      throw qasm3::CompilerError("Only single-index expressions are supported.",
-                                 debugInfo);
-    }
-    const auto& indexExpression = id->indices[0]->indexExpressions[0];
-    const auto index = evaluatePositiveConstant(indexExpression, debugInfo);
     if (index >= regBits.size() || !regBits[index]) {
       throw qasm3::CompilerError("Bit " + std::to_string(index) +
                                      " of register '" + regName +
                                      "' has been not measured yet.",
                                  debugInfo);
     }
-    return regBits[index];
+    const auto reg = classicalRegisters.find(regName);
+    assert(reg != classicalRegisters.end());
+    auto indexValue =
+        arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index))
+            .getResult();
+    return memref::LoadOp::create(builder, reg->second.memref, indexValue)
+        .getResult();
   }
 
   //===--- Operand resolution helpers ------------------------------------===//
@@ -1085,7 +1113,7 @@ public:
   }
 
   /// Resolve a classical bit operand.
-  [[nodiscard]] SmallVector<QCProgramBuilder::Bit> resolveClassicalBits(
+  [[nodiscard]] SmallVector<ResolvedBit> resolveClassicalBits(
       const std::shared_ptr<qasm3::IndexedIdentifier>& operand,
       const std::shared_ptr<qasm3::DebugInfo>& debugInfo) const {
     const auto& name = operand->identifier;
@@ -1096,11 +1124,12 @@ public:
     }
 
     const auto& creg = it->second;
-    SmallVector<QCProgramBuilder::Bit> bits;
+    SmallVector<ResolvedBit> bits;
 
     if (operand->indices.empty()) {
       for (int64_t i = 0; i < creg.size; ++i) {
-        bits.push_back(creg[i]);
+        bits.push_back(
+            {.registerName = it->first(), .memref = creg.memref, .index = i});
       }
       return bits;
     }
@@ -1116,7 +1145,9 @@ public:
       throw qasm3::CompilerError("Classical bit index out of bounds.",
                                  debugInfo);
     }
-    bits.push_back(creg[static_cast<int64_t>(index)]);
+    bits.push_back({.registerName = it->first(),
+                    .memref = creg.memref,
+                    .index = static_cast<int64_t>(index)});
     return bits;
   }
 
