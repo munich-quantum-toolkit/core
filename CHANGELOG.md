@@ -16,8 +16,9 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
 
 ### Added
 
-- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
-  ([**@burgholzer**])
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC, including
+  explicit text and exact-byte APIs and all standard QDMI program formats
+  ([#1957]) ([**@burgholzer**])
 - ✨ Add versioned, relocatable configuration and stable-ID registration for
   QDMI device libraries, including disabled-ID reservations, fresh device
   sessions, idempotent registration, and external-device target metadata
@@ -31,10 +32,12 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
   libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
-- ✨ Add QIR output schemas support to the QIR runtime ([#1877])
+- ✨ Add labeled and ordered output schemas to the QIR runtime ([#1877])
   ([**@rturrado**])
-- ✨ Add QIR program format support to the DDSIM QDMI device ([#1766])
-  ([**@rturrado**])
+- ✨ Add boolean, integer, floating-point, tuple, and array record output
+  functions to the QIR runtime ([#1799]) ([**@rturrado**])
+- ✨ Add the reusable in-process `MQT::CoreQIRJIT` library and QIR program
+  format support to the DDSIM QDMI device ([#1766]) ([**@rturrado**])
 
 ### Changed
 
@@ -629,6 +632,7 @@ changelogs._
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
+[#1799]: https://github.com/munich-quantum-toolkit/core/pull/1799
 [#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720

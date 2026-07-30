@@ -13,6 +13,11 @@ Thus, consuming libraries need to update their wheel repair configuration for
 `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
 wheel repair step.
 
+### QDMI updated to version 1.3.2
+
+MQT Core already bundled QDMI 1.3.2 in the previous release, but now also
+requires at least that version when using a system-provided QDMI installation.
+
 ### Bundled QDMI devices in embedded builds
 
 The bundled QDMI devices now have individual CMake options:
@@ -59,6 +64,25 @@ Registration validates and stores metadata without loading native code. Opening
 an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
 owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
 behavior for client callers.
+
+See the [QDMI device configuration guide](docs/qdmi/configuration.md) for the
+versioned JSON and TOML formats, configuration precedence, and relocatable
+device manifests.
+
+### FoMaC program payload handling
+
+FoMaC now distinguishes textual programs from exact binary payloads. In C++, use
+`Device::submitJob(const std::string&, ...)` for text formats and
+`Device::submitJob(std::span<const std::byte>, ...)` for binary formats. In
+Python, pass `str` for text and `bytes` for binary payloads. In particular, QIR
+`*_STRING` formats are text, while QIR `*_MODULE` formats are LLVM bitcode and
+must be submitted as bytes.
+
+`Job::getProgram()` and Python's `Job.program` remain the textual accessors and
+now reject binary or non-null-terminated payloads. Use `Job::getProgramBytes()`
+or `Job.program_bytes` to retrieve the exact submitted bytes. Calibration and
+batch-job formats cannot be submitted through these generic program APIs because
+their QDMI payloads have specialized representations.
 
 ### QDMI child devices
 
