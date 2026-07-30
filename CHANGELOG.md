@@ -12,12 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
-  ([**@burgholzer**])
-- ✨ Add versioned, relocatable configuration and stable-ID registration for
-  QDMI device libraries, including disabled-ID reservations, fresh device
-  sessions, idempotent registration, and external-device target metadata
-  ([#1912]) ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
@@ -32,19 +26,8 @@ releases may include breaking changes.
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
-- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
-  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
-  [#1950]) ([**@simon1hofmann**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
-- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
-  ([#1897], [#1952]) ([**@burgholzer**])
-- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
-  libraries ([#1895]) ([**@burgholzer**])
-- ✨ Add support for custom job parameters to C++ and Python FoMaC library
-  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
-- ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
-  ([**@rturrado**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
@@ -58,8 +41,6 @@ releases may include breaking changes.
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
   single-qubit unitary runs via Euler resynthesis ([#1672])
   ([**@simon1hofmann**], [**@burgholzer**])
-- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766], [#1815])
-  ([**@rturrado**], [**@burgholzer**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
   containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
@@ -93,8 +74,6 @@ releases may include breaking changes.
 
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
-- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
-  ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
   [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
@@ -102,13 +81,50 @@ releases may include breaking changes.
 
 ### Removed
 
-- 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
-  `add_dynamic_device_library` APIs with definition registration and stable-ID
-  opening ([#1912]) ([**@burgholzer**])
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+## [3.8.0] - 2026-07-30
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
+
+### Added
+
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC, including
+  explicit text and exact-byte APIs and all standard QDMI program formats
+  ([#1957]) ([**@burgholzer**])
+- ✨ Add versioned, relocatable configuration and stable-ID registration for
+  QDMI device libraries, including disabled-ID reservations, fresh device
+  sessions, idempotent registration, and external-device target metadata
+  ([#1912]) ([**@burgholzer**])
+- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
+  [#1950]) ([**@simon1hofmann**])
+- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
+  ([#1897], [#1952]) ([**@burgholzer**])
+- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
+  libraries ([#1895]) ([**@burgholzer**])
+- ✨ Add support for custom job parameters to C++ and Python FoMaC library
+  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
+- ✨ Add labeled and ordered output schemas to the QIR runtime ([#1877])
+  ([**@rturrado**])
+- ✨ Add boolean, integer, floating-point, tuple, and array record output
+  functions to the QIR runtime ([#1799]) ([**@rturrado**])
+- ✨ Add the reusable in-process `MQT::CoreQIRJIT` library and QIR program
+  format support to the DDSIM QDMI device ([#1766]) ([**@rturrado**])
+
+### Changed
+
+- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
+  ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
+  `add_dynamic_device_library` APIs with definition registration and stable-ID
+  opening ([#1912]) ([**@burgholzer**])
 
 ### Fixed
 
@@ -650,7 +666,8 @@ changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.7.0
 [3.6.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.1
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
@@ -723,6 +740,7 @@ changelogs._
 [#1805]: https://github.com/munich-quantum-toolkit/core/pull/1805
 [#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
 [#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
+[#1799]: https://github.com/munich-quantum-toolkit/core/pull/1799
 [#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
 [#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
 [#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
