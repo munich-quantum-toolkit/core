@@ -131,6 +131,22 @@ TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       "Register index is out of bounds");
 }
 
+TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
+  ClassicalRegister returnedRegister;
+  auto module = QIRProgramBuilder::build(
+      context.get(),
+      [&](QIRProgramBuilder& builder) {
+        returnedRegister = builder.allocClassicalBitRegister(2, false);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base);
+
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(returnedRegister.record);
+  EXPECT_EQ(returnedRegister.results.size(), 2U);
+  EXPECT_FALSE(returnedRegister.array);
+}
+
 /// \name QIR/Operations/StandardGates/DcxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

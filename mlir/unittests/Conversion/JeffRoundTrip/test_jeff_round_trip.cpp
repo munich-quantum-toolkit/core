@@ -133,6 +133,24 @@ static Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
   return b.measure(res[1]).second;
 }
 
+static SmallVector<Value>
+nestedIfWithCapturedMeasurement(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  auto measuredQubit = b.measure(q[0], c0, 0).first;
+  auto results =
+      b.qcoIf(c0, 0, {measuredQubit, q[1]}, [&](ValueRange outerArgs) {
+        auto innerResult = b.qcoIf(true, outerArgs[1], [&](Value innerArg) {
+          return b.measure(innerArg, c1, 0).first;
+        });
+        return SmallVector{outerArgs[0], innerResult};
+      });
+  b.sink(results[0]);
+  b.sink(results[1]);
+  return {c0, c1};
+}
+
 static Value whileWithAngle(qco::QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
   auto q0 = b.allocQubit();
@@ -314,6 +332,29 @@ module {
   });
   EXPECT_TRUE(failed(convertQCOToJeff(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(JeffRoundTripRegressionTest, ConvertsDynamicClassicalRegisterSize) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) -> memref<?xi1>
+      attributes {passthrough = ["entry_point"]} {
+    %c = memref.alloc(%size) : memref<?xi1>
+    return %c : memref<?xi1>
+  }
+}
+)mlir";
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(convertQCOToJeff(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
@@ -911,7 +952,11 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)},
         JeffRoundTripTestCase{"NestedIfOpForLoopWithAngle",
                               MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle),
-                              MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle)}));
+                              MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle)},
+        JeffRoundTripTestCase{
+            "NestedIfWithCapturedMeasurement",
+            MQT_NAMED_BUILDER(nestedIfWithCapturedMeasurement),
+            MQT_NAMED_BUILDER(nestedIfWithCapturedMeasurement)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/ForOp.cpp

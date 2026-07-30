@@ -17,6 +17,7 @@
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -33,6 +34,13 @@ enum class AllocationMode : std::uint8_t {
   Static, //!< The module uses static qubit allocation.
   Dynamic //!< The module uses dynamic qubit allocation.
 };
+
+/// Returns whether @p type represents a classical result register.
+[[nodiscard]] inline bool isClassicalBitRegister(const Type type) {
+  const auto memrefType = dyn_cast<MemRefType>(type);
+  return memrefType && memrefType.getRank() == 1 &&
+         memrefType.getElementType().isInteger(1);
+}
 
 /// State object for tracking lowering information during QIR conversion
 struct LoweringState {

@@ -154,7 +154,8 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
-Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size) {
+Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
+                                                   const StringRef name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -162,8 +163,11 @@ Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size) {
   }
 
   auto memrefType = MemRefType::get({size}, getI1Type());
-  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
-  return memref;
+  auto alloc = memref::AllocOp::create(*this, memrefType);
+  if (!name.empty()) {
+    alloc->setAttr(CLASSICAL_REGISTER_NAME_ATTR, getStringAttr(name));
+  }
+  return alloc.getResult();
 }
 
 //===----------------------------------------------------------------------===//

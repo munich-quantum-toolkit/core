@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qasm_programs.h"
@@ -260,6 +261,48 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndOverflow) {
 
   EXPECT_FALSE(qc::translateQASM3ToQC(qasm::inexactLargePowX, &context));
   EXPECT_FALSE(qc::translateQASM3ToQC(qasm::overflowingNestedPowX, &context));
+}
+
+TEST_F(QASM3TranslationTest, RetainsClassicalRegisterName) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+qubit q;
+output bit named_result;
+named_result = measure q;
+)qasm";
+  auto translated = qc::translateQASM3ToQC(source, context.get());
+  ASSERT_TRUE(translated);
+
+  memref::AllocOp classicalRegister;
+  translated->walk([&](memref::AllocOp op) {
+    if (op.getType().getElementType().isInteger(1)) {
+      classicalRegister = op;
+    }
+  });
+  ASSERT_TRUE(classicalRegister);
+  const auto name = classicalRegister->getAttrOfType<StringAttr>(
+      utils::CLASSICAL_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_result");
+}
+
+TEST_F(QASM3TranslationTest, JoinsMeasurementsFromBothBranches) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+qubit[2] q;
+bit condition;
+bit measured_on_all_paths;
+condition = measure q[0];
+if (condition) {
+  measured_on_all_paths = measure q[1];
+} else {
+  measured_on_all_paths = measure q[1];
+}
+if (measured_on_all_paths) {
+  x q[1];
+}
+)qasm";
+  auto translated = qc::translateQASM3ToQC(source, context.get());
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(succeeded(verify(*translated)));
 }
 
 TEST(QASM3TranslationRegression, ReloadsConditionAfterBranchMeasurement) {

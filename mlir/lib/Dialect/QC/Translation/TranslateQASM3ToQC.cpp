@@ -420,7 +420,7 @@ public:
     case qasm3::Int:
     case qasm3::Uint: {
       classicalRegisters[id] = {
-          .memref = builder.allocClassicalBitRegister(size), .size = size};
+          .memref = builder.allocClassicalBitRegister(size, id), .size = size};
       if (sizedType->type == qasm3::Bit) {
         allBitRegisters.push_back(id);
         if (stmt->isOutput || openQASM2CompatMode) {
@@ -559,17 +559,34 @@ public:
     // Save current insertion point
     OpBuilder::InsertionGuard guard(builder);
     const auto measuredBefore = measuredBits;
+    decltype(measuredBits) measuredAfterThen;
+    decltype(measuredBits) measuredAfterElse;
 
     // Then block
     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
     emitBlockStatements(thenStatements, stmt->debugInfo);
+    measuredAfterThen = measuredBits;
     measuredBits = measuredBefore;
 
     // Else block
     if (hasElse) {
       builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
       emitBlockStatements(stmt->elseStatements, stmt->debugInfo);
+      measuredAfterElse = measuredBits;
       measuredBits = measuredBefore;
+
+      for (const auto& [name, thenBits] : measuredAfterThen) {
+        const auto elseIt = measuredAfterElse.find(name);
+        if (elseIt == measuredAfterElse.end()) {
+          continue;
+        }
+        auto& joinedBits = measuredBits[name];
+        joinedBits.resize(thenBits.size());
+        for (const auto i : llvm::seq<size_t>(0, thenBits.size())) {
+          joinedBits[i] =
+              thenBits[i] && i < elseIt->second.size() && elseIt->second[i];
+        }
+      }
     }
   }
 

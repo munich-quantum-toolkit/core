@@ -233,6 +233,7 @@ public:
    * deallocated automatically so that it can be returned from the program.
    *
    * @param size Number of bits (must be positive)
+   * @param name Optional source-level register name
    * @return The memref value representing the classical register
    *
    * @par Example:
@@ -243,7 +244,7 @@ public:
    * %c = memref.alloc() : memref<3xi1>
    * ```
    */
-  Value allocClassicalBitRegister(int64_t size);
+  Value allocClassicalBitRegister(int64_t size, StringRef name = {});
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset

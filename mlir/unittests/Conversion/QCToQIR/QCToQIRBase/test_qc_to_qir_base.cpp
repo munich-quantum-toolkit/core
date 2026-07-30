@@ -19,6 +19,7 @@
 #include "qir_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -26,6 +27,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -111,6 +113,134 @@ TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
   EXPECT_FALSE(retainsAssertion);
   EXPECT_TRUE(hasConditionalBranch);
   EXPECT_TRUE(hasUnreachableFailure);
+}
+
+TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1, "named_result");
+  const auto result = builder.measure(q, c, 0);
+  builder.retype(result.getType());
+  auto module = builder.finalize(result);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_ARRAY_RECORD_OUTPUT));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto c = builder.allocClassicalBitRegister(1);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(true), c,
+                          zero.getResult());
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "only supports storing direct measurement results");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto type = MemRefType::get({1}, builder.getI8Type());
+  const auto memref = memref::AllocOp::create(builder, type).getResult();
+  builder.retype(type);
+  auto module = builder.finalize(memref);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "only supports one-dimensional memrefs of i1");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
+  auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                          unknown.getResult());
+  const auto result = builder.measure(q, c, index.getResult());
+  builder.retype(result.getType());
+  auto module = builder.finalize(result);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "requires constant classical-register measurement indices");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsClassicalRegisterIndex) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  const auto result = builder.measure(q);
+  auto index = arith::ConstantIndexOp::create(builder, 1);
+  memref::StoreOp::create(builder, result, c, index.getResult());
+  builder.retype(result.getType());
+  auto module = builder.finalize(result);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "classical-register measurement index is out of bounds");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_P(QCToQIRBaseTest, ProgramEquivalence) {

@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -113,6 +114,43 @@ TEST_F(QuantumComputationTranslationTest,
   comp.emplace_back<::qc::IfElseOperation>(
       std::make_unique<::qc::NonUnitaryOperation>(q[0], c[0]), nullptr, c[0]);
   comp.if_(::qc::X, q[0], c[0]);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+}
+
+TEST_F(QuantumComputationTranslationTest, RetainsClassicalRegisterName) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "named_result");
+  comp.measure(q[0], c[0]);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+
+  mlir::memref::AllocOp classicalRegister;
+  translated->walk([&](mlir::memref::AllocOp op) {
+    if (op.getType().getElementType().isInteger(1)) {
+      classicalRegister = op;
+    }
+  });
+  ASSERT_TRUE(classicalRegister);
+  const auto name = classicalRegister->getAttrOfType<mlir::StringAttr>(
+      mlir::utils::CLASSICAL_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_result");
+}
+
+TEST_F(QuantumComputationTranslationTest, JoinsMeasurementsFromBothBranches) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(2, "q");
+  const auto& c = comp.addClassicalRegister(2, "c");
+  comp.measure(q[0], c[0]);
+  comp.emplace_back<::qc::IfElseOperation>(
+      std::make_unique<::qc::NonUnitaryOperation>(q[1], c[1]),
+      std::make_unique<::qc::NonUnitaryOperation>(q[1], c[1]), c[0]);
+  comp.if_(::qc::X, q[1], c[1]);
 
   auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
   ASSERT_TRUE(translated);
