@@ -17,8 +17,8 @@ releases may include breaking changes.
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
-  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978], [#1979])
-  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
+  [#1979]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
