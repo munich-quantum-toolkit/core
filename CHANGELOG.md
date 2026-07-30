@@ -15,12 +15,6 @@ releases may include breaking changes.
 - ✨ Add progressive native targeting (`QCOProgram::targetNative` / Python
   `target_native` / `target_device`, `mqt-cc --coupling-map`) ([#1969])
   ([**@simon1hofmann**])
-- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
-  ([**@burgholzer**])
-- ✨ Add versioned, relocatable configuration and stable-ID registration for
-  QDMI device libraries, including disabled-ID reservations, fresh device
-  sessions, idempotent registration, and external-device target metadata
-  ([#1912]) ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
