@@ -48,6 +48,9 @@ struct LoweringState {
   /// Map from `memref::AllocOp` to `ClassicalRegister`
   DenseMap<Operation*, qir::ClassicalRegister> cregs;
 
+  /// Returned classical registers in function-result order.
+  SmallVector<Operation*> returnedCregs;
+
   /// Destination of each measurement stored in a classical register.
   DenseMap<Operation*, std::pair<Operation*, Value>> cregMeasurements;
 

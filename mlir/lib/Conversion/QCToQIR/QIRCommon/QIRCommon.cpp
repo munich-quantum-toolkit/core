@@ -412,9 +412,12 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
   OpBuilder builder(ctx);
   builder.setInsertionPoint(&main.getBlocks().back().back());
-  emitOutputRecording(builder, main,
-                      llvm::to_vector(llvm::make_second_range(state.cregs)),
-                      state.staticResults);
+  SmallVector<qir::ClassicalRegister> returnedRegisters;
+  returnedRegisters.reserve(state.returnedCregs.size());
+  for (auto* allocOp : state.returnedCregs) {
+    returnedRegisters.push_back(state.cregs.at(allocOp));
+  }
+  emitOutputRecording(builder, main, returnedRegisters, state.staticResults);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
@@ -507,12 +510,11 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
         } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>();
                    allocOp && state.cregs.contains(allocOp.getOperation())) {
           auto& reg = state.cregs.at(allocOp.getOperation());
-          reg.label =
-              "c" +
-              std::to_string(llvm::count_if(state.cregs, [](const auto& entry) {
-                return entry.second.record;
-              }));
-          reg.record = true;
+          if (!reg.record) {
+            reg.label = "c" + std::to_string(state.returnedCregs.size());
+            reg.record = true;
+            state.returnedCregs.push_back(allocOp.getOperation());
+          }
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());

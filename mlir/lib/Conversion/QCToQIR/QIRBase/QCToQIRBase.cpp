@@ -71,6 +71,7 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op) {
 
 namespace {
 
+/**
  * @brief Converts a classical-bit-register `memref.alloc` to static result
  * pointers represented by `llvm.inttoptr` operations.
  *

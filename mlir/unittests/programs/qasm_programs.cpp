@@ -10,6 +10,9 @@
 
 #include "qasm_programs.h"
 
+#include <llvm/ADT/ArrayRef.h>
+
+#include <array>
 #include <string>
 
 // NOLINTBEGIN(readability-identifier-naming)
@@ -1390,74 +1393,99 @@ result = measure q;
 )qasm";
 
 llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
-  static const OpenQASMProgram programs[]{
-      {"broadcast-custom-gate", broadcastCompoundGate},
-      {"arithmetic-parameters", expressionArithmetic},
-      {"math-parameters", expressionMathFunctions},
-      {"bit-vector-builtins", bitVectorBuiltins},
-      {"runtime-scalar-rounding", runtimeScalarRounding},
-      {"simple-if", conditionLiteral},
-      {"nested-static-control-flow", nestedStaticControlFlow},
-      {"mutable-loop-state", mutableLoopState},
-      {"measurement-controlled-while", conditionWhileAnd},
-      {"resolved-dynamic-index", resolvedDynamicIndex},
-      {"equal-constant-index-join", equalConstantIndexJoin},
-      {"reset", resetQubitAfterSingleOp},
-      {"barrier", barrierMultipleQubits},
-      {"mixed-controls", mixedControlledX},
-      {"runtime-dynamic-index", runtimeDynamicIndex},
-      {"induction-variable-index", inductionVariableIndex},
-      {"checked-integer-state", checkedIntegerState},
-      {"dynamic-range", dynamicRange},
-      {"pow-two-x", powTwoX},
-      {"negative-pow-s", negativePowS},
-      {"controlled-inverse-pow-s", controlledInversePowS},
-      {"nested-pow-x", nestedPowX},
-      {"broadcast-pow-x", broadcastPowX},
-      {"floating-pow-x", floatingPowX},
+  static const std::array programs{
+      OpenQASMProgram{.name = "broadcast-custom-gate",
+                      .source = broadcastCompoundGate},
+      OpenQASMProgram{.name = "arithmetic-parameters",
+                      .source = expressionArithmetic},
+      OpenQASMProgram{.name = "math-parameters",
+                      .source = expressionMathFunctions},
+      OpenQASMProgram{.name = "bit-vector-builtins",
+                      .source = bitVectorBuiltins},
+      OpenQASMProgram{.name = "runtime-scalar-rounding",
+                      .source = runtimeScalarRounding},
+      OpenQASMProgram{.name = "simple-if", .source = conditionLiteral},
+      OpenQASMProgram{.name = "nested-static-control-flow",
+                      .source = nestedStaticControlFlow},
+      OpenQASMProgram{.name = "mutable-loop-state", .source = mutableLoopState},
+      OpenQASMProgram{.name = "measurement-controlled-while",
+                      .source = conditionWhileAnd},
+      OpenQASMProgram{.name = "resolved-dynamic-index",
+                      .source = resolvedDynamicIndex},
+      OpenQASMProgram{.name = "equal-constant-index-join",
+                      .source = equalConstantIndexJoin},
+      OpenQASMProgram{.name = "reset", .source = resetQubitAfterSingleOp},
+      OpenQASMProgram{.name = "barrier", .source = barrierMultipleQubits},
+      OpenQASMProgram{.name = "mixed-controls", .source = mixedControlledX},
+      OpenQASMProgram{.name = "runtime-dynamic-index",
+                      .source = runtimeDynamicIndex},
+      OpenQASMProgram{.name = "induction-variable-index",
+                      .source = inductionVariableIndex},
+      OpenQASMProgram{.name = "checked-integer-state",
+                      .source = checkedIntegerState},
+      OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
+      OpenQASMProgram{.name = "pow-two-x", .source = powTwoX},
+      OpenQASMProgram{.name = "negative-pow-s", .source = negativePowS},
+      OpenQASMProgram{.name = "controlled-inverse-pow-s",
+                      .source = controlledInversePowS},
+      OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
+      OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
+      OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
   };
   return programs;
 }
 
 llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
-  static const OpenQASMProgram programs[]{
-      {"broadcast-custom-gate", broadcastCompoundGate},
-      {"nested-static-control-flow", nestedStaticControlFlow},
-      {"mutable-loop-state", mutableLoopState},
-      {"reset", resetQubitAfterSingleOp},
-      {"mixed-controls", mixedControlledX},
-      {"pow-two-x", powTwoX},
-      {"negative-pow-s", negativePowS},
-      {"controlled-inverse-pow-s", controlledInversePowS},
-      {"nested-pow-x", nestedPowX},
-      {"broadcast-pow-x", broadcastPowX},
-      {"floating-pow-x", floatingPowX},
-      {"runtime-scalar-rounding", runtimeScalarRounding},
+  static const std::array programs{
+      OpenQASMProgram{.name = "broadcast-custom-gate",
+                      .source = broadcastCompoundGate},
+      OpenQASMProgram{.name = "nested-static-control-flow",
+                      .source = nestedStaticControlFlow},
+      OpenQASMProgram{.name = "mutable-loop-state", .source = mutableLoopState},
+      OpenQASMProgram{.name = "reset", .source = resetQubitAfterSingleOp},
+      OpenQASMProgram{.name = "mixed-controls", .source = mixedControlledX},
+      OpenQASMProgram{.name = "pow-two-x", .source = powTwoX},
+      OpenQASMProgram{.name = "negative-pow-s", .source = negativePowS},
+      OpenQASMProgram{.name = "controlled-inverse-pow-s",
+                      .source = controlledInversePowS},
+      OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
+      OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
+      OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
+      OpenQASMProgram{.name = "runtime-scalar-rounding",
+                      .source = runtimeScalarRounding},
   };
   return programs;
 }
 
 llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
-  static const OpenQASMProgram programs[]{
-      {"runtime-dynamic-index", runtimeDynamicIndex},
-      {"induction-variable-index", inductionVariableIndex},
-      {"checked-integer-state", checkedIntegerState},
-      {"dynamic-range", dynamicRange},
-      {"custom-pow-hs", customPowHS},
-      {"bit-vector-builtins", bitVectorBuiltins},
+  static const std::array programs{
+      OpenQASMProgram{.name = "runtime-dynamic-index",
+                      .source = runtimeDynamicIndex},
+      OpenQASMProgram{.name = "induction-variable-index",
+                      .source = inductionVariableIndex},
+      OpenQASMProgram{.name = "checked-integer-state",
+                      .source = checkedIntegerState},
+      OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
+      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
+      OpenQASMProgram{.name = "bit-vector-builtins",
+                      .source = bitVectorBuiltins},
   };
   return programs;
 }
 
 llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms() {
-  static const OpenQASMProgram programs[]{
-      {"broadcast-custom-gate", broadcastCompoundGate},
-      {"arithmetic-parameters", expressionArithmetic},
-      {"math-parameters", expressionMathFunctions},
-      {"runtime-scalar-rounding", runtimeScalarRounding},
-      {"barrier", barrierMultipleQubits},
-      {"pow-two-x", powTwoX},
-      {"floating-pow-x", floatingPowX},
+  static const std::array programs{
+      OpenQASMProgram{.name = "broadcast-custom-gate",
+                      .source = broadcastCompoundGate},
+      OpenQASMProgram{.name = "arithmetic-parameters",
+                      .source = expressionArithmetic},
+      OpenQASMProgram{.name = "math-parameters",
+                      .source = expressionMathFunctions},
+      OpenQASMProgram{.name = "runtime-scalar-rounding",
+                      .source = runtimeScalarRounding},
+      OpenQASMProgram{.name = "barrier", .source = barrierMultipleQubits},
+      OpenQASMProgram{.name = "pow-two-x", .source = powTwoX},
+      OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
   };
   return programs;
 }
