@@ -30,6 +30,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -47,6 +48,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -69,8 +71,6 @@ using namespace mlir::utils;
 using QCProgramBuilderFn = NamedMLIRBuilder<QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedMLIRBuilder<QIRProgramBuilder>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
-
-namespace {
 
 /// Return true if two-qubit unitaries in a straight-line entry point obey
 /// coupling constraints.
@@ -111,6 +111,8 @@ static bool isExecutableStraightLine(
   }
   return true;
 }
+
+namespace {
 
 struct CompilerPipelineTestCase {
   std::string name;
