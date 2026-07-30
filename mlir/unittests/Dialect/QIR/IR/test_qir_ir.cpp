@@ -10,6 +10,7 @@
 
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qir_programs.h"

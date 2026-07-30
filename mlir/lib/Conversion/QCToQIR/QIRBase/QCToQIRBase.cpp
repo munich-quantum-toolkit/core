@@ -41,8 +41,10 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <variant>
 
 namespace mlir {
 
