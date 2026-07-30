@@ -15,13 +15,13 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -117,9 +117,10 @@ protected:
     return basisState(1, {true}, dd);
   }
 
-  void expectSimulatesFromZero(
-      func::FuncOp func, size_t nQubits, llvm::ArrayRef<bool> expectedBits,
-      std::optional<std::uint64_t> seed = std::nullopt) const {
+  static void
+  expectSimulatesFromZero(func::FuncOp func, size_t nQubits,
+                          llvm::ArrayRef<bool> expectedBits,
+                          std::optional<std::uint64_t> seed = std::nullopt) {
     auto dd = std::make_unique<dd::Package>(nQubits);
     auto expected = basisState(nQubits, expectedBits, *dd);
     if (seed) {
@@ -138,12 +139,12 @@ protected:
     dd->decRef(expected);
   }
 
-  enum class SampleApi { Sample, SampleWithClassics };
+  enum class SampleApi : std::uint8_t { Sample, SampleWithClassics };
 
-  void expectSampleHistogram(
+  static void expectSampleHistogram(
       func::FuncOp func, size_t nQubits, std::size_t shots, std::uint64_t seed,
       StringRef expectedShotKey, SampleApi api = SampleApi::Sample,
-      std::optional<StringRef> expectedClassicalKey = std::nullopt) const {
+      std::optional<StringRef> expectedClassicalKey = std::nullopt) {
     auto dd = std::make_unique<dd::Package>(nQubits);
     std::mt19937_64 rng(seed);
     if (api == SampleApi::Sample) {

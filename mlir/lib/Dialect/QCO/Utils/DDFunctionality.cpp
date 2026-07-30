@@ -34,11 +34,13 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Visitors.h>
+#include <mlir/IR/WalkResult.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -137,12 +139,30 @@ struct DecodedGate {
 };
 
 struct WalkState {
-  QubitMap& qubits;
-  ClassicalEnv& classical;
-  dd::Package& dd;
+  // Non-owning handles into the active simulation frame.
+  QubitMap& qubits; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  ClassicalEnv&
+      classical;   // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  dd::Package& dd; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   std::mt19937_64* rng = nullptr;
   std::string* classicalBits = nullptr;
   DenseSet<Operation*>* activeCalls = nullptr;
+};
+
+/// Erases @p op from @p set on destruction (used around `func.call`).
+struct ActiveCallGuard {
+  DenseSet<Operation*>* set = nullptr;
+  Operation* op = nullptr;
+
+  ActiveCallGuard(DenseSet<Operation*>* activeSet, Operation* callee)
+      : set(activeSet), op(callee) {}
+  ~ActiveCallGuard() {
+    if (set != nullptr && op != nullptr) {
+      set->erase(op);
+    }
+  }
+  ActiveCallGuard(const ActiveCallGuard&) = delete;
+  ActiveCallGuard& operator=(const ActiveCallGuard&) = delete;
 };
 
 } // namespace
@@ -202,8 +222,12 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 /// QCO matrices are MSB-first (operand 0 = high bit).
 [[nodiscard]] static size_t qcoIndexFromDdIndex(const size_t ddIndex,
                                                 const size_t numQubits) {
-  const auto shift = static_cast<unsigned>(64 - numQubits);
-  return llvm::reverseBits(ddIndex) >> shift;
+  // Dense embed is capped at 12 qubits; guard the shift width for the analyzer.
+  if (numQubits == 0 || numQubits > 63) {
+    return ddIndex;
+  }
+  const auto shift = static_cast<unsigned>(64U - numQubits);
+  return llvm::reverseBits(static_cast<uint64_t>(ddIndex)) >> shift;
 }
 
 [[nodiscard]] static dd::CMat toCMatInDdBasis(const DynamicMatrix& qcoMatrix,
@@ -227,7 +251,7 @@ embedLocalInNQubitMsb(const DynamicMatrix& local, size_t n,
   const size_t k = wires.size();
   const auto dimN = static_cast<int64_t>(size_t{1} << n);
   DynamicMatrix out(dimN);
-  const size_t dimNSz = static_cast<size_t>(dimN);
+  const auto dimNSz = static_cast<size_t>(dimN);
   auto bitAt = [](size_t idx, size_t nQ, size_t q) -> size_t {
     return (idx >> (nQ - 1 - q)) & 1U;
   };
@@ -611,7 +635,7 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
       .Case<arith::ShLIOp>([&](arith::ShLIOp shli) -> LogicalResult {
         if (!isa<IndexType>(shli.getType())) {
           return shli.emitError() << "QCO DD simulation only supports index "
-                                  << shli.getOperationName();
+                                  << arith::ShLIOp::getOperationName();
         }
         auto lhs = lookupIndex(shli.getLhs(), classical, shli);
         auto rhs = lookupIndex(shli.getRhs(), classical, shli);
@@ -629,7 +653,7 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
       .Case<arith::ShRUIOp>([&](arith::ShRUIOp shrui) -> LogicalResult {
         if (!isa<IndexType>(shrui.getType())) {
           return shrui.emitError() << "QCO DD simulation only supports index "
-                                   << shrui.getOperationName();
+                                   << arith::ShRUIOp::getOperationName();
         }
         auto lhs = lookupIndex(shrui.getLhs(), classical, shrui);
         auto rhs = lookupIndex(shrui.getRhs(), classical, shrui);
@@ -807,22 +831,6 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
   }
   return success();
 }
-
-/// Erases @p op from @p set on destruction (used around `func.call`).
-struct ActiveCallGuard {
-  DenseSet<Operation*>* set = nullptr;
-  Operation* op = nullptr;
-
-  ActiveCallGuard(DenseSet<Operation*>* activeSet, Operation* callee)
-      : set(activeSet), op(callee) {}
-  ~ActiveCallGuard() {
-    if (set != nullptr && op != nullptr) {
-      set->erase(op);
-    }
-  }
-  ActiveCallGuard(const ActiveCallGuard&) = delete;
-  ActiveCallGuard& operator=(const ActiveCallGuard&) = delete;
-};
 
 static LogicalResult bindYieldResults(YieldOp yield,
                                       ValueRange classicalResults,

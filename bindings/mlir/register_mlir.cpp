@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
