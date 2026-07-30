@@ -78,9 +78,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocOp> {
       for (auto* user : op->getUsers()) {
         // Move the user operation after the current operation.
 
-        while (op->getBlock() != user->getBlock()) {
-          user = user->getParentOp();
-        }
+        user = op->getBlock()->findAncestorOpInBlock(*user);
         if (op->isBeforeInBlock(user)) {
           continue; // Already in the correct order.
         }
