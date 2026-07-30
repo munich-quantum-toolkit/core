@@ -96,12 +96,14 @@ enum class ScalarType : uint8_t {
   Int,
   Uint,
   Float,
+  Angle,
 };
 
 enum class ExpressionKind : uint8_t {
   Constant,
   GateParameter,
   Variable,
+  Cast,
   Negate,
   ArcCos,
   ArcSin,
@@ -151,6 +153,7 @@ struct BitVectorExpression {
 struct ScalarDeclaration {
   ScalarType type = ScalarType::Int;
   std::string name;
+  SourceLocation location;
 };
 
 enum class RegisterKind : uint8_t {
@@ -318,6 +321,16 @@ struct Statement {
   SourceLocation location;
 };
 
+enum class OutputKind : uint8_t {
+  Scalar,
+  BitRegister,
+};
+
+struct ProgramOutput {
+  OutputKind kind = OutputKind::Scalar;
+  uint32_t symbol = 0;
+};
+
 struct TypedProgram {
   bool openQASM2 = false;
   bool stdGatesIncluded = false;
@@ -330,7 +343,7 @@ struct TypedProgram {
   std::vector<GateDefinition> gates;
   std::vector<Statement> statements;
   std::vector<StatementId> body;
-  std::vector<RegisterId> outputs;
+  std::vector<ProgramOutput> outputs;
 };
 
 struct AnalysisResult {

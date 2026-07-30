@@ -61,9 +61,8 @@ constexpr size_t EXPANDED_STATEMENT_LIMIT = 100'000;
 
 } // namespace
 
-[[nodiscard]] std::
-    optional<detail::StandardLibraryKind> static standardLibraryKind(
-        const llvm::StringRef filename) {
+[[nodiscard]] static std::optional<detail::StandardLibraryKind>
+standardLibraryKind(const llvm::StringRef filename) {
   if (filename == "stdgates.inc") {
     return detail::StandardLibraryKind::StdGates;
   }

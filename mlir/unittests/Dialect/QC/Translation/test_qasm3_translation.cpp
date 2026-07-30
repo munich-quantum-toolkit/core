@@ -629,8 +629,8 @@ static Value buildShortCircuitCondition(qc::QCProgramBuilder& b, Value lhs,
 
 static Value shortCircuitAnd(qc::QCProgramBuilder& b, Value lhs,
                              const function_ref<Value()>& rhs) {
-  return buildShortCircuitCondition(
-      b, lhs, rhs, [&] { return b.boolConstant(false); });
+  return buildShortCircuitCondition(b, lhs, rhs,
+                                    [&] { return b.boolConstant(false); });
 }
 
 static Value shortCircuitOr(qc::QCProgramBuilder& b, Value lhs,
@@ -776,12 +776,14 @@ static Value expressionConstFloat(qc::QCProgramBuilder& b) {
   return measureToRegister(b, {q[0]});
 }
 
-static Value expressionMutableFloat(qc::QCProgramBuilder& b) {
+static SmallVector<Value> expressionMutableFloat(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   b.rx(0.5, q[0]);
   b.ry(0.75, q[0]);
-  return measureToRegister(b, {q[0]});
+  auto theta =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.75)).getResult();
+  return {theta, measureToRegister(b, {q[0]})};
 }
 
 static SmallVector<Value>
@@ -818,8 +820,7 @@ static SmallVector<Value> conditionAnd(qc::QCProgramBuilder& b) {
   auto c0Reg = measureToRegister(b, {q[0]});
   auto c1Reg = measureToRegister(b, {q[1]});
   auto c0 = loadBit(b, c0Reg);
-  auto condition =
-      shortCircuitAnd(b, c0, [&] { return loadBit(b, c1Reg); });
+  auto condition = shortCircuitAnd(b, c0, [&] { return loadBit(b, c1Reg); });
   b.scfIf(condition, [&] { b.x(q[2]); });
   auto out = measureToRegister(b, {q[2]});
   return {c0Reg, c1Reg, out};
@@ -832,8 +833,7 @@ static SmallVector<Value> conditionOr(qc::QCProgramBuilder& b) {
   auto c0Reg = measureToRegister(b, {q[0]});
   auto c1Reg = measureToRegister(b, {q[1]});
   auto c0 = loadBit(b, c0Reg);
-  auto condition =
-      shortCircuitOr(b, c0, [&] { return loadBit(b, c1Reg); });
+  auto condition = shortCircuitOr(b, c0, [&] { return loadBit(b, c1Reg); });
   b.scfIf(condition, [&] { b.x(q[2]); }, [&] { b.h(q[2]); });
   auto out = measureToRegister(b, {q[2]});
   return {c0Reg, c1Reg, out};
@@ -868,7 +868,7 @@ static SmallVector<Value> conditionBoolVariable(qc::QCProgramBuilder& b) {
   auto neither = arith::XOrIOp::create(b, both, b.boolConstant(true));
   b.scfIf(neither, [&] { b.x(q[2]); });
   auto out = measureToRegister(b, {q[2]});
-  return {c0Reg, c1Reg, out};
+  return {c0Reg, c1Reg, both, neither, out};
 }
 
 static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {

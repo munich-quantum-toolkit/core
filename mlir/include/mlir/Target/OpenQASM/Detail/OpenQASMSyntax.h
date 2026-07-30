@@ -74,6 +74,7 @@ struct SyntaxScalarDeclaration {
   StringRef identifier;
   std::optional<SyntaxExpressionId> initializer;
   bool isConst = false;
+  bool output = false;
 };
 
 struct SyntaxAssignment {
@@ -190,7 +191,8 @@ public:
   standardLibraryInclude(SMLoc location, StandardLibraryKind kind);
   [[nodiscard]] LogicalResult scalarDecl(SMLoc location, ScalarKind kind,
                                          StringRef identifier,
-                                         const Expr* initializer, bool isConst);
+                                         const Expr* initializer, bool isConst,
+                                         bool output);
   [[nodiscard]] LogicalResult
   assignment(SMLoc location, const BitReference& target, const Expr& value);
   [[nodiscard]] LogicalResult

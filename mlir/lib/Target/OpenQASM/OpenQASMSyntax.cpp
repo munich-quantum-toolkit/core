@@ -156,9 +156,11 @@ SyntaxGateCall SyntaxBuilder::copyGateCall(const GateCall& call) {
 LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
                                         StringRef identifier,
                                         const Expr* initializer,
-                                        const bool isConst) {
-  SyntaxScalarDeclaration declaration{
-      .kind = kind, .identifier = identifier, .isConst = isConst};
+                                        const bool isConst, const bool output) {
+  SyntaxScalarDeclaration declaration{.kind = kind,
+                                      .identifier = identifier,
+                                      .isConst = isConst,
+                                      .output = output};
   if (initializer != nullptr) {
     declaration.initializer = copyExpression(*initializer);
   }

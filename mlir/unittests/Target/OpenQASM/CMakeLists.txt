@@ -7,7 +7,8 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-openqasm-target)
-add_executable(${target_name} test_openqasm.cpp)
+add_executable(${target_name} test_openqasm_emitter.cpp test_openqasm_parser.cpp
+                              test_openqasm_semantics.cpp)
 target_link_libraries(
   ${target_name} PRIVATE MLIROpenQASMFrontend MLIRQCTranslation MLIRQASMPrograms MLIRQCDialect
                          MLIRSupportMQT GTest::gtest_main)

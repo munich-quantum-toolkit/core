@@ -210,7 +210,7 @@ concept QASMSink =
       s.error(loc, str);
       s.version(loc, version);
       s.include(loc, str);
-      s.scalarDecl(loc, ScalarKind::Int, str, &expr, flag);
+      s.scalarDecl(loc, ScalarKind::Int, str, &expr, flag, flag);
       s.assignment(loc, reference, expr);
       s.qubitRegister(loc, str, &expr);
       s.classicalRegister(loc, str, &expr, &expr, flag);
@@ -329,7 +329,7 @@ private:
     case TokenKind::Int:
     case TokenKind::Uint:
     case TokenKind::Float:
-      return parseScalarDeclaration();
+      return parseScalarDeclaration(/*isOutput=*/false);
     case TokenKind::Angle:
     case TokenKind::Duration:
       return sink.error(current().loc,
@@ -502,12 +502,12 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  /// Parse `[const] (int|uint|float|bool) <id> = <initializer>;`.
-  [[nodiscard]] LogicalResult parseScalarDeclaration() {
+  /// Parse `[const] (int|uint|float|bool) <id> [= <initializer>];`.
+  [[nodiscard]] LogicalResult parseScalarDeclaration(const bool isOutput) {
     const auto loc = current().loc;
 
     bool isConst = false;
-    if (current().kind == TokenKind::Const) {
+    if (!isOutput && current().kind == TokenKind::Const) {
       isConst = true;
       advance(); // const
     }
@@ -544,6 +544,12 @@ private:
     advance();
 
     const bool hasInitializer = current().kind == TokenKind::Equals;
+    if (isOutput && hasInitializer) {
+      return sink.error(
+          current().loc,
+          "output declarations cannot have an initializer; assign the output "
+          "in a separate statement");
+    }
     if (hasInitializer) {
       advance();
     }
@@ -581,7 +587,8 @@ private:
     } else if (kind == TokenKind::Uint) {
       scalarKind = ScalarKind::Uint;
     }
-    if (failed(sink.scalarDecl(loc, scalarKind, id, initializer, isConst))) {
+    if (failed(sink.scalarDecl(loc, scalarKind, id, initializer, isConst,
+                               isOutput))) {
       return failure();
     }
     if (measureSource) {
@@ -637,18 +644,27 @@ private:
     return sink.qubitRegister(loc, id, size);
   }
 
-  /// Parse `output bit[<n>] <id>;`.
+  /// Parse `output <classical-type> <id>;`.
   [[nodiscard]] LogicalResult parseOutputDecl() {
-    const auto loc = current().loc;
     advance(); // output
     if (current().kind == TokenKind::UnsupportedKeyword) {
       return unsupportedKeyword();
     }
-    if (current().kind != TokenKind::Bit) {
-      return sink.error(current().loc,
-                        "only 'bit' registers can be declared as outputs");
+    if (current().kind == TokenKind::Bit) {
+      return parseClassicalDecl(/*isOutput=*/true);
     }
-    return parseClassicalDecl(/*isOutput=*/true);
+    if (current().kind == TokenKind::Bool || current().kind == TokenKind::Int ||
+        current().kind == TokenKind::Uint ||
+        current().kind == TokenKind::Float) {
+      return parseScalarDeclaration(/*isOutput=*/true);
+    }
+    if (current().kind == TokenKind::Angle ||
+        current().kind == TokenKind::Duration) {
+      return sink.error(current().loc,
+                        "'angle' and 'duration' declarations are not supported "
+                        "yet");
+    }
+    return sink.error(current().loc, "expected a classical output type");
   }
 
   /// Parse `bit[<n>] <id> (= <measurement>);`.

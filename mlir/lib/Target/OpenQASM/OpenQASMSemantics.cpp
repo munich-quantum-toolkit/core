@@ -117,6 +117,8 @@ struct Symbol {
     return "uint";
   case ScalarType::Float:
     return "float";
+  case ScalarType::Angle:
+    return "angle";
   }
   llvm_unreachable("unknown scalar type");
 }
@@ -159,22 +161,27 @@ belongsToStdGates(const GateAvailability availability) {
            destination == ScalarType::Float;
   case ScalarType::Int:
     return destination == ScalarType::Float ||
+           destination == ScalarType::Angle ||
            (destination == ScalarType::Uint &&
             std::get<int64_t>(initializer.value) >= 0);
   case ScalarType::Uint:
     return destination == ScalarType::Float ||
+           destination == ScalarType::Angle ||
            (destination == ScalarType::Int &&
             std::get<uint64_t>(initializer.value) <=
                 static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
   case ScalarType::Float:
-    return false;
+    return destination == ScalarType::Angle;
+  case ScalarType::Angle:
+    return destination == ScalarType::Float;
   }
   llvm_unreachable("unknown scalar type");
 }
 
 [[nodiscard]] static int compareNumericConstants(const Constant& lhs,
                                                  const Constant& rhs) {
-  if (lhs.type == ScalarType::Float || rhs.type == ScalarType::Float) {
+  if (lhs.type == ScalarType::Float || lhs.type == ScalarType::Angle ||
+      rhs.type == ScalarType::Float || rhs.type == ScalarType::Angle) {
     const auto left = asDouble(lhs);
     const auto right = asDouble(rhs);
     if (left < right) {
@@ -211,8 +218,10 @@ public:
   SemanticAnalyzer(const SyntaxProgram& syntaxProgram,
                    const llvm::SourceMgr& sourceManager,
                    const FrontendOptions& frontendOptions)
-      : syntax(syntaxProgram), sources(sourceManager),
-        options(frontendOptions) {
+      : syntax(syntaxProgram), sources(sourceManager), options(frontendOptions),
+        constantExpressionStatus(syntax.expressions.size(), 0),
+        constantValues(syntax.expressions.size()),
+        constantTypes(syntax.expressions.size()) {
     scopes.emplace_back();
   }
 
@@ -253,8 +262,11 @@ private:
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
   std::vector<uint64_t> bitGenerations;
-  std::vector<RegisterId> bitRegisters;
-  std::vector<RegisterId> explicitOutputs;
+  std::vector<ProgramOutput> implicitOutputs;
+  std::vector<ProgramOutput> explicitOutputs;
+  mutable std::vector<int8_t> constantExpressionStatus;
+  mutable std::vector<std::optional<Constant>> constantValues;
+  mutable std::vector<std::optional<ScalarType>> constantTypes;
   bool insideGate = false;
   bool hasVirtualQubits = false;
   bool hasHardwareQubits = false;
@@ -365,6 +377,7 @@ private:
       return true;
     case ExpressionKind::PopCount:
       return sameBitVectorExpression(left.bitVector, right.bitVector);
+    case ExpressionKind::Cast:
     case ExpressionKind::Negate:
     case ExpressionKind::ArcCos:
     case ExpressionKind::ArcSin:
@@ -429,7 +442,8 @@ private:
       return;
     }
     collectDependencies(value.lhs, dependencies);
-    if (value.kind != ExpressionKind::Negate &&
+    if (value.kind != ExpressionKind::Cast &&
+        value.kind != ExpressionKind::Negate &&
         value.kind != ExpressionKind::ArcCos &&
         value.kind != ExpressionKind::ArcSin &&
         value.kind != ExpressionKind::ArcTan &&
@@ -622,6 +636,44 @@ private:
                           .constant = constant.value});
   }
 
+  [[nodiscard]] static bool canImplicitlyConvert(const ScalarType source,
+                                                 const ScalarType target) {
+    if (source == target) {
+      return true;
+    }
+    switch (source) {
+    case ScalarType::Bool:
+      return target == ScalarType::Int || target == ScalarType::Uint ||
+             target == ScalarType::Float;
+    case ScalarType::Int:
+    case ScalarType::Uint:
+      return target == ScalarType::Int || target == ScalarType::Uint ||
+             target == ScalarType::Float || target == ScalarType::Angle;
+    case ScalarType::Float:
+      return target == ScalarType::Int || target == ScalarType::Uint ||
+             target == ScalarType::Angle;
+    case ScalarType::Angle:
+      return target == ScalarType::Float;
+    }
+    llvm_unreachable("unknown scalar type");
+  }
+
+  [[nodiscard]] ExpressionId castExpression(const ExpressionId expression,
+                                            const ScalarType target,
+                                            const SMLoc location) {
+    const auto source = program.expressions[expression].type;
+    if (source == target) {
+      return expression;
+    }
+    if (!canImplicitlyConvert(source, target)) {
+      fail(location, "expression of type '" + scalarTypeName(source) +
+                         "' cannot be implicitly converted to '" +
+                         scalarTypeName(target) + "'");
+    }
+    return addExpression(
+        {.kind = ExpressionKind::Cast, .type = target, .lhs = expression});
+  }
+
   [[nodiscard]] Constant promoteConstInitializer(const Constant& initializer,
                                                  const ScalarType destination,
                                                  const SMLoc location) const {
@@ -657,6 +709,8 @@ private:
                   static_cast<uint64_t>(std::get<int64_t>(initializer.value))};
     case ScalarType::Float:
       return {.type = ScalarType::Float, .value = asDouble(initializer)};
+    case ScalarType::Angle:
+      return {.type = ScalarType::Angle, .value = asDouble(initializer)};
     }
     llvm_unreachable("unknown scalar type");
   }
@@ -707,7 +761,7 @@ private:
     const auto value = analyzeExpression(syntaxId);
     const auto type = program.expressions[value].type;
     auto zeroValue = Constant{.type = ScalarType::Int, .value = int64_t{0}};
-    if (type == ScalarType::Float) {
+    if (type == ScalarType::Float || type == ScalarType::Angle) {
       zeroValue = Constant{.type = ScalarType::Float, .value = 0.0};
     } else if (type == ScalarType::Uint) {
       zeroValue = Constant{.type = ScalarType::Uint, .value = uint64_t{0}};
@@ -724,10 +778,10 @@ private:
   [[nodiscard]] static std::optional<Constant>
   builtinConstant(StringRef identifier) {
     if (identifier == "pi" || identifier == "π") {
-      return Constant{.type = ScalarType::Float, .value = std::numbers::pi};
+      return Constant{.type = ScalarType::Angle, .value = std::numbers::pi};
     }
     if (identifier == "tau" || identifier == "τ") {
-      return Constant{.type = ScalarType::Float,
+      return Constant{.type = ScalarType::Angle,
                       .value = 2.0 * std::numbers::pi};
     }
     if (identifier == "euler" || identifier == "ℇ") {
@@ -737,349 +791,425 @@ private:
   }
 
   [[nodiscard]] Constant evaluateConstant(const SyntaxExpressionId id) const {
-    const auto& expression = syntax.expressions[id];
-    switch (expression.kind) {
-    case Expr::Kind::Int:
-      if (expression.integer <=
-          static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
-        return {.type = ScalarType::Int,
-                .value = static_cast<int64_t>(expression.integer)};
-      }
-      return {.type = ScalarType::Uint, .value = expression.integer};
-    case Expr::Kind::Float:
-      return {.type = ScalarType::Float, .value = expression.floatingPoint};
-    case Expr::Kind::Bool:
-      return {.type = ScalarType::Bool, .value = expression.boolean};
-    case Expr::Kind::Identifier: {
-      if (const auto builtin = builtinConstant(expression.identifier)) {
-        return *builtin;
-      }
-      const auto* symbol = lookup(expression.identifier);
-      if (symbol == nullptr || symbol->kind != SymbolKind::Constant ||
-          !symbol->constant) {
-        fail(expression.location, "expression is not a compile-time constant");
-      }
-      return *symbol->constant;
+    if (constantValues[id]) {
+      return *constantValues[id];
     }
-    case Expr::Kind::Neg: {
-      auto operand = evaluateConstant(*expression.lhs);
-      if (operand.type == ScalarType::Bool) {
-        fail(expression.location,
-             "numeric negation requires a numeric operand");
-      }
-      if (operand.type == ScalarType::Float) {
-        return {.type = ScalarType::Float, .value = -asDouble(operand)};
-      }
-      if (operand.type == ScalarType::Uint) {
-        const auto value = std::get<uint64_t>(operand.value);
-        if (syntax.expressions[*expression.lhs].kind == Expr::Kind::Int) {
-          if (value > (1ULL << 63)) {
-            fail(expression.location, "integer negation overflows i64");
-          }
+    const auto result = [&]() -> Constant {
+      const auto& expression = syntax.expressions[id];
+      switch (expression.kind) {
+      case Expr::Kind::Int:
+        if (expression.integer <=
+            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
           return {.type = ScalarType::Int,
-                  .value = std::numeric_limits<int64_t>::min()};
+                  .value = static_cast<int64_t>(expression.integer)};
         }
-        return {.type = ScalarType::Uint, .value = 0ULL - value};
+        return {.type = ScalarType::Uint, .value = expression.integer};
+      case Expr::Kind::Float:
+        return {.type = ScalarType::Float, .value = expression.floatingPoint};
+      case Expr::Kind::Bool:
+        return {.type = ScalarType::Bool, .value = expression.boolean};
+      case Expr::Kind::Identifier: {
+        if (const auto builtin = builtinConstant(expression.identifier)) {
+          return *builtin;
+        }
+        const auto* symbol = lookup(expression.identifier);
+        if (symbol == nullptr || symbol->kind != SymbolKind::Constant ||
+            !symbol->constant) {
+          fail(expression.location,
+               "expression is not a compile-time constant");
+        }
+        return *symbol->constant;
       }
-      const auto value = std::get<int64_t>(operand.value);
-      if (value == std::numeric_limits<int64_t>::min()) {
-        fail(expression.location, "integer negation overflows i64");
+      case Expr::Kind::Neg: {
+        auto operand = evaluateConstant(*expression.lhs);
+        if (operand.type == ScalarType::Bool) {
+          fail(expression.location,
+               "numeric negation requires a numeric operand");
+        }
+        if (operand.type == ScalarType::Float ||
+            operand.type == ScalarType::Angle) {
+          return {.type = operand.type, .value = -asDouble(operand)};
+        }
+        if (operand.type == ScalarType::Uint) {
+          const auto value = std::get<uint64_t>(operand.value);
+          if (syntax.expressions[*expression.lhs].kind == Expr::Kind::Int) {
+            if (value > (1ULL << 63)) {
+              fail(expression.location, "integer negation overflows i64");
+            }
+            return {.type = ScalarType::Int,
+                    .value = std::numeric_limits<int64_t>::min()};
+          }
+          return {.type = ScalarType::Uint, .value = 0ULL - value};
+        }
+        const auto value = std::get<int64_t>(operand.value);
+        if (value == std::numeric_limits<int64_t>::min()) {
+          fail(expression.location, "integer negation overflows i64");
+        }
+        return {.type = ScalarType::Int, .value = -value};
       }
-      return {.type = ScalarType::Int, .value = -value};
-    }
-    case Expr::Kind::Not: {
-      const auto operand = evaluateConstant(*expression.lhs);
-      if (operand.type != ScalarType::Bool) {
-        fail(expression.location, "logical negation requires a bool operand");
+      case Expr::Kind::Not: {
+        const auto operand = evaluateConstant(*expression.lhs);
+        if (operand.type != ScalarType::Bool) {
+          fail(expression.location, "logical negation requires a bool operand");
+        }
+        return {.type = ScalarType::Bool,
+                .value = !std::get<bool>(operand.value)};
       }
-      return {.type = ScalarType::Bool,
-              .value = !std::get<bool>(operand.value)};
-    }
-    case Expr::Kind::BitNot: {
-      fail(expression.location,
-           "bitwise operators require explicitly sized uint, bit, or angle "
-           "operands, which are not supported yet");
-    }
-    case Expr::Kind::And:
-    case Expr::Kind::Or: {
-      const auto lhs = evaluateConstant(*expression.lhs);
-      if (lhs.type != ScalarType::Bool) {
-        fail(expression.location, "logical operators require bool operands");
+      case Expr::Kind::BitNot: {
+        fail(expression.location,
+             "bitwise operators require explicitly sized uint, bit, or angle "
+             "operands, which are not supported yet");
       }
-      const auto left = std::get<bool>(lhs.value);
-      const auto shortCircuits =
-          expression.kind == Expr::Kind::And ? !left : left;
-      if (shortCircuits) {
-        if (constantExpressionType(*expression.rhs) != ScalarType::Bool) {
+      case Expr::Kind::And:
+      case Expr::Kind::Or: {
+        const auto lhs = evaluateConstant(*expression.lhs);
+        if (lhs.type != ScalarType::Bool) {
           fail(expression.location, "logical operators require bool operands");
         }
-        return {.type = ScalarType::Bool, .value = left};
-      }
-      const auto rhs = evaluateConstant(*expression.rhs);
-      if (rhs.type != ScalarType::Bool) {
-        fail(expression.location, "logical operators require bool operands");
-      }
-      const auto right = std::get<bool>(rhs.value);
-      return {.type = ScalarType::Bool,
-              .value = expression.kind == Expr::Kind::And ? left && right
-                                                          : left || right};
-    }
-    case Expr::Kind::Equal:
-    case Expr::Kind::NotEqual:
-    case Expr::Kind::Less:
-    case Expr::Kind::LessEqual:
-    case Expr::Kind::Greater:
-    case Expr::Kind::GreaterEqual: {
-      const auto lhs = evaluateConstant(*expression.lhs);
-      const auto rhs = evaluateConstant(*expression.rhs);
-      bool result = false;
-      if (lhs.type == ScalarType::Bool || rhs.type == ScalarType::Bool) {
-        if (lhs.type != ScalarType::Bool || rhs.type != ScalarType::Bool ||
-            (expression.kind != Expr::Kind::Equal &&
-             expression.kind != Expr::Kind::NotEqual)) {
-          fail(expression.location,
-               "bool values only support equality comparisons with bool "
-               "values");
+        const auto left = std::get<bool>(lhs.value);
+        const auto shortCircuits =
+            expression.kind == Expr::Kind::And ? !left : left;
+        if (shortCircuits) {
+          if (constantExpressionType(*expression.rhs) != ScalarType::Bool) {
+            fail(expression.location,
+                 "logical operators require bool operands");
+          }
+          return {.type = ScalarType::Bool, .value = left};
         }
-        const auto equal =
-            std::get<bool>(lhs.value) == std::get<bool>(rhs.value);
-        result = expression.kind == Expr::Kind::Equal ? equal : !equal;
-      } else {
-        const auto ordering = compareNumericConstants(lhs, rhs);
+        const auto rhs = evaluateConstant(*expression.rhs);
+        if (rhs.type != ScalarType::Bool) {
+          fail(expression.location, "logical operators require bool operands");
+        }
+        const auto right = std::get<bool>(rhs.value);
+        return {.type = ScalarType::Bool,
+                .value = expression.kind == Expr::Kind::And ? left && right
+                                                            : left || right};
+      }
+      case Expr::Kind::Equal:
+      case Expr::Kind::NotEqual:
+      case Expr::Kind::Less:
+      case Expr::Kind::LessEqual:
+      case Expr::Kind::Greater:
+      case Expr::Kind::GreaterEqual: {
+        const auto lhs = evaluateConstant(*expression.lhs);
+        const auto rhs = evaluateConstant(*expression.rhs);
+        bool result = false;
+        if (lhs.type == ScalarType::Bool || rhs.type == ScalarType::Bool) {
+          if (lhs.type != ScalarType::Bool || rhs.type != ScalarType::Bool ||
+              (expression.kind != Expr::Kind::Equal &&
+               expression.kind != Expr::Kind::NotEqual)) {
+            fail(expression.location,
+                 "bool values only support equality comparisons with bool "
+                 "values");
+          }
+          const auto equal =
+              std::get<bool>(lhs.value) == std::get<bool>(rhs.value);
+          result = expression.kind == Expr::Kind::Equal ? equal : !equal;
+        } else {
+          const auto ordering = compareNumericConstants(lhs, rhs);
+          switch (expression.kind) {
+          case Expr::Kind::Equal:
+            result = ordering == 0;
+            break;
+          case Expr::Kind::NotEqual:
+            result = ordering != 0;
+            break;
+          case Expr::Kind::Less:
+            result = ordering < 0;
+            break;
+          case Expr::Kind::LessEqual:
+            result = ordering <= 0;
+            break;
+          case Expr::Kind::Greater:
+            result = ordering > 0;
+            break;
+          case Expr::Kind::GreaterEqual:
+            result = ordering >= 0;
+            break;
+          default:
+            llvm_unreachable("not a comparison expression");
+          }
+        }
+        return {.type = ScalarType::Bool, .value = result};
+      }
+      case Expr::Kind::ArcCos:
+      case Expr::Kind::ArcSin:
+      case Expr::Kind::ArcTan:
+      case Expr::Kind::Ceiling:
+      case Expr::Kind::Cos:
+      case Expr::Kind::Exp:
+      case Expr::Kind::Floor:
+      case Expr::Kind::Log:
+      case Expr::Kind::Sin:
+      case Expr::Kind::Sqrt:
+      case Expr::Kind::Tan: {
+        const auto operand = evaluateConstant(*expression.lhs);
+        if (operand.type == ScalarType::Bool) {
+          fail(expression.location, "math functions require numeric operands");
+        }
+        const bool inverseTrig = expression.kind == Expr::Kind::ArcCos ||
+                                 expression.kind == Expr::Kind::ArcSin ||
+                                 expression.kind == Expr::Kind::ArcTan;
+        const bool trig = expression.kind == Expr::Kind::Cos ||
+                          expression.kind == Expr::Kind::Sin ||
+                          expression.kind == Expr::Kind::Tan;
+        if (operand.type == ScalarType::Angle && !trig) {
+          fail(expression.location,
+               inverseTrig
+                   ? "inverse trigonometric functions require a float operand"
+                   : "this math function does not accept an angle operand");
+        }
+        const auto value = asDouble(operand);
+        double result = 0.0;
         switch (expression.kind) {
-        case Expr::Kind::Equal:
-          result = ordering == 0;
+        case Expr::Kind::ArcCos:
+          result = std::acos(value);
           break;
-        case Expr::Kind::NotEqual:
-          result = ordering != 0;
+        case Expr::Kind::ArcSin:
+          result = std::asin(value);
           break;
-        case Expr::Kind::Less:
-          result = ordering < 0;
+        case Expr::Kind::ArcTan:
+          result = std::atan(value);
           break;
-        case Expr::Kind::LessEqual:
-          result = ordering <= 0;
+        case Expr::Kind::Ceiling:
+          result = std::ceil(value);
           break;
-        case Expr::Kind::Greater:
-          result = ordering > 0;
+        case Expr::Kind::Cos:
+          result = std::cos(value);
           break;
-        case Expr::Kind::GreaterEqual:
-          result = ordering >= 0;
+        case Expr::Kind::Exp:
+          result = std::exp(value);
+          break;
+        case Expr::Kind::Floor:
+          result = std::floor(value);
+          break;
+        case Expr::Kind::Log:
+          result = std::log(value);
+          break;
+        case Expr::Kind::Sin:
+          result = std::sin(value);
+          break;
+        case Expr::Kind::Sqrt:
+          result = std::sqrt(value);
+          break;
+        case Expr::Kind::Tan:
+          result = std::tan(value);
           break;
         default:
-          llvm_unreachable("not a comparison expression");
+          llvm_unreachable("not a unary math expression");
         }
+        if (!std::isfinite(result)) {
+          fail(expression.location,
+               "constant math expression has a non-finite result");
+        }
+        return {.type = inverseTrig ? ScalarType::Angle : ScalarType::Float,
+                .value = result};
       }
-      return {.type = ScalarType::Bool, .value = result};
-    }
-    case Expr::Kind::ArcCos:
-    case Expr::Kind::ArcSin:
-    case Expr::Kind::ArcTan:
-    case Expr::Kind::Ceiling:
-    case Expr::Kind::Cos:
-    case Expr::Kind::Exp:
-    case Expr::Kind::Floor:
-    case Expr::Kind::Log:
-    case Expr::Kind::Sin:
-    case Expr::Kind::Sqrt:
-    case Expr::Kind::Tan: {
-      const auto value = asDouble(evaluateConstant(*expression.lhs));
-      double result = 0.0;
-      switch (expression.kind) {
-      case Expr::Kind::ArcCos:
-        result = std::acos(value);
-        break;
-      case Expr::Kind::ArcSin:
-        result = std::asin(value);
-        break;
-      case Expr::Kind::ArcTan:
-        result = std::atan(value);
-        break;
-      case Expr::Kind::Ceiling:
-        result = std::ceil(value);
-        break;
-      case Expr::Kind::Cos:
-        result = std::cos(value);
-        break;
-      case Expr::Kind::Exp:
-        result = std::exp(value);
-        break;
-      case Expr::Kind::Floor:
-        result = std::floor(value);
-        break;
-      case Expr::Kind::Log:
-        result = std::log(value);
-        break;
-      case Expr::Kind::Sin:
-        result = std::sin(value);
-        break;
-      case Expr::Kind::Sqrt:
-        result = std::sqrt(value);
-        break;
-      case Expr::Kind::Tan:
-        result = std::tan(value);
-        break;
-      default:
-        llvm_unreachable("not a unary math expression");
-      }
-      if (!std::isfinite(result)) {
+      case Expr::Kind::Add:
+      case Expr::Kind::Sub:
+      case Expr::Kind::Mul:
+      case Expr::Kind::Div:
+      case Expr::Kind::Mod:
+      case Expr::Kind::BuiltinMod:
+      case Expr::Kind::BuiltinPow:
+      case Expr::Kind::Pow:
+        return evaluateConstantBinary(expression);
+      case Expr::Kind::BitAnd:
+      case Expr::Kind::BitOr:
+      case Expr::Kind::BitXor:
+      case Expr::Kind::ShiftLeft:
+      case Expr::Kind::ShiftRight:
         fail(expression.location,
-             "constant math expression has a non-finite result");
+             "bitwise operators require explicitly sized uint, bit, or angle "
+             "operands, which are not supported yet");
+      case Expr::Kind::Index:
+        fail(expression.location, "expression is not a compile-time constant");
+      case Expr::Kind::PopCount:
+      case Expr::Kind::RotateLeft:
+      case Expr::Kind::RotateRight:
+        fail(expression.location,
+             "bit-register expressions are not compile-time constants");
       }
-      return {.type = ScalarType::Float, .value = result};
-    }
-    case Expr::Kind::Add:
-    case Expr::Kind::Sub:
-    case Expr::Kind::Mul:
-    case Expr::Kind::Div:
-    case Expr::Kind::Mod:
-    case Expr::Kind::BuiltinMod:
-    case Expr::Kind::BuiltinPow:
-    case Expr::Kind::Pow:
-      return evaluateConstantBinary(expression);
-    case Expr::Kind::BitAnd:
-    case Expr::Kind::BitOr:
-    case Expr::Kind::BitXor:
-    case Expr::Kind::ShiftLeft:
-    case Expr::Kind::ShiftRight:
-      fail(expression.location,
-           "bitwise operators require explicitly sized uint, bit, or angle "
-           "operands, which are not supported yet");
-    case Expr::Kind::Index:
-      fail(expression.location, "expression is not a compile-time constant");
-    case Expr::Kind::PopCount:
-    case Expr::Kind::RotateLeft:
-    case Expr::Kind::RotateRight:
-      fail(expression.location,
-           "bit-register expressions are not compile-time constants");
-    }
-    llvm_unreachable("unknown syntax expression kind");
+      llvm_unreachable("unknown syntax expression kind");
+    }();
+    constantValues[id] = result;
+    return result;
   }
 
   [[nodiscard]] ScalarType
   constantExpressionType(const SyntaxExpressionId id) const {
-    const auto& expression = syntax.expressions[id];
-    switch (expression.kind) {
-    case Expr::Kind::Int:
-      return expression.integer <=
-                     static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
-                 ? ScalarType::Int
-                 : ScalarType::Uint;
-    case Expr::Kind::Float:
-      return ScalarType::Float;
-    case Expr::Kind::Bool:
-      return ScalarType::Bool;
-    case Expr::Kind::Identifier: {
-      if (const auto builtin = builtinConstant(expression.identifier)) {
-        return builtin->type;
-      }
-      const auto* symbol = lookup(expression.identifier);
-      if (symbol == nullptr || symbol->kind != SymbolKind::Constant ||
-          !symbol->constant) {
-        fail(expression.location, "expression is not a compile-time constant");
-      }
-      return symbol->constant->type;
+    if (constantTypes[id]) {
+      return *constantTypes[id];
     }
-    case Expr::Kind::Neg: {
-      const auto type = constantExpressionType(*expression.lhs);
-      if (type == ScalarType::Bool) {
-        fail(expression.location,
-             "numeric negation requires a numeric operand");
-      }
-      return type;
-    }
-    case Expr::Kind::Not:
-      if (constantExpressionType(*expression.lhs) != ScalarType::Bool) {
-        fail(expression.location, "logical negation requires a bool operand");
-      }
-      return ScalarType::Bool;
-    case Expr::Kind::And:
-    case Expr::Kind::Or:
-      if (constantExpressionType(*expression.lhs) != ScalarType::Bool ||
-          constantExpressionType(*expression.rhs) != ScalarType::Bool) {
-        fail(expression.location, "logical operators require bool operands");
-      }
-      return ScalarType::Bool;
-    case Expr::Kind::Equal:
-    case Expr::Kind::NotEqual:
-    case Expr::Kind::Less:
-    case Expr::Kind::LessEqual:
-    case Expr::Kind::Greater:
-    case Expr::Kind::GreaterEqual: {
-      const auto lhs = constantExpressionType(*expression.lhs);
-      const auto rhs = constantExpressionType(*expression.rhs);
-      if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
-        if (lhs != ScalarType::Bool || rhs != ScalarType::Bool ||
-            (expression.kind != Expr::Kind::Equal &&
-             expression.kind != Expr::Kind::NotEqual)) {
-          fail(expression.location,
-               "bool values only support equality comparisons with bool "
-               "values");
-        }
-      }
-      return ScalarType::Bool;
-    }
-    case Expr::Kind::ArcCos:
-    case Expr::Kind::ArcSin:
-    case Expr::Kind::ArcTan:
-    case Expr::Kind::Ceiling:
-    case Expr::Kind::Cos:
-    case Expr::Kind::Exp:
-    case Expr::Kind::Floor:
-    case Expr::Kind::Log:
-    case Expr::Kind::Sin:
-    case Expr::Kind::Sqrt:
-    case Expr::Kind::Tan:
-      if (constantExpressionType(*expression.lhs) == ScalarType::Bool) {
-        fail(expression.location, "math functions require numeric operands");
-      }
-      return ScalarType::Float;
-    case Expr::Kind::Add:
-    case Expr::Kind::Sub:
-    case Expr::Kind::Mul:
-    case Expr::Kind::Div:
-    case Expr::Kind::Mod:
-    case Expr::Kind::BuiltinMod:
-    case Expr::Kind::BuiltinPow:
-    case Expr::Kind::Pow: {
-      const auto lhs = constantExpressionType(*expression.lhs);
-      const auto rhs = constantExpressionType(*expression.rhs);
-      if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
-        fail(expression.location,
-             "arithmetic operators require numeric operands");
-      }
-      if (expression.kind == Expr::Kind::Mod &&
-          (lhs == ScalarType::Float || rhs == ScalarType::Float)) {
-        fail(expression.location,
-             "the '%' operator requires integer operands; use mod() for "
-             "floating-point remainder");
-      }
-      if (lhs == ScalarType::Float || rhs == ScalarType::Float ||
-          expression.kind == Expr::Kind::BuiltinPow) {
+    const auto result = [&]() -> ScalarType {
+      const auto& expression = syntax.expressions[id];
+      switch (expression.kind) {
+      case Expr::Kind::Int:
+        return expression.integer <= static_cast<uint64_t>(
+                                         std::numeric_limits<int64_t>::max())
+                   ? ScalarType::Int
+                   : ScalarType::Uint;
+      case Expr::Kind::Float:
         return ScalarType::Float;
+      case Expr::Kind::Bool:
+        return ScalarType::Bool;
+      case Expr::Kind::Identifier: {
+        if (const auto builtin = builtinConstant(expression.identifier)) {
+          return builtin->type;
+        }
+        const auto* symbol = lookup(expression.identifier);
+        if (symbol == nullptr || symbol->kind != SymbolKind::Constant ||
+            !symbol->constant) {
+          fail(expression.location,
+               "expression is not a compile-time constant");
+        }
+        return symbol->constant->type;
       }
-      return lhs == ScalarType::Uint || rhs == ScalarType::Uint
-                 ? ScalarType::Uint
-                 : ScalarType::Int;
-    }
-    case Expr::Kind::BitNot:
-    case Expr::Kind::BitAnd:
-    case Expr::Kind::BitOr:
-    case Expr::Kind::BitXor:
-    case Expr::Kind::ShiftLeft:
-    case Expr::Kind::ShiftRight:
-      fail(expression.location,
-           "bitwise operators require explicitly sized uint, bit, or angle "
-           "operands, which are not supported yet");
-    case Expr::Kind::Index:
-      fail(expression.location, "expression is not a compile-time constant");
-    case Expr::Kind::PopCount:
-      return ScalarType::Uint;
-    case Expr::Kind::RotateLeft:
-    case Expr::Kind::RotateRight:
-      fail(expression.location,
-           "bit-register rotations are not scalar expressions");
-    }
-    llvm_unreachable("unknown syntax expression kind");
+      case Expr::Kind::Neg: {
+        const auto type = constantExpressionType(*expression.lhs);
+        if (type == ScalarType::Bool) {
+          fail(expression.location,
+               "numeric negation requires a numeric operand");
+        }
+        return type;
+      }
+      case Expr::Kind::Not:
+        if (constantExpressionType(*expression.lhs) != ScalarType::Bool) {
+          fail(expression.location, "logical negation requires a bool operand");
+        }
+        return ScalarType::Bool;
+      case Expr::Kind::And:
+      case Expr::Kind::Or:
+        if (constantExpressionType(*expression.lhs) != ScalarType::Bool ||
+            constantExpressionType(*expression.rhs) != ScalarType::Bool) {
+          fail(expression.location, "logical operators require bool operands");
+        }
+        return ScalarType::Bool;
+      case Expr::Kind::Equal:
+      case Expr::Kind::NotEqual:
+      case Expr::Kind::Less:
+      case Expr::Kind::LessEqual:
+      case Expr::Kind::Greater:
+      case Expr::Kind::GreaterEqual: {
+        const auto lhs = constantExpressionType(*expression.lhs);
+        const auto rhs = constantExpressionType(*expression.rhs);
+        if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
+          if (lhs != ScalarType::Bool || rhs != ScalarType::Bool ||
+              (expression.kind != Expr::Kind::Equal &&
+               expression.kind != Expr::Kind::NotEqual)) {
+            fail(expression.location,
+                 "bool values only support equality comparisons with bool "
+                 "values");
+          }
+        }
+        return ScalarType::Bool;
+      }
+      case Expr::Kind::ArcCos:
+      case Expr::Kind::ArcSin:
+      case Expr::Kind::ArcTan:
+        if (constantExpressionType(*expression.lhs) == ScalarType::Angle) {
+          fail(expression.location,
+               "inverse trigonometric functions require a float operand");
+        }
+        if (constantExpressionType(*expression.lhs) == ScalarType::Bool) {
+          fail(expression.location, "math functions require numeric operands");
+        }
+        return ScalarType::Angle;
+      case Expr::Kind::Ceiling:
+      case Expr::Kind::Exp:
+      case Expr::Kind::Floor:
+      case Expr::Kind::Log:
+      case Expr::Kind::Sqrt:
+        if (constantExpressionType(*expression.lhs) == ScalarType::Bool) {
+          fail(expression.location, "math functions require numeric operands");
+        }
+        if (constantExpressionType(*expression.lhs) == ScalarType::Angle) {
+          fail(expression.location,
+               "this math function does not accept an angle operand");
+        }
+        return ScalarType::Float;
+      case Expr::Kind::Cos:
+      case Expr::Kind::Sin:
+      case Expr::Kind::Tan:
+        if (constantExpressionType(*expression.lhs) == ScalarType::Bool) {
+          fail(expression.location, "math functions require numeric operands");
+        }
+        return ScalarType::Float;
+      case Expr::Kind::Add:
+      case Expr::Kind::Sub:
+      case Expr::Kind::Mul:
+      case Expr::Kind::Div:
+      case Expr::Kind::Mod:
+      case Expr::Kind::BuiltinMod:
+      case Expr::Kind::BuiltinPow:
+      case Expr::Kind::Pow: {
+        const auto lhs = constantExpressionType(*expression.lhs);
+        const auto rhs = constantExpressionType(*expression.rhs);
+        if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
+          fail(expression.location,
+               "arithmetic operators require numeric operands");
+        }
+        if (expression.kind == Expr::Kind::Mod &&
+            (lhs == ScalarType::Float || rhs == ScalarType::Float)) {
+          fail(expression.location,
+               "the '%' operator requires integer operands; use mod() for "
+               "floating-point remainder");
+        }
+        if (lhs == ScalarType::Angle || rhs == ScalarType::Angle) {
+          if (expression.kind == Expr::Kind::Add ||
+              expression.kind == Expr::Kind::Sub ||
+              (expression.kind == Expr::Kind::Mul &&
+               lhs != ScalarType::Angle) ||
+              (expression.kind == Expr::Kind::Mul &&
+               rhs != ScalarType::Angle) ||
+              (expression.kind == Expr::Kind::Div && lhs == ScalarType::Angle &&
+               rhs != ScalarType::Angle)) {
+            return ScalarType::Angle;
+          }
+          if (expression.kind == Expr::Kind::Div && lhs == ScalarType::Angle &&
+              rhs == ScalarType::Angle) {
+            return ScalarType::Float;
+          }
+          fail(expression.location,
+               "unsupported arithmetic operation on angle operands");
+        }
+        if (lhs == ScalarType::Float || rhs == ScalarType::Float) {
+          return ScalarType::Float;
+        }
+        if (expression.kind == Expr::Kind::BuiltinPow &&
+            lhs == ScalarType::Int) {
+          if (rhs == ScalarType::Int &&
+              std::get<int64_t>(evaluateConstant(*expression.rhs).value) < 0) {
+            return ScalarType::Float;
+          }
+          return ScalarType::Int;
+        }
+        return lhs == ScalarType::Uint || rhs == ScalarType::Uint
+                   ? ScalarType::Uint
+                   : ScalarType::Int;
+      }
+      case Expr::Kind::BitNot:
+      case Expr::Kind::BitAnd:
+      case Expr::Kind::BitOr:
+      case Expr::Kind::BitXor:
+      case Expr::Kind::ShiftLeft:
+      case Expr::Kind::ShiftRight:
+        fail(expression.location,
+             "bitwise operators require explicitly sized uint, bit, or angle "
+             "operands, which are not supported yet");
+      case Expr::Kind::Index:
+        fail(expression.location, "expression is not a compile-time constant");
+      case Expr::Kind::PopCount:
+        return ScalarType::Uint;
+      case Expr::Kind::RotateLeft:
+      case Expr::Kind::RotateRight:
+        fail(expression.location,
+             "bit-register rotations are not scalar expressions");
+      }
+      llvm_unreachable("unknown syntax expression kind");
+    }();
+    constantTypes[id] = result;
+    return result;
   }
 
   [[nodiscard]] Constant
@@ -1093,6 +1223,30 @@ private:
     const bool builtinFloatPower = expression.kind == Expr::Kind::BuiltinPow &&
                                    rhs.type == ScalarType::Int &&
                                    std::get<int64_t>(rhs.value) < 0;
+    if (lhs.type == ScalarType::Angle || rhs.type == ScalarType::Angle) {
+      const auto left = asDouble(lhs);
+      const auto right = asDouble(rhs);
+      if (expression.kind == Expr::Kind::Add ||
+          expression.kind == Expr::Kind::Sub) {
+        return {.type = ScalarType::Angle,
+                .value = expression.kind == Expr::Kind::Add ? left + right
+                                                            : left - right};
+      }
+      if (expression.kind == Expr::Kind::Mul &&
+          (lhs.type == ScalarType::Angle) != (rhs.type == ScalarType::Angle)) {
+        return {.type = ScalarType::Angle, .value = left * right};
+      }
+      if (expression.kind == Expr::Kind::Div && lhs.type == ScalarType::Angle) {
+        if (right == 0.0) {
+          fail(expression.location, "division by zero");
+        }
+        return {.type = rhs.type == ScalarType::Angle ? ScalarType::Float
+                                                      : ScalarType::Angle,
+                .value = left / right};
+      }
+      fail(expression.location,
+           "unsupported arithmetic operation on angle operands");
+    }
     if (lhs.type == ScalarType::Float || rhs.type == ScalarType::Float ||
         builtinFloatPower) {
       if (expression.kind == Expr::Kind::Mod) {
@@ -1137,6 +1291,27 @@ private:
              "constant arithmetic has a non-finite result");
       }
       return {.type = ScalarType::Float, .value = result};
+    }
+
+    if (expression.kind == Expr::Kind::BuiltinPow &&
+        lhs.type == ScalarType::Int && rhs.type == ScalarType::Uint) {
+      auto result = int64_t{1};
+      auto base = std::get<int64_t>(lhs.value);
+      auto exponent = std::get<uint64_t>(rhs.value);
+      bool overflow = false;
+      while (exponent != 0 && !overflow) {
+        if ((exponent & 1U) != 0) {
+          overflow = llvm::MulOverflow(result, base, result) != 0;
+        }
+        exponent >>= 1U;
+        if (exponent != 0 && !overflow) {
+          overflow = llvm::MulOverflow(base, base, base) != 0;
+        }
+      }
+      if (overflow) {
+        fail(expression.location, "constant integer arithmetic overflows i64");
+      }
+      return {.type = ScalarType::Int, .value = result};
     }
 
     if (lhs.type == ScalarType::Uint || rhs.type == ScalarType::Uint) {
@@ -1254,28 +1429,35 @@ private:
   }
 
   [[nodiscard]] bool isConstantExpression(const SyntaxExpressionId id) const {
+    if (constantExpressionStatus[id] != 0) {
+      return constantExpressionStatus[id] > 0;
+    }
     const auto& expression = syntax.expressions[id];
-    switch (expression.kind) {
-    case Expr::Kind::Identifier: {
-      if (builtinConstant(expression.identifier)) {
-        return true;
+    const auto result = [&] {
+      switch (expression.kind) {
+      case Expr::Kind::Identifier: {
+        if (builtinConstant(expression.identifier)) {
+          return true;
+        }
+        const auto* symbol = lookup(expression.identifier);
+        return symbol != nullptr && symbol->kind == SymbolKind::Constant;
       }
-      const auto* symbol = lookup(expression.identifier);
-      return symbol != nullptr && symbol->kind == SymbolKind::Constant;
-    }
-    case Expr::Kind::Int:
-    case Expr::Kind::Float:
-    case Expr::Kind::Bool:
-      return true;
-    case Expr::Kind::Index:
-    case Expr::Kind::PopCount:
-    case Expr::Kind::RotateLeft:
-    case Expr::Kind::RotateRight:
-      return false;
-    default:
-      return (!expression.lhs || isConstantExpression(*expression.lhs)) &&
-             (!expression.rhs || isConstantExpression(*expression.rhs));
-    }
+      case Expr::Kind::Int:
+      case Expr::Kind::Float:
+      case Expr::Kind::Bool:
+        return true;
+      case Expr::Kind::Index:
+      case Expr::Kind::PopCount:
+      case Expr::Kind::RotateLeft:
+      case Expr::Kind::RotateRight:
+        return false;
+      default:
+        return (!expression.lhs || isConstantExpression(*expression.lhs)) &&
+               (!expression.rhs || isConstantExpression(*expression.rhs));
+      }
+    }();
+    constantExpressionStatus[id] = result ? 1 : -1;
+    return result;
   }
 
   void validateGateExpression(const SyntaxExpressionId id) const {
@@ -1290,12 +1472,6 @@ private:
              "gate definitions cannot capture outer scalar '" +
                  expression.identifier + "'");
       }
-    }
-    if (expression.lhs) {
-      validateGateExpression(*expression.lhs);
-    }
-    if (expression.rhs) {
-      validateGateExpression(*expression.rhs);
     }
   }
 
@@ -1365,7 +1541,7 @@ private:
       }
       if (symbol->kind == SymbolKind::GateParameter) {
         return addExpression({.kind = ExpressionKind::GateParameter,
-                              .type = ScalarType::Float,
+                              .type = ScalarType::Angle,
                               .parameter = symbol->id});
       }
       if (symbol->kind != SymbolKind::Scalar &&
@@ -1475,40 +1651,119 @@ private:
     case Expr::Kind::Identifier:
       llvm_unreachable("handled expression kind");
     }
-    const auto lhs = analyzeExpression(*expression.lhs);
-    const auto rhs =
+    auto lhs = analyzeExpression(*expression.lhs);
+    auto rhs =
         expression.rhs
             ? std::optional<ExpressionId>(analyzeExpression(*expression.rhs))
             : std::nullopt;
-    if (program.expressions[lhs].type == ScalarType::Bool ||
-        (rhs && program.expressions[*rhs].type == ScalarType::Bool)) {
+    auto lhsType = program.expressions[lhs].type;
+    auto rhsType =
+        rhs ? std::optional<ScalarType>(program.expressions[*rhs].type)
+            : std::nullopt;
+    if (lhsType == ScalarType::Bool ||
+        (rhsType && *rhsType == ScalarType::Bool)) {
       fail(expression.location,
            "arithmetic operators require numeric operands");
     }
+
+    const bool inverseTrig = kind == ExpressionKind::ArcCos ||
+                             kind == ExpressionKind::ArcSin ||
+                             kind == ExpressionKind::ArcTan;
+    const bool trig = kind == ExpressionKind::Cos ||
+                      kind == ExpressionKind::Sin ||
+                      kind == ExpressionKind::Tan;
+    const bool otherMath =
+        kind == ExpressionKind::Ceiling || kind == ExpressionKind::Exp ||
+        kind == ExpressionKind::Floor || kind == ExpressionKind::Log ||
+        kind == ExpressionKind::Sqrt;
+    if (inverseTrig || trig || otherMath) {
+      if (lhsType == ScalarType::Angle && !trig) {
+        fail(expression.location,
+             inverseTrig
+                 ? "inverse trigonometric functions require a float operand"
+                 : "this math function does not accept an angle operand");
+      }
+      lhs = castExpression(lhs, trig ? ScalarType::Angle : ScalarType::Float,
+                           expression.location);
+      return addExpression(
+          {.kind = kind,
+           .type = inverseTrig ? ScalarType::Angle : ScalarType::Float,
+           .lhs = lhs});
+    }
+    if (!rhs) {
+      return addExpression({.kind = kind, .type = lhsType, .lhs = lhs});
+    }
+
     if (expression.kind == Expr::Kind::Mod &&
-        (program.expressions[lhs].type == ScalarType::Float ||
-         (rhs && program.expressions[*rhs].type == ScalarType::Float))) {
+        (lhsType == ScalarType::Float || lhsType == ScalarType::Angle ||
+         *rhsType == ScalarType::Float || *rhsType == ScalarType::Angle)) {
       fail(expression.location,
            "the '%' operator requires integer operands; use mod() for "
            "floating-point remainder");
     }
-    auto type = program.expressions[lhs].type;
-    if (kind == ExpressionKind::ArcCos || kind == ExpressionKind::ArcSin ||
-        kind == ExpressionKind::ArcTan || kind == ExpressionKind::Ceiling ||
-        kind == ExpressionKind::Cos || kind == ExpressionKind::Exp ||
-        kind == ExpressionKind::Floor || kind == ExpressionKind::Log ||
-        kind == ExpressionKind::Sin || kind == ExpressionKind::Sqrt ||
-        kind == ExpressionKind::Tan || type == ScalarType::Float ||
-        (expression.kind == Expr::Kind::BuiltinPow && rhs &&
-         program.expressions[*rhs].type == ScalarType::Int) ||
-        (rhs && program.expressions[*rhs].type == ScalarType::Float)) {
+
+    if (lhsType == ScalarType::Angle || *rhsType == ScalarType::Angle) {
+      ScalarType type = ScalarType::Angle;
+      if (kind == ExpressionKind::Add || kind == ExpressionKind::Subtract) {
+        lhs = castExpression(lhs, ScalarType::Angle, expression.location);
+        *rhs = castExpression(*rhs, ScalarType::Angle, expression.location);
+      } else if (kind == ExpressionKind::Multiply &&
+                 (lhsType == ScalarType::Angle) !=
+                     (*rhsType == ScalarType::Angle)) {
+        if (lhsType != ScalarType::Angle) {
+          lhs = castExpression(lhs, ScalarType::Float, expression.location);
+        } else {
+          *rhs = castExpression(*rhs, ScalarType::Float, expression.location);
+        }
+      } else if (kind == ExpressionKind::Divide &&
+                 lhsType == ScalarType::Angle) {
+        if (*rhsType == ScalarType::Angle) {
+          type = ScalarType::Float;
+        } else {
+          *rhs = castExpression(*rhs, ScalarType::Float, expression.location);
+        }
+      } else {
+        fail(expression.location,
+             "unsupported arithmetic operation on angle operands");
+      }
+      return addExpression(
+          {.kind = kind, .type = type, .lhs = lhs, .rhs = *rhs});
+    }
+
+    if (expression.kind == Expr::Kind::BuiltinPow) {
+      auto type = ScalarType::Float;
+      if (lhsType == ScalarType::Int && *rhsType == ScalarType::Uint) {
+        type = ScalarType::Int;
+      } else if (lhsType == ScalarType::Int && *rhsType == ScalarType::Int &&
+                 program.expressions[*rhs].kind == ExpressionKind::Constant &&
+                 std::get<int64_t>(program.expressions[*rhs].constant) >= 0) {
+        type = ScalarType::Int;
+        *rhs = castExpression(*rhs, ScalarType::Uint, expression.location);
+      } else if (lhsType == ScalarType::Uint &&
+                 (*rhsType == ScalarType::Uint ||
+                  (*rhsType == ScalarType::Int &&
+                   program.expressions[*rhs].kind == ExpressionKind::Constant &&
+                   std::get<int64_t>(program.expressions[*rhs].constant) >=
+                       0))) {
+        type = ScalarType::Uint;
+        *rhs = castExpression(*rhs, ScalarType::Uint, expression.location);
+      } else {
+        lhs = castExpression(lhs, ScalarType::Float, expression.location);
+        *rhs = castExpression(*rhs, ScalarType::Float, expression.location);
+      }
+      return addExpression(
+          {.kind = kind, .type = type, .lhs = lhs, .rhs = *rhs});
+    }
+
+    auto type = ScalarType::Int;
+    if (lhsType == ScalarType::Float || *rhsType == ScalarType::Float) {
       type = ScalarType::Float;
-    } else if (rhs && (type == ScalarType::Uint ||
-                       program.expressions[*rhs].type == ScalarType::Uint)) {
+    } else if (lhsType == ScalarType::Uint || *rhsType == ScalarType::Uint) {
       type = ScalarType::Uint;
     }
-    return addExpression(
-        {.kind = kind, .type = type, .lhs = lhs, .rhs = rhs.value_or(0)});
+    lhs = castExpression(lhs, type, expression.location);
+    *rhs = castExpression(*rhs, type, expression.location);
+    return addExpression({.kind = kind, .type = type, .lhs = lhs, .rhs = *rhs});
   }
 
   [[nodiscard]] uint64_t
@@ -1594,7 +1849,8 @@ private:
           if constexpr (std::is_same_v<T, SyntaxStandardLibraryInclude>) {
             activateStandardLibrary(statement.location, data.kind);
           } else if constexpr (std::is_same_v<T, SyntaxScalarDeclaration>) {
-            analyzeScalarDeclaration(statement.location, data, destination);
+            analyzeScalarDeclaration(statement.location, data, destination,
+                                     global);
           } else if constexpr (std::is_same_v<T, SyntaxAssignment>) {
             analyzeAssignment(statement.location, data, destination);
           } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration> ||
@@ -1656,7 +1912,11 @@ private:
 
   void analyzeScalarDeclaration(SMLoc location,
                                 const SyntaxScalarDeclaration& declaration,
-                                std::vector<StatementId>& destination) {
+                                std::vector<StatementId>& destination,
+                                const bool global) {
+    if (declaration.output && !global) {
+      fail(location, "outputs must be declared at global scope");
+    }
     const auto type = scalarType(declaration.kind);
     if (declaration.isConst) {
       if (!declaration.initializer ||
@@ -1672,18 +1932,28 @@ private:
     }
 
     const auto id = static_cast<ScalarId>(program.scalars.size());
-    program.scalars.push_back(
-        {.type = type, .name = declaration.identifier.str()});
+    program.scalars.push_back({.type = type,
+                               .name = declaration.identifier.str(),
+                               .location = getSourceLocation(location)});
     initializedScalars.push_back(false);
     scalarGenerations.push_back(0);
     declare(location, declaration.identifier,
             {.kind = SymbolKind::Scalar, .type = type, .id = id});
+    if (global) {
+      const ProgramOutput output{.kind = OutputKind::Scalar, .symbol = id};
+      implicitOutputs.push_back(output);
+      if (declaration.output) {
+        explicitOutputs.push_back(output);
+      }
+    }
     ScalarDeclarationStatement typed{.scalar = id};
     if (declaration.initializer) {
       if (type == ScalarType::Bool) {
         typed.conditionInitializer = analyzeBoolValue(*declaration.initializer);
       } else {
-        typed.initializer = analyzeExpression(*declaration.initializer);
+        typed.initializer = castExpression(
+            analyzeExpression(*declaration.initializer), type,
+            syntax.expressions[*declaration.initializer].location);
       }
       initializedScalars[id] = true;
     }
@@ -1718,7 +1988,9 @@ private:
       if (symbol->type == ScalarType::Bool) {
         typed.condition = analyzeBoolValue(assignment.value);
       } else {
-        typed.value = analyzeExpression(assignment.value);
+        typed.value =
+            castExpression(analyzeExpression(assignment.value), symbol->type,
+                           syntax.expressions[assignment.value].location);
       }
       initializedScalars[symbol->id] = true;
       ++scalarGenerations[symbol->id];
@@ -1813,9 +2085,11 @@ private:
     declare(location, declaration.identifier,
             {.kind = SymbolKind::Register, .id = id});
     if (!isQubit && global) {
-      bitRegisters.push_back(id);
+      const ProgramOutput programOutput{.kind = OutputKind::BitRegister,
+                                        .symbol = id};
+      implicitOutputs.push_back(programOutput);
       if (output || program.openQASM2) {
-        explicitOutputs.push_back(id);
+        explicitOutputs.push_back(programOutput);
       }
     }
     destination.push_back(
@@ -1862,7 +2136,7 @@ private:
          llvm::enumerate(declaration.parameters)) {
       declare(location, parameter,
               {.kind = SymbolKind::GateParameter,
-               .type = ScalarType::Float,
+               .type = ScalarType::Angle,
                .id = static_cast<uint32_t>(index)});
     }
     for (const auto [index, qubit] : llvm::enumerate(declaration.qubits)) {
@@ -1974,15 +2248,19 @@ private:
 
     const auto knownCondition = constantCondition(conditional.condition);
     if (knownCondition) {
-      if (*knownCondition) {
-        restoreStatePrefix(afterThenBitsInitialized, afterThenInitialized,
-                           afterThenGenerations, afterThenBitGenerations);
-        restoreDynamicFactsPrefix(afterThenDynamicBitFacts);
-      } else {
-        restoreStatePrefix(afterElseBitsInitialized, afterElseInitialized,
-                           afterElseGenerations, afterElseBitGenerations);
-        restoreDynamicFactsPrefix(afterElseDynamicBitFacts);
-      }
+      const auto& knownBitsInitialized =
+          *knownCondition ? afterThenBitsInitialized : afterElseBitsInitialized;
+      const auto& knownInitialized =
+          *knownCondition ? afterThenInitialized : afterElseInitialized;
+      const auto& knownGenerations =
+          *knownCondition ? afterThenGenerations : afterElseGenerations;
+      const auto& knownBitGenerations =
+          *knownCondition ? afterThenBitGenerations : afterElseBitGenerations;
+      const auto& knownDynamicBitFacts =
+          *knownCondition ? afterThenDynamicBitFacts : afterElseDynamicBitFacts;
+      restoreStatePrefix(knownBitsInitialized, knownInitialized,
+                         knownGenerations, knownBitGenerations);
+      restoreDynamicFactsPrefix(knownDynamicBitFacts);
       return addStatement(location, std::move(result));
     }
 
@@ -2294,6 +2572,23 @@ private:
         fail(condition.location,
              "bool values only support equality comparisons with bool values");
       }
+      if (!boolComparison) {
+        auto comparisonType = ScalarType::Int;
+        if (lhsType == ScalarType::Angle || rhsType == ScalarType::Angle) {
+          comparisonType = ScalarType::Angle;
+        } else if (lhsType == ScalarType::Float ||
+                   rhsType == ScalarType::Float) {
+          comparisonType = ScalarType::Float;
+        } else if (lhsType == ScalarType::Uint || rhsType == ScalarType::Uint) {
+          comparisonType = ScalarType::Uint;
+        }
+        typed.comparisonLhs =
+            castExpression(typed.comparisonLhs, comparisonType,
+                           syntax.expressions[*condition.lhs].location);
+        typed.comparisonRhs =
+            castExpression(typed.comparisonRhs, comparisonType,
+                           syntax.expressions[*condition.rhs].location);
+      }
       switch (condition.kind) {
       case Expr::Kind::Equal:
         typed.comparison = ComparisonKind::Equal;
@@ -2392,10 +2687,12 @@ private:
     std::vector<ExpressionId> parameters;
     parameters.reserve(call.parameters.size());
     for (const auto expression : call.parameters) {
-      const auto parameter = analyzeExpression(expression);
+      auto parameter = analyzeExpression(expression);
       if (program.expressions[parameter].type == ScalarType::Bool) {
         fail(call.location, "gate parameters require numeric expressions");
       }
+      parameter = castExpression(parameter, ScalarType::Angle,
+                                 syntax.expressions[expression].location);
       parameters.push_back(parameter);
     }
 
@@ -2416,7 +2713,8 @@ private:
         }
         {
           const auto operand = analyzeExpression(*modifier.argument);
-          if (program.expressions[operand].type == ScalarType::Bool) {
+          if (program.expressions[operand].type == ScalarType::Bool ||
+              program.expressions[operand].type == ScalarType::Angle) {
             fail(call.location, "pow modifier requires a numeric argument");
           }
           modifiers.push_back({.kind = ModifierKind::Pow, .operand = operand});
@@ -2650,8 +2948,20 @@ private:
   }
 
   void finalizeOutputs() {
-    program.outputs = explicitOutputs.empty() ? bitRegisters : explicitOutputs;
-    for (const auto reg : program.outputs) {
+    program.outputs =
+        explicitOutputs.empty() ? implicitOutputs : explicitOutputs;
+    for (const auto output : program.outputs) {
+      if (output.kind == OutputKind::Scalar) {
+        if (!initializedScalars[output.symbol]) {
+          throw SemanticError(
+              {.location = program.scalars[output.symbol].location,
+               .message = "Output scalar '" +
+                          program.scalars[output.symbol].name +
+                          "' is not initialized."});
+        }
+        continue;
+      }
+      const auto reg = static_cast<RegisterId>(output.symbol);
       if (llvm::any_of(*initializedBits[reg],
                        [](const bool initialized) { return !initialized; })) {
         throw SemanticError({.location = program.registers[reg].location,
