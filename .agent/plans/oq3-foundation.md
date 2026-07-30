@@ -244,21 +244,25 @@ threads or publishing new PR text.
       scalar results with allocated classical-register memrefs returned from
       the QC entry function, and identified the overlapping translation,
       compiler-corpus, and QIR conversion files.
-- [ ] Integrate the classical-register contract from pull request #1927 while
-      preserving the staged OpenQASM frontend and direct emitter. Resolve the
-      old translator conflict in favor of the staged adapter, and adapt the
-      emitter and tests to return declared scalar and bit-register outputs in
-      source order.
-- [ ] Add explicit resolved conversion expressions and context-sensitive
+- [x] (2026-07-30) Integrated the exact `bea1ce54e` classical-register contract
+      from pull request #1927 while preserving the staged OpenQASM frontend and
+      direct emitter. Resolved the old translator conflict in favor of the
+      staged adapter and adapted the emitter and tests to return declared scalar
+      and bit-register outputs in source order.
+- [x] (2026-07-30) Added explicit resolved conversion expressions and
+      context-sensitive
       builtin overload resolution, including the specified signed result for
       `pow(int, uint)` and the distinct angle type of gate parameters.
-- [ ] Make semantic expression analysis one bottom-up traversal rather than
+- [x] (2026-07-30) Made semantic expression analysis one bottom-up traversal
+      rather than
       recursively revalidating and reevaluating the same syntax subtree.
-- [ ] Split the monolithic OpenQASM unit-test source by frontend, semantic, and
+- [x] (2026-07-30) Split the monolithic OpenQASM unit-test source by frontend,
+      semantic, and
       target-emission responsibility; fix the Windows iterator declaration,
       remaining Clang-Tidy diagnostics, frontend declaration style, and
       float-to-integer conversion documentation.
-- [ ] Extract the OpenQASM-independent QIR builtin-profile diagnostics and
+- [x] (2026-07-30) Extracted the OpenQASM-independent QIR builtin-profile
+      diagnostics and
       native tests into a separate local task branch. The OpenQASM branch must
       then rely on the QIR behavior supplied by its base and by #1927 rather
       than carrying those conversion changes itself.
@@ -400,6 +404,27 @@ threads or publishing new PR text.
   bit-vector fixture is tracked independently in both the `jeff` and QIR
   boundary corpora; source acceptance must not imply retained-operation QIR
   support.
+
+- Observation: #1927's first QC-to-QCO implementation treated every
+  `memref.load` nested below structured control flow as quantum state. Evidence:
+  an OpenQASM `while` carrying a bit register reached the conversion with an
+  `i1` load and triggered the qubit-only state assertion. Filtering by
+  `qc.qubit` element type fixes the conversion independently of the source
+  parser.
+
+- Observation: the order in which `DenseMap` iterates returned classical
+  registers is not the order of function results. Evidence: Base QIR recorded
+  the two outputs of the broadcast fixture in a nondeterministic order after
+  adopting #1927. Retaining the returned allocation operations in signature
+  order makes output recording deterministic without changing the lookup map.
+
+- Observation: `jeff` represents a classical-register result with tensor
+  storage even though QC and QCO expose the same value as a memref. Evidence:
+  otherwise valid round trips failed an exact intermediate type-string check,
+  while the reconstructed QCO and QC functions restored the original memref
+  signature. The integration oracle normalizes only this known storage
+  representation at the two `jeff` stages and still requires exact types on
+  both sides.
 
 ## Decision Log
 
@@ -646,6 +671,23 @@ threads or publishing new PR text.
   and lets each change be reviewed against its actual contract. Date/Author:
   2026-07-29 / Codex.
 
+- Decision: preserve scalar outputs as builtin SSA results and bit-register
+  outputs as #1927's `memref<nxi1>` results, in one source-ordered result list.
+  Rationale: scalars do not need mutable aggregate storage, while bit registers
+  must retain the storage contract already established for QC, QCO, and QIR.
+  Date/Author: 2026-07-30 / Codex.
+
+- Decision: retain both a classical-register lookup map and a separate
+  function-result-ordered list in QIR lowering. Rationale: lookup and ordered
+  output emission have different requirements; deriving observable order from
+  a hash map is incorrect. Date/Author: 2026-07-30 / Codex.
+
+- Decision: compare `jeff` classical-register result storage by semantic shape,
+  accepting the format's tensor spelling only while the program is in `jeff`.
+  Rationale: this tests the exchange representation that exists today without
+  weakening the exact QC and QCO round-trip contract. Date/Author: 2026-07-30 /
+  Codex.
+
 ## Outcomes & Retrospective
 
 The completed frontend groundwork is retained: the native parser and semantic
@@ -709,6 +751,27 @@ gate-catalog canonical-name mapping. Clean sequential counters report 4149 of
 4542 substantive frontend/emitter lines and 3283 of 5195 branches. A local
 Cobertura plus `diff-cover` calculation against `origin/main` reports 4256 of
 4651 changed production C++ lines.
+
+The #1927 integration now emits declared scalar and bit-register outputs in
+source order and retains OpenQASM's compatibility rule that, without explicit
+output declarations, all global classical variables are observable. Semantic
+analysis records every promotion and assignment conversion explicitly, gate
+parameters carry the distinct angle type, mixed signed/unsigned integer powers
+retain the specified signed result, and constant-expression queries are cached
+per syntax expression. The emitter consumes those decisions instead of
+re-resolving source typing.
+
+The integration exposed and fixed two source-independent downstream defects:
+QC-to-QCO no longer mistakes classical memref loads for qubit state, and QIR
+output recording follows function-result order rather than hash-map iteration.
+The public compiler corpus also distinguishes the temporary tensor spelling of
+classical registers in `jeff` from the exact memref signature required after
+restoration.
+
+The monolithic OpenQASM target test has been split into parser, semantics, and
+emitter files with a small namespaced helper header. The resulting suites retain
+their existing target and coverage identity while making ownership and review
+boundaries explicit.
 
 ## Context and Orientation
 
