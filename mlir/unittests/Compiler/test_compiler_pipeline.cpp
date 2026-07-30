@@ -599,6 +599,24 @@ cx q[0], q[2];
   EXPECT_NE(ir.find("qco.ctrl"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, TargetNativeFailsWhenArchitectureTooSmall) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+cx q[0], q[1];
+x q[2];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  // Coupling only spans two hardware qubits; three live program qubits must
+  // fail.
+  const std::vector<std::pair<size_t, size_t>> coupling = {{0, 1}};
+  EXPECT_FALSE(qco->targetNative("u,cx", coupling));
+}
+
 /**
  * @brief Test: default compilation returns the requested typed program format
  */

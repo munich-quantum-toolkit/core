@@ -47,4 +47,36 @@ if(BUILD_MQT_CORE_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-coupling-map-requires-native-gates.cmake)
   set_tests_properties(mqt-cc-coupling-map-requires-native-gates PROPERTIES LABELS
                                                                             mqt-mlir-unittests)
+
+  add_test(
+    NAME mqt-cc-coupling-map-must-not-be-empty
+    COMMAND
+      ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc>
+      -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/coupling-line.qasm
+      "-DARGS=--emit=qco-optimized;--native-gates=u,cx;--coupling-map="
+      "-DEXPECTED=--coupling-map must not be empty" -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-mqt-cc-fails.cmake)
+  set_tests_properties(mqt-cc-coupling-map-must-not-be-empty PROPERTIES LABELS mqt-mlir-unittests)
+
+  add_test(
+    NAME mqt-cc-coupling-map-rejects-invalid-entry
+    COMMAND
+      ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc>
+      -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/coupling-line.qasm
+      "-DARGS=--emit=qco-optimized;--native-gates=u,cx;--coupling-map=0-x"
+      "-DEXPECTED=invalid --coupling-map entry" -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-mqt-cc-fails.cmake)
+  set_tests_properties(mqt-cc-coupling-map-rejects-invalid-entry PROPERTIES LABELS
+                                                                            mqt-mlir-unittests)
+
+  add_test(
+    NAME mqt-cc-native-gates-requires-qco-optimization
+    COMMAND
+      ${CMAKE_COMMAND} -DMQT_CC=$<TARGET_FILE:mqt-cc>
+      -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/coupling-line.qasm
+      "-DARGS=--emit=qco;--native-gates=u,cx"
+      "-DEXPECTED=--native-gates requires an output that passes through QCO optimization" -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check-mqt-cc-fails.cmake)
+  set_tests_properties(mqt-cc-native-gates-requires-qco-optimization PROPERTIES LABELS
+                                                                                mqt-mlir-unittests)
 endif()

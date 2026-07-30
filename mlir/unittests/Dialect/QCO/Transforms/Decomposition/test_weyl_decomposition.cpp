@@ -785,6 +785,31 @@ TEST(NativeGatesetFromNamesTest, RotationPairXzx) {
   EXPECT_EQ(gs->toMenuString(), "rx,rz,cx");
 }
 
+TEST(NativeGatesetFromNamesTest, RotationPairXyx) {
+  const SmallVector<StringRef> names = {"rx", "ry", "cx"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::XYX);
+  EXPECT_EQ(gs->toMenuString(), "rx,ry,cx");
+}
+
+TEST(NativeGatesetFromNamesTest, RotationPairZyz) {
+  const SmallVector<StringRef> names = {"ry", "rz", "cx"};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::ZYZ);
+  EXPECT_EQ(gs->toMenuString(), "ry,rz,cx");
+}
+
+TEST(NativeGatesetFromNamesTest, IgnoresEmptyAndNormalizesAliases) {
+  const SmallVector<StringRef> names = {"  ", " U3 ", "", " CNOT "};
+  const auto gs = NativeGateset::fromOperationNames(names);
+  ASSERT_TRUE(gs);
+  EXPECT_EQ(gs->eulerBasis, EulerBasis::U);
+  EXPECT_EQ(gs->entangler, NativeGateKind::CX);
+  EXPECT_EQ(gs->toMenuString(), "u,cx");
+}
+
 TEST(NativeGatesetFromNamesTest, RejectsInsufficientMenus) {
   EXPECT_FALSE(NativeGateset::fromOperationNames(
       SmallVector<StringRef>{"h", "measure"}));
