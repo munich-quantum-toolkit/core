@@ -140,9 +140,14 @@ Code paths that may be imported more than once can use
 inserted and ignores an existing or explicitly disabled stable ID; malformed
 definitions still raise an error.
 
+Use `registered_device_ids()` to inspect the enabled stable IDs in deterministic
+registration order. This includes runtime registrations without loading native
+device libraries or exposing their paths, prefixes, or session configuration.
+
 The equivalent C++ registration operation is `qdmi::Driver::registerDevice`.
 Duplicate IDs are rejected unless `replace` is true, and an opened definition
-cannot be replaced. `qdmi::Driver::open(id)` returns the cached device.
+cannot be replaced. `qdmi::Driver::registeredDeviceIds()` provides the same
+load-free enumeration, and `qdmi::Driver::open(id)` returns the cached device.
 `fomac::Session::openDevice(id, overrides)` returns a fresh device session and
 does not add it to the QDMI client catalog. Runtime registrations and explicit
 opens are not added to that catalog.

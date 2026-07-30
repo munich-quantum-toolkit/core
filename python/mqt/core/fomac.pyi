@@ -619,6 +619,13 @@ def register_device_if_absent(definition: DeviceDefinition) -> bool:
         ValueError: If the definition is invalid.
     """
 
+def registered_device_ids() -> list[str]:
+    """Return registered, enabled QDMI device IDs in registration order.
+
+    This includes devices registered at runtime and does not load native device
+    libraries or expose their definitions.
+    """
+
 def open_device(
     device_id: str,
     *,
