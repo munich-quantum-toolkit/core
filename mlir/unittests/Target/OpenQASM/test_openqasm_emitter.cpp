@@ -574,6 +574,71 @@ x $3;
   EXPECT_EQ(xGates, 1);
 }
 
+TEST(OpenQASMTargetTest, RejectsMixedQubitAllocationAtTheQCTarget) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit q;
+x q;
+x $0;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+
+  MLIRContext context;
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    return success();
+  });
+  auto module = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(module);
+  EXPECT_NE(diagnostic.find("mixing physical and declared qubits"),
+            std::string::npos)
+      << diagnostic;
+  EXPECT_NE(diagnostic.find("QC target"), std::string::npos) << diagnostic;
+}
+
+TEST(OpenQASMTargetTest, AllocatesClassicalStorageOnlyForBitOutputs) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit local = measure q;
+if (local) {
+  x q;
+}
+output bit result;
+result = measure q;
+)qasm";
+
+  MLIRContext context;
+  auto module = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t classicalAllocations = 0;
+  size_t classicalLoads = 0;
+  size_t classicalStores = 0;
+  module->walk([&](Operation* operation) {
+    if (auto allocation = dyn_cast<memref::AllocOp>(operation);
+        allocation && allocation.getType().getElementType().isInteger(1)) {
+      ++classicalAllocations;
+    }
+    if (auto load = dyn_cast<memref::LoadOp>(operation);
+        load && load.getMemRefType().getElementType().isInteger(1)) {
+      ++classicalLoads;
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(operation);
+        store && store.getMemRefType().getElementType().isInteger(1)) {
+      ++classicalStores;
+    }
+  });
+  EXPECT_EQ(classicalAllocations, 1);
+  EXPECT_EQ(classicalLoads, 0);
+  EXPECT_EQ(classicalStores, 1);
+}
+
 TEST(OpenQASMTargetTest, PreservesOrderedScalarAndRegisterOutputs) {
   constexpr llvm::StringLiteral implicitSource = R"qasm(
 OPENQASM 3.1;

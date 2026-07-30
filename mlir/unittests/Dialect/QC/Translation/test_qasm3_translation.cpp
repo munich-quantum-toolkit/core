@@ -583,12 +583,9 @@ static Value ifNot(qc::QCProgramBuilder& b) {
   // condition bit `c` is not returned.
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  b.measure(q[0], c, 0);
-  auto loaded = memref::LoadOp::create(
-      b, c, arith::ConstantIndexOp::create(b, 0).getResult());
-  auto cond = arith::XOrIOp::create(b, loaded, trueValue).getResult();
+  auto measured = b.measure(q[0]);
+  auto cond = arith::XOrIOp::create(b, measured, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
   auto out = b.allocClassicalBitRegister(1);
   b.measure(q[0], out, 0);

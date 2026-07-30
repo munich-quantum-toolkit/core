@@ -113,6 +113,7 @@ public:
       : program(typedProgram), context(mlirContext), emissionBudget(context),
         builder(&context), registerValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
+        outputBitRegisters(program.registers.size(), false),
         bitValues(program.registers.size()),
         scalarValues(program.scalars.size()),
         expressionEmissionCosts(program.expressions.size()),
@@ -125,6 +126,11 @@ public:
     builder.initialize();
     for (const auto& gate : program.gates) {
       customGateIndex.try_emplace(gate.name, &gate);
+    }
+    for (const auto& output : program.outputs) {
+      if (output.kind == frontend::OutputKind::BitRegister) {
+        outputBitRegisters.at(output.symbol) = true;
+      }
     }
   }
 
@@ -196,6 +202,7 @@ private:
   qc::QCProgramBuilder builder;
   std::vector<SmallVector<Value>> registerValues;
   std::vector<Value> classicalRegisters;
+  std::vector<bool> outputBitRegisters;
   std::vector<SmallVector<Value>> bitValues;
   std::vector<Value> scalarValues;
   mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
@@ -211,6 +218,8 @@ private:
     StateKind kind = StateKind::Scalar;
     uint32_t first = 0;
     uint32_t second = 0;
+
+    bool operator==(const StateSlot&) const = default;
   };
 
   [[nodiscard]] Location
@@ -479,7 +488,7 @@ private:
         static_cast<size_t>(program.registers.at(reference.reg).width);
     return chargeExpressionEmission(*reference.dynamicIndex, multiplicity,
                                     projectedEmission, source) &&
-           chargeScaledEmission(9 + (3 * (width - 1)), multiplicity,
+           chargeScaledEmission(11 + (3 * (width - 1)), multiplicity,
                                 projectedEmission, source);
   }
 
@@ -854,6 +863,44 @@ private:
   }
 
   [[nodiscard]] bool preflight() {
+    const bool hasDeclaredQubits =
+        llvm::any_of(program.registers, [](const auto& declaration) {
+          return declaration.kind == frontend::RegisterKind::Qubit;
+        });
+    if (hasDeclaredQubits) {
+      for (const auto& condition : program.conditions) {
+        if (condition.kind == frontend::ConditionKind::Measurement &&
+            condition.measurement.kind ==
+                frontend::QubitReferenceKind::Hardware) {
+          emitError(getLocation(condition.location))
+              << "OpenQASM QC emission error: mixing physical and declared "
+                 "qubits is not supported by the QC target";
+          return false;
+        }
+      }
+      for (const auto& statement : program.statements) {
+        const auto containsHardwareQubit = std::visit(
+            [](const auto& data) {
+              using T = std::decay_t<decltype(data)>;
+              if constexpr (std::is_same_v<T, frontend::GateApplication> ||
+                            std::is_same_v<T, frontend::MeasurementStatement> ||
+                            std::is_same_v<T, frontend::ResetStatement> ||
+                            std::is_same_v<T, frontend::BarrierStatement>) {
+                return llvm::any_of(data.qubits, [](const auto& qubit) {
+                  return qubit.kind == frontend::QubitReferenceKind::Hardware;
+                });
+              }
+              return false;
+            },
+            statement.data);
+        if (containsHardwareQubit) {
+          emitError(getLocation(statement.location))
+              << "OpenQASM QC emission error: mixing physical and declared "
+                 "qubits is not supported by the QC target";
+          return false;
+        }
+      }
+    }
     size_t projectedEmission = program.registers.size() + 4;
     return preflightStatements(program.body, projectedEmission);
   }
@@ -1973,18 +2020,31 @@ private:
   [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
     const auto reg = classicalRegisters.at(reference.reg);
     if (!reference.dynamicIndex) {
-      auto index = arith::ConstantIndexOp::create(
-          builder, static_cast<int64_t>(reference.index));
-      return memref::LoadOp::create(builder, reg, index.getResult());
+      if (reg) {
+        auto index = arith::ConstantIndexOp::create(
+            builder, static_cast<int64_t>(reference.index));
+        return memref::LoadOp::create(builder, reg, index.getResult());
+      }
+      return bitValues.at(reference.reg)[reference.index];
     }
 
     const auto width =
         static_cast<int64_t>(program.registers.at(reference.reg).width);
     auto index = emitCheckedIndex(*reference.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
-    auto memrefIndex =
-        arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-    return memref::LoadOp::create(builder, reg, memrefIndex.getResult());
+    if (reg) {
+      auto memrefIndex =
+          arith::IndexCastOp::create(builder, builder.getIndexType(), index);
+      return memref::LoadOp::create(builder, reg, memrefIndex.getResult());
+    }
+    auto selected = bitValues.at(reference.reg).front();
+    for (int64_t bit = 1; bit < width; ++bit) {
+      auto isSelected = arith::CmpIOp::create(builder, arith::CmpIPredicate::eq,
+                                              index, builder.intConstant(bit));
+      selected = arith::SelectOp::create(
+          builder, isSelected, bitValues.at(reference.reg)[bit], selected);
+    }
+    return selected;
   }
 
   [[nodiscard]] Value
@@ -2117,8 +2177,20 @@ private:
     return (static_cast<uint64_t>(reg) << 32U) | bit;
   }
 
+  static void recordMutation(const StateSlot slot,
+                             llvm::DenseSet<uint64_t>& mutationKeys,
+                             SmallVectorImpl<StateSlot>& mutations) {
+    const auto key = slot.kind == StateKind::Scalar
+                         ? scalarStateKey(slot.first)
+                         : bitStateKey(slot.first, slot.second);
+    if (mutationKeys.insert(key).second) {
+      mutations.push_back(slot);
+    }
+  }
+
   void collectMutations(const frontend::StatementId id,
-                        llvm::DenseSet<uint64_t>& mutations) const {
+                        llvm::DenseSet<uint64_t>& mutationKeys,
+                        SmallVectorImpl<StateSlot>& mutations) const {
     const auto& statement = program.statements.at(id);
     std::visit(
         [&](const auto& data) {
@@ -2127,46 +2199,63 @@ private:
                                        frontend::ScalarDeclarationStatement> ||
                         std::is_same_v<T,
                                        frontend::ScalarAssignmentStatement>) {
-            mutations.insert(scalarStateKey(data.scalar));
+            recordMutation({.kind = StateKind::Scalar, .first = data.scalar},
+                           mutationKeys, mutations);
           } else if constexpr (std::is_same_v<T,
                                               frontend::MeasurementStatement>) {
             for (const auto& target : data.targets) {
               if (!target.dynamicIndex) {
-                mutations.insert(bitStateKey(target.reg, target.index));
+                recordMutation({.kind = StateKind::Bit,
+                                .first = target.reg,
+                                .second = static_cast<uint32_t>(target.index)},
+                               mutationKeys, mutations);
                 continue;
               }
               for (uint64_t bit = 0;
                    bit < program.registers.at(target.reg).width; ++bit) {
-                mutations.insert(bitStateKey(target.reg, bit));
+                recordMutation({.kind = StateKind::Bit,
+                                .first = target.reg,
+                                .second = static_cast<uint32_t>(bit)},
+                               mutationKeys, mutations);
               }
             }
           } else if constexpr (std::is_same_v<
                                    T, frontend::BitAssignmentStatement>) {
             if (!data.target.dynamicIndex) {
-              mutations.insert(bitStateKey(data.target.reg, data.target.index));
+              recordMutation(
+                  {.kind = StateKind::Bit,
+                   .first = data.target.reg,
+                   .second = static_cast<uint32_t>(data.target.index)},
+                  mutationKeys, mutations);
             } else {
               for (uint64_t bit = 0;
                    bit < program.registers.at(data.target.reg).width; ++bit) {
-                mutations.insert(bitStateKey(data.target.reg, bit));
+                recordMutation({.kind = StateKind::Bit,
+                                .first = data.target.reg,
+                                .second = static_cast<uint32_t>(bit)},
+                               mutationKeys, mutations);
               }
             }
           } else if constexpr (std::is_same_v<
                                    T, frontend::BitVectorAssignmentStatement>) {
             for (uint64_t bit = 0;
                  bit < program.registers.at(data.target).width; ++bit) {
-              mutations.insert(bitStateKey(data.target, bit));
+              recordMutation({.kind = StateKind::Bit,
+                              .first = data.target,
+                              .second = static_cast<uint32_t>(bit)},
+                             mutationKeys, mutations);
             }
           } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
             for (const auto nested : data.thenStatements) {
-              collectMutations(nested, mutations);
+              collectMutations(nested, mutationKeys, mutations);
             }
             for (const auto nested : data.elseStatements) {
-              collectMutations(nested, mutations);
+              collectMutations(nested, mutationKeys, mutations);
             }
           } else if constexpr (std::is_same_v<T, frontend::ForStatement> ||
                                std::is_same_v<T, frontend::WhileStatement>) {
             for (const auto nested : data.body) {
-              collectMutations(nested, mutations);
+              collectMutations(nested, mutationKeys, mutations);
             }
           }
         },
@@ -2175,26 +2264,26 @@ private:
 
   [[nodiscard]] SmallVector<StateSlot>
   mutatedState(ArrayRef<frontend::StatementId> statements) const {
-    llvm::DenseSet<uint64_t> mutations;
+    llvm::DenseSet<uint64_t> mutationKeys;
+    SmallVector<StateSlot> mutations;
     for (const auto statement : statements) {
-      collectMutations(statement, mutations);
+      collectMutations(statement, mutationKeys, mutations);
     }
-    SmallVector<StateSlot> slots;
-    for (const auto [scalar, value] : llvm::enumerate(scalarValues)) {
-      if (value && mutations.contains(scalarStateKey(
-                       static_cast<frontend::ScalarId>(scalar)))) {
-        slots.push_back({.kind = StateKind::Scalar,
-                         .first = static_cast<uint32_t>(scalar)});
+    llvm::sort(mutations, [](const StateSlot lhs, const StateSlot rhs) {
+      if (lhs.kind != rhs.kind) {
+        return lhs.kind < rhs.kind;
       }
-    }
-    for (const auto [reg, values] : llvm::enumerate(bitValues)) {
-      for (const auto [bit, value] : llvm::enumerate(values)) {
-        if (value && mutations.contains(bitStateKey(
-                         static_cast<frontend::RegisterId>(reg), bit))) {
-          slots.push_back({.kind = StateKind::Bit,
-                           .first = static_cast<uint32_t>(reg),
-                           .second = static_cast<uint32_t>(bit)});
-        }
+      return lhs.first != rhs.first ? lhs.first < rhs.first
+                                    : lhs.second < rhs.second;
+    });
+    SmallVector<StateSlot> slots;
+    slots.reserve(mutations.size());
+    for (const auto slot : mutations) {
+      const auto value = slot.kind == StateKind::Scalar
+                             ? scalarValues.at(slot.first)
+                             : bitValues.at(slot.first)[slot.second];
+      if (value) {
+        slots.push_back(slot);
       }
     }
     return slots;
@@ -2252,7 +2341,7 @@ private:
             emitGateApplication(builder, data, loc, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T,
                                               frontend::MeasurementStatement>) {
-            emitMeasurement(data, loc, gateQubits);
+            emitMeasurement(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::ResetStatement>) {
             for (const auto& qubit : data.qubits) {
               const auto indices = emitDynamicQubitIndices({qubit});
@@ -2327,8 +2416,10 @@ private:
       registerValues[statement.reg] = std::move(allocation.qubits);
       return;
     }
-    classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(declaration.width), declaration.name);
+    if (outputBitRegisters[statement.reg]) {
+      classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
+          static_cast<int64_t>(declaration.width), declaration.name);
+    }
     bitValues[statement.reg].resize(declaration.width);
     auto poison =
         ub::PoisonOp::create(builder, builder.getI1Type()).getResult();
@@ -2337,27 +2428,24 @@ private:
 
   void assignBit(const frontend::BitReference& target, Value value) {
     const auto reg = classicalRegisters[target.reg];
-    if (!reg) {
-      emitError(getLocation(program.registers[target.reg].location))
-          << "OpenQASM QC emission error: bit assignment target has no "
-             "classical storage";
-      emissionFailed = true;
-      return;
-    }
     if (!target.dynamicIndex) {
       bitValues[target.reg][target.index] = value;
-      auto index = arith::ConstantIndexOp::create(
-          builder, static_cast<int64_t>(target.index));
-      memref::StoreOp::create(builder, value, reg, index.getResult());
+      if (reg) {
+        auto index = arith::ConstantIndexOp::create(
+            builder, static_cast<int64_t>(target.index));
+        memref::StoreOp::create(builder, value, reg, index.getResult());
+      }
       return;
     }
     const auto width =
         static_cast<int64_t>(program.registers.at(target.reg).width);
     auto index = emitCheckedIndex(*target.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
-    auto memrefIndex =
-        arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-    memref::StoreOp::create(builder, value, reg, memrefIndex.getResult());
+    if (reg) {
+      auto memrefIndex =
+          arith::IndexCastOp::create(builder, builder.getIndexType(), index);
+      memref::StoreOp::create(builder, value, reg, memrefIndex.getResult());
+    }
     if (!emissionBudget.canConstruct(3 * static_cast<size_t>(width))) {
       return;
     }
@@ -2381,6 +2469,9 @@ private:
     const auto bits = ensureBits(builder, value);
     bitValues[assignment.target].assign(bits.begin(), bits.end());
     const auto reg = classicalRegisters[assignment.target];
+    if (!reg) {
+      return;
+    }
     for (const auto [index, bit] : llvm::enumerate(bits)) {
       auto indexValue =
           arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index));
@@ -2389,7 +2480,7 @@ private:
   }
 
   void emitMeasurement(const frontend::MeasurementStatement& measurement,
-                       Location loc, ValueRange gateQubits) {
+                       ValueRange gateQubits) {
     if (measurement.targets.empty()) {
       for (const auto& qubit : measurement.qubits) {
         const auto indices = emitDynamicQubitIndices({qubit});
@@ -2401,13 +2492,6 @@ private:
     }
     for (const auto [target, qubit] :
          llvm::zip_equal(measurement.targets, measurement.qubits)) {
-      const auto reg = classicalRegisters[target.reg];
-      if (!reg) {
-        emitError(loc) << "OpenQASM QC emission error: measurement target has "
-                          "no classical storage";
-        emissionFailed = true;
-        return;
-      }
       const auto emitMeasurement = [&](Value resolved) {
         return builder.measure(resolved);
       };

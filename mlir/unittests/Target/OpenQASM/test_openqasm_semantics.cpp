@@ -1225,17 +1225,14 @@ TEST(OpenQASMFrontendTest, RejectsMeasurementsInGeneralExpressions) {
   }
 }
 
-TEST(OpenQASMFrontendTest, DiagnosesMixedPhysicalAndDeclaredQubits) {
+TEST(OpenQASMFrontendTest, AcceptsMixedPhysicalAndDeclaredQubits) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; x q; x $0;",
       "OPENQASM 3.1; x $0; qubit q; x q;",
   });
   for (const auto source : sources) {
     auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-    ASSERT_FALSE(analyzed);
-    ASSERT_FALSE(analyzed.diagnostics.empty());
-    EXPECT_NE(analyzed.diagnostics.front().message.find("mixing physical"),
-              std::string::npos);
+    EXPECT_TRUE(analyzed) << source.str();
   }
 }
 

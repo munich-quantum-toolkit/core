@@ -268,8 +268,6 @@ private:
   mutable std::vector<std::optional<Constant>> constantValues;
   mutable std::vector<std::optional<ScalarType>> constantTypes;
   bool insideGate = false;
-  bool hasVirtualQubits = false;
-  bool hasHardwareQubits = false;
   std::set<uint64_t> hardwareQubits;
   uint64_t totalRegisterElements = 0;
   std::optional<SyntaxIncludeContextId> currentIncludeContext;
@@ -2049,12 +2047,6 @@ private:
       if (!global) {
         fail(location, "qubits must be declared at global scope");
       }
-      if (hasHardwareQubits) {
-        fail(location,
-             "mixing physical and declared qubits is not supported by the QC "
-             "target");
-      }
-      hasVirtualQubits = true;
     } else if (declaration.output && !global) {
       fail(location, "outputs must be declared at global scope");
     }
@@ -2836,12 +2828,6 @@ private:
         fail(operand.location,
              "hardware qubits are not allowed in gate definitions");
       }
-      if (hasVirtualQubits) {
-        fail(operand.location,
-             "mixing physical and declared qubits is not supported by the QC "
-             "target");
-      }
-      hasHardwareQubits = true;
       hardwareQubits.insert(*operand.hardwareQubit);
       return {{.kind = QubitReferenceKind::Hardware,
                .index = *operand.hardwareQubit}};
