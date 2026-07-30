@@ -64,14 +64,14 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
   if (it == state.cregMeasurements.end()) {
     return Value{};
   }
-  const auto [allocOp, index] = it->second;
+  const auto [registerIndex, index] = it->second;
   const auto indexValue = getConstantIntValue(index);
   if (!indexValue) {
     op->emitError("QIR Base Profile requires constant classical-register "
                   "measurement indices");
     return failure();
   }
-  const auto& results = state.cregs.at(allocOp).results;
+  const auto& results = state.cregs[registerIndex].results;
   if (*indexValue < 0 || static_cast<size_t>(*indexValue) >= results.size()) {
     op->emitError("classical-register measurement index is out of bounds");
     return failure();
@@ -96,12 +96,12 @@ struct ConvertMemRefAllocOp final
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto it = state.cregs.find(op.getOperation());
-    if (it == state.cregs.end()) {
+    const auto it = state.cregIndices.find(op.getOperation());
+    if (it == state.cregIndices.end()) {
       rewriter.eraseOp(op);
       return success();
     }
-    auto& reg = it->second;
+    auto& reg = state.cregs[it->second];
     const auto* size = std::get_if<int64_t>(&reg.size);
     if (size == nullptr) {
       op.emitError(
