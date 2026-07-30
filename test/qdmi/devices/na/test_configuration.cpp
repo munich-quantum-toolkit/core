@@ -12,12 +12,15 @@
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include <nlohmann/json_fwd.hpp>
 
+#include <algorithm>
+#include <cstdint>
 #include <fstream>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace na {
 TEST(NaConfigurationTest, ParsesBundledDeviceStrictly) {
@@ -121,6 +124,58 @@ TEST(NaConfigurationTest, RejectsUnknownMissingAndInvalidValues) {
   emptyOffsets["traps"][0]["sublatticeOffsets"] = nlohmann::json::array();
   EXPECT_THROW(static_cast<void>(readJSON(emptyOffsets.dump(), "inline")),
                std::invalid_argument);
+}
+
+TEST(NaConfigurationTest, PreservesCoordinatesNearSignedMaximum) {
+  std::ifstream input(NA_DEVICE_JSON);
+  ASSERT_TRUE(input);
+  nlohmann::json json;
+  input >> json;
+
+  constexpr auto maximum = std::numeric_limits<int64_t>::max();
+  constexpr auto origin = maximum - 2;
+  auto& trap = json["traps"][0];
+  trap["latticeOrigin"] = {{"x", origin}, {"y", origin}};
+  trap["latticeVector1"] = {{"x", 1}, {"y", 0}};
+  trap["latticeVector2"] = {{"x", 0}, {"y", 1}};
+  trap["sublatticeOffsets"] = {{{"x", 0}, {"y", 0}}};
+  trap["extent"] = {{"origin", {{"x", origin}, {"y", origin}}},
+                    {"size", {{"width", 2}, {"height", 2}}}};
+  json["numQubits"] = 9;
+
+  const auto device = readJSON(json.dump(), "inline");
+  std::vector<std::pair<int64_t, int64_t>> coordinates;
+  forEachRegularSites(device.traps, [&](const SiteInfo& site) {
+    coordinates.emplace_back(site.x, site.y);
+  });
+
+  EXPECT_EQ(coordinates.size(), 9);
+  EXPECT_NE(std::ranges::find(coordinates, std::pair{maximum, maximum}),
+            coordinates.end());
+}
+
+TEST(NaConfigurationTest, AcceptsLargeLatticeVectors) {
+  std::ifstream input(NA_DEVICE_JSON);
+  ASSERT_TRUE(input);
+  nlohmann::json json;
+  input >> json;
+
+  auto& trap = json["traps"][0];
+  trap["latticeOrigin"] = {{"x", 0}, {"y", 0}};
+  trap["latticeVector1"] = {{"x", 4'000'000'000}, {"y", 0}};
+  trap["latticeVector2"] = {{"x", 0}, {"y", 4'000'000'000}};
+  trap["sublatticeOffsets"] = {{{"x", 0}, {"y", 0}}};
+  trap["extent"] = {{"origin", {{"x", 0}, {"y", 0}}},
+                    {"size", {{"width", 1}, {"height", 1}}}};
+  json["numQubits"] = 1;
+
+  const auto device = readJSON(json.dump(), "inline");
+  std::vector<std::pair<int64_t, int64_t>> coordinates;
+  forEachRegularSites(device.traps, [&](const SiteInfo& site) {
+    coordinates.emplace_back(site.x, site.y);
+  });
+
+  EXPECT_EQ(coordinates, std::vector({std::pair<int64_t, int64_t>{0, 0}}));
 }
 
 } // namespace na

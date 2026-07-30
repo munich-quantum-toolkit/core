@@ -10,17 +10,27 @@
 
 #include "qdmi/common/DeviceConfiguration.hpp"
 
+#include <qdmi/device.h>
 #include <spdlog/spdlog.h>
 
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
-#include <memory>
+#include <ios>
+#include <iterator>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
 #include <system_error>
+#include <utility>
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <memory>
 #else
 #include <dlfcn.h>
 #endif
@@ -133,12 +143,12 @@ int setDeviceConfigurationParameter(
   if (size == 0) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto* bytes = static_cast<const char*>(value);
-  if (bytes[size - 1] != '\0' ||
-      std::memchr(bytes, '\0', size - 1) != nullptr) {
+  const std::span bytes{static_cast<const char*>(value), size};
+  if (bytes.back() != '\0' ||
+      std::memchr(bytes.data(), '\0', bytes.size() - 1) != nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const std::string stringValue(bytes, size - 1);
+  const std::string stringValue(bytes.data(), bytes.size() - 1);
   if (parameter == QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) {
     inlineJson =
         stringValue.empty() ? std::nullopt : std::optional{stringValue};

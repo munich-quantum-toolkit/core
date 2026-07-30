@@ -42,6 +42,14 @@ copied-runtime, and wheel layouts remain relocatable.
       operation factories after independent review.
 - [x] (2026-07-30 17:46Z) Moved materialized local-operation site vectors into
       session storage to avoid duplicating the potentially large pair list.
+- [x] (2026-07-30 19:10Z) Rebased onto current `main`, resolved the changelog
+      conflict, replaced the Windows-only DLL copy with the complete QDMI
+      runtime-copy helper, deferred Windows GoogleTest discovery until those
+      assets are present, and remediated the exact clang-tidy findings.
+- [x] (2026-07-30 19:35Z) Rebuilt the NA provider and tests, passed the 74
+      NA-matching tests, six QDMI runtime-copy fixtures, two runtime
+      registration tests, clang-tidy 22.1.8 on the affected files, and the full
+      repository lint gate.
 
 ## Surprises & Discoveries
 
@@ -71,6 +79,10 @@ copied-runtime, and wheel layouts remain relocatable.
   identified the remaining quadratic path; parsing now enforces a cumulative
   ten-million candidate-pair ceiling before materialization, with a regression
   below the site-count ceiling.
+- Observation: the Windows NA test copied only the provider DLL beside the test
+  executable, while module-relative fallback also requires the bundled JSON
+  there. Evidence: all 34 Windows failures reported the missing JSON beside the
+  copied DLL; `mqt_copy_qdmi_runtime` already copies both plus the manifest.
 
 ## Decision Log
 
@@ -96,6 +108,16 @@ copied-runtime, and wheel layouts remain relocatable.
   ownership mutation. Rationale: the session is now the sole materialization
   path, so the factories only added temporary objects and indirection.
   Date/Author: 2026-07-30 / Codex.
+- Decision: Reuse `mqt_copy_qdmi_runtime` for Windows NA tests instead of adding
+  another asset-specific copy command. Rationale: it is the single existing
+  contract for colocating a QDMI provider, manifest, and runtime files.
+  Date/Author: 2026-07-30 / Codex.
+- Decision: Keep lattice enumeration dependency-free and preserve signed 64-bit
+  coordinates with exact integer differences, checked coordinate arithmetic, and
+  bounded span multiplication. Rationale: converting absolute coordinates to
+  floating point before subtraction collapses adjacent values above 2^53, while
+  constraining determinant products to signed 64-bit rejects valid large lattice
+  vectors. Date/Author: 2026-07-30 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -120,6 +142,11 @@ without an explicit configuration reported the bundled name, 100-qubit capacity,
 and 103 total sites. The only install diagnostic was an unrelated, non-fatal
 Cap'n Proto attempt to create a `/usr/local/bin/capnpc` symlink; all MQT Core
 artifacts were installed and the relocated provider check succeeded.
+
+After the rebase, Windows test setup uses the same runtime-copy contract as
+static consumers, so the provider DLL, manifest, and bundled configuration stay
+colocated. The affected clang-tidy 22.1.8 report is clean; focused NA,
+runtime-copy, and stable-ID registration validation all pass.
 
 ## Context and Orientation
 

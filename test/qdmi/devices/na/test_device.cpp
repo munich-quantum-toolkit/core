@@ -14,8 +14,10 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -251,8 +253,8 @@ TEST(NaRuntimeConfiguration,
   EXPECT_EQ(customQubits, 5);
   EXPECT_EQ(bundledQubits, 100);
 
-  const auto customSite = querySites(custom).front();
-  const auto customOperation = queryOperations(custom).front();
+  auto* const customSite = querySites(custom).front();
+  auto* const customOperation = queryOperations(custom).front();
   EXPECT_EQ(
       MQT_NA_QDMI_device_session_query_site_property(
           bundled, customSite, QDMI_SITE_PROPERTY_INDEX, 0, nullptr, nullptr),
@@ -275,26 +277,26 @@ TEST(NaRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
   EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 0, nullptr),
             QDMI_SUCCESS);
-  constexpr char embeddedNul[] = {'x', '\0', 'y', '\0'};
+  constexpr std::array embeddedNul{'x', '\0', 'y', '\0'};
   EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
-                sizeof(embeddedNul), embeddedNul),
+                embeddedNul.size(), embeddedNul.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  constexpr char missingTerminator[] = {'x'};
+  constexpr std::array missingTerminator{'x'};
   EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                sizeof(missingTerminator), missingTerminator),
+                missingTerminator.size(), missingTerminator.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  constexpr char missing[] = "does-not-exist.json";
+  constexpr auto missing = std::to_array("does-not-exist.json");
   ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, sizeof(missing),
-                missing),
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, missing.size(),
+                missing.data()),
             QDMI_SUCCESS);
   EXPECT_EQ(MQT_NA_QDMI_device_session_init(session), QDMI_ERROR_NOTFOUND);
-  constexpr char malformed[] = "{";
+  constexpr auto malformed = std::to_array("{");
   ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                sizeof(malformed), malformed),
+                malformed.size(), malformed.data()),
             QDMI_SUCCESS);
   EXPECT_EQ(MQT_NA_QDMI_device_session_init(session),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -388,8 +390,11 @@ TEST(NaRuntimeConfiguration, InitializesIndependentSessionsConcurrently) {
     auto configuration = base;
     const auto name = "Concurrent NA " + std::to_string(i);
     configuration["name"] = name;
+    // Exceptions are intentionally transported to the caller by the future.
     sessions.emplace_back(std::async(
-        std::launch::async, [configuration = configuration.dump(), name] {
+        std::launch::async,
+        // NOLINTNEXTLINE(bugprone-exception-escape)
+        [configuration = configuration.dump(), name] {
           MQT_NA_QDMI_Device_Session session = nullptr;
           if (MQT_NA_QDMI_device_session_alloc(&session) != QDMI_SUCCESS) {
             return std::string{"allocation failed"};

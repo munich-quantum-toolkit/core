@@ -26,10 +26,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <new>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -42,6 +46,30 @@ namespace {
          x <= region.origin.x + static_cast<int64_t>(region.size.width) &&
          region.origin.y <= y &&
          y <= region.origin.y + static_cast<int64_t>(region.size.height);
+}
+
+[[nodiscard]] uint64_t magnitude(const int64_t value) {
+  return value >= 0
+             ? static_cast<uint64_t>(value)
+             : static_cast<uint64_t>(-(value + 1)) + static_cast<uint64_t>(1);
+}
+
+[[nodiscard]] uint64_t coordinateDistance(const int64_t first,
+                                          const int64_t second) {
+  if ((first < 0) == (second < 0)) {
+    return first >= second ? static_cast<uint64_t>(first - second)
+                           : static_cast<uint64_t>(second - first);
+  }
+  return magnitude(first) + magnitude(second);
+}
+
+[[nodiscard]] bool withinRadius(const int64_t firstX, const int64_t firstY,
+                                const int64_t secondX, const int64_t secondY,
+                                const uint64_t radius) {
+  const auto deltaX = coordinateDistance(firstX, secondX);
+  const auto deltaY = coordinateDistance(firstY, secondY);
+  return std::hypot(static_cast<double>(deltaX), static_cast<double>(deltaY)) <=
+         static_cast<double>(radius);
 }
 } // namespace
 
@@ -70,17 +98,20 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
           this, newSiteStorage.size(), region.origin.x, region.origin.y,
           region.size.width, region.size.height,
           configuration.decoherenceTimes.t1, configuration.decoherenceTimes.t2);
-      const auto handle = site.get();
+      auto* const handle = site.get();
       newSiteStorage.emplace_back(std::move(site));
       newSites.emplace_back(handle);
       return handle;
     };
+    globalMultiZones.reserve(configuration.globalMultiQubitOperations.size());
     for (const auto& operation : configuration.globalMultiQubitOperations) {
       globalMultiZones.emplace_back(addZone(operation.region));
     }
+    globalSingleZones.reserve(configuration.globalSingleQubitOperations.size());
     for (const auto& operation : configuration.globalSingleQubitOperations) {
       globalSingleZones.emplace_back(addZone(operation.region));
     }
+    shuttlingZones.reserve(configuration.shuttlingUnits.size());
     for (const auto& unit : configuration.shuttlingUnits) {
       shuttlingZones.emplace_back(addZone(unit.region));
     }
@@ -96,10 +127,10 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
           this, newSiteStorage.size(), info.moduleId, info.subModuleId, info.x,
           info.y, configuration.decoherenceTimes.t1,
           configuration.decoherenceTimes.t2);
-      const auto handle = site.get();
+      auto* const handle = site.get();
       newSiteStorage.emplace_back(std::move(site));
       newSites.emplace_back(handle);
-      regularSites.push_back({handle, info.x, info.y});
+      regularSites.push_back({.handle = handle, .x = info.x, .y = info.y});
     });
 
     std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>
@@ -145,11 +176,9 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
              ++second) {
           if (inside(operation.region, regularSites[second].x,
                      regularSites[second].y) &&
-              std::hypot(static_cast<long double>(regularSites[first].x) -
-                             regularSites[second].x,
-                         static_cast<long double>(regularSites[first].y) -
-                             regularSites[second].y) <=
-                  static_cast<long double>(operation.interactionRadius)) {
+              withinRadius(regularSites[first].x, regularSites[first].y,
+                           regularSites[second].x, regularSites[second].y,
+                           operation.interactionRadius)) {
             supported.emplace_back(regularSites[first].handle,
                                    regularSites[second].handle);
           }
@@ -308,10 +337,9 @@ int MQT_NA_QDMI_Device_Session_impl_d::queryOperationProperty(
     return QDMI_ERROR_BADSTATE;
   }
   if (sites != nullptr) {
-    for (size_t i = 0; i < numSites; ++i) {
-      if (sites[i] == nullptr ||
-          std::ranges::find(sites_, sites[i]) == sites_.end() ||
-          !sites[i]->ownedBy(this)) {
+    for (auto* const site : std::span{sites, numSites}) {
+      if (site == nullptr || std::ranges::find(sites_, site) == sites_.end() ||
+          !site->ownedBy(this)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
     }
@@ -372,13 +400,13 @@ MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(
     const uint64_t module, const uint64_t subModule, const int64_t x,
     const int64_t y, const uint64_t t1, const uint64_t t2)
     : owner_(owner), id_(id), moduleId_(module), subModuleId_(subModule), x_(x),
-      y_(y), decoherenceTimes_{t1, t2} {}
+      y_(y), decoherenceTimes_{.t1_ = t1, .t2_ = t2} {}
 MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(
     MQT_NA_QDMI_Device_Session_impl_d* owner, const uint64_t id,
     const int64_t x, const int64_t y, const uint64_t width,
     const uint64_t height, const uint64_t t1, const uint64_t t2)
     : owner_(owner), id_(id), x_(x), y_(y), xExtent_(width), yExtent_(height),
-      decoherenceTimes_{t1, t2}, isZone(true) {}
+      decoherenceTimes_{.t1_ = t1, .t2_ = t2}, isZone(true) {}
 int MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                                            const size_t size, void* value,
                                            size_t* sizeRet) const {
@@ -621,6 +649,8 @@ int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  // QDMI transfers ownership through its opaque C handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   *session = new (std::nothrow) MQT_NA_QDMI_Device_Session_impl_d;
   return *session == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
@@ -633,6 +663,7 @@ int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
 }
 
 void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete session;
 }
 

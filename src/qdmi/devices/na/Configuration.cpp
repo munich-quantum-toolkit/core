@@ -15,22 +15,23 @@
 #include "qdmi/devices/na/Configuration.hpp"
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <fstream>
 #include <functional>
+#include <initializer_list>
 #include <istream>
 #include <limits>
-#include <ranges>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -102,7 +103,7 @@ void requireString(const Json& value, const std::string_view key,
 void validateVector(const Json& value, const std::string_view source,
                     const std::string& pointer) {
   requireObjectKeys(value, {"x", "y"}, source, pointer);
-  for (const auto key : {"x", "y"}) {
+  for (const auto* const key : {"x", "y"}) {
     const auto& coordinate = value.at(key);
     const auto outOfRangeUnsigned =
         coordinate.is_number_unsigned() &&
@@ -239,8 +240,8 @@ void validateNestedSchema(const Json& json, const std::string_view source) {
                            "meanShuttlingSpeed"},
                           source, pointer);
         validateRegion(unit.at("region"), source, pointer + "/region");
-        for (const auto key : {"loadDuration", "storeDuration", "numParameters",
-                               "meanShuttlingSpeed"}) {
+        for (const auto* const key : {"loadDuration", "storeDuration",
+                                      "numParameters", "meanShuttlingSpeed"}) {
           requireUnsigned(unit, key, source, pointer);
         }
         requireNumber(unit, "loadFidelity", source, pointer);
@@ -423,22 +424,70 @@ void validateNestedSchema(const Json& json, const std::string_view source) {
  * @param y2 Coefficient for y in the second equation.
  * @param x0 Right-hand side of the first equation.
  * @param y0 Right-hand side of the second equation.
- * @returns A pair containing the solution (x, y).
- * @throws std::runtime_error if the system has no unique solution (determinant
- * is near zero).
+ * @returns A pair containing the solution (i, j).
+ * @throws std::runtime_error if the system has no unique solution.
  */
+[[noreturn]] void arithmeticOverflow() {
+  throw std::overflow_error(
+      "lattice arithmetic exceeds the signed 64-bit range");
+}
+
+[[nodiscard]] int64_t checkedAdd(const int64_t left, const int64_t right) {
+  if ((right > 0 && left > std::numeric_limits<int64_t>::max() - right) ||
+      (right < 0 && left < std::numeric_limits<int64_t>::min() - right)) {
+    arithmeticOverflow();
+  }
+  return left + right;
+}
+
+[[nodiscard]] int64_t checkedSubtract(const int64_t left, const int64_t right) {
+  if ((right > 0 && left < std::numeric_limits<int64_t>::min() + right) ||
+      (right < 0 && left > std::numeric_limits<int64_t>::max() + right)) {
+    arithmeticOverflow();
+  }
+  return left - right;
+}
+
+[[nodiscard]] int64_t checkedMultiply(const int64_t left, const int64_t right) {
+  if (left == 0 || right == 0) {
+    return 0;
+  }
+  if ((left == -1 && right == std::numeric_limits<int64_t>::min()) ||
+      (right == -1 && left == std::numeric_limits<int64_t>::min())) {
+    arithmeticOverflow();
+  }
+  bool overflow = false;
+  if (left > 0) {
+    overflow = right > 0 ? left > std::numeric_limits<int64_t>::max() / right
+                         : right < std::numeric_limits<int64_t>::min() / left;
+  } else {
+    overflow = right > 0 ? left < std::numeric_limits<int64_t>::min() / right
+                         : left < std::numeric_limits<int64_t>::max() / right;
+  }
+  if (overflow) {
+    arithmeticOverflow();
+  }
+  return left * right;
+}
+
+// Preserve the extended precision offered by platforms where it is available.
+using LatticeFloat = long double; // NOLINT(google-runtime-float)
+
 [[nodiscard]] std::pair<double, double>
-solve2DLinearEquation(const long double x1, const long double x2,
-                      const long double y1, const long double y2,
-                      const long double x0, const long double y0) {
-  // Calculate the determinant
-  const auto det = (x1 * y2) - (x2 * y1);
+solve2DLinearEquation(const int64_t x1, const int64_t x2, const int64_t y1,
+                      const int64_t y2, const int64_t x0, const int64_t y0) {
+  const auto asLatticeFloat = [](const int64_t value) {
+    return static_cast<LatticeFloat>(value);
+  };
+  const auto det = (asLatticeFloat(x1) * asLatticeFloat(y2)) -
+                   (asLatticeFloat(x2) * asLatticeFloat(y1));
   if (constexpr auto epsilon = 1e-10; std::abs(det) < epsilon) {
     throw std::runtime_error("The system of equations has no unique solution.");
   }
-  // Calculate the solution
-  const auto detX = (x0 * y2) - (x2 * y0);
-  const auto detY = (x1 * y0) - (x0 * y1);
+  const auto detX = (asLatticeFloat(x0) * asLatticeFloat(y2)) -
+                    (asLatticeFloat(x2) * asLatticeFloat(y0));
+  const auto detY = (asLatticeFloat(x1) * asLatticeFloat(y0)) -
+                    (asLatticeFloat(x0) * asLatticeFloat(y1));
   return {static_cast<double>(detX / det), static_cast<double>(detY / det)};
 }
 
@@ -458,17 +507,9 @@ solve2DLinearEquation(const long double x1, const long double x2,
                                  const int64_t firstVector,
                                  const int64_t secondIndex,
                                  const int64_t secondVector) {
-  const auto value = static_cast<long double>(origin) +
-                     static_cast<long double>(offset) +
-                     (static_cast<long double>(firstIndex) * firstVector) +
-                     (static_cast<long double>(secondIndex) * secondVector);
-  if (!std::isfinite(value) ||
-      value < static_cast<long double>(std::numeric_limits<int64_t>::min()) ||
-      value > static_cast<long double>(std::numeric_limits<int64_t>::max())) {
-    throw std::overflow_error("generated site coordinate exceeds the signed "
-                              "64-bit range");
-  }
-  return static_cast<int64_t>(value);
+  return checkedAdd(checkedAdd(origin, offset),
+                    checkedAdd(checkedMultiply(firstIndex, firstVector),
+                               checkedMultiply(secondIndex, secondVector)));
 }
 
 /**
@@ -544,30 +585,32 @@ void forEachRegularSites(const std::vector<Device::Lattice>& lattices,
     const auto& [origin, size] = extent;
     const auto extentWidth = static_cast<int64_t>(size.width);
     const auto extentHeight = static_cast<int64_t>(size.height);
+    const auto solve = [&](const int64_t x, const int64_t y) {
+      return solve2DLinearEquation(latticeVector1.x, latticeVector2.x,
+                                   latticeVector1.y, latticeVector2.y, x, y);
+    };
+    const auto maximumX = checkedAdd(origin.x, extentWidth);
+    const auto maximumY = checkedAdd(origin.y, extentHeight);
 
-    // approximate indices of the bottom left corner
-    const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation(
-        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
-        static_cast<long double>(origin.x) - latticeOrigin.x,
-        static_cast<long double>(origin.y) - latticeOrigin.y);
+    // indices of the bottom left corner
+    const auto& [bottomLeftI, bottomLeftJ] =
+        solve(checkedSubtract(origin.x, latticeOrigin.x),
+              checkedSubtract(origin.y, latticeOrigin.y));
 
-    // approximate indices of the bottom right corner
-    const auto& [bottomRightI, bottomRightJ] = solve2DLinearEquation(
-        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
-        static_cast<long double>(origin.x) + extentWidth - latticeOrigin.x,
-        static_cast<long double>(origin.y) - latticeOrigin.y);
+    // indices of the bottom right corner
+    const auto& [bottomRightI, bottomRightJ] =
+        solve(checkedSubtract(maximumX, latticeOrigin.x),
+              checkedSubtract(origin.y, latticeOrigin.y));
 
-    // approximate indices of the top left corner
-    const auto& [topLeftI, topLeftJ] = solve2DLinearEquation(
-        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
-        static_cast<long double>(origin.x) - latticeOrigin.x,
-        static_cast<long double>(origin.y) + extentHeight - latticeOrigin.y);
+    // indices of the top left corner
+    const auto& [topLeftI, topLeftJ] =
+        solve(checkedSubtract(origin.x, latticeOrigin.x),
+              checkedSubtract(maximumY, latticeOrigin.y));
 
-    // approximate indices of the top right corner
-    const auto& [topRightI, topRightJ] = solve2DLinearEquation(
-        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
-        static_cast<long double>(origin.x) + extentWidth - latticeOrigin.x,
-        static_cast<long double>(origin.y) + extentHeight - latticeOrigin.y);
+    // indices of the top right corner
+    const auto& [topRightI, topRightJ] =
+        solve(checkedSubtract(maximumX, latticeOrigin.x),
+              checkedSubtract(maximumY, latticeOrigin.y));
 
     const auto minI = floorToInt64(
         std::min({bottomLeftI, bottomRightI, topLeftI, topRightI}));
@@ -578,12 +621,15 @@ void forEachRegularSites(const std::vector<Device::Lattice>& lattices,
     const auto maxJ = floorToInt64(
         std::max({bottomLeftJ, bottomRightJ, topLeftJ, topRightJ}));
 
-    constexpr long double maxCandidateSites = 10'000'000.L;
-    const auto candidateSites =
-        (static_cast<long double>(maxI) - minI + 1.L) *
-        (static_cast<long double>(maxJ) - minJ + 1.L) *
-        static_cast<long double>(sublatticeOffsets.size());
-    if (!std::isfinite(candidateSites) || candidateSites > maxCandidateSites) {
+    constexpr size_t maxCandidateSites = 10'000'000;
+    const auto spanI = checkedAdd(checkedSubtract(maxI, minI), 1);
+    const auto spanJ = checkedAdd(checkedSubtract(maxJ, minJ), 1);
+    if (std::cmp_greater(spanI, maxCandidateSites) ||
+        std::cmp_greater(spanJ, maxCandidateSites) ||
+        spanI > static_cast<int64_t>(maxCandidateSites) / spanJ ||
+        sublatticeOffsets.size() >
+            maxCandidateSites /
+                (static_cast<size_t>(spanI) * static_cast<size_t>(spanJ))) {
       throw std::length_error(
           "lattice expands to more than 10000000 candidate sites");
     }
