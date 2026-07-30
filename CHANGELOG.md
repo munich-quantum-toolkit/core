@@ -77,8 +77,6 @@ releases may include breaking changes.
 
 ### Changed
 
-- ♻️ Make the neutral-atom QDMI device runtime configurable per session
-  ([#1974]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],

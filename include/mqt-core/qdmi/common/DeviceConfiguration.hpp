@@ -31,11 +31,10 @@ struct LoadedDeviceConfiguration {
  * A null value with size zero is a capability probe. Assignments contain one
  * trailing NUL and no embedded NUL. A single NUL clears the selected value.
  */
-auto setDeviceConfigurationParameter(QDMI_Device_Session_Parameter parameter,
-                                     size_t size, const void* value,
-                                     std::optional<std::string>& inlineJson,
-                                     std::optional<std::filesystem::path>& file)
-    -> int;
+int setDeviceConfigurationParameter(QDMI_Device_Session_Parameter parameter,
+                                    size_t size, const void* value,
+                                    std::optional<std::string>& inlineJson,
+                                    std::optional<std::filesystem::path>& file);
 
 /**
  * @brief Select and load one runtime device description.
@@ -45,12 +44,10 @@ auto setDeviceConfigurationParameter(QDMI_Device_Session_Parameter parameter,
  * select inline JSON or a file. The final fallback is a file beside the shared
  * module containing @p anchor.
  */
-auto loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
-                             const std::optional<std::filesystem::path>& file,
-                             std::string_view inlineEnvironment,
-                             std::string_view fileEnvironment,
-                             std::string_view bundledFilename,
-                             const void* anchor, int& status)
-    -> std::optional<LoadedDeviceConfiguration>;
+std::optional<LoadedDeviceConfiguration> loadDeviceConfiguration(
+    const std::optional<std::string>& inlineJson,
+    const std::optional<std::filesystem::path>& file,
+    std::string_view inlineEnvironment, std::string_view fileEnvironment,
+    std::string_view bundledFilename, const void* anchor, int& status);
 
 } // namespace qdmi::detail

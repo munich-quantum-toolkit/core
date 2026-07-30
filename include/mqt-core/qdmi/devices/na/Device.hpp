@@ -62,51 +62,49 @@ public:
    * @brief Initializes the device session.
    * @see MQT_NA_QDMI_device_session_init
    */
-  auto init() -> int;
+  int init();
 
   /**
    * @brief Sets a parameter for the device session.
    * @see MQT_NA_QDMI_device_session_set_parameter
    */
-  auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
-                    const void* value) -> int;
+  int setParameter(QDMI_Device_Session_Parameter param, size_t size,
+                   const void* value);
 
   /**
    * @brief Create a new device job.
    * @see MQT_NA_QDMI_device_session_create_device_job
    */
-  auto createDeviceJob(MQT_NA_QDMI_Device_Job* job) -> int;
+  int createDeviceJob(MQT_NA_QDMI_Device_Job* job);
 
   /**
    * @brief Frees the device job.
    * @see MQT_NA_QDMI_device_job_free
    */
-  auto freeDeviceJob(MQT_NA_QDMI_Device_Job job) -> void;
+  void freeDeviceJob(MQT_NA_QDMI_Device_Job job);
 
   /**
    * @brief Forwards a query of a device property to the device.
    * @see MQT_NA_QDMI_device_session_query_device_property
    */
-  auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
-                           size_t* sizeRet) const -> int;
+  int queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
+                          size_t* sizeRet) const;
 
   /**
    * @brief Forwards a query of a site property to the site.
    * @see MQT_NA_QDMI_device_session_query_site_property
    */
-  auto querySiteProperty(MQT_NA_QDMI_Site site, QDMI_Site_Property prop,
-                         size_t size, void* value, size_t* sizeRet) const
-      -> int;
+  int querySiteProperty(MQT_NA_QDMI_Site site, QDMI_Site_Property prop,
+                        size_t size, void* value, size_t* sizeRet) const;
 
   /**
    * @brief Forwards a query of an operation property to the operation.
    * @see MQT_NA_QDMI_device_session_query_operation_property
    */
-  auto queryOperationProperty(MQT_NA_QDMI_Operation operation, size_t numSites,
-                              const MQT_NA_QDMI_Site* sites, size_t numParams,
-                              const double* params,
-                              QDMI_Operation_Property prop, size_t size,
-                              void* value, size_t* sizeRet) const -> int;
+  int queryOperationProperty(MQT_NA_QDMI_Operation operation, size_t numSites,
+                             const MQT_NA_QDMI_Site* sites, size_t numParams,
+                             const double* params, QDMI_Operation_Property prop,
+                             size_t size, void* value, size_t* sizeRet) const;
 };
 
 /**
@@ -129,52 +127,52 @@ public:
    * needed because the interface only provides the job handle to the @ref
    * QDMI_job_free function and the job's session handle is private.
    */
-  auto free() -> void;
+  void free();
 
   /**
    * @brief Sets a parameter for the job.
    * @see MQT_NA_QDMI_device_job_set_parameter
    */
-  auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
-                    const void* value) -> int;
+  int setParameter(QDMI_Device_Job_Parameter param, size_t size,
+                   const void* value);
 
   /**
    * @brief Queries a property of the job.
    * @see MQT_NA_QDMI_device_job_query_property
    */
-  auto queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,
-                     size_t* sizeRet) -> int;
+  int queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,
+                    size_t* sizeRet);
 
   /**
    * @brief Submits the job to the device.
    * @see MQT_NA_QDMI_device_job_submit
    */
-  auto submit() -> int;
+  int submit();
 
   /**
    * @brief Cancels the job.
    * @see MQT_NA_QDMI_device_job_cancel
    */
-  auto cancel() -> int;
+  int cancel();
 
   /**
    * @brief Checks the status of the job.
    * @see MQT_NA_QDMI_device_job_check
    */
-  auto check(QDMI_Job_Status* status) -> int;
+  int check(QDMI_Job_Status* status);
 
   /**
    * @brief Waits for the job to complete but at most for the specified timeout.
    * @see MQT_NA_QDMI_device_job_wait
    */
-  auto wait(size_t timeout) -> int;
+  int wait(size_t timeout);
 
   /**
    * @brief Gets the results of the job.
    * @see MQT_NA_QDMI_device_job_get_results
    */
-  auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                  [[maybe_unused]] size_t* sizeRet) -> int;
+  int getResults(QDMI_Job_Result result, size_t size, void* data,
+                 [[maybe_unused]] size_t* sizeRet);
 };
 
 /**
@@ -213,25 +211,23 @@ private:
 
 public:
   /// @brief Factory function for regular sites.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Site_impl_d>
   makeUniqueSite(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
                  uint64_t moduleId, uint64_t subModuleId, int64_t x, int64_t y,
-                 uint64_t t1, uint64_t t2)
-      -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d>;
+                 uint64_t t1, uint64_t t2);
   /// @brief Factory function for zone sites.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Site_impl_d>
   makeUniqueZone(MQT_NA_QDMI_Device_Session_impl_d* owner, uint64_t id,
                  int64_t x, int64_t y, uint64_t width, uint64_t height,
-                 uint64_t t1, uint64_t t2)
-      -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d>;
+                 uint64_t t1, uint64_t t2);
   /**
    * @brief Queries a property of the site.
    * @see MQT_NA_QDMI_device_session_query_site_property
    */
-  auto queryProperty(QDMI_Site_Property prop, size_t size, void* value,
-                     size_t* sizeRet) const -> int;
-  [[nodiscard]] auto
-  ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const -> bool {
+  int queryProperty(QDMI_Site_Property prop, size_t size, void* value,
+                    size_t* sizeRet) const;
+  [[nodiscard]] bool
+  ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const {
     return owner_ == session;
   }
 };
@@ -312,63 +308,59 @@ private:
 
   /// @brief Sort the sites such that the occurrence of a given site can be
   /// determined in O(log n) time.
-  auto sortSites() -> void;
+  void sortSites();
 
 public:
   void setOwner(MQT_NA_QDMI_Device_Session_impl_d* owner) { owner_ = owner; }
-  [[nodiscard]] auto
-  ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const -> bool {
+  [[nodiscard]] bool
+  ownedBy(const MQT_NA_QDMI_Device_Session_impl_d* session) const {
     return owner_ == session;
   }
   /// @brief Factory function for the global single-qubit operations.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
   makeUniqueGlobalSingleQubit(const std::string& name, size_t numParameters,
                               uint64_t duration, double fidelity,
-                              MQT_NA_QDMI_Site zone)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+                              MQT_NA_QDMI_Site zone);
   /// @brief Factory function for the global multi-qubit operations.
-  [[nodiscard]] static auto makeUniqueGlobalMultiQubit(
-      const std::string& name, size_t numParameters, size_t numQubits,
-      uint64_t duration, double fidelity, uint64_t interactionRadius,
-      uint64_t blockingRadius, double idlingFidelity, MQT_NA_QDMI_Site zone)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
+  makeUniqueGlobalMultiQubit(const std::string& name, size_t numParameters,
+                             size_t numQubits, uint64_t duration,
+                             double fidelity, uint64_t interactionRadius,
+                             uint64_t blockingRadius, double idlingFidelity,
+                             MQT_NA_QDMI_Site zone);
   /// @brief Factory function for the local single-qubit operations.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
   makeUniqueLocalSingleQubit(const std::string& name, size_t numParameters,
                              uint64_t duration, double fidelity,
-                             const std::vector<MQT_NA_QDMI_Site>& sites)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+                             const std::vector<MQT_NA_QDMI_Site>& sites);
   /// @brief Factory function for the local multi-qubit operations.
-  [[nodiscard]] static auto makeUniqueLocalTwoQubit(
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
+  makeUniqueLocalTwoQubit(
       const std::string& name, size_t numParameters, size_t numQubits,
       uint64_t duration, double fidelity, uint64_t interactionRadius,
       uint64_t blockingRadius,
-      const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+      const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites);
   /// @brief Factory function for the shuttling load operations.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
   makeUniqueShuttlingLoad(const std::string& name, size_t numParameters,
                           uint64_t duration, double fidelity,
-                          MQT_NA_QDMI_Site zone)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+                          MQT_NA_QDMI_Site zone);
   /// @brief Factory function for the shuttling move operations.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
   makeUniqueShuttlingMove(const std::string& name, size_t numParameters,
-                          MQT_NA_QDMI_Site zone, uint64_t meanShuttlingSpeed)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+                          MQT_NA_QDMI_Site zone, uint64_t meanShuttlingSpeed);
   /// @brief Factory function for the shuttling store operations.
-  [[nodiscard]] static auto
+  [[nodiscard]] static std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>
   makeUniqueShuttlingStore(const std::string& name, size_t numParameters,
                            uint64_t duration, double fidelity,
-                           MQT_NA_QDMI_Site zone)
-      -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
+                           MQT_NA_QDMI_Site zone);
 
   /**
    * @brief Queries a property of the operation.
    * @see MQT_NA_QDMI_device_session_query_operation_property
    */
-  auto queryProperty(size_t numSites, const MQT_NA_QDMI_Site* sites,
-                     size_t numParams, const double* params,
-                     QDMI_Operation_Property prop, size_t size, void* value,
-                     size_t* sizeRet) const -> int;
+  int queryProperty(size_t numSites, const MQT_NA_QDMI_Site* sites,
+                    size_t numParams, const double* params,
+                    QDMI_Operation_Property prop, size_t size, void* value,
+                    size_t* sizeRet) const;
 };

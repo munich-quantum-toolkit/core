@@ -27,8 +27,8 @@
 
 namespace qdmi::detail {
 namespace {
-[[nodiscard]] auto environment(const std::string_view name)
-    -> std::optional<std::string> {
+[[nodiscard]] std::optional<std::string>
+environment(const std::string_view name) {
 #ifdef _WIN32
   char* raw = nullptr;
   size_t size = 0;
@@ -51,8 +51,7 @@ namespace {
 #endif
 }
 
-[[nodiscard]] auto moduleDirectory(const void* anchor)
-    -> std::filesystem::path {
+[[nodiscard]] std::filesystem::path moduleDirectory(const void* anchor) {
 #ifdef _WIN32
   HMODULE module = nullptr;
   if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -82,9 +81,8 @@ namespace {
 #endif
 }
 
-[[nodiscard]] auto readFile(const std::filesystem::path& path,
-                            const bool bundled, int& status)
-    -> std::optional<LoadedDeviceConfiguration> {
+[[nodiscard]] std::optional<LoadedDeviceConfiguration>
+readFile(const std::filesystem::path& path, const bool bundled, int& status) {
   std::error_code error;
   const auto exists = std::filesystem::exists(path, error);
   if (error) {
@@ -121,10 +119,10 @@ namespace {
 }
 } // namespace
 
-auto setDeviceConfigurationParameter(
+int setDeviceConfigurationParameter(
     const QDMI_Device_Session_Parameter parameter, const size_t size,
     const void* value, std::optional<std::string>& inlineJson,
-    std::optional<std::filesystem::path>& file) -> int {
+    std::optional<std::filesystem::path>& file) {
   if (parameter != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1 &&
       parameter != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2) {
     return QDMI_ERROR_NOTSUPPORTED;
@@ -152,13 +150,13 @@ auto setDeviceConfigurationParameter(
   return QDMI_SUCCESS;
 }
 
-auto loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
-                             const std::optional<std::filesystem::path>& file,
-                             const std::string_view inlineEnvironment,
-                             const std::string_view fileEnvironment,
-                             const std::string_view bundledFilename,
-                             const void* anchor, int& status)
-    -> std::optional<LoadedDeviceConfiguration> {
+std::optional<LoadedDeviceConfiguration>
+loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
+                        const std::optional<std::filesystem::path>& file,
+                        const std::string_view inlineEnvironment,
+                        const std::string_view fileEnvironment,
+                        const std::string_view bundledFilename,
+                        const void* anchor, int& status) {
   if (inlineJson) {
     status = QDMI_SUCCESS;
     return LoadedDeviceConfiguration{.json = *inlineJson,

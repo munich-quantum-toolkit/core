@@ -296,7 +296,7 @@ public:
   // and must not be changed
   template <typename BasicJsonType>
   // NOLINTNEXTLINE(readability-identifier-naming)
-  friend auto from_json(const BasicJsonType& json, Device& device) -> void {
+  friend void from_json(const BasicJsonType& json, Device& device) {
     const Device defaultDevice{};
     device.name = !json.is_null() ? json.value("name", defaultDevice.name)
                                   : defaultDevice.name;
@@ -375,11 +375,10 @@ public:
  * @returns The parsed device configuration as a Protobuf message.
  * @throws std::runtime_error if the JSON cannot be parsed.
  */
-[[nodiscard]] auto readJSON(std::istream& is) -> Device;
+[[nodiscard]] Device readJSON(std::istream& is);
 
 /// Parse and validate JSON text while using @p source in diagnostics.
-[[nodiscard]] auto readJSON(std::string_view json, std::string_view source)
-    -> Device;
+[[nodiscard]] Device readJSON(std::string_view json, std::string_view source);
 
 /**
  * @brief Parses the device configuration from a JSON file.
@@ -388,7 +387,7 @@ public:
  * @throws std::runtime_error if the JSON file does not exist, or the JSON file
  * cannot be parsed.
  */
-[[nodiscard]] auto readJSON(const std::string& path) -> Device;
+[[nodiscard]] Device readJSON(const std::string& path);
 
 /**
  * @brief Information about a regular site in a lattice.
@@ -419,8 +418,8 @@ struct SiteInfo {
  * determinant of the lattice vector matrix is near zero, causing the system
  * of equations to have no unique solution).
  */
-auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
+void forEachRegularSites(const std::vector<Device::Lattice>& lattices,
                          const std::function<void(const SiteInfo&)>& f,
-                         size_t startId = 0) -> void;
+                         size_t startId = 0);
 
 } // namespace na

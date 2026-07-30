@@ -265,8 +265,8 @@ void validateNestedSchema(const Json& json, const std::string_view source) {
   requireString(json.at("durationUnit"), "unit", source, "$/durationUnit");
 }
 
-[[nodiscard]] auto parseAndValidate(const Json& json,
-                                    const std::string_view source) -> Device {
+[[nodiscard]] Device parseAndValidate(const Json& json,
+                                      const std::string_view source) {
   if (!json.is_object()) {
     validationError(source, "$", "must be an object");
   }
@@ -447,11 +447,10 @@ void validateNestedSchema(const Json& json, const std::string_view source) {
  * @throws std::runtime_error if the system has no unique solution (determinant
  * is near zero).
  */
-[[nodiscard]] auto
+[[nodiscard]] std::pair<double, double>
 solve2DLinearEquation(const long double x1, const long double x2,
                       const long double y1, const long double y2,
-                      const long double x0, const long double y0)
-    -> std::pair<double, double> {
+                      const long double x0, const long double y0) {
   // Calculate the determinant
   const auto det = (x1 * y2) - (x2 * y1);
   if (constexpr auto epsilon = 1e-10; std::abs(det) < epsilon) {
@@ -463,7 +462,7 @@ solve2DLinearEquation(const long double x1, const long double x2,
   return {static_cast<double>(detX / det), static_cast<double>(detY / det)};
 }
 
-[[nodiscard]] auto floorToInt64(const double value) -> int64_t {
+[[nodiscard]] int64_t floorToInt64(const double value) {
   const auto floored = std::floor(value);
   constexpr auto minInt64 = -0x1p63;
   constexpr auto maxInt64Exclusive = 0x1p63;
@@ -474,11 +473,11 @@ solve2DLinearEquation(const long double x1, const long double x2,
   return static_cast<int64_t>(floored);
 }
 
-[[nodiscard]] auto coordinate(const int64_t origin, const int64_t offset,
-                              const int64_t firstIndex,
-                              const int64_t firstVector,
-                              const int64_t secondIndex,
-                              const int64_t secondVector) -> int64_t {
+[[nodiscard]] int64_t coordinate(const int64_t origin, const int64_t offset,
+                                 const int64_t firstIndex,
+                                 const int64_t firstVector,
+                                 const int64_t secondIndex,
+                                 const int64_t secondVector) {
   const auto value = static_cast<long double>(origin) +
                      static_cast<long double>(offset) +
                      (static_cast<long double>(firstIndex) * firstVector) +
@@ -502,9 +501,9 @@ solve2DLinearEquation(const long double x1, const long double x2,
  * @returns true if the increment was successful, false if all indices have
  * reached their limits.
  */
-[[nodiscard]] auto increment(std::vector<int64_t>& indices,
+[[nodiscard]] bool increment(std::vector<int64_t>& indices,
                              const std::vector<int64_t>& minima,
-                             const std::vector<int64_t>& limits) -> bool {
+                             const std::vector<int64_t>& limits) {
   size_t i = 0;
   for (; i < indices.size() && indices[i] == limits[i]; ++i) {
   }
@@ -520,7 +519,7 @@ solve2DLinearEquation(const long double x1, const long double x2,
 }
 } // namespace
 
-[[nodiscard]] auto readJSON(std::istream& is) -> Device {
+[[nodiscard]] Device readJSON(std::istream& is) {
   // Read the device configuration from the input stream
   nlohmann::json json;
   try {
@@ -534,8 +533,7 @@ solve2DLinearEquation(const long double x1, const long double x2,
   return parseAndValidate(json, "input");
 }
 
-auto readJSON(const std::string_view json, const std::string_view source)
-    -> Device {
+Device readJSON(const std::string_view json, const std::string_view source) {
   try {
     return parseAndValidate(Json::parse(json), source);
   } catch (const Json::parse_error& error) {
@@ -544,7 +542,7 @@ auto readJSON(const std::string_view json, const std::string_view source)
   }
 }
 
-[[nodiscard]] auto readJSON(const std::string& path) -> Device {
+[[nodiscard]] Device readJSON(const std::string& path) {
   // Read the device configuration from a JSON file
   std::ifstream ifs(path);
   if (!ifs.good()) {
@@ -555,9 +553,9 @@ auto readJSON(const std::string_view json, const std::string_view source)
   return device;
 }
 
-auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
+void forEachRegularSites(const std::vector<Device::Lattice>& lattices,
                          const std::function<void(const SiteInfo&)>& f,
-                         const size_t startId) -> void {
+                         const size_t startId) {
   size_t count = startId;
   size_t moduleCount = 0;
   for (const auto& [latticeOrigin, latticeVector1, latticeVector2,
