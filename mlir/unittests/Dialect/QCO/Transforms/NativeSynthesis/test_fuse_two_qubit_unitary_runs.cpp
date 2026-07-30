@@ -325,23 +325,36 @@ struct NamedProgram {
   ProgramFn program;
 };
 
-/// Native gatesets spanning every supported single-qubit basis and both
-/// entangler families (plus a multi-entangler menu). Because the pass
-/// re-synthesizes each two-qubit window into the target basis, every circuit is
-/// valid input for every gateset.
-constexpr std::array<const char*, 9> GATESETS = {
-    // CX entangler family
-    "x,sx,rz,cx", // ZSXX
-    "u,cx",       // U
-    "rx,rz,cx",   // XZX
-    "rx,ry,cx",   // XYX
-    // CZ entangler family
+/// Native gatesets spanning every supported single-qubit basis and all
+/// entangler families (RXX/RYY/RZX/RZZ/iSWAP/CZ/CX/ECR, plus multi-entangler
+/// menus). Because the pass re-synthesizes each two-qubit window into the
+/// target basis, every circuit is valid input for every gateset.
+constexpr std::array<const char*, 20> GATESETS = {
+    "u,rxx",
+    "u,ryy",
+    "u,rzx",
+    "u,rzz",
+    "x,sx,rz,rzz",
+    // iSWAP
+    "u,iswap",
+    "x,sx,rz,iswap",
+    // CZ
     "r,cz",       // R
     "ry,rz,cz",   // ZYZ
     "x,sx,rz,cz", // ZSXX
     "u,cz",       // U
-    // Multiple entanglers (cz preferred)
-    "u,cx,cz",
+    // CX
+    "x,sx,rz,cx", // ZSXX
+    "u,cx",       // U
+    "rx,rz,cx",   // XZX
+    "rx,ry,cx",   // XYX
+    // ECR
+    "u,ecr",
+    "x,sx,rz,ecr",
+    // Multiple entanglers (listed in preference order; rxx / iswap / cz win)
+    "u,rxx,ryy,rzx,rzz,iswap,cz,cx,ecr",
+    "u,iswap,cz,cx,ecr",
+    "u,cz,cx",
 };
 
 /// Gateset used for the fusion-window suite, which asserts on structure rather
@@ -602,6 +615,40 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForInvalidNativeGateMenu) {
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,
        FailsForNativeGateMenuWithoutSingleQEmitter) {
   expectSynthesisFailure(mlir::qc::singleControlledX, "cx,cz");
+}
+
+TEST_F(FuseTwoQubitUnitaryRunsPassTest,
+       PreservesRuntimeParameterizedNativeTwoQubitRotations) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %q2, %q3 = qco.rxx(%theta) %q0, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q4, %q5 = qco.ryy(%theta) %q2, %q3 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q6, %q7 = qco.rzx(%theta) %q4, %q5 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q8, %q9 = qco.rzz(%theta) %q6, %q7 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        return %q8, %q9 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+
+  std::string before;
+  llvm::raw_string_ostream osBefore(before);
+  module->print(osBefore);
+
+  PassManager pm(module->getContext());
+  pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
+      .nativeGates = "u,rxx,ryy,rzx,rzz",
+  }));
+  ASSERT_TRUE(succeeded(pm.run(*module)));
+
+  std::string after;
+  llvm::raw_string_ostream osAfter(after);
+  module->print(osAfter);
+  EXPECT_EQ(before, after);
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,
