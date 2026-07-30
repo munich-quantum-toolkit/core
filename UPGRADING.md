@@ -120,7 +120,7 @@ an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
 owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
 behavior for client callers.
 
-See the [QDMI device configuration guide](docs/qdmi/configuration.md) for the
+See the {doc}`QDMI device configuration guide <qdmi/configuration>` for the
 versioned JSON and TOML formats, configuration precedence, and relocatable
 device manifests.
 
