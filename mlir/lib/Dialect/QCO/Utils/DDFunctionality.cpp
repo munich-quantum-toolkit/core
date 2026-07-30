@@ -40,9 +40,9 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Visitors.h>
-#include <mlir/IR/WalkResult.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -418,6 +418,11 @@ static LogicalResult validateReturn(func::ReturnOp returnOp,
 
 static LogicalResult recordConstant(arith::ConstantOp constant,
                                     ClassicalEnv& classical) {
+  // `arith.constant true/false` is a BoolAttr; other integers are IntegerAttr.
+  if (auto boolAttr = dyn_cast<BoolAttr>(constant.getValue())) {
+    classical.bools[constant.getResult()] = boolAttr.getValue();
+    return success();
+  }
   auto attr = dyn_cast<IntegerAttr>(constant.getValue());
   if (!attr) {
     return success();
