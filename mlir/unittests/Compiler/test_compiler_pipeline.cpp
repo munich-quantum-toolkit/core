@@ -482,7 +482,7 @@ cx q[0], q[2];
   const auto beforeTwoQubitFusion = qco.str();
   EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("u,cx"));
   EXPECT_NE(qco.str(), beforeTwoQubitFusion);
-  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
+  const std::vector<std::pair<size_t, size_t>> coupling = {
       {0, 1}, {1, 0}, {1, 2}, {2, 1}};
   EXPECT_TRUE(qco.placeAndRoute(coupling));
   EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
@@ -530,7 +530,7 @@ cx q[0], q[2];
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
-  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
+  const std::vector<std::pair<size_t, size_t>> coupling = {
       {0, 1}, {1, 0}, {1, 2}, {2, 1}};
   ASSERT_TRUE(qco->targetNative("u,cx", coupling));
   const auto ir = qco->str();
@@ -558,8 +558,7 @@ h q;
   ASSERT_TRUE(qco);
   EXPECT_FALSE(qco->targetNative(""));
   EXPECT_FALSE(qco->targetNative("   "));
-  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
-                                                                     {1, 0}};
+  const std::vector<std::pair<size_t, size_t>> coupling = {{0, 1}, {1, 0}};
   EXPECT_FALSE(qco->targetNative("", coupling));
 }
 
@@ -593,8 +592,7 @@ cx q[0], q[2];
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
   // One direction only; targetNative must symmetrize before placeAndRoute.
-  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
-                                                                     {1, 2}};
+  const std::vector<std::pair<size_t, size_t>> coupling = {{0, 1}, {1, 2}};
   ASSERT_TRUE(qco->targetNative("u,cx", coupling));
   const auto ir = qco->str();
   EXPECT_EQ(ir.find("qco.swap"), std::string::npos);

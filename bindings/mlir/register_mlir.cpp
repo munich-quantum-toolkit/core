@@ -12,8 +12,7 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
+#include <mlir/Support/LLVM.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
@@ -242,7 +241,7 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
 
 [[nodiscard]] std::string
 nativeGatesMenuOrThrow(const std::vector<std::string>& names) {
-  llvm::SmallVector<llvm::StringRef> refs;
+  mlir::SmallVector<mlir::StringRef> refs;
   refs.reserve(names.size());
   for (const auto& name : names) {
     refs.emplace_back(name);
@@ -265,19 +264,17 @@ nativeGatesMenuOrThrow(const std::vector<std::string>& names) {
   return nativeGatesMenuOrThrow(names);
 }
 
-[[nodiscard]] std::vector<std::pair<std::size_t, std::size_t>>
+[[nodiscard]] std::vector<std::pair<size_t, size_t>>
 couplingFromDevice(const nb::object& device) {
-  std::vector<std::pair<std::size_t, std::size_t>> edges;
+  std::vector<std::pair<size_t, size_t>> edges;
   const nb::object cmap = device.attr("coupling_map")();
   if (cmap.is_none()) {
     return edges;
   }
   for (const auto& pair : cmap) {
     const auto edge = nb::cast<nb::tuple>(nb::handle(pair));
-    const auto a =
-        static_cast<std::size_t>(nb::cast<int>(edge[0].attr("index")()));
-    const auto b =
-        static_cast<std::size_t>(nb::cast<int>(edge[1].attr("index")()));
+    const auto a = static_cast<size_t>(nb::cast<int>(edge[0].attr("index")()));
+    const auto b = static_cast<size_t>(nb::cast<int>(edge[1].attr("index")()));
     edges.emplace_back(a, b);
     edges.emplace_back(b, a);
   }
@@ -457,10 +454,10 @@ operations.)pb");
       .def(
           "place_and_route",
           [](mlir::QCOProgram& value,
-             const std::vector<std::pair<std::size_t, std::size_t>>& coupling,
-             const std::size_t nlookahead, const float alpha,
-             const float lambda, const std::size_t niterations,
-             const std::size_t ntrials, const std::size_t seed) {
+             const std::vector<std::pair<size_t, size_t>>& coupling,
+             const size_t nlookahead, const float alpha, const float lambda,
+             const size_t niterations, const size_t ntrials,
+             const size_t seed) {
             requireSuccess(value.placeAndRoute(std::span(coupling), nlookahead,
                                                alpha, lambda, niterations,
                                                ntrials, seed));
@@ -476,8 +473,7 @@ operations.)pb");
               requireSuccess(value.targetNative(nativeGates));
             } else {
               const auto edges =
-                  nb::cast<std::vector<std::pair<std::size_t, std::size_t>>>(
-                      coupling);
+                  nb::cast<std::vector<std::pair<size_t, size_t>>>(coupling);
               requireSuccess(value.targetNative(nativeGates, std::span(edges)));
             }
           },

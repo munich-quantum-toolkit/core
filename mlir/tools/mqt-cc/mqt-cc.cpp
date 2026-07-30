@@ -434,8 +434,7 @@ int main(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
-  const llvm::StringRef nativeGateMenu =
-      llvm::StringRef(nativeGates.getValue()).trim();
+  const StringRef nativeGateMenu = StringRef(nativeGates.getValue()).trim();
   if (nativeGates.getNumOccurrences() > 0 && nativeGateMenu.empty()) {
     llvm::errs() << "--native-gates must not be empty.\n";
     return 1;
@@ -520,7 +519,7 @@ int main(int argc, char** argv) {
               populateDecomposeMultiControlledPipeline(pm, /*minControls=*/2);
             }
             if (!couplingEdges.empty()) {
-              DenseSet<std::pair<std::size_t, std::size_t>> couplingSet(
+              DenseSet<std::pair<size_t, size_t>> couplingSet(
                   couplingEdges.begin(), couplingEdges.end());
               pm.addPass(qco::createMappingPass(couplingSet,
                                                 qco::MappingPassOptions{}));

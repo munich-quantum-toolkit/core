@@ -393,11 +393,10 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {
 }
 
 bool QCOProgram::placeAndRoute(
-    const std::span<const std::pair<std::size_t, std::size_t>> coupling,
-    const std::size_t nlookahead, const float alpha, const float lambda,
-    const std::size_t niterations, const std::size_t ntrials,
-    const std::size_t seed) {
-  DenseSet<std::pair<std::size_t, std::size_t>> couplingSet;
+    const std::span<const std::pair<size_t, size_t>> coupling,
+    const size_t nlookahead, const float alpha, const float lambda,
+    const size_t niterations, const size_t ntrials, const size_t seed) {
+  DenseSet<std::pair<size_t, size_t>> couplingSet;
   couplingSet.insert(coupling.begin(), coupling.end());
   qco::MappingPassOptions options;
   options.nlookahead = nlookahead;
@@ -416,7 +415,7 @@ bool QCOProgram::placeAndRoute(
 
 bool QCOProgram::targetNative(
     const std::string_view nativeGates,
-    const std::span<const std::pair<std::size_t, std::size_t>> coupling) {
+    const std::span<const std::pair<size_t, size_t>> coupling) {
   if (StringRef(nativeGates).trim().empty()) {
     mod().emitError("the native gate menu must not be empty");
     return false;
@@ -433,7 +432,7 @@ bool QCOProgram::targetNative(
   if (!coupling.empty()) {
     // Treat coupling as undirected: placeAndRoute requires both (u,v) and
     // (v,u).
-    SmallVector<std::pair<std::size_t, std::size_t>> symmetric;
+    SmallVector<std::pair<size_t, size_t>> symmetric;
     symmetric.reserve(coupling.size() * 2);
     for (const auto& [u, v] : coupling) {
       symmetric.emplace_back(u, v);

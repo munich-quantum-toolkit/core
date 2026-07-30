@@ -13,8 +13,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseSet.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <optional>
@@ -59,7 +58,7 @@ struct TwoQubitNativeDecomposition;
  * `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of π/2.
  */
 struct NativeGateset {
-  llvm::DenseSet<NativeGateKind> gates;
+  DenseSet<NativeGateKind> gates;
   std::optional<EulerBasis> eulerBasis;
   std::optional<NativeGateKind> entangler;
 
@@ -82,7 +81,7 @@ struct NativeGateset {
    * @return Resolved gateset, or `std::nullopt` when no supported menu exists.
    */
   [[nodiscard]] static std::optional<NativeGateset>
-  fromOperationNames(llvm::ArrayRef<llvm::StringRef> names);
+  fromOperationNames(ArrayRef<StringRef> names);
 
   /**
    * @brief Comma-separated menu for the selected Euler factors and entangler.

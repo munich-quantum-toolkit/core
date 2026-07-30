@@ -197,19 +197,18 @@ public:
 
   /// Place and route the program on a coupling graph.
   [[nodiscard]] bool
-  placeAndRoute(std::span<const std::pair<std::size_t, std::size_t>> coupling,
-                std::size_t nlookahead = 1, float alpha = 1.F,
-                float lambda = 0.5F, std::size_t niterations = 1,
-                std::size_t ntrials = 4, std::size_t seed = 42);
+  placeAndRoute(std::span<const std::pair<size_t, size_t>> coupling,
+                size_t nlookahead = 1, float alpha = 1.F, float lambda = 0.5F,
+                size_t niterations = 1, size_t ntrials = 4, size_t seed = 42);
 
   /// Progressive native targeting: decompose multi-controlled gates,
   /// optionally place/route on @p coupling (treated as undirected; reverse
   /// edges are added automatically), then fuse to @p nativeGates (required,
   /// non-empty, and must parse as a supported native menu). The menu is
   /// validated before any IR mutation.
-  [[nodiscard]] bool targetNative(
-      std::string_view nativeGates,
-      std::span<const std::pair<std::size_t, std::size_t>> coupling = {});
+  [[nodiscard]] bool
+  targetNative(std::string_view nativeGates,
+               std::span<const std::pair<size_t, size_t>> coupling = {});
 
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
