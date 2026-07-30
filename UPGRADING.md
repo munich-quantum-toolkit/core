@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+## [3.8.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.7` to `3.8`.
+Thus, consuming libraries need to update their wheel repair configuration for
+`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
+wheel repair step.
+
 ### Bundled QDMI devices in embedded builds
 
 The bundled QDMI devices now have individual CMake options:
