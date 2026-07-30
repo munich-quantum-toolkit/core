@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
@@ -26,5 +27,10 @@ namespace mlir::qco {
 /// Generate the code for registering passes.
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
+void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable);
+void runAncillaHoisting(ModuleOp module, SymbolTable& symbolTable);
+void runQuantumFunctionBoundaryCommutation(ModuleOp module,
+                                           SymbolTable& symbolTable);
 
 } // namespace mlir::qco

@@ -1,0 +1,134 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "llvm/ADT/SCCIterator.h"
+#include "mlir/Analysis/CallGraph.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+
+#include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+
+#include <array>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
+
+namespace mlir::qco {
+
+namespace {
+
+func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
+  OpBuilder builder(funcOp);
+  builder.setInsertionPointAfter(funcOp);
+
+  auto newFunc = funcOp.clone();
+  newFunc.setName(newName.str());
+
+  return newFunc;
+}
+
+bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
+  // For now, let's just consider self-inverses and single-qubit, non-controlled
+  // gates.
+  if (first.getOperation()->getName() != second.getOperation()->getName()) {
+    return false;
+  }
+  if (first.getNumQubits() != 1 || second.getNumQubits() != 1) {
+    return false;
+  }
+  if (isa<XOp, YOp, ZOp, HOp>(first)) {
+    return true;
+  }
+  return false;
+}
+
+void tryBoundaryCommutation(
+    func::CallOp call, SymbolTable& symbolTable, uint32_t parameter,
+    std::unordered_map<std::string, func::FuncOp>& previousSpecializations) {
+  auto calleeName = call.getCallee();
+  auto funcOp = symbolTable.lookup<func::FuncOp>(calleeName);
+
+  if (!funcOp || funcOp.isExternal()) {
+    return;
+  }
+
+  auto argOutside = call.getArgOperands()[parameter];
+  auto argInside = funcOp.getArgument(parameter);
+
+  if (!argInside.hasOneUse()) {
+    return;
+  }
+  if (argOutside.getDefiningOp() == nullptr) {
+    return;
+  }
+
+  auto lastOp = dyn_cast<UnitaryOpInterface>(argOutside.getDefiningOp());
+  auto nextOp = dyn_cast<UnitaryOpInterface>(*argInside.getUsers().begin());
+
+  if (!lastOp || !nextOp) {
+    return;
+  }
+
+  if (!doOpsCancel(lastOp, nextOp)) {
+    return;
+  }
+  argOutside.replaceAllUsesWith(lastOp.getInputQubit(0));
+  lastOp.erase();
+
+  if (previousSpecializations.contains(funcOp.getName().str())) {
+    call.setCallee(previousSpecializations[funcOp.getName().str()].getName());
+    return;
+  }
+
+  auto newFunc = copyFunction(funcOp, funcOp.getName().str() +
+                                          "_spec_boundary_commutation");
+  symbolTable.insert(newFunc);
+
+  auto newParameter = newFunc.getArgument(parameter);
+  auto newUser = dyn_cast<UnitaryOpInterface>(*newParameter.getUsers().begin());
+
+  for (auto i = 0U; i < newUser.getNumQubits(); ++i) {
+    newUser.getOutputQubit(i).replaceAllUsesWith(newUser.getInputQubit(i));
+  }
+  newUser.erase();
+  previousSpecializations[funcOp.getName().str()] = newFunc;
+
+  call.setCallee(newFunc.getName());
+}
+
+}; // namespace
+
+void runQuantumFunctionBoundaryCommutation(ModuleOp module,
+                                           SymbolTable& symbolTable) {
+  std::unordered_map<std::string, func::FuncOp> previousSpecializations;
+  module.walk([&](func::CallOp call) {
+    for (uint32_t i = 0; i < call.getArgOperands().size(); ++i) {
+      const auto arg = call.getArgOperands()[i];
+      if (!isa<QubitType>(arg.getType())) {
+        continue;
+      }
+      tryBoundaryCommutation(call, symbolTable, i, previousSpecializations);
+    }
+  });
+}
+
+} // namespace mlir::qco
