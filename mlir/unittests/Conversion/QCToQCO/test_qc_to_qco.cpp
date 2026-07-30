@@ -207,6 +207,47 @@ module {
   EXPECT_TRUE(result.isOne());
 }
 
+TEST_F(QCToQCORegressionTest, IgnoresClassicalRegisterLoadsInWhileState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> memref<1xi1>
+      attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<1xi1>
+    %c0 = arith.constant 0 : index
+    %true = arith.constant true
+    memref.store %true, %c[%c0] : memref<1xi1>
+    %result = scf.while (%running = %true) : (i1) -> i1 {
+      %condition = memref.load %c[%c0] : memref<1xi1>
+      scf.condition(%condition) %running : i1
+    } do {
+    ^bb0(%running: i1):
+      qc.x %qc : !qc.qubit
+      %false = arith.constant false
+      memref.store %false, %c[%c0] : memref<1xi1>
+      scf.yield %false : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %c : memref<1xi1>
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  expectNoQCOperations(*module);
+
+  bool retainsClassicalRegister = false;
+  module->walk([&](memref::LoadOp op) {
+    retainsClassicalRegister |=
+        op.getMemRefType().getElementType().isInteger(1);
+  });
+  EXPECT_TRUE(retainsClassicalRegister);
+}
+
 TEST_F(QCToQCORegressionTest, ConvertsTypeChangingWhileWithQuantumState) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
