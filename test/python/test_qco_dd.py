@@ -30,8 +30,8 @@ module {
 """)
 
 
-def test_build_functionality_and_simulate_unitary() -> None:
-    """X on |0> builds a unitary and simulates to |1>."""
+def test_unitary_x_build_simulate_and_sample() -> None:
+    """X on |0>: unitary matrix, simulation to |1>, deterministic sampling."""
     program = _x_program()
     package = dd.DDPackage(1)
     matrix = mlir.build_functionality(program, package)
@@ -41,19 +41,11 @@ def test_build_functionality_and_simulate_unitary() -> None:
     zero = package.zero_state(1)
     out = mlir.simulate(program, zero, package)
     expected = package.computational_basis_state(1, [True])
-
     assert np.allclose(out.get_vector(), expected.get_vector())
     package.dec_ref_vec(out)
     package.dec_ref_vec(expected)
 
-
-def test_sample_and_sample_with_classics() -> None:
-    """Unitary X samples as all-ones with empty mid-circuit classics."""
-    program = _x_program()
-    package = dd.DDPackage(1)
-    hist = mlir.sample(program, package, shots=32, seed=1)
-    assert hist == {"1": 32}
-
+    assert mlir.sample(program, package, shots=32, seed=1) == {"1": 32}
     result = mlir.sample_with_classics(program, package, shots=16, seed=2)
     assert result.shots == {"1": 16}
     assert result.classical == {}
