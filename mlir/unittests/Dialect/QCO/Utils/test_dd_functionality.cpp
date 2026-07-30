@@ -96,14 +96,6 @@ protected:
     auto dd = std::make_unique<dd::Package>(numQubits);
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
-
-  template <typename BuildFn>
-  void expectBuiltFails(size_t numQubits, BuildFn&& buildFn) {
-    auto mod = buildModule(std::forward<BuildFn>(buildFn));
-    ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(numQubits);
-    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
-  }
 };
 
 TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
@@ -225,7 +217,8 @@ TEST_F(QCODDFunctionalityTest, Rccx) {
 }
 
 TEST_F(QCODDFunctionalityTest, DensePaths) {
-  // Compound `ctrl` (dense) with sparse gates, 2-qubit `inv`, full-width `inv`.
+  // Compound `ctrl` (dense) with sparse gates, 2-qubit `inv`, full-width `inv`,
+  // and partial-width 3-qubit `inv`.
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
       auto q0 = b.staticQubit(0);
@@ -277,6 +270,28 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     qc::QuantumComputation qc(3);
+    qc.rx(-0.2, 0);
+    qc.ry(-0.3, 1);
+    qc.rz(-0.4, 2);
+    expectEqualToQc(mainFunc(*mod), qc);
+  }
+  {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
+      auto q0 = b.staticQubit(0);
+      auto q1 = b.staticQubit(1);
+      auto q2 = b.staticQubit(2);
+      auto q3 = b.staticQubit(3);
+      auto outs = b.inv({q0, q1, q2}, [&](ValueRange t) -> SmallVector<Value> {
+        return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2])};
+      });
+      b.sink(outs[0]);
+      b.sink(outs[1]);
+      b.sink(outs[2]);
+      b.sink(q3);
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
+    qc::QuantumComputation qc(4);
     qc.rx(-0.2, 0);
     qc.ry(-0.3, 1);
     qc.rz(-0.4, 2);
@@ -478,21 +493,6 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     EXPECT_TRUE(
         failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
-
-  expectBuiltFails(4, [](QCOProgramBuilder& b) {
-    auto q0 = b.staticQubit(0);
-    auto q1 = b.staticQubit(1);
-    auto q2 = b.staticQubit(2);
-    auto q3 = b.staticQubit(3);
-    auto outs = b.inv({q0, q1, q2}, [&](ValueRange t) -> SmallVector<Value> {
-      return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2])};
-    });
-    b.sink(outs[0]);
-    b.sink(outs[1]);
-    b.sink(outs[2]);
-    b.sink(q3);
-    return b.intConstant(0);
-  });
 
   expectMlirFails(1, R"mlir(
     module {

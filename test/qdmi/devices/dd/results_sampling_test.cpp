@@ -15,41 +15,34 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
-
-#include <gtest/gtest.h>
-
-#include <algorithm>
-#include <cstddef>
-#include <numeric>
-#include <ranges>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <vector>
-
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 #include "qir/helpers/test_utils.hpp"
 #include "qir/runtime/Runtime.hpp"
 
+#include <gtest/gtest.h>
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <memory>
+#include <numeric>
+#include <ranges>
 #include <sstream>
-#endif
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
 class HistogramTest : public ::testing::Test {
 protected:
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
   std::ostringstream sink;
   void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
   void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
-#endif
 
   using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
   static constexpr size_t NUM_SHOTS = 1024;
@@ -98,7 +91,6 @@ protected:
   }
 };
 
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 class QIRHistogramTestModule : public HistogramTest {
 protected:
   static std::string getProgram(const std::string_view file) {
@@ -120,7 +112,6 @@ protected:
 };
 
 class QIRHistogramTestString : public HistogramTest {};
-#endif
 
 } // namespace
 
@@ -130,7 +121,6 @@ TEST_F(HistogramTest, QASM3Program) {
   checkHistogram(runProgram(format, program));
 }
 
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 TEST_F(QIRHistogramTestModule, BaseStatic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
   checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));
@@ -174,7 +164,6 @@ TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
   checkSmokeHistogram(
       runProgram(format, qir_test::getProgram("AdaptiveRecordOutputs.ll")));
 }
-#endif
 
 TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};

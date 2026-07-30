@@ -84,22 +84,7 @@ ninja.version = ">=1.10"
 build-dir = "build/python/{build_type}"
 
 # All the targets to build
-build.targets = [
-  "mqt-core-ir",
-  "mqt-core-algorithms",
-  "mqt-core-circuit-optimizer",
-  "mqt-core-dd",
-  "mqt-core-zx",
-  "mqt-core-na",
-  "mqt-core-ir-bindings",
-  "mqt-core-dd-bindings",
-  "mqt-core-fomac-bindings",
-  "mqt-core-na-bindings",
-  "mqt-core-mlir-bindings",
-  "mqt-core-qdmi-ddsim-device",
-  "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-sc-device",
-]
+build.targets = ["mqt-core-wheel"]
 
 install.components = [
   "mqt-core_Runtime",
@@ -134,7 +119,6 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
-BUILD_MQT_CORE_MLIR = "ON"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
@@ -276,7 +260,7 @@ PC170 = "We do not use rST files anymore"
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = ["*-musllinux_*", "cp313t-*"]
+skip = ["*-musllinux_*"]
 archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "test/circuits", "json/na"]
@@ -300,12 +284,6 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
-
-[[tool.cibuildwheel.overrides]]
-select = "cp312-*"
-inherit.repair-wheel-command = "append"
-repair-wheel-command = "uvx abi3audit --strict --report {wheel}"
-
 
 [tool.uv]
 required-version = ">=0.5.20"
