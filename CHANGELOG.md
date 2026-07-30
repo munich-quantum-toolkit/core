@@ -21,8 +21,8 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction and simulation of QCO functions,
   including static unitaries, mid-circuit `measure`/`reset`, concrete
   `if`/`index_switch`/`scf.for`/`func.call`, richer classical SSA, dense `k>3`
-  wire embedding, multi-shot `sample` / `sampleWithClassics`, and Python
-  wrappers ([#1915]) ([**@simon1hofmann**])
+  wire embedding, multi-shot `sample` / `sampleWithClassics`, `memref` classical
+  registers, and Python wrappers ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
   unitary windows via Weyl/KAK resynthesis ([#1865], [#1961])
   ([**@simon1hofmann**], [**@burgholzer**])
@@ -693,6 +693,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1973]: https://github.com/munich-quantum-toolkit/core/pull/1973
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957

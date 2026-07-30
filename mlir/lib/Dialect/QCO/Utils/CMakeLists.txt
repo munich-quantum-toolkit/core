@@ -65,6 +65,7 @@ add_mlir_library(
   MLIRQCODialect
   MLIRQCOMatrix
   MLIRFuncDialect
+  MLIRMemRefDialect
   MQT::CoreDD)
 
 mqt_mlir_target_use_project_options(MLIRQCODDFunctionality)

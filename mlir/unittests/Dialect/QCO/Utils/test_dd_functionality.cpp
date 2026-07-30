@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -57,7 +58,7 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    scf::SCFDialect>();
+                    scf::SCFDialect, memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -922,6 +923,35 @@ TEST_F(QCODDFunctionalityTest, SampleWithClassicsRecordsMeasureBits) {
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(9);
   constexpr std::size_t shots = 32;
+  const auto hist = sampleWithClassics(mainFunc(*mod), *dd, shots, rng);
+  ASSERT_TRUE(succeeded(hist));
+  ASSERT_EQ(hist->shots.size(), 1U);
+  EXPECT_EQ(hist->shots.begin()->first, "0");
+  EXPECT_EQ(hist->shots.begin()->second, shots);
+  ASSERT_EQ(hist->classical.size(), 1U);
+  EXPECT_EQ(hist->classical.begin()->first, "1");
+  EXPECT_EQ(hist->classical.begin()->second, shots);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateClassicalMemRefRegister) {
+  // measure into memref c[0], then qcoIf loads c[0] and applies X → |0>.
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto c = b.allocClassicalBitRegister(1);
+    auto q = b.x(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q, c, 0);
+    auto results = b.qcoIf(
+        c, 0, ValueRange{q},
+        [&](ValueRange args) { return SmallVector<Value>{b.x(args[0])}; },
+        [&](ValueRange args) { return SmallVector<Value>{args[0]}; });
+    b.sink(results[0]);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(11);
+  constexpr std::size_t shots = 16;
   const auto hist = sampleWithClassics(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->shots.size(), 1U);
