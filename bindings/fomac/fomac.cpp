@@ -753,6 +753,14 @@ Raises:
     ValueError: If the definition is invalid.)pb");
 
   m.def(
+      "registered_device_ids",
+      [] { return qdmi::Driver::get().registeredDeviceIds(); },
+      R"pb(Return registered, enabled QDMI device IDs in registration order.
+
+This includes devices registered at runtime and does not load native device
+libraries or expose their definitions.)pb");
+
+  m.def(
       "open_device",
       [](const std::string& deviceId, std::optional<std::string> baseUrl,
          std::optional<std::string> token,

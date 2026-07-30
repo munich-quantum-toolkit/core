@@ -505,6 +505,14 @@ public:
   auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
 
   /**
+   * @brief Lists the stable IDs of all registered devices.
+   * @returns The enabled device IDs in deterministic registration order.
+   * @details This query includes runtime registrations and does not load device
+   * libraries or expose their definitions.
+   */
+  [[nodiscard]] auto registeredDeviceIds() const -> std::vector<std::string>;
+
+  /**
    * @brief Opens the registered device with the given stable ID.
    * @returns The existing device handle when the ID is already open.
    * @throws std::out_of_range If the ID is unknown.

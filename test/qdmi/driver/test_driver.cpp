@@ -937,6 +937,28 @@ TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
                std::runtime_error);
 }
 
+TEST(DeviceRegistrationTest,
+     EnumeratesEnabledIdsInOrderWithoutLoadingLibraries) {
+  auto& driver = qdmi::Driver::get();
+  const auto idsBefore = driver.registeredDeviceIds();
+  driver.registerDevice({.id = "test.enumeration.first",
+                         .library = "/nonexistent/first-device-library",
+                         .prefix = "MISSING_FIRST"});
+  driver.registerDevice({.id = "test.enumeration.second",
+                         .library = "/nonexistent/second-device-library",
+                         .prefix = "MISSING_SECOND"});
+
+  const auto idsAfter = driver.registeredDeviceIds();
+  ASSERT_EQ(idsAfter.size(), idsBefore.size() + 2);
+  EXPECT_TRUE(std::equal(idsBefore.begin(), idsBefore.end(), idsAfter.begin()));
+  EXPECT_EQ(idsAfter[idsBefore.size()], "test.enumeration.first");
+  EXPECT_EQ(idsAfter[idsBefore.size() + 1], "test.enumeration.second");
+  EXPECT_THAT(idsAfter, testing::Not(testing::Contains("test.disabled")));
+
+  EXPECT_THROW(static_cast<void>(driver.open("test.enumeration.first")),
+               std::runtime_error);
+}
+
 TEST(DeviceRegistrationTest, SynthesizesManifestForMetadataOnlyTarget) {
   std::ifstream manifest(MQT_CORE_QDMI_METADATA_MANIFEST);
   ASSERT_TRUE(manifest);
