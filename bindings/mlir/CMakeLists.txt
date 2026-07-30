@@ -23,7 +23,8 @@ if(NOT TARGET ${TARGET_NAME})
     .
     LINK_LIBS
     MQTCompilerPipeline
-    MQT::CoreIR)
+    MQT::CoreIR
+    MLIRQCODDFunctionality)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")

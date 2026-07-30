@@ -8,11 +8,18 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Package.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/map.h>         // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string_view.h> // NOLINT(misc-include-cleaner)
@@ -21,8 +28,10 @@
 
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <random>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -93,6 +102,32 @@ void requireValid(const mlir::Program& program) {
     throw std::runtime_error(
         "This compiler program has already been consumed.");
   }
+}
+
+[[nodiscard]] mlir::func::FuncOp entryFunc(const mlir::QCOProgram& program) {
+  requireValid(program);
+  auto func = program.entryFunc();
+  if (!func) {
+    throw nb::value_error("QCO program has no func.func to simulate");
+  }
+  return *func;
+}
+
+[[nodiscard]] std::mt19937_64 makeRng(const std::uint64_t seed) {
+  if (seed == 0) {
+    std::random_device rd;
+    return std::mt19937_64(rd());
+  }
+  return std::mt19937_64(seed);
+}
+
+template <typename T>
+[[nodiscard]] T takeFailureOr(mlir::FailureOr<T>&& result,
+                              const char* message) {
+  if (mlir::failed(result)) {
+    throw nb::value_error(message);
+  }
+  return *std::move(result);
 }
 
 template <class ProgramType>
@@ -512,6 +547,114 @@ LLVM bitcode.)pb");
       .def("write_bitcode",
            &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
            "path"_a, "Write this program as LLVM bitcode.");
+
+  nb::module_::import_("mqt.core.dd");
+
+  nb::class_<mlir::qco::SampleResult>(m, "SampleResult",
+                                      "Histograms from QCO DD sampling.")
+      .def_ro("shots", &mlir::qco::SampleResult::shots,
+              "Final computational-basis outcome histogram.")
+      .def_ro("classical", &mlir::qco::SampleResult::classical,
+              "Mid-circuit measure-bit histogram (encounter order).");
+
+  m.def(
+      "build_functionality",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
+        return takeFailureOr(
+            mlir::qco::buildFunctionality(entryFunc(program), ddPackage),
+            "cannot build DD functionality for this QCO program");
+      },
+      "program"_a, "dd_package"_a,
+      R"pb(Build a matrix DD for a static unitary QCO program.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is simulated.
+    dd_package: DD package with enough qubits for the program.
+
+Returns:
+    Matrix DD of the program functionality.
+
+Raises:
+    ValueError: When the program is unsupported for functionality construction.)pb");
+
+  m.def(
+      "simulate",
+      [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
+         dd::Package& ddPackage, const std::optional<std::uint64_t> seed) {
+        auto func = entryFunc(program);
+        if (!seed.has_value()) {
+          return takeFailureOr(
+              mlir::qco::simulate(func, initialState, ddPackage),
+              "cannot simulate this QCO program");
+        }
+        auto rng = makeRng(*seed);
+        return takeFailureOr(
+            mlir::qco::simulate(func, initialState, ddPackage, rng),
+            "cannot simulate this QCO program");
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      R"pb(Simulate a QCO program on a DD state.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is simulated.
+    initial_state: Input state DD (one reference is consumed).
+    dd_package: DD package with enough qubits for the program.
+    seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
+        RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+
+Returns:
+    Output state DD.
+
+Raises:
+    ValueError: When the program is unsupported for simulation.)pb");
+
+  m.def(
+      "sample",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
+         const std::size_t shots, const std::uint64_t seed) {
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            mlir::qco::sample(entryFunc(program), ddPackage, shots, rng),
+            "cannot sample this QCO program");
+      },
+      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
+      R"pb(Sample final computational-basis outcomes from a QCO program.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is sampled.
+    dd_package: DD package with enough qubits for the program.
+    shots: Number of shots (default 1024).
+    seed: RNG seed (``0`` = nondeterministic).
+
+Returns:
+    Histogram of final ``measureAll`` bitstrings.
+
+Raises:
+    ValueError: When the program is unsupported for sampling.)pb");
+
+  m.def(
+      "sample_with_classics",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
+         const std::size_t shots, const std::uint64_t seed) {
+        auto rng = makeRng(seed);
+        return takeFailureOr(mlir::qco::sampleWithClassics(
+                                 entryFunc(program), ddPackage, shots, rng),
+                             "cannot sample this QCO program");
+      },
+      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
+      R"pb(Sample final and mid-circuit classical outcomes from a QCO program.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is sampled.
+    dd_package: DD package with enough qubits for the program.
+    shots: Number of shots (default 1024).
+    seed: RNG seed (``0`` = nondeterministic).
+
+Returns:
+    A :class:`SampleResult` with ``shots`` and ``classical`` histograms.
+
+Raises:
+    ValueError: When the program is unsupported for sampling.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,

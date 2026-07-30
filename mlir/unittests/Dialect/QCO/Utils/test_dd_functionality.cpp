@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -55,7 +56,8 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -565,19 +567,19 @@ TEST_F(QCODDFunctionalityTest, SimulateIfConstantBranches) {
   ASSERT_TRUE(elseMod);
 
   auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(0);
   auto zero = dd::makeZeroState(1, *dd);
   auto one = dd->applyOperation(
       dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
       dd::makeZeroState(1, *dd));
 
+  // Deterministic constant branches do not require an RNG.
   const auto thenOut =
-      simulate(mainFunc(*thenMod), dd::makeZeroState(1, *dd), *dd, rng);
+      simulate(mainFunc(*thenMod), dd::makeZeroState(1, *dd), *dd);
   ASSERT_TRUE(succeeded(thenOut));
   EXPECT_EQ(thenOut->getVector(), one.getVector());
 
   const auto elseOut =
-      simulate(mainFunc(*elseMod), dd::makeZeroState(1, *dd), *dd, rng);
+      simulate(mainFunc(*elseMod), dd::makeZeroState(1, *dd), *dd);
   ASSERT_TRUE(succeeded(elseOut));
   EXPECT_EQ(elseOut->getVector(), zero.getVector());
 
@@ -612,19 +614,18 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
   ASSERT_TRUE(defaultMod);
 
   auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(0);
   auto zero = dd::makeZeroState(1, *dd);
   auto one = dd->applyOperation(
       dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
       dd::makeZeroState(1, *dd));
 
   const auto caseOut =
-      simulate(mainFunc(*caseMod), dd::makeZeroState(1, *dd), *dd, rng);
+      simulate(mainFunc(*caseMod), dd::makeZeroState(1, *dd), *dd);
   ASSERT_TRUE(succeeded(caseOut));
   EXPECT_EQ(caseOut->getVector(), one.getVector());
 
   const auto defaultOut =
-      simulate(mainFunc(*defaultMod), dd::makeZeroState(1, *dd), *dd, rng);
+      simulate(mainFunc(*defaultMod), dd::makeZeroState(1, *dd), *dd);
   ASSERT_TRUE(succeeded(defaultOut));
   EXPECT_EQ(defaultOut->getVector(), zero.getVector());
 
@@ -690,9 +691,149 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
   dd->decRef(zero);
 }
 
-TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
+TEST_F(QCODDFunctionalityTest, SimulateFuncCallAppliesCallee) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @apply_x(%q: !qco.qubit) -> !qco.qubit {
+        %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+        return %q1 : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %q1 = func.call @apply_x(%q) : (!qco.qubit) -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto main = mod->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto one = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd::makeZeroState(1, *dd));
+  const auto out = simulate(main, dd::makeZeroState(1, *dd), *dd);
+  ASSERT_TRUE(succeeded(out));
+  EXPECT_EQ(out->getVector(), one.getVector());
+  dd->decRef(*out);
+  dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsRecursiveFuncCall) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @rec(%q: !qco.qubit) -> !qco.qubit {
+        %q1 = func.call @rec(%q) : (!qco.qubit) -> !qco.qubit
+        return %q1 : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %q1 = func.call @rec(%q) : (!qco.qubit) -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto main = mod->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  EXPECT_TRUE(failed(simulate(main, dd::makeZeroState(1, *dd), *dd)));
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateScfForAppliesBodyTrips) {
+  // Three X applications: |0> → |1>.
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto results =
+        b.scfFor(0, 3, 1, ValueRange{q},
+                 [&](Value /*iv*/, ValueRange iterArgs) -> SmallVector<Value> {
+                   return {b.x(iterArgs[0])};
+                 });
+    b.sink(results[0]);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto one = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd::makeZeroState(1, *dd));
+  const auto out = simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd);
+  ASSERT_TRUE(succeeded(out));
+  EXPECT_EQ(out->getVector(), one.getVector());
+  dd->decRef(*out);
+  dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsScfForTripCountLimit) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto results =
+        b.scfFor(0, 10001, 1, ValueRange{q},
+                 [&](Value /*iv*/, ValueRange iterArgs) -> SmallVector<Value> {
+                   return {iterArgs[0]};
+                 });
+    b.sink(results[0]);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
+  // idx = (1+2)*3 >> 1 = 4; select(true, idx, 0)=4; cmpi eq 4 → if applies X.
+  // Also round-trip i1 via extui/trunci.
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+    auto two = arith::ConstantIndexOp::create(b, 2).getResult();
+    auto three = arith::ConstantIndexOp::create(b, 3).getResult();
+    auto four = arith::ConstantIndexOp::create(b, 4).getResult();
+    auto zero = arith::ConstantIndexOp::create(b, 0).getResult();
+    auto sum = arith::AddIOp::create(b, one, two).getResult();
+    auto prod = arith::MulIOp::create(b, sum, three).getResult();
+    auto shifted = arith::ShRUIOp::create(b, prod, one).getResult();
+    auto t = b.boolConstant(true);
+    auto selected = arith::SelectOp::create(b, t, shifted, zero).getResult();
+    auto eq = arith::CmpIOp::create(b, arith::CmpIPredicate::eq, selected, four)
+                  .getResult();
+    auto asIndex = arith::ExtUIOp::create(b, b.getIndexType(), eq).getResult();
+    auto asBool =
+        arith::TruncIOp::create(b, b.getI1Type(), asIndex).getResult();
+    q = b.qcoIf(
+        asBool, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    // Exercise subi: 4-4=0 unused for branching but must succeed.
+    (void)arith::SubIOp::create(b, four, four);
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto one = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd::makeZeroState(1, *dd));
+  const auto out = simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd);
+  ASSERT_TRUE(succeeded(out));
+  EXPECT_EQ(out->getVector(), one.getVector());
+  dd->decRef(*out);
+  dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateAndiOriXoriShliClassical) {
   // Pack two measure bits (from |1>,|0>) as index = bit0 | (bit1 << 1) = 1,
   // then switch case 1 applies X on an idle |0> target → |1>.
+  // Also exercise andi / xori on the measured bits.
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.x(b.staticQubit(0));
     auto q1 = b.staticQubit(1);
@@ -708,9 +849,11 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
     auto one = arith::ConstantIndexOp::create(b, 1).getResult();
     auto shifted = arith::ShLIOp::create(b, i1, one).getResult();
     auto packed = arith::OrIOp::create(b, i0, shifted).getResult();
-    // Also exercise andi on i1: bit0 & true → still feeds nothing critical.
     auto t = b.boolConstant(true);
-    (void)arith::AndIOp::create(b, bit0, t);
+    auto anded = arith::AndIOp::create(b, bit0, t).getResult();
+    // bit0 ^ true flips the measured-1 bit to false; keep the value live.
+    auto xored = arith::XOrIOp::create(b, anded, t).getResult();
+    (void)xored;
     q2 = b.qcoIndexSwitch(packed, q2, ArrayRef<int64_t>{0, 1, 2},
                           SmallVector<function_ref<Value(Value)>>{
                               [&](Value arg) { return arg; },
@@ -743,6 +886,90 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
   dd->decRef(expected);
 }
 
+TEST_F(QCODDFunctionalityTest, SampleWithClassicsUnitaryLeavesClassicalEmpty) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.x(b.staticQubit(0));
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(1);
+  constexpr std::size_t shots = 16;
+  const auto hist = sampleWithClassics(mainFunc(*mod), *dd, shots, rng);
+  ASSERT_TRUE(succeeded(hist));
+  ASSERT_EQ(hist->shots.size(), 1U);
+  EXPECT_EQ(hist->shots.begin()->first, "1");
+  EXPECT_EQ(hist->shots.begin()->second, shots);
+  EXPECT_TRUE(hist->classical.empty());
+}
+
+TEST_F(QCODDFunctionalityTest, SampleWithClassicsRecordsMeasureBits) {
+  // |1> → measure (bit 1) → if then X → |0>. Classical key "1" every shot.
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.x(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(9);
+  constexpr std::size_t shots = 32;
+  const auto hist = sampleWithClassics(mainFunc(*mod), *dd, shots, rng);
+  ASSERT_TRUE(succeeded(hist));
+  ASSERT_EQ(hist->shots.size(), 1U);
+  EXPECT_EQ(hist->shots.begin()->first, "0");
+  EXPECT_EQ(hist->shots.begin()->second, shots);
+  ASSERT_EQ(hist->classical.size(), 1U);
+  EXPECT_EQ(hist->classical.begin()->first, "1");
+  EXPECT_EQ(hist->classical.begin()->second, shots);
+}
+
+TEST_F(QCODDFunctionalityTest, SampleCombinedForMeasureIfIndexSwitch) {
+  // Drivers-style CF stack on static wires: three X in `scf.for` → |1>,
+  // measure, keep via `qco.if`, then identity `index_switch`.
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto forResults =
+        b.scfFor(0, 3, 1, ValueRange{q},
+                 [&](Value /*iv*/, ValueRange iterArgs) -> SmallVector<Value> {
+                   return {b.x(iterArgs[0])};
+                 });
+    q = forResults[0];
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return arg; },
+        [&](Value arg) { return b.x(arg); });
+    const auto identity = [](Value arg) { return arg; };
+    q = b.qcoIndexSwitch(0, q, ArrayRef<int64_t>{0},
+                         SmallVector<function_ref<Value(Value)>>{identity},
+                         identity);
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(13);
+  constexpr std::size_t shots = 24;
+  const auto hist = sampleWithClassics(mainFunc(*mod), *dd, shots, rng);
+  ASSERT_TRUE(succeeded(hist));
+  ASSERT_EQ(hist->shots.size(), 1U);
+  EXPECT_EQ(hist->shots.begin()->first, "1");
+  EXPECT_EQ(hist->shots.begin()->second, shots);
+  ASSERT_EQ(hist->classical.size(), 1U);
+  EXPECT_EQ(hist->classical.begin()->first, "1");
+  EXPECT_EQ(hist->classical.begin()->second, shots);
+}
+
 TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.x(b.staticQubit(0));
@@ -754,6 +981,81 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(1);
   constexpr std::size_t shots = 64;
+  const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
+  ASSERT_TRUE(succeeded(hist));
+  ASSERT_EQ(hist->size(), 1U);
+  EXPECT_EQ(hist->begin()->first, "1");
+  EXPECT_EQ(hist->begin()->second, shots);
+}
+
+TEST_F(QCODDFunctionalityTest, SampleFromInputStateConsumesReference) {
+  auto unitary = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  auto withReset = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.reset(b.staticQubit(0));
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(unitary);
+  ASSERT_TRUE(withReset);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto& roots = dd->getRootSet<dd::vNode>();
+  std::mt19937_64 rng(5);
+
+  // Static path: input |1> sampled without mid-circuit collapse.
+  for (size_t i = 0; i < 3; ++i) {
+    auto in = dd->applyOperation(
+        dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+        dd::makeZeroState(1, *dd));
+    const auto hist = sample(mainFunc(*unitary), in, *dd, /*shots=*/8, rng);
+    ASSERT_TRUE(succeeded(hist));
+    ASSERT_EQ(hist->size(), 1U);
+    EXPECT_EQ(hist->begin()->first, "1");
+    EXPECT_EQ(hist->begin()->second, 8U);
+    EXPECT_TRUE(roots.empty());
+  }
+
+  // Dynamic path: reset forces per-shot re-simulation from input |1|.
+  for (size_t i = 0; i < 3; ++i) {
+    auto in = dd->applyOperation(
+        dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+        dd::makeZeroState(1, *dd));
+    const auto hist = sample(mainFunc(*withReset), in, *dd, /*shots=*/4, rng);
+    ASSERT_TRUE(succeeded(hist));
+    ASSERT_EQ(hist->size(), 1U);
+    EXPECT_EQ(hist->begin()->first, "0");
+    EXPECT_EQ(hist->begin()->second, 4U);
+    EXPECT_TRUE(roots.empty());
+  }
+
+  // shots == 0 still consumes the input reference.
+  {
+    auto in = dd::makeZeroState(1, *dd);
+    const auto hist = sample(mainFunc(*unitary), in, *dd, /*shots=*/0, rng);
+    ASSERT_TRUE(succeeded(hist));
+    EXPECT_TRUE(hist->empty());
+    EXPECT_TRUE(roots.empty());
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, SampleConstantIfUsesStaticPath) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        true, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(2);
+  constexpr std::size_t shots = 16;
   const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 1U);
@@ -803,6 +1105,26 @@ TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
   EXPECT_EQ(hist->begin()->second, shots);
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsOutOfRangeShift) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+    auto bad = arith::ConstantIndexOp::create(b, 64).getResult();
+    auto shifted = arith::ShLIOp::create(b, one, bad).getResult();
+    q = b.qcoIndexSwitch(
+        shifted, q, ArrayRef<int64_t>{0},
+        SmallVector<function_ref<Value(Value)>>{[&](Value arg) { return arg; }},
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+}
+
 TEST_F(QCODDFunctionalityTest, Rejects) {
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -815,6 +1137,19 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     auto dd = std::make_unique<dd::Package>(1);
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
     // Three-arg simulate has no RNG and must reject measure/reset.
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+  }
+
+  {
+    auto mod = buildModule([](QCOProgramBuilder& b) {
+      auto q0 = b.reset(b.staticQubit(0));
+      b.sink(q0);
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
+    auto dd = std::make_unique<dd::Package>(1);
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
     EXPECT_TRUE(
         failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
