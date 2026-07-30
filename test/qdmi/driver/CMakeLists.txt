@@ -15,11 +15,18 @@ if(TARGET MQT::CoreQDMIDriver)
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                QDMI_DEVICE_ID "test.metadata-only"
-               QDMI_DEVICE_PREFIX "TEST_METADATA")
+               QDMI_DEVICE_PREFIX "TEST_METADATA"
+               QDMI_RUNTIME_FILES "metadata-runtime.json")
+  add_custom_command(
+    TARGET mqt-core-qdmi-metadata-device
+    POST_BUILD
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/metadata-runtime.json"
+      "$<TARGET_FILE_DIR:mqt-core-qdmi-metadata-device>/metadata-runtime.json")
   set_property(
     TARGET mqt-core-qdmi-metadata-device
     APPEND
-    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX)
+    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_RUNTIME_FILES)
   set(metadata_device_export
       "${CMAKE_CURRENT_BINARY_DIR}/mqt-core-qdmi-metadata-device-targets.cmake")
   export(TARGETS mqt-core-qdmi-metadata-device FILE "${metadata_device_export}")
@@ -76,4 +83,48 @@ if(TARGET MQT::CoreQDMIDriver)
                        PROPERTIES FIXTURES_SETUP mqt-core-qdmi-imported-device)
   set_tests_properties(mqt-core-qdmi-imported-device-build PROPERTIES FIXTURES_REQUIRED
                                                                       mqt-core-qdmi-imported-device)
+
+  set(runtime_file_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime-file-device")
+  set(runtime_file_device_install_dir "${runtime_file_device_build_dir}/install")
+  if(WIN32)
+    set(runtime_file_device_artifact_dir "${CMAKE_INSTALL_BINDIR}")
+  else()
+    set(runtime_file_device_artifact_dir "${CMAKE_INSTALL_LIBDIR}")
+  endif()
+  set(runtime_file_device_configure_command
+      ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/runtime_file_device" -B
+      "${runtime_file_device_build_dir}" -G "${CMAKE_GENERATOR}"
+      "-DMQT_CORE_QDMI_HELPER=${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake"
+      "-DMQT_CORE_QDMI_TEST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}" "-DCMAKE_BUILD_TYPE=$<CONFIG>")
+  if(CMAKE_GENERATOR_PLATFORM)
+    list(APPEND runtime_file_device_configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
+  endif()
+  if(CMAKE_GENERATOR_TOOLSET)
+    list(APPEND runtime_file_device_configure_command -T "${CMAKE_GENERATOR_TOOLSET}")
+  endif()
+  add_test(NAME mqt-core-qdmi-runtime-file-configure
+           COMMAND ${runtime_file_device_configure_command})
+  add_test(NAME mqt-core-qdmi-runtime-file-build
+           COMMAND ${CMAKE_COMMAND} --build "${runtime_file_device_build_dir}" --config $<CONFIG>)
+  add_test(NAME mqt-core-qdmi-runtime-file-install
+           COMMAND ${CMAKE_COMMAND} --install "${runtime_file_device_build_dir}" --config $<CONFIG>
+                   --prefix "${runtime_file_device_install_dir}")
+  add_test(
+    NAME mqt-core-qdmi-runtime-file-install-verify
+    COMMAND
+      ${CMAKE_COMMAND} -E compare_files
+      "${runtime_file_device_install_dir}/${runtime_file_device_artifact_dir}/metadata-runtime.json"
+      "${CMAKE_CURRENT_SOURCE_DIR}/metadata-runtime.json")
+  set_tests_properties(mqt-core-qdmi-runtime-file-configure
+                       PROPERTIES FIXTURES_SETUP mqt-core-qdmi-runtime-file-configure)
+  set_tests_properties(
+    mqt-core-qdmi-runtime-file-build
+    PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-configure FIXTURES_SETUP
+               mqt-core-qdmi-runtime-file-build)
+  set_tests_properties(
+    mqt-core-qdmi-runtime-file-install
+    PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-build FIXTURES_SETUP
+               mqt-core-qdmi-runtime-file-install)
+  set_tests_properties(mqt-core-qdmi-runtime-file-install-verify
+                       PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
 endif()
