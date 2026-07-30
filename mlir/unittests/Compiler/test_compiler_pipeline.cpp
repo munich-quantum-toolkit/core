@@ -29,6 +29,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -346,8 +347,8 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   return info;
 }
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 [[nodiscard]] testing::AssertionResult
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 throughOptimizedQCO(const qasm::OpenQASMProgram& source,
                     std::optional<QCProgram>& restored,
                     std::vector<std::string>& resultTypes) {
@@ -381,8 +382,8 @@ throughOptimizedQCO(const qasm::OpenQASMProgram& source,
   return testing::AssertionSuccess();
 }
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 [[nodiscard]] testing::AssertionResult
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
                               std::optional<QCProgram>& restored,
                               std::vector<std::string>& resultTypes) {
@@ -473,6 +474,28 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
            << source.name.str() << ": restored QCO to QC";
   }
   return matchesEntry(*restored, "restored QC");
+}
+
+TEST(OpenQASMCompilerOutputTest,
+     PreservesMixedScalarAndRegisterResultsThroughQCO) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+output int count;
+count = 1;
+output bit[2] bits;
+bits[0] = true;
+bits[1] = false;
+output float ratio;
+ratio = 2.0;
+)qasm";
+  const qasm::OpenQASMProgram program{.name = "mixed-output-results",
+                                      .source = source};
+
+  std::optional<QCProgram> restoredQC;
+  std::vector<std::string> resultTypes;
+  ASSERT_TRUE(throughOptimizedQCO(program, restoredQC, resultTypes));
+  EXPECT_EQ(resultTypes,
+            (std::vector<std::string>{"i64", "memref<2xi1>", "f64"}));
 }
 
 enum class OutputRecordingShape : std::uint8_t { AdaptiveArrays, BaseArrays };

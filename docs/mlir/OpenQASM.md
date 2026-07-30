@@ -45,8 +45,9 @@ runtime precondition continue to emit explicit assertions.
 Bit outputs use the classical-register representation from the QC dialect:
 `bit[n]` is returned as `memref<nxi1>`, including `bit` as `memref<1xi1>`. Other
 scalar outputs retain their builtin MLIR scalar types. This keeps the function
-signature in source declaration order through QC, QCO, reconstructed QC, and QIR
-output recording.
+signature in source declaration order through QC, QCO, and reconstructed QC.
+Current QIR output recording covers returned bit registers; the QIR ABI for
+arbitrary scalar OpenQASM outputs remains a target-capability follow-up.
 
 ## Translation and compiler support
 
