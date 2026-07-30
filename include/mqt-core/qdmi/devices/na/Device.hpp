@@ -284,13 +284,13 @@ public:
   MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
                                std::string name, size_t numParameters,
                                uint64_t duration, double fidelity,
-                               const std::vector<MQT_NA_QDMI_Site>& sites);
+                               std::vector<MQT_NA_QDMI_Site> sites);
   /// @brief Constructor for the local two-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(
       MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
       size_t numParameters, size_t numQubits, uint64_t duration,
       double fidelity, uint64_t interactionRadius, uint64_t blockingRadius,
-      const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites);
+      std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> sites);
   /// @brief Constructor for load and store operations.
   MQT_NA_QDMI_Operation_impl_d(MQT_NA_QDMI_Device_Session_impl_d* owner,
                                std::string name, size_t numParameters,

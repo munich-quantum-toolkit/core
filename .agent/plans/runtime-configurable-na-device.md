@@ -40,6 +40,8 @@ copied-runtime, and wheel layouts remain relocatable.
 - [x] (2026-07-30 17:22Z) Simplified strict key validation and session
       materialization, then removed the remaining generator-era site and
       operation factories after independent review.
+- [x] (2026-07-30 17:46Z) Moved materialized local-operation site vectors into
+      session storage to avoid duplicating the potentially large pair list.
 
 ## Surprises & Discoveries
 

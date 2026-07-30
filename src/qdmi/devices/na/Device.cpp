@@ -132,7 +132,7 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
         }
       }
       addOperation(operation.name, operation.numParameters, operation.duration,
-                   operation.fidelity, supported);
+                   operation.fidelity, std::move(supported));
     }
     for (const auto& operation : configuration.localMultiQubitOperations) {
       std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> supported;
@@ -158,7 +158,7 @@ int MQT_NA_QDMI_Device_Session_impl_d::init() {
       addOperation(operation.name, operation.numParameters, operation.numQubits,
                    operation.duration, operation.fidelity,
                    operation.interactionRadius, operation.blockingRadius,
-                   supported);
+                   std::move(supported));
     }
     for (size_t i = 0; i < configuration.shuttlingUnits.size(); ++i) {
       const auto& unit = configuration.shuttlingUnits[i];
@@ -431,10 +431,10 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
     const size_t numParameters, const uint64_t duration, const double fidelity,
-    const std::vector<MQT_NA_QDMI_Site>& sites)
+    std::vector<MQT_NA_QDMI_Site> sites)
     : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       numQubits_(1), duration_(duration), fidelity_(fidelity),
-      supportedSites_(sites) {
+      supportedSites_(std::move(sites)) {
   sortSites();
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
@@ -442,11 +442,11 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     const size_t numParameters, const size_t numQubits, const uint64_t duration,
     const double fidelity, const uint64_t interactionRadius,
     uint64_t blockingRadius,
-    const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
+    std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> sites)
     : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
-      supportedSites_(sites) {
+      supportedSites_(std::move(sites)) {
   sortSites();
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
