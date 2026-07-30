@@ -469,17 +469,16 @@ operations.)pb");
           "lambda_"_a = 0.5F, "niterations"_a = 1, "ntrials"_a = 4,
           "seed"_a = 42, "Place and route the program for a coupling graph.")
       .def(
-          "target_backend",
+          "target_native",
           [](mlir::QCOProgram& value, const std::string& nativeGates,
              const nb::object& coupling) {
             if (coupling.is_none()) {
-              requireSuccess(value.targetBackend(nativeGates));
+              requireSuccess(value.targetNative(nativeGates));
             } else {
               const auto edges =
                   nb::cast<std::vector<std::pair<std::size_t, std::size_t>>>(
                       coupling);
-              requireSuccess(
-                  value.targetBackend(nativeGates, std::span(edges)));
+              requireSuccess(value.targetNative(nativeGates, std::span(edges)));
             }
           },
           nb::kw_only(), "native_gates"_a, "coupling"_a = nb::none(),
@@ -491,11 +490,11 @@ operations.)pb");
           [](mlir::QCOProgram& value, const nb::object& device) {
             const auto menu = nativeGatesMenuFromDevice(device);
             const auto coupling = couplingFromDevice(device);
-            requireSuccess(value.targetBackend(menu, std::span(coupling)));
+            requireSuccess(value.targetNative(menu, std::span(coupling)));
           },
           "device"_a,
           "Target a FoMaC device: derive native menu and coupling, then run "
-          "target_backend.")
+          "target_native.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

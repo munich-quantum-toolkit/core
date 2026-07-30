@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -413,18 +414,36 @@ bool QCOProgram::placeAndRoute(
       "failed to place and route the QCO program"));
 }
 
-bool QCOProgram::targetBackend(
+bool QCOProgram::targetNative(
     const std::string_view nativeGates,
     const std::span<const std::pair<std::size_t, std::size_t>> coupling) {
   if (StringRef(nativeGates).trim().empty()) {
     mod().emitError("the native gate menu must not be empty");
     return false;
   }
+  if (!qco::decomposition::NativeGateset::parse(nativeGates).has_value()) {
+    mod().emitError("unsupported native gate menu '")
+        << nativeGates
+        << "' (expected a recognised Euler basis plus one entangler)";
+    return false;
+  }
   if (!decomposeMultiControlled(/*minControls=*/2)) {
     return false;
   }
-  if (!coupling.empty() && !placeAndRoute(coupling)) {
-    return false;
+  if (!coupling.empty()) {
+    // Treat coupling as undirected: placeAndRoute requires both (u,v) and
+    // (v,u).
+    SmallVector<std::pair<std::size_t, std::size_t>> symmetric;
+    symmetric.reserve(coupling.size() * 2);
+    for (const auto& [u, v] : coupling) {
+      symmetric.emplace_back(u, v);
+      if (u != v) {
+        symmetric.emplace_back(v, u);
+      }
+    }
+    if (!placeAndRoute(symmetric)) {
+      return false;
+    }
   }
   return fuseTwoQubitUnitaryRuns(nativeGates);
 }

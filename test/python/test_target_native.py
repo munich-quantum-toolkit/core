@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Tests for progressive QCOProgram.target_backend / target_device."""
+"""Tests for progressive QCOProgram.target_native / target_device."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import OutputFormat, QCOProgram, compile_program
 
 
-def test_target_backend_menu_only() -> None:
+def test_target_native_menu_only() -> None:
     """Menu-only targeting removes H in favor of native u factors."""
     qc = QuantumComputation(2)
     qc.h(0)
     qc.cx(0, 1)
     qco = compile_program(qc, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
-    qco.target_backend(native_gates="u,cx")
+    qco.target_native(native_gates="u,cx")
     assert "qco.h" not in qco.ir
 
 
@@ -46,11 +46,35 @@ def test_target_device_with_coupling() -> None:
     assert "qco.ctrl(%0) targets (%arg0 = %2)" not in qco.ir
 
 
-def test_target_backend_rejects_empty_menu() -> None:
+def test_target_native_rejects_empty_menu() -> None:
     """Empty native_gates must fail."""
     qc = QuantumComputation(1)
     qc.h(0)
     qco = compile_program(qc, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
     with pytest.raises(RuntimeError, match=r"(?i)fail|empty|native"):
-        qco.target_backend(native_gates="")
+        qco.target_native(native_gates="")
+
+
+def test_target_native_rejects_invalid_menu() -> None:
+    """Unsupported menus fail before mutating the IR."""
+    qc = QuantumComputation(1)
+    qc.h(0)
+    qco = compile_program(qc, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+    before = qco.ir
+    with pytest.raises(RuntimeError, match=r"(?i)unsupported|native|fail"):
+        qco.target_native(native_gates="not-a-gate")
+    assert qco.ir == before
+
+
+def test_target_native_one_way_coupling() -> None:
+    """One-direction coupling edges are treated as undirected."""
+    qc = QuantumComputation(3)
+    qc.cx(0, 2)
+    qco = compile_program(qc, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+    qco.target_native(native_gates="u,cx", coupling=[(0, 1), (1, 2)])
+    assert "qco.swap" not in qco.ir
+    assert "qco.ctrl" in qco.ir
+    assert "qco.ctrl(%0) targets (%arg0 = %2)" not in qco.ir

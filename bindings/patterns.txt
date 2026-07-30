@@ -170,8 +170,8 @@ mqt.core.mlir.compile_program:
     ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
         \doc
 
-mqt.core.mlir.QCOProgram.target_backend:
-    def target_backend(
+mqt.core.mlir.QCOProgram.target_native:
+    def target_native(
         self,
         *,
         native_gates: str,

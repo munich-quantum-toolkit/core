@@ -500,7 +500,7 @@ cx q[0], q[2];
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, TargetBackendMenuOnlyFuses) {
+TEST_F(CompilerPipelineTest, TargetNativeMenuOnlyFuses) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -512,13 +512,13 @@ cx q[0], q[1];
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
-  ASSERT_TRUE(qco->targetBackend("u,cx"));
+  ASSERT_TRUE(qco->targetNative("u,cx"));
   const auto ir = qco->str();
   EXPECT_EQ(ir.find("qco.h"), std::string::npos);
   EXPECT_NE(ir.find("qco.u"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, TargetBackendWithCouplingLowersSwaps) {
+TEST_F(CompilerPipelineTest, TargetNativeWithCouplingLowersSwaps) {
   // CX on (0,2) needs routing on a line 0-1-2.
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -532,7 +532,7 @@ cx q[0], q[2];
   ASSERT_TRUE(qco->cleanup());
   const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
       {0, 1}, {1, 0}, {1, 2}, {2, 1}};
-  ASSERT_TRUE(qco->targetBackend("u,cx", coupling));
+  ASSERT_TRUE(qco->targetNative("u,cx", coupling));
   const auto ir = qco->str();
   EXPECT_EQ(ir.find("qco.swap"), std::string::npos);
   EXPECT_NE(ir.find("qco.ctrl"), std::string::npos);
@@ -546,7 +546,7 @@ cx q[0], q[2];
       isExecutableStraightLine(getEntryPoint(module.get()), couplingSet));
 }
 
-TEST_F(CompilerPipelineTest, TargetBackendRejectsEmptyMenu) {
+TEST_F(CompilerPipelineTest, TargetNativeRejectsEmptyMenu) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
@@ -556,11 +556,49 @@ h q;
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
-  EXPECT_FALSE(qco->targetBackend(""));
-  EXPECT_FALSE(qco->targetBackend("   "));
+  EXPECT_FALSE(qco->targetNative(""));
+  EXPECT_FALSE(qco->targetNative("   "));
   const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
                                                                      {1, 0}};
-  EXPECT_FALSE(qco->targetBackend("", coupling));
+  EXPECT_FALSE(qco->targetNative("", coupling));
+}
+
+TEST_F(CompilerPipelineTest, TargetNativeRejectsInvalidMenuWithoutMutating) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  const auto before = qco->str();
+  EXPECT_FALSE(qco->targetNative("not-a-gate"));
+  EXPECT_FALSE(qco->targetNative("cx"));
+  EXPECT_EQ(qco->str(), before);
+  EXPECT_NE(before.find("qco.h"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetNativeAcceptsOneWayCoupling) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+cx q[0], q[2];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  // One direction only; targetNative must symmetrize before placeAndRoute.
+  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
+                                                                     {1, 2}};
+  ASSERT_TRUE(qco->targetNative("u,cx", coupling));
+  const auto ir = qco->str();
+  EXPECT_EQ(ir.find("qco.swap"), std::string::npos);
+  EXPECT_NE(ir.find("qco.ctrl"), std::string::npos);
 }
 
 /**

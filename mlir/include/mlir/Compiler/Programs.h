@@ -202,10 +202,12 @@ public:
                 float lambda = 0.5F, std::size_t niterations = 1,
                 std::size_t ntrials = 4, std::size_t seed = 42);
 
-  /// Progressive backend targeting: decompose multi-controlled gates,
-  /// optionally place/route on @p coupling, then fuse to @p nativeGates
-  /// (required, non-empty).
-  [[nodiscard]] bool targetBackend(
+  /// Progressive native targeting: decompose multi-controlled gates,
+  /// optionally place/route on @p coupling (treated as undirected; reverse
+  /// edges are added automatically), then fuse to @p nativeGates (required,
+  /// non-empty, and must parse as a supported native menu). The menu is
+  /// validated before any IR mutation.
+  [[nodiscard]] bool targetNative(
       std::string_view nativeGates,
       std::span<const std::pair<std::size_t, std::size_t>> coupling = {});
 

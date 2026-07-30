@@ -169,7 +169,7 @@ class QCOProgram(Program):
     ) -> None:
         """Place and route the program for a coupling graph."""
 
-    def target_backend(
+    def target_native(
         self,
         *,
         native_gates: str,
@@ -178,7 +178,7 @@ class QCOProgram(Program):
         """Decompose multi-controlled gates, optionally place/route, then fuse to native_gates."""
 
     def target_device(self, device: object) -> None:
-        """Target a FoMaC device: derive native menu and coupling, then run target_backend."""
+        """Target a FoMaC device: derive native menu and coupling, then run target_native."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.
