@@ -583,9 +583,18 @@ LLVM bitcode.)pb");
            &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
            "path"_a, "Write this program as LLVM bitcode.");
 
-  m.def("native_gates_from_operation_names", &nativeGatesMenuOrThrow, "names"_a,
-        "Derive a comma-separated native-gates menu from operation name "
-        "strings.");
+  m.def(
+      "native_gates_from_operation_names", &nativeGatesMenuOrThrow, "names"_a,
+      R"pb(Derive a comma-separated native-gates menu from operation name strings.
+
+Args:
+    names: Operation name strings (aliases such as ``u3`` / ``cnot`` are normalized).
+
+Returns:
+    Comma-separated native gate menu string.
+
+Raises:
+    ValueError: When no supported menu can be derived.)pb");
 
   m.def("native_gates_from_device", &nativeGatesMenuFromDevice, "device"_a,
         R"pb(Derive a comma-separated native-gates menu from a FoMaC device.

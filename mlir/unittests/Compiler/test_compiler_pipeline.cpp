@@ -597,6 +597,13 @@ cx q[0], q[2];
   const auto ir = qco->str();
   EXPECT_EQ(ir.find("qco.swap"), std::string::npos);
   EXPECT_NE(ir.find("qco.ctrl"), std::string::npos);
+
+  auto module = parseRecordedModule(ir);
+  ASSERT_TRUE(module);
+  const DenseSet<std::pair<size_t, size_t>> couplingSet = {
+      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+  EXPECT_TRUE(
+      isExecutableStraightLine(getEntryPoint(module.get()), couplingSet));
 }
 
 TEST_F(CompilerPipelineTest, TargetNativeFailsWhenArchitectureTooSmall) {

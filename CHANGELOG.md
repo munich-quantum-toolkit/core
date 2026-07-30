@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - ✨ Add progressive native targeting (`QCOProgram::targetNative` / Python
-  `target_native` / `target_device`, `mqt-cc --coupling-map`)
+  `target_native` / `target_device`, `mqt-cc --coupling-map`) ([#1969])
   ([**@simon1hofmann**])
 - ✨ Add binary-safe QDMI program submission and retrieval to FoMaC ([#1957])
   ([**@burgholzer**])
@@ -675,6 +675,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1969]: https://github.com/munich-quantum-toolkit/core/pull/1969
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957

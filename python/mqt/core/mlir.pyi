@@ -253,7 +253,17 @@ class QIRProgram(Program):
         """Write this program as LLVM bitcode."""
 
 def native_gates_from_operation_names(names: Sequence[str]) -> str:
-    """Derive a comma-separated native-gates menu from operation name strings."""
+    """Derive a comma-separated native-gates menu from operation name strings.
+
+    Args:
+        names: Operation name strings (aliases such as ``u3`` / ``cnot`` are normalized).
+
+    Returns:
+        Comma-separated native gate menu string.
+
+    Raises:
+        ValueError: When no supported menu can be derived.
+    """
 
 def native_gates_from_device(device: object) -> str:
     """Derive a comma-separated native-gates menu from a FoMaC device.
