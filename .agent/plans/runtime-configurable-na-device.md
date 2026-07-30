@@ -34,6 +34,9 @@ copied-runtime, and wheel layouts remain relocatable.
 - [x] (2026-07-29 23:52Z) Completed the full build, install-tree and relocated
       provider checks, documentation build, stub audit, and repository lint
       gate.
+- [x] (2026-07-30 14:30Z) Rebased the provider migration onto the merged
+      configuration transport from #1967, repeated the affected validation, and
+      published draft PR #1974 against `main`.
 
 ## Surprises & Discoveries
 
@@ -93,9 +96,9 @@ under two stable IDs with different JSON files and observes different device
 models. Direct ABI tests cover source precedence, retry, malformed assignments,
 environment conflicts, foreign handles, and concurrent independent sessions.
 
-The release build completed 469 targets. The NA provider suite completed 41
-tests with 40 passes and the pre-existing unsupported job-ID query skipped; the
-Driver suite passed all 112 tests; NA FoMaC passed 2 C++ tests and 12 Python
+The rebased release build completed 427 targets. The NA provider suite completed
+41 tests with 40 passes and the pre-existing unsupported job-ID query skipped;
+the Driver suite passed all 112 tests; NA FoMaC passed 2 C++ tests and 12 Python
 tests. Six imported-target and runtime-file CTest fixtures passed. Stub
 generation produced no tracked change. The complete documentation build passed
 after generating `mlir-doc`, and the full repository lint session and
@@ -195,5 +198,5 @@ present in MQT Core. The provider library links the NA configuration parser
 directly and receives its bundled JSON through
 `mqt_configure_qdmi_device(... RUNTIME_FILES ...)`.
 
-Revision note: updated on 2026-07-29 to record the reconstructed PR boundary,
-shared-loader decision, broadened tests, final validation evidence, and outcome.
+Revision note: updated on 2026-07-30 after #1967 merged to record the clean
+rebase onto `main`, repeated validation, and publication as draft PR #1974.
