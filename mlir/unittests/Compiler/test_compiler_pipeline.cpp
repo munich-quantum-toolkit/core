@@ -48,7 +48,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -85,12 +84,17 @@ static bool isExecutableStraightLine(
     }
 
     if (auto unitaryOp = dyn_cast<UnitaryOpInterface>(op)) {
-      if (!isa<BarrierOp>(op) && unitaryOp.getNumQubits() > 1) {
-        assert(unitaryOp.getNumQubits() <= 2 && "expected two-qubit decomp.");
-        const auto hwA = m.at(unitaryOp.getInputQubit(0));
-        const auto hwB = m.at(unitaryOp.getInputQubit(1));
-        if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+      if (!isa<BarrierOp>(op)) {
+        const auto numQubits = unitaryOp.getNumQubits();
+        if (numQubits > 2) {
           return false;
+        }
+        if (numQubits > 1) {
+          const auto hwA = m.at(unitaryOp.getInputQubit(0));
+          const auto hwB = m.at(unitaryOp.getInputQubit(1));
+          if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+            return false;
+          }
         }
       }
       for (const auto [pred, succ] : llvm::zip_equal(
