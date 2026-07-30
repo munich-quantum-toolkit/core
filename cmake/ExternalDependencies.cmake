@@ -27,7 +27,14 @@ FetchContent_Declare(
   jeff-mlir
   GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
   GIT_TAG v0.3.0)
-list(APPEND FETCH_PACKAGES jeff-mlir)
+# Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option and
+# defines a global `check` target when it is enabled. Do not let an embedding project's test setting
+# leak into this third-party dependency.
+function(_mqt_core_make_jeff_available)
+  set(BUILD_TESTING OFF)
+  FetchContent_MakeAvailable(jeff-mlir)
+endfunction()
+_mqt_core_make_jeff_available()
 
 set(JSON_VERSION
     3.12.0
