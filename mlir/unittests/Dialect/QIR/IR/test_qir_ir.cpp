@@ -10,6 +10,7 @@
 
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qir_programs.h"
@@ -107,6 +108,44 @@ TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         mixedDynamicRegisterThenStaticQubit(builder);
       },
       "Cannot mix dynamic and static qubit allocation modes");
+}
+
+TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, -1);
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, 1);
+      },
+      "Register index is out of bounds");
+}
+
+TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
+  ClassicalRegister returnedRegister;
+  auto module = QIRProgramBuilder::build(
+      context.get(),
+      [&](QIRProgramBuilder& builder) {
+        returnedRegister = builder.allocClassicalBitRegister(2, false);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base);
+
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(returnedRegister.record);
+  EXPECT_EQ(returnedRegister.results.size(), 2U);
+  EXPECT_FALSE(returnedRegister.array);
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp
@@ -523,14 +562,14 @@ INSTANTIATE_TEST_SUITE_P(
     QIRMeasureOpTest, QIRTest,
     testing::Values(
         QIRTestCase{"SingleMeasurementToSingleBit",
-                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit<>),
-                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit<>)},
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit),
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit)},
         QIRTestCase{"RepeatedMeasurementToSameBit",
-                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit<>),
-                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit<>)},
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit)},
         QIRTestCase{"RepeatedMeasurementToDifferentBits",
-                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits<>),
-                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits<>)}));
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits)}));
 /// @}
 
 /// \name QIR/Operations/ResetOp.cpp

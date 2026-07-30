@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -38,6 +39,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -183,12 +185,39 @@ protected:
     return parseSourceString<ModuleOp>(ir, context.get());
   }
 
+  static void ignoreSingleQIRResultLabel(ModuleOp module) {
+    constexpr llvm::StringLiteral prefix = "qir.result_label_";
+    size_t numLabels = 0;
+    module.walk([&](LLVM::GlobalOp op) {
+      numLabels += op.getSymName().starts_with(prefix);
+    });
+    if (numLabels != 1) {
+      return;
+    }
+    module.walk([&](Operation* op) {
+      if (const auto name = op->getAttrOfType<StringAttr>("sym_name");
+          name && name.getValue().starts_with(prefix)) {
+        op->removeAttr("sym_name");
+        op->removeAttr("value");
+      }
+      if (const auto name = op->getAttrOfType<FlatSymbolRefAttr>("global_name");
+          name && name.getValue().starts_with(prefix)) {
+        op->removeAttr("global_name");
+      }
+    });
+  }
+
   void expectEquivalent(const std::string& stage, const std::string& ir,
                         ModuleOp expected) const {
     auto actual = parseRecordedModule(ir);
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
     EXPECT_TRUE(verify(expected).succeeded());
+    // Dedicated translation and QIR-lowering tests cover exact source labels.
+    // The shared program fixtures use synthesized cN labels, so exclude labels
+    // from their structural program comparison.
+    ignoreSingleQIRResultLabel(actual.get());
+    ignoreSingleQIRResultLabel(expected);
     EXPECT_TRUE(areModulesEquivalentWithPermutations(actual.get(), expected));
   }
 };
@@ -851,19 +880,18 @@ INSTANTIATE_TEST_SUITE_P(
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(::qc::singleMeasurementToSingleBit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleMeasurementToSingleBit),
-            MQT_NAMED_BUILDER(mlir::qir::singleMeasurementToSingleBit<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::singleMeasurementToSingleBit)},
         CompilerPipelineTestCase{
             "RepeatedMeasurementToSameBit",
             MQT_NAMED_BUILDER(::qc::repeatedMeasurementToSameBit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToSameBit<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToSameBit)},
         CompilerPipelineTestCase{
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(::qc::repeatedMeasurementToDifferentBits),
             nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(
-                mlir::qir::repeatedMeasurementToDifferentBits<true>)},
+            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToDifferentBits)},
         CompilerPipelineTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(::qc::multipleClassicalRegistersAndMeasurements),
@@ -871,13 +899,22 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(
                 mlir::qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(
-                mlir::qir::multipleClassicalRegistersAndMeasurements<true>)},
+                mlir::qir::multipleClassicalRegistersAndMeasurements)},
+        CompilerPipelineTestCase{
+            "PartialMeasurementToRegister", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(mlir::qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(mlir::qir::partialMeasurementToRegister), false},
+        CompilerPipelineTestCase{
+            "DynamicallyIndexedMeasurement", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(mlir::qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(mlir::qir::dynamicallyIndexedMeasurement), false},
         CompilerPipelineTestCase{
             "MeasurementWithoutRegisters", nullptr,
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(mlir::qir::measurementWithoutRegisters<true>),
-            false},
+            MQT_NAMED_BUILDER(mlir::qir::measurementWithoutRegisters), false},
         CompilerPipelineTestCase{
             "ResetQubitAfterSingleOp",
             MQT_NAMED_BUILDER(::qc::resetQubitAfterSingleOp), nullptr,
@@ -956,11 +993,11 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledH", MQT_NAMED_BUILDER(::qc::multipleControlledH),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledH),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledH<true>)},
-        CompilerPipelineTestCase{
-            "HWithoutRegister", nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
-            MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
-            MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister<true>), false},
+        CompilerPipelineTestCase{"HWithoutRegister", nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister),
+                                 false},
         CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(::qc::s), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::s),
                                  MQT_NAMED_BUILDER(mlir::qir::s<true>)},

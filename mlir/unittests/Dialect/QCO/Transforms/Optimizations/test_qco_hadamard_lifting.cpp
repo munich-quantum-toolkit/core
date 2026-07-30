@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -46,7 +47,8 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
 
@@ -280,22 +282,24 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(2);
-  const auto b = programBuilder.allocClassicalBitRegister(1);
+  auto b = programBuilder.allocClassicalBitRegister(1);
   q[0] = programBuilder.s(q[0]);
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
   q[1] = programBuilder.h(q1);
-  programBuilder.measure(q[1], b[0]);
-  module = programBuilder.finalize();
+  programBuilder.measure(q[1], b, 0);
+  programBuilder.retype(b.getType());
+  module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
-  const auto bRef = referenceBuilder.allocClassicalBitRegister(1);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(1);
   qRef[0] = referenceBuilder.s(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   qRef[0] = referenceBuilder.h(qRef[0]);
   auto [q1Ref, q0Ref] = referenceBuilder.cx(qRef[1], qRef[0]);
   referenceBuilder.h(q0Ref);
-  referenceBuilder.measure(q1Ref, bRef[0]);
-  reference = referenceBuilder.finalize();
+  referenceBuilder.measure(q1Ref, bRef, 0);
+  referenceBuilder.retype(bRef.getType());
+  reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -310,16 +314,17 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   auto q = programBuilder.allocQubitRegister(3);
-  const auto b = programBuilder.allocClassicalBitRegister(1);
+  auto b = programBuilder.allocClassicalBitRegister(1);
   auto [q12, q0] = programBuilder.ctrl({q[1], q[2]}, q[0], [&](Value target) {
     return programBuilder.x(target);
   });
   q[1] = programBuilder.h(q0);
-  programBuilder.measure(q[1], b[0]);
-  module = programBuilder.finalize();
+  programBuilder.measure(q[1], b, 0);
+  programBuilder.retype(b.getType());
+  module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
-  const auto bRef = referenceBuilder.allocClassicalBitRegister(1);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(1);
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   auto [q02Ref, q1Ref] =
@@ -327,8 +332,9 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
         return referenceBuilder.x(target);
       });
   referenceBuilder.h(q1Ref);
-  referenceBuilder.measure(q02Ref[0], bRef[0]);
-  reference = referenceBuilder.finalize();
+  referenceBuilder.measure(q02Ref[0], bRef, 0);
+  referenceBuilder.retype(bRef.getType());
+  reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -343,30 +349,32 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(6);
-  const auto b = programBuilder.allocClassicalBitRegister(3);
+  auto b = programBuilder.allocClassicalBitRegister(3);
   programBuilder.cx(q[1], q[0]);
   auto [q3, q2] = programBuilder.cx(q[3], q[2]);
-  programBuilder.measure(q3, b[0]);
+  programBuilder.measure(q3, b, 0);
   auto [q5, q4] = programBuilder.cx(q[5], q[4]);
   q[4] = programBuilder.h(q4);
   q[5] = programBuilder.h(q5);
   q[4] = programBuilder.s(q[4]);
-  programBuilder.measure(q[4], b[1]);
-  programBuilder.measure(q[5], b[2]);
-  module = programBuilder.finalize();
+  programBuilder.measure(q[4], b, 1);
+  programBuilder.measure(q[5], b, 2);
+  programBuilder.retype(b.getType());
+  module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(6);
-  const auto bRef = referenceBuilder.allocClassicalBitRegister(3);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(3);
   referenceBuilder.cx(qRef[1], qRef[0]);
   auto [q3Ref, q2Ref] = referenceBuilder.cx(qRef[3], qRef[2]);
-  referenceBuilder.measure(q3Ref, bRef[0]);
+  referenceBuilder.measure(q3Ref, bRef, 0);
   auto [q5Ref, q4Ref] = referenceBuilder.cx(qRef[5], qRef[4]);
   qRef[4] = referenceBuilder.h(q4Ref);
   qRef[5] = referenceBuilder.h(q5Ref);
   qRef[4] = referenceBuilder.s(qRef[4]);
-  referenceBuilder.measure(qRef[4], bRef[1]);
-  referenceBuilder.measure(qRef[5], bRef[2]);
-  reference = referenceBuilder.finalize();
+  referenceBuilder.measure(qRef[4], bRef, 1);
+  referenceBuilder.measure(qRef[5], bRef, 2);
+  referenceBuilder.retype(bRef.getType());
+  reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -382,26 +390,27 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
 TEST_F(QCOHadamardLiftingTest,
        doNotLiftHadamardOverCNOTIfMeasurementsAfterControlsGate) {
   auto q = programBuilder.allocQubitRegister(5);
-  const auto b = programBuilder.allocClassicalBitRegister(4);
+  auto b = programBuilder.allocClassicalBitRegister(4);
   auto [q1, q0] = programBuilder.cx(q[1], q[0]);
   q[0] = programBuilder.h(q0);
-  programBuilder.measure(q[0], b[0]);
-  programBuilder.measure(q1, b[1]);
+  programBuilder.measure(q[0], b, 0);
+  programBuilder.measure(q1, b, 1);
   auto [q34, q2] = programBuilder.ctrl({q[3], q[4]}, q[2], [&](Value target) {
     return programBuilder.x(target);
   });
   q[2] = programBuilder.h(q2);
-  programBuilder.measure(q[2], b[2]);
-  programBuilder.measure(q34[0], b[3]);
+  programBuilder.measure(q[2], b, 2);
+  programBuilder.measure(q34[0], b, 3);
   programBuilder.s(q34[1]);
-  module = programBuilder.finalize();
+  programBuilder.retype(b.getType());
+  module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(5);
-  const auto bRef = referenceBuilder.allocClassicalBitRegister(4);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(4);
   auto [qRef1, qRef0] = referenceBuilder.cx(qRef[1], qRef[0]);
   qRef[0] = referenceBuilder.h(qRef0);
-  referenceBuilder.measure(qRef[0], bRef[0]);
-  referenceBuilder.measure(qRef1, bRef[1]);
+  referenceBuilder.measure(qRef[0], bRef, 0);
+  referenceBuilder.measure(qRef1, bRef, 1);
   qRef[2] = referenceBuilder.h(qRef[2]);
   qRef[4] = referenceBuilder.h(qRef[4]);
   auto [qRef32, qRef4] =
@@ -409,10 +418,11 @@ TEST_F(QCOHadamardLiftingTest,
         return referenceBuilder.x(target);
       });
   qRef[4] = referenceBuilder.h(qRef4);
-  referenceBuilder.measure(qRef32[1], bRef[2]);
-  referenceBuilder.measure(qRef32[0], bRef[3]);
+  referenceBuilder.measure(qRef32[1], bRef, 2);
+  referenceBuilder.measure(qRef32[0], bRef, 3);
   referenceBuilder.s(qRef[4]);
-  reference = referenceBuilder.finalize();
+  referenceBuilder.retype(bRef.getType());
+  reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());

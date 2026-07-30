@@ -118,6 +118,46 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, -1);
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, 1);
+      },
+      "Register index is out of bounds");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.scfIf(c, -1, [] {});
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.scfCondition(c, 1);
+      },
+      "Register index is out of bounds");
+}
+
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
