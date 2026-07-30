@@ -81,32 +81,44 @@ def FuseTwoQubitUnitaryRuns
     matrix cannot be synthesized and causes the pass to fail.
 
     `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
-    two-qubit scope only when it has a single control and a single target. It is
-    considered a native entangler only when it additionally contains exactly
-    one `qco.x` or `qco.z` body operation matching the selected `cx` or `cz`
-    token. Gates acting on more than two qubits (e.g. multi-controlled
-    `qco.ctrl`) are out of scope and left untouched for a dedicated
-    multi-controlled synthesis pass.
+    two-qubit scope only when it has a single control and a single target. Every
+    entangler token listed in the menu is accepted as already native: bare
+    `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`, `qco.iswap`, or `qco.ecr`, or a
+    `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz` is
+    listed. Runtime-parameterized `rxx`/`ryy`/`rzx`/`rzz` operations remain
+    valid when their token is listed, although only operations with compile-time
+    matrices can participate in fusion or off-gateset synthesis. Entangler
+    preference (below) selects the Weyl synthesis basis only and does not
+    restrict which menu tokens count as native. Weyl synthesis emits
+    `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of π/2. Gates acting on more than
+    two qubits (e.g. multi-controlled `qco.ctrl`) are out of scope and left
+    untouched for a dedicated multi-controlled synthesis pass.
 
     The gateset is a comma-separated list of gate tokens (order not
     significant) from which the pass resolves a single-qubit Euler basis
     (generic `qco.u` when `u` is present; IBM-style surface gates when all of
     `x`, `sx`, and `rz` are present; IQM-style `qco.r` when `r` is present;
-    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus the
-    two-qubit entangler `cx` or `cz`.
+    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus one
+    two-qubit entangler from `rxx`, `ryy`, `rzx`, `rzz`, `iswap`, `cz`, `cx`, or
+    `ecr`.
 
-    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `cx`,
-    `cz`. An empty or whitespace-only gateset is a no-op, which is the intended
-    pipeline default when synthesis is not needed. An unrecognised token causes
-    the pass to fail.
+    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `rxx`, `ryy`,
+    `rzx`, `rzz`, `iswap`, `cz`, `cx`, `ecr`. An empty or whitespace-only
+    gateset is a no-op, which is the intended pipeline default when synthesis is
+    not needed. An unrecognised token causes the pass to fail.
 
-    Example gatesets (each line is one illustrative gateset; pick either `cx`
-    or `cz` as the entangler, or list both if both are native):
-    - IBM: `x,sx,rz,cx` or `x,sx,rz,cz`
-    - Generic single-qubit U: `u,cx` or `u,cz`
+    Example gatesets (each line is one illustrative gateset; pick one entangler
+    or list several if multiple are native):
+    - IBM: `x,sx,rz,cx`, `x,sx,rz,cz`, or `x,sx,rz,ecr`
+    - Generic single-qubit U: `u,rxx`, `u,ryy`, `u,rzx`, `u,rzz`, `u,iswap`,
+      `u,cz`, `u,cx`, or `u,ecr`
     - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
     - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
       Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
+
+    When several entanglers are listed, synthesis preference is `rxx` > `ryy` >
+    `rzx` > `rzz` > `iswap` > `cz` > `cx` > `ecr` (alphabetic among two-qubit
+    rotations; then discrete named gates; ECR last).
 
     Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
     which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
@@ -115,15 +127,18 @@ def FuseTwoQubitUnitaryRuns
     single- or two-qubit op remains off the native gateset afterwards; gates on
     more than two qubits are left untouched and do not cause a failure.
 
-    Lowering is deterministic: `cz` is preferred over `cx`, single-qubit
-    factors use the resolved Euler basis, and two-qubit run replacement uses
-    the minimal entangler count from the synthesizer.
+    Lowering is deterministic: entangler preference is `rxx` > `ryy` > `rzx` >
+    `rzz` > `iswap` > `cz` > `cx` > `ecr`; single-qubit factors use the resolved
+    Euler basis; and two-qubit run replacement uses the minimal entangler count
+    from the synthesizer.
   }];
   let options = [Option<
       "nativeGates", "native-gates", "std::string", "\"\"",
       "Comma-separated native gateset. Empty or whitespace-only is "
-      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, cx, cz. "
-      "Examples: x,sx,rz,cx; u,cx; r,cz; rx,rz,cx.">];
+      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, rxx, ryy, rzx, rzz, iswap, "
+      "cz, cx, ecr. "
+      "Examples: x,sx,rz,cx; x,sx,rz,ecr; u,rxx; u,ryy; u,rzx; u,rzz; u,iswap; "
+      "u,cx; r,cz; rx,rz,cx; x,sx,rz,rzz.">];
 }
 
 //===----------------------------------------------------------------------===//
