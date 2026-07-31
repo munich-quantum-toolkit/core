@@ -123,6 +123,12 @@ TEST(ScConfigurationTest, ValidatesOperationSupportAndCalibration) {
         root["operations"][0].erase("sites");
       },
       "sites");
+  expectInvalid(
+      [](auto& root) {
+        root["operations"][1]["sites"] = {{0, 2}};
+        root["operations"][1]["siteOverrides"] = Json::array();
+      },
+      "device connectivity");
   expectInvalid([](auto& root) { root["operations"][0]["fidelity"] = 1.1; },
                 "fidelity");
   expectInvalid(

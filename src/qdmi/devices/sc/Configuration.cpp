@@ -280,15 +280,20 @@ void validateFidelity(const std::optional<double>& fidelity,
       for (size_t j = 0; j < sites->size(); ++j) {
         auto tuple = indices((*sites)[j], source,
                              pointer + "/sites/" + std::to_string(j));
+        const auto supportedByTopology =
+            operation.numQubits != 2 ||
+            (tuple.size() == 2 &&
+             uniqueCouplings.contains(std::pair{tuple[0], tuple[1]}));
         if (const std::set<uint64_t> tupleSites(tuple.begin(), tuple.end());
             tuple.size() != operation.numQubits ||
             tupleSites.size() != tuple.size() ||
             std::ranges::any_of(
                 tuple,
                 [&](const auto qubit) { return qubit >= result.numQubits; }) ||
-            !uniqueSites.emplace(tuple).second) {
+            !supportedByTopology || !uniqueSites.emplace(tuple).second) {
           fail(source, pointer + "/sites/" + std::to_string(j),
-               "must be a unique tuple matching the operation arity");
+               "must be a unique tuple matching the operation arity and "
+               "device connectivity");
         }
         operation.sites->emplace_back(std::move(tuple));
       }

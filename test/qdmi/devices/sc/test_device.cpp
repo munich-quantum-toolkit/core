@@ -268,6 +268,24 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
   MQT_SC_QDMI_device_session_free(session);
 }
 
+TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
+  auto configuration = nlohmann::json::parse(CUSTOM_SC);
+  configuration["couplings"] = {{0, 1}};
+  configuration["operations"][0]["sites"] = {{1, 0}};
+  configuration["operations"][0]["siteOverrides"] = nlohmann::json::array();
+  const auto serialized = configuration.dump();
+
+  MQT_SC_QDMI_Device_Session session = nullptr;
+  ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                serialized.size() + 1, serialized.c_str()),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_SC_QDMI_device_session_init(session),
+            QDMI_ERROR_INVALIDARGUMENT);
+  MQT_SC_QDMI_device_session_free(session);
+}
+
 TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
   auto custom = initializedSession();
   MQT_SC_QDMI_Device_Session bundled = nullptr;
