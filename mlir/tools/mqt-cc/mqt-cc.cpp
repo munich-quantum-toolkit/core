@@ -357,10 +357,11 @@ static int runCompiler(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
-                  qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  scf::SCFDialect, math::MathDialect, jeff::JeffDialect>();
+  registry
+      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              LLVM::LLVMDialect, math::MathDialect, memref::MemRefDialect,
+              qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+              scf::SCFDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 

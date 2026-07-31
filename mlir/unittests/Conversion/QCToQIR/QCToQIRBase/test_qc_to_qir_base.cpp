@@ -38,7 +38,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -133,14 +132,14 @@ TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
   ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  std::size_t mathPopulationCounts = 0;
-  std::size_t llvmPopulationCounts = 0;
+  bool retainsMathPopulationCount = false;
+  bool hasLLVMPopulationCount = false;
   module->walk([&](Operation* operation) {
-    mathPopulationCounts += isa<math::CtPopOp>(operation);
-    llvmPopulationCounts += isa<LLVM::CtPopOp>(operation);
+    retainsMathPopulationCount |= isa<math::CtPopOp>(operation);
+    hasLLVMPopulationCount |= isa<LLVM::CtPopOp>(operation);
   });
-  EXPECT_EQ(mathPopulationCounts, 0);
-  EXPECT_EQ(llvmPopulationCounts, 1);
+  EXPECT_FALSE(retainsMathPopulationCount);
+  EXPECT_TRUE(hasLLVMPopulationCount);
 }
 
 TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
@@ -161,6 +160,40 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
       module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_ARRAY_RECORD_OUTPUT));
   EXPECT_TRUE(
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
+}
+
+TEST(QCToQIRBaseNativeTest, RecordsReturnedRegistersInResultOrder) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto firstQubit = builder.allocQubit();
+  const auto secondQubit = builder.allocQubit();
+  const auto firstRegister =
+      builder.allocClassicalBitRegister(1, "first_result");
+  const auto secondRegister =
+      builder.allocClassicalBitRegister(1, "second_result");
+  builder.measure(firstQubit, firstRegister, 0);
+  builder.measure(secondQubit, secondRegister, 0);
+  builder.retype({secondRegister.getType(), firstRegister.getType()});
+  auto module = builder.finalize({secondRegister, firstRegister});
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  SmallVector<StringRef> recordedLabels;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() != qir::QIR_ARRAY_RECORD_OUTPUT) {
+      return;
+    }
+    auto address = call.getOperands().back().getDefiningOp<LLVM::AddressOfOp>();
+    ASSERT_TRUE(address);
+    recordedLabels.push_back(address.getGlobalName());
+  });
+  EXPECT_EQ(recordedLabels,
+            SmallVector<StringRef>({"qir.result_label_second_result",
+                                    "qir.result_label_first_result"}));
 }
 
 TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {

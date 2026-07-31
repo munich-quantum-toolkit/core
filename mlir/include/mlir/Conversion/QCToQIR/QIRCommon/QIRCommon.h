@@ -53,14 +53,17 @@ struct LoweringState {
   /// Cache qubit register sizes for reuse
   DenseMap<Value, Value> qregSizes;
 
-  /// Map from `memref::AllocOp` to `ClassicalRegister`
-  DenseMap<Operation*, qir::ClassicalRegister> cregs;
+  /// Classical registers owned by the lowering state.
+  SmallVector<qir::ClassicalRegister> cregs;
 
-  /// Returned classical registers in function-result order.
-  SmallVector<Operation*> returnedCregs;
+  /// Map from `memref::AllocOp` to its index in `cregs`.
+  DenseMap<Operation*, size_t> cregIndices;
 
-  /// Destination of each measurement stored in a classical register.
-  DenseMap<Operation*, std::pair<Operation*, Value>> cregMeasurements;
+  /// Returned classical-register indices in function-result order.
+  SmallVector<size_t> returnedCregs;
+
+  /// Destination register index and bit index of each stored measurement.
+  DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
 
   /// Map from index to `StaticResult`
   DenseMap<int64_t, qir::StaticResult> staticResults;

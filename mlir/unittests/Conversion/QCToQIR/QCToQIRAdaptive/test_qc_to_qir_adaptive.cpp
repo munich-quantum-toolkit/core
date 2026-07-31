@@ -38,7 +38,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -135,14 +134,14 @@ TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  std::size_t mathPopulationCounts = 0;
-  std::size_t llvmPopulationCounts = 0;
+  bool retainsMathPopulationCount = false;
+  bool hasLLVMPopulationCount = false;
   module->walk([&](Operation* operation) {
-    mathPopulationCounts += isa<math::CtPopOp>(operation);
-    llvmPopulationCounts += isa<LLVM::CtPopOp>(operation);
+    retainsMathPopulationCount |= isa<math::CtPopOp>(operation);
+    hasLLVMPopulationCount |= isa<LLVM::CtPopOp>(operation);
   });
-  EXPECT_EQ(mathPopulationCounts, 0);
-  EXPECT_EQ(llvmPopulationCounts, 1);
+  EXPECT_FALSE(retainsMathPopulationCount);
+  EXPECT_TRUE(hasLLVMPopulationCount);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {

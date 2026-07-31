@@ -59,8 +59,8 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
   if (it == state.cregMeasurements.end()) {
     return nullptr;
   }
-  const auto [allocOp, index] = it->second;
-  auto& reg = state.cregs[allocOp];
+  const auto [registerIndex, index] = it->second;
+  auto& reg = state.cregs[registerIndex];
   assert(reg.array && "result array must be allocated");
   auto loc = op->getLoc();
   auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
@@ -77,12 +77,12 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
 static LogicalResult convertClassicalBitMemRefAllocOp(
     memref::AllocOp op, memref::AllocOp::Adaptor adaptor, LoweringState& state,
     ConversionPatternRewriter& rewriter) {
-  const auto it = state.cregs.find(op.getOperation());
-  if (it == state.cregs.end()) {
+  const auto it = state.cregIndices.find(op.getOperation());
+  if (it == state.cregIndices.end()) {
     rewriter.eraseOp(op);
     return success();
   }
-  auto& reg = it->second;
+  auto& reg = state.cregs[it->second];
 
   auto loc = op.getLoc();
   auto* ctx = op.getContext();
