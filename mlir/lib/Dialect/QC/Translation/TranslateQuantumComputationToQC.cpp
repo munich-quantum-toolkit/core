@@ -674,17 +674,32 @@ static LogicalResult addCompoundOp(QCProgramBuilder& builder,
 
 // IfElseOp
 
-static LogicalResult addIfElseOp(QCProgramBuilder& builder,
-                                 const ::qc::Operation& operation,
-                                 TranslationState& state) {
-  const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
-
-  if (ifElse.getControlRegister().has_value()) {
-    llvm::errs() << "IfElseOperations controlled by registers cannot be "
-                    "translated to QC at the moment\n";
-    return failure();
+/// Map an IR comparison kind to an `arith.cmpi` predicate.
+static FailureOr<arith::CmpIPredicate>
+comparisonPredicate(const ::qc::ComparisonKind kind) {
+  switch (kind) {
+  case ::qc::ComparisonKind::Eq:
+    return arith::CmpIPredicate::eq;
+  case ::qc::ComparisonKind::Neq:
+    return arith::CmpIPredicate::ne;
+  case ::qc::ComparisonKind::Lt:
+    return arith::CmpIPredicate::ult;
+  case ::qc::ComparisonKind::Leq:
+    return arith::CmpIPredicate::ule;
+  case ::qc::ComparisonKind::Gt:
+    return arith::CmpIPredicate::ugt;
+  case ::qc::ComparisonKind::Geq:
+    return arith::CmpIPredicate::uge;
   }
+  llvm::errs() << "Unsupported comparison kind in IfElseOperation\n";
+  return failure();
+}
 
+/// Build an `i1` condition for a bit-controlled IfElse.
+static FailureOr<Value>
+buildBitControlledCondition(QCProgramBuilder& builder,
+                            const ::qc::IfElseOperation& ifElse,
+                            const TranslationState& state) {
   assert(ifElse.getControlBit().has_value());
   const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
   if (!state.measuredBits.contains(bitIdx)) {
@@ -699,24 +714,102 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
       memref::LoadOp::create(builder, regMemref, index).getResult();
   auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
 
-  // Define comparison predicate
+  // Bit controls historically only expose Eq/Neq; keep that contract.
   const auto comparisonKind = ifElse.getComparisonKind();
-  auto predicate = arith::CmpIPredicate::eq;
-  switch (comparisonKind) {
-  case ::qc::ComparisonKind::Eq:
-    predicate = arith::CmpIPredicate::eq;
-    break;
-  case ::qc::ComparisonKind::Neq:
-    predicate = arith::CmpIPredicate::ne;
-    break;
-  default:
-    llvm::errs() << "Unsupported comparison kind in IfElseOperation\n";
+  if (comparisonKind != ::qc::ComparisonKind::Eq &&
+      comparisonKind != ::qc::ComparisonKind::Neq) {
+    llvm::errs() << "Unsupported comparison kind in bit-controlled "
+                    "IfElseOperation\n";
+    return failure();
+  }
+  auto predicate = comparisonPredicate(comparisonKind);
+  if (failed(predicate)) {
+    return failure();
+  }
+  return arith::CmpIOp::create(builder, *predicate, controlValue, expectedValue)
+      .getResult();
+}
+
+/// Build an `i1` condition for a register-controlled IfElse.
+///
+/// Classical bits of the control register are packed into an `i64` (little-
+/// endian within the register, matching the DD simulator) and compared against
+/// `expectedValueRegister`. Registers wider than 64 bits are rejected.
+static FailureOr<Value>
+buildRegisterControlledCondition(QCProgramBuilder& builder,
+                                 const ::qc::IfElseOperation& ifElse,
+                                 const TranslationState& state) {
+  assert(ifElse.getControlRegister().has_value());
+  const auto& controlRegister = *ifElse.getControlRegister();
+  const auto regSize = controlRegister.getSize();
+  if (regSize == 0) {
+    llvm::errs() << "IfElseOperations controlled by empty registers cannot be "
+                    "translated to QC\n";
+    return failure();
+  }
+  if (regSize > 64) {
+    llvm::errs() << "IfElseOperations controlled by registers wider than 64 "
+                    "bits cannot be translated to QC yet\n";
     return failure();
   }
 
-  // Define condition
-  auto condition =
-      arith::CmpIOp::create(builder, predicate, controlValue, expectedValue);
+  auto i64Type = builder.getI64Type();
+  Value actualValue =
+      arith::ConstantIntOp::create(builder, /*value=*/0, /*width=*/64)
+          .getResult();
+  const auto regStart = static_cast<size_t>(controlRegister.getStartIndex());
+  for (size_t j = 0; j < regSize; ++j) {
+    const auto bitIdx = regStart + j;
+    if (bitIdx >= state.bitMap.size()) {
+      llvm::errs() << "Control register bit index out of bounds\n";
+      return failure();
+    }
+    const auto& [regMemref, localIdx] = state.bitMap[bitIdx];
+    auto index =
+        arith::ConstantIndexOp::create(builder, static_cast<int64_t>(localIdx))
+            .getResult();
+    auto bitValue =
+        memref::LoadOp::create(builder, regMemref, index).getResult();
+    auto bitAsI64 =
+        arith::ExtUIOp::create(builder, i64Type, bitValue).getResult();
+    if (j != 0) {
+      auto shift =
+          arith::ConstantIntOp::create(builder, static_cast<int64_t>(j),
+                                       /*width=*/64)
+              .getResult();
+      bitAsI64 = arith::ShLIOp::create(builder, bitAsI64, shift).getResult();
+    }
+    actualValue =
+        arith::OrIOp::create(builder, actualValue, bitAsI64).getResult();
+  }
+
+  auto expectedValue =
+      arith::ConstantIntOp::create(
+          builder, static_cast<int64_t>(ifElse.getExpectedValueRegister()),
+          /*width=*/64)
+          .getResult();
+  auto predicate = comparisonPredicate(ifElse.getComparisonKind());
+  if (failed(predicate)) {
+    return failure();
+  }
+  return arith::CmpIOp::create(builder, *predicate, actualValue, expectedValue)
+      .getResult();
+}
+
+static LogicalResult addIfElseOp(QCProgramBuilder& builder,
+                                 const ::qc::Operation& operation,
+                                 TranslationState& state) {
+  const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
+
+  FailureOr<Value> condition = failure();
+  if (ifElse.getControlRegister().has_value()) {
+    condition = buildRegisterControlledCondition(builder, ifElse, state);
+  } else {
+    condition = buildBitControlledCondition(builder, ifElse, state);
+  }
+  if (failed(condition)) {
+    return failure();
+  }
 
   // Define if-else operation
   auto thenResult = success();
@@ -737,9 +830,9 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   };
 
   if (ifElse.getElseOp() != nullptr) {
-    builder.scfIf(condition.getResult(), thenBuilder, elseBuilder);
+    builder.scfIf(*condition, thenBuilder, elseBuilder);
   } else {
-    builder.scfIf(condition.getResult(), thenBuilder);
+    builder.scfIf(*condition, thenBuilder);
   }
 
   if (failed(thenResult)) {
@@ -880,12 +973,15 @@ translateOperations(QCProgramBuilder& builder,
  * 4. Translates operations
  * 5. Finalizes the module (adds return statement with exit code 0)
  *
- * If the translation fails due to an unsupported operation, a fatal error is
- * reported.
+ * If the translation fails due to an unsupported operation, an empty
+ * `OwningOpRef` is returned so callers (e.g.
+ * `QCProgram::fromQuantumComputation`) can surface a recoverable error instead
+ * of aborting the process.
  *
  * @param context The MLIR context in which the module will be created
  * @param quantumComputation The quantum computation to translate
- * @return OwningOpRef containing the translated MLIR module
+ * @return OwningOpRef containing the translated MLIR module, or empty on
+ * failure
  */
 OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
@@ -909,8 +1005,8 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
 
   // Translate operations
   if (translateOperations(builder, quantumComputation, state).failed()) {
-    llvm::reportFatalInternalError(
-        "Failed to translate QuantumComputation to QC");
+    llvm::errs() << "Failed to translate QuantumComputation to QC\n";
+    return {};
   }
 
   // Finalize and return the module

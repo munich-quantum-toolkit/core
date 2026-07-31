@@ -13,6 +13,7 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
@@ -156,6 +157,90 @@ TEST_F(QuantumComputationTranslationTest, JoinsMeasurementsFromBothBranches) {
   auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
   ASSERT_TRUE(translated);
   EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       TranslatesSizeOneRegisterControlledIfElse) {
+  // OpenQASM `if(c0==1)` on `creg c0[1]` is register-controlled, not
+  // bit-controlled.
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(q[0], c[0]);
+  comp.ifElse(std::make_unique<::qc::StandardOperation>(q[0], ::qc::X), nullptr,
+              c, /*expectedValue=*/1U, ::qc::Eq);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+
+  bool sawScfIf = false;
+  translated->walk([&](mlir::scf::IfOp) { sawScfIf = true; });
+  EXPECT_TRUE(sawScfIf);
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       TranslatesMultiBitRegisterControlledIfElse) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& syn = comp.addClassicalRegister(2, "syn");
+  comp.h(q[0]);
+  comp.measure(q[0], syn[0]);
+  comp.measure(q[0], syn[1]);
+  // `if(syn==3) x q[0];` style feedback used by QASMBench qec_sm_n5.
+  comp.ifElse(std::make_unique<::qc::StandardOperation>(q[0], ::qc::X), nullptr,
+              syn, /*expectedValue=*/3U, ::qc::Eq);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+
+  bool sawCmp = false;
+  translated->walk([&](mlir::arith::CmpIOp op) {
+    if (op.getPredicate() == mlir::arith::CmpIPredicate::eq &&
+        op.getLhs().getType().isInteger(64)) {
+      sawCmp = true;
+    }
+  });
+  EXPECT_TRUE(sawCmp);
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       TranslatesRegisterControlledIfElseComparisons) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(3, "c");
+  comp.measure(q[0], c[0]);
+  comp.measure(q[0], c[1]);
+  comp.measure(q[0], c[2]);
+  comp.ifElse(std::make_unique<::qc::StandardOperation>(q[0], ::qc::X), nullptr,
+              c, /*expectedValue=*/2U, ::qc::Lt);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+
+  bool sawUlt = false;
+  translated->walk([&](mlir::arith::CmpIOp op) {
+    if (op.getPredicate() == mlir::arith::CmpIPredicate::ult) {
+      sawUlt = true;
+    }
+  });
+  EXPECT_TRUE(sawUlt);
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       RejectsRegisterControlledIfElseWiderThan64Bits) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(65, "c");
+  comp.measure(q[0], c[0]);
+  comp.ifElse(std::make_unique<::qc::StandardOperation>(q[0], ::qc::X), nullptr,
+              c, /*expectedValue=*/1U, ::qc::Eq);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  EXPECT_FALSE(translated);
 }
 
 INSTANTIATE_TEST_SUITE_P(
