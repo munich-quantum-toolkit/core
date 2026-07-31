@@ -32,7 +32,7 @@ releases may include breaking changes.
   threshold ([#1810]) ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
-  and structured control flow ([#1910]) ([**@burgholzer**])
+  and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter

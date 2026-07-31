@@ -416,12 +416,12 @@ topLevelQubitIndex(const Value qubit) {
 [[nodiscard]] static Matrix2
 translatedOneQubitUnitary(const llvm::StringRef source) {
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_TRUE(module);
-  if (!module) {
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_TRUE(moduleOp);
+  if (!moduleOp) {
     return Matrix2::identity();
   }
-  auto function = *module->getOps<func::FuncOp>().begin();
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
   const auto matrix = evaluateOneQubitRegion(function.getBody());
   EXPECT_TRUE(matrix);
   return matrix.value_or(Matrix2::identity());
@@ -430,12 +430,12 @@ translatedOneQubitUnitary(const llvm::StringRef source) {
 [[nodiscard]] static Matrix4
 translatedTwoQubitUnitary(const llvm::StringRef source) {
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_TRUE(module);
-  if (!module) {
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_TRUE(moduleOp);
+  if (!moduleOp) {
     return Matrix4::identity();
   }
-  auto function = *module->getOps<func::FuncOp>().begin();
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
   auto result = Matrix4::identity();
   for (Operation& operation : function.getBody().front()) {
     if (auto gphase = dyn_cast<qc::GPhaseOp>(&operation)) {

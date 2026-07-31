@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -97,14 +98,14 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   detail::SyntaxBuilder builder;
   bool failedParsing = false;
   const auto reportIncludeNestingLimit = [&](const llvm::SMLoc location) {
-    (void)builder.error(
+    std::ignore = builder.error(
         location,
         llvm::Twine("include nesting exceeds the limit of ") +
             llvm::Twine(static_cast<unsigned>(INCLUDE_NESTING_LIMIT)));
     failedParsing = true;
   };
   const auto reportStatementLimit = [&](const llvm::SMLoc location) {
-    (void)builder.error(
+    std::ignore = builder.error(
         location,
         llvm::Twine(
             "expanded OpenQASM program exceeds the statement limit of ") +
@@ -175,9 +176,9 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
       }
     }
     if (bufferId == 0) {
-      (void)builder.error(include.location,
-                          llvm::Twine("could not open included file '") +
-                              include.filename + "'");
+      std::ignore = builder.error(
+          include.location, llvm::Twine("could not open included file '") +
+                                include.filename + "'");
       failedParsing = true;
       continue;
     }
@@ -246,8 +247,8 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
       } else if (includeTargets[includeIndex] != 0) {
         const auto target = includeTargets[includeIndex];
         if (activeBuffers.contains(target)) {
-          (void)builder.error(includeLocation,
-                              "recursive include is not allowed");
+          std::ignore = builder.error(includeLocation,
+                                      "recursive include is not allowed");
           failedParsing = true;
         } else if (depth >= INCLUDE_NESTING_LIMIT) {
           reportIncludeNestingLimit(includeLocation);
@@ -276,7 +277,7 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
     activeBuffers.erase(bufferId);
     return true;
   };
-  (void)appendSource(appendSource, mainBufferId, 0, std::nullopt);
+  std::ignore = appendSource(appendSource, mainBufferId, 0, std::nullopt);
   builder.replaceBody(std::move(expandedBody),
                       std::move(expandedIncludeContexts),
                       std::move(includeContexts));

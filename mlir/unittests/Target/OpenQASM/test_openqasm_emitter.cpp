@@ -48,23 +48,23 @@ namespace {
 
 TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t gates = 0;
-  module->walk([&](qc::HOp) { ++gates; });
+  moduleOp->walk([&](qc::HOp) { ++gates; });
   EXPECT_EQ(gates, 2);
 }
 
 TEST(OpenQASMTargetTest, ProductionTranslationUsesTheStagedPipeline) {
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 
   bool hasQuantumOperation = false;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     hasQuantumOperation |= isa<qc::HOp>(operation);
   });
   EXPECT_TRUE(hasQuantumOperation);
@@ -82,12 +82,12 @@ shifted(0.5) q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t numericCasts = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     numericCasts += isa<arith::SIToFPOp, arith::UIToFPOp>(operation);
   });
   EXPECT_EQ(numericCasts, 1);
@@ -104,12 +104,12 @@ rx(sin(value) + cos(value) + tan(value) + exp(value) + log(value) +
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t functions = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     functions += isa<math::SinOp, math::CosOp, math::TanOp, math::ExpOp,
                      math::LogOp, math::SqrtOp>(operation);
   });
@@ -128,16 +128,16 @@ rx(arccos(unsigned_value) + arcsin(signed_value) + arctan(float_value)) q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t arcCosines = 0;
   size_t arcSines = 0;
   size_t arcTangents = 0;
   size_t unsignedConversions = 0;
   size_t signedConversions = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     arcCosines += isa<math::AcosOp>(operation);
     arcSines += isa<math::AsinOp>(operation);
     arcTangents += isa<math::AtanOp>(operation);
@@ -167,16 +167,16 @@ float float_from_int = source_int;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t floatToUnsigned = 0;
   size_t floatToSigned = 0;
   size_t boolToInteger = 0;
   size_t unsignedToFloat = 0;
   size_t signedToFloat = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     floatToUnsigned += isa<arith::FPToUIOp>(operation);
     floatToSigned += isa<arith::FPToSIOp>(operation);
     boolToInteger += isa<arith::ExtUIOp>(operation);
@@ -220,13 +220,13 @@ bool unsigned_greater_equal = unsigned_left >= unsigned_right;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   std::array<size_t, 6> floatPredicates{};
   std::array<size_t, 10> integerPredicates{};
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto comparison = dyn_cast<arith::CmpFOp>(operation)) {
       switch (comparison.getPredicate()) {
       case arith::CmpFPredicate::OEQ:
@@ -319,13 +319,13 @@ rounded(0.5) q;
   EXPECT_DOUBLE_EQ(std::get<double>(constant.constant), 0.0);
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t ceilings = 0;
   size_t floors = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     ceilings += isa<math::CeilOp>(operation);
     floors += isa<math::FloorOp>(operation);
   });
@@ -342,14 +342,14 @@ ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
 
-  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   SmallVector<size_t> controlArities;
   size_t outerPolarityFlips = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto control = dyn_cast<qc::CtrlOp>(operation)) {
       controlArities.push_back(control.getNumControls());
     }
@@ -372,16 +372,16 @@ qubit[4] q;
 negctrl(3) @ x q[0], q[1], q[2], q[3];
 )qasm";
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t controlRegions = 0;
   size_t polarityFlips = 0;
-  module->walk([&](qc::CtrlOp control) {
+  moduleOp->walk([&](qc::CtrlOp control) {
     ++controlRegions;
     EXPECT_EQ(control.getNumControls(), 3);
   });
-  module->walk([&](qc::XOp operation) {
+  moduleOp->walk([&](qc::XOp operation) {
     polarityFlips += operation->getParentOfType<qc::CtrlOp>() == nullptr;
   });
   EXPECT_EQ(controlRegions, 1);
@@ -398,12 +398,12 @@ pow(exponent) @ x q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   SmallVector<qc::PowOp> powers;
-  module->walk([&](qc::PowOp op) { powers.push_back(op); });
+  moduleOp->walk([&](qc::PowOp op) { powers.push_back(op); });
   ASSERT_EQ(powers.size(), 1U);
   ASSERT_TRUE(powers.front().getExponentValue().has_value());
   EXPECT_DOUBLE_EQ(*powers.front().getExponentValue(), 0.5);
@@ -441,13 +441,13 @@ pow(exponent) @ x q;
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto module = qc::translateQASM3ToQC(source, &context);
-    ASSERT_TRUE(module);
-    ASSERT_TRUE(succeeded(verify(*module)));
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
     SmallVector<qc::PowOp> powers;
     size_t exactnessAssertions = 0;
-    module->walk([&](Operation* operation) {
+    moduleOp->walk([&](Operation* operation) {
       if (auto power = dyn_cast<qc::PowOp>(operation)) {
         powers.push_back(power);
       }
@@ -486,21 +486,21 @@ out = measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t conditionals = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     conditionals += operation->getName().getStringRef() == "scf.if";
   });
   EXPECT_EQ(conditionals, 1);
 
-  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t resets = 0;
   size_t barriers = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     auto name = operation->getName().getStringRef();
     resets += name == "qc.reset";
     barriers += name == "qc.barrier";
@@ -521,12 +521,12 @@ TEST(OpenQASMTargetTest, ResolvesManyCustomGateDefinitionsThroughTheIndex) {
   }
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t xGates = 0;
-  module->walk(
+  moduleOp->walk(
       [&](Operation* operation) { xGates += isa<qc::XOp>(operation); });
   EXPECT_EQ(xGates, definitionCount);
 }
@@ -542,12 +542,12 @@ measure q -> c;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t controls = 0;
-  module->walk(
+  moduleOp->walk(
       [&](Operation* operation) { controls += isa<qc::CtrlOp>(operation); });
   EXPECT_EQ(controls, 1);
 }
@@ -560,13 +560,13 @@ x $3;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t globalPhases = 0;
   size_t xGates = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     globalPhases += isa<qc::GPhaseOp>(operation);
     xGates += isa<qc::XOp>(operation);
   });
@@ -591,8 +591,8 @@ x $0;
     diagnostic = value.str();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
   EXPECT_NE(diagnostic.find("mixing physical and declared qubits"),
             std::string::npos)
       << diagnostic;
@@ -613,14 +613,14 @@ result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t classicalAllocations = 0;
   size_t classicalLoads = 0;
   size_t classicalStores = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto allocation = dyn_cast<memref::AllocOp>(operation);
         allocation && allocation.getType().getElementType().isInteger(1)) {
       ++classicalAllocations;
@@ -666,11 +666,11 @@ float ratio = 2.0;
             "ratio");
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(implicitSource, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(implicitSource, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   func::ReturnOp result;
-  module->walk([&](func::ReturnOp operation) { result = operation; });
+  moduleOp->walk([&](func::ReturnOp operation) { result = operation; });
   ASSERT_TRUE(result);
   ASSERT_EQ(result.getNumOperands(), 3);
   EXPECT_TRUE(result.getOperand(0).getType().isInteger(64));
@@ -701,8 +701,8 @@ TEST(OpenQASMTargetTest, RejectsExcessiveDynamicDispatch) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
-qubit[317] q;
-qubit[317] aux;
+qubit[3163] q;
+qubit[3163] aux;
 int i = 0;
   int j = 1;
 cx q[i], aux[j];
@@ -716,8 +716,8 @@ cx q[i], aux[j];
     location = value.getLocation();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
   const auto fileLocation = dyn_cast<FileLineColLoc>(location);
   ASSERT_TRUE(fileLocation);
   EXPECT_EQ(fileLocation.getFilename(), "<input>");
@@ -731,12 +731,12 @@ TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
   std::string source = "OPENQASM 3.1;\n"
                        "include \"stdgates.inc\";\n"
                        "gate g0 q { x q; }\n";
-  for (size_t level = 1; level <= 17; ++level) {
+  for (size_t level = 1; level <= 24; ++level) {
     source += "gate g" + std::to_string(level) + " q { g" +
               std::to_string(level - 1) + " q; g" + std::to_string(level - 1) +
               " q; }\n";
   }
-  source += "qubit q;\ng17 q;\n";
+  source += "qubit q;\ng24 q;\n";
 
   MLIRContext context;
   std::string diagnostic;
@@ -744,8 +744,8 @@ TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
     diagnostic = value.str();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
   EXPECT_NE(diagnostic.find("projected emitted operation count"),
             std::string::npos);
 }
@@ -758,8 +758,8 @@ TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
     source += operation % 2 == 0 ? "  x a;\n" : "  x b;\n";
   }
   source += "}\n"
-            "qubit[64] q;\n"
-            "qubit[64] aux;\n"
+            "qubit[640] q;\n"
+            "qubit[640] aux;\n"
             "int i = 0;\n"
             "int j = 1;\n"
             "expanded q[i], aux[j];\n";
@@ -770,104 +770,43 @@ TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
     diagnostic = value.str();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
   EXPECT_NE(diagnostic.find("projected emitted operation count"),
             std::string::npos);
 }
 
-TEST(OpenQASMTargetTest, RejectsWideConstructionBeforeEmittingOperations) {
-  constexpr auto sources = std::to_array<llvm::StringLiteral>({
-      "OPENQASM 3.1;\nqubit[50001] q;\n",
-      "OPENQASM 3.1;\nbit[40000] c;\nint i = 0;\n"
-      "output bit value;\nvalue = false;\n"
-      "c[i] = value;\n",
+TEST(OpenQASMTargetTest, BudgetsRepresentativeOperationConstruction) {
+  constexpr auto baseBodies = std::to_array<llvm::StringLiteral>({
+      "rx(theta + theta) q;",
+      "U(theta, theta, theta) q;",
+      "pow(2) @ x q;",
+      "for int i in [0:1] { x q; }",
   });
-  for (const auto source : sources) {
-    SCOPED_TRACE(source.str());
-    MLIRContext context;
-    std::string diagnostic;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
-      diagnostic = value.str();
-      return success();
-    });
-    auto module = qc::translateQASM3ToQC(source, &context);
-    EXPECT_FALSE(module);
-    EXPECT_NE(diagnostic.find("projected emitted operation count"),
-              std::string::npos)
-        << diagnostic;
-  }
-}
-
-TEST(OpenQASMTargetTest, BudgetsScalarAndStructuredOperationConstruction) {
-  std::string expressionSource =
-      "OPENQASM 3.1;\nint operand = 1;\nint result = ";
-  std::vector<std::string> expressions(16384, "operand");
-  while (expressions.size() > 1) {
-    std::vector<std::string> next;
-    next.reserve(expressions.size() / 2);
-    for (size_t expression = 0; expression < expressions.size();
-         expression += 2) {
-      next.push_back("(" + expressions[expression] + " + " +
-                     expressions[expression + 1] + ")");
+  for (const auto baseBody : baseBodies) {
+    std::string source = "OPENQASM 3.1;\n"
+                         "include \"stdgates.inc\";\n"
+                         "gate g0(theta) q { " +
+                         baseBody.str() + " }\n";
+    for (size_t level = 1; level <= 24; ++level) {
+      source += "gate g" + std::to_string(level) + "(theta) q { g" +
+                std::to_string(level - 1) + "(theta) q; g" +
+                std::to_string(level - 1) + "(theta) q; }\n";
     }
-    expressions = std::move(next);
-  }
-  expressionSource += expressions.front();
-  expressionSource += ";\n";
+    source += "qubit q;\ng24(0.5) q;\n";
 
-  std::string controlFlowSource = "OPENQASM 3.1;\nint operand = 1;\n";
-  constexpr size_t conditionals = 12000;
-  for (size_t conditional = 0; conditional < conditionals; ++conditional) {
-    controlFlowSource += "if (operand > 0) {}\n";
-  }
-
-  std::string phaseSource = "OPENQASM 3.1;\nqubit q;\n";
-  // Setup costs eight operations and each OpenQASM 3 U application costs
-  // three parameter constants plus four phase-aware lowering operations.
-  constexpr size_t phaseGates = ((100000 - 8) / 7) + 1;
-  static_assert(8 + ((phaseGates - 1) * 7) <= 100000);
-  static_assert(8 + (phaseGates * 7) > 100000);
-  for (size_t gate = 0; gate < phaseGates; ++gate) {
-    phaseSource += "U(0.1, 0.2, 0.3) q;\n";
-  }
-
-  std::string powerSource = "OPENQASM 3.1;\nqubit q;\nint exponent = 1;\n";
-  constexpr size_t powerGates = 6000;
-  for (size_t gate = 0; gate < powerGates; ++gate) {
-    powerSource += "pow(exponent) @ x q;\n";
-  }
-
-  for (const auto* source :
-       {&expressionSource, &controlFlowSource, &phaseSource, &powerSource}) {
     MLIRContext context;
     std::string diagnostic;
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
       diagnostic = value.str();
       return success();
     });
-    auto module = qc::translateQASM3ToQC(*source, &context);
-    EXPECT_FALSE(module);
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    EXPECT_FALSE(moduleOp);
     EXPECT_NE(diagnostic.find("projected emitted operation count"),
               std::string::npos)
         << diagnostic;
   }
-}
-
-TEST(OpenQASMTargetTest, BudgetsLinearBitVectorPackingWork) {
-  constexpr size_t width = 12501;
-  std::string source =
-      "OPENQASM 3.1;\noutput bit[" + std::to_string(width) + "] value;\n";
-  for (size_t bit = 0; bit < width; ++bit) {
-    source += "value[" + std::to_string(bit) + "] = false;\n";
-  }
-  source += "int distance = 1;\nvalue = rotl(value, distance);\n";
-
-  MLIRContext context;
-  ScopedDiagnosticHandler diagnostics(&context,
-                                      [](Diagnostic&) { return success(); });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
 }
 
 TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {
@@ -884,19 +823,19 @@ bit result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t forLoops = 0;
   size_t whileLoops = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     forLoops += isa<scf::ForOp>(operation);
     whileLoops += isa<scf::WhileOp>(operation);
   });
   EXPECT_EQ(forLoops, 1);
   EXPECT_EQ(whileLoops, 1);
 
-  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASMTargetTest, GateDefinitionsCaptureGlobalConstants) {
@@ -910,11 +849,11 @@ g q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   qc::RXOp rotation;
-  module->walk([&](qc::RXOp application) { rotation = application; });
+  moduleOp->walk([&](qc::RXOp application) { rotation = application; });
   ASSERT_TRUE(rotation);
   FloatAttr angle;
   EXPECT_TRUE(matchPattern(rotation.getParameter(0), m_Constant(&angle)));
@@ -953,15 +892,15 @@ if (target[0] || target[1]) { x q[0]; }
   EXPECT_EQ(value.width, 2);
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   SmallVector<Value> measured;
-  module->walk([&](qc::MeasureOp measurement) {
+  moduleOp->walk([&](qc::MeasureOp measurement) {
     measured.push_back(measurement.getResult());
   });
-  const auto returned = returnedBitValues(*module);
+  const auto returned = returnedBitValues(*moduleOp);
   ASSERT_EQ(measured.size(), 2);
   ASSERT_EQ(returned.size(), 2);
   EXPECT_EQ(returned[0], measured[0]);
@@ -994,12 +933,12 @@ if (count == 3) { x q; }
       }));
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t populationCounts = 0;
   size_t funnelShifts = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     populationCounts += isa<math::CtPopOp>(operation);
     funnelShifts += isa<LLVM::FshlOp, LLVM::FshrOp>(operation);
   });
@@ -1024,15 +963,15 @@ if (count == 3) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t leftShifts = 0;
   size_t rightShifts = 0;
   size_t populationCounts = 0;
   size_t unpackingTruncations = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     leftShifts += isa<LLVM::FshlOp>(operation);
     rightShifts += isa<LLVM::FshrOp>(operation);
     populationCounts += isa<math::CtPopOp>(operation);
@@ -1065,11 +1004,11 @@ if (condition) {
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool carriedWholeRegister = false;
-  module->walk([&](scf::IfOp conditional) {
+  moduleOp->walk([&](scf::IfOp conditional) {
     carriedWholeRegister |= conditional.getNumResults() == 5;
   });
   EXPECT_TRUE(carriedWholeRegister);
@@ -1085,15 +1024,15 @@ result = rotl(result, 2);
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   SmallVector<Value> measured;
-  module->walk([&](qc::MeasureOp measurement) {
+  moduleOp->walk([&](qc::MeasureOp measurement) {
     measured.push_back(measurement.getResult());
   });
-  const auto returned = returnedBitValues(*module);
+  const auto returned = returnedBitValues(*moduleOp);
   ASSERT_EQ(measured.size(), 5);
   ASSERT_EQ(returned.size(), 5);
   EXPECT_EQ(returned[0], measured[3]);
@@ -1118,13 +1057,13 @@ rx(count) q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t populationCounts = 0;
   size_t leftShifts = 0;
   size_t rightShifts = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     populationCounts += isa<math::CtPopOp>(operation);
     leftShifts += isa<LLVM::FshlOp>(operation);
     rightShifts += isa<LLVM::FshrOp>(operation);
@@ -1145,14 +1084,14 @@ uint count = popcount(value);
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t wideFunnelShifts = 0;
   size_t populationCounts = 0;
   size_t narrowedCounts = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto shift = dyn_cast<LLVM::FshlOp>(operation)) {
       wideFunnelShifts += shift.getResult().getType().isInteger(65);
     }
@@ -1269,11 +1208,11 @@ if (c == 1) x q[0];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
-  module->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
   // The register equality and the source-level branch each short-circuit
   // through their own structured conditional.
   EXPECT_EQ(conditionals, 2);
@@ -1289,11 +1228,11 @@ if (result == 0.0625) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool foundResult = false;
-  module->walk([&](arith::ConstantFloatOp constant) {
+  moduleOp->walk([&](arith::ConstantFloatOp constant) {
     foundResult |= constant.value().convertToDouble() == 0.0625;
   });
   EXPECT_TRUE(foundResult);
@@ -1331,13 +1270,13 @@ result = pow(base, exponent);
             oq3::frontend::ScalarType::Uint);
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t integerPowers = 0;
   size_t floatConversions = 0;
-  module->walk([&](scf::WhileOp) { ++integerPowers; });
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](scf::WhileOp) { ++integerPowers; });
+  moduleOp->walk([&](Operation* operation) {
     floatConversions += isa<arith::SIToFPOp, arith::UIToFPOp>(operation);
   });
   EXPECT_EQ(integerPowers, 1);
@@ -1355,11 +1294,11 @@ measured = measure q;
 if (!measured) { h q; }
 )qasm";
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t measurements = 0;
-  module->walk([&](qc::MeasureOp) { ++measurements; });
+  moduleOp->walk([&](qc::MeasureOp) { ++measurements; });
   EXPECT_EQ(measurements, 2);
 }
 
@@ -1386,8 +1325,8 @@ TEST(OpenQASMTargetTest, EmitsStructuredDiagnosticsWithIncludeStacks) {
     location = diagnostic.getLocation();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(sourceMgr, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(sourceMgr, &context);
+  EXPECT_FALSE(moduleOp);
   EXPECT_NE(message.find("cannot be represented exactly"), std::string::npos);
   const auto mainCall = dyn_cast<CallSiteLoc>(location);
   ASSERT_TRUE(mainCall);
@@ -1455,17 +1394,17 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
   size_t conditionals = 0;
-  module->walk([&](scf::IndexSwitchOp switchOp) {
+  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
     ++switches;
     EXPECT_EQ(switchOp.getNumCases(), 1);
     EXPECT_EQ(switchOp.getNumResults(), 0);
   });
-  module->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
   EXPECT_EQ(switches, 1);
   EXPECT_EQ(conditionals, 0);
 }
@@ -1481,18 +1420,18 @@ c = measure q[i];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
   size_t conditionals = 0;
-  module->walk([&](scf::IndexSwitchOp switchOp) {
+  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
     ++switches;
     EXPECT_EQ(switchOp.getNumCases(), 1);
     ASSERT_EQ(switchOp.getNumResults(), 1);
     EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(1));
   });
-  module->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
   EXPECT_EQ(switches, 1);
   EXPECT_EQ(conditionals, 0);
 }
@@ -1548,11 +1487,11 @@ if (flags[0] && !flags[1]) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t xGates = 0;
-  module->walk([&](qc::XOp) { ++xGates; });
+  moduleOp->walk([&](qc::XOp) { ++xGates; });
   EXPECT_EQ(xGates, 1);
 }
 
@@ -1564,11 +1503,11 @@ measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t measurements = 0;
-  module->walk([&](qc::MeasureOp) { ++measurements; });
+  moduleOp->walk([&](qc::MeasureOp) { ++measurements; });
   EXPECT_EQ(measurements, 1);
 }
 
@@ -1583,15 +1522,15 @@ for uint i in [start:-1:stop] { x q; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
   canonicalizer.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(canonicalizer.run(*module)));
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
   size_t loops = 0;
   size_t xGates = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     loops += isa<scf::ForOp>(operation);
     xGates += isa<qc::XOp>(operation);
   });
@@ -1611,11 +1550,11 @@ conditional(0.0) q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t loops = 0;
-  module->walk([&](scf::WhileOp) { ++loops; });
+  moduleOp->walk([&](scf::WhileOp) { ++loops; });
   EXPECT_EQ(loops, 1);
 }
 
@@ -1636,8 +1575,8 @@ inv @ looped(pi / 2) q;
     diagnostic = value.str();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
   EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
 }
 
@@ -1660,8 +1599,8 @@ inv @ wrapper q;
     location = value.getLocation();
     return success();
   });
-  auto module = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
   const auto fileLocation = dyn_cast<FileLineColLoc>(location);
   ASSERT_TRUE(fileLocation);
   EXPECT_EQ(fileLocation.getFilename(), "<input>");
@@ -1681,9 +1620,9 @@ x q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASMTargetTest, LowersRuntimeDynamicIndicesWithBoundsChecks) {
@@ -1698,11 +1637,11 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t assertions = 0;
-  module->walk([&](cf::AssertOp) { ++assertions; });
+  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   EXPECT_GE(assertions, 1);
 }
 
@@ -1731,9 +1670,9 @@ if (c[i]) { x q[0]; })qasm",
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto module = qc::translateQASM3ToQC(source, &context);
-    ASSERT_TRUE(module);
-    EXPECT_TRUE(succeeded(verify(*module)));
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
 }
 
@@ -1748,9 +1687,9 @@ while (repeat) { x q[i]; i = 1; repeat = measure q[0]; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASMTargetTest, LowersMultiIterationInductionIndicesAtQCTarget) {
@@ -1762,9 +1701,9 @@ for uint i in [0:2] { int x = i + 1; h q[x]; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASMTargetTest, LowersCheckedIntegerArithmeticAtQCTarget) {
@@ -1789,11 +1728,11 @@ if (value + 1 > 0) { x q; })qasm",
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto module = qc::translateQASM3ToQC(source, &context);
-    ASSERT_TRUE(module);
-    ASSERT_TRUE(succeeded(verify(*module)));
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
     size_t assertions = 0;
-    module->walk([&](cf::AssertOp) { ++assertions; });
+    moduleOp->walk([&](cf::AssertOp) { ++assertions; });
     EXPECT_GE(assertions, 1);
   }
 }
@@ -1822,13 +1761,13 @@ unsignedValue = unsignedValue ** unsignedOperand;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t assertions = 0;
   size_t powerLoops = 0;
-  module->walk([&](cf::AssertOp) { ++assertions; });
-  module->walk([&](scf::WhileOp) { ++powerLoops; });
+  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
+  moduleOp->walk([&](scf::WhileOp) { ++powerLoops; });
   EXPECT_GE(assertions, 7);
   EXPECT_EQ(powerLoops, 2);
 }
@@ -1846,15 +1785,15 @@ for int i in [9223372036854775806:1:9223372036854775807] { x q; })qasm",
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto module = qc::translateQASM3ToQC(source, &context);
-    ASSERT_TRUE(module);
-    ASSERT_TRUE(succeeded(verify(*module)));
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
     size_t forLoops = 0;
     size_t whileLoops = 0;
     size_t divisions = 0;
-    module->walk([&](scf::ForOp) { ++forLoops; });
-    module->walk([&](scf::WhileOp) { ++whileLoops; });
-    module->walk([&](arith::DivUIOp) { ++divisions; });
+    moduleOp->walk([&](scf::ForOp) { ++forLoops; });
+    moduleOp->walk([&](scf::WhileOp) { ++whileLoops; });
+    moduleOp->walk([&](arith::DivUIOp) { ++divisions; });
     EXPECT_EQ(forLoops, 1);
     EXPECT_EQ(whileLoops, 0);
     EXPECT_EQ(divisions, 0);
@@ -1874,15 +1813,15 @@ for int i in [start:step:stop] { x q; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t whileLoops = 0;
   size_t divisions = 0;
   size_t assertions = 0;
-  module->walk([&](scf::WhileOp) { ++whileLoops; });
-  module->walk([&](arith::DivUIOp) { ++divisions; });
-  module->walk([&](cf::AssertOp) { ++assertions; });
+  moduleOp->walk([&](scf::WhileOp) { ++whileLoops; });
+  moduleOp->walk([&](arith::DivUIOp) { ++divisions; });
+  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   EXPECT_EQ(whileLoops, 1);
   EXPECT_EQ(divisions, 0);
   EXPECT_GE(assertions, 1);
@@ -1899,17 +1838,17 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
   size_t indexSwitches = 0;
   size_t xGates = 0;
   size_t powers = 0;
-  module->walk([&](scf::IfOp) { ++conditionals; });
-  module->walk([&](scf::IndexSwitchOp) { ++indexSwitches; });
-  module->walk([&](qc::XOp) { ++xGates; });
-  module->walk([&](qc::PowOp) { ++powers; });
+  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](scf::IndexSwitchOp) { ++indexSwitches; });
+  moduleOp->walk([&](qc::XOp) { ++xGates; });
+  moduleOp->walk([&](qc::PowOp) { ++powers; });
   EXPECT_EQ(conditionals, 0);
   EXPECT_EQ(indexSwitches, 1);
   EXPECT_EQ(xGates, 2);
@@ -1928,9 +1867,9 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASMTargetTest, LowersShortCircuitBooleanEvaluation) {
@@ -1946,15 +1885,15 @@ result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   SmallVector<int64_t> firstMeasuredIndices;
   bool sawUnorderedInequality = false;
   size_t shortCircuitOperations = 0;
   size_t eagerLogicalOperations = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto comparison = dyn_cast<arith::CmpFOp>(operation)) {
       sawUnorderedInequality |=
           comparison.getPredicate() == arith::CmpFPredicate::UNE;
@@ -2003,13 +1942,13 @@ bit result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   scf::ForOp forLoop;
   scf::WhileOp whileLoop;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto loop = dyn_cast<scf::ForOp>(operation)) {
       forLoop = loop;
     }
@@ -2028,9 +1967,9 @@ bit result = measure q;
   EXPECT_EQ(whileLoop.getAfterBody()->getTerminator()->getNumOperands(), 2);
   PassManager canonicalizer(&context);
   canonicalizer.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(canonicalizer.run(*module)));
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
   forLoop = {};
-  module->walk([&](scf::ForOp loop) { forLoop = loop; });
+  moduleOp->walk([&](scf::ForOp loop) { forLoop = loop; });
   ASSERT_TRUE(forLoop);
   APInt lower;
   APInt upper;
@@ -2042,7 +1981,7 @@ bit result = measure q;
   EXPECT_EQ(upper.getSExtValue(), 3);
   EXPECT_EQ(step.getSExtValue(), 1);
 
-  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASMTargetTest, PreservesBranchAndWhileCarriedClassicalBits) {
@@ -2067,12 +2006,12 @@ result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t resultBearingConditionals = 0;
   size_t resultBearingWhiles = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto conditional = dyn_cast<scf::IfOp>(operation)) {
       resultBearingConditionals += conditional.getNumResults() != 0;
     }
@@ -2082,7 +2021,7 @@ result = measure q;
   });
   EXPECT_EQ(resultBearingConditionals, 1);
   EXPECT_EQ(resultBearingWhiles, 1);
-  module->walk([&](scf::IfOp conditional) {
+  moduleOp->walk([&](scf::IfOp conditional) {
     if (conditional.getNumResults() == 0) {
       return;
     }
@@ -2095,7 +2034,7 @@ result = measure q;
         conditional.getElseRegion().front().getTerminator()->getNumOperands(),
         1);
   });
-  module->walk([&](scf::WhileOp loop) {
+  moduleOp->walk([&](scf::WhileOp loop) {
     EXPECT_EQ(loop.getInits().size(), 1);
     EXPECT_EQ(loop.getNumResults(), 1);
     EXPECT_EQ(loop.getBeforeBody()->getTerminator()->getNumOperands(), 2);
@@ -2121,12 +2060,12 @@ if (state[0]) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   scf::IfOp stateUpdate;
-  module->walk([&](scf::IfOp conditional) {
+  moduleOp->walk([&](scf::IfOp conditional) {
     if (conditional.getNumResults() == 2) {
       stateUpdate = conditional;
     }
@@ -2148,11 +2087,11 @@ qubit q;
 for uint i in [maximum:maximum] { if (i == maximum) { x q; } }
 )qasm";
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   scf::ForOp loop;
-  module->walk([&](scf::ForOp current) { loop = current; });
+  moduleOp->walk([&](scf::ForOp current) { loop = current; });
   ASSERT_TRUE(loop);
   APInt lower;
   APInt step;
@@ -2163,10 +2102,10 @@ for uint i in [maximum:maximum] { if (i == maximum) { x q; } }
 
   PassManager canonicalizer(&context);
   canonicalizer.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(canonicalizer.run(*module)));
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
   size_t remainingLoops = 0;
   size_t xApplications = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     remainingLoops += isa<scf::ForOp>(operation);
     xApplications += isa<qc::XOp>(operation);
   });
@@ -2182,11 +2121,11 @@ barrier;
 bit[3] result = measure q;
 )qasm";
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t barriers = 0;
-  module->walk([&](qc::BarrierOp barrier) {
+  moduleOp->walk([&](qc::BarrierOp barrier) {
     ++barriers;
     EXPECT_EQ(barrier.getNumQubits(), 3);
   });
@@ -2203,13 +2142,13 @@ mcx_vchain q[0], q[1], q[2], q[3], q[4], q[8], q[9];
 mcx_recursive q[0], q[1], q[2], q[3], q[4], q[9];
 )qasm";
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t controls = 0;
   size_t xGates = 0;
   size_t phaseGates = 0;
-  module->walk([&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     controls += isa<qc::CtrlOp>(operation);
     xGates += isa<qc::XOp>(operation);
     phaseGates += isa<qc::POp>(operation);
@@ -2231,10 +2170,10 @@ bit right = measure target;
 )qasm";
 
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(module);
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
   size_t controls = 0;
-  module->walk([&](qc::CtrlOp) { ++controls; });
+  moduleOp->walk([&](qc::CtrlOp) { ++controls; });
   EXPECT_EQ(controls, 3);
 }
 
@@ -2276,18 +2215,18 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
   for (const auto& fixture : fixtures) {
     SCOPED_TRACE(fixture.name.str());
     MLIRContext context;
-    auto module = qc::translateQASM3ToQC(fixture.source, &context);
-    ASSERT_TRUE(module);
-    ASSERT_TRUE(succeeded(verify(*module)));
+    auto moduleOp = qc::translateQASM3ToQC(fixture.source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
     PassManager canonicalizer(&context);
     canonicalizer.addPass(createCanonicalizerPass());
-    ASSERT_TRUE(succeeded(canonicalizer.run(*module)));
+    ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
 
     SmallVector<scf::ForOp> forLoops;
     size_t whileLoops = 0;
     bool hasQubitSelect = false;
-    module->walk([&](Operation* operation) {
+    moduleOp->walk([&](Operation* operation) {
       if (auto loop = dyn_cast<scf::ForOp>(operation)) {
         forLoops.push_back(loop);
       }
@@ -2312,7 +2251,7 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
       EXPECT_EQ(step.getSExtValue(), 1);
     }
 
-    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
     size_t hGates = 0;
     size_t xGates = 0;
     size_t measurements = 0;
@@ -2321,7 +2260,7 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
     size_t dispatchConditionals = 0;
     SmallVector<scf::ForOp> loweredForLoops;
     SmallVector<scf::WhileOp> loweredWhileLoops;
-    module->walk([&](Operation* operation) {
+    moduleOp->walk([&](Operation* operation) {
       hGates += isa<qc::HOp>(operation);
       xGates += isa<qc::XOp>(operation);
       measurements += isa<qc::MeasureOp>(operation);

@@ -48,6 +48,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -89,7 +90,7 @@ class OpenQASMToQCEmitter {
       }
     }
 
-    static constexpr size_t OPERATION_LIMIT = 100000;
+    static constexpr size_t OPERATION_LIMIT = 10'000'000;
 
   private:
     size_t operationCount = 0;
@@ -179,17 +180,17 @@ public:
       }
       results.push_back(reg);
     }
-    OwningOpRef<ModuleOp> module;
+    OwningOpRef<ModuleOp> moduleOp;
     if (results.empty()) {
-      module = builder.finalize();
+      moduleOp = builder.finalize();
     } else {
       builder.retype(ValueRange(results).getTypes());
-      module = builder.finalize(results);
+      moduleOp = builder.finalize(results);
     }
     if (emissionBudget.isExhausted()) {
       return nullptr;
     }
-    return module;
+    return moduleOp;
   }
 
 private:
@@ -2494,7 +2495,7 @@ private:
       for (const auto& qubit : measurement.qubits) {
         const auto indices = emitDynamicQubitIndices({qubit});
         dispatchQubits({qubit}, gateQubits, indices, [&](ValueRange resolved) {
-          (void)builder.measure(resolved.front());
+          std::ignore = builder.measure(resolved.front());
         });
       }
       return;

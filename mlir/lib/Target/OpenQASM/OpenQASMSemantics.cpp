@@ -38,6 +38,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -591,7 +592,7 @@ private:
     };
     for (size_t index = 0; index < program.gates.size(); ++index) {
       if (states[index] == VisitState::Unvisited) {
-        (void)visit(visit, index);
+        std::ignore = visit(visit, index);
       }
     }
   }

@@ -190,8 +190,9 @@ threads or publishing new PR text.
 - [x] (2026-07-27) Addressed selected review findings MF-01, MF-04, and MF-05:
       made standard-gate lowering recipes exhaustive, restored the distinct
       OpenQASM 2 and 3 U-family phase conventions, guarded runtime integer power
-      exponents against inexact f64 conversion, and made the 100000-operation
-      construction budget authoritative with conservative preflight accounting.
+      exponents against inexact f64 conversion, and made the initial
+      100000-operation construction budget authoritative with conservative
+      preflight accounting.
 - [x] (2026-07-27) Added an independent lightweight QC-IR matrix oracle for U,
       u2/u3/u, cu/cu3, and modifier phase behavior, plus variable,
       branch-joined, and loop-carried integer-power tests and early-rejection
@@ -308,6 +309,16 @@ threads or publishing new PR text.
       qubit-reuse pass and pipeline remain isolated in #1923. All 265 QC
       translation tests, 144 OpenQASM frontend/emitter tests, and 204 compiler
       pipeline tests pass with updated result-level references.
+- [x] (2026-07-31) Raised the combined projected and actual QC-emission limit
+      from 100000 to 10,000,000 operations so multi-million-operation Grover
+      expansions remain accepted. Updated the cheap preflight regressions to
+      cross the new limit through nested gate expansion and dynamic dispatch,
+      adopted `std::ignore` for intentionally discarded nodiscard results, and
+      renamed PR-owned C++ variables named `module` to `moduleOp`. All 142
+      OpenQASM frontend/emitter tests, 265 QC translation tests, and 204
+      compiler tests pass. The complete warning-as-error documentation build,
+      repository lint session, and diff checks pass. The PR changelog entry
+      credits both `@burgholzer` and `@denialhaag`.
 
 ## Surprises & Discoveries
 
@@ -571,10 +582,12 @@ threads or publishing new PR text.
   constant simplification is an optimization rather than an acceptance rule.
   Date/Author: 2026-07-16 / Codex.
 
-- Decision: enforce one 100000-operation projected-emission budget that composes
-  custom-gate expansion and register dispatch with overflow-safe multiplication.
-  Rationale: emitted work, not either mechanism independently, is the relevant
-  safety bound. Date/Author: 2026-07-16 / Codex.
+- Decision: enforce one 10,000,000-operation projected-emission budget that
+  composes custom-gate expansion and register dispatch with overflow-safe
+  multiplication. Rationale: emitted work, not either mechanism independently,
+  is the relevant safety bound. Ten million operations accommodates realistic
+  multi-million-gate Grover circuits while retaining a guard against accidental
+  unbounded expansion. Date/Author: 2026-07-16, revised 2026-07-31 / Codex.
 
 - Decision: emit non-folded signed integer arithmetic with overflow assertions,
   unsigned arithmetic with 64-bit wrap semantics, and inclusive ranges without
@@ -1333,3 +1346,9 @@ rounding in the positive corpus and adds direct Base and Adaptive diagnostics
 for retained rounding, population-count, and funnel-shift operations. It does
 not broaden either profile or turn `jeff` compatibility into a prerequisite for
 successful OpenQASM-to-QC translation.
+
+Revision note (2026-07-31): maintainer cleanup raised the authoritative QC
+emission ceiling to ten million operations, revised its preflight regressions to
+remain bounded in test execution, used `std::ignore` for deliberately discarded
+nodiscard results, and avoided `module` as a C++ variable name in the PR-owned
+implementation and tests.

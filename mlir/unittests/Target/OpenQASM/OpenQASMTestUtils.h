@@ -124,9 +124,9 @@ inline std::optional<APInt> evaluateConstantInteger(const Value value) {
   return std::nullopt;
 }
 
-inline SmallVector<Value> returnedBitValues(ModuleOp module) {
+inline SmallVector<Value> returnedBitValues(ModuleOp moduleOp) {
   func::ReturnOp result;
-  module.walk([&](func::ReturnOp operation) { result = operation; });
+  moduleOp.walk([&](func::ReturnOp operation) { result = operation; });
   if (!result) {
     ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
         << "translated module has no return operation";
@@ -144,7 +144,7 @@ inline SmallVector<Value> returnedBitValues(ModuleOp module) {
     }
     SmallVector<Value> registerValues(
         static_cast<size_t>(memrefType.getDimSize(0)));
-    module.walk([&](memref::StoreOp store) {
+    moduleOp.walk([&](memref::StoreOp store) {
       if (store.getMemRef() != operand || store.getIndices().size() != 1) {
         return;
       }
@@ -169,26 +169,26 @@ inline SmallVector<Value> returnedBitValues(ModuleOp module) {
 
 inline std::vector<bool> canonicalizedBitOutputs(const StringRef source) {
   MLIRContext context;
-  auto module = qc::translateQASM3ToQC(source, &context);
-  if (!module) {
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  if (!moduleOp) {
     ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
         << "translation failed";
     return {};
   }
-  if (failed(verify(*module))) {
+  if (failed(verify(*moduleOp))) {
     ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
         << "translation produced an invalid module";
     return {};
   }
   PassManager canonicalizer(&context);
   canonicalizer.addPass(createCanonicalizerPass());
-  if (failed(canonicalizer.run(*module))) {
+  if (failed(canonicalizer.run(*moduleOp))) {
     ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
         << "canonicalization failed";
     return {};
   }
 
-  const auto returned = returnedBitValues(*module);
+  const auto returned = returnedBitValues(*moduleOp);
   std::vector<bool> outputs;
   outputs.reserve(returned.size());
   for (const auto operand : returned) {

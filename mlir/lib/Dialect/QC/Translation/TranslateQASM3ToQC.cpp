@@ -40,14 +40,14 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
     emitDiagnostics(analyzed.diagnostics, *context);
     return nullptr;
   }
-  auto module = detail::emitOpenQASMToQC(*analyzed.program, *context);
-  if (!module) {
+  auto moduleOp = detail::emitOpenQASMToQC(*analyzed.program, *context);
+  if (!moduleOp) {
     return nullptr;
   }
-  if (failed(verify(*module))) {
+  if (failed(verify(*moduleOp))) {
     return nullptr;
   }
-  return module;
+  return moduleOp;
 }
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(const StringRef source,

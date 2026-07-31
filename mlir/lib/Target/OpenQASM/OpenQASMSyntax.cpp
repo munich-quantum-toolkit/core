@@ -19,6 +19,7 @@
 
 #include <iterator>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -164,16 +165,16 @@ LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
   if (initializer != nullptr) {
     declaration.initializer = copyExpression(*initializer);
   }
-  (void)addStatement(location, declaration);
+  std::ignore = addStatement(location, declaration);
   return success();
 }
 
 LogicalResult SyntaxBuilder::assignment(SMLoc location,
                                         const BitReference& target,
                                         const Expr& value) {
-  (void)addStatement(location,
-                     SyntaxAssignment{.target = copyBitReference(target),
-                                      .value = copyExpression(value)});
+  std::ignore = addStatement(
+      location, SyntaxAssignment{.target = copyBitReference(target),
+                                 .value = copyExpression(value)});
   return success();
 }
 
@@ -183,7 +184,7 @@ LogicalResult SyntaxBuilder::qubitRegister(SMLoc location, StringRef identifier,
   if (size != nullptr) {
     declaration.size = copyExpression(*size);
   }
-  (void)addStatement(location, declaration);
+  std::ignore = addStatement(location, declaration);
   return success();
 }
 
@@ -199,7 +200,7 @@ LogicalResult SyntaxBuilder::classicalRegister(SMLoc location,
   if (initializer != nullptr) {
     declaration.initializer = copyExpression(*initializer);
   }
-  (void)addStatement(location, declaration);
+  std::ignore = addStatement(location, declaration);
   return success();
 }
 
@@ -209,12 +210,13 @@ LogicalResult SyntaxBuilder::measure(SMLoc location, const BitReference* target,
   if (target != nullptr) {
     measurement.target = copyBitReference(*target);
   }
-  (void)addStatement(location, measurement);
+  std::ignore = addStatement(location, measurement);
   return success();
 }
 
 LogicalResult SyntaxBuilder::reset(SMLoc location, const Operand& operand) {
-  (void)addStatement(location, SyntaxReset{.operand = copyOperand(operand)});
+  std::ignore =
+      addStatement(location, SyntaxReset{.operand = copyOperand(operand)});
   return success();
 }
 
@@ -224,12 +226,12 @@ LogicalResult SyntaxBuilder::barrier(SMLoc location,
   barrier.operands.reserve(operands.size());
   llvm::transform(operands, std::back_inserter(barrier.operands),
                   [&](const Operand& operand) { return copyOperand(operand); });
-  (void)addStatement(location, std::move(barrier));
+  std::ignore = addStatement(location, std::move(barrier));
   return success();
 }
 
 LogicalResult SyntaxBuilder::gateCall(const GateCall& call) {
-  (void)addStatement(call.loc, copyGateCall(call));
+  std::ignore = addStatement(call.loc, copyGateCall(call));
   return success();
 }
 
@@ -244,7 +246,7 @@ LogicalResult SyntaxBuilder::gateDefinition(
     return failure();
   }
   definition.body = std::move(*body);
-  (void)addStatement(location, std::move(definition));
+  std::ignore = addStatement(location, std::move(definition));
   return success();
 }
 
@@ -272,10 +274,10 @@ SyntaxBuilder::ifStmt(SMLoc location, const Expr& condition,
   if (failed(elseStatements)) {
     return failure();
   }
-  (void)addStatement(location,
-                     SyntaxIf{.condition = copyExpression(condition),
-                              .thenStatements = std::move(*thenStatements),
-                              .elseStatements = std::move(*elseStatements)});
+  std::ignore = addStatement(
+      location, SyntaxIf{.condition = copyExpression(condition),
+                         .thenStatements = std::move(*thenStatements),
+                         .elseStatements = std::move(*elseStatements)});
   return success();
 }
 
@@ -288,12 +290,13 @@ SyntaxBuilder::forStmt(SMLoc location, StringRef inductionVariable,
   if (failed(body)) {
     return failure();
   }
-  (void)addStatement(location, SyntaxFor{.inductionVariable = inductionVariable,
-                                         .isUnsigned = isUnsigned,
-                                         .start = copyExpression(start),
-                                         .step = copyExpression(step),
-                                         .stop = copyExpression(stop),
-                                         .body = std::move(*body)});
+  std::ignore =
+      addStatement(location, SyntaxFor{.inductionVariable = inductionVariable,
+                                       .isUnsigned = isUnsigned,
+                                       .start = copyExpression(start),
+                                       .step = copyExpression(step),
+                                       .stop = copyExpression(stop),
+                                       .body = std::move(*body)});
   return success();
 }
 
@@ -304,9 +307,9 @@ SyntaxBuilder::whileStmt(SMLoc location, const Expr& condition,
   if (failed(body)) {
     return failure();
   }
-  (void)addStatement(location,
-                     SyntaxWhile{.condition = copyExpression(condition),
-                                 .body = std::move(*body)});
+  std::ignore =
+      addStatement(location, SyntaxWhile{.condition = copyExpression(condition),
+                                         .body = std::move(*body)});
   return success();
 }
 

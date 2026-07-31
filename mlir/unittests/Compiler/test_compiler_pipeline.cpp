@@ -342,20 +342,20 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
                   LLVM::LLVMDialect, jeff::JeffDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
-  auto module = parseSourceString<ModuleOp>(ir, &context);
-  if (!module) {
+  auto moduleOp = parseSourceString<ModuleOp>(ir, &context);
+  if (!moduleOp) {
     return std::nullopt;
   }
 
   EntryInfo info;
-  if (auto main = module->lookupSymbol<func::FuncOp>("main")) {
+  if (auto main = moduleOp->lookupSymbol<func::FuncOp>("main")) {
     for (const auto type : main.getFunctionType().getResults()) {
       info.resultTypes.push_back(printType(type));
     }
     return info;
   }
 
-  auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
   if (!main) {
     return std::nullopt;
   }
