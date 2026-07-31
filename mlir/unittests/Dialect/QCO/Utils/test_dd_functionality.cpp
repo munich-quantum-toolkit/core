@@ -1255,7 +1255,53 @@ TEST_F(QCODDFunctionalityTest, ClassicalCmpSelectAndIndexBitwise) {
     auto selected = arith::SelectOp::create(b, all, t, f).getResult();
     auto i1Ne = arith::CmpIOp::create(b, arith::CmpIPredicate::ne, selected, f)
                     .getResult();
-    auto orI1 = arith::OrIOp::create(b, i1Ne, f).getResult();
+    // i1 signed preds use sign-extension (true≡-1); unsigned use 0/1.
+    auto i1Eq =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq, t, t).getResult();
+    auto i1Slt =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::slt, t, f).getResult();
+    auto i1Sle =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::sle, t, t).getResult();
+    auto i1Sgt =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::sgt, f, t).getResult();
+    auto i1Sge =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::sge, f, t).getResult();
+    auto i1Ult =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::ult, f, t).getResult();
+    auto i1Ule =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::ule, t, t).getResult();
+    auto i1Ugt =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::ugt, t, f).getResult();
+    auto i1Uge =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::uge, t, f).getResult();
+    auto i1All =
+        arith::AndIOp::create(
+            b, i1Ne,
+            arith::AndIOp::create(
+                b, i1Eq,
+                arith::AndIOp::create(
+                    b, i1Slt,
+                    arith::AndIOp::create(
+                        b, i1Sle,
+                        arith::AndIOp::create(
+                            b, i1Sgt,
+                            arith::AndIOp::create(
+                                b, i1Sge,
+                                arith::AndIOp::create(
+                                    b, i1Ult,
+                                    arith::AndIOp::create(
+                                        b, i1Ule,
+                                        arith::AndIOp::create(b, i1Ugt, i1Uge)
+                                            .getResult())
+                                        .getResult())
+                                    .getResult())
+                                .getResult())
+                            .getResult())
+                        .getResult())
+                    .getResult())
+                .getResult())
+            .getResult();
+    auto orI1 = arith::OrIOp::create(b, i1All, f).getResult();
 
     auto masked = arith::AndIOp::create(b, three, one).getResult(); // 1
     auto ored = arith::OrIOp::create(b, masked, zero).getResult();  // 1
@@ -1509,6 +1555,150 @@ TEST_F(QCODDFunctionalityTest, RejectsDenseFallbackAboveTwelveQubits) {
   });
   ASSERT_TRUE(mod);
   expectBuildAndSimFail(mainFunc(*mod), 13);
+}
+
+TEST_F(QCODDFunctionalityTest, ClassicalErrorPathsAndCalleeMeasureSample) {
+  // Unmapped classical args fail in bindFrom through func.call.
+  auto unmapped = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @use(%q: !qco.qubit, %b: i1, %i: index) -> !qco.qubit {
+        return %q : !qco.qubit
+      }
+      func.func @main(%b: i1, %i: index) {
+        %q = qco.static 0 : !qco.qubit
+        %q1 = func.call @use(%q, %b, %i) : (!qco.qubit, i1, index) -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(unmapped);
+  expectSimulateFail(mainFunc(*unmapped), 1);
+
+  // Unsupported classical type for bindFrom (i64).
+  auto badType = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @use(%q: !qco.qubit, %x: i64) -> !qco.qubit {
+        return %q : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %x = arith.constant 1 : i64
+        %q1 = func.call @use(%q, %x) : (!qco.qubit, i64) -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                             context.get());
+  ASSERT_TRUE(badType);
+  expectSimulateFail(mainFunc(*badType), 1);
+
+  // Non-index shifts / bad select / bad trunci / bad cmpi result type.
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %t = arith.constant true
+        %f = arith.constant false
+        %s = arith.shli %t, %f : i1
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %t = arith.constant true
+        %c0 = arith.constant 0 : i64
+        %c1 = arith.constant 1 : i64
+        %s = arith.select %t, %c0, %c1 : i64
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c = arith.constant 1 : i64
+        %w = arith.trunci %c : i64 to i1
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+
+  // Unmapped memref / dynamic alloc.
+  auto unmappedMem = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%c: memref<1xi1>) {
+        %i0 = arith.constant 0 : index
+        %v = memref.load %c[%i0] : memref<1xi1>
+        return
+      }
+    }
+  )mlir",
+                                                 context.get());
+  ASSERT_TRUE(unmappedMem);
+  expectSimulateFail(mainFunc(*unmappedMem), 0);
+
+  auto dynAlloc = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%n: index) {
+        %c = memref.alloc(%n) : memref<?xi1>
+        memref.dealloc %c : memref<?xi1>
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(dynAlloc);
+  expectSimulateFail(mainFunc(*dynAlloc), 0);
+
+  // IntegerAttr i1 (non-BoolAttr) constant recording + index select.
+  auto intAttrI1 = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto bit = arith::ConstantOp::create(b, IntegerAttr::get(b.getI1Type(), 1))
+                   .getResult();
+    auto zero = arith::ConstantIndexOp::create(b, 0).getResult();
+    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+    auto idx = arith::SelectOp::create(b, bit, one, zero).getResult();
+    q = b.qcoIndexSwitch(idx, q, ArrayRef<int64_t>{1},
+                         SmallVector<function_ref<Value(Value)>>{
+                             [&](Value arg) { return b.x(arg); }},
+                         [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(intAttrI1);
+  expectSimulatesFromZero(mainFunc(*intAttrI1), 1, {true});
+
+  // Measure inside callee forces dynamic per-shot sampling.
+  auto calleeMeasure = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @meas(%q: !qco.qubit) -> !qco.qubit {
+        %q1, %b = qco.measure %q : !qco.qubit
+        return %q1 : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+        %q2 = func.call @meas(%q1) : (!qco.qubit) -> !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                                   context.get());
+  ASSERT_TRUE(calleeMeasure);
+  expectSampleHistogram(mainFunc(*calleeMeasure), 1, 8, /*seed=*/9, "1",
+                        SampleApi::SampleWithClassics,
+                        /*expectedClassicalKey=*/StringRef("1"));
 }
 
 } // namespace
