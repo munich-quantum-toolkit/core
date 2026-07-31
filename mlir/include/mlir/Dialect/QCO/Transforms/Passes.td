@@ -369,7 +369,7 @@ def QuantumIPO : Pass<"quantum-ipo", "mlir::ModuleOp"> {
 
   let dependentDialects = ["::mlir::func::FuncDialect",
                            "::mlir::arith::ArithDialect",
-                           "::mlir::tensor::TensorDialect",
+                           "::mlir::qtensor::QTensorDialect",
                            "mlir::qco::QCODialect"];
 }
 

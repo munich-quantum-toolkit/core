@@ -731,6 +731,9 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             auto lhsExtract = cast<qtensor::ExtractOp>(lhsOp);
             auto rhsExtract = cast<qtensor::ExtractOp>(rhsOp);
             m.map(lhsExtract.getResult(), rhsExtract.getResult());
+            // The threaded tensor is only covered by the equivalence groups
+            // when it descends from an allocation, so map it here as well.
+            m.map(lhsExtract.getOutTensor(), rhsExtract.getOutTensor());
           } else {
             SmallVector<size_t> permutation(lhsOp->getNumResults());
             std::iota(permutation.begin(), permutation.end(), 0);

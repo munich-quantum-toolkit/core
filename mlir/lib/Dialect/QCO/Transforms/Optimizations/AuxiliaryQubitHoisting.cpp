@@ -14,12 +14,13 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -39,43 +40,47 @@ namespace {
 
 SinkOp findDeallocForAlloc(AllocOp alloc) {
   Value currentValue = alloc.getResult();
-  uint32_t currentIndexInTensor = 0;
+  uint64_t currentIndexInTensor = 0;
   bool isInTensor = false;
+
   while (currentValue) {
+    // Both qubits and qubit tensors are linear values, so every step of the
+    // chain has exactly one user.
     if (!currentValue.hasOneUse()) {
-      if (isInTensor) {
-        for (auto* user : currentValue.getUsers()) {
-          if (auto extractOp = dyn_cast<tensor::ExtractOp>(user)) {
-            const auto operands = extractOp.getIndices();
-            if (operands.size() != 1) {
-              // Not a 1D tensor, should not happen.
-              return nullptr;
-            }
-            const auto indexValue = operands[0];
-            if (auto constIndex = dyn_cast<arith::ConstantIndexOp>(
-                    indexValue.getDefiningOp())) {
-              if (constIndex.value() == currentIndexInTensor) {
-                // Index does not match, should not happen.
-                currentValue = extractOp.getResult();
-                isInTensor = false;
-                break;
-              }
-            }
-          } else {
-            return nullptr;
-          }
-        }
-        if (isInTensor) {
-          // No extract found, should not happen.
-          return nullptr;
-        }
-        continue;
-      } else {
-        // Multiple users, should not happen.
-        return nullptr;
-      }
+      return nullptr;
     }
     auto* user = *currentValue.getUsers().begin();
+
+    if (isInTensor) {
+      // The qubit currently lives at `currentIndexInTensor` of the tensor in
+      // `currentValue`. Follow the tensor until it is extracted again.
+      if (auto extractOp = dyn_cast<qtensor::ExtractOp>(user)) {
+        const auto index = getConstantIntValue(extractOp.getIndex());
+        if (!index) {
+          // Dynamic index, cannot tell whether it is our qubit.
+          return nullptr;
+        }
+        if (static_cast<uint64_t>(*index) == currentIndexInTensor) {
+          currentValue = extractOp.getResult();
+          isInTensor = false;
+        } else {
+          currentValue = extractOp.getOutTensor();
+        }
+        continue;
+      }
+      if (auto insertOp = dyn_cast<qtensor::InsertOp>(user)) {
+        const auto index = getConstantIntValue(insertOp.getIndex());
+        if (!index || static_cast<uint64_t>(*index) == currentIndexInTensor) {
+          // Dynamic index, or our slot is overwritten by another qubit.
+          return nullptr;
+        }
+        currentValue = insertOp.getResult();
+        continue;
+      }
+      // Anything else (a dealloc, a call, ...) takes the qubit out of reach.
+      return nullptr;
+    }
+
     if (auto deallocOp = dyn_cast<SinkOp>(user)) {
       return deallocOp;
     }
@@ -91,7 +96,9 @@ SinkOp findDeallocForAlloc(AllocOp alloc) {
       currentValue = resetOp.getQubitOut();
       continue;
     }
-    if (auto callOp = dyn_cast<func::CallOp>(user)) {
+    if (isa<func::CallOp>(user)) {
+      // Relies on the QCO calling convention that the i-th qubit result of a
+      // call corresponds to its i-th qubit operand.
       // TODO-Damian this only works if the indices are the same. Implement a
       // helper function to get the index
       for (auto i = 0ULL; i < user->getNumOperands(); i++) {
@@ -102,7 +109,7 @@ SinkOp findDeallocForAlloc(AllocOp alloc) {
       }
       continue;
     }
-    if (auto fromElementsOp = dyn_cast<tensor::FromElementsOp>(user)) {
+    if (auto fromElementsOp = dyn_cast<qtensor::FromElementsOp>(user)) {
       for (auto i = 0ULL; i < user->getNumOperands(); i++) {
         if (user->getOperand(i) == currentValue) {
           currentIndexInTensor = i;
@@ -111,6 +118,16 @@ SinkOp findDeallocForAlloc(AllocOp alloc) {
         }
       }
       currentValue = fromElementsOp.getResult();
+      continue;
+    }
+    if (auto insertOp = dyn_cast<qtensor::InsertOp>(user)) {
+      const auto index = getConstantIntValue(insertOp.getIndex());
+      if (!index) {
+        return nullptr;
+      }
+      currentIndexInTensor = static_cast<uint64_t>(*index);
+      isInTensor = true;
+      currentValue = insertOp.getResult();
       continue;
     }
     if (user->getNumResults() != 1) {

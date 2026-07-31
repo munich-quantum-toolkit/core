@@ -26,7 +26,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -54,8 +53,7 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<QCODialect, qtensor::QTensorDialect,
-                   tensor::TensorDialect>();
+  ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
 }
 
 void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
@@ -1365,6 +1363,15 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
 
 Type QCOProgramBuilder::getQubitType() { return QubitType::get(ctx); }
 
+Type QCOProgramBuilder::getQubitTensorType(const int64_t size) {
+  return RankedTensorType::get({size}, getQubitType());
+}
+
+bool QCOProgramBuilder::isQubitTensor(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && isa<QubitType>(tensorType.getElementType());
+}
+
 SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
                                                     TypeRange argTypes,
                                                     TypeRange resultTypes) {
@@ -1376,9 +1383,13 @@ SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
   }
 
   FunctionScope scope{.savedInsertPoint = saveInsertionPoint(),
-                      .outerQubits = {}};
+                      .outerQubits = {},
+                      .outerTensors = {}};
   for (const auto& [qubit, info] : validQubits) {
     scope.outerQubits.insert(qubit);
+  }
+  for (const auto& [tensor, info] : validTensors) {
+    scope.outerTensors.insert(tensor);
   }
 
   setInsertionPointToEnd(cast<ModuleOp>(module).getBody());
@@ -1397,6 +1408,10 @@ SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
   for (const auto arg : entryBlock.getArguments()) {
     if (isa<QubitType>(arg.getType())) {
       validQubits.try_emplace(arg, QubitInfo{});
+    } else if (isQubitTensor(arg.getType())) {
+      // A tensor argument acts like a register the callee owns for the
+      // duration of the call, so give it its own register id.
+      validTensors.try_emplace(arg, TensorInfo{tensorCounter++});
     }
     args.emplace_back(arg);
   }
@@ -1417,6 +1432,9 @@ void QCOProgramBuilder::endFunction(ValueRange returnValues) {
     if (isa<QubitType>(value.getType())) {
       validateQubitValue(value);
       validQubits.erase(value);
+    } else if (isQubitTensor(value.getType())) {
+      validateTensorValue(value);
+      validTensors.erase(value);
     }
   }
 
@@ -1425,6 +1443,13 @@ void QCOProgramBuilder::endFunction(ValueRange returnValues) {
       llvm::reportFatalUsageError(
           "Function body has qubit values that are neither returned nor "
           "consumed");
+    }
+  }
+  for (const auto& [tensor, info] : validTensors) {
+    if (!functionScope->outerTensors.contains(tensor)) {
+      llvm::reportFatalUsageError(
+          "Function body has tensor values that are neither returned nor "
+          "deallocated");
     }
   }
 
@@ -1445,87 +1470,56 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
   }
 
   SmallVector<Value> qubitOperands;
+  SmallVector<Value> tensorOperands;
   for (const auto operand : operands) {
     if (isa<QubitType>(operand.getType())) {
       validateQubitValue(operand);
       qubitOperands.emplace_back(operand);
+    } else if (isQubitTensor(operand.getType())) {
+      validateTensorValue(operand);
+      tensorOperands.emplace_back(operand);
     }
   }
 
   auto callOp = func::CallOp::create(*this, funcOp, operands);
 
   SmallVector<Value> qubitResults;
+  SmallVector<Value> tensorResults;
   for (const auto result : callOp.getResults()) {
     if (isa<QubitType>(result.getType())) {
       qubitResults.emplace_back(result);
+    } else if (isQubitTensor(result.getType())) {
+      tensorResults.emplace_back(result);
     }
   }
 
-  // Thread the i-th qubit operand into the i-th qubit result. Any operand
-  // without a matching result is consumed by the call, any result without a
-  // matching operand is newly created by it.
-  const auto paired = std::min(qubitOperands.size(), qubitResults.size());
-  for (size_t i = 0; i < paired; ++i) {
+  // Thread the i-th linear operand into the i-th linear result of the same
+  // kind. Any operand without a matching result is consumed by the call, any
+  // result without a matching operand is newly created by it.
+  const auto pairedQubits = std::min(qubitOperands.size(), qubitResults.size());
+  for (size_t i = 0; i < pairedQubits; ++i) {
     updateQubitTracking(qubitOperands[i], qubitResults[i]);
   }
-  for (size_t i = paired; i < qubitOperands.size(); ++i) {
+  for (size_t i = pairedQubits; i < qubitOperands.size(); ++i) {
     validQubits.erase(qubitOperands[i]);
   }
-  for (size_t i = paired; i < qubitResults.size(); ++i) {
+  for (size_t i = pairedQubits; i < qubitResults.size(); ++i) {
     validQubits.try_emplace(qubitResults[i], QubitInfo{});
   }
 
+  const auto pairedTensors =
+      std::min(tensorOperands.size(), tensorResults.size());
+  for (size_t i = 0; i < pairedTensors; ++i) {
+    updateTensorTracking(tensorOperands[i], tensorResults[i]);
+  }
+  for (size_t i = pairedTensors; i < tensorOperands.size(); ++i) {
+    validTensors.erase(tensorOperands[i]);
+  }
+  for (size_t i = pairedTensors; i < tensorResults.size(); ++i) {
+    validTensors.try_emplace(tensorResults[i], TensorInfo{tensorCounter++});
+  }
+
   return SmallVector<Value>(callOp.getResults());
-}
-
-//===----------------------------------------------------------------------===//
-// Builtin Tensor Operations
-//===----------------------------------------------------------------------===//
-
-Value QCOProgramBuilder::tensorFromElements(ValueRange qubits) {
-  checkFinalized();
-
-  for (const auto qubit : qubits) {
-    validateQubitValue(qubit);
-  }
-
-  const auto tensorType = RankedTensorType::get(
-      {static_cast<int64_t>(qubits.size())}, getQubitType());
-  auto fromElementsOp =
-      tensor::FromElementsOp::create(*this, tensorType, qubits);
-
-  for (const auto qubit : qubits) {
-    validQubits.erase(qubit);
-  }
-
-  return fromElementsOp.getResult();
-}
-
-Value QCOProgramBuilder::tensorExtract(Value tensor, const int64_t index) {
-  checkFinalized();
-
-  auto indexValue = arith::ConstantIndexOp::create(*this, index);
-  auto extractOp =
-      tensor::ExtractOp::create(*this, tensor, ValueRange{indexValue});
-
-  validQubits.try_emplace(extractOp.getResult(), QubitInfo{});
-
-  return extractOp.getResult();
-}
-
-Value QCOProgramBuilder::tensorInsert(Value qubit, Value tensor,
-                                      const int64_t index) {
-  checkFinalized();
-
-  validateQubitValue(qubit);
-
-  auto indexValue = arith::ConstantIndexOp::create(*this, index);
-  auto insertOp =
-      tensor::InsertOp::create(*this, qubit, tensor, ValueRange{indexValue});
-
-  validQubits.erase(qubit);
-
-  return insertOp.getResult();
 }
 
 //===----------------------------------------------------------------------===//

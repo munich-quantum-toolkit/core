@@ -11,14 +11,13 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -50,7 +49,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    tensor::TensorDialect>();
+                    qtensor::QTensorDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
@@ -460,21 +459,20 @@ TEST_F(QCOQuantumIPOTest, noSpecializationForArbitraryRotationAngle) {
  * compile-time constant indices is replaced by scalar qubit arguments.
  */
 TEST_F(QCOQuantumIPOTest, promoteTensorArgumentToQubitArgument) {
-  const auto tensorType =
-      RankedTensorType::get({2}, programBuilder.getQubitType());
+  const auto tensorType = programBuilder.getQubitTensorType(2);
 
   programBuilder.initialize();
   auto args = programBuilder.startFunction("f", {tensorType}, {tensorType});
-  auto inner = programBuilder.tensorExtract(args[0], 0);
+  auto [tensorIn, inner] = programBuilder.qtensorExtract(args[0], 0);
   inner = programBuilder.h(inner);
-  programBuilder.endFunction({programBuilder.tensorInsert(inner, args[0], 0)});
+  programBuilder.endFunction(
+      {programBuilder.qtensorInsert(inner, tensorIn, 0)});
 
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
-  auto tensor = programBuilder.tensorFromElements({q0, q1});
+  auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 0));
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 1));
+  programBuilder.qtensorDealloc(results[0]);
   module = programBuilder.finalize();
 
   referenceBuilder.initialize();
@@ -485,13 +483,14 @@ TEST_F(QCOQuantumIPOTest, promoteTensorArgumentToQubitArgument) {
 
   auto refQ0 = referenceBuilder.allocQubit();
   auto refQ1 = referenceBuilder.allocQubit();
-  auto refTensor = referenceBuilder.tensorFromElements({refQ0, refQ1});
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1});
   // The caller extracts the promoted element, calls, and re-inserts it.
-  auto refExtracted = referenceBuilder.tensorExtract(refTensor, 0);
+  auto [refTensorIn, refExtracted] =
+      referenceBuilder.qtensorExtract(refTensor, 0);
   auto refResults = referenceBuilder.call("f", {refExtracted});
-  auto refInserted = referenceBuilder.tensorInsert(refResults[0], refTensor, 0);
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refInserted, 0));
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refInserted, 1));
+  auto refInserted =
+      referenceBuilder.qtensorInsert(refResults[0], refTensorIn, 0);
+  referenceBuilder.qtensorDealloc(refInserted);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
@@ -502,23 +501,21 @@ TEST_F(QCOQuantumIPOTest, promoteTensorArgumentToQubitArgument) {
  * arguments; untouched elements never cross the call boundary.
  */
 TEST_F(QCOQuantumIPOTest, promoteOnlyUsedTensorElements) {
-  const auto tensorType =
-      RankedTensorType::get({3}, programBuilder.getQubitType());
+  const auto tensorType = programBuilder.getQubitTensorType(3);
 
   programBuilder.initialize();
   auto args = programBuilder.startFunction("f", {tensorType}, {tensorType});
-  auto inner = programBuilder.tensorExtract(args[0], 1);
+  auto [tensorIn, inner] = programBuilder.qtensorExtract(args[0], 1);
   inner = programBuilder.x(inner);
-  programBuilder.endFunction({programBuilder.tensorInsert(inner, args[0], 1)});
+  programBuilder.endFunction(
+      {programBuilder.qtensorInsert(inner, tensorIn, 1)});
 
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
-  auto tensor = programBuilder.tensorFromElements({q0, q1, q2});
+  auto tensor = programBuilder.qtensorFromElements({q0, q1, q2});
   auto results = programBuilder.call("f", {tensor});
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 0));
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 1));
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 2));
+  programBuilder.qtensorDealloc(results[0]);
   module = programBuilder.finalize();
 
   referenceBuilder.initialize();
@@ -530,13 +527,54 @@ TEST_F(QCOQuantumIPOTest, promoteOnlyUsedTensorElements) {
   auto refQ0 = referenceBuilder.allocQubit();
   auto refQ1 = referenceBuilder.allocQubit();
   auto refQ2 = referenceBuilder.allocQubit();
-  auto refTensor = referenceBuilder.tensorFromElements({refQ0, refQ1, refQ2});
-  auto refExtracted = referenceBuilder.tensorExtract(refTensor, 1);
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1, refQ2});
+  auto [refTensorIn, refExtracted] =
+      referenceBuilder.qtensorExtract(refTensor, 1);
   auto refResults = referenceBuilder.call("f", {refExtracted});
-  auto refInserted = referenceBuilder.tensorInsert(refResults[0], refTensor, 1);
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refInserted, 0));
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refInserted, 1));
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refInserted, 2));
+  auto refInserted =
+      referenceBuilder.qtensorInsert(refResults[0], refTensorIn, 1);
+  referenceBuilder.qtensorDealloc(refInserted);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief A qubit that is moved to a different slot is promoted with the
+ * extraction and insertion indices kept apart.
+ */
+TEST_F(QCOQuantumIPOTest, promoteTensorElementIntoDifferentSlot) {
+  const auto tensorType = programBuilder.getQubitTensorType(2);
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {tensorType}, {tensorType});
+  auto [tensorIn, inner] = programBuilder.qtensorExtract(args[0], 0);
+  inner = programBuilder.h(inner);
+  programBuilder.endFunction(
+      {programBuilder.qtensorInsert(inner, tensorIn, 1)});
+
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto tensor = programBuilder.qtensorFromElements({q0, q1});
+  auto results = programBuilder.call("f", {tensor});
+  programBuilder.qtensorDealloc(results[0]);
+  module = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs =
+      referenceBuilder.startFunction("f", {referenceBuilder.getQubitType()},
+                                     {referenceBuilder.getQubitType()});
+  referenceBuilder.endFunction({referenceBuilder.h(refArgs[0])});
+
+  auto refQ0 = referenceBuilder.allocQubit();
+  auto refQ1 = referenceBuilder.allocQubit();
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1});
+  auto [refTensorIn, refExtracted] =
+      referenceBuilder.qtensorExtract(refTensor, 0);
+  auto refResults = referenceBuilder.call("f", {refExtracted});
+  auto refInserted =
+      referenceBuilder.qtensorInsert(refResults[0], refTensorIn, 1);
+  referenceBuilder.qtensorDealloc(refInserted);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
@@ -547,86 +585,72 @@ TEST_F(QCOQuantumIPOTest, promoteOnlyUsedTensorElements) {
  * because the promoted callee would have nothing to hand back for that slot.
  */
 TEST_F(QCOQuantumIPOTest, noPromotionWithoutMatchingInsert) {
-  const auto tensorType =
-      RankedTensorType::get({2}, programBuilder.getQubitType());
+  const auto tensorType = programBuilder.getQubitTensorType(2);
   const auto qubitType = programBuilder.getQubitType();
 
   programBuilder.initialize();
   auto args =
       programBuilder.startFunction("f", {tensorType}, {tensorType, qubitType});
-  // The element at index 0 leaves the tensor for good, ...
-  auto escaping = programBuilder.h(programBuilder.tensorExtract(args[0], 0));
-  // ... while the element at index 1 is threaded back in.
-  auto threaded = programBuilder.x(programBuilder.tensorExtract(args[0], 1));
-  auto inserted = programBuilder.tensorInsert(threaded, args[0], 1);
-  programBuilder.endFunction({inserted, escaping});
+  // The element at index 0 leaves the tensor for good.
+  auto [tensorIn, escaping] = programBuilder.qtensorExtract(args[0], 0);
+  escaping = programBuilder.h(escaping);
+  programBuilder.endFunction({tensorIn, escaping});
 
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
-  auto tensor = programBuilder.tensorFromElements({q0, q1});
+  auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.sink(results[1]);
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 1));
+  programBuilder.qtensorDealloc(results[0]);
   module = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {tensorType},
                                                 {tensorType, qubitType});
-  auto refEscaping =
-      referenceBuilder.h(referenceBuilder.tensorExtract(refArgs[0], 0));
-  auto refThreaded =
-      referenceBuilder.x(referenceBuilder.tensorExtract(refArgs[0], 1));
-  auto refInserted = referenceBuilder.tensorInsert(refThreaded, refArgs[0], 1);
-  referenceBuilder.endFunction({refInserted, refEscaping});
+  auto [refTensorIn, refEscaping] =
+      referenceBuilder.qtensorExtract(refArgs[0], 0);
+  refEscaping = referenceBuilder.h(refEscaping);
+  referenceBuilder.endFunction({refTensorIn, refEscaping});
 
   auto refQ0 = referenceBuilder.allocQubit();
   auto refQ1 = referenceBuilder.allocQubit();
-  auto refTensor = referenceBuilder.tensorFromElements({refQ0, refQ1});
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1});
   auto refResults = referenceBuilder.call("f", {refTensor});
   referenceBuilder.sink(refResults[1]);
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refResults[0], 1));
+  referenceBuilder.qtensorDealloc(refResults[0]);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
 }
 
 /**
- * @brief A tensor argument that is handed back to the caller as a whole cannot
- * be promoted, because it is used by something other than element accesses.
+ * @brief A tensor argument that never has an element taken out of it has
+ * nothing to promote.
  */
-TEST_F(QCOQuantumIPOTest, noPromotionWhenTensorEscapesToReturn) {
-  const auto tensorType =
-      RankedTensorType::get({2}, programBuilder.getQubitType());
-  const auto qubitType = programBuilder.getQubitType();
+TEST_F(QCOQuantumIPOTest, noPromotionWithoutElementAccess) {
+  const auto tensorType = programBuilder.getQubitTensorType(2);
 
   programBuilder.initialize();
-  auto args =
-      programBuilder.startFunction("f", {tensorType}, {tensorType, qubitType});
-  auto inner = programBuilder.tensorExtract(args[0], 0);
-  inner = programBuilder.h(inner);
-  programBuilder.endFunction({args[0], inner});
+  auto args = programBuilder.startFunction("f", {tensorType}, {tensorType});
+  programBuilder.endFunction({args[0]});
 
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
-  auto tensor = programBuilder.tensorFromElements({q0, q1});
+  auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
-  programBuilder.sink(results[1]);
-  programBuilder.sink(programBuilder.tensorExtract(results[0], 1));
+  programBuilder.qtensorDealloc(results[0]);
   module = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {tensorType},
-                                                {tensorType, qubitType});
-  auto refInner = referenceBuilder.tensorExtract(refArgs[0], 0);
-  refInner = referenceBuilder.h(refInner);
-  referenceBuilder.endFunction({refArgs[0], refInner});
+  auto refArgs =
+      referenceBuilder.startFunction("f", {tensorType}, {tensorType});
+  referenceBuilder.endFunction({refArgs[0]});
 
   auto refQ0 = referenceBuilder.allocQubit();
   auto refQ1 = referenceBuilder.allocQubit();
-  auto refTensor = referenceBuilder.tensorFromElements({refQ0, refQ1});
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1});
   auto refResults = referenceBuilder.call("f", {refTensor});
-  referenceBuilder.sink(refResults[1]);
-  referenceBuilder.sink(referenceBuilder.tensorExtract(refResults[0], 1));
+  referenceBuilder.qtensorDealloc(refResults[0]);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
