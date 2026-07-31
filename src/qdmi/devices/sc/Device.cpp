@@ -10,6 +10,9 @@
 
 #include "qdmi/devices/sc/Device.hpp"
 
+#include "mqt_sc_qdmi/constants.h"
+#include "mqt_sc_qdmi/device.h"
+#include "mqt_sc_qdmi/types.h"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
@@ -18,12 +21,13 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <memory>
 #include <new>
 #include <optional>
-#include <ranges>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -115,7 +119,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
               materializeTuple(tuple, newSites));
         }
       } else if (operation->numQubits == 1) {
-        for (const auto site : newSites) {
+        for (auto* const site : newSites) {
           operation->supportedSites.push_back({site});
         }
       } else if (operation->numQubits == 2) {
@@ -275,8 +279,8 @@ int MQT_SC_QDMI_Device_Session_impl_d::queryOperationProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (suppliedSites != nullptr) {
-    for (size_t i = 0; i < numSites; ++i) {
-      if (suppliedSites[i] == nullptr || suppliedSites[i]->owner != this) {
+    for (auto* const site : std::span{suppliedSites, numSites}) {
+      if (site == nullptr || site->owner != this) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
     }
@@ -327,7 +331,8 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
     if (numSites != numQubits) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    tuple.assign(sites, sites + numSites);
+    const std::span suppliedSites{sites, numSites};
+    tuple.assign(suppliedSites.begin(), suppliedSites.end());
     if (!contains(supportedSites, tuple)) {
       return QDMI_ERROR_NOTSUPPORTED;
     }
@@ -377,6 +382,7 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
 }
 
 void MQT_SC_QDMI_Device_Job_impl_d::free() { session->freeDeviceJob(this); }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter parameter, const size_t size,
     const void* value) {
@@ -386,6 +392,7 @@ int MQT_SC_QDMI_Device_Job_impl_d::setParameter(
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property property, const size_t size, void* value,
     size_t* /*sizeRet*/) {
@@ -395,15 +402,20 @@ int MQT_SC_QDMI_Device_Job_impl_d::queryProperty(
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::submit() { return QDMI_ERROR_NOTSUPPORTED; }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::cancel() { return QDMI_ERROR_NOTSUPPORTED; }
-int MQT_SC_QDMI_Device_Job_impl_d::check(QDMI_Job_Status* value) {
-  return value == nullptr ? QDMI_ERROR_INVALIDARGUMENT
-                          : QDMI_ERROR_NOTSUPPORTED;
+// NOLINTNEXTLINE(readability-non-const-parameter,readability-convert-member-functions-to-static)
+int MQT_SC_QDMI_Device_Job_impl_d::check(QDMI_Job_Status* status) {
+  return status == nullptr ? QDMI_ERROR_INVALIDARGUMENT
+                           : QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::wait(size_t /*timeout*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                               const size_t size, void* data,
                                               size_t* /*sizeRet*/) {
@@ -420,6 +432,8 @@ int MQT_SC_QDMI_device_session_alloc(MQT_SC_QDMI_Device_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  // QDMI transfers ownership through its opaque C handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   *session = new (std::nothrow) MQT_SC_QDMI_Device_Session_impl_d;
   return *session == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
@@ -427,6 +441,7 @@ int MQT_SC_QDMI_device_session_init(MQT_SC_QDMI_Device_Session session) {
   return session == nullptr ? QDMI_ERROR_INVALIDARGUMENT : session->init();
 }
 void MQT_SC_QDMI_device_session_free(MQT_SC_QDMI_Device_Session session) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete session;
 }
 int MQT_SC_QDMI_device_session_set_parameter(

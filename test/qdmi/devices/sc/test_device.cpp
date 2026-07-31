@@ -13,9 +13,11 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include <nlohmann/json_fwd.hpp>
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <future>
@@ -212,8 +214,8 @@ queryOperations(MQT_SC_QDMI_Device_Session session) {
   std::vector<MQT_SC_QDMI_Operation> operations(size /
                                                 sizeof(MQT_SC_QDMI_Operation));
   if (MQT_SC_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_OPERATIONS, size, operations.data(),
-          nullptr) != QDMI_SUCCESS) {
+          session, QDMI_DEVICE_PROPERTY_OPERATIONS, size,
+          static_cast<void*>(operations.data()), nullptr) != QDMI_SUCCESS) {
     throw std::runtime_error("Failed to retrieve operations");
   }
   return operations;
@@ -226,34 +228,34 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 0, nullptr),
             QDMI_SUCCESS);
-  constexpr char missingNul[] = {'{', '}'};
+  constexpr std::array missingNul{'{', '}'};
   EXPECT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                sizeof(missingNul), missingNul),
+                missingNul.size(), missingNul.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  constexpr char embeddedNul[] = {'{', '\0', '}', '\0'};
+  constexpr std::array embeddedNul{'{', '\0', '}', '\0'};
   EXPECT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                sizeof(embeddedNul), embeddedNul),
+                embeddedNul.size(), embeddedNul.data()),
             QDMI_ERROR_INVALIDARGUMENT);
-  constexpr char file[] = SC_DEVICE_JSON;
+  constexpr auto file = std::to_array(SC_DEVICE_JSON);
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
                 std::strlen(CUSTOM_SC) + 1, CUSTOM_SC),
             QDMI_SUCCESS);
-  ASSERT_EQ(
-      MQT_SC_QDMI_device_session_set_parameter(
-          session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, sizeof(file), file),
-      QDMI_SUCCESS);
+  ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, file.size(),
+                file.data()),
+            QDMI_SUCCESS);
   ASSERT_EQ(MQT_SC_QDMI_device_session_init(session), QDMI_SUCCESS);
   EXPECT_EQ(queryName(session), "Custom SC");
   MQT_SC_QDMI_device_session_free(session);
 
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  constexpr char malformed[] = "{";
+  constexpr auto malformed = std::to_array("{");
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                sizeof(malformed), malformed),
+                malformed.size(), malformed.data()),
             QDMI_SUCCESS);
   EXPECT_EQ(MQT_SC_QDMI_device_session_init(session),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -287,7 +289,7 @@ TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
 }
 
 TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
-  auto custom = initializedSession();
+  auto* custom = initializedSession();
   MQT_SC_QDMI_Device_Session bundled = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&bundled), QDMI_SUCCESS);
   ASSERT_EQ(MQT_SC_QDMI_device_session_init(bundled), QDMI_SUCCESS);
@@ -319,7 +321,7 @@ TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
       QDMI_SUCCESS);
   EXPECT_EQ(t2, 200);
 
-  const auto operation = queryOperations(custom).front();
+  auto* const operation = queryOperations(custom).front();
   uint64_t duration = 0;
   double fidelity = 0.;
   ASSERT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
@@ -349,7 +351,7 @@ TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
             QDMI_SUCCESS);
   EXPECT_DOUBLE_EQ(fidelity, 0.9);
 
-  const auto bundledSite = querySites(bundled).front();
+  auto* const bundledSite = querySites(bundled).front();
   EXPECT_EQ(
       MQT_SC_QDMI_device_session_query_site_property(
           custom, bundledSite, QDMI_SITE_PROPERTY_INDEX, 0, nullptr, nullptr),
@@ -377,10 +379,10 @@ TEST(ScRuntimeConfiguration, SelectsEnvironmentAndExplicitFileSources) {
   MQT_SC_QDMI_Device_Session explicitFileSession = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&explicitFileSession),
             QDMI_SUCCESS);
-  constexpr char file[] = SC_DEVICE_JSON;
+  constexpr auto file = std::to_array(SC_DEVICE_JSON);
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 explicitFileSession, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
-                sizeof(file), file),
+                file.size(), file.data()),
             QDMI_SUCCESS);
   ASSERT_EQ(MQT_SC_QDMI_device_session_init(explicitFileSession), QDMI_SUCCESS);
   EXPECT_EQ(queryName(explicitFileSession), "MQT SC Default QDMI Device");
@@ -399,10 +401,11 @@ TEST(ScRuntimeConfiguration, SelectsEnvironmentAndExplicitFileSources) {
 TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
   MQT_SC_QDMI_Device_Session session = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  constexpr char missing[] = "missing-sc-device-configuration.json";
+  constexpr auto missing =
+      std::to_array("missing-sc-device-configuration.json");
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, sizeof(missing),
-                missing),
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, missing.size(),
+                missing.data()),
             QDMI_SUCCESS);
   EXPECT_EQ(MQT_SC_QDMI_device_session_init(session), QDMI_ERROR_NOTFOUND);
   MQT_SC_QDMI_device_session_free(session);
@@ -416,9 +419,9 @@ TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
   configuration["operations"][0].erase("fidelity");
   configuration["operations"][0]["siteOverrides"] = nlohmann::json::array();
   const auto serialized = configuration.dump();
-  auto session = initializedSession(serialized);
+  auto* session = initializedSession(serialized);
   const auto sites = querySites(session);
-  const auto operation = queryOperations(session).front();
+  auto* const operation = queryOperations(session).front();
   EXPECT_EQ(MQT_SC_QDMI_device_session_query_site_property(
                 session, sites[0], QDMI_SITE_PROPERTY_T1, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
@@ -431,7 +434,7 @@ TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
 
 TEST(ScRuntimeConfiguration, InitializesIndependentSessionsConcurrently) {
   auto initializeAndQuery = [] {
-    auto session = initializedSession();
+    auto* session = initializedSession();
     const auto name = queryName(session);
     MQT_SC_QDMI_device_session_free(session);
     return name;

@@ -68,6 +68,20 @@ synthetic. These operation and calibration semantics directly address
       `9f6853a3a`; no further actionable issue was found.
 - [x] (2026-07-31 09:10 CEST) Published draft PR #1980 from the verified head
       and added its required changelog reference in a signed follow-up.
+- [x] (2026-07-31 10:25 CEST) Diagnosed the first PR CI run at exact published
+      head `9f6853a3a`: Linux exposed a platform-dependent integer type in four
+      coupling assertions, and clang-tidy 22.1.8 reported 105 diagnostics
+      confined to the new SC implementation and tests.
+- [x] (2026-07-31 10:25 CEST) Replaced the platform-dependent assertions with
+      the schema's `uint64_t` type, addressed the changed-surface clang-tidy
+      findings with direct includes, spans, standard arrays, qualified pointer
+      declarations, and established QDMI ABI suppressions, then passed the
+      release build, all SC tests, exact clang-tidy, repository hooks, and diff
+      checks.
+- [x] (2026-07-31 10:35 CEST) An independent exact-head review found one
+      remaining transitive provider for the generated session and job handle
+      aliases; added the direct device-interface include and normalized the job
+      status parameter name.
 
 ## Surprises & Discoveries
 
@@ -109,6 +123,15 @@ synthetic. These operation and calibration semantics directly address
   adjacent JSON file. The merged NA provider already established the required
   pattern: copy all target-declared runtime files and discover GoogleTests only
   after that copy has run.
+- Observation: macOS defines `uint64_t` as `unsigned long long`, while the Linux
+  CI target defines it as `unsigned long`; coupling assertions constructed with
+  `ULL` therefore compiled locally but failed on every Linux C++ job. Explicitly
+  constructing `std::pair<uint64_t, uint64_t>` tests the actual configuration
+  contract on both data models.
+- Observation: local include-cleaner analysis did not report the generated
+  session and job handle providers because `Device.hpp` exported them
+  transitively. Independent review against the original CI diagnostics exposed
+  the difference, so `Device.cpp` now includes the device interface directly.
 
 ## Decision Log
 
@@ -142,6 +165,11 @@ synthetic. These operation and calibration semantics directly address
   `PRE_TEST` discovery. Rationale: the shared helper follows target metadata and
   keeps the provider, manifest, and JSON together without duplicating asset
   lists or platform-specific copy commands. Date/Author: 2026-07-31 / Codex.
+- Decision: Preserve the QDMI job methods as instance methods and suppress only
+  the corresponding static-method diagnostics, matching the NA provider.
+  Rationale: these methods implement opaque-handle ABI behavior that may gain
+  per-job state, while changing them to static functions would only satisfy a
+  local implementation detail. Date/Author: 2026-07-31 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -164,6 +192,12 @@ MF-02 uses the same Windows runtime-copy and deferred-discovery pattern already
 validated for the merged NA provider. Local macOS validation confirms CMake
 configuration, the SC target, all SC tests, and the shared runtime-copy/import
 tests; the Windows CI jobs remain the platform-specific oracle.
+
+The first published CI run additionally established Linux portability and exact
+clang-tidy coverage. The remediation release-builds the SC provider and test,
+runs all 40 SC cases with one expected unsupported-job-property skip, produces
+no project diagnostics under clang-tidy 22.1.8, and passes the affected-file
+repository hooks and diff checks.
 
 ## Context and Orientation
 

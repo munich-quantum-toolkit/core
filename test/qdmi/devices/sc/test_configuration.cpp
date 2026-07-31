@@ -12,13 +12,17 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include <nlohmann/json_fwd.hpp>
 
+#include <cstdint>
 #include <fstream>
 #include <functional>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace sc {
 namespace {
@@ -56,8 +60,8 @@ TEST(ScConfigurationTest, ParsesBundledDeviceStrictly) {
   EXPECT_EQ(device.operations[1].name, "cz");
   EXPECT_EQ(device.operations[2].name, "measure");
   ASSERT_EQ(device.couplings.size(), 180);
-  EXPECT_EQ(device.couplings.front(), std::pair(0ULL, 1ULL));
-  EXPECT_EQ(device.couplings.back(), std::pair(89ULL, 99ULL));
+  EXPECT_EQ(device.couplings.front(), (std::pair<uint64_t, uint64_t>{0, 1}));
+  EXPECT_EQ(device.couplings.back(), (std::pair<uint64_t, uint64_t>{89, 99}));
 }
 
 TEST(ScConfigurationTest, RejectsTopLevelSchemaErrors) {
@@ -107,8 +111,8 @@ TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {
   root["couplings"] = {{1, 0}, {0, 1}};
   root["operations"][1]["siteOverrides"] = Json::array();
   const auto parsed = readJSON(root.dump(), "ordered");
-  EXPECT_EQ(parsed.couplings[0], std::pair(1ULL, 0ULL));
-  EXPECT_EQ(parsed.couplings[1], std::pair(0ULL, 1ULL));
+  EXPECT_EQ(parsed.couplings[0], (std::pair<uint64_t, uint64_t>{1, 0}));
+  EXPECT_EQ(parsed.couplings[1], (std::pair<uint64_t, uint64_t>{0, 1}));
 }
 
 TEST(ScConfigurationTest, ValidatesOperationSupportAndCalibration) {

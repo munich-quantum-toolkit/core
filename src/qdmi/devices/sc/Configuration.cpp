@@ -11,17 +11,26 @@
 #include "qdmi/devices/sc/Configuration.hpp"
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
+#include <initializer_list>
+#include <istream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace sc {
 namespace {
@@ -145,8 +154,9 @@ void validateFidelity(const std::optional<double>& fidelity,
        {"schema-version", "name", "numQubits", "durationUnit",
         "qubitProperties", "couplings", "operations"},
        source, "$");
-  for (const auto key : {"schema-version", "name", "numQubits", "durationUnit",
-                         "qubitProperties", "couplings", "operations"}) {
+  for (const auto* const key :
+       {"schema-version", "name", "numQubits", "durationUnit",
+        "qubitProperties", "couplings", "operations"}) {
     if (!root.contains(key)) {
       fail(source, "$/" + std::string(key), "is required");
     }
@@ -187,7 +197,7 @@ void validateFidelity(const std::optional<double>& fidelity,
     const auto& properties = root.at("qubitProperties");
     object(properties, source, "$/qubitProperties");
     keys(properties, {"defaults", "overrides"}, source, "$/qubitProperties");
-    for (const auto key : {"defaults", "overrides"}) {
+    for (const auto* const key : {"defaults", "overrides"}) {
       if (!properties.contains(key)) {
         fail(source, "$/qubitProperties/" + std::string(key), "is required");
       }
@@ -215,7 +225,7 @@ void validateFidelity(const std::optional<double>& fidelity,
           fail(source, pointer,
                "must select one unique valid qubit and override t1 or t2");
         }
-        result.qubitProperties.overrides.emplace_back(std::move(entry));
+        result.qubitProperties.overrides.emplace_back(entry);
       }
     }
   }
