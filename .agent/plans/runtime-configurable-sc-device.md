@@ -55,7 +55,16 @@ synthetic. These operation and calibration semantics directly address
       runtime-file/imported-device CTest coverage, focused Python tests, full
       repository lint, release build, diff checks, and warning-as-error
       documentation build after remediation.
-- [ ] Complete independent exact-head verification after MF-01 and NIT-01.
+- [x] (2026-07-31 08:10 CEST) Independently verified MF-01 and NIT-01, finding
+      MF-02: the Windows SC test copied only the provider DLL and omitted its
+      adjacent runtime JSON.
+- [x] (2026-07-31 08:15 CEST) Replaced the Windows-only DLL copy with the shared
+      runtime-copy helper and deferred GoogleTest discovery until the provider,
+      manifest, and JSON are colocated.
+- [x] (2026-07-31 08:45 CEST) Reconfigured and rebuilt the SC target, repeated
+      all 40 SC tests and six runtime-copy/import tests, and passed full
+      repository lint and diff checks after MF-02.
+- [ ] Complete independent exact-head verification after MF-02.
 
 ## Surprises & Discoveries
 
@@ -92,6 +101,11 @@ synthetic. These operation and calibration semantics directly address
   the ordered coupling map. QDMI requires every advertised two-site operation
   tuple to be a coupling edge, so the parser now enforces that invariant before
   materialization.
+- Observation: the second exact-head review found that the SC Windows test
+  retained a DLL-only copy even though provider initialization now loads an
+  adjacent JSON file. The merged NA provider already established the required
+  pattern: copy all target-declared runtime files and discover GoogleTests only
+  after that copy has run.
 
 ## Decision Log
 
@@ -121,6 +135,10 @@ synthetic. These operation and calibration semantics directly address
   ordered coupling edge. Rationale: QDMI conformance requires every advertised
   supported pair to belong to the coupling map, and preserving orientation is
   part of the runtime schema contract. Date/Author: 2026-07-31 / Codex.
+- Decision: Use `mqt_copy_qdmi_runtime` for the Windows SC test target and
+  `PRE_TEST` discovery. Rationale: the shared helper follows target metadata and
+  keeps the provider, manifest, and JSON together without duplicating asset
+  lists or platform-specific copy commands. Date/Author: 2026-07-31 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -138,6 +156,11 @@ and diff checks also pass. Earlier stacked validation additionally covered
 installation and wheel relocation. After MF-01 and NIT-01, the SC suite reports
 39 passed with the same one expected skip; the Driver, Python, CTest, lint,
 release-build, documentation, and diff checks remain green.
+
+MF-02 uses the same Windows runtime-copy and deferred-discovery pattern already
+validated for the merged NA provider. Local macOS validation confirms CMake
+configuration, the SC target, all SC tests, and the shared runtime-copy/import
+tests; the Windows CI jobs remain the platform-specific oracle.
 
 ## Context and Orientation
 

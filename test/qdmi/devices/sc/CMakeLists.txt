@@ -12,6 +12,10 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
   generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMIScDevice)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-test)
+  if(WIN32)
+    # Discover tests after the provider and its runtime assets have been copied.
+    set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+  endif()
   # Add the test executable
   package_add_test(${TARGET_NAME} MQT::CoreQDMIScDevice test_configuration.cpp test_device.cpp)
   # Add dependency to enforce implementation of all interface functions
@@ -25,12 +29,8 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
     PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}"
             SC_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json")
 
-  # On Windows, we need to copy the DLL to the test executable directory
+  # On Windows, copy the provider and its runtime assets beside the test executable.
   if(WIN32)
-    add_custom_command(
-      TARGET ${TARGET_NAME}
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMIScDevice>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+    mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMIScDevice)
   endif()
 endif()
