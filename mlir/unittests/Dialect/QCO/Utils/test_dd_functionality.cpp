@@ -781,6 +781,22 @@ TEST_F(QCODDFunctionalityTest, SimulateScfForAppliesBodyTrips) {
   expectSimulatesFromZero(mainFunc(*mod), 1, {true});
 }
 
+TEST_F(QCODDFunctionalityTest, AcceptsScfForAtTripCountLimit) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto results =
+        b.scfFor(0, 10000, 1, ValueRange{q},
+                 [&](Value /*iv*/, ValueRange iterArgs) -> SmallVector<Value> {
+                   return {iterArgs[0]};
+                 });
+    b.sink(results[0]);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {false});
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsScfForTripCountLimit) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);

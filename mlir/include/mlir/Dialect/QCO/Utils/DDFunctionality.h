@@ -60,10 +60,12 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * concrete classical control-flow (`qco.if` / `qco.index_switch` with
  * compile-time or previously recorded classical selectors) and static 1-D
  * `memref<?xi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
- * Mid-circuit `measure` / `reset` require the RNG overload below. Only
- * qubit-typed linear values are supported (no qtensors). Nested regions are
- * walked; loops and multi-block function bodies remain unsupported. Consumes
- * one reference to @p in regardless of whether simulation succeeds or fails.
+ * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
+ * bound `scf.for` loops and non-recursive single-block `func.call` are
+ * supported independently of RNG. Only qubit-typed linear values are supported
+ * (no qtensors). Nested regions are walked; `scf.while` and multi-block
+ * function bodies remain unsupported. Consumes one reference to @p in
+ * regardless of whether simulation succeeds or fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state, represented as a vector DD; one reference is
@@ -146,6 +148,12 @@ FailureOr<std::map<std::string, std::size_t>>
 sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
        std::size_t shots, std::mt19937_64& rng);
 
+/// Histograms from QCO DD sampling (`shots` and optional mid-circuit bits).
+struct SampleResult {
+  std::map<std::string, size_t> shots;
+  std::map<std::string, size_t> classical;
+};
+
 /**
  * @brief Sample final and mid-circuit classical outcomes from a QCO
  * `func.func`.
@@ -154,13 +162,16 @@ sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
  * measurement bits in encounter order into @c SampleResult::classical.
  * Programs without mid-circuit measures leave @c classical empty.
  */
-struct SampleResult {
-  std::map<std::string, size_t> shots;
-  std::map<std::string, size_t> classical;
-};
-
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
                                            size_t shots, std::mt19937_64& rng);
+
+/**
+ * @brief Sample final and mid-circuit classical outcomes from a given input.
+ *
+ * @details Same as the zero-state overload, but starts from @p in. Consumes one
+ * reference to @p in (the static path keeps that state for all shots; the
+ * dynamic path clones per shot).
+ */
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func,
                                            const dd::VectorDD& in,
                                            dd::Package& dd, size_t shots,

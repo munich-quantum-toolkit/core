@@ -626,16 +626,22 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
                                 [](int64_t a, int64_t b) { return a ^ b; });
       })
       .Case<arith::AddIOp>([&](arith::AddIOp addOp) {
-        return applyBinaryIndex(addOp, classical,
-                                [](int64_t a, int64_t b) { return a + b; });
+        return applyBinaryIndex(addOp, classical, [](int64_t a, int64_t b) {
+          return static_cast<int64_t>(static_cast<uint64_t>(a) +
+                                      static_cast<uint64_t>(b));
+        });
       })
       .Case<arith::SubIOp>([&](arith::SubIOp subOp) {
-        return applyBinaryIndex(subOp, classical,
-                                [](int64_t a, int64_t b) { return a - b; });
+        return applyBinaryIndex(subOp, classical, [](int64_t a, int64_t b) {
+          return static_cast<int64_t>(static_cast<uint64_t>(a) -
+                                      static_cast<uint64_t>(b));
+        });
       })
       .Case<arith::MulIOp>([&](arith::MulIOp mulOp) {
-        return applyBinaryIndex(mulOp, classical,
-                                [](int64_t a, int64_t b) { return a * b; });
+        return applyBinaryIndex(mulOp, classical, [](int64_t a, int64_t b) {
+          return static_cast<int64_t>(static_cast<uint64_t>(a) *
+                                      static_cast<uint64_t>(b));
+        });
       })
       .Case<arith::ShLIOp>([&](arith::ShLIOp shli) -> LogicalResult {
         if (!isa<IndexType>(shli.getType())) {
@@ -651,8 +657,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           return shli.emitError()
                  << "shift amount out of range for QCO DD simulation";
         }
-        classical.indices[shli.getResult()] = *lhs
-                                              << static_cast<unsigned>(*rhs);
+        classical.indices[shli.getResult()] = static_cast<int64_t>(
+            static_cast<uint64_t>(*lhs) << static_cast<unsigned>(*rhs));
         return success();
       })
       .Case<arith::ShRUIOp>([&](arith::ShRUIOp shrui) -> LogicalResult {
@@ -689,8 +695,47 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           if (failed(lb) || failed(rb)) {
             return failure();
           }
-          lhs = static_cast<int64_t>(*lb);
-          rhs = static_cast<int64_t>(*rb);
+          // Unsigned i1 uses 0/1; signed predicates use arith sign-extension
+          // (true → -1). Equality is identical under either encoding.
+          const int64_t aU = *lb ? 1 : 0;
+          const int64_t bU = *rb ? 1 : 0;
+          const int64_t aS = *lb ? -1 : 0;
+          const int64_t bS = *rb ? -1 : 0;
+          bool result = false;
+          switch (cmp.getPredicate()) {
+          case arith::CmpIPredicate::eq:
+            result = aU == bU;
+            break;
+          case arith::CmpIPredicate::ne:
+            result = aU != bU;
+            break;
+          case arith::CmpIPredicate::slt:
+            result = aS < bS;
+            break;
+          case arith::CmpIPredicate::sle:
+            result = aS <= bS;
+            break;
+          case arith::CmpIPredicate::sgt:
+            result = aS > bS;
+            break;
+          case arith::CmpIPredicate::sge:
+            result = aS >= bS;
+            break;
+          case arith::CmpIPredicate::ult:
+            result = static_cast<uint64_t>(aU) < static_cast<uint64_t>(bU);
+            break;
+          case arith::CmpIPredicate::ule:
+            result = static_cast<uint64_t>(aU) <= static_cast<uint64_t>(bU);
+            break;
+          case arith::CmpIPredicate::ugt:
+            result = static_cast<uint64_t>(aU) > static_cast<uint64_t>(bU);
+            break;
+          case arith::CmpIPredicate::uge:
+            result = static_cast<uint64_t>(aU) >= static_cast<uint64_t>(bU);
+            break;
+          }
+          classical.bools[cmp.getResult()] = result;
+          return success();
         } else {
           return cmp.emitError()
                  << "QCO DD simulation only supports cmpi on i1 or index";
@@ -1011,8 +1056,16 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
               }
               const int64_t selector = idxIt->second;
               const auto cases = switchOp.getCases();
+              if (switchOp.getDefaultRegion().empty()) {
+                return switchOp.emitError()
+                       << "index_switch default region is missing or empty";
+              }
               Block* block = switchOp.getDefaultBlock();
               YieldOp yield = switchOp.getDefaultYield();
+              if (block == nullptr) {
+                return switchOp.emitError()
+                       << "index_switch default region is missing or empty";
+              }
               for (auto [i, caseValue] : llvm::enumerate(cases)) {
                 if (caseValue == selector) {
                   block = switchOp.getCaseBlock(i);
@@ -1126,7 +1179,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
 
-        if (failed(walkFunction(callee, walk, state))) {
+        // Walk the callee body without its terminator so entry-function-only
+        // `validateReturn` (canonical wire order) is not applied to callees.
+        if (failed(walkBlock(callee.getBody().front(), walk, state))) {
           return failure();
         }
 
@@ -1293,7 +1348,18 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
   return simulateImpl(func, in, dd, &rng, nullptr);
 }
 
-[[nodiscard]] static bool requiresDynamicSampling(func::FuncOp func) {
+[[nodiscard]] static bool
+requiresDynamicSampling(func::FuncOp func,
+                        DenseSet<Operation*>* visiting = nullptr) {
+  DenseSet<Operation*> localVisiting;
+  DenseSet<Operation*>& active =
+      visiting != nullptr ? *visiting : localVisiting;
+  Operation* funcOp = func.getOperation();
+  if (!active.insert(funcOp).second) {
+    // Recursive call cycle: treat as dynamic to avoid infinite recursion.
+    return true;
+  }
+
   bool dynamic = false;
   func.walk([&](Operation* op) {
     // Only stochastic collapse forces per-shot re-simulation. Deterministic
@@ -1302,8 +1368,22 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
       dynamic = true;
       return WalkResult::interrupt();
     }
+    if (auto call = dyn_cast<func::CallOp>(op)) {
+      auto module = call->getParentOfType<ModuleOp>();
+      if (!module) {
+        dynamic = true;
+        return WalkResult::interrupt();
+      }
+      auto callee = module.lookupSymbol<func::FuncOp>(call.getCallee());
+      if (!callee || !callee.getBody().hasOneBlock() ||
+          requiresDynamicSampling(callee, &active)) {
+        dynamic = true;
+        return WalkResult::interrupt();
+      }
+    }
     return WalkResult::advance();
   });
+  active.erase(funcOp);
   return dynamic;
 }
 
