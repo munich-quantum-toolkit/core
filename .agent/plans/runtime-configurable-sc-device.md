@@ -64,7 +64,10 @@ synthetic. These operation and calibration semantics directly address
 - [x] (2026-07-31 08:45 CEST) Reconfigured and rebuilt the SC target, repeated
       all 40 SC tests and six runtime-copy/import tests, and passed full
       repository lint and diff checks after MF-02.
-- [ ] Complete independent exact-head verification after MF-02.
+- [x] (2026-07-31 09:00 CEST) Independently verified MF-02 at exact head
+      `9f6853a3a`; no further actionable issue was found.
+- [x] (2026-07-31 09:10 CEST) Published draft PR #1980 from the verified head
+      and added its required changelog reference in a signed follow-up.
 
 ## Surprises & Discoveries
 
@@ -228,7 +231,8 @@ and post-init immutability are covered by automated tests.
 The provider commits a model only after parsing, validation, and materialization
 finish, so initialization can be retried. Test environment changes are scoped
 and restored. Build, install, copy, documentation, and lint commands are
-repeatable. No remote publication is part of this plan.
+repeatable. Draft publication occurs only after independent exact-head
+verification; the PR-numbered changelog is then added as a signed follow-up.
 
 ## Artifacts and Notes
 
