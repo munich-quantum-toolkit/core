@@ -314,7 +314,7 @@ struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
     }
 
     runQuantumArgumentPromotion(op, symbolTable);
-    runAncillaHoisting(op, symbolTable);
+    runAuxiliaryQubitHoisting(op, symbolTable);
     runQuantumFunctionBoundaryCommutation(op, symbolTable);
     runQuantumFunctionBoundaryCommutation(op, symbolTable);
   }

@@ -52,9 +52,6 @@ bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
   if (first.getOperation()->getName() != second.getOperation()->getName()) {
     return false;
   }
-  if (first.getNumQubits() != 1 || second.getNumQubits() != 1) {
-    return false;
-  }
   if (isa<XOp, YOp, ZOp, HOp>(first)) {
     return true;
   }
