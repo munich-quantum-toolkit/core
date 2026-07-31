@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -69,9 +71,9 @@ namespace qir {
  * builder.h(q0).cx(q0, q1);
  *
  * // Measure with register info for proper output recording
- * auto c = builder.allocClassicalBitRegister(2, "c");
- * builder.measure(q0, c[0]);
- * builder.measure(q1, c[1]);
+ * auto c = builder.allocClassicalBitRegister(2);
+ * builder.measure(q0, c, 0);
+ * builder.measure(q1, c, 1);
  *
  * auto module = builder.finalize();
  * ```
@@ -190,12 +192,19 @@ public:
   /**
    * @brief Get a static result by index
    * @param index The result index (must be non-negative)
+   * @param record Whether the result should be recorded in the output
    * @return An LLVM pointer representing the result
    *
    * @par Example:
-   *
+   * ```c++
+   * auto r0 = builder.staticResult(0);
+   * ```
+   * ```mlir
+   * %c0 = llvm.mlir.constant(0 : i64) : i64
+   * %r0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+   * ```
    */
-  Value staticResult(int64_t index);
+  Value staticResult(int64_t index, bool record = true);
 
   /**
    * @brief Represents a qubit register with its qubits.
@@ -246,140 +255,118 @@ public:
   /**
    * @brief Loads a qubit from a register
    *
-   * @param reg Source register
-   * @param index The index from where the qubit is loaded
-   * @return The loaded qubit
+   * @param reg The qubit register
+   * @param index The index within the register
+   * @return An LLVM pointer to the loaded qubit
    *
    * @par Example:
    * ```c++
-   * auto q0 = builder.load(register, index);
+   * auto q = builder.loadQubit(reg, index);
    * ```
    * ```mlir
-   * %gep = llvm.getelementptr %alloc[%index] : (!llvm.ptr, i64) -> !llvm.ptr,
-   * !llvm.ptr
-   * %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
+   * !llvm.ptr, !llvm.ptr
+   * %q = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
    * ```
    */
-  Value load(Value reg, Value index);
-
-  /**
-   * @brief A small structure representing a single classical bit within a
-   * classical register.
-   */
-  struct Bit {
-    /// Name of the register containing this bit
-    StringRef registerName;
-    /// Size of the register containing this bit
-    int64_t registerSize{};
-    /// Index of this bit within the register
-    int64_t registerIndex{};
-  };
-
-  /**
-   * @brief A small structure representing a classical bit register.
-   */
-  struct ClassicalRegister {
-    /// Name of the classical register
-    std::string name;
-    /// Size of the classical register
-    int64_t size;
-
-    /**
-     * @brief Access a specific bit in the classical register
-     * @param index The index of the bit to access (must be less than size)
-     * @return A Bit structure representing the specified bit
-     */
-    Bit operator[](const int64_t index) const;
-  };
+  Value loadQubit(Value reg, Value index);
 
   /**
    * @brief Allocate a classical bit register
    * @param size Number of bits
-   * @param name Register name (default: "c")
-   * @return A ClassicalRegister structure
+   * @param record Whether the register should be recorded in the output
+   * @return A `ClassicalRegister` structure
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(3, "c");
+   * auto c = builder.allocClassicalBitRegister(3);
    * ```
    */
-  ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              const std::string& name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size, bool record = true);
+
+  /**
+   * @brief Loads a classical bit from a register
+   *
+   * @param reg The classical bit register
+   * @param index The index within the register
+   * @return An LLVM pointer to the loaded classical bit
+   *
+   * @par Example:
+   * ```c++
+   * auto b = builder.loadClassicalBit(reg, index);
+   * ```
+   * ```mlir
+   * %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
+   * !llvm.ptr, !llvm.ptr
+   * %b = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
+   * ```
+   */
+  Value loadClassicalBit(const ClassicalRegister& reg,
+                         const std::variant<int64_t, Value>& index);
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Measure a qubit and record the result (simple version)
+   * @brief Measure a qubit and record the result
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
-   *
-   * The output is recorded via `__quantum__rt__result_record_output` during
-   * `finalize()`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`. The result
+   * is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
-   * @param resultIndex The classical bit index for result pointer
+   * @param index The index for result pointer
    * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
-   * auto result = builder.measure(q0, 0);
+   * auto result = builder.measure(q, 0);
    * ```
    * ```mlir
    * // In entry block:
    * %zero = llvm.mlir.zero : !llvm.ptr
-   * %r = llvm.call @"@__quantum__rt__result_allocate"(%zero) : !llvm.ptr ->
+   * %b = llvm.call @__quantum__rt__result_allocate(%zero) : !llvm.ptr ->
    * !llvm.ptr
    *
    * // In measurements block:
-   * llvm.call @__quantum__qis__mz__body(%q0, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+   * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
    *
    * // In output block:
-   * llvm.call @__quantum__rt__result_record_output(%r, %label) : (!llvm.ptr,
+   * llvm.call @__quantum__rt__result_record_output(%b, %label) : (!llvm.ptr,
    * !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, int64_t resultIndex, bool record = true);
+  Value measure(Value qubit, int64_t index, bool record = true);
 
   /**
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
-   *
-   * The output is recorded via `__quantum__rt__result_array_record_output`
-   * during `finalize()`.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`. The result
+   * is stored in the specified classical register at the given bit index. The
+   * index may be a constant or, in the Adaptive Profile, computed at runtime.
+   * The result is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
-   * @param bit The classical bit to store the result
-   * @param record Whether the measurement should be recorded in the output
+   * @param reg The memref representing the classical register
+   * @param index The index within the classical register
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(2, "c");
-   * builder.measure(q0, c[0]);
+   * auto c = builder.allocClassicalBitRegister(2);
+   * builder.measure(q, c, 0);
    * ```
    * ```mlir
-   * // In entry block:
-   * %zero = llvm.mlir.zero : !llvm.ptr
-   * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
-   * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
-   * (i64, !llvm.ptr, !llvm.ptr) -> ()
-   * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
-   *
-   * // In measurements block:
-   * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
-   *
-   * // In output block:
-   * llvm.call @__quantum__rt__result_array_record_output(%c2, %alloca, %label)
-   * : (i64, !llvm.ptr, !llvm.ptr) -> ()
+   * %gep = llvm.getelementptr %c[%zero] : (!llvm.ptr, i64) -> !llvm.ptr
+   * %b = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const Bit& bit, bool record = true);
+  Value measure(Value qubit, const ClassicalRegister& reg,
+                const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1223,32 +1210,29 @@ private:
   /// Exit code constant (created in entry block, used in output block)
   Value exitCode;
 
+  /// Qubit pointers to be deallocated at the end of the program
+  DenseSet<Value> qubitPtrs;
+
+  /// Qubit-array pointers to be deallocated at the end of the program
+  DenseSet<Value> qubitArrays;
+
+  /// Result pointers to be deallocated at the end of the program
+  DenseSet<Value> resultPtrs;
+
+  /// Result-array pointers to be deallocated at the end of the program
+  DenseSet<Value> resultArrays;
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
-  /// Set of qubit pointers
-  DenseSet<Value> qubits;
-
-  /// Set of qubit-array pointers
-  DenseSet<Value> qubitArrays;
-
-  /// Map from register name to result-array pointer
-  llvm::StringMap<Value> resultArrays;
-
-  /// Map from (register name, index) to loaded result
-  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
-
-  /// Map from result index to result pointer for non-register results
-  DenseMap<int64_t, Value> resultPtrs;
-
-  /// Set of array register names that should be recorded in the output.
-  DenseSet<StringRef> recordedArrays;
-
-  /// Set of unnamed result indices that should be recorded in the output.
-  DenseSet<int64_t> recordedIndices;
-
-  /// Map from register to their loaded indices
+  /// Cache loaded qubit pointers for reuse
   DenseMap<Value, DenseSet<Value>> loadedQubits;
+
+  /// Map from register name to `ClassicalRegister`
+  llvm::StringMap<ClassicalRegister> cregs;
+
+  /// Map from index to `StaticResult`
+  DenseMap<int64_t, StaticResult> staticResults;
 
   /// Helper variable for storing the LLVM pointer type
   Type ptrType;
@@ -1296,20 +1280,6 @@ private:
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
-
-  /**
-   * @brief Helper to resolve a variant of either int64_t type or Value Type to
-   * a Value
-   *
-   * @details Helper function to resolve a given variant to a Value. Creates a
-   * LLVM ConstantOp from the int value. The created LLVM Constant is of type
-   * I64 and has an IndexAttr as its value. If the variant holds a Value, return
-   * it directly.
-   *
-   * @param variant The variant to resolve
-   * @return The resolved Value
-   */
-  Value resolveIntVariant(const std::variant<int64_t, Value>& variant);
 };
 
 } // namespace qir

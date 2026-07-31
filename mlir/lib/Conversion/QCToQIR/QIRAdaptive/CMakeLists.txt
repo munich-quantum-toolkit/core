@@ -22,6 +22,8 @@ add_mlir_conversion_library(
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
+  MLIRMathDialect
+  MLIRMathToLLVM
   MLIRSCFToControlFlow
   MLIRReconcileUnrealizedCasts)
 

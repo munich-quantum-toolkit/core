@@ -48,6 +48,7 @@ struct SessionPatch {
   std::optional<std::string> authUrl;
   std::optional<std::string> username;
   std::optional<std::string> password;
+  std::optional<DeviceConfigurationSource> deviceConfiguration;
   std::optional<std::string> custom1;
   std::optional<std::string> custom2;
   std::optional<std::string> custom3;
@@ -131,7 +132,7 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
   rejectUnknownKeys(value,
                     {"base-url", "token", "auth-file", "auth-url", "username",
                      "password", "custom1", "custom2", "custom3", "custom4",
-                     "custom5"},
+                     "custom5", "device-config"},
                     source, path);
   SessionPatch patch;
   patch.baseUrl = optionalString(value, "base-url", source, path);
@@ -144,6 +145,34 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
   patch.custom3 = optionalString(value, "custom3", source, path);
   patch.custom4 = optionalString(value, "custom4", source, path);
   patch.custom5 = optionalString(value, "custom5", source, path);
+  if (const auto config = value.find("device-config"); config != value.end()) {
+    const auto configPath = path + ".device-config";
+    requireObject(*config, source, configPath);
+    rejectUnknownKeys(*config, {"inline", "file"}, source, configPath);
+    const auto inlineConfig = config->find("inline");
+    const auto fileConfig = config->find("file");
+    if ((inlineConfig == config->end()) == (fileConfig == config->end())) {
+      throw std::invalid_argument(sourceLabel(source, configPath) +
+                                  " must contain exactly one of 'inline' and "
+                                  "'file'");
+    }
+    if (inlineConfig != config->end()) {
+      if (!inlineConfig->is_object()) {
+        throw std::invalid_argument(
+            sourceLabel(source, configPath + ".inline") + " must be an object");
+      }
+      patch.deviceConfiguration =
+          InlineDeviceConfiguration{.json = inlineConfig->dump()};
+    } else {
+      if (!fileConfig->is_string() ||
+          fileConfig->get_ref<const std::string&>().empty()) {
+        throw std::invalid_argument(sourceLabel(source, configPath + ".file") +
+                                    " must be a non-empty string");
+      }
+      patch.deviceConfiguration = FileDeviceConfiguration{
+          .path = resolvePath(fileConfig->get<std::string>(), base)};
+    }
+  }
   if (auto authFile = optionalString(value, "auth-file", source, path)) {
     patch.authFile = resolvePath(*authFile, base);
   }
@@ -269,6 +298,7 @@ void mergeSession(SessionPatch& target, const SessionPatch& source) {
   mergeOptional(target.authUrl, source.authUrl);
   mergeOptional(target.username, source.username);
   mergeOptional(target.password, source.password);
+  mergeOptional(target.deviceConfiguration, source.deviceConfiguration);
   mergeOptional(target.custom1, source.custom1);
   mergeOptional(target.custom2, source.custom2);
   mergeOptional(target.custom3, source.custom3);
@@ -467,6 +497,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   definition.session.authUrl = patch.session.authUrl;
   definition.session.username = patch.session.username;
   definition.session.password = patch.session.password;
+  definition.session.deviceConfiguration = patch.session.deviceConfiguration;
   definition.session.custom1 = patch.session.custom1;
   definition.session.custom2 = patch.session.custom2;
   definition.session.custom3 = patch.session.custom3;

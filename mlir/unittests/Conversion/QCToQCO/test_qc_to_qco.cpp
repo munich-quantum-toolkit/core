@@ -207,6 +207,47 @@ module {
   EXPECT_TRUE(result.isOne());
 }
 
+TEST_F(QCToQCORegressionTest, IgnoresClassicalRegisterLoadsInWhileState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> memref<1xi1>
+      attributes {passthrough = ["entry_point"]} {
+    %qc = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<1xi1>
+    %c0 = arith.constant 0 : index
+    %true = arith.constant true
+    memref.store %true, %c[%c0] : memref<1xi1>
+    %result = scf.while (%running = %true) : (i1) -> i1 {
+      %condition = memref.load %c[%c0] : memref<1xi1>
+      scf.condition(%condition) %running : i1
+    } do {
+    ^bb0(%running: i1):
+      qc.x %qc : !qc.qubit
+      %false = arith.constant false
+      memref.store %false, %c[%c0] : memref<1xi1>
+      scf.yield %false : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %c : memref<1xi1>
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  expectNoQCOperations(*module);
+
+  bool retainsClassicalRegister = false;
+  module->walk([&](memref::LoadOp op) {
+    retainsClassicalRegister |=
+        op.getMemRefType().getElementType().isInteger(1);
+  });
+  EXPECT_TRUE(retainsClassicalRegister);
+}
+
 TEST_F(QCToQCORegressionTest, ConvertsTypeChangingWhileWithQuantumState) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
@@ -975,6 +1016,12 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        QCToQCOTestCase{"PartialMeasurementToRegister",
+                        MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
+                        MQT_NAMED_BUILDER(qco::partialMeasurementToRegister)},
+        QCToQCOTestCase{"DynamicallyIndexedMeasurement",
+                        MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
+                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement)},
         QCToQCOTestCase{"MeasurementWithoutRegisters",
                         MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
                         MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
@@ -1004,10 +1051,15 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQCOTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
                         MQT_NAMED_BUILDER(qco::simpleIf)},
-        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
         QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
                         MQT_NAMED_BUILDER(qco::ifElse)},
+        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
+                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
+        QCToQCOTestCase{"IfWithMeasurement",
+                        MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+                        MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
+        QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
+                        MQT_NAMED_BUILDER(qco::ifWithCreg)},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
@@ -1055,11 +1107,11 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
                         MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp)},
         QCToQCOTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
         QCToQCOTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}

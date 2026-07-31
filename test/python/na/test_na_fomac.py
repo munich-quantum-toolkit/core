@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 @pytest.fixture
 def device_tuple() -> tuple[Device, Mapping[str, Any]]:
     """Return a neutral atom FoMaC device instance."""
-    with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
+    with pathlib.Path("json/na/mqt-core-qdmi-na-device.json").open(encoding="utf-8") as f:
         device_dict = load(f)
     return next(iter(devices())), device_dict
 

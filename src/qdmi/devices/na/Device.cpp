@@ -16,74 +16,272 @@
 
 #include "mqt_na_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
-#include "qdmi/na/DeviceMemberInitializers.hpp"
+#include "qdmi/common/DeviceConfiguration.hpp"
+#include "qdmi/devices/na/Configuration.hpp"
+
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <functional>
+#include <iterator>
 #include <memory>
+#include <new>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
-namespace qdmi::na {
-Device::Device() {
-  // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
-  INITIALIZE_NAME(name_);
-  INITIALIZE_QUBITSNUM(qubitsNum_);
-  INITIALIZE_MINATOMDISTANCE(minAtomDistance_);
-  // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
-  INITIALIZE_LENGTHUNIT(lengthUnit_);
-  INITIALIZE_DURATIONUNIT(durationUnit_);
-  // NOLINTNEXTLINE(misc-const-correctness)
-  INITIALIZE_SITES(sites_);
-  INITIALIZE_OPERATIONS(operations_);
+namespace {
+[[nodiscard]] bool inside(const na::Device::Region& region, const int64_t x,
+                          const int64_t y) {
+  return region.origin.x <= x &&
+         x <= region.origin.x + static_cast<int64_t>(region.size.width) &&
+         region.origin.y <= y &&
+         y <= region.origin.y + static_cast<int64_t>(region.size.height);
 }
-auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
-  if (session == nullptr) {
+
+[[nodiscard]] uint64_t magnitude(const int64_t value) {
+  return value >= 0
+             ? static_cast<uint64_t>(value)
+             : static_cast<uint64_t>(-(value + 1)) + static_cast<uint64_t>(1);
+}
+
+[[nodiscard]] uint64_t coordinateDistance(const int64_t first,
+                                          const int64_t second) {
+  if ((first < 0) == (second < 0)) {
+    return first >= second ? static_cast<uint64_t>(first - second)
+                           : static_cast<uint64_t>(second - first);
+  }
+  return magnitude(first) + magnitude(second);
+}
+
+[[nodiscard]] bool withinRadius(const int64_t firstX, const int64_t firstY,
+                                const int64_t secondX, const int64_t secondY,
+                                const uint64_t radius) {
+  const auto deltaX = coordinateDistance(firstX, secondX);
+  const auto deltaY = coordinateDistance(firstY, secondY);
+  return std::hypot(static_cast<double>(deltaX), static_cast<double>(deltaY)) <=
+         static_cast<double>(radius);
+}
+} // namespace
+
+int MQT_NA_QDMI_Device_Session_impl_d::init() {
+  if (status_ != Status::ALLOCATED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  int loadStatus = QDMI_SUCCESS;
+  const auto loaded = qdmi::detail::loadDeviceConfiguration(
+      inlineConfiguration_, fileConfiguration_, "MQT_CORE_QDMI_NA_CONFIG_JSON",
+      "MQT_CORE_QDMI_NA_CONFIG_FILE", "mqt-core-qdmi-na-device.json",
+      reinterpret_cast<const void*>(&MQT_NA_QDMI_device_initialize),
+      loadStatus);
+  if (!loaded) {
+    return loadStatus;
+  }
+  try {
+    const auto configuration = na::readJSON(loaded->json, loaded->source);
+    std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> newSiteStorage;
+    std::vector<MQT_NA_QDMI_Site> newSites;
+    std::vector<MQT_NA_QDMI_Site> globalMultiZones;
+    std::vector<MQT_NA_QDMI_Site> globalSingleZones;
+    std::vector<MQT_NA_QDMI_Site> shuttlingZones;
+    const auto addZone = [&](const na::Device::Region& region) {
+      auto site = std::make_unique<MQT_NA_QDMI_Site_impl_d>(
+          this, newSiteStorage.size(), region.origin.x, region.origin.y,
+          region.size.width, region.size.height,
+          configuration.decoherenceTimes.t1, configuration.decoherenceTimes.t2);
+      auto* const handle = site.get();
+      newSiteStorage.emplace_back(std::move(site));
+      newSites.emplace_back(handle);
+      return handle;
+    };
+    globalMultiZones.reserve(configuration.globalMultiQubitOperations.size());
+    for (const auto& operation : configuration.globalMultiQubitOperations) {
+      globalMultiZones.emplace_back(addZone(operation.region));
+    }
+    globalSingleZones.reserve(configuration.globalSingleQubitOperations.size());
+    for (const auto& operation : configuration.globalSingleQubitOperations) {
+      globalSingleZones.emplace_back(addZone(operation.region));
+    }
+    shuttlingZones.reserve(configuration.shuttlingUnits.size());
+    for (const auto& unit : configuration.shuttlingUnits) {
+      shuttlingZones.emplace_back(addZone(unit.region));
+    }
+
+    struct RegularSite {
+      MQT_NA_QDMI_Site handle;
+      int64_t x;
+      int64_t y;
+    };
+    std::vector<RegularSite> regularSites;
+    na::forEachRegularSites(configuration.traps, [&](const na::SiteInfo& info) {
+      auto site = std::make_unique<MQT_NA_QDMI_Site_impl_d>(
+          this, newSiteStorage.size(), info.moduleId, info.subModuleId, info.x,
+          info.y, configuration.decoherenceTimes.t1,
+          configuration.decoherenceTimes.t2);
+      auto* const handle = site.get();
+      newSiteStorage.emplace_back(std::move(site));
+      newSites.emplace_back(handle);
+      regularSites.push_back({.handle = handle, .x = info.x, .y = info.y});
+    });
+
+    std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>
+        newOperationStorage;
+    const auto addOperation = [&]<typename... Args>(Args&&... args) {
+      newOperationStorage.emplace_back(
+          std::make_unique<MQT_NA_QDMI_Operation_impl_d>(
+              this, std::forward<Args>(args)...));
+    };
+    for (size_t i = 0; i < configuration.globalSingleQubitOperations.size();
+         ++i) {
+      const auto& operation = configuration.globalSingleQubitOperations[i];
+      addOperation(operation.name, operation.numParameters, 1U,
+                   operation.duration, operation.fidelity,
+                   globalSingleZones[i]);
+    }
+    for (size_t i = 0; i < configuration.globalMultiQubitOperations.size();
+         ++i) {
+      const auto& operation = configuration.globalMultiQubitOperations[i];
+      addOperation(operation.name, operation.numParameters, operation.numQubits,
+                   operation.duration, operation.fidelity,
+                   operation.interactionRadius, operation.blockingRadius,
+                   operation.idlingFidelity, globalMultiZones[i]);
+    }
+    for (const auto& operation : configuration.localSingleQubitOperations) {
+      std::vector<MQT_NA_QDMI_Site> supported;
+      for (const auto& site : regularSites) {
+        if (inside(operation.region, site.x, site.y)) {
+          supported.emplace_back(site.handle);
+        }
+      }
+      addOperation(operation.name, operation.numParameters, operation.duration,
+                   operation.fidelity, std::move(supported));
+    }
+    for (const auto& operation : configuration.localMultiQubitOperations) {
+      std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> supported;
+      for (size_t first = 0; first < regularSites.size(); ++first) {
+        if (!inside(operation.region, regularSites[first].x,
+                    regularSites[first].y)) {
+          continue;
+        }
+        for (size_t second = first + 1; second < regularSites.size();
+             ++second) {
+          if (inside(operation.region, regularSites[second].x,
+                     regularSites[second].y) &&
+              withinRadius(regularSites[first].x, regularSites[first].y,
+                           regularSites[second].x, regularSites[second].y,
+                           operation.interactionRadius)) {
+            supported.emplace_back(regularSites[first].handle,
+                                   regularSites[second].handle);
+          }
+        }
+      }
+      addOperation(operation.name, operation.numParameters, operation.numQubits,
+                   operation.duration, operation.fidelity,
+                   operation.interactionRadius, operation.blockingRadius,
+                   std::move(supported));
+    }
+    for (size_t i = 0; i < configuration.shuttlingUnits.size(); ++i) {
+      const auto& unit = configuration.shuttlingUnits[i];
+      addOperation("load<" + std::to_string(unit.id) + ">", unit.numParameters,
+                   unit.loadDuration, unit.loadFidelity, shuttlingZones[i]);
+      addOperation("move<" + std::to_string(unit.id) + ">", unit.numParameters,
+                   shuttlingZones[i], unit.meanShuttlingSpeed);
+      addOperation("store<" + std::to_string(unit.id) + ">", unit.numParameters,
+                   unit.storeDuration, unit.storeFidelity, shuttlingZones[i]);
+    }
+    std::vector<MQT_NA_QDMI_Operation> newOperations;
+    newOperations.reserve(newOperationStorage.size());
+    std::ranges::transform(
+        newOperationStorage, std::back_inserter(newOperations),
+        [](const auto& operation) { return operation.get(); });
+
+    name_ = configuration.name;
+    qubitsNum_ = configuration.numQubits;
+    lengthUnit_ = configuration.lengthUnit;
+    durationUnit_ = configuration.durationUnit;
+    minAtomDistance_ = configuration.minAtomDistance;
+    siteStorage_ = std::move(newSiteStorage);
+    sites_ = std::move(newSites);
+    operationStorage_ = std::move(newOperationStorage);
+    operations_ = std::move(newOperations);
+    status_ = Status::INITIALIZED;
+    return QDMI_SUCCESS;
+  } catch (const std::bad_alloc&) {
+    SPDLOG_ERROR("Out of memory while initializing NA device from {}",
+                 loaded->source);
+    return QDMI_ERROR_OUTOFMEM;
+  } catch (const std::invalid_argument& error) {
+    SPDLOG_ERROR("Invalid NA device configuration from {}: {}", loaded->source,
+                 error.what());
+    return QDMI_ERROR_INVALIDARGUMENT;
+  } catch (const std::exception& error) {
+    SPDLOG_ERROR("Failed to initialize NA device from {}: {}", loaded->source,
+                 error.what());
+    return QDMI_ERROR_FATAL;
+  }
+}
+int MQT_NA_QDMI_Device_Session_impl_d::setParameter(
+    QDMI_Device_Session_Parameter param, const size_t size, const void* value) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  auto uniqueSession = std::make_unique<MQT_NA_QDMI_Device_Session_impl_d>();
-  const auto& it =
-      sessions_.emplace(uniqueSession.get(), std::move(uniqueSession)).first;
-  // get the key, i.e., the raw pointer to the session from the map iterator
-  *session = it->first;
+  if (status_ != Status::ALLOCATED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  return qdmi::detail::setDeviceConfigurationParameter(
+      param, size, value, inlineConfiguration_, fileConfiguration_);
+}
+int MQT_NA_QDMI_Device_Session_impl_d::createDeviceJob(
+    // NOLINTNEXTLINE(readability-non-const-parameter)
+    MQT_NA_QDMI_Device_Job* job) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (status_ == Status::ALLOCATED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  auto uniqueJob = std::make_unique<MQT_NA_QDMI_Device_Job_impl_d>(this);
+  *job = jobs_.emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
   return QDMI_SUCCESS;
 }
-auto Device::sessionFree(MQT_NA_QDMI_Device_Session session) -> void {
-  if (session != nullptr) {
-    if (const auto& it = sessions_.find(session); it != sessions_.end()) {
-      sessions_.erase(it);
-    }
+void MQT_NA_QDMI_Device_Session_impl_d::freeDeviceJob(
+    MQT_NA_QDMI_Device_Job job) {
+  if (job != nullptr) {
+    jobs_.erase(job);
   }
 }
-auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
-                           void* value, size_t* sizeRet) -> int {
+int MQT_NA_QDMI_Device_Session_impl_d::queryDeviceProperty(
+    const QDMI_Device_Property prop, const size_t size, void* value,
+    size_t* sizeRet) const {
+  if (status_ != Status::INITIALIZED) {
+    return QDMI_ERROR_BADSTATE;
+  }
   if ((value != nullptr && size == 0) ||
       IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
                       value, sizeRet)
-  // NOLINTNEXTLINE(misc-include-cleaner)
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_VERSION, MQT_CORE_VERSION, prop,
                       size, value, sizeRet)
-  // NOLINTNEXTLINE(misc-include-cleaner)
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION, prop,
                       size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
                             QDMI_DEVICE_STATUS_IDLE, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
                             prop, size, value, sizeRet)
-  // This device never needs calibration
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, size_t, 0,
                             prop, size, value, sizeRet)
-  // This device does not support pulse-level control
   ADD_SINGLE_VALUE_PROPERTY(
       QDMI_DEVICE_PROPERTY_PULSESUPPORT, QDMI_Device_Pulse_Support_Level,
       QDMI_DEVICE_PULSE_SUPPORT_LEVEL_NONE, prop, size, value, sizeRet)
@@ -113,58 +311,11 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
-} // namespace qdmi::na
-
-auto MQT_NA_QDMI_Device_Session_impl_d::init() -> int {
-  if (status_ != Status::ALLOCATED) {
-    return QDMI_ERROR_BADSTATE;
-  }
-  status_ = Status::INITIALIZED;
-  return QDMI_SUCCESS;
-}
-auto MQT_NA_QDMI_Device_Session_impl_d::setParameter(
-    QDMI_Device_Session_Parameter param, const size_t size,
-    const void* value) const -> int {
-  if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  if (status_ != Status::ALLOCATED) {
-    return QDMI_ERROR_BADSTATE;
-  }
-  return QDMI_ERROR_NOTSUPPORTED;
-}
-auto MQT_NA_QDMI_Device_Session_impl_d::createDeviceJob(
-    // NOLINTNEXTLINE(readability-non-const-parameter)
-    MQT_NA_QDMI_Device_Job* job) -> int {
-  if (job == nullptr) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  if (status_ == Status::ALLOCATED) {
-    return QDMI_ERROR_BADSTATE;
-  }
-  auto uniqueJob = std::make_unique<MQT_NA_QDMI_Device_Job_impl_d>(this);
-  *job = jobs_.emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
-  return QDMI_SUCCESS;
-}
-auto MQT_NA_QDMI_Device_Session_impl_d::freeDeviceJob(
-    MQT_NA_QDMI_Device_Job job) -> void {
-  if (job != nullptr) {
-    jobs_.erase(job);
-  }
-}
-auto MQT_NA_QDMI_Device_Session_impl_d::queryDeviceProperty(
-    const QDMI_Device_Property prop, const size_t size, void* value,
-    size_t* sizeRet) const -> int {
-  if (status_ != Status::INITIALIZED) {
-    return QDMI_ERROR_BADSTATE;
-  }
-  return qdmi::na::Device::get().queryProperty(prop, size, value, sizeRet);
-}
-auto MQT_NA_QDMI_Device_Session_impl_d::querySiteProperty(
+int MQT_NA_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_NA_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,
-    void* value, size_t* sizeRet) const -> int {
-  if (site == nullptr) {
+    void* value, size_t* sizeRet) const {
+  if (site == nullptr || std::ranges::find(sites_, site) == sites_.end() ||
+      !site->ownedBy(this)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::INITIALIZED) {
@@ -172,27 +323,35 @@ auto MQT_NA_QDMI_Device_Session_impl_d::querySiteProperty(
   }
   return site->queryProperty(prop, size, value, sizeRet);
 }
-auto MQT_NA_QDMI_Device_Session_impl_d::queryOperationProperty(
+int MQT_NA_QDMI_Device_Session_impl_d::queryOperationProperty(
     MQT_NA_QDMI_Operation operation, const size_t numSites,
     const MQT_NA_QDMI_Site* sites, const size_t numParams, const double* params,
     const QDMI_Operation_Property prop, const size_t size, void* value,
-    size_t* sizeRet) const -> int {
-  if (operation == nullptr) {
+    size_t* sizeRet) const {
+  if (operation == nullptr ||
+      std::ranges::find(operations_, operation) == operations_.end() ||
+      !operation->ownedBy(this)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (sites != nullptr) {
+    for (auto* const site : std::span{sites, numSites}) {
+      if (site == nullptr || std::ranges::find(sites_, site) == sites_.end() ||
+          !site->ownedBy(this)) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+    }
+  }
   return operation->queryProperty(numSites, sites, numParams, params, prop,
                                   size, value, sizeRet);
 }
-auto MQT_NA_QDMI_Device_Job_impl_d::free() -> void {
-  session_->freeDeviceJob(this);
-}
+void MQT_NA_QDMI_Device_Job_impl_d::free() { session_->freeDeviceJob(this); }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
-    const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
-    -> int {
+int MQT_NA_QDMI_Device_Job_impl_d::setParameter(
+    const QDMI_Device_Job_Parameter param, const size_t size,
+    const void* value) {
   if ((value != nullptr && size == 0) ||
       IS_INVALID_ARGUMENT(param, QDMI_DEVICE_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -200,10 +359,10 @@ auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
+int MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
     // NOLINTNEXTLINE(readability-non-const-parameter)
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
-    [[maybe_unused]] size_t* sizeRet) -> int {
+    [[maybe_unused]] size_t* sizeRet) {
   if ((value != nullptr && size == 0) ||
       IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -211,71 +370,46 @@ auto MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::submit() -> int {
-  return QDMI_ERROR_NOTSUPPORTED;
-}
+int MQT_NA_QDMI_Device_Job_impl_d::submit() { return QDMI_ERROR_NOTSUPPORTED; }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::cancel() -> int {
-  return QDMI_ERROR_NOTSUPPORTED;
-}
+int MQT_NA_QDMI_Device_Job_impl_d::cancel() { return QDMI_ERROR_NOTSUPPORTED; }
 // NOLINTNEXTLINE(readability-non-const-parameter,readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::check(QDMI_Job_Status* status) -> int {
+int MQT_NA_QDMI_Device_Job_impl_d::check(QDMI_Job_Status* status) {
   if (status == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::wait([[maybe_unused]] const size_t timeout)
-    -> int {
+int MQT_NA_QDMI_Device_Job_impl_d::wait([[maybe_unused]] const size_t timeout) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto MQT_NA_QDMI_Device_Job_impl_d::getResults(
+int MQT_NA_QDMI_Device_Job_impl_d::getResults(
     QDMI_Job_Result result,
     // NOLINTNEXTLINE(readability-non-const-parameter)
-    const size_t size, void* data, [[maybe_unused]] size_t* sizeRet) -> int {
+    const size_t size, void* data, [[maybe_unused]] size_t* sizeRet) {
   if ((data != nullptr && size == 0) ||
       IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
-MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const uint64_t id,
-                                                 const uint64_t module,
-                                                 const uint64_t subModule,
-                                                 const int64_t x,
-                                                 const int64_t y)
-    : id_(id), moduleId_(module), subModuleId_(subModule), x_(x), y_(y) {
-  INITIALIZE_DECOHERENCETIMES(decoherenceTimes_);
-}
-MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const uint64_t id,
-                                                 const int64_t x,
-                                                 const int64_t y,
-                                                 const uint64_t width,
-                                                 const uint64_t height)
-    : id_(id), x_(x), y_(y), xExtent_(width), yExtent_(height), isZone(true) {
-  INITIALIZE_DECOHERENCETIMES(decoherenceTimes_);
-}
-auto MQT_NA_QDMI_Site_impl_d::makeUniqueSite(const uint64_t id,
-                                             const uint64_t moduleId,
-                                             const uint64_t subModuleId,
-                                             const int64_t x, const int64_t y)
-    -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d> {
-  const MQT_NA_QDMI_Site_impl_d site(id, moduleId, subModuleId, x, y);
-  return std::make_unique<MQT_NA_QDMI_Site_impl_d>(site);
-}
-auto MQT_NA_QDMI_Site_impl_d::makeUniqueZone(const uint64_t id, const int64_t x,
-                                             const int64_t y,
-                                             const uint64_t width,
-                                             const uint64_t height)
-    -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d> {
-  const MQT_NA_QDMI_Site_impl_d site(id, x, y, width, height);
-  return std::make_unique<MQT_NA_QDMI_Site_impl_d>(site);
-}
-auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
-                                            const size_t size, void* value,
-                                            size_t* sizeRet) const -> int {
+MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(
+    MQT_NA_QDMI_Device_Session_impl_d* owner, const uint64_t id,
+    const uint64_t module, const uint64_t subModule, const int64_t x,
+    const int64_t y, const uint64_t t1, const uint64_t t2)
+    : owner_(owner), id_(id), moduleId_(module), subModuleId_(subModule), x_(x),
+      y_(y), decoherenceTimes_{.t1_ = t1, .t2_ = t2} {}
+MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(
+    MQT_NA_QDMI_Device_Session_impl_d* owner, const uint64_t id,
+    const int64_t x, const int64_t y, const uint64_t width,
+    const uint64_t height, const uint64_t t1, const uint64_t t2)
+    : owner_(owner), id_(id), x_(x), y_(y), xExtent_(width), yExtent_(height),
+      decoherenceTimes_{.t1_ = t1, .t2_ = t2}, isZone(true) {}
+int MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
+                                           const size_t size, void* value,
+                                           size_t* sizeRet) const {
   if ((value != nullptr && size == 0) ||
       IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -306,52 +440,58 @@ auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const size_t numQubits,
-    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
-    : name_(std::move(name)), numParameters_(numParameters),
+    MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+    const size_t numParameters, const size_t numQubits, const uint64_t duration,
+    const double fidelity, MQT_NA_QDMI_Site zone)
+    : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       supportedSites_(std::vector<MQT_NA_QDMI_Site>{zone}), isZoned_(true) {}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const size_t numQubits,
-    const uint64_t duration, const double fidelity,
-    const uint64_t interactionRadius, uint64_t blockingRadius,
-    const double idlingFidelity, MQT_NA_QDMI_Site zone)
-    : name_(std::move(name)), numParameters_(numParameters),
+    MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+    const size_t numParameters, const size_t numQubits, const uint64_t duration,
+    const double fidelity, const uint64_t interactionRadius,
+    uint64_t blockingRadius, const double idlingFidelity, MQT_NA_QDMI_Site zone)
+    : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
       idlingFidelity_(idlingFidelity),
       supportedSites_(std::vector<MQT_NA_QDMI_Site>{zone}), isZoned_(true) {}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const uint64_t duration,
-    const double fidelity, const std::vector<MQT_NA_QDMI_Site>& sites)
-    : name_(std::move(name)), numParameters_(numParameters), numQubits_(1),
-      duration_(duration), fidelity_(fidelity), supportedSites_(sites) {
+    MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+    const size_t numParameters, const uint64_t duration, const double fidelity,
+    std::vector<MQT_NA_QDMI_Site> sites)
+    : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
+      numQubits_(1), duration_(duration), fidelity_(fidelity),
+      supportedSites_(std::move(sites)) {
   sortSites();
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const size_t numQubits,
-    const uint64_t duration, const double fidelity,
-    const uint64_t interactionRadius, uint64_t blockingRadius,
-    const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
-    : name_(std::move(name)), numParameters_(numParameters),
+    MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+    const size_t numParameters, const size_t numQubits, const uint64_t duration,
+    const double fidelity, const uint64_t interactionRadius,
+    uint64_t blockingRadius,
+    std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> sites)
+    : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
-      supportedSites_(sites) {
+      supportedSites_(std::move(sites)) {
   sortSites();
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, size_t numParameters, uint64_t duration, double fidelity,
+    MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+    const size_t numParameters, const uint64_t duration, const double fidelity,
     MQT_NA_QDMI_Site zone)
-    : name_(std::move(name)), numParameters_(numParameters),
+    : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       duration_(duration), fidelity_(fidelity),
       supportedSites_(std::vector<MQT_NA_QDMI_Site>{zone}), isZoned_(true) {}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, size_t numParameters, MQT_NA_QDMI_Site zone,
-    uint64_t meanShuttlingSpeed)
-    : name_(std::move(name)), numParameters_(numParameters),
+    MQT_NA_QDMI_Device_Session_impl_d* owner, std::string name,
+    const size_t numParameters, MQT_NA_QDMI_Site zone,
+    const uint64_t meanShuttlingSpeed)
+    : owner_(owner), name_(std::move(name)), numParameters_(numParameters),
       meanShuttlingSpeed_(meanShuttlingSpeed),
       supportedSites_(std::vector<MQT_NA_QDMI_Site>{zone}), isZoned_(true) {}
-auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
+void MQT_NA_QDMI_Operation_impl_d::sortSites() {
   std::visit(
       [](auto& sites) {
         using T = std::decay_t<decltype(sites)>;
@@ -375,74 +515,11 @@ auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
       },
       supportedSites_);
 }
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalSingleQubit(
-    const std::string& name, const size_t numParameters,
-    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1U, duration, fidelity,
-                                  zone);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalMultiQubit(
-    const std::string& name, const size_t numParameters, const size_t numQubits,
-    const uint64_t duration, const double fidelity,
-    const uint64_t interactionRadius, const uint64_t blockingRadius,
-    const double idlingFidelity, MQT_NA_QDMI_Site zone)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, numQubits, duration,
-                                  fidelity, interactionRadius, blockingRadius,
-                                  idlingFidelity, zone);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalSingleQubit(
-    const std::string& name, const size_t numParameters,
-    const uint64_t duration, const double fidelity,
-    const std::vector<MQT_NA_QDMI_Site>& sites)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
-                                  sites);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalTwoQubit(
-    const std::string& name, const size_t numParameters, const size_t numQubits,
-    const uint64_t duration, const double fidelity,
-    const uint64_t interactionRadius, const uint64_t blockingRadius,
-    const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, numQubits, duration,
-                                  fidelity, interactionRadius, blockingRadius,
-                                  sites);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingLoad(
-    const std::string& name, const size_t numParameters,
-    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
-                                  zone);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingMove(
-    const std::string& name, const size_t numParameters, MQT_NA_QDMI_Site zone,
-    const uint64_t meanShuttlingSpeed)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, zone,
-                                  meanShuttlingSpeed);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingStore(
-    const std::string& name, const size_t numParameters,
-    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
-    -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
-                                  zone);
-  return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
-}
-auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
+int MQT_NA_QDMI_Operation_impl_d::queryProperty(
     const size_t numSites, const MQT_NA_QDMI_Site* sites,
     const size_t numParams, const double* params,
     const QDMI_Operation_Property prop, const size_t size, void* value,
-    size_t* sizeRet) const -> int {
+    size_t* sizeRet) const {
   if ((sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) ||
@@ -456,7 +533,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     if (numSites == 1) {
       // If the (single) site is not supported, return with an error
       const bool found = std::visit(
-          [sites](const auto& storedSites) -> bool {
+          [sites](const auto& storedSites) {
             using T = std::decay_t<decltype(storedSites)>;
             if constexpr (std::is_same_v<T, std::vector<MQT_NA_QDMI_Site>>) {
               return std::ranges::binary_search(storedSites, *sites,
@@ -476,7 +553,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
       // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       // if the pair of sites is not supported, return with an error
       const bool found = std::visit(
-          [&needle](const auto& storedSites) -> bool {
+          [&needle](const auto& storedSites) {
             using T = std::decay_t<decltype(storedSites)>;
             if constexpr (std::is_same_v<
                               T, std::vector<std::pair<MQT_NA_QDMI_Site,
@@ -498,7 +575,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
 
   if (prop == QDMI_OPERATION_PROPERTY_SITES) {
     return std::visit(
-        [&](const auto& storedSites) -> int {
+        [&](const auto& storedSites) {
           using T = std::decay_t<decltype(storedSites)>;
           if constexpr (std::is_same_v<T, std::vector<MQT_NA_QDMI_Site>>) {
             // Single-qubit: return flat array
@@ -564,16 +641,18 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-int MQT_NA_QDMI_device_initialize() {
-  // ensure the singleton is initialized
-  std::ignore = qdmi::na::Device::get();
-  return QDMI_SUCCESS;
-}
+int MQT_NA_QDMI_device_initialize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
-  return qdmi::na::Device::get().sessionAlloc(session);
+  if (session == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  // QDMI transfers ownership through its opaque C handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  *session = new (std::nothrow) MQT_NA_QDMI_Device_Session_impl_d;
+  return *session == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
 
 int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
@@ -584,7 +663,8 @@ int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
 }
 
 void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {
-  qdmi::na::Device::get().sessionFree(session);
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete session;
 }
 
 int MQT_NA_QDMI_device_session_set_parameter(
@@ -604,7 +684,11 @@ int MQT_NA_QDMI_device_session_create_device_job(
   return session->createDeviceJob(job);
 }
 
-void MQT_NA_QDMI_device_job_free(MQT_NA_QDMI_Device_Job job) { job->free(); }
+void MQT_NA_QDMI_device_job_free(MQT_NA_QDMI_Device_Job job) {
+  if (job != nullptr) {
+    job->free();
+  }
+}
 
 int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
                                          const QDMI_Device_Job_Parameter param,
