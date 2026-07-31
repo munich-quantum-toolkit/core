@@ -12,13 +12,15 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Expose registered QDMI device IDs without loading device libraries
+  ([#1972]) ([**@burgholzer**])
 - ✨ Add typed runtime configuration transport and relocatable assets for QDMI
   device descriptions ([#1967]) ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
-  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933])
-  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
+  [#1979]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of QCO functions,
   including static unitaries, mid-circuit `measure`/`reset`, concrete
@@ -71,9 +73,9 @@ releases may include breaking changes.
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717],
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
-  [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938])
-  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
-  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
+  [#1976]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
@@ -695,7 +697,12 @@ changelogs._
 
 <!-- PR links -->
 
+[#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979
+[#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
+[#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
+[#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
 [#1973]: https://github.com/munich-quantum-toolkit/core/pull/1973
+[#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961

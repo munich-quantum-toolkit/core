@@ -412,9 +412,12 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
   OpBuilder builder(ctx);
   builder.setInsertionPoint(&main.getBlocks().back().back());
-  emitOutputRecording(builder, main,
-                      llvm::to_vector(llvm::make_second_range(state.cregs)),
-                      state.staticResults);
+  SmallVector<qir::ClassicalRegister> returnedRegisters;
+  returnedRegisters.reserve(state.returnedCregs.size());
+  for (const auto registerIndex : state.returnedCregs) {
+    returnedRegisters.push_back(state.cregs[registerIndex]);
+  }
+  emitOutputRecording(builder, main, returnedRegisters, state.staticResults);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
@@ -473,7 +476,12 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
         return;
       }
 
-      auto& reg = state.cregs.try_emplace(allocOp.getOperation()).first->second;
+      const auto [it, inserted] = state.cregIndices.try_emplace(
+          allocOp.getOperation(), state.cregs.size());
+      if (inserted) {
+        state.cregs.emplace_back();
+      }
+      auto& reg = state.cregs[it->second];
       reg.record = false;
       if (const auto name = allocOp->getAttrOfType<StringAttr>(
               utils::CLASSICAL_REGISTER_NAME_ATTR)) {
@@ -493,7 +501,7 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
       }
       auto allocOp = storeOp.getMemref().getDefiningOp<memref::AllocOp>();
       auto measureOp = storeOp.getValueToStore().getDefiningOp<MeasureOp>();
-      if (!allocOp || !state.cregs.contains(allocOp.getOperation()) ||
+      if (!allocOp || !state.cregIndices.contains(allocOp.getOperation()) ||
           !measureOp) {
         storeOp.emitError(
             "QIR conversion only supports storing direct measurement results "
@@ -501,8 +509,9 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
         hasInvalidMemory = true;
         return;
       }
-      const auto destination = std::pair<Operation*, Value>{
-          allocOp.getOperation(), storeOp.getIndices()[0]};
+      const auto destination =
+          std::pair<size_t, Value>{state.cregIndices.at(allocOp.getOperation()),
+                                   storeOp.getIndices()[0]};
       const auto [it, inserted] = state.cregMeasurements.try_emplace(
           measureOp.getOperation(), destination);
       if (!inserted && it->second != destination) {
@@ -513,16 +522,16 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
       }
     });
 
-    const auto markRegisterForRecording = [&](Operation* allocOp) {
-      auto& reg = state.cregs.at(allocOp);
+    const auto markRegisterForRecording = [&](const size_t registerIndex) {
+      auto& reg = state.cregs[registerIndex];
+      if (reg.record) {
+        return;
+      }
       if (reg.label.empty()) {
-        reg.label =
-            "c" +
-            std::to_string(llvm::count_if(state.cregs, [](const auto& entry) {
-              return entry.second.record;
-            }));
+        reg.label = "c" + std::to_string(state.returnedCregs.size());
       }
       reg.record = true;
+      state.returnedCregs.push_back(registerIndex);
     };
 
     funcOp.walk([&](func::ReturnOp returnOp) {
@@ -539,8 +548,10 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
             state.returnedStaticResults.insert(measureOp.getOperation());
           }
         } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>();
-                   allocOp && state.cregs.contains(allocOp.getOperation())) {
-          markRegisterForRecording(allocOp.getOperation());
+                   allocOp &&
+                   state.cregIndices.contains(allocOp.getOperation())) {
+          markRegisterForRecording(
+              state.cregIndices.at(allocOp.getOperation()));
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());
