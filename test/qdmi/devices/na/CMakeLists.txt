@@ -18,6 +18,7 @@ if(TARGET MQT::CoreQDMINaDeviceConfig AND TARGET MQT::CoreQDMINaDevice)
   endif()
   # Add the test executable
   package_add_test(${TARGET_NAME} MQT::CoreQDMINaDevice test_configuration.cpp test_device.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/test)
   # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
   # Link further libraries
