@@ -58,8 +58,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  *
  * @details Same supported unitary op set as @ref buildFunctionality, plus
  * concrete classical control-flow (`qco.if` / `qco.index_switch` with
- * compile-time or previously recorded classical selectors) and static 1-D
- * `memref<?xi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
+ * compile-time or previously recorded classical selectors) and static-shape
+ * 1-D `memref<Nxi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
  * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
  * bound `scf.for` loops and non-recursive single-block `func.call` are
  * supported independently of RNG. Only qubit-typed linear values are supported
@@ -88,7 +88,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * `arith.extui`/`trunci` between `i1` and `index`, `arith.cmpi`,
  * `arith.select`, `arith.addi`/`subi`/`muli`,
  * `andi`/`ori`/`xori`/`shli`/`shrui` on those values). Classical registers as
- * static 1-D `memref<?xi1>` with `memref.alloc` / `store` / `load` /
+ * static-shape 1-D `memref<Nxi1>` with `memref.alloc` / `store` / `load` /
  * `dealloc` are supported. Deterministic
  * control-flow without measure/reset also works on the non-RNG overload. Only
  * qubit-typed linear values are supported (no qtensors). Nested regions are

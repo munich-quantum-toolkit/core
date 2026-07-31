@@ -105,7 +105,7 @@ struct QubitMap {
 struct ClassicalEnv {
   DenseMap<Value, bool> bools;
   DenseMap<Value, int64_t> indices;
-  /// Backing storage for static 1-D `memref<?xi1>` classical registers.
+  /// Backing storage for static-shape 1-D `memref<Nxi1>` classical registers.
   DenseMap<Value, SmallVector<bool>> memrefs;
 
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
@@ -481,13 +481,14 @@ static LogicalResult applyI1ToIndex(Value in, Value out, Operation* op,
          memref.getElementType().isInteger(1);
 }
 
-/// Resolve a static 1-D `i1` memref classical register and a concrete index.
+/// Resolve a static-shape 1-D `i1` memref classical register and a concrete
+/// index.
 static FailureOr<std::pair<SmallVector<bool>*, int64_t>>
 lookupI1MemRefSlot(Value memref, Value index, ClassicalEnv& classical,
                    Operation* op) {
   if (!isStaticI1MemRef(memref.getType())) {
-    return op->emitError() << "QCO DD simulation only supports static 1-D "
-                              "memref<?xi1> classical registers";
+    return op->emitError() << "QCO DD simulation only supports static-shape "
+                              "1-D memref<Nxi1> classical registers";
   }
   auto idx = lookupIndex(index, classical, op);
   if (failed(idx)) {
@@ -508,8 +509,8 @@ lookupI1MemRefSlot(Value memref, Value index, ClassicalEnv& classical,
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
                                       ClassicalEnv& classical) {
   if (!isStaticI1MemRef(alloc.getType())) {
-    return alloc.emitError() << "QCO DD simulation only supports static 1-D "
-                                "memref<?xi1> classical registers";
+    return alloc.emitError() << "QCO DD simulation only supports static-shape "
+                                "1-D memref<Nxi1> classical registers";
   }
   if (!alloc.getDynamicSizes().empty() || !alloc.getSymbolOperands().empty()) {
     return alloc.emitError()
@@ -1125,7 +1126,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           }
 
           for (int64_t t = 0; t < trips; ++t) {
-            walk.classical.indices[body.getArgument(0)] = *lb + (t * *step);
+            const auto offset =
+                static_cast<uint64_t>(t) * static_cast<uint64_t>(*step);
+            walk.classical.indices[body.getArgument(0)] =
+                static_cast<int64_t>(static_cast<uint64_t>(*lb) + offset);
             auto iterArgs = body.getArguments().drop_front();
             if (carried.size() != iterArgs.size()) {
               return forOp.emitError()

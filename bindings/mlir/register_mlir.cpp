@@ -579,11 +579,11 @@ LLVM bitcode.)pb");
   nb::module_::import_("mqt.core.dd");
 
   nb::class_<mlir::qco::SampleResult>(m, "SampleResult",
-                                      "Histograms from QCO DD sampling.")
+                                      R"pb(Histograms from QCO DD sampling.)pb")
       .def_ro("shots", &mlir::qco::SampleResult::shots,
-              "Final computational-basis outcome histogram.")
+              R"pb(Final computational-basis outcome histogram.)pb")
       .def_ro("classical", &mlir::qco::SampleResult::classical,
-              "Mid-circuit measure-bit histogram (encounter order).");
+              R"pb(Mid-circuit measure-bit histogram (encounter order).)pb");
 
   m.def(
       "build_functionality",
@@ -601,7 +601,7 @@ LLVM bitcode.)pb");
       R"pb(Build a matrix DD for a static unitary QCO program.
 
 Args:
-    program: A QCO program whose entry ``func.func`` is simulated.
+    program: A QCO program whose entry ``func.func`` is used to build a matrix DD.
     dd_package: DD package with enough qubits for the program.
 
 Returns:
@@ -665,7 +665,9 @@ Raises:
 
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
-    dd_package: DD package with enough qubits for the program.
+    dd_package: DD package with enough qubits for the program. Not thread-safe;
+        do not share it across threads while sampling (the GIL is released for
+        the duration of the call).
     shots: Number of shots (default 1024).
     seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
 
@@ -692,7 +694,9 @@ Raises:
 
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
-    dd_package: DD package with enough qubits for the program.
+    dd_package: DD package with enough qubits for the program. Not thread-safe;
+        do not share it across threads while sampling (the GIL is released for
+        the duration of the call).
     shots: Number of shots (default 1024).
     seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
 

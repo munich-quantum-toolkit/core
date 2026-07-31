@@ -257,7 +257,7 @@ def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) 
     """Build a matrix DD for a static unitary QCO program.
 
     Args:
-        program: A QCO program whose entry ``func.func`` is simulated.
+        program: A QCO program whose entry ``func.func`` is used to build a matrix DD.
         dd_package: DD package with enough qubits for the program.
 
     Returns:
@@ -293,7 +293,9 @@ def sample(
 
     Args:
         program: A QCO program whose entry ``func.func`` is sampled.
-        dd_package: DD package with enough qubits for the program.
+        dd_package: DD package with enough qubits for the program. Not thread-safe;
+            do not share it across threads while sampling (the GIL is released for
+            the duration of the call).
         shots: Number of shots (default 1024).
         seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
 
@@ -311,7 +313,9 @@ def sample_with_classics(
 
     Args:
         program: A QCO program whose entry ``func.func`` is sampled.
-        dd_package: DD package with enough qubits for the program.
+        dd_package: DD package with enough qubits for the program. Not thread-safe;
+            do not share it across threads while sampling (the GIL is released for
+            the duration of the call).
         shots: Number of shots (default 1024).
         seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
 
