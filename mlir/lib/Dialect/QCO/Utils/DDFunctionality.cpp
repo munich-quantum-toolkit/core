@@ -1095,12 +1095,21 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return forOp.emitError()
                    << "scf.for step must be positive for QCO DD simulation";
           }
-          const int64_t trips = (*ub > *lb) ? ((*ub - *lb - 1) / *step) + 1 : 0;
           constexpr int64_t maxTrips = 10000;
-          if (trips > maxTrips) {
-            return forOp.emitError()
-                   << "scf.for trip count exceeds QCO DD simulation limit of "
-                   << maxTrips;
+          int64_t trips = 0;
+          if (*ub > *lb) {
+            // Use unsigned arithmetic to avoid signed-overflow UB when
+            // classical bounds are extreme (e.g. INT64_MIN / INT64_MAX).
+            const auto span =
+                static_cast<uint64_t>(*ub) - static_cast<uint64_t>(*lb);
+            const uint64_t tripsU =
+                ((span - 1) / static_cast<uint64_t>(*step)) + 1;
+            if (tripsU > static_cast<uint64_t>(maxTrips)) {
+              return forOp.emitError()
+                     << "scf.for trip count exceeds QCO DD simulation limit of "
+                     << maxTrips;
+            }
+            trips = static_cast<int64_t>(tripsU);
           }
 
           Block& body = *forOp.getBody();

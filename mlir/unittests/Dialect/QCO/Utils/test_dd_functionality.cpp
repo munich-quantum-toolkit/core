@@ -36,6 +36,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -70,7 +71,9 @@ protected:
     if (auto main = mod.lookupSymbol<func::FuncOp>("main")) {
       return main;
     }
-    return *mod.getBody()->getOps<func::FuncOp>().begin();
+    auto funcs = mod.getBody()->getOps<func::FuncOp>();
+    assert(funcs.begin() != funcs.end() && "module must contain a func.func");
+    return *funcs.begin();
   }
 
   template <typename BuildFn>

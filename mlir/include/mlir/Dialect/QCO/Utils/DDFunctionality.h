@@ -148,9 +148,11 @@ FailureOr<std::map<std::string, std::size_t>>
 sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
        std::size_t shots, std::mt19937_64& rng);
 
-/// Histograms from QCO DD sampling (`shots` and optional mid-circuit bits).
+/// Histograms produced by @ref sampleWithClassics.
 struct SampleResult {
+  /// Final computational-basis outcome histogram.
   std::map<std::string, size_t> shots;
+  /// Mid-circuit measurement-bit histogram (encounter order).
   std::map<std::string, size_t> classical;
 };
 
@@ -165,13 +167,9 @@ struct SampleResult {
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
                                            size_t shots, std::mt19937_64& rng);
 
-/**
- * @brief Sample final and mid-circuit classical outcomes from a given input.
- *
- * @details Same as the zero-state overload, but starts from @p in. Consumes one
- * reference to @p in (the static path keeps that state for all shots; the
- * dynamic path clones per shot).
- */
+/// @copydoc sampleWithClassics(func::FuncOp, dd::Package&, size_t,
+/// std::mt19937_64&)
+/// Starts from @p in; one reference is consumed.
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func,
                                            const dd::VectorDD& in,
                                            dd::Package& dd, size_t shots,

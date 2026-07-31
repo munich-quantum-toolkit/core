@@ -110,7 +110,7 @@ void requireValid(const mlir::Program& program) {
   requireValid(program);
   auto func = program.entryFunc();
   if (!func) {
-    throw nb::value_error("QCO program has no func.func to simulate");
+    throw nb::value_error("QCO program has no func.func entry point");
   }
   return *func;
 }
@@ -628,6 +628,8 @@ Raises:
             });
       },
       "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      // Keep the DD package alive while the returned vector DD is alive.
+      nb::keep_alive<0, 3>(),
       R"pb(Simulate a QCO program on a DD state.
 
 Args:
