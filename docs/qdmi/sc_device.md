@@ -14,9 +14,10 @@ The provider selects the first available source in this order:
 4. `MQT_CORE_QDMI_SC_CONFIG_FILE`;
 5. `mqt-core-qdmi-sc-device.json` beside the provider shared library.
 
-Setting both sources at the same precedence level is an error. Configuration is
-immutable after successful initialization, while a failed initialization can be
-corrected and retried.
+When direct QDMI callers populate both explicit slots, inline JSON wins. Setting
+both SC environment sources is an error. Configuration cannot be changed after
+successful initialization. A failed initialization does not commit partial
+state, so the same allocated session can be corrected and initialized again.
 
 ## Schema and calibration
 
@@ -60,8 +61,9 @@ finite values in the inclusive range `[0, 1]`.
 
 The `sites` member may be omitted for one-qubit operations to support every
 qubit, or for two-qubit operations to use the coupling map. Higher-arity
-operations require explicit tuples. Every site override must select one of the
-operation's supported tuples and supply a duration, fidelity, or both.
+operations require explicit tuples. Every explicit two-qubit tuple must be an
+exact ordered edge in the coupling map. Every site override must select one of
+the operation's supported tuples and supply a duration, fidelity, or both.
 
 When operation duration or fidelity is queried, a matching tuple override wins
 over the operation default. Missing data returns `QDMI_ERROR_NOTSUPPORTED`.

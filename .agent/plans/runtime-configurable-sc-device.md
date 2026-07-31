@@ -45,7 +45,17 @@ synthetic. These operation and calibration semantics directly address
 - [x] (2026-07-31 06:50 CEST) Repeated the complete 423-step release build,
       repository lint, focused Python tests, and warning-as-error documentation
       build on the rebased branch.
-- [ ] Complete independent exact-head verification on the rebased branch.
+- [x] (2026-07-31 07:20 CEST) Independently reviewed exact head `0bf1f1b828`,
+      identifying MF-01 (explicit two-qubit tuples could contradict the ordered
+      coupling map) and NIT-01 (ambiguous source-precedence documentation).
+- [x] (2026-07-31 07:30 CEST) Enforced exact ordered coupling membership for
+      explicit two-qubit tuples, added parser and ABI regressions, and clarified
+      explicit versus environment source precedence.
+- [x] (2026-07-31 07:45 CEST) Repeated the complete SC and Driver binaries,
+      runtime-file/imported-device CTest coverage, focused Python tests, full
+      repository lint, release build, diff checks, and warning-as-error
+      documentation build after remediation.
+- [ ] Complete independent exact-head verification after MF-01 and NIT-01.
 
 ## Surprises & Discoveries
 
@@ -77,6 +87,11 @@ synthetic. These operation and calibration semantics directly address
   default retains `r`, `cz`, and `measure`, while direct and Driver tests
   exercise ordered operation support, tuple overrides, defaults, and site
   calibration.
+- Observation: the first exact-head independent review found that explicit
+  two-qubit tuples were checked for arity, range, and uniqueness but not against
+  the ordered coupling map. QDMI requires every advertised two-site operation
+  tuple to be a coupling edge, so the parser now enforces that invariant before
+  materialization.
 
 ## Decision Log
 
@@ -102,6 +117,10 @@ synthetic. These operation and calibration semantics directly address
   duration/fidelity, while site T1/T2 values have defaults and overrides; this
   resolves the issue's two explicit requirements without expanding the QDMI
   abstraction. Date/Author: 2026-07-31 / Codex.
+- Decision: Require explicit two-qubit operation tuples to match an exact
+  ordered coupling edge. Rationale: QDMI conformance requires every advertised
+  supported pair to belong to the coupling map, and preserving orientation is
+  part of the runtime schema contract. Date/Author: 2026-07-31 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -116,8 +135,9 @@ passed, the focused Python runtime-configuration selection reports two passed,
 and the imported/runtime-file CTest selection reports six passed. The complete
 423-step release build, warning-as-error documentation build, repository lint,
 and diff checks also pass. Earlier stacked validation additionally covered
-installation and wheel relocation; those packaging checks must be refreshed
-before publication.
+installation and wheel relocation. After MF-01 and NIT-01, the SC suite reports
+39 passed with the same one expected skip; the Driver, Python, CTest, lint,
+release-build, documentation, and diff checks remain green.
 
 ## Context and Orientation
 
