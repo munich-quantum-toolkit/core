@@ -138,14 +138,15 @@ template <typename Fn>
 [[nodiscard]] auto takeFailureOr(mlir::MLIRContext* context,
                                  const char* message, Fn&& fn) {
   std::string diagnostics;
-  mlir::ScopedDiagnosticHandler handler(context, [&](mlir::Diagnostic& diag) {
-    if (!diagnostics.empty()) {
-      diagnostics.push_back('\n');
-    }
-    llvm::raw_string_ostream os(diagnostics);
-    os << diag;
-    return mlir::success();
-  });
+  const mlir::ScopedDiagnosticHandler handler(
+      context, [&](mlir::Diagnostic& diag) {
+        if (!diagnostics.empty()) {
+          diagnostics.push_back('\n');
+        }
+        llvm::raw_string_ostream os(diagnostics);
+        os << diag;
+        return mlir::success();
+      });
   auto result = std::forward<Fn>(fn)();
   if (mlir::failed(result)) {
     std::string full = message;
@@ -653,7 +654,7 @@ Raises:
         auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot sample this QCO program", [&] {
-              nb::gil_scoped_release release;
+              const nb::gil_scoped_release release;
               return mlir::qco::sample(func, ddPackage, shots, rng);
             });
       },
@@ -680,7 +681,7 @@ Raises:
         auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot sample this QCO program", [&] {
-              nb::gil_scoped_release release;
+              const nb::gil_scoped_release release;
               return mlir::qco::sampleWithClassics(func, ddPackage, shots, rng);
             });
       },
