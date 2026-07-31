@@ -82,6 +82,15 @@ synthetic. These operation and calibration semantics directly address
       remaining transitive provider for the generated session and job handle
       aliases; added the direct device-interface include and normalized the job
       status parameter name.
+- [x] (2026-07-31 12:15 CEST) Addressed the four human review threads locally:
+      corrected the SC documentation title, added Doxygen file metadata to all
+      SC production files, renamed the misleading `override` variable, and
+      consolidated the three duplicated scoped environment helpers.
+- [x] (2026-07-31 12:25 CEST) Rebuilt all four affected test targets, passed
+      their complete 212-test execution with the two existing expected skips,
+      passed exact clang-tidy 22.1.8 on the changed C++ surfaces, full
+      repository lint, diff checks, and the warning-as-error documentation
+      build.
 
 ## Surprises & Discoveries
 
@@ -132,6 +141,9 @@ synthetic. These operation and calibration semantics directly address
   session and job handle providers because `Device.hpp` exported them
   transitively. Independent review against the original CI diagnostics exposed
   the difference, so `Device.cpp` now includes the device interface directly.
+- Observation: the same scoped environment-variable helper had been copied into
+  the NA, SC, and registry tests. A shared test-only utility removes that
+  duplication without adding test infrastructure to the installed QDMI API.
 
 ## Decision Log
 
@@ -170,6 +182,10 @@ synthetic. These operation and calibration semantics directly address
   Rationale: these methods implement opaque-handle ABI behavior that may gain
   per-job state, while changing them to static functions would only satisfy a
   local implementation detail. Date/Author: 2026-07-31 / Codex.
+- Decision: Place `ScopedEnvironmentVariable` in `test/qdmi/TestUtils.hpp`
+  rather than a production QDMI utility. Rationale: it is test scaffolding used
+  by three test binaries, so a test include path provides one implementation
+  without expanding the runtime or public API. Date/Author: 2026-07-31 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -198,6 +214,11 @@ clang-tidy coverage. The remediation release-builds the SC provider and test,
 runs all 40 SC cases with one expected unsupported-job-property skip, produces
 no project diagnostics under clang-tidy 22.1.8, and passes the affected-file
 repository hooks and diff checks.
+
+The review follow-up keeps the runtime behavior unchanged. The complete SC, NA,
+Driver, and registry binaries report 210 passed and the two existing unsupported
+job-ID skips. Exact changed-surface clang-tidy 22.1.8, full repository lint, and
+the warning-as-error documentation build also pass.
 
 ## Context and Orientation
 

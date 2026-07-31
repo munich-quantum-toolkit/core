@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Device.cpp
+ * @brief The MQT QDMI device implementation for superconducting devices.
+ */
+
 #include "qdmi/devices/sc/Device.hpp"
 
 #include "mqt_sc_qdmi/constants.h"

@@ -9,6 +9,7 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
+#include "qdmi/TestUtils.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -18,14 +19,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <future>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -120,55 +118,7 @@ constexpr auto CUSTOM_SC = R"({
   }]
 })";
 
-class ScopedEnvironmentVariable {
-public:
-  ScopedEnvironmentVariable(std::string name, const std::string& value)
-      : name_(std::move(name)) {
-    if (const auto* previous = std::getenv(name_.c_str());
-        previous != nullptr) {
-      previous_ = previous;
-    }
-    set(value);
-  }
-
-  ~ScopedEnvironmentVariable() {
-    if (previous_) {
-      static_cast<void>(setWithoutChecking(*previous_));
-    } else {
-#ifdef _WIN32
-      static_cast<void>(_putenv_s(name_.c_str(), ""));
-#else
-      // NOLINTNEXTLINE(misc-include-cleaner)
-      static_cast<void>(unsetenv(name_.c_str()));
-#endif
-    }
-  }
-
-  ScopedEnvironmentVariable(const ScopedEnvironmentVariable&) = delete;
-  ScopedEnvironmentVariable&
-  operator=(const ScopedEnvironmentVariable&) = delete;
-  ScopedEnvironmentVariable(ScopedEnvironmentVariable&&) = delete;
-  ScopedEnvironmentVariable& operator=(ScopedEnvironmentVariable&&) = delete;
-
-private:
-  void set(const std::string& value) const {
-    if (!setWithoutChecking(value)) {
-      throw std::runtime_error("failed to set environment variable " + name_);
-    }
-  }
-
-  [[nodiscard]] bool setWithoutChecking(const std::string& value) const {
-#ifdef _WIN32
-    return _putenv_s(name_.c_str(), value.c_str()) == 0;
-#else
-    // NOLINTNEXTLINE(misc-include-cleaner)
-    return setenv(name_.c_str(), value.c_str(), 1) == 0;
-#endif
-  }
-
-  std::string name_;
-  std::optional<std::string> previous_;
-};
+using mqt::test::ScopedEnvironmentVariable;
 
 [[nodiscard]] MQT_SC_QDMI_Device_Session
 initializedSession(const std::string_view configuration = CUSTOM_SC) {

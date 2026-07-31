@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Configuration.hpp
+ * @brief Superconducting QDMI device configuration.
+ */
+
 #pragma once
 
 #include <cstdint>

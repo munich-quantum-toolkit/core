@@ -1167,8 +1167,9 @@ TEST(DeviceRegistrationTest,
   ASSERT_TRUE(secondCouplingMap.has_value());
   ASSERT_EQ(secondCouplingMap->size(), 1);
 
-  qdmi::DeviceSessionConfig override;
-  override.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+  qdmi::DeviceSessionConfig configurationOverride;
+  configurationOverride.deviceConfiguration =
+      qdmi::InlineDeviceConfiguration{.json = R"({
         "schema-version":1,
         "name":"SC per-open override",
         "numQubits":3,
@@ -1178,7 +1179,7 @@ TEST(DeviceRegistrationTest,
         "operations":[]
       })"};
   const auto overridden =
-      fomac::Session::openDevice("test.sc.runtime-one", override);
+      fomac::Session::openDevice("test.sc.runtime-one", configurationOverride);
   EXPECT_EQ(overridden.getName(), "SC per-open override");
   EXPECT_EQ(overridden.getQubitsNum(), 3);
 }

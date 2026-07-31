@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Configuration.cpp
+ * @brief Runtime configuration parsing for superconducting QDMI devices.
+ */
+
 #include "qdmi/devices/sc/Configuration.hpp"
 
 #include <nlohmann/json.hpp>
