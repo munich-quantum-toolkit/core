@@ -138,6 +138,80 @@ static void inlineRegion(Region& sourceRegion, Region& targetRegion,
   block.eraseArguments(offset, replacementValues.size());
 }
 
+[[nodiscard]] static bool isQuantumStateType(const Type type) {
+  if (isa<qco::QubitType, qc::QubitType>(type)) {
+    return true;
+  }
+  if (const auto tensor = dyn_cast<RankedTensorType>(type)) {
+    return isa<qco::QubitType>(tensor.getElementType());
+  }
+  const auto memref = dyn_cast<MemRefType>(type);
+  return memref && isa<qc::QubitType>(memref.getElementType());
+}
+
+[[nodiscard]] static SmallVector<Value>
+selectConvertedState(ValueRange originalValues, ValueRange convertedValues,
+                     const bool selectQuantum) {
+  assert(originalValues.size() == convertedValues.size());
+  SmallVector<Value> selected;
+  for (const auto [original, converted] :
+       llvm::zip_equal(originalValues, convertedValues)) {
+    if (isQuantumStateType(original.getType()) == selectQuantum) {
+      selected.push_back(converted);
+    }
+  }
+  return selected;
+}
+
+static void inlineSCFRegion(Region& sourceRegion, Region& targetRegion,
+                            const unsigned int offset, ValueRange originalState,
+                            ValueRange quantumReplacements,
+                            ConversionPatternRewriter& rewriter) {
+  rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
+  auto& block = targetRegion.front();
+  assert(block.getNumArguments() == offset + originalState.size() &&
+         "region arguments must match the original loop state");
+
+  SmallVector<unsigned int> quantumArguments;
+  size_t quantumIndex = 0;
+  for (const auto [index, original] : llvm::enumerate(originalState)) {
+    if (!isQuantumStateType(original.getType())) {
+      continue;
+    }
+    assert(quantumIndex < quantumReplacements.size() &&
+           "missing replacement for quantum loop state");
+    block.getArgument(offset + index)
+        .replaceAllUsesWith(quantumReplacements[quantumIndex++]);
+    quantumArguments.push_back(static_cast<unsigned int>(offset + index));
+  }
+  assert(quantumIndex == quantumReplacements.size() &&
+         "unused replacement for quantum loop state");
+  for (const auto argument : llvm::reverse(quantumArguments)) {
+    block.eraseArgument(argument);
+  }
+}
+
+[[nodiscard]] static SmallVector<Value>
+combineConvertedResults(TypeRange originalTypes, ValueRange classicalResults,
+                        ValueRange quantumReplacements) {
+  SmallVector<Value> replacements;
+  replacements.reserve(originalTypes.size());
+  size_t classicalIndex = 0;
+  size_t quantumIndex = 0;
+  for (const auto type : originalTypes) {
+    if (isQuantumStateType(type)) {
+      assert(quantumIndex < quantumReplacements.size());
+      replacements.push_back(quantumReplacements[quantumIndex++]);
+    } else {
+      assert(classicalIndex < classicalResults.size());
+      replacements.push_back(classicalResults[classicalIndex++]);
+    }
+  }
+  assert(classicalIndex == classicalResults.size());
+  assert(quantumIndex == quantumReplacements.size());
+  return replacements;
+}
+
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
 
@@ -483,15 +557,13 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
  * alongside the measurement bit. MLIR's conversion infrastructure automatically
  * routes subsequent uses of the QCO output qubit to this QC reference.
  *
- * Register metadata (name, size, index) for output recording is preserved
- * during conversion.
- *
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %q_out, %c = qco.measure("c", 2, 0) %q_in : !qco.qubit
- * // becomes:
- * %c = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
- * // %q_out uses are replaced with %q (the adaptor-converted input)
+ * %q_out, %c = qco.measure %q_in : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %c = qc.measure %q : !qc.qubit -> i1
  * ```
  */
 struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
@@ -504,10 +576,7 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
     auto qcQubit = adaptor.getQubitIn();
 
     // Create qc.measure (in-place operation, returns only bit)
-    // Preserve register metadata for output recording
-    auto qcOp = qc::MeasureOp::create(
-        rewriter, op.getLoc(), qcQubit, op.getRegisterNameAttr(),
-        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
+    auto qcOp = qc::MeasureOp::create(rewriter, op.getLoc(), qcQubit);
 
     auto measureBit = qcOp.getResult();
 
@@ -771,8 +840,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 
 /**
  * @brief Converts scf.for with value semantics to scf.for with memory
- * semantics for qubit values. This currently assumes only qubit types as return
- * values.
+ * semantics for qubit values while preserving classical loop-carried state.
  *
  * @par Example:
  * ```mlir
@@ -798,17 +866,24 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   LogicalResult
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    const auto classicalInits =
+        selectConvertedState(op.getInitArgs(), adaptor.getInitArgs(), false);
+    const auto quantumInits =
+        selectConvertedState(op.getInitArgs(), adaptor.getInitArgs(), true);
     auto newFor = scf::ForOp::create(
         rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
-        adaptor.getStep(), ValueRange{});
+        adaptor.getStep(), classicalInits);
     // Erase default block
     rewriter.eraseBlock(&newFor.getRegion().front());
 
-    // Inline the region and replace the block arguments
-    inlineRegion(op.getRegion(), newFor.getRegion(), 1, adaptor.getInitArgs(),
-                 rewriter);
+    // Inline the region, retaining classical state as block arguments and
+    // replacing quantum state with the reference-semantic QC values.
+    inlineSCFRegion(op.getRegion(), newFor.getRegion(), 1, op.getInitArgs(),
+                    quantumInits, rewriter);
 
-    rewriter.replaceOp(op, adaptor.getInitArgs());
+    rewriter.replaceOp(op, combineConvertedResults(op.getResultTypes(),
+                                                   newFor.getResults(),
+                                                   quantumInits));
 
     return success();
   }
@@ -816,8 +891,7 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
 
 /**
  * @brief Converts scf.while with value semantics to scf.while with memory
- * semantics for qubit values. This currently assumes only qubit types as return
- * values.
+ * semantics for qubit values while preserving classical loop-carried state.
  *
  * @par Example:
  * ```mlir
@@ -847,16 +921,30 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   LogicalResult
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto newWhileOp =
-        scf::WhileOp::create(rewriter, op->getLoc(), TypeRange{}, ValueRange{});
+    const auto classicalInits =
+        selectConvertedState(op.getInits(), adaptor.getInits(), false);
+    const auto quantumInits =
+        selectConvertedState(op.getInits(), adaptor.getInits(), true);
+    SmallVector<Type> classicalResultTypes;
+    for (const auto type : op.getResultTypes()) {
+      if (!isQuantumStateType(type)) {
+        classicalResultTypes.push_back(type);
+      }
+    }
+    auto newWhileOp = scf::WhileOp::create(
+        rewriter, op->getLoc(), classicalResultTypes, classicalInits);
 
-    // Inline the regions and replace the block arguments
-    inlineRegion(op.getBefore(), newWhileOp.getBefore(), 0, adaptor.getInits(),
-                 rewriter);
-    inlineRegion(op.getAfter(), newWhileOp.getAfter(), 0, adaptor.getInits(),
-                 rewriter);
+    // The before region receives initial-state types, while the after region
+    // receives result-state types. Quantum state in both regions maps back to
+    // the same reference-semantic QC values.
+    inlineSCFRegion(op.getBefore(), newWhileOp.getBefore(), 0, op.getInits(),
+                    quantumInits, rewriter);
+    inlineSCFRegion(op.getAfter(), newWhileOp.getAfter(), 0, op.getResults(),
+                    quantumInits, rewriter);
 
-    rewriter.replaceOp(op, adaptor.getInits());
+    rewriter.replaceOp(op, combineConvertedResults(op.getResultTypes(),
+                                                   newWhileOp.getResults(),
+                                                   quantumInits));
 
     return success();
   }
@@ -985,8 +1073,7 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
 
 /**
  * @brief Converts scf.yield with value semantics to scf.yield with memory
- * semantics for qubit values. This currently assumes no mixed types as yielded
- * values.
+ * semantics for qubit values while retaining classical yielded values.
  *
  * @par Example:
  * ```mlir
@@ -1001,16 +1088,17 @@ struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(
+        op, selectConvertedState(op.getResults(), adaptor.getResults(), false));
     return success();
   }
 };
 
 /**
  * @brief Converts scf.condition with value semantics to scf.condition with
- * memory semantics for qubit values
+ * memory semantics for qubit values while retaining classical state
  *
  * @par Example:
  * ```mlir
@@ -1027,8 +1115,9 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
   LogicalResult
   matchAndRewrite(scf::ConditionOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, adaptor.getCondition(),
-                                                  ValueRange{});
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(
+        op, adaptor.getCondition(),
+        selectConvertedState(op.getArgs(), adaptor.getArgs(), false));
 
     return success();
   }

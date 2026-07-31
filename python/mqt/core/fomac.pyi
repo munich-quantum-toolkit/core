@@ -550,6 +550,8 @@ class DeviceDefinition:
         auth_url: str | None = None,
         username: str | None = None,
         password: str | None = None,
+        device_config: str | None = None,
+        device_config_file: str | os.PathLike | None = None,
         custom1: str | None = None,
         custom2: str | None = None,
         custom3: str | None = None,
@@ -568,6 +570,8 @@ class DeviceDefinition:
             auth_url: Optional authentication server URL.
             username: Optional authentication username.
             password: Optional authentication password.
+            device_config: Optional inline JSON device description.
+            device_config_file: Optional device-description JSON file.
             custom1: Optional custom configuration parameter 1.
             custom2: Optional custom configuration parameter 2.
             custom3: Optional custom configuration parameter 3.
@@ -615,6 +619,13 @@ def register_device_if_absent(definition: DeviceDefinition) -> bool:
         ValueError: If the definition is invalid.
     """
 
+def registered_device_ids() -> list[str]:
+    """Return registered, enabled QDMI device IDs in registration order.
+
+    This includes devices registered at runtime and does not load native device
+    libraries or expose their definitions.
+    """
+
 def open_device(
     device_id: str,
     *,
@@ -624,6 +635,8 @@ def open_device(
     auth_url: str | None = None,
     username: str | None = None,
     password: str | None = None,
+    device_config: str | None = None,
+    device_config_file: str | os.PathLike | None = None,
     custom1: str | None = None,
     custom2: str | None = None,
     custom3: str | None = None,
@@ -643,6 +656,8 @@ def open_device(
         auth_url: Optional authentication server URL override.
         username: Optional authentication username override.
         password: Optional authentication password override.
+        device_config: Optional inline JSON device-description override.
+        device_config_file: Optional device-description JSON file override.
         custom1: Optional custom configuration parameter 1 override.
         custom2: Optional custom configuration parameter 2 override.
         custom3: Optional custom configuration parameter 3 override.

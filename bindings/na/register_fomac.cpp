@@ -10,7 +10,7 @@
 
 #include "fomac/FoMaC.hpp"
 #include "na/fomac/Device.hpp"
-#include "qdmi/devices/na/Generator.hpp"
+#include "qdmi/devices/na/Configuration.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>

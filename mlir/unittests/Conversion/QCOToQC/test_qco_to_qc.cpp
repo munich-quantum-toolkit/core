@@ -192,6 +192,106 @@ module {
   EXPECT_FALSE(containsQCOOperations);
 }
 
+TEST(QCOToQCRegressionTest, PreservesClassicalForLoopState) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 2 : index
+    %step = arith.constant 1 : index
+    %initial = arith.constant 0 : i64
+    %one = arith.constant 1 : i64
+    %result, %q1 = scf.for %iv = %lb to %ub step %step
+        iter_args(%value = %initial, %q = %q0) -> (i64, !qco.qubit) {
+      %next = arith.addi %value, %one : i64
+      %q2 = qco.h %q : !qco.qubit -> !qco.qubit
+      scf.yield %next, %q2 : i64, !qco.qubit
+    }
+    qco.sink %q1 : !qco.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::ForOp loop;
+  module->walk([&](scf::ForOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getInitArgs().size(), 1);
+  EXPECT_TRUE(loop.getInitArgs().front().getType().isInteger(64));
+  ASSERT_EQ(loop.getNumResults(), 1);
+  EXPECT_TRUE(loop.getResult(0).getType().isInteger(64));
+  auto yield = cast<scf::YieldOp>(loop.getBody()->getTerminator());
+  ASSERT_EQ(yield.getNumOperands(), 1);
+  EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+}
+
+TEST(QCOToQCRegressionTest, PreservesTypeChangingClassicalWhileState) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %initial = arith.constant 1.0 : f32
+    %result, %q1 = scf.while (%input = %initial, %q = %q0)
+        : (f32, !qco.qubit) -> (i64, !qco.qubit) {
+      %q2 = qco.h %q : !qco.qubit -> !qco.qubit
+      %condition = arith.constant false
+      %next = arith.constant 7 : i64
+      scf.condition(%condition) %next, %q2 : i64, !qco.qubit
+    } do {
+    ^bb0(%input: i64, %q: !qco.qubit):
+      %q2 = qco.x %q : !qco.qubit -> !qco.qubit
+      %next = arith.sitofp %input : i64 to f32
+      scf.yield %next, %q2 : f32, !qco.qubit
+    }
+    qco.sink %q1 : !qco.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::WhileOp loop;
+  module->walk([&](scf::WhileOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getInits().size(), 1);
+  EXPECT_TRUE(loop.getInits().front().getType().isF32());
+  ASSERT_EQ(loop.getNumResults(), 1);
+  EXPECT_TRUE(loop.getResult(0).getType().isInteger(64));
+  auto condition =
+      cast<scf::ConditionOp>(loop.getBeforeBody()->getTerminator());
+  ASSERT_EQ(condition.getArgs().size(), 1);
+  EXPECT_TRUE(condition.getArgs().front().getType().isInteger(64));
+  auto yield = cast<scf::YieldOp>(loop.getAfterBody()->getTerminator());
+  ASSERT_EQ(yield.getNumOperands(), 1);
+  EXPECT_TRUE(yield.getOperand(0).getType().isF32());
+}
+
 TEST_P(QCOToQCTest, ProgramEquivalence) {
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
@@ -768,6 +868,12 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)},
+        QCOToQCTestCase{"PartialMeasurementToRegister",
+                        MQT_NAMED_BUILDER(qco::partialMeasurementToRegister),
+                        MQT_NAMED_BUILDER(qc::partialMeasurementToRegister)},
+        QCOToQCTestCase{"DynamicallyIndexedMeasurement",
+                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement),
+                        MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement)},
         QCOToQCTestCase{"MeasurementWithoutRegisters",
                         MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
                         MQT_NAMED_BUILDER(qc::measurementWithoutRegisters)}));
@@ -794,17 +900,21 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOIfOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"SimpleIfOp",
-                                    MQT_NAMED_BUILDER(qco::simpleIf),
-                                    MQT_NAMED_BUILDER(qc::simpleIf)},
-                    QCOToQCTestCase{"IfTwoQubits",
-                                    MQT_NAMED_BUILDER(qco::ifTwoQubits),
-                                    MQT_NAMED_BUILDER(qc::ifTwoQubits)},
-                    QCOToQCTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
-                                    MQT_NAMED_BUILDER(qc::ifElse)},
-                    QCOToQCTestCase{"NestedIfOpForLoop",
-                                    MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
-                                    MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
+    testing::Values(
+        QCOToQCTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qco::simpleIf),
+                        MQT_NAMED_BUILDER(qc::simpleIf)},
+        QCOToQCTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
+                        MQT_NAMED_BUILDER(qc::ifElse)},
+        QCOToQCTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qco::ifTwoQubits),
+                        MQT_NAMED_BUILDER(qc::ifTwoQubits)},
+        QCOToQCTestCase{"IfWithMeasurement",
+                        MQT_NAMED_BUILDER(qco::ifWithMeasurement),
+                        MQT_NAMED_BUILDER(qc::ifWithMeasurement)},
+        QCOToQCTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qco::ifWithCreg),
+                        MQT_NAMED_BUILDER(qc::ifWithCreg)},
+        QCOToQCTestCase{"NestedIfOpForLoop",
+                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
+                        MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
 /// @}
 
 /// \name QCOToQC/Operations/IndexSwitchOp.cpp
@@ -849,11 +959,11 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp)},
         QCOToQCTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit)},
         QCOToQCTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}
