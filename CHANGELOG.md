@@ -667,9 +667,9 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
 
 ## [2.7.0] - 2024-10-08
 
-_📚 Refer to the [GitHub Release
-Notes](https://github.com/munich-quantum-toolkit/core/releases) for previous
-changelogs._
+_📚 Refer to the
+[GitHub Release Notes](https://github.com/munich-quantum-toolkit/core/releases)
+for previous changelogs._
 
 <!-- Version links -->
 
