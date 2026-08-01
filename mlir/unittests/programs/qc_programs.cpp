@@ -2207,6 +2207,48 @@ Value ctrlInvTwo(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+Value modifierBodyReuseReordered(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(10);
+
+  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange outerTargets) {
+    b.ctrl({outerTargets[2]}, {outerTargets[1], outerTargets[0]},
+           [&](ValueRange innerTargets) {
+             b.rzx(0.123, innerTargets[0], innerTargets[1]);
+           });
+  });
+
+  b.inv({q[4], q[5], q[6]}, [&](ValueRange invArgs) {
+    b.ctrl({invArgs[2]}, {invArgs[1], invArgs[0]},
+           [&](ValueRange targets) { b.rzx(0.234, targets[0], targets[1]); });
+  });
+
+  b.pow(3.0, {q[7], q[8], q[9]}, [&](ValueRange powArgs) {
+    b.ctrl({powArgs[2]}, {powArgs[1], powArgs[0]},
+           [&](ValueRange targets) { b.rzx(0.345, targets[0], targets[1]); });
+  });
+
+  return measureAndReturn(b, q.qubits);
+}
+
+Value modifierBodyReuseReorderedRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(10);
+
+  b.ctrl({q[0], q[3]}, {q[2], q[1]},
+         [&](ValueRange targets) { b.rzx(0.123, targets[0], targets[1]); });
+
+  b.ctrl({q[6]}, {q[5], q[4]}, [&](ValueRange targets) {
+    b.inv(targets,
+          [&](ValueRange invArgs) { b.rzx(0.234, invArgs[0], invArgs[1]); });
+  });
+
+  b.ctrl({q[9]}, {q[8], q[7]}, [&](ValueRange targets) {
+    b.pow(3.0, targets,
+          [&](ValueRange powArgs) { b.rzx(0.345, powArgs[0], powArgs[1]); });
+  });
+
+  return measureAndReturn(b, q.qubits);
+}
+
 Value emptyInv(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);

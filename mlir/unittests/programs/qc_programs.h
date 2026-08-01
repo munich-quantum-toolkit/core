@@ -1084,6 +1084,12 @@ Value nestedCtrlTwo(QCProgramBuilder& b);
 /// applied to two gates.
 Value ctrlInvTwo(QCProgramBuilder& b);
 
+/// Exercises modifier-body reuse with reordered control and target aliases.
+Value modifierBodyReuseReordered(QCProgramBuilder& b);
+
+/// Canonical reference for modifierBodyReuseReordered.
+Value modifierBodyReuseReorderedRef(QCProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with an empty inverse modifier.

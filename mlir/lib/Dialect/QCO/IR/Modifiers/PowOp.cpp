@@ -271,11 +271,12 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
     auto newCtrl = CtrlOp::create(
         rewriter, op.getLoc(), controls, targets,
         [&](ValueRange targetArgs) -> SmallVector<Value> {
-          auto innerPow = PowOp::create(rewriter, op.getLoc(), targetArgs,
-                                        op.getExponent());
-          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
-                                      innerPow.getRegion(),
-                                      innerPow.getRegion().end());
+          auto innerPow =
+              PowOp::create(rewriter, op.getLoc(), targetArgs, op.getExponent(),
+                            [&](ValueRange powArgs) -> SmallVector<Value> {
+                              return utils::inlineBodyReturningYields(
+                                  *innerCtrlOp.getBody(), powArgs, rewriter);
+                            });
           return innerPow.getResults();
         });
 
@@ -339,11 +340,9 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    // Inline the body before op so all parameter-defining ops (constants,
-    // arithmetic) are in scope and survive op replacement.
-    rewriter.inlineBlockBefore(op.getBody(), op, op.getInputQubits());
-    rewriter.eraseOp(op->getPrevNode()); // erase the now-inlined YieldOp
-    rewriter.setInsertionPoint(op);
+    // Move supporting ops (constants, arithmetic) out of the body so their
+    // Values are accessible from outside and survive PowOp erasure.
+    utils::hoistSupportingOpsBefore(*op.getBody(), innerOp, op, rewriter);
 
     const LogicalResult result =
         TypeSwitch<Operation*, LogicalResult>(innerOp)
@@ -517,21 +516,23 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             })
             // --- Hermitian gates (integer exponent): even => id, odd => gate
             // --- pow(n) { h } => id (n even) | h (n odd)
-            .Case<HOp>([&](auto gate) {
+            .Case<HOp>([&](auto) {
               if (utils::isEvenExponent(r)) {
                 // pow(even) { h } => identity: thread inputs to results.
                 rewriter.replaceOp(op, op.getQubitsIn());
               } else {
-                rewriter.replaceOp(op, gate->getResults());
+                utils::inlineModifierBody(op, *op.getBody(),
+                                          op.getInputQubits(), rewriter);
               }
               return success();
             })
             // pow(n) { ecr/rccx/swap } => id (n even) | gate (n odd)
-            .Case<ECROp, RCCXOp, SWAPOp>([&](auto gate) {
+            .Case<ECROp, RCCXOp, SWAPOp>([&](auto) {
               if (utils::isEvenExponent(r)) {
                 rewriter.replaceOp(op, op.getQubitsIn());
               } else {
-                rewriter.replaceOp(op, gate->getResults());
+                utils::inlineModifierBody(op, *op.getBody(),
+                                          op.getInputQubits(), rewriter);
               }
               return success();
             })
@@ -562,9 +563,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               llvm_unreachable("unhandled gate type after pre-check");
               return failure(); // unreachable — satisfies compiler
             });
-    if (innerOp->use_empty()) {
-      rewriter.eraseOp(innerOp);
-    }
     return result;
   }
 };
