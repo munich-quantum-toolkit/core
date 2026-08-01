@@ -1167,7 +1167,8 @@ TEST(OpenQASMTargetTest, RotationsProduceSpecifiedBitResults) {
 
   for (size_t runtime = 0; runtime < 2; ++runtime) {
     for (size_t distance = 0; distance < distances.size(); ++distance) {
-      const auto* const opposite =
+      // libc++ uses a pointer here, whereas MSVC uses an iterator class.
+      const auto opposite = // NOLINT(readability-qualified-auto)
           std::ranges::find(distances, -distances[distance]);
       ASSERT_NE(opposite, distances.end());
       const auto oppositeIndex =

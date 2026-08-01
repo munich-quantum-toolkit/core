@@ -326,6 +326,10 @@ threads or publishing new PR text.
       logical results their direct MLIR header providers. The focused build, all
       142 OpenQASM frontend/emitter tests, all 204 compiler tests, changed-file
       hooks, and diff checks pass.
+- [x] (2026-08-01) Corrected the Windows ARM build regression exposed by the
+      clang-tidy iterator qualification: retain the portable deduced
+      `std::array` iterator and document the narrow lint suppression instead of
+      assuming libc++'s pointer representation.
 
 ## Surprises & Discoveries
 
