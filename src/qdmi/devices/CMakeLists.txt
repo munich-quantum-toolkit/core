@@ -6,8 +6,12 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(dd)
-add_subdirectory(sc)
+if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
+  add_subdirectory(dd)
+endif()
+if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
+  add_subdirectory(sc)
+endif()
 add_subdirectory(na)
 
 set(MQT_CORE_TARGETS

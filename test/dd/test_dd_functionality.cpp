@@ -290,6 +290,8 @@ TEST_F(DDFunctionality, BuildCircuit) {
   qc.cxx_minus_yy(theta, beta, 2, 0, 1);
   qc.xx_plus_yy(theta, beta, 0, 1);
   qc.cxx_plus_yy(theta, beta, 2, 0, 1);
+  qc.rccx(0, 1, 2);
+  qc.crccx(3, 0, 1, 2);
   qc.r(theta, beta, 0);
   qc.cr(theta, beta, 2, 0);
   qc.mcr(theta, beta, {2, 3}, 0);
@@ -298,6 +300,8 @@ TEST_F(DDFunctionality, BuildCircuit) {
   qc.mcr(-theta, beta, {2, 3}, 0);
   qc.cr(-theta, beta, 2, 0);
   qc.r(-theta, beta, 0);
+  qc.crccx(3, 0, 1, 2);
+  qc.rccx(0, 1, 2);
   qc.cxx_plus_yy(-theta, beta, 2, 0, 1);
   qc.xx_plus_yy(-theta, beta, 0, 1);
   qc.cxx_minus_yy(-theta, beta, 2, 0, 1);

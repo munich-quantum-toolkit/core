@@ -47,26 +47,24 @@ endfunction()
 
 set(TARGET_NAME mqt-core-qir-runtime-test)
 
-if(TARGET MQT::CoreQIRRuntime)
-  # add test executable
-  package_add_test(${TARGET_NAME} MQT::CoreQIRRuntime test_qir_runtime.cpp)
+# add test executable
+package_add_test(${TARGET_NAME} MQT::CoreQIRRuntime test_qir_runtime.cpp)
 
-  # add tests for QIR files
-  set(QIR_EXECUTABLES "")
-  set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
+# add tests for QIR files
+set(QIR_EXECUTABLES "")
+set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
 
-  file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
-  foreach(QIR_EXAMPLE ${QIR_FILES})
-    get_filename_component(QIR_EXAMPLE_NAME ${QIR_EXAMPLE} NAME_WE)
-    camel_to_dash_lowercase(${QIR_EXAMPLE_NAME} QIR_EXAMPLE_NAME)
-    add_qir_circuit(mqt-core-qir-${QIR_EXAMPLE_NAME}-ll ${QIR_EXAMPLE})
-    list(APPEND QIR_EXECUTABLES "$<TARGET_FILE:mqt-core-qir-${QIR_EXAMPLE_NAME}-ll>")
-    add_dependencies(${TARGET_NAME} mqt-core-qir-${QIR_EXAMPLE_NAME}-ll)
-  endforeach()
+file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
+foreach(QIR_EXAMPLE ${QIR_FILES})
+  get_filename_component(QIR_EXAMPLE_NAME ${QIR_EXAMPLE} NAME_WE)
+  camel_to_dash_lowercase(${QIR_EXAMPLE_NAME} QIR_EXAMPLE_NAME)
+  add_qir_circuit(mqt-core-qir-${QIR_EXAMPLE_NAME}-ll ${QIR_EXAMPLE})
+  list(APPEND QIR_EXECUTABLES "$<TARGET_FILE:mqt-core-qir-${QIR_EXAMPLE_NAME}-ll>")
+  add_dependencies(${TARGET_NAME} mqt-core-qir-${QIR_EXAMPLE_NAME}-ll)
+endforeach()
 
-  # transform QIR_EXECUTABLES to comma separated list of string ("...")
-  string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
+# transform QIR_EXECUTABLES to comma separated list of string ("...")
+string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
 
-  # add all executables as initializer list of std::filesystem::path's
-  target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})
-endif()
+# add all executables as initializer list of std::filesystem::path's
+target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})

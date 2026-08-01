@@ -6,21 +6,18 @@
 #
 # Licensed under the MIT License
 
-if(TARGET MQT::CoreQIRRunner)
-  # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner-test)
-  # Add the test executable
-  package_add_test(${TARGET_NAME} "" test_qir_runner.cpp)
-  # Collect QIR files
-  set(QIR_FILES "")
-  set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
-  file(REAL_PATH "${QIR_FILES_DIR}" QIR_FILES_DIR)
-  file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
-  # transform QIR_FILES to comma separated list of string ("...")
-  string(REPLACE ";" "\",\"" QIR_FILES "\"${QIR_FILES}\"")
-  # Set the executable path and version information
-  target_compile_definitions(
-    ${TARGET_NAME} PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQIRRunner>"
-                           QIR_FILES=${QIR_FILES})
-  add_dependencies(${TARGET_NAME} MQT::CoreQIRRunner)
-endif()
+# Set test target name
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner-test)
+# Add the test executable
+package_add_test(${TARGET_NAME} "" test_qir_runner.cpp)
+# Collect QIR files
+set(QIR_FILES "")
+set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
+file(REAL_PATH "${QIR_FILES_DIR}" QIR_FILES_DIR)
+file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
+# transform QIR_FILES to comma separated list of string ("...")
+string(REPLACE ";" "\",\"" QIR_FILES "\"${QIR_FILES}\"")
+# Set the executable path and version information
+target_compile_definitions(
+  ${TARGET_NAME} PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQIRRunner>" QIR_FILES=${QIR_FILES})
+add_dependencies(${TARGET_NAME} MQT::CoreQIRRunner)

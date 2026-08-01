@@ -85,6 +85,11 @@ using SparseCMat = std::unordered_map<std::pair<std::size_t, std::size_t>,
 using GateMatrix = std::array<std::complex<fp>, NEDGE>;
 using TwoQubitGateMatrix =
     std::array<std::array<std::complex<fp>, NEDGE>, NEDGE>;
+/// Dimension of a three-qubit gate matrix (`2^3`).
+static constexpr std::uint8_t THREE_QUBIT_GATE_DIM = 8;
+using ThreeQubitGateMatrix =
+    std::array<std::array<std::complex<fp>, THREE_QUBIT_GATE_DIM>,
+               THREE_QUBIT_GATE_DIM>;
 
 /**
  * @brief Converts a decimal number to a binary string (big endian)

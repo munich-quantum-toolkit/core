@@ -406,33 +406,41 @@ public:
         std::dynamic_pointer_cast<qasm3::DesignatedType<uint64_t>>(
             std::get<1>(stmt->type));
     if (!sizedType) {
-      throw qasm3::CompilerError("Only sized types are supported.",
-                                 stmt->debugInfo);
-    }
-    const auto size = static_cast<int64_t>(sizedType->getDesignator());
-
-    switch (sizedType->type) {
-    case qasm3::Qubit: {
-      const auto& reg = builder.allocQubitRegister(size);
-      qubitRegisters[id] = reg.qubits;
-      break;
-    }
-    case qasm3::Bit:
-    case qasm3::Int:
-    case qasm3::Uint: {
-      classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
-      if (sizedType->type == qasm3::Bit) {
-        allBitRegisters.push_back(id);
-        if (stmt->isOutput || openQASM2CompatMode) {
-          // We return `output` bits in QASM3, or all named bits in QASM2.
-          outputRegisters.push_back(id);
-        }
+      const auto unsizedType =
+          std::dynamic_pointer_cast<qasm3::UnsizedType<uint64_t>>(
+              std::get<1>(stmt->type));
+      if (!unsizedType || unsizedType->type != qasm3::SingleQubit) {
+        throw qasm3::CompilerError(
+            "Only qubit types are allowed to be unsized.", stmt->debugInfo);
       }
-      break;
-    }
-    default:
-      throw qasm3::CompilerError("Unsupported declaration type.",
-                                 stmt->debugInfo);
+      const auto qubit = builder.allocQubit();
+      qubitRegisters[id] = {qubit};
+    } else {
+      const auto size = static_cast<int64_t>(sizedType->getDesignator());
+
+      switch (sizedType->type) {
+      case qasm3::Qubit: {
+        const auto& reg = builder.allocQubitRegister(size);
+        qubitRegisters[id] = reg.qubits;
+        break;
+      }
+      case qasm3::Bit:
+      case qasm3::Int:
+      case qasm3::Uint: {
+        classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
+        if (sizedType->type == qasm3::Bit) {
+          allBitRegisters.push_back(id);
+          if (stmt->isOutput || openQASM2CompatMode) {
+            // We return `output` bits in QASM3, or all named bits in QASM2.
+            outputRegisters.push_back(id);
+          }
+        }
+        break;
+      }
+      default:
+        throw qasm3::CompilerError("Unsupported declaration type.",
+                                   stmt->debugInfo);
+      }
     }
 
     // Handle declarations through measure expressions
