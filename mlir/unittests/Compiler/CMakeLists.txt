@@ -13,6 +13,7 @@ target_link_libraries(
   PRIVATE GTest::gtest_main
           MQTCompilerPipeline
           MLIRQCTranslation
+          MLIRQASMPrograms
           MLIRQCProgramBuilder
           MLIRQIRProgramBuilder
           MLIRParser

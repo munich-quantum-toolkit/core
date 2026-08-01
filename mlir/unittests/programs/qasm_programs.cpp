@@ -10,6 +10,9 @@
 
 #include "qasm_programs.h"
 
+#include <llvm/ADT/ArrayRef.h>
+
+#include <array>
 #include <string>
 
 // NOLINTBEGIN(readability-identifier-naming)
@@ -283,6 +286,8 @@ const std::string floatingPowX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
 pow(0.5) @ x q;
+output bit result;
+result = measure q;
 )qasm";
 
 const std::string booleanPowX = R"qasm(OPENQASM 3.0;
@@ -985,6 +990,8 @@ h q[0];
 c = measure q[0];
 if (c) {
   meas = measure q[0];
+} else {
+  meas = measure q[0];
 }
 )qasm";
 
@@ -996,7 +1003,8 @@ bit c = measure q[0];
 if (!c) {
   x q[0];
 }
-output bit[1] out = measure q;
+output bit[1] out;
+out = measure q;
 )qasm";
 
 const std::string ifEmptyThen = R"qasm(OPENQASM 3.0;
@@ -1008,8 +1016,495 @@ if (c) {
 } else {
   x q[0];
 }
-output bit[1] out = measure q;
+output bit[1] out;
+out = measure q;
 )qasm";
+
+const std::string nestedIfOpForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] reg;
+qubit q;
+h q;
+bit c = measure q;
+if (c) { h q; } else {
+  for uint i in [0:2] { h reg[i]; }
+}
+output bit out;
+out = measure q;
+)qasm";
+
+const std::string simpleWhileReset = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+bit repeat = measure q;
+while (repeat) { h q; repeat = measure q; }
+bit out = measure q;
+)qasm";
+
+const std::string simpleForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:1] { h q[i]; }
+bit[2] out = measure q;
+)qasm";
+
+const std::string nestedForLoopIfOp = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] reg;
+qubit q;
+bit enabled;
+for uint i in [0:1] {
+  h q;
+  enabled = measure q;
+  if (enabled) { h reg[i]; }
+}
+bit out = measure q;
+)qasm";
+
+const std::string nestedForLoopWhileOp = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:1] { h q[i]; }
+bit repeat;
+for uint i in [0:1] {
+  repeat = measure q[i];
+  while (repeat) { h q[i]; repeat = measure q[i]; }
+}
+bit[2] out = measure q;
+)qasm";
+
+const std::string nestedForLoopCtrlOpWithSeparateQubit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+qubit control;
+h control;
+for uint i in [0:2] { h q[i]; cx control, q[i]; }
+bit out = measure control;
+)qasm";
+
+const std::string nestedForLoopCtrlOpWithExtractedQubit =
+    R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+h q[0];
+for uint i in [1:3] { h q[i]; cx q[0], q[i]; }
+bit out = measure q[0];
+)qasm";
+
+const std::string broadcastRegisterAndQubit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] reg;
+qubit q;
+cx reg, q;
+bit[3] left = measure reg;
+bit right = measure q;
+)qasm";
+
+const std::string broadcastCompoundGate = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+gate compound a, b { x a; cx a, b; }
+qubit[3] reg;
+qubit q;
+compound reg, q;
+bit[3] left = measure reg;
+bit right = measure q;
+)qasm";
+
+const std::string expressionArithmetic = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx((1.0 + 2.0) * 3.0 / 2.0 - 0.5) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionUnaryMinus = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(-0.5) q;
+ry(-(1.0 + 2.0)) q;
+rz(-(-0.25)) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionBuiltinConstants = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(pi / 2) q;
+ry(tau / 4) q;
+rz(euler) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionMathFunctions = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(arccos(0.5)) q;
+rx(arcsin(0.5)) q;
+rx(arctan(0.5)) q;
+rx(cos(0.5)) q;
+rx(exp(0.5)) q;
+rx(log(2.0)) q;
+rx(mod(5.5, 2.0)) q;
+rx(pow(2.0, 3.0)) q;
+rx(sin(0.5)) q;
+rx(sqrt(2.0)) q;
+rx(tan(0.5)) q;
+bit c = measure q;
+)qasm";
+
+const std::string bitVectorBuiltins = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[5] q;
+bit[5] bits = measure q;
+int distance = -7;
+bits = rotl(bits, distance);
+uint count = popcount(bits);
+rx(count) q[0];
+output bit result;
+result = measure q[0];
+)qasm";
+
+const std::string runtimeScalarRounding = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+float value = -1.25;
+rx(ceiling(value) + floor(value)) q;
+output bit result;
+result = measure q;
+)qasm";
+
+const std::string expressionNestedMathFunctions = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+rx(sqrt(pow(sin(0.5), 2.0) + pow(cos(0.5), 2.0))) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionConstFloat = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+const float theta = pi / 4;
+qubit q;
+h q;
+rx(theta) q;
+ry(theta * 2.0) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionMutableFloat = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+float theta = 0.5;
+h q;
+rx(theta) q;
+theta = theta + 0.25;
+ry(theta) q;
+bit c = measure q;
+)qasm";
+
+const std::string expressionConstIntArithmetic = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+const int n = pow(2, 3);
+const int m = mod(11, 4);
+const int k = (1 + 2) * 3 - 4;
+qubit[n] q;
+h q[m];
+h q[k];
+rx(m + k) q[m];
+bit[2] c;
+c[0] = measure q[m];
+c[1] = measure q[k];
+)qasm";
+
+const std::string expressionDynamicIntIndex = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+for uint i in [0:2] { int x = i + 1; h q[x]; }
+bit[4] c = measure q;
+)qasm";
+
+const std::string expressionModIndex = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:3] { h q[mod(i, 2)]; }
+bit[2] c = measure q;
+)qasm";
+
+const std::string conditionLiteral = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+if (true) { x q[0]; }
+if (false) { x q[1]; }
+bit[2] c = measure q;
+)qasm";
+
+const std::string conditionMeasurement = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+bit enabled = measure q[0];
+if (enabled) { x q[1]; }
+bit c = measure q[1];
+)qasm";
+
+const std::string conditionAnd = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+if (c0 && c1) { x q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionOr = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+if (c0 || c1) { x q[2]; } else { h q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionNotAndOr = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+h q[0]; h q[1]; h q[2];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+bit c2 = measure q[2];
+if (!(c0 && c1) || c2) { x q[3]; }
+bit out = measure q[3];
+)qasm";
+
+const std::string conditionBoolVariable = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit c0 = measure q[0]; bit c1 = measure q[1];
+bool both = c0 && c1;
+bool neither = !both;
+if (neither) { x q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionIndexedBit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0]; h q[1];
+bit[2] c;
+c[0] = measure q[0]; c[1] = measure q[1];
+if (c[1]) { x q[2]; }
+bit out = measure q[2];
+)qasm";
+
+const std::string conditionWhileAnd = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+bit c0 = measure q[0];
+bit c1 = measure q[1];
+while (c0 && c1) {
+  h q[0]; h q[1];
+  c0 = measure q[0]; c1 = measure q[1];
+}
+bit[2] c = measure q;
+)qasm";
+
+static const std::string nestedStaticControlFlow = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit enabled = false;
+if (enabled) { h q; } else { for int i in [0:2] { x q; } }
+output bit result;
+result = measure q;
+)qasm";
+static const std::string mutableLoopState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit enabled = measure q;
+while (enabled) {
+  x q;
+  enabled = measure q;
+}
+if (enabled) { h q; }
+output bit result;
+result = measure q;
+)qasm";
+static const std::string scalarLoopState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+float theta = 0.0;
+for int i in [0:2] { theta += 0.125; }
+bit keep_going = measure q;
+while (keep_going) {
+  theta += 0.25;
+  rx(theta) q;
+  keep_going = measure q;
+}
+rx(theta) q;
+output bit result;
+result = measure q;
+)qasm";
+static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int index = 1;
+x q[index];
+output bit[2] result;
+result = measure q;
+)qasm";
+static const std::string equalConstantIndexJoin = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int index = 0;
+bit choose = measure q[0];
+if (choose) { index = 1; } else { index = 1; }
+x q[index];
+output bit[2] result;
+result = measure q;
+)qasm";
+static const std::string runtimeDynamicIndex = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int index = 0;
+bit choose = measure q[0];
+if (choose) { index = 1; }
+x q[index];
+output bit[2] result;
+result = measure q;
+)qasm";
+static const std::string inductionVariableIndex = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[3] q;
+for uint i in [0:2] { x q[i]; }
+output bit[3] result;
+result = measure q;
+)qasm";
+static const std::string checkedIntegerState = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int turns = 0;
+for int i in [0:2] { turns += 1; }
+rx(turns) q;
+output bit result;
+result = measure q;
+)qasm";
+static const std::string dynamicRange = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int start = 0;
+int step = 1;
+int stop = 2;
+bit choose = measure q;
+if (choose) { start = 1; }
+for int i in [start:step:stop] { x q; }
+output bit result;
+result = measure q;
+)qasm";
+
+llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
+  static const std::array programs{
+      OpenQASMProgram{.name = "broadcast-custom-gate",
+                      .source = broadcastCompoundGate},
+      OpenQASMProgram{.name = "arithmetic-parameters",
+                      .source = expressionArithmetic},
+      OpenQASMProgram{.name = "math-parameters",
+                      .source = expressionMathFunctions},
+      OpenQASMProgram{.name = "bit-vector-builtins",
+                      .source = bitVectorBuiltins},
+      OpenQASMProgram{.name = "runtime-scalar-rounding",
+                      .source = runtimeScalarRounding},
+      OpenQASMProgram{.name = "simple-if", .source = conditionLiteral},
+      OpenQASMProgram{.name = "nested-static-control-flow",
+                      .source = nestedStaticControlFlow},
+      OpenQASMProgram{.name = "mutable-loop-state", .source = mutableLoopState},
+      OpenQASMProgram{.name = "scalar-loop-state", .source = scalarLoopState},
+      OpenQASMProgram{.name = "measurement-controlled-while",
+                      .source = conditionWhileAnd},
+      OpenQASMProgram{.name = "resolved-dynamic-index",
+                      .source = resolvedDynamicIndex},
+      OpenQASMProgram{.name = "equal-constant-index-join",
+                      .source = equalConstantIndexJoin},
+      OpenQASMProgram{.name = "reset", .source = resetQubitAfterSingleOp},
+      OpenQASMProgram{.name = "barrier", .source = barrierMultipleQubits},
+      OpenQASMProgram{.name = "mixed-controls", .source = mixedControlledX},
+      OpenQASMProgram{.name = "runtime-dynamic-index",
+                      .source = runtimeDynamicIndex},
+      OpenQASMProgram{.name = "induction-variable-index",
+                      .source = inductionVariableIndex},
+      OpenQASMProgram{.name = "checked-integer-state",
+                      .source = checkedIntegerState},
+      OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
+      OpenQASMProgram{.name = "pow-two-x", .source = powTwoX},
+      OpenQASMProgram{.name = "negative-pow-s", .source = negativePowS},
+      OpenQASMProgram{.name = "controlled-inverse-pow-s",
+                      .source = controlledInversePowS},
+      OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
+      OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
+      OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
+  static const std::array programs{
+      OpenQASMProgram{.name = "broadcast-custom-gate",
+                      .source = broadcastCompoundGate},
+      OpenQASMProgram{.name = "nested-static-control-flow",
+                      .source = nestedStaticControlFlow},
+      OpenQASMProgram{.name = "mutable-loop-state", .source = mutableLoopState},
+      OpenQASMProgram{.name = "reset", .source = resetQubitAfterSingleOp},
+      OpenQASMProgram{.name = "mixed-controls", .source = mixedControlledX},
+      OpenQASMProgram{.name = "pow-two-x", .source = powTwoX},
+      OpenQASMProgram{.name = "negative-pow-s", .source = negativePowS},
+      OpenQASMProgram{.name = "controlled-inverse-pow-s",
+                      .source = controlledInversePowS},
+      OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
+      OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
+      OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
+      OpenQASMProgram{.name = "runtime-scalar-rounding",
+                      .source = runtimeScalarRounding},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
+  static const std::array programs{
+      OpenQASMProgram{.name = "runtime-dynamic-index",
+                      .source = runtimeDynamicIndex},
+      OpenQASMProgram{.name = "induction-variable-index",
+                      .source = inductionVariableIndex},
+      OpenQASMProgram{.name = "checked-integer-state",
+                      .source = checkedIntegerState},
+      OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
+      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
+      OpenQASMProgram{.name = "bit-vector-builtins",
+                      .source = bitVectorBuiltins},
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms() {
+  static const std::array programs{
+      OpenQASMProgram{.name = "broadcast-custom-gate",
+                      .source = broadcastCompoundGate},
+      OpenQASMProgram{.name = "arithmetic-parameters",
+                      .source = expressionArithmetic},
+      OpenQASMProgram{.name = "math-parameters",
+                      .source = expressionMathFunctions},
+      OpenQASMProgram{.name = "runtime-scalar-rounding",
+                      .source = runtimeScalarRounding},
+      OpenQASMProgram{.name = "barrier", .source = barrierMultipleQubits},
+      OpenQASMProgram{.name = "pow-two-x", .source = powTwoX},
+      OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
+  };
+  return programs;
+}
 
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)
