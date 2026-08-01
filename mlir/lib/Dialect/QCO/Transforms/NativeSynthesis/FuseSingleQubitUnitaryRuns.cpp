@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
@@ -188,14 +189,17 @@ struct FuseSingleQubitUnitaryRunsPattern final
     }
 
     FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
-    const auto qubitOut = decomposition::synthesizeUnitary1QEuler(
+    const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputTarget(0), run.composed,
         run.gateCount, run.hasNonBasisGate, basis);
-    if (!qubitOut) {
+    if (!synthesized) {
       return failure();
     }
+    decomposition::emitGPhaseIfNeeded(rewriter, op.getLoc(),
+                                      synthesized->globalPhase);
 
-    rewriter.replaceAllUsesWith(run.tail.getOutputTarget(0), *qubitOut);
+    rewriter.replaceAllUsesWith(run.tail.getOutputTarget(0),
+                                synthesized->qubit);
     eraseFusableRun(rewriter, op, run.tail);
     return success();
   }
@@ -229,7 +233,8 @@ protected:
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
         patterns, *parsed, /*skipControlledBodies=*/false);
 
-    if (failed(applyPatternsGreedily(module, std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(module, std::move(patterns))) ||
+        failed(quantum::normalizeGlobalPhases(module))) {
       signalPassFailure();
     }
   }

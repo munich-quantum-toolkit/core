@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -674,7 +675,8 @@ protected:
     RewritePatternSet patterns(ctx);
     patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext());
 
-    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(op, std::move(patterns))) ||
+        failed(quantum::normalizeGlobalPhases(op))) {
       signalPassFailure();
     }
   }

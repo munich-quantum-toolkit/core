@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
@@ -155,7 +156,12 @@ protected:
    * parameter is equal to the expected one.
    */
   void expectGPhaseParam(double expected, double tolerance = 1e-8) {
+    expected = utils::normalizeAngle(expected);
     auto param = getGPhaseParam();
+    if (expected == 0.0) {
+      EXPECT_FALSE(param.has_value());
+      return;
+    }
     ASSERT_TRUE(param.has_value());
     EXPECT_NEAR(*param, expected, tolerance);
   }
@@ -244,7 +250,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRXGates) {
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
 /**
@@ -301,7 +307,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRYGates) {
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
 /**
@@ -455,9 +461,9 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePRXGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(1., -1.57079632679490, 2.57079632679490);
-  expectGPhaseParam(1.11022302462516e-16);
+  expectGPhaseParam(0.0);
 }
 
 /**
@@ -470,7 +476,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePRYGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
 /**
@@ -507,7 +513,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePPGates) {
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
 /**
@@ -671,7 +677,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeManyWithUnmergeable) {
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 2);
+  EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
 // ##################################################
@@ -713,7 +719,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(0., 0., 0.);
   expectGPhaseParam(0.);
 }
@@ -730,7 +736,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity2) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(0., 0., 0.);
   expectGPhaseParam(0.);
 }
@@ -776,7 +782,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRRSameAxis) {
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<ROp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(2., -0.570796326794897, 0.570796326794897);
   expectGPhaseParam(0.0);
 }
@@ -792,7 +798,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
                    {.type = GateType::U, .angles = {0, 4.157656961105587, 0}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 
   auto params = getUGateParams();
   ASSERT_TRUE(params.has_value());
@@ -802,7 +808,5 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
   EXPECT_FALSE(std::isnan(phi));
   EXPECT_FALSE(std::isnan(lambda));
 
-  auto gphase = getGPhaseParam();
-  ASSERT_TRUE(gphase.has_value());
-  EXPECT_FALSE(std::isnan(*gphase));
+  EXPECT_FALSE(getGPhaseParam().has_value());
 }

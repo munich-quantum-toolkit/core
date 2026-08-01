@@ -82,6 +82,21 @@ static bool allOpsNative(OwningOpRef<ModuleOp>& moduleOp,
   return ok;
 }
 
+static void expectNormalizedPhaseScopes(Operation* root) {
+  for (auto& region : root->getRegions()) {
+    for (auto& block : region) {
+      const auto phases = llvm::to_vector(block.getOps<GPhaseOp>());
+      ASSERT_LE(phases.size(), 1);
+      if (!phases.empty()) {
+        EXPECT_EQ(phases.front()->getNextNode(), block.getTerminator());
+      }
+      for (auto& nested : block) {
+        expectNormalizedPhaseScopes(&nested);
+      }
+    }
+  }
+}
+
 // --- DD-based equivalence ------------------------------------------------ //
 
 [[nodiscard]] static func::FuncOp mainFunc(ModuleOp module) {
@@ -436,6 +451,7 @@ protected:
         mlir::qc::QCProgramBuilder::build(context.get(), program);
     runFusePipeline(synthesized, nativeGates);
     EXPECT_TRUE(allOpsNative(synthesized, nativeGates));
+    expectNormalizedPhaseScopes(synthesized->getOperation());
     expectQcoModulesEquivalent(expected, synthesized);
   }
 

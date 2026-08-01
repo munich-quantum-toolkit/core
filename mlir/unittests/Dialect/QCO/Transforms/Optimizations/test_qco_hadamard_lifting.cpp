@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Support/IRVerification.h"
 
 #include <gtest/gtest.h>
@@ -71,7 +72,10 @@ protected:
   static LogicalResult runCanonicalizerPass(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    if (failed(pm.run(module))) {
+      return failure();
+    }
+    return quantum::normalizeGlobalPhases(module);
   }
 };
 

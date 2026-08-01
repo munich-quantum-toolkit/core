@@ -21,10 +21,10 @@ operations to at most one direct global phase per basic block. Standard QC and
 QCO cleanup runs this normalization automatically. The implementation moves a
 phase out of an inverse or an integral power modifier and converts a phase
 inside a control modifier into the correct relative phase on the controls.
-Function bodies, control-flow graph blocks, structured-control-flow regions,
-and unknown regions remain independent scopes. Focused full-matrix tests,
-including tests under an extra outer control, demonstrate that no rewrite hides
-an incorrect phase behind an equivalence-up-to-phase comparison.
+Function bodies, control-flow graph blocks, structured-control-flow regions, and
+unknown regions remain independent scopes. Focused full-matrix tests, including
+tests under an extra outer control, demonstrate that no rewrite hides an
+incorrect phase behind an equivalence-up-to-phase comparison.
 
 ## Progress
 
@@ -32,20 +32,20 @@ an incorrect phase behind an equivalence-up-to-phase comparison.
   worktree, verify issue labels, and read repository policy.
 - [x] (2026-08-01 10:42Z) Record the semantic contract and staged implementation
   in this ExecPlan.
-- [x] (2026-08-01) Repair existing principal-power canonicalizations and add
-  direct and outer-controlled full-matrix regressions for phase-producing power
-  rewrites.
+- [x] (2026-08-01) Repair existing principal-power canonicalization and add
+      direct and outer-controlled full-matrix regressions for phase-producing
+      power rewrites.
 - [x] (2026-08-01) Add the shared QC/QCO global-phase normalization engine and
   its textual pass.
-- [x] (2026-08-01) Factor normalized phases through inverse, integral power,
-  and control modifiers with conservative SSA-slice hoisting.
+- [x] (2026-08-01) Factor normalized phases through inverse, integral power, and
+      control modifiers with conservative SSA-slice hoisting.
 - [x] (2026-08-01) Integrate normalization into cleanup, typed C++ APIs,
-  generated Python bindings, conversion passes, and phase-producing synthesis
-  passes.
+      generated Python bindings, conversion passes, and phase-producing
+      synthesis passes.
 - [x] (2026-08-01) Add exact-unitary modifier tests, scope-boundary and
   idempotence tests, conversion diagnostics, synthesis invariants, an
   OpenQASM-to-Jeff/QIR case, and 1k/10k/100k scaling coverage.
-- [x] (2026-08-01) Run focused tests, the complete 4,297-case configured CTest
+- [x] (2026-08-01) Run focused tests, the complete 4,427-case configured CTest
   suite, the release build, generated-stub and Python binding checks,
   repository lint, and final diff/status audits.
 - [x] (2026-08-01) Refresh `origin/main`, inspect its two non-overlapping
@@ -59,16 +59,16 @@ an incorrect phase behind an equivalence-up-to-phase comparison.
   emits `gphase(-r*pi/2); rx(r*pi)`. For `r = 1/3`, the maximum entrywise error
   from principal `X^(1/3)` is approximately `0.866`, while changing the phase
   sign to positive reduces the error to floating-point noise. Existing
-  measurement-oriented module-equivalence tests do not observe this global
-  phase error.
+  measurement-oriented module-equivalence tests do not observe this global phase
+  error.
 - Observation: extracting a phase through a fractional matrix power is not
   generally valid. For a diagonal example, independently applying the principal
   power to `exp(i*phi) V` and factoring `exp(i*p*phi)` from `V^p` differs by
   magnitude `2.0` across a branch cut. Integral powers remain exact.
 - Observation: QIR cannot represent a global phase nested in a control. The
-  conversion now runs normalization itself: a hoistable phase becomes the
-  exact relative `P` operation on the controls, while a phase whose angle
-  depends on a non-speculatable call remains nested and produces the existing
+  conversion now runs normalization itself: a hoistable phase becomes the exact
+  relative `P` operation on the controls, while a phase whose angle depends on a
+  non-speculatable call remains nested and produces the existing
   `Controlled GPhaseOps cannot be converted to QIR` diagnostic.
 - Observation: the QCO DD fallback used by the exact-unitary oracle accepts
   full-width unitaries only in canonical qubit order. Reordered-control SSA
@@ -84,19 +84,18 @@ an incorrect phase behind an equivalence-up-to-phase comparison.
   source workarounds.
 - Observation: the final upstream refresh advanced `origin/main` from
   `e772dba5c` to `a5757fe95` by two commits confined to DD serialization and ZX
-  decomposition. They did not overlap the compiler changes and rebased
-  cleanly.
-- Observation: the complete configured CTest suite passed all 4,297 cases in
-  39.62 seconds; two environment-dependent QDMI job-ID tests were reported by
-  CTest as skipped. The all-files Nox lint session passed every hook, and the
-  built Python 3.13 binding test passed.
+  decomposition. They did not overlap the compiler changes and rebased cleanly.
+- Observation: after rebasing, the complete configured CTest suite passed all
+  4,427 cases in 38.63 seconds; two environment-dependent QDMI job-ID tests were
+  reported by CTest as skipped. The all-files Nox lint session passed every
+  hook, and the built Python 3.13 binding test passed.
 
 ## Decision Log
 
 - Decision: preserve `qc.gphase` and `qco.gphase` as the canonical materialized
-  representation and place at most one directly in each basic block.
-  Rationale: this avoids a new phase-token dataflow system and retains all
-  existing translations and lowerings. Date/Author: 2026-08-01, Codex.
+  representation and place at most one directly in each basic block. Rationale:
+  this avoids a new phase-token dataflow system and retains all existing
+  translations and lowerings. Date/Author: 2026-08-01, Codex.
 - Decision: define each basic block as a normalization scope and never transport
   phase state through function signatures, CFG successors, or SCF
   arguments/results in this change. Rationale: one block-local traversal is
@@ -116,16 +115,16 @@ an incorrect phase behind an equivalence-up-to-phase comparison.
   patterns that repeatedly scan enclosing modules. Rationale: this gives
   deterministic linear work and one place to enforce boundary and numerical
   rules. Date/Author: 2026-08-01, Codex.
-- Decision: run normalization inside the QC-to-QIR Base/Adaptive and
-  QCO-to-Jeff conversion passes, rather than relying only on typed-program
-  wrappers. Rationale: textual pass pipelines and direct conversion users must
-  receive the same sound boundary behavior without a duplicate traversal in
-  the typed API. Date/Author: 2026-08-01, Codex.
+- Decision: run normalization inside the QC-to-QIR Base/Adaptive and QCO-to-Jeff
+  conversion passes, rather than relying only on typed-program wrappers.
+  Rationale: textual pass pipelines and direct conversion users must receive the
+  same sound boundary behavior without a duplicate traversal in the typed API.
+  Date/Author: 2026-08-01, Codex.
 - Decision: reduce each finite literal modulo `2*pi` while accumulating
   constants. Rationale: the phase identity permits this and it prevents two
-  individually finite literals from overflowing their C++ accumulator before
-  the final normalization. Dynamic additions remain unreassociated and in
-  encounter order. Date/Author: 2026-08-01, Codex.
+  individually finite literals from overflowing their C++ accumulator before the
+  final normalization. Dynamic additions remain unreassociated and in encounter
+  order. Date/Author: 2026-08-01, Codex.
 - Decision: return numeric phase contributions directly from Euler and Weyl
   synthesis, while dynamic optimization contributions remain canonical
   `qco.gphase` operations until the one post-pass normalization traversal.
@@ -137,38 +136,36 @@ an incorrect phase behind an equivalence-up-to-phase comparison.
 ## Outcomes & Retrospective
 
 The semantic repairs, shared transform, APIs, conversion integration, synthesis
-refactor, generated stubs, and acceptance tests are implemented.
-Complete QC and QCO matrices are compared entry-by-entry, including
-phase-producing power folds and controlled-phase extraction under another
-control. Euler/Weyl and native synthesis retain full-unitary equivalence while
-emitting at most one direct phase per block. The release build, all 4,297
-configured CTest cases, generated stubs, the built Python 3.13 binding test,
-all-files repository lint, `git diff --check`, and focused linear-scaling
-measurement passed. The three local commits are rebased onto `a5757fe95`.
-No remote branch, issue, or pull-request state has been changed.
+refactor, generated stubs, and acceptance tests are implemented. Complete QC and
+QCO matrices are compared entry-by-entry, including phase-producing power folds
+and controlled-phase extraction under another control. Euler/Weyl and native
+synthesis retain full-unitary equivalence while emitting at most one direct
+phase per block. The release build, all 4,427 configured CTest cases, generated
+stubs, the built Python 3.13 binding test, all-files repository lint,
+`git diff --check`, and focused linear-scaling measurement passed. The three
+local commits are rebased onto `a5757fe95`. No remote branch, issue, or
+pull-request state has been changed.
 
 ## Context and Orientation
 
-The QC dialect represents quantum operations on reference-like qubit values.
-Its operation definitions are in
-`mlir/include/mlir/Dialect/QC/IR/QCOps.td`, with modifier implementations under
-`mlir/lib/Dialect/QC/IR/Modifiers/`. QCO represents explicit linear quantum
-dataflow: each operation consumes input qubit values and returns their
-successors. Its corresponding definitions and modifier implementations are
-under `mlir/include/mlir/Dialect/QCO/IR/` and
+The QC dialect represents quantum operations on reference-like qubit values. Its
+operation definitions are in `mlir/include/mlir/Dialect/QC/IR/QCOps.td`, with
+modifier implementations under `mlir/lib/Dialect/QC/IR/Modifiers/`. QCO
+represents explicit linear quantum dataflow: each operation consumes input qubit
+values and returns their successors. Its corresponding definitions and modifier
+implementations are under `mlir/include/mlir/Dialect/QCO/IR/` and
 `mlir/lib/Dialect/QCO/IR/Modifiers/`.
 
 Both dialects have a zero-target `GPhaseOp` with one `f64` SSA operand. A
 `GPhaseOp(theta)` denotes multiplication of the complete quantum state by
 `exp(i*theta)`. It has no qubit operand through which ordinary SSA analyses can
-connect separate occurrences, so generic canonicalization does not combine
-them.
+connect separate occurrences, so generic canonicalization does not combine them.
 
 A modifier is a region-owning quantum operation. `ctrl` applies the region body
 only when every control is one, `inv` applies the adjoint of the composed body,
-and `pow` applies a real matrix power. QCO's
-`PowOp::getUnitaryMatrix()` explicitly uses principal-branch complex powers.
-The exact identities needed here are:
+and `pow` applies a real matrix power. QCO's `PowOp::getUnitaryMatrix()`
+explicitly uses principal-branch complex powers. The exact identities needed
+here are:
 
     inv(exp(i*phi) V) = exp(-i*phi) inv(V)
 
@@ -182,18 +179,17 @@ smaller controlled `P(phi)` whose target is the last original control and whose
 controls are the remaining original controls. This factor commutes with the
 controlled body because both are block diagonal in the control basis.
 
-The cleanup pipelines are assembled in
-`mlir/lib/Support/Passes.cpp`; typed program methods live in
-`mlir/include/mlir/Compiler/Programs.h` and
+The cleanup pipelines are assembled in `mlir/lib/Support/Passes.cpp`; typed
+program methods live in `mlir/include/mlir/Compiler/Programs.h` and
 `mlir/lib/Compiler/Programs.cpp`; Python bindings live in
-`bindings/mlir/register_mlir.cpp`. The generated
-`python/mqt/core/mlir.pyi` file must be regenerated, never edited manually.
+`bindings/mlir/register_mlir.cpp`. The generated `python/mqt/core/mlir.pyi` file
+must be regenerated, never edited manually.
 
 Synthesis helpers under `mlir/lib/Dialect/QCO/Transforms/Decomposition/` and
 optimization passes under `mlir/lib/Dialect/QCO/Transforms/Optimizations/`
-currently materialize phase operations immediately. They will instead return
-or accumulate a `double` or SSA-value phase contribution and materialize it
-once per completed pass scope.
+currently materialize phase operations immediately. They will instead return or
+accumulate a `double` or SSA-value phase contribution and materialize it once
+per completed pass scope.
 
 This work must remain inside its assigned worktree. It must not modify another
 task's worktree. `AGENTS.md` and `docs/ai_usage.md` govern validation, generated
@@ -202,7 +198,7 @@ pull request, issue comment, or other GitHub mutation.
 
 ## Plan of Work
 
-First, repair the existing phase-producing power canonicalizations in both
+First, repair the existing phase-producing power canonicalization in both
 dialects. Fixed-spectrum gates may retain real-exponent closed forms only when
 the formula follows directly from their principal eigenphases. In particular,
 use positive `r*pi/2` global phase for `X` and `Y`, positive `r*pi/4` for `SX`,
@@ -243,20 +239,20 @@ conversions that cannot represent a controlled global phase. Regenerate Python
 stubs with the repository Nox session.
 
 Refactor phase-producing synthesis code only after the normalizer is proven.
-Introduce a small `GlobalPhaseContribution` representation that contains
-either a constant `double` or an existing `f64` SSA value. Euler and Weyl
-synthesis return their correction with their synthesized outputs; native
-two-qubit synthesis accumulates all constant corrections before materializing
-one operation. Rotation merging and Hadamard lifting send their contributions
-to the shared block accumulator. A standalone phase-producing pass invokes
+Introduce a small `GlobalPhaseContribution` representation that contains either
+a constant `double` or an existing `f64` SSA value. Euler and Weyl synthesis
+return their correction with their synthesized outputs; native two-qubit
+synthesis accumulates all constant corrections before materializing one
+operation. Rotation merging and Hadamard lifting send their contributions to the
+shared block accumulator. A standalone phase-producing pass invokes
 normalization once after its rewrite traversal; a compound native pipeline does
 so once after all internal stages.
 
-Finally add end-to-end and scaling coverage. Exercise OpenQASM-to-QC,
-QC-to-QCO, QCO-to-QC, Jeff, and QIR paths with modifier-contained phases and
-structured control flow. Add a test or benchmark helper that creates 1,000,
-10,000, and 100,000 phase contributions and records phase count and pass time.
-The implementation is acceptable only if the phase count becomes the number of
+Finally add end-to-end and scaling coverage. Exercise OpenQASM-to-QC, QC-to-QCO,
+QCO-to-QC, Jeff, and QIR paths with modifier-contained phases and structured
+control flow. Add a test or benchmark helper that creates 1,000, 10,000, and
+100,000 phase contributions and records phase count and pass time. The
+implementation is acceptable only if the phase count becomes the number of
 nonzero block scopes and observed runtime growth remains linear.
 
 ## Concrete Steps
@@ -279,8 +275,8 @@ become known:
       mqt-core-mlir-unittests-qc-ir \
       mqt-core-mlir-unittests-compiler
 
-Run the corresponding binaries with GoogleTest filters while iterating, then
-run the complete affected binaries without filters. Use
+Run the corresponding binaries with GoogleTest filters while iterating, then run
+the complete affected binaries without filters. Use
 `./.agent/run.sh ctest --preset release` for the final configured C++ suite.
 
 Regenerate binding stubs after changing `bindings/mlir/register_mlir.cpp`:
@@ -303,16 +299,16 @@ second time must not change the printed module.
 
 Modifier tests must compare complete matrices entry by entry within the
 repository's numerical tolerance. Cover zero through three controls, composite
-and multi-target bodies, inverse, integral powers `-3`, `-1`, `0`, `1`, `2`,
-and `3`, fractional and dynamic power boundaries, nested modifier orders,
-runtime angles, non-hoistable angle definitions, and reordered QCO operands.
-Every phase-producing identity must also be tested under one additional
-control. The previous negative-sign `pow(1/3) { X }` reference must fail before
-the repair and pass afterward.
+and multi-target bodies, inverse, integral powers `-3`, `-1`, `0`, `1`, `2`, and
+`3`, fractional and dynamic power boundaries, nested modifier orders, runtime
+angles, non-hoistable angle definitions, and reordered QCO operands. Every
+phase-producing identity must also be tested under one additional control. The
+previous negative-sign `pow(1/3) { X }` reference must fail before the repair
+and pass afterward.
 
 Boundary tests must show independent phases in separate functions, CFG blocks,
-`qco.if` and `qco.index_switch` branches, and SCF loop/conditional regions.
-They must show no new phase argument, result, or yield threading.
+`qco.if` and `qco.index_switch` branches, and SCF loop/conditional regions. They
+must show no new phase argument, result, or yield threading.
 
 Synthesis tests must compare complete original and synthesized matrices in each
 supported Euler basis and native gate menu. Their IR assertions must show that
@@ -362,9 +358,9 @@ The final public interfaces are:
 
 The textual pass argument is `normalize-global-phases` and operates on
 `mlir::ModuleOp`. Its required dialects are QC, QCO, and Arith. The shared
-implementation must depend only on existing MLIR IR, side-effect,
-speculation, and rewrite utilities; it must not introduce a phase-token type,
-change `GPhaseOp` syntax, or require Jeff/QIR to duplicate normalization logic.
+implementation must depend only on existing MLIR IR, side-effect, speculation,
+and rewrite utilities; it must not introduce a phase-token type, change
+`GPhaseOp` syntax, or require Jeff/QIR to duplicate normalization logic.
 
 Revision note: created on 2026-08-01 to turn the approved compiler-wide phase
 normalization design into a self-contained staged implementation and validation

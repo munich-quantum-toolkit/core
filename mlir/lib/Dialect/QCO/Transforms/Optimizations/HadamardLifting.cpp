@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -234,7 +235,8 @@ protected:
     patterns.add<LiftHadamardAboveCNOTPattern>(patterns.getContext());
 
     // Apply patterns in an iterative and greedy manner.
-    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(op, std::move(patterns))) ||
+        failed(quantum::normalizeGlobalPhases(op))) {
       signalPassFailure();
     }
   }

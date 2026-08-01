@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -326,16 +327,17 @@ struct FuseTwoQubitUnitaryRunsPattern final
 
     auto firstOp = cast<UnitaryOpInterface>(run.ops.front());
     rewriter.setInsertionPoint(firstOp);
-    Value newA;
-    Value newB;
-    if (failed(synthesizeUnitary2QWeyl(
-            rewriter, firstOp.getLoc(), firstOp.getInputQubit(0),
-            firstOp.getInputQubit(1), run.composed, spec, newA, newB))) {
+    const auto synthesized = synthesizeUnitary2QWeyl(
+        rewriter, firstOp.getLoc(), firstOp.getInputQubit(0),
+        firstOp.getInputQubit(1), run.composed, spec);
+    if (failed(synthesized)) {
       firstOp->emitError("failed to emit synthesized two-qubit gate sequence");
       return failure();
     }
-    rewriter.replaceAllUsesWith(run.tailA, newA);
-    rewriter.replaceAllUsesWith(run.tailB, newB);
+    decomposition::emitGPhaseIfNeeded(rewriter, firstOp.getLoc(),
+                                      synthesized->globalPhase);
+    rewriter.replaceAllUsesWith(run.tailA, synthesized->qubit0);
+    rewriter.replaceAllUsesWith(run.tailB, synthesized->qubit1);
     eraseFusableRun(rewriter, run);
     return success();
   }
@@ -377,13 +379,15 @@ struct LowerTwoQubitOpPattern final
     }
 
     rewriter.setInsertionPoint(raw);
-    Value out0;
-    Value out1;
-    if (failed(synthesizeUnitary2QWeyl(rewriter, raw->getLoc(), in0, in1,
-                                       matrix, spec, out0, out1))) {
+    const auto synthesized = synthesizeUnitary2QWeyl(rewriter, raw->getLoc(),
+                                                     in0, in1, matrix, spec);
+    if (failed(synthesized)) {
       return failure();
     }
-    rewriter.replaceOp(raw, ValueRange{out0, out1});
+    decomposition::emitGPhaseIfNeeded(rewriter, raw->getLoc(),
+                                      synthesized->globalPhase);
+    rewriter.replaceOp(raw,
+                       ValueRange{synthesized->qubit0, synthesized->qubit1});
     return success();
   }
 };
@@ -457,6 +461,10 @@ protected:
           << "native gate synthesis: operation remains outside the native "
              "gateset (native-gates='"
           << nativeGates << "')";
+      signalPassFailure();
+      return;
+    }
+    if (failed(quantum::normalizeGlobalPhases(module))) {
       signalPassFailure();
     }
   }
