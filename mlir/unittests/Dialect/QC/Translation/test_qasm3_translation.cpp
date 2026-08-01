@@ -899,7 +899,7 @@ static void materializeRegisterOperandsAtUse(ModuleOp module) {
         continue;
       }
       if (auto load = operand.get().getDefiningOp<memref::LoadOp>()) {
-        const auto previousUser = lastUser.lookup(load.getResult());
+        auto* const previousUser = lastUser.lookup(load.getResult());
         const auto belongsToSameApplication =
             previousUser == operation ||
             (previousUser != nullptr && previousUser == previousOperation &&

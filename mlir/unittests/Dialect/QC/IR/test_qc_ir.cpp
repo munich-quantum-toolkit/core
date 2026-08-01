@@ -30,6 +30,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>

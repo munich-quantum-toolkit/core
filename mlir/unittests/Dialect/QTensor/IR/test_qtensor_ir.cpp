@@ -278,11 +278,13 @@ TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
 // Canonicalization
 // ============================================================================
 
+namespace {
 enum class AdjacentIndexKind : std::uint8_t {
   EqualConstants,
   IdenticalDynamicValue,
   PotentiallyAliasingDynamicValues,
 };
+} // namespace
 
 static OwningOpRef<ModuleOp>
 buildAdjacentInsertExtractProgram(MLIRContext* context,

@@ -13,6 +13,7 @@
 #include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -36,6 +37,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -424,10 +426,12 @@ static void seedRegionMappings(LoweringState& state, Region& region,
 }
 
 /** @brief QCO operands and register provenance materialized for a QC op. */
+namespace {
 struct MaterializedQubits {
   SmallVector<Value> values;
   SmallVector<std::optional<RegisterAccess>> accesses;
 };
+} // namespace
 
 /**
  * @brief Materializes register-backed qubits immediately before a quantum op.
@@ -1099,7 +1103,6 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto& state = getState();
     auto* operation = op.getOperation();
     const auto qcControls = op.getControls();
-    const auto qcTargets = op.getTargets();
     const auto qcQubits = op.getQubits();
     auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
     const auto qcoControls =
