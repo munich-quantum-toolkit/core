@@ -32,6 +32,9 @@ releases may include breaking changes.
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
+- ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
+  and direct QC emission, including lexical scope, assignment, inclusive ranges,
+  and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -721,6 +724,7 @@ for previous changelogs._
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
 [#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
+[#1910]: https://github.com/munich-quantum-toolkit/core/pull/1910
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
