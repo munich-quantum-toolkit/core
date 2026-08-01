@@ -53,10 +53,11 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
     ASSERT_EQ(expectedMatrix[row].size(), actualMatrix[row].size());
     for (std::size_t column = 0; column < expectedMatrix[row].size();
          ++column) {
+      SCOPED_TRACE(testing::Message()
+                   << "matrix entry (" << row << ", " << column << ")");
       EXPECT_LE(
           std::abs(expectedMatrix[row][column] - actualMatrix[row][column]),
-          tolerance)
-          << "matrix entry (" << row << ", " << column << ")";
+          tolerance);
     }
   }
   package->decRef(*expected);
