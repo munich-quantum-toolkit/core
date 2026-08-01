@@ -189,6 +189,31 @@ TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
   EXPECT_EQ(qubitLoads, 5U);
 }
 
+TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto reg = builder.allocQubitRegisterStorage(4);
+
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t allocations = 0;
+  size_t qubitLoads = 0;
+  module->walk([&](memref::AllocOp allocation) {
+    if (isa<QubitType>(allocation.getType().getElementType())) {
+      ++allocations;
+      EXPECT_EQ(allocation.getResult(), reg);
+      EXPECT_EQ(allocation.getType().getShape(), ArrayRef<int64_t>{4});
+    }
+  });
+  module->walk([&](memref::LoadOp load) {
+    qubitLoads += isa<QubitType>(load.getMemRefType().getElementType());
+  });
+  EXPECT_EQ(allocations, 1U);
+  EXPECT_EQ(qubitLoads, 0U);
+}
+
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();

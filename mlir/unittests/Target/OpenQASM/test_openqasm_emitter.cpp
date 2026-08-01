@@ -704,7 +704,7 @@ result = internal + 1;
             "result");
 }
 
-TEST(OpenQASMTargetTest, RejectsExcessiveDynamicDispatch) {
+TEST(OpenQASMTargetTest, SupportsLargeDirectDynamicQubitAccess) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -716,22 +716,20 @@ cx q[i], aux[j];
 )qasm";
 
   MLIRContext context;
-  std::string diagnostic;
-  Location location = UnknownLoc::get(&context);
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
-    diagnostic = value.str();
-    location = value.getLocation();
-    return success();
-  });
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(moduleOp);
-  const auto fileLocation = dyn_cast<FileLineColLoc>(location);
-  ASSERT_TRUE(fileLocation);
-  EXPECT_EQ(fileLocation.getFilename(), "<input>");
-  EXPECT_EQ(fileLocation.getLine(), 8);
-  EXPECT_EQ(fileLocation.getColumn(), 1);
-  EXPECT_NE(diagnostic.find("projected emitted operation count"),
-            std::string::npos);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t loads = 0;
+  size_t controls = 0;
+  size_t switches = 0;
+  moduleOp->walk([&](memref::LoadOp load) {
+    loads += isa<qc::QubitType>(load.getType());
+  });
+  moduleOp->walk([&](qc::CtrlOp) { ++controls; });
+  moduleOp->walk([&](scf::IndexSwitchOp) { ++switches; });
+  EXPECT_EQ(loads, 2);
+  EXPECT_EQ(controls, 1);
+  EXPECT_EQ(switches, 0);
 }
 
 TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
@@ -786,7 +784,7 @@ TEST(OpenQASMTargetTest, AccountsForEachLabelInSwitchCaseBudgets) {
       << diagnostic;
 }
 
-TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
+TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
   std::string source = "OPENQASM 3.1;\n"
                        "include \"stdgates.inc\";\n"
                        "gate expanded a, b {\n";
@@ -801,15 +799,17 @@ TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
             "expanded q[i], aux[j];\n";
 
   MLIRContext context;
-  std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
-    diagnostic = value.str();
-    return success();
-  });
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(moduleOp);
-  EXPECT_NE(diagnostic.find("projected emitted operation count"),
-            std::string::npos);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t loads = 0;
+  size_t xGates = 0;
+  moduleOp->walk([&](memref::LoadOp load) {
+    loads += isa<qc::QubitType>(load.getType());
+  });
+  moduleOp->walk([&](qc::XOp) { ++xGates; });
+  EXPECT_EQ(loads, 2);
+  EXPECT_EQ(xGates, 25);
 }
 
 TEST(OpenQASMTargetTest, BudgetsRepresentativeOperationConstruction) {
@@ -1422,7 +1422,7 @@ bit[2] result = measure q;
   EXPECT_GE(aliasAssertions, 3);
 }
 
-TEST(OpenQASMTargetTest, DispatchesDynamicQubitGatesWithStructuredControlFlow) {
+TEST(OpenQASMTargetTest, LoadsDynamicQubitGatesDirectly) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -1436,15 +1436,17 @@ x q[i];
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
-  size_t conditionals = 0;
-  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
-    ++switches;
-    EXPECT_EQ(switchOp.getNumCases(), 1);
-    EXPECT_EQ(switchOp.getNumResults(), 0);
+  size_t loads = 0;
+  moduleOp->walk([&](scf::IndexSwitchOp) { ++switches; });
+  moduleOp->walk([&](memref::LoadOp load) {
+    if (!isa<qc::QubitType>(load.getType())) {
+      return;
+    }
+    ++loads;
+    EXPECT_TRUE(load.getIndices().front().getType().isIndex());
   });
-  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
-  EXPECT_EQ(switches, 1);
-  EXPECT_EQ(conditionals, 0);
+  EXPECT_EQ(switches, 0);
+  EXPECT_EQ(loads, 1);
 }
 
 TEST(OpenQASMTargetTest, LowersNativeSwitchWithCasesAndCarriedState) {
@@ -1483,8 +1485,7 @@ switch (selector) {
   EXPECT_EQ(switches, 1);
 }
 
-TEST(OpenQASMTargetTest,
-     DispatchesDynamicQubitMeasurementsWithStructuredControlFlow) {
+TEST(OpenQASMTargetTest, LoadsDynamicQubitMeasurementsDirectly) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit[2] q;
@@ -1498,19 +1499,19 @@ c = measure q[i];
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
-  size_t conditionals = 0;
-  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
-    ++switches;
-    EXPECT_EQ(switchOp.getNumCases(), 1);
-    ASSERT_EQ(switchOp.getNumResults(), 1);
-    EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(1));
+  size_t measurements = 0;
+  moduleOp->walk([&](scf::IndexSwitchOp) { ++switches; });
+  moduleOp->walk([&](qc::MeasureOp measurement) {
+    ++measurements;
+    auto load = measurement.getQubit().getDefiningOp<memref::LoadOp>();
+    ASSERT_TRUE(load);
+    EXPECT_TRUE(load.getIndices().front().getType().isIndex());
   });
-  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
-  EXPECT_EQ(switches, 1);
-  EXPECT_EQ(conditionals, 0);
+  EXPECT_EQ(switches, 0);
+  EXPECT_EQ(measurements, 1);
 }
 
-TEST(OpenQASMTargetTest, HandlesWidthOneAndNestedDynamicQubitDispatch) {
+TEST(OpenQASMTargetTest, HandlesWidthOneAndMultipleDynamicQubitLoads) {
   constexpr llvm::StringLiteral widthOneSource = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -1522,9 +1523,14 @@ x q[i];
   auto widthOneModule =
       qc::translateQASM3ToQC(widthOneSource, &widthOneContext);
   ASSERT_TRUE(widthOneModule);
-  widthOneModule->walk([&](scf::IndexSwitchOp switchOp) {
-    EXPECT_EQ(switchOp.getNumCases(), 0);
+  size_t widthOneSwitches = 0;
+  size_t widthOneLoads = 0;
+  widthOneModule->walk([&](scf::IndexSwitchOp) { ++widthOneSwitches; });
+  widthOneModule->walk([&](memref::LoadOp load) {
+    widthOneLoads += isa<qc::QubitType>(load.getType());
   });
+  EXPECT_EQ(widthOneSwitches, 0);
+  EXPECT_EQ(widthOneLoads, 1);
 
   constexpr llvm::StringLiteral nestedSource = R"qasm(
 OPENQASM 3.1;
@@ -1543,8 +1549,78 @@ cx left[i], right[j];
   size_t controls = 0;
   nestedModule->walk([&](scf::IndexSwitchOp) { ++switches; });
   nestedModule->walk([&](qc::CtrlOp) { ++controls; });
-  EXPECT_EQ(switches, 3);
-  EXPECT_EQ(controls, 4);
+  size_t loads = 0;
+  nestedModule->walk([&](memref::LoadOp load) {
+    loads += isa<qc::QubitType>(load.getType());
+  });
+  EXPECT_EQ(switches, 0);
+  EXPECT_EQ(controls, 1);
+  EXPECT_EQ(loads, 2);
+}
+
+TEST(OpenQASMTargetTest, LoadsEveryDynamicQuantumStatementDirectly) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+int i = 0;
+int j = 1;
+negctrl @ x q[i], q[j];
+bit measured = measure q[i];
+reset q[j];
+barrier q[i], q[j];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t switches = 0;
+  size_t loads = 0;
+  size_t measurements = 0;
+  size_t resets = 0;
+  size_t barriers = 0;
+  size_t distinctnessAssertions = 0;
+  moduleOp->walk([&](scf::IndexSwitchOp) { ++switches; });
+  moduleOp->walk([&](memref::LoadOp load) {
+    if (isa<qc::QubitType>(load.getType())) {
+      ++loads;
+      EXPECT_TRUE(load.getIndices().front().getType().isIndex());
+    }
+  });
+  moduleOp->walk([&](qc::MeasureOp) { ++measurements; });
+  moduleOp->walk([&](qc::ResetOp) { ++resets; });
+  moduleOp->walk([&](qc::BarrierOp) { ++barriers; });
+  moduleOp->walk([&](cf::AssertOp assertion) {
+    distinctnessAssertions += assertion.getMsg().ends_with(
+        "operands must not reference the same qubit");
+  });
+  EXPECT_EQ(switches, 0);
+  EXPECT_EQ(loads, 6);
+  EXPECT_EQ(measurements, 1);
+  EXPECT_EQ(resets, 1);
+  EXPECT_EQ(barriers, 1);
+  EXPECT_EQ(distinctnessAssertions, 2);
+}
+
+TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
+  const auto operationCount = [](const int64_t width) {
+    const auto source = "OPENQASM 3.1;\ninclude \"stdgates.inc\";\nqubit[" +
+                        std::to_string(width) + "] q;\nint i = 0;\nh q[i];\n";
+    MLIRContext context;
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    EXPECT_TRUE(moduleOp);
+    if (!moduleOp) {
+      return size_t{0};
+    }
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    size_t operations = 0;
+    moduleOp->walk([&](Operation*) { ++operations; });
+    return operations;
+  };
+
+  EXPECT_EQ(operationCount(2), operationCount(100'000));
 }
 
 TEST(OpenQASMTargetTest, SupportsOrdinaryBitInitializationAndAssignment) {
@@ -1918,14 +1994,19 @@ x q[i];
   size_t conditionals = 0;
   size_t indexSwitches = 0;
   size_t xGates = 0;
+  size_t qubitLoads = 0;
   size_t powers = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
   moduleOp->walk([&](scf::IndexSwitchOp) { ++indexSwitches; });
   moduleOp->walk([&](qc::XOp) { ++xGates; });
+  moduleOp->walk([&](memref::LoadOp load) {
+    qubitLoads += isa<qc::QubitType>(load.getType());
+  });
   moduleOp->walk([&](qc::PowOp) { ++powers; });
   EXPECT_EQ(conditionals, 0);
-  EXPECT_EQ(indexSwitches, 1);
-  EXPECT_EQ(xGates, 2);
+  EXPECT_EQ(indexSwitches, 0);
+  EXPECT_EQ(xGates, 1);
+  EXPECT_EQ(qubitLoads, 1);
   EXPECT_EQ(powers, 0);
 }
 

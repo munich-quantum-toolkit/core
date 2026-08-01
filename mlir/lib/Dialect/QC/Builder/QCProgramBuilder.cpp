@@ -118,16 +118,7 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 
 QCProgramBuilder::QubitRegister
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
-  checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic);
-
-  if (size <= 0) {
-    llvm::reportFatalUsageError("Size must be positive");
-  }
-
-  auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
-  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
-  allocatedQregs.insert(memref);
+  auto memref = allocQubitRegisterStorage(size);
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
@@ -139,6 +130,20 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
+}
+
+Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size) {
+  checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
+
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
+  auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
+  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
+  allocatedQregs.insert(memref);
+  return memref;
 }
 
 Value QCProgramBuilder::loadQubit(Value memref, Value index) {

@@ -36,12 +36,33 @@ width-dependent `scf.index_switch`.
 - [x] (2026-08-01 12:40Z) Add focused Stage 1 regression tests and verify the
       raw conversion without relying on cleanup. The QC IR (311 tests), QTensor
       IR (29 tests), and QC-to-QCO (141 tests) suites pass.
-- [ ] Commit Stage 1 as one signed, AI-attributed commit.
-- [ ] Implement Stage 2 direct OpenQASM register loads.
-- [ ] Add focused Stage 2 translation and end-to-end tests.
-- [ ] Commit Stage 2 as one signed, AI-attributed commit.
-- [ ] Integrate the refreshed `origin/main` tip and rerun affected validation.
-- [ ] Run repository lint and an independent exact-revision review.
+- [x] (2026-08-01 12:48Z) Commit Stage 1 as the signed, AI-attributed
+      `🐛 Make repeated qubit loads alias-safe` commit.
+- [x] (2026-08-01 14:05Z) Implement Stage 2 direct OpenQASM register loads.
+- [x] (2026-08-01 14:10Z) Add focused Stage 2 translation and end-to-end tests.
+      The OpenQASM target (71 tests), QC IR (312 tests), and selected OpenQASM
+      compiler pipeline (14 tests) suites pass. `mqt-cc` also emits verified QC,
+      operation-local QCO extract/use/insert sequences, and Adaptive QIR for a
+      combined dynamic gate/measurement/reset/barrier program.
+- [x] (2026-08-01 14:15Z) Commit Stage 2 as the signed, AI-attributed
+      `✨ Emit direct OpenQASM qubit register loads` commit.
+- [x] (2026-08-01 14:20Z) Rebase the two commits onto refreshed `origin/main`,
+      initially at `a5757fe95af7d5f7ba85471c27d8d294afc0b894`.
+- [x] (2026-08-01 15:10Z) Run the release build, all 4,401 CTest tests, focused
+      MLIR suites, compiler and `mqt-cc` smoke tests, and repository lint.
+- [x] (2026-08-01) Address independent-review finding MF-01 by applying the same
+      runtime distinctness checks to dynamic barrier operands, rejecting exact
+      duplicate barrier references during semantic analysis, and adding focused
+      frontend/emitter regressions.
+- [x] (2026-08-01) Rebuild all affected release targets and rerun the complete
+      post-review CTest matrix: all 4,402 tests pass, with the same two
+      configured QDMI skips.
+- [x] (2026-08-01) Rebase both signed commits again after `origin/main` advanced
+      to `618c37fa4d5d15be282117d2c12f26a3b6e3dd75`, then complete a clean
+      434-step release rebuild and pass all 4,404 exact-base CTest cases with
+      the same two configured QDMI skips.
+- [x] (2026-08-01) Complete a fresh independent review of exact source revision
+      `7a84fdf22de840efa423164cb967d5da10ecebf7`; no actionable findings remain.
 
 ## Surprises & Discoveries
 
@@ -63,6 +84,28 @@ width-dependent `scf.index_switch`.
   Keeping such a range in a local variable produced a dangling view during the
   first conversion prototype. Single-qubit helper calls now use owned
   `SmallVector<Value, 1>` storage.
+- Observation: Once quantum dispatch is removed, the existing emission budget
+  correctly accepts registers that were previously rejected solely because their
+  widths were multiplied into projected operation counts. Large and small
+  registers now produce identical operation counts for the same dynamic source
+  access.
+- Observation: The QCO mapping pass intentionally expects a canonical
+  all-extracts-before-all-inserts tensor shape. The public place-and-route API
+  now composes the existing QCO cleanup pipeline before mapping, which restores
+  that supported shape for statically addressable programs without weakening the
+  operation-local conversion invariant.
+- Observation: Several direct-QCO test fixtures encoded the old partially
+  extracted structured state. Rewriting those fixtures to allocate complete
+  QTensors directly exposed and verified the new region-boundary invariant while
+  preserving direct QC-to-QIR behavior.
+- Observation: The aggregate lint cache contained incomplete hook environments
+  from an interrupted provisioning run. Moving only the generated cache aside
+  and allowing `prek` to recreate it produced a clean all-files lint run.
+- Observation: Gates already rejected exact duplicate qubits during semantic
+  analysis and asserted potentially aliasing dynamic operands at runtime, but
+  barriers originally did neither. Reusing the runtime assertion path for
+  barriers and using an ordered set for exact semantic duplicates preserves the
+  linear QCO contract without quadratic checks over expanded whole registers.
 
 ## Decision Log
 
@@ -91,11 +134,50 @@ width-dependent `scf.index_switch`.
   references encode the representation Stage 1 intentionally removes and are no
   longer valid structural references for those cases. Date/Author: 2026-08-01,
   Codex.
+- Decision: Treat barriers as simultaneous multi-qubit operations for alias
+  validation. Rationale: A QCO barrier consumes its operands linearly just like
+  a multi-qubit gate; exact duplicates should fail in semantic analysis, while
+  potentially equal runtime indices need `cf.assert`. Date/Author: 2026-08-01,
+  Codex.
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. This section will record final behavior, commit
-identifiers, validation results, remaining limitations, and lessons learned.
+The implementation now has the intended two-commit shape. Stage 1 makes
+`memref.load` a stable QC register-access marker, lowers every quantum use to an
+operation-local QTensor extract/use/reverse-insert sequence, carries complete
+QTensor state through structured control flow, rejects unsupported escaping
+references before mutation, and restricts QTensor rewrites to local, alias-safe
+cases. Stage 2 adds storage-only register allocation and makes the typed
+OpenQASM emitter produce checked point-of-use loads without quantum
+`scf.index_switch` expansion.
+
+The release build completed successfully. All 4,401 CTest tests passed; the two
+QDMI job-ID tests were reported as skipped by their existing test configuration.
+Focused QC, QCO, QTensor, QC-to-QCO, QCO-to-QC, Jeff round-trip, OpenQASM
+translation, and compiler suites pass. `mqt-cc` successfully emitted QC,
+operation-local QCO, and Adaptive QIR for dynamic gate, modifier, measurement,
+reset, and barrier access. The all-files nox lint session passed every
+configured hook.
+
+Independent review found one barrier-specific alias gap in Stage 2. The
+remediation centralizes dynamic distinctness assertions across gates and
+barriers, accounts for those assertions in the emission budget, and rejects
+exact duplicate scalar, static-register, and hardware barrier operands during
+semantic analysis. The focused OpenQASM target suite has 145 passing tests, and
+a barrier-only `mqt-cc --emit=qco` smoke test verifies the assertion followed by
+extract/barrier/reverse-insert. After rebuilding all affected dependents, the
+post-review full CTest matrix passes all 4,402 tests with the same two
+configured QDMI skips.
+
+During finalization, `origin/main` advanced once more with modifier-body helper
+reuse. Both commits rebased cleanly onto
+`618c37fa4d5d15be282117d2c12f26a3b6e3dd75`; the overlapping QC/QCO modifier
+fixtures rebuilt without conflict, and all 4,404 tests on that base pass.
+
+No dialect operation, type, pass, command-line option, or external dependency
+was added. Direct QC-to-QIR conversion remains unchanged. A fresh independent
+exact-revision review found no remaining correctness, MLIR-legality, lifetime,
+alias-safety, SCF, QTensor-fold, direct-QIR, or emission-budget defect.
 
 ## Context and Orientation
 
@@ -252,10 +334,16 @@ The selected implementation base is:
 
     e772dba5ce1c51cc7b8931b8a5031a826040f3d5
 
-At worktree allocation time the live base was one unrelated commit newer:
+At final validation the live base included three subsequent commits:
 
     a4293f1473f4a716aec81707d3cbe01cd1a1b83a
     ✨ Expose DD serialization in Python (#1983)
+
+    a5757fe95af7d5f7ba85471c27d8d294afc0b894
+    🚀 Improve ZX MCX decomposition complexity (#1984)
+
+    618c37fa4d5d15be282117d2c12f26a3b6e3dd75
+    ♻️ Reuse MLIR modifier body helpers (#1985)
 
 Issue #1893 is an enhancement/MLIR issue and is not labeled `good first issue`.
 No external GitHub mutation is authorized by this plan.
@@ -278,3 +366,20 @@ pass, or command-line option.
 
 Revision note (2026-08-01, Codex): Created the living plan from the approved
 two-stage design and recorded the refreshed-base boundary before implementation.
+
+Revision note (2026-08-01, Codex): Recorded the completed two-stage
+implementation, live-base integration, full validation, fixture migrations, and
+lint-cache recovery before independent review.
+
+Revision note (2026-08-01, Codex): Refreshed the final base to include the
+subsequent ZX functionality commit and recorded the exact-head 4,401-test
+validation.
+
+Revision note (2026-08-01, Codex): Recorded the independent-review barrier
+finding, its semantic and runtime remediation, and focused validation.
+
+Revision note (2026-08-01, Codex): Integrated the final modifier-helper base
+commit and recorded the exact-base release rebuild and 4,404-test result.
+
+Revision note (2026-08-01, Codex): Closed the plan after a fresh independent
+exact-revision review reported no actionable findings.

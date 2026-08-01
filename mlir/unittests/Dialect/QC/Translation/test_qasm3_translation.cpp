@@ -21,6 +21,7 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -879,6 +880,45 @@ static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   return {c, out};
 }
 
+/// Rewrite eager register references in legacy fixtures to the per-application
+/// loads emitted by the typed OpenQASM frontend.
+static void materializeRegisterOperandsAtUse(ModuleOp module) {
+  SmallVector<std::pair<Operation*, Operation*>> operations;
+  module.walk([&](Operation* operation) {
+    if (operation != module.getOperation() && !isa<memref::LoadOp>(operation)) {
+      operations.emplace_back(operation, operation->getPrevNode());
+    }
+  });
+
+  llvm::DenseMap<Value, Operation*> lastUser;
+  llvm::DenseMap<Value, Value> lastReload;
+  OpBuilder builder(module.getContext());
+  for (const auto [operation, previousOperation] : operations) {
+    for (auto& operand : operation->getOpOperands()) {
+      if (!isa<qc::QubitType>(operand.get().getType())) {
+        continue;
+      }
+      if (auto load = operand.get().getDefiningOp<memref::LoadOp>()) {
+        const auto previousUser = lastUser.lookup(load.getResult());
+        const auto belongsToSameApplication =
+            previousUser == operation ||
+            (previousUser != nullptr && previousUser == previousOperation &&
+             (isa<qc::CtrlOp>(previousUser) || isa<qc::CtrlOp>(operation)));
+        Value reloaded = lastReload.lookup(load.getResult());
+        if (!belongsToSameApplication) {
+          builder.setInsertionPoint(operation);
+          reloaded = memref::LoadOp::create(builder, operation->getLoc(),
+                                            load.getMemref(), load.getIndices())
+                         .getResult();
+        }
+        operand.set(reloaded);
+        lastUser[load.getResult()] = operation;
+        lastReload[load.getResult()] = reloaded;
+      }
+    }
+  }
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -896,6 +936,7 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
   auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
+  materializeRegisterOperandsAtUse(reference.get());
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 

@@ -205,6 +205,16 @@ public:
   QubitRegister allocQubitRegister(int64_t size);
 
   /**
+   * @brief Allocate storage for a qubit register without loading its elements
+   * @param size Number of qubits (must be positive)
+   * @return The memref value representing the qubit register
+   *
+   * @details The register is tracked for automatic deallocation. Use
+   * `loadQubit` to obtain references to individual elements.
+   */
+  Value allocQubitRegisterStorage(int64_t size);
+
+  /**
    * @brief Explicitly loads a qubit from a memref
    *
    * @param memref Source memref

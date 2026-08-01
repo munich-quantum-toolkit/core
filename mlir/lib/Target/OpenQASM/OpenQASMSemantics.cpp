@@ -2243,6 +2243,21 @@ private:
       auto selection = resolveQubitOperand(operand);
       qubits.insert(qubits.end(), selection.begin(), selection.end());
     }
+
+    std::set<std::tuple<QubitReferenceKind, uint32_t, uint64_t,
+                        std::optional<ExpressionId>>>
+        uniqueQubits;
+    for (const auto& qubit : qubits) {
+      if (!uniqueQubits
+               .emplace(qubit.kind, qubit.symbol, qubit.index,
+                        qubit.dynamicIndex)
+               .second) {
+        fail(location,
+             "barrier operands must not reference the same qubit more than "
+             "once");
+      }
+    }
+
     return addStatement(location,
                         BarrierStatement{.qubits = std::move(qubits)});
   }
