@@ -481,6 +481,12 @@ TEST(DDPackageTest, StateGenerationManipulation) {
 TEST(DDPackageTest, VectorSerializationTest) {
   auto dd = std::make_unique<Package>(2);
 
+  for (const bool binary : {false, true}) {
+    std::stringstream serialized{};
+    serialize(vEdge::one(), serialized, binary);
+    EXPECT_EQ(dd->deserialize<vNode>(serialized, binary), vEdge::one());
+  }
+
   auto hGate = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
@@ -582,6 +588,12 @@ TEST(DDPackageTest, BellMatrix) {
 
 TEST(DDPackageTest, MatrixSerializationTest) {
   auto dd = std::make_unique<Package>(2);
+
+  for (const bool binary : {false, true}) {
+    std::stringstream serialized{};
+    serialize(mEdge::one(), serialized, binary);
+    EXPECT_EQ(dd->deserialize<mNode>(serialized, binary), mEdge::one());
+  }
 
   auto hGate = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
