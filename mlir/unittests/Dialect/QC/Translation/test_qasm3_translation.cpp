@@ -638,23 +638,23 @@ static Value shortCircuitOr(qc::QCProgramBuilder& b, Value lhs,
 }
 
 static Value powTwoX(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.pow(2.0, q, [&](Value qubit) { b.x(qubit); });
-  return measureToRegister(b, {q});
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, {q[0]});
 }
 
 static Value powZeroX(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.pow(0.0, q, [&](Value qubit) { b.x(qubit); });
-  return measureToRegister(b, {q});
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.0, q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, {q[0]});
 }
 
 static Value negativePowS(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.pow(2.0, q, [&](Value powQubit) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value powQubit) {
     b.inv(powQubit, [&](Value invQubit) { b.s(invQubit); });
   });
-  return measureToRegister(b, {q});
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
@@ -668,18 +668,18 @@ static SmallVector<Value> controlledInversePowS(qc::QCProgramBuilder& b) {
 }
 
 static Value nestedPowX(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.pow(6.0, q, [&](Value qubit) { b.x(qubit); });
-  return measureToRegister(b, {q});
+  auto q = b.allocQubitRegister(1);
+  b.pow(6.0, q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, {q[0]});
 }
 
 static Value customPowHS(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.pow(2.0, q, [&](Value qubit) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubit) {
     b.h(qubit);
     b.s(qubit);
   });
-  return measureToRegister(b, {q});
+  return measureToRegister(b, {q[0]});
 }
 
 static SmallVector<Value> broadcastPowX(qc::QCProgramBuilder& b) {

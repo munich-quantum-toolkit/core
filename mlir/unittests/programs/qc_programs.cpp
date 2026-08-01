@@ -2709,14 +2709,14 @@ SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b) {
   auto q2 = b.allocQubit();
   b.h(q1);
   b.h(q2);
-  return measureAndReturn(b, {q1, q2});
+  return {b.measure(q1), b.measure(q2)};
 }
 
 SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b) {
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
   b.cx(q1, q2);
-  return measureAndReturn(b, {q1, q2});
+  return {b.measure(q1), b.measure(q2)};
 }
 
 } // namespace mlir::qc
