@@ -85,28 +85,28 @@ static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
-  if (std::abs(norm) < TOLERANCE) {
+  if (norm == 0.0) {
     // pow(r) folds to the identity: thread the input qubits to the results.
     rewriter.replaceOp(op, op.getQubitsIn());
     return success();
   }
-  if (std::abs(std::abs(norm) - pi) < TOLERANCE) {
+  if (std::abs(norm) == pi) {
     rewriter.replaceOpWithNewOp<ZOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm - (pi / 2.0)) < TOLERANCE) {
+  if (norm == pi / 2.0) {
     rewriter.replaceOpWithNewOp<SOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm + (pi / 2.0)) < TOLERANCE) {
+  if (norm == -pi / 2.0) {
     rewriter.replaceOpWithNewOp<SdgOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm - (pi / 4.0)) < TOLERANCE) {
+  if (norm == pi / 4.0) {
     rewriter.replaceOpWithNewOp<TOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm + (pi / 4.0)) < TOLERANCE) {
+  if (norm == -pi / 4.0) {
     rewriter.replaceOpWithNewOp<TdgOp>(op, op.getInputTarget(0));
     return success();
   }
@@ -126,7 +126,7 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
+    if (!exponent || *exponent != 1.0) {
       return failure();
     }
 
@@ -142,7 +142,7 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent) > TOLERANCE) {
+    if (!exponent || *exponent != 0.0) {
       return failure();
     }
 
@@ -318,8 +318,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     const double r = *exponent;
     auto loc = op.getLoc();
 
-    // Pre-check: only proceed for gate types we can fold.
-    // HOp, ECROp, RCCXOp, and SWAPOp additionally require an integer exponent.
+    // Scaling a gate parameter represents a principal matrix power only for an
+    // integral exponent unless the parameter is known to remain within the
+    // principal branch. Keep arbitrary parameters inside fractional powers.
+    if (isa<GPhaseOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp, RZXOp, RZZOp,
+            XXPlusYYOp, XXMinusYYOp>(innerOp) &&
+        !utils::isIntegerExponent(r)) {
+      return failure();
+    }
+    // HOp, ECROp, RCCXOp, and SWAPOp also only have the simple parity fold for
+    // integral exponents.
     if (isa<HOp, ECROp, RCCXOp, SWAPOp>(innerOp) &&
         !utils::isIntegerExponent(r)) {
       return failure();
@@ -376,34 +384,34 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- Pauli gates: decompose to rotation + global phase ---
-            // pow(r) { x } => gphase(-r*π/2); rx(r*π)
+            // pow(r) { x } => gphase(r*π/2); rx(r*π)
             // pow(1/2) x => sx      (X^(1/2) = SX exactly)
             // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
             .Case<XOp>([&](auto) {
-              if (std::abs(r - 0.5) < TOLERANCE) {
+              if (r == 0.5) {
                 rewriter.replaceOpWithNewOp<SXOp>(op, op.getInputTarget(0));
                 return success();
               }
-              if (std::abs(r + 0.5) < TOLERANCE) {
+              if (r == -0.5) {
                 rewriter.replaceOpWithNewOp<SXdgOp>(op, op.getInputTarget(0));
                 return success();
               }
               GPhaseOp::create(
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (-std::numbers::pi / 2.0)));
+                                            r * (std::numbers::pi / 2.0)));
               rewriter.replaceOpWithNewOp<RXOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),
                                             r * std::numbers::pi));
               return success();
             })
-            // pow(r) { y } => gphase(-r*π/2); ry(r*π)
+            // pow(r) { y } => gphase(r*π/2); ry(r*π)
             .Case<YOp>([&](auto) {
               GPhaseOp::create(
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (-std::numbers::pi / 2.0)));
+                                            r * (std::numbers::pi / 2.0)));
               rewriter.replaceOpWithNewOp<RYOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),
@@ -473,27 +481,10 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- SX/SXdg gates: decompose to rotation + global phase ---
-            // pow(r) { sx } => gphase(-r*π/4); rx(r*π/2)
+            // pow(r) { sx } => gphase(r*π/4); rx(r*π/2)
             // pow(±2) sx => x
             .Case<SXOp>([&](auto) {
-              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
-                rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
-                return success();
-              }
-              GPhaseOp::create(
-                  rewriter, loc,
-                  utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (-std::numbers::pi / 4.0)));
-              rewriter.replaceOpWithNewOp<RXOp>(
-                  op, op.getInputTarget(0),
-                  utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (std::numbers::pi / 2.0)));
-              return success();
-            })
-            // pow(r) { sxdg } => gphase(r*π/4); rx(-r*π/2)
-            // pow(±2) sxdg => x
-            .Case<SXdgOp>([&](auto) {
-              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
+              if (std::abs(r) == 2.0) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
                 return success();
               }
@@ -501,6 +492,23 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
                                             r * (std::numbers::pi / 4.0)));
+              rewriter.replaceOpWithNewOp<RXOp>(
+                  op, op.getInputTarget(0),
+                  utils::constantFromScalar(rewriter, op.getLoc(),
+                                            r * (std::numbers::pi / 2.0)));
+              return success();
+            })
+            // pow(r) { sxdg } => gphase(-r*π/4); rx(-r*π/2)
+            // pow(±2) sxdg => x
+            .Case<SXdgOp>([&](auto) {
+              if (std::abs(r) == 2.0) {
+                rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
+                return success();
+              }
+              GPhaseOp::create(
+                  rewriter, loc,
+                  utils::constantFromScalar(rewriter, op.getLoc(),
+                                            r * (-std::numbers::pi / 4.0)));
               rewriter.replaceOpWithNewOp<RXOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),
