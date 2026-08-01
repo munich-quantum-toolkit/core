@@ -82,6 +82,22 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   return pm.run(module);
 }
 
+static Value
+aliasSafeNestedForLoopCtrlOpWithExtractedQubit(qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  auto c0 = arith::ConstantIndexOp::create(b, 0);
+  auto control = b.loadQubit(reg.value, c0);
+  b.h(control);
+  b.scfFor(1, 4, 1, [&](Value iv) {
+    auto target = b.loadQubit(reg.value, iv);
+    b.h(target);
+    b.cx(b.loadQubit(reg.value, c0), target);
+  });
+  auto result = b.allocClassicalBitRegister(1);
+  b.measure(control, result, 0);
+  return result;
+}
+
 TEST(QCOToQCRegressionTest, PreservesClassicalIfResult) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
@@ -965,5 +981,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{
             "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
-            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
+            MQT_NAMED_BUILDER(
+                aliasSafeNestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}

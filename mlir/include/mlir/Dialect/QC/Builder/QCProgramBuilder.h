@@ -207,11 +207,6 @@ public:
   /**
    * @brief Explicitly loads a qubit from a memref
    *
-   * @details Explicitly loads a qubit from a memref at the given index. This
-   * builder should only be called in a nested region inside the main function.
-   * The same index cannot be used to load a value multiple times in the same
-   * nested region.
-   *
    * @param memref Source memref
    * @param index The index from where the qubit is loaded
    * @return The loaded qubit
@@ -1370,12 +1365,6 @@ private:
 
   /// Track allocated memrefs for automatic deallocation
   DenseSet<Value> allocatedQregs;
-
-  /// Per-region map of memrefs and their loaded indices
-  DenseMap<Region*, DenseMap<Value, DenseSet<Value>>> loadedQubits;
-
-  /// Stack of the nested regions where the insertion point of the builder is
-  SmallVector<Region*> regionStack;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

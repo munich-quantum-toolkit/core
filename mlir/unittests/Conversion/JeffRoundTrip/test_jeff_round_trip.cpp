@@ -173,8 +173,8 @@ static Value ifWithAngle(qco::QCOProgramBuilder& b) {
 
 static Value forLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
-  auto reg = b.allocQubitRegister(2);
-  auto res = b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+  auto reg = b.qtensorAlloc(2);
+  auto res = b.scfFor(0, 2, 1, {reg}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.rx(theta, q0);
     auto insert = b.qtensorInsert(q1, t0, iv);
@@ -187,12 +187,12 @@ static Value forLoopWithAngle(qco::QCOProgramBuilder& b) {
 static Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto theta1 = b.floatConstant(0.123);
   auto theta2 = b.floatConstant(0.456);
-  auto reg = b.allocQubitRegister(3);
+  auto reg = b.qtensorAlloc(3);
   auto q0 = b.allocQubit();
   auto q1 = b.h(q0);
   auto [q2, cond] = b.measure(q1);
   auto res = b.qcoIf(
-      cond, {reg.value, q2},
+      cond, {reg, q2},
       [&](ValueRange args) {
         auto q3 = b.rx(theta1, args[1]);
         return SmallVector{args[0], q3};

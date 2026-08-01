@@ -296,9 +296,9 @@ Value partialMeasurementToRegister(QCOProgramBuilder& b) {
 }
 
 Value dynamicallyIndexedMeasurement(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
+  auto q = b.qtensorAlloc(2);
   auto c = b.allocClassicalBitRegister(2);
-  b.scfFor(0, 2, 1, {q.value}, [&](Value iv, ValueRange iterArgs) {
+  b.scfFor(0, 2, 1, {q}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, qubit] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.measure(qubit, c, iv).first;
     auto insert = b.qtensorInsert(q1, t0, iv);
@@ -3359,9 +3359,10 @@ Value barrierMultipleQubits(QCOProgramBuilder& b) {
 }
 
 Value singleControlledBarrier(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  auto res =
-      b.ctrl(q[1], q[0], [&](Value target) { return b.barrier({target})[0]; });
+  auto target = b.allocQubitRegister(1);
+  auto control = b.allocQubit();
+  auto res = b.ctrl(control, target[0],
+                    [&](Value qubit) { return b.barrier({qubit})[0]; });
   return measureToRegister(b, res.second);
 }
 
@@ -4121,8 +4122,8 @@ Value ifOneQubitOneTensor(QCOProgramBuilder& b) {
 }
 
 Value ifOneTensor(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  auto result = b.qcoIf(true, q.value, [&](Value tensor) {
+  auto q = b.qtensorAlloc(1);
+  auto result = b.qcoIf(true, q, [&](Value tensor) {
     auto [updatedTensor, qubit] = b.qtensorExtract(tensor, 0);
     qubit = b.x(qubit);
     return b.qtensorInsert(qubit, updatedTensor, 0);
@@ -4413,22 +4414,21 @@ Value simpleDoWhileReset(QCOProgramBuilder& b) {
 }
 
 Value simpleForLoop(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto scfFor =
-      b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
-        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-        auto q1 = b.h(q0);
-        auto insert = b.qtensorInsert(q1, t0, iv);
-        return SmallVector{insert};
-      });
+  auto reg = b.qtensorAlloc(2);
+  auto scfFor = b.scfFor(0, 2, 1, {reg}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.h(q0);
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
   return measureAndReturnQTensor(b, scfFor[0], 2);
 };
 
 Value nestedForLoopIfOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+  auto reg = b.qtensorAlloc(2);
   auto q0 = b.allocQubit();
   auto scfFor =
-      b.scfFor(0, 2, 1, {reg.value, q0}, [&](Value iv, ValueRange iterArgs) {
+      b.scfFor(0, 2, 1, {reg, q0}, [&](Value iv, ValueRange iterArgs) {
         auto q1 = b.h(iterArgs[1]);
         auto [q2, cond] = b.measure(q1);
         auto ifOp = b.qcoIf(cond, iterArgs[0], [&](ValueRange args) {
@@ -4443,9 +4443,9 @@ Value nestedForLoopIfOp(QCOProgramBuilder& b) {
 }
 
 Value nestedForLoopWhileOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+  auto reg = b.qtensorAlloc(2);
   auto loopResult =
-      b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+      b.scfFor(0, 2, 1, {reg}, [&](Value iv, ValueRange iterArgs) {
         auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
         auto q1 = b.h(q0);
         auto insert = b.qtensorInsert(q1, t0, iv);
@@ -4473,10 +4473,10 @@ Value nestedForLoopWhileOp(QCOProgramBuilder& b) {
 
 Value nestedForLoopSwitchOp(QCOProgramBuilder& b) {
   constexpr int64_t n = 3;
-  auto reg = b.allocQubitRegister(n);
+  auto reg = b.qtensorAlloc(n);
   auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
 
-  reg.value = b.scfFor(0, n, 1, reg.value, [&](Value iv, ValueRange iterArgs) {
+  reg = b.scfFor(0, n, 1, reg, [&](Value iv, ValueRange iterArgs) {
     auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
     auto [t, q] = b.qtensorExtract(iterArgs[0], iv);
     q = b.qcoIndexSwitch(
@@ -4503,15 +4503,15 @@ Value nestedForLoopSwitchOp(QCOProgramBuilder& b) {
     return SmallVector{insert};
   })[0];
 
-  return measureAndReturnQTensor(b, reg.value, n);
+  return measureAndReturnQTensor(b, reg, n);
 }
 
 Value nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
+  auto reg = b.qtensorAlloc(3);
   auto control0 = b.allocQubit();
   auto control1 = b.h(control0);
-  auto scfFor = b.scfFor(
-      0, 3, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
+  auto scfFor =
+      b.scfFor(0, 3, 1, {reg, control1}, [&](Value iv, ValueRange iterArgs) {
         auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
         auto q1 = b.h(q0);
         auto [controlOut, targetOut] =
@@ -4523,27 +4523,37 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
 }
 
 Value nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  auto control = b.h(reg[0]);
-  auto scfFor = b.scfFor(
-      1, 4, 1, {reg.value, control}, [&](Value iv, ValueRange iterArgs) {
-        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-        auto q1 = b.h(q0);
-        auto [controlOut, targetOut] =
-            b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
-        auto insert = b.qtensorInsert(targetOut, t0, iv);
-        return SmallVector{insert, controlOut};
-      });
-  return measureToRegister(b, scfFor[1]);
+  auto reg = b.qtensorAlloc(4);
+  auto [tensorWithoutControl, control] = b.qtensorExtract(reg, 0);
+  control = b.h(control);
+  reg = b.qtensorInsert(control, tensorWithoutControl, 0);
+
+  reg = b.scfFor(1, 4, 1, reg, [&](Value iv, ValueRange iterArgs) {
+    auto [tensorWithoutTarget, target] = b.qtensorExtract(iterArgs[0], iv);
+    target = b.h(target);
+    auto tensor = b.qtensorInsert(target, tensorWithoutTarget, iv);
+
+    auto [withoutControl, loopControl] = b.qtensorExtract(tensor, 0);
+    std::tie(tensorWithoutTarget, target) =
+        b.qtensorExtract(withoutControl, iv);
+    std::tie(loopControl, target) = b.ctrl(
+        loopControl, target, [&](Value ctrlTarget) { return b.x(ctrlTarget); });
+    tensor = b.qtensorInsert(target, tensorWithoutTarget, iv);
+    tensor = b.qtensorInsert(loopControl, tensor, 0);
+    return SmallVector{tensor};
+  })[0];
+
+  auto [finalTensor, finalControl] = b.qtensorExtract(reg, 0);
+  return measureToRegister(b, finalControl);
 }
 
 Value nestedIfOpForLoop(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
+  auto reg = b.qtensorAlloc(3);
   auto q0 = b.allocQubit();
   auto q1 = b.h(q0);
   auto [q2, cond] = b.measure(q1);
   auto ifRes = b.qcoIf(
-      cond, {reg.value, q2},
+      cond, {reg, q2},
       [&](ValueRange args) {
         auto q3 = b.h(args[1]);
         return SmallVector{args[0], q3};

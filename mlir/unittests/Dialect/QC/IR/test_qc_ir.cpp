@@ -21,6 +21,8 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
@@ -67,7 +69,7 @@ void QCTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
   registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect>();
+                  memref::MemRefDialect, scf::SCFDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
@@ -156,6 +158,35 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         builder.scfCondition(c, 1);
       },
       "Register index is out of bounds");
+}
+
+TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto reg = builder.allocQubitRegister(1);
+  const auto index = arith::ConstantIndexOp::create(builder, 0).getResult();
+
+  builder.h(builder.loadQubit(reg.value, index));
+  builder.x(builder.loadQubit(reg.value, index));
+  builder.scfIf(true, [&] {
+    builder.y(builder.loadQubit(reg.value, index));
+    builder.scfIf(true,
+                  [&] { builder.z(builder.loadQubit(reg.value, index)); });
+  });
+
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::size_t qubitLoads = 0;
+  module->walk([&](memref::LoadOp load) {
+    if (isa<QubitType>(load.getMemRefType().getElementType())) {
+      ++qubitLoads;
+      EXPECT_EQ(load.getMemref(), reg.value);
+      EXPECT_TRUE(isEqualConstantIntOrValue(load.getIndices().front(), index));
+    }
+  });
+  EXPECT_EQ(qubitLoads, 5U);
 }
 
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
