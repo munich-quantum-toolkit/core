@@ -59,6 +59,37 @@ class VectorDD:
             MemoryError: If the memory allocation fails.
         """
 
+    def to_bytes(self, binary: bool = True) -> bytes:
+        """Serialize the DD to bytes.
+
+        Args:
+            binary: Whether to use the binary serialization format. Defaults to True.
+                If False, the textual serialization format is used.
+
+        Returns:
+            The serialized DD.
+
+        Notes:
+            The binary format is not portable across different architectures or platforms.
+        """
+
+    @staticmethod
+    def from_bytes(dd_package: DDPackage, data: bytes, binary: bool = True) -> VectorDD:
+        """Deserialize a DD from bytes.
+
+        Args:
+            dd_package: The DD package that owns the deserialized DD.
+            data: The serialized DD.
+            binary: Whether the data uses the binary serialization format. Defaults to True.
+                If False, the textual serialization format is expected.
+
+        Returns:
+            The deserialized DD.
+
+        Notes:
+            The binary format is not portable across different architectures or platforms.
+        """
+
     def to_dot(
         self,
         colored: bool = True,
@@ -153,6 +184,37 @@ class MatrixDD:
 
         Raises:
             MemoryError: If the memory allocation fails.
+        """
+
+    def to_bytes(self, binary: bool = True) -> bytes:
+        """Serialize the DD to bytes.
+
+        Args:
+            binary: Whether to use the binary serialization format. Defaults to True.
+                If False, the textual serialization format is used.
+
+        Returns:
+            The serialized DD.
+
+        Notes:
+            The binary format is not portable across different architectures or platforms.
+        """
+
+    @staticmethod
+    def from_bytes(dd_package: DDPackage, data: bytes, binary: bool = True) -> MatrixDD:
+        """Deserialize a DD from bytes.
+
+        Args:
+            dd_package: The DD package that owns the deserialized DD.
+            data: The serialized DD.
+            binary: Whether the data uses the binary serialization format. Defaults to True.
+                If False, the textual serialization format is expected.
+
+        Returns:
+            The deserialized DD.
+
+        Notes:
+            The binary format is not portable across different architectures or platforms.
         """
 
     def to_dot(
