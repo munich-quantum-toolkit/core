@@ -476,10 +476,23 @@ INSTANTIATE_TEST_SUITE_P(
 
 /// \name JeffRoundTrip/Operations/StandardGates/GphaseOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(QCOGPhaseOpTest, JeffRoundTripTest,
-                         testing::Values(JeffRoundTripTestCase{
-                             "GlobalPhase", MQT_NAMED_BUILDER(qco::globalPhase),
-                             MQT_NAMED_BUILDER(qco::globalPhase)}));
+INSTANTIATE_TEST_SUITE_P(
+    QCOGPhaseOpTest, JeffRoundTripTest,
+    testing::Values(JeffRoundTripTestCase{"GlobalPhase",
+                                          MQT_NAMED_BUILDER(qco::globalPhase),
+                                          MQT_NAMED_BUILDER(qco::globalPhase)},
+                    JeffRoundTripTestCase{
+                        "SingleControlledGlobalPhase",
+                        MQT_NAMED_BUILDER(qco::singleControlledGlobalPhase),
+                        MQT_NAMED_BUILDER(qco::p)},
+                    JeffRoundTripTestCase{
+                        "MultipleControlledGlobalPhase",
+                        MQT_NAMED_BUILDER(qco::multipleControlledGlobalPhase),
+                        MQT_NAMED_BUILDER(qco::multipleControlledP)},
+                    JeffRoundTripTestCase{
+                        "InverseGlobalPhase",
+                        MQT_NAMED_BUILDER(qco::inverseGlobalPhase),
+                        MQT_NAMED_BUILDER(qco::globalPhase)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/HOp.cpp

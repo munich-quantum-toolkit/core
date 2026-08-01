@@ -15,6 +15,7 @@ add_mlir_conversion_library(
   QCToQIRAdaptiveIncGen
   LINK_LIBS
   MLIRQCToQIRCommon
+  MLIRQuantumTransforms
   MLIRQIRUtils
   MLIRLLVMDialect
   MLIRQCDialect

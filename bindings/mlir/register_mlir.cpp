@@ -332,6 +332,9 @@ before conversion to QCO.)pb");
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
            "Run the standard QC cleanup pipeline in place.")
+      .def("normalize_global_phases",
+           &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
+           "Normalize scoped global phases in place.")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -372,6 +375,10 @@ operations.)pb");
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
            "Run the standard QCO cleanup pipeline in place.")
+      .def(
+          "normalize_global_phases",
+          &BooleanMemberAdapter<&mlir::QCOProgram::normalizeGlobalPhases>::call,
+          "Normalize scoped global phases in place.")
       .def("run_pass_pipeline",
            &BooleanMemberAdapter<&mlir::QCOProgram::runPassPipeline>::call,
            "pipeline"_a, nb::kw_only(), "enable_timing"_a = false,

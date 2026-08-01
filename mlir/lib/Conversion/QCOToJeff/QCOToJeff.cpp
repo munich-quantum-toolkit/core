@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -1739,6 +1740,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
+    if (failed(quantum::normalizeGlobalPhases(cast<ModuleOp>(module)))) {
+      signalPassFailure();
+      return;
+    }
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);

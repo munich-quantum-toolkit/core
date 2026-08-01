@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
@@ -53,6 +54,7 @@ void registerMQTCompilerPasses() {
     qco::registerHadamardLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
+    quantum::registerNormalizeGlobalPhases();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
@@ -63,6 +65,7 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
+  pm.addPass(quantum::createNormalizeGlobalPhases());
 }
 
 bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
@@ -96,13 +99,17 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 }
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(quantum::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(quantum::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createRemoveDeadValuesPass());
 }

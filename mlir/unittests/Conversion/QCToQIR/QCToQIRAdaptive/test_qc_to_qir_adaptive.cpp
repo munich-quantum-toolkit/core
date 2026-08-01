@@ -89,6 +89,63 @@ static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
   return pm.run(module);
 }
 
+TEST(QCToQIRAdaptiveNativeTest,
+     NormalizesFactorableControlledGlobalPhaseBeforeLowering) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto control = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  builder.ctrl(control, target, [&](Value targetArg) {
+    builder.x(targetArg);
+    builder.gphase(0.317);
+  });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto control = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  builder.ctrl(control, target, [&](Value targetArg) {
+    auto angle = func::CallOp::create(builder, builder.getLoc(), "angle",
+                                      builder.getF64Type(), ValueRange{});
+    builder.x(targetArg);
+    builder.gphase(angle.getResult(0));
+  });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  OpBuilder moduleBuilder(&context);
+  moduleBuilder.setInsertionPointToStart(module->getBody());
+  auto angleFunction = func::FuncOp::create(
+      moduleBuilder, module->getLoc(), "angle",
+      moduleBuilder.getFunctionType({}, {moduleBuilder.getF64Type()}));
+  angleFunction.setPrivate();
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "Controlled GPhaseOps cannot be converted to QIR");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
 TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   MLIRContext context;
   context

@@ -6,8 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QC)
-add_subdirectory(QCO)
-add_subdirectory(QIR)
-add_subdirectory(QTensor)
-add_subdirectory(Utils)
+set(LLVM_TARGET_DEFINITIONS Passes.td)
+mlir_tablegen(Passes.h.inc -gen-pass-decls -name Quantum)
+add_public_tablegen_target(MLIRQuantumTransformsIncGen)
+
+add_mlir_doc(Passes QuantumTransforms Passes/ -gen-pass-doc)
