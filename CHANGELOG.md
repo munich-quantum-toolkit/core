@@ -84,6 +84,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
+  ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -701,6 +703,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979

@@ -70,10 +70,11 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
-          auto innerInv = InvOp::create(rewriter, op.getLoc(), targetArgs);
-          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
-                                      innerInv.getRegion(),
-                                      innerInv.getRegion().end());
+          InvOp::create(rewriter, op.getLoc(), targetArgs,
+                        [&](ValueRange invArgs) {
+                          utils::inlineBodyReturningYields(
+                              *innerCtrlOp.getBody(), invArgs, rewriter);
+                        });
         });
 
     return success();

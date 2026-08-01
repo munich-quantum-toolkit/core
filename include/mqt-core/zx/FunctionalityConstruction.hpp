@@ -147,6 +147,11 @@ protected:
   static void addMcrz(ZXDiagram& diag, const PiExpression& phase,
                       std::vector<Qubit> controls, Qubit target,
                       std::vector<Vertex>& qubits);
+  static void addMcxWithDirtyAncillas(ZXDiagram& diag,
+                                      const std::vector<Qubit>& controls,
+                                      Qubit target,
+                                      const std::vector<Qubit>& ancillas,
+                                      std::vector<Vertex>& qubits);
   static void addMcx(ZXDiagram& diag, std::vector<Qubit> controls, Qubit target,
                      std::vector<Vertex>& qubits);
   static void addMcz(ZXDiagram& diag, const std::vector<Qubit>& controls,
