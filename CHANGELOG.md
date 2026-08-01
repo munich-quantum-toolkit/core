@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Make superconducting QDMI devices runtime configurable with session-owned
+  topology, operations, and calibration data ([#1980]) ([**@burgholzer**])
 - ✨ Expose registered QDMI device IDs without loading device libraries
   ([#1972]) ([**@burgholzer**])
 - ✨ Add typed runtime configuration transport and relocatable assets for QDMI
@@ -668,9 +670,9 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
 
 ## [2.7.0] - 2024-10-08
 
-_📚 Refer to the [GitHub Release
-Notes](https://github.com/munich-quantum-toolkit/core/releases) for previous
-changelogs._
+_📚 Refer to the
+[GitHub Release Notes](https://github.com/munich-quantum-toolkit/core/releases)
+for previous changelogs._
 
 <!-- Version links -->
 
@@ -697,6 +699,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979
 [#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
