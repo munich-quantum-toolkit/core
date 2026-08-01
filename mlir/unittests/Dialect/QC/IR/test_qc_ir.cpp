@@ -195,7 +195,10 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
                    MQT_NAMED_BUILDER(fourControlledRxx)},
         QCTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
-                   MQT_NAMED_BUILDER(ctrlTwo)}));
+                   MQT_NAMED_BUILDER(ctrlTwo)},
+        QCTestCase{"ModifierBodyReuseReordered",
+                   MQT_NAMED_BUILDER(modifierBodyReuseReordered),
+                   MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
 /// @}
 
 /// \name QC/Modifiers/PowOp.cpp

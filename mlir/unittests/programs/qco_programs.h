@@ -1289,6 +1289,12 @@ Value powTwo(QCOProgramBuilder& b);
 /// applied to two gates.
 Value invCtrlTwo(QCOProgramBuilder& b);
 
+/// Exercises modifier-body reuse with reordered control and target aliases.
+Value modifierBodyReuseReordered(QCOProgramBuilder& b);
+
+/// Canonical reference for modifierBodyReuseReordered.
+Value modifierBodyReuseReorderedRef(QCOProgramBuilder& b);
+
 // --- PowOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with pow(1.0) modifier (should inline to just the gate).

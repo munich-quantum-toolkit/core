@@ -244,11 +244,11 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
-          auto innerPow = PowOp::create(rewriter, op.getLoc(), op.getExponent(),
-                                        targetArgs);
-          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
-                                      innerPow.getRegion(),
-                                      innerPow.getRegion().end());
+          PowOp::create(rewriter, op.getLoc(), op.getExponent(), targetArgs,
+                        [&](ValueRange powArgs) {
+                          utils::inlineBodyReturningYields(
+                              *innerCtrlOp.getBody(), powArgs, rewriter);
+                        });
         });
 
     return success();
