@@ -3663,6 +3663,93 @@ Value invCtrlTwo(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
+Value modifierBodyReuseReordered(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(10);
+
+  const auto& [outerControlsOut, outerTargetsOut] =
+      b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange outerTargets) {
+        const auto& [innerControlsOut, innerTargetsOut] =
+            b.ctrl({outerTargets[2]}, {outerTargets[1], outerTargets[0]},
+                   [&](ValueRange innerTargets) {
+                     auto [q0, q1] =
+                         b.rzx(0.123, innerTargets[0], innerTargets[1]);
+                     return SmallVector{q0, q1};
+                   });
+        return SmallVector{innerTargetsOut[1], innerTargetsOut[0],
+                           innerControlsOut[0]};
+      });
+  q[0] = outerControlsOut[0];
+  q[1] = outerTargetsOut[0];
+  q[2] = outerTargetsOut[1];
+  q[3] = outerTargetsOut[2];
+
+  auto invOut = b.inv({q[4], q[5], q[6]}, [&](ValueRange invArgs) {
+    const auto& [controlsOut, targetsOut] =
+        b.ctrl({invArgs[2]}, {invArgs[1], invArgs[0]}, [&](ValueRange targets) {
+          auto [q0, q1] = b.rzx(0.234, targets[0], targets[1]);
+          return SmallVector{q0, q1};
+        });
+    return SmallVector{targetsOut[1], targetsOut[0], controlsOut[0]};
+  });
+  q[4] = invOut[0];
+  q[5] = invOut[1];
+  q[6] = invOut[2];
+
+  auto powOut = b.pow(3.0, {q[7], q[8], q[9]}, [&](ValueRange powArgs) {
+    const auto& [controlsOut, targetsOut] =
+        b.ctrl({powArgs[2]}, {powArgs[1], powArgs[0]}, [&](ValueRange targets) {
+          auto [q0, q1] = b.rzx(0.345, targets[0], targets[1]);
+          return SmallVector{q0, q1};
+        });
+    return SmallVector{targetsOut[1], targetsOut[0], controlsOut[0]};
+  });
+  q[7] = powOut[0];
+  q[8] = powOut[1];
+  q[9] = powOut[2];
+
+  return measureAndReturn(b, q.qubits);
+}
+
+Value modifierBodyReuseReorderedRef(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(10);
+
+  const auto& [mergedControlsOut, mergedTargetsOut] =
+      b.ctrl({q[0], q[3]}, {q[2], q[1]}, [&](ValueRange targets) {
+        auto [q0, q1] = b.rzx(0.123, targets[0], targets[1]);
+        return SmallVector{q0, q1};
+      });
+  q[0] = mergedControlsOut[0];
+  q[3] = mergedControlsOut[1];
+  q[2] = mergedTargetsOut[0];
+  q[1] = mergedTargetsOut[1];
+
+  const auto& [invControlsOut, invTargetsOut] =
+      b.ctrl({q[6]}, {q[5], q[4]}, [&](ValueRange targets) {
+        auto inner = b.inv(targets, [&](ValueRange invArgs) {
+          auto [q0, q1] = b.rzx(0.234, invArgs[0], invArgs[1]);
+          return SmallVector{q0, q1};
+        });
+        return llvm::to_vector(inner);
+      });
+  q[6] = invControlsOut[0];
+  q[5] = invTargetsOut[0];
+  q[4] = invTargetsOut[1];
+
+  const auto& [powControlsOut, powTargetsOut] =
+      b.ctrl({q[9]}, {q[8], q[7]}, [&](ValueRange targets) {
+        auto inner = b.pow(3.0, targets, [&](ValueRange powArgs) {
+          auto [q0, q1] = b.rzx(0.345, powArgs[0], powArgs[1]);
+          return SmallVector{q0, q1};
+        });
+        return llvm::to_vector(inner);
+      });
+  q[9] = powControlsOut[0];
+  q[8] = powTargetsOut[0];
+  q[7] = powTargetsOut[1];
+
+  return measureAndReturn(b, q.qubits);
+}
+
 Value pow1Inline(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto powOut = b.pow(1.0, q[0], [&](Value qubits) {
