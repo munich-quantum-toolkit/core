@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/FunctionalityConstruction.hpp"
+#include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -20,11 +22,6 @@
 #include "zx/Simplify.hpp"
 #include "zx/ZXDefinitions.hpp"
 #include "zx/ZXDiagram.hpp"
-
-#ifdef MQT_CORE_ZX_TEST_WITH_DD
-#include "dd/FunctionalityConstruction.hpp"
-#include "dd/Package.hpp"
-#endif
 
 #include <gtest/gtest.h>
 
@@ -373,14 +370,12 @@ TEST_F(ZXFunctionalityTest, LargeMCX) {
     const auto diag = FunctionalityConstruction::buildFunctionality(&qc);
     EXPECT_LT(diag.getNVertices(), 22U * numControls * numControls);
 
-#ifdef MQT_CORE_ZX_TEST_WITH_DD
     dd::Package package(numQubits);
     const auto actual = dd::buildFunctionality(qc, package);
     const auto expected = dd::buildFunctionality(reference, package);
     EXPECT_EQ(actual.p, expected.p);
     package.decRef(actual);
     package.decRef(expected);
-#endif
   }
 }
 
