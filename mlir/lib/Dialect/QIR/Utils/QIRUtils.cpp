@@ -21,9 +21,11 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <string>
 
 namespace mlir::qir {
 
@@ -140,6 +142,71 @@ Value createPointerFromIndex(OpBuilder& builder, const Location loc,
       builder, loc, LLVM::LLVMPointerType::get(builder.getContext()),
       constantOp.getResult());
   return intToPtrOp.getResult();
+}
+
+void emitOutputRecording(OpBuilder& builder, Operation* anchor,
+                         ArrayRef<ClassicalRegister> classicalRegisters,
+                         const DenseMap<int64_t, StaticResult>& staticResults) {
+  if (classicalRegisters.empty() && staticResults.empty()) {
+    return;
+  }
+
+  auto* ctx = builder.getContext();
+  auto i64Type = builder.getI64Type();
+  auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  auto voidType = LLVM::LLVMVoidType::get(ctx);
+  auto loc = anchor->getLoc();
+
+  auto resultSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+  auto resultDec = getOrCreateFunctionDeclaration(builder, anchor,
+                                                  QIR_RECORD_OUTPUT, resultSig);
+
+  // Classical registers
+  for (const auto& reg : classicalRegisters) {
+    if (!reg.record) {
+      continue;
+    }
+
+    auto size = resolveIntVariant(builder, loc, reg.size);
+    auto label = createResultLabel(builder, anchor, reg.label).getResult();
+
+    // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
+    if (reg.array) {
+      auto arraySig =
+          LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
+      auto arrayDec = getOrCreateFunctionDeclaration(
+          builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
+      LLVM::CallOp::create(builder, loc, arrayDec,
+                           ValueRange{size, reg.array, label});
+      continue;
+    }
+
+    // Base Profile: emit `__quantum__rt__array_record_output` followed by
+    // `__quantum__rt__result_record_output` for each bit
+    auto arraySig =
+        LLVM::LLVMFunctionType::get(voidType, {builder.getI64Type(), ptrType});
+    auto arrayDec = getOrCreateFunctionDeclaration(
+        builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
+    LLVM::CallOp::create(builder, loc, arrayDec, ValueRange{size, label});
+    for (const auto& [index, ptr] : llvm::enumerate(reg.results)) {
+      auto bitLabel = createResultLabel(builder, anchor,
+                                        reg.label + "_" + std::to_string(index))
+                          .getResult();
+      LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, bitLabel});
+    }
+  }
+
+  // Static results
+  for (const auto& [index, result] : staticResults) {
+    if (!result.record) {
+      continue;
+    }
+    auto label = createResultLabel(builder, anchor,
+                                   "__unnamed__" + std::to_string(index))
+                     .getResult();
+    LLVM::CallOp::create(builder, loc, resultDec,
+                         ValueRange{result.pointer, label});
+  }
 }
 
 } // namespace mlir::qir

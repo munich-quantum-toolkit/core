@@ -24,6 +24,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -72,7 +73,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                    qco::QCODialect, scf::SCFDialect>();
+                    memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -132,6 +133,24 @@ static Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
   return b.measure(res[1]).second;
 }
 
+static SmallVector<Value>
+nestedIfWithCapturedMeasurement(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  auto measuredQubit = b.measure(q[0], c0, 0).first;
+  auto results =
+      b.qcoIf(c0, 0, {measuredQubit, q[1]}, [&](ValueRange outerArgs) {
+        auto innerResult = b.qcoIf(true, outerArgs[1], [&](Value innerArg) {
+          return b.measure(innerArg, c1, 0).first;
+        });
+        return SmallVector{outerArgs[0], innerResult};
+      });
+  b.sink(results[0]);
+  b.sink(results[1]);
+  return {c0, c1};
+}
+
 static Value whileWithAngle(qco::QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
   auto q0 = b.allocQubit();
@@ -148,6 +167,59 @@ static Value whileWithAngle(qco::QCOProgramBuilder& b) {
         return SmallVector{q3};
       });
   return b.measure(res[0]).second;
+}
+
+static Value forLoopWithTwoMeasurements(qco::QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto c = b.allocClassicalBitRegister(2);
+  b.scfFor(0, 1, 1, {reg.value}, [&](Value /*iv*/, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], 0);
+    auto q0m = b.measure(q0, c, 0).first;
+    auto t1 = b.qtensorInsert(q0m, t0, 0);
+    auto [t2, q1] = b.qtensorExtract(t1, 1);
+    auto q1m = b.measure(q1, c, 1).first;
+    auto t3 = b.qtensorInsert(q1m, t2, 1);
+    return SmallVector{t3};
+  });
+  return c;
+}
+
+static Value whileWithMeasurement(qco::QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto c = b.allocClassicalBitRegister(1);
+  auto q1 = b.h(q0);
+  auto res = b.scfWhile(
+      q1,
+      [&](ValueRange iterArgs) {
+        auto [q2, measureResult] = b.measure(iterArgs[0], c, 0);
+        b.scfCondition(measureResult, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) {
+        auto q3 = b.h(iterArgs[0]);
+        return SmallVector{q3};
+      });
+  b.sink(res[0]);
+  return c;
+}
+
+static Value whileWithRead(qco::QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto c = b.allocClassicalBitRegister(1);
+  auto q1 = b.h(q0);
+  auto res = b.scfWhile(
+      q1,
+      [&](ValueRange iterArgs) {
+        auto q2 = b.measure(iterArgs[0], c, 0).first;
+        b.scfCondition(c, 0, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) {
+        auto q3 = b.h(iterArgs[0]);
+        return SmallVector{q3};
+      });
+  b.sink(res[0]);
+  return c;
 }
 
 static LogicalResult convertQCOToJeff(ModuleOp module) {
@@ -197,7 +269,7 @@ TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
 TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  qco::QCODialect, scf::SCFDialect>();
+                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto program = mqt::test::buildMLIRProgram(
@@ -210,11 +282,12 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   EXPECT_EQ(
       main->getAttrOfType<ArrayAttr>("passthrough"),
       ArrayAttr::get(&context, {StringAttr::get(&context, "entry_point")}));
+  auto cregType = MemRefType::get({1}, IntegerType::get(&context, 1));
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
-  EXPECT_TRUE(main.getFunctionType().getResult(0).isInteger(1));
+  EXPECT_EQ(main.getFunctionType().getResult(0), cregType);
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   ASSERT_EQ(returnOp.getNumOperands(), 1);
-  EXPECT_TRUE(returnOp.getOperand(0).getType().isInteger(1));
+  EXPECT_EQ(returnOp.getOperand(0).getType(), cregType);
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {
@@ -259,6 +332,29 @@ module {
   });
   EXPECT_TRUE(failed(convertQCOToJeff(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(JeffRoundTripRegressionTest, ConvertsDynamicClassicalRegisterSize) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) -> memref<?xi1>
+      attributes {passthrough = ["entry_point"]} {
+    %c = memref.alloc(%size) : memref<?xi1>
+    return %c : memref<?xi1>
+  }
+}
+)mlir";
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(convertQCOToJeff(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
@@ -805,6 +901,14 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
         JeffRoundTripTestCase{
+            "PartialMeasurementToRegister",
+            MQT_NAMED_BUILDER(qco::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(qco::partialMeasurementToRegister)},
+        JeffRoundTripTestCase{
+            "DynamicallyIndexedMeasurement",
+            MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement)},
+        JeffRoundTripTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
             MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
@@ -831,19 +935,28 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         JeffRoundTripTestCase{"SimpleIf", MQT_NAMED_BUILDER(qco::simpleIf),
                               MQT_NAMED_BUILDER(qco::simpleIf)},
-        JeffRoundTripTestCase{"IfWithAngle", MQT_NAMED_BUILDER(ifWithAngle),
-                              MQT_NAMED_BUILDER(ifWithAngle)},
+        JeffRoundTripTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
+                              MQT_NAMED_BUILDER(qco::ifElse)},
         JeffRoundTripTestCase{"IfTwoQubits",
                               MQT_NAMED_BUILDER(qco::ifTwoQubits),
                               MQT_NAMED_BUILDER(qco::ifTwoQubits)},
-        JeffRoundTripTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
-                              MQT_NAMED_BUILDER(qco::ifElse)},
+        JeffRoundTripTestCase{"IfWithMeasurement",
+                              MQT_NAMED_BUILDER(qco::ifWithMeasurement),
+                              MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
+        JeffRoundTripTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qco::ifWithCreg),
+                              MQT_NAMED_BUILDER(qco::ifWithCreg)},
+        JeffRoundTripTestCase{"IfWithAngle", MQT_NAMED_BUILDER(ifWithAngle),
+                              MQT_NAMED_BUILDER(ifWithAngle)},
         JeffRoundTripTestCase{"NestedIfOpForLoop",
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)},
         JeffRoundTripTestCase{"NestedIfOpForLoopWithAngle",
                               MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle),
-                              MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle)}));
+                              MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle)},
+        JeffRoundTripTestCase{
+            "NestedIfWithCapturedMeasurement",
+            MQT_NAMED_BUILDER(nestedIfWithCapturedMeasurement),
+            MQT_NAMED_BUILDER(nestedIfWithCapturedMeasurement)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/ForOp.cpp
@@ -857,6 +970,9 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"ForLoopWithAngle",
                               MQT_NAMED_BUILDER(forLoopWithAngle),
                               MQT_NAMED_BUILDER(forLoopWithAngle)},
+        JeffRoundTripTestCase{"ForLoopWithTwoMeasurements",
+                              MQT_NAMED_BUILDER(forLoopWithTwoMeasurements),
+                              MQT_NAMED_BUILDER(forLoopWithTwoMeasurements)},
         JeffRoundTripTestCase{"NestedForLoopIfOp",
                               MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
                               MQT_NAMED_BUILDER(qco::nestedForLoopIfOp)},
@@ -864,11 +980,11 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
                               MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp)},
         JeffRoundTripTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
         JeffRoundTripTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}
@@ -886,5 +1002,10 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::simpleDoWhileReset)},
         JeffRoundTripTestCase{"WhileWithAngle",
                               MQT_NAMED_BUILDER(whileWithAngle),
-                              MQT_NAMED_BUILDER(whileWithAngle)}));
+                              MQT_NAMED_BUILDER(whileWithAngle)},
+        JeffRoundTripTestCase{"WhileWithMeasurement",
+                              MQT_NAMED_BUILDER(whileWithMeasurement),
+                              MQT_NAMED_BUILDER(whileWithMeasurement)},
+        JeffRoundTripTestCase{"WhileWithRead", MQT_NAMED_BUILDER(whileWithRead),
+                              MQT_NAMED_BUILDER(whileWithRead)}));
 /// @}
