@@ -721,11 +721,10 @@ private:
                        std::get_if<frontend::DeclarationStatement>(
                            &statement.data)) {
           const auto& reg = program.registers.at(declaration->reg);
-          const auto cost =
-              reg.kind == frontend::RegisterKind::Qubit
-                  ? (reg.isScalar ? 1
-                                  : 1 + (2 * static_cast<size_t>(reg.width)))
-                  : 1;
+          size_t cost = 1;
+          if (reg.kind == frontend::RegisterKind::Qubit && !reg.isScalar) {
+            cost += 2 * static_cast<size_t>(reg.width);
+          }
           if (!chargeScaledEmission(cost, multiplicity, projectedEmission,
                                     statement.location)) {
             return false;

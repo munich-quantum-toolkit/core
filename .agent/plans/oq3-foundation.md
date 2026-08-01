@@ -319,6 +319,13 @@ threads or publishing new PR text.
       compiler tests pass. The complete warning-as-error documentation build,
       repository lint session, and diff checks pass. The PR changelog entry
       credits both `@burgholzer` and `@denialhaag`.
+- [x] (2026-08-01) Merged `origin/main` at `8591113f8` and addressed all 29
+      diagnostics from the replacement CI clang-tidy report: removed a nested
+      emission-cost conditional, made a pointer iterator explicit, and gave MLIR
+      attributes, values, types, diagnostics, matchers, locations, passes, and
+      logical results their direct MLIR header providers. The focused build, all
+      142 OpenQASM frontend/emitter tests, all 204 compiler tests, changed-file
+      hooks, and diff checks pass.
 
 ## Surprises & Discoveries
 

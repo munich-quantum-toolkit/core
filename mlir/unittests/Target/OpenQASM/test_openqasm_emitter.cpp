@@ -27,9 +27,17 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <algorithm>
 #include <array>
@@ -37,7 +45,6 @@
 #include <cstdint>
 #include <numbers>
 #include <string>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -1160,7 +1167,8 @@ TEST(OpenQASMTargetTest, RotationsProduceSpecifiedBitResults) {
 
   for (size_t runtime = 0; runtime < 2; ++runtime) {
     for (size_t distance = 0; distance < distances.size(); ++distance) {
-      const auto opposite = std::ranges::find(distances, -distances[distance]);
+      const auto* const opposite =
+          std::ranges::find(distances, -distances[distance]);
       ASSERT_NE(opposite, distances.end());
       const auto oppositeIndex =
           static_cast<size_t>(opposite - distances.begin());
