@@ -18,6 +18,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <complex>
 #include <optional>
 #include <variant>
@@ -37,7 +38,7 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
     if (const auto theta = valueToDouble(op.getTheta());
-        !theta || *theta != 0.0) {
+        !theta || std::abs(*theta) > TOLERANCE) {
       return failure();
     }
 

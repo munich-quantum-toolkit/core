@@ -270,7 +270,7 @@ bool QCProgram::cleanup() {
 }
 
 bool QCProgram::normalizeGlobalPhases() {
-  return succeeded(quantum::normalizeGlobalPhases(mod()));
+  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
 }
 
 std::optional<QCOProgram> QCProgram::intoQCO() && {
@@ -328,7 +328,7 @@ bool QCOProgram::cleanup() {
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
-  return succeeded(quantum::normalizeGlobalPhases(mod()));
+  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,

@@ -655,7 +655,7 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
-    if (failed(quantum::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
     }

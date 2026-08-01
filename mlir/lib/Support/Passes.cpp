@@ -54,7 +54,7 @@ void registerMQTCompilerPasses() {
     qco::registerHadamardLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
-    quantum::registerNormalizeGlobalPhases();
+    mqt::registerNormalizeGlobalPhases();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
@@ -65,7 +65,7 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
-  pm.addPass(quantum::createNormalizeGlobalPhases());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
 }
 
 bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
@@ -100,7 +100,7 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
-  pm.addPass(quantum::createNormalizeGlobalPhases());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createRemoveDeadValuesPass());
@@ -108,7 +108,7 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
-  pm.addPass(quantum::createNormalizeGlobalPhases());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createRemoveDeadValuesPass());

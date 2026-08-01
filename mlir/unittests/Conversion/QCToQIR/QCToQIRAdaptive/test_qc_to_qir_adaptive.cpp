@@ -83,10 +83,10 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRAdaptive());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
 TEST(QCToQIRAdaptiveNativeTest,
@@ -102,11 +102,11 @@ TEST(QCToQIRAdaptiveNativeTest,
     builder.x(targetArg);
     builder.gphase(0.317);
   });
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
@@ -123,15 +123,15 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
     builder.x(targetArg);
     builder.gphase(angle.getResult(0));
   });
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
   OpBuilder moduleBuilder(&context);
-  moduleBuilder.setInsertionPointToStart(module->getBody());
+  moduleBuilder.setInsertionPointToStart(moduleOp->getBody());
   auto angleFunction = func::FuncOp::create(
-      moduleBuilder, module->getLoc(), "angle",
+      moduleBuilder, moduleOp->getLoc(), "angle",
       moduleBuilder.getFunctionType({}, {moduleBuilder.getF64Type()}));
   angleFunction.setPrivate();
-  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
   ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
@@ -142,7 +142,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
         "Controlled GPhaseOps cannot be converted to QIR");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 

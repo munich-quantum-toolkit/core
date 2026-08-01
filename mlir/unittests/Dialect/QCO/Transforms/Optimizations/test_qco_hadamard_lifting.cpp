@@ -60,22 +60,22 @@ protected:
   /**
    * @brief Adds the hadamardLiftingPass to the current context and runs it.
    */
-  static LogicalResult runHadamardLiftingPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runHadamardLiftingPass(ModuleOp moduleOp) {
+    PassManager pm(moduleOp.getContext());
     pm.addPass(createHadamardLifting());
-    return pm.run(module);
+    return pm.run(moduleOp);
   }
 
   /**
    * @brief Adds the canonicalizerPass to the current context and runs it.
    */
-  static LogicalResult runCanonicalizerPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runCanonicalizerPass(ModuleOp moduleOp) {
+    PassManager pm(moduleOp.getContext());
     pm.addPass(createCanonicalizerPass());
-    if (failed(pm.run(module))) {
+    if (failed(pm.run(moduleOp))) {
       return failure();
     }
-    return quantum::normalizeGlobalPhases(module);
+    return mlir::mqt::normalizeGlobalPhases(moduleOp);
   }
 };
 

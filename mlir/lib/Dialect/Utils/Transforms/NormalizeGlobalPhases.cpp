@@ -8,23 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Block.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/IRMapping.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
@@ -34,16 +30,13 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
-#include <cstddef>
 #include <optional>
 #include <variant>
 
-namespace mlir::quantum {
+namespace mlir::mqt {
 
 #define GEN_PASS_DEF_NORMALIZEGLOBALPHASES
 #include "mlir/Dialect/Utils/Transforms/Passes.h.inc"
-
-namespace {
 
 using PhaseTerm = std::variant<double, Value>;
 
@@ -92,13 +85,13 @@ static bool hoistAngleBefore(Value angle, Block& body, Operation* modifier,
   SmallPtrSet<Operation*, 8> visiting;
   SmallPtrSet<Operation*, 8> collected;
   SmallVector<Operation*, 8> ordered;
-  if (!collectHoistableSlice(angle, body, visiting, collected, ordered)) {
-    return false;
+  if (collectHoistableSlice(angle, body, visiting, collected, ordered)) {
+    for (auto* op : ordered) {
+      rewriter.moveOpBefore(op, modifier);
+    }
+    return true;
   }
-  for (auto* op : ordered) {
-    rewriter.moveOpBefore(op, modifier);
-  }
-  return true;
+  return false;
 }
 
 template <typename GPhaseOp> static GPhaseOp getExitPhase(Block& block) {
@@ -330,10 +323,13 @@ static void normalizeRegion(Region& region, RewriterBase& rewriter) {
   }
 }
 
+namespace {
+
 struct NormalizeGlobalPhases final
     : impl::NormalizeGlobalPhasesBase<NormalizeGlobalPhases> {
   using NormalizeGlobalPhasesBase::NormalizeGlobalPhasesBase;
 
+protected:
   void runOnOperation() override {
     if (failed(normalizeGlobalPhases(getOperation()))) {
       signalPassFailure();
@@ -343,10 +339,10 @@ struct NormalizeGlobalPhases final
 
 } // namespace
 
-LogicalResult normalizeGlobalPhases(ModuleOp module) {
-  IRRewriter rewriter(module.getContext());
-  normalizeRegion(module.getRegion(), rewriter);
+LogicalResult normalizeGlobalPhases(ModuleOp moduleOp) {
+  IRRewriter rewriter(moduleOp.getContext());
+  normalizeRegion(moduleOp.getRegion(), rewriter);
   return success();
 }
 
-} // namespace mlir::quantum
+} // namespace mlir::mqt

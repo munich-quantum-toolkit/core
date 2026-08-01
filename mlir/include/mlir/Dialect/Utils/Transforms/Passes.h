@@ -13,7 +13,7 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
-namespace mlir::quantum {
+namespace mlir::mqt {
 
 #define GEN_PASS_DECL
 #include "mlir/Dialect/Utils/Transforms/Passes.h.inc" // IWYU pragma: export
@@ -21,4 +21,4 @@ namespace mlir::quantum {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/Utils/Transforms/Passes.h.inc" // IWYU pragma: export
 
-} // namespace mlir::quantum
+} // namespace mlir::mqt

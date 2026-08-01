@@ -549,15 +549,15 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
                 : !qco.qubit, !qco.qubit
           }
         })mlir";
-    auto module = parseSourceString<ModuleOp>(source, context.get());
-    ASSERT_TRUE(module);
-    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*module)->clone()));
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
 
-    ASSERT_TRUE(runQCOCleanupPipeline(*module).succeeded());
-    ASSERT_TRUE(verify(*module).succeeded());
-    mqt::test::expectFullUnitaryEqual(*expected, *module, 2);
+    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(verify(*moduleOp).succeeded());
+    mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
 
-    auto func = *module->getOps<func::FuncOp>().begin();
+    auto func = *moduleOp->getOps<func::FuncOp>().begin();
     EXPECT_TRUE(func.getBody().getOps<PowOp>().empty());
     EXPECT_EQ(llvm::range_size(func.getBody().getOps<POp>()), 1);
   }

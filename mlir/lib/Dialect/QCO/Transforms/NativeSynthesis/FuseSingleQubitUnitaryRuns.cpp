@@ -218,13 +218,13 @@ struct FuseSingleQubitUnitaryRunsPass final
 
 protected:
   void runOnOperation() override {
-    auto module = getOperation();
+    auto moduleOp = getOperation();
 
     const auto parsed = decomposition::parseEulerBasis(basis);
     if (!parsed) {
-      module.emitError() << "Invalid Euler basis '" << basis
-                         << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, "
-                            "r.";
+      moduleOp.emitError()
+          << "Invalid Euler basis '" << basis
+          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r.";
       signalPassFailure();
       return;
     }
@@ -233,8 +233,8 @@ protected:
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
         patterns, *parsed, /*skipControlledBodies=*/false);
 
-    if (failed(applyPatternsGreedily(module, std::move(patterns))) ||
-        failed(quantum::normalizeGlobalPhases(module))) {
+    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
+        failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
   }

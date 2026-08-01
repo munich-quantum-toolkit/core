@@ -397,28 +397,28 @@ struct LowerTwoQubitOpPattern final
 /// Fuses single-qubit runs (and lowers lone off-gateset single-qubit ops) by
 /// reusing the `fuse-single-qubit-unitary-runs` rewrite. `qco.ctrl` bodies are
 /// skipped so the `X`/`Z` bodies of native entanglers are preserved.
-static LogicalResult fuseSingleQubitRuns(ModuleOp module,
+static LogicalResult fuseSingleQubitRuns(ModuleOp moduleOp,
                                          const EulerBasis basis) {
-  RewritePatternSet patterns(module.getContext());
+  RewritePatternSet patterns(moduleOp.getContext());
   populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis,
                                              /*skipControlledBodies=*/true);
-  return applyPatternsGreedily(module, std::move(patterns));
+  return applyPatternsGreedily(moduleOp, std::move(patterns));
 }
 
 /// Fuses two-qubit runs, then lowers any remaining off-gateset two-qubit ops.
-static LogicalResult fuseAndLowerTwoQubitOps(ModuleOp module,
+static LogicalResult fuseAndLowerTwoQubitOps(ModuleOp moduleOp,
                                              const NativeGateset& spec) {
-  MLIRContext* ctx = module.getContext();
+  MLIRContext* ctx = moduleOp.getContext();
   {
     RewritePatternSet runPatterns(ctx);
     runPatterns.add<FuseTwoQubitUnitaryRunsPattern>(ctx, spec);
-    if (failed(applyPatternsGreedily(module, std::move(runPatterns)))) {
+    if (failed(applyPatternsGreedily(moduleOp, std::move(runPatterns)))) {
       return failure();
     }
   }
   RewritePatternSet lowerPatterns(ctx);
   lowerPatterns.add<LowerTwoQubitOpPattern>(ctx, spec);
-  return applyPatternsGreedily(module, std::move(lowerPatterns));
+  return applyPatternsGreedily(moduleOp, std::move(lowerPatterns));
 }
 
 namespace {
@@ -443,20 +443,20 @@ protected:
       return;
     }
     const EulerBasis basis = *spec->eulerBasis;
-    ModuleOp module = getOperation();
+    ModuleOp moduleOp = getOperation();
 
     // 1. Fuse single-qubit runs (also lowers lone off-gateset single-qubit
     // ops).
     // 2. Fuse two-qubit runs and lower remaining off-gateset two-qubit ops.
     // 3. Fuse the single-qubit seams introduced by two-qubit synthesis.
-    if (failed(fuseSingleQubitRuns(module, basis)) ||
-        failed(fuseAndLowerTwoQubitOps(module, *spec)) ||
-        failed(fuseSingleQubitRuns(module, basis))) {
+    if (failed(fuseSingleQubitRuns(moduleOp, basis)) ||
+        failed(fuseAndLowerTwoQubitOps(moduleOp, *spec)) ||
+        failed(fuseSingleQubitRuns(moduleOp, basis))) {
       signalPassFailure();
       return;
     }
 
-    if (Operation* leftover = findNonNativeOp(module, *spec)) {
+    if (Operation* leftover = findNonNativeOp(moduleOp, *spec)) {
       leftover->emitError()
           << "native gate synthesis: operation remains outside the native "
              "gateset (native-gates='"
@@ -464,7 +464,7 @@ protected:
       signalPassFailure();
       return;
     }
-    if (failed(quantum::normalizeGlobalPhases(module))) {
+    if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
   }

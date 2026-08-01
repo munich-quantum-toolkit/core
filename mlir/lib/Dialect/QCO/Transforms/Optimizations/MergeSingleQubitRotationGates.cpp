@@ -676,7 +676,7 @@ protected:
     patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext());
 
     if (failed(applyPatternsGreedily(op, std::move(patterns))) ||
-        failed(quantum::normalizeGlobalPhases(op))) {
+        failed(mlir::mqt::normalizeGlobalPhases(op))) {
       signalPassFailure();
     }
   }

@@ -1739,8 +1739,8 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
-    if (failed(quantum::normalizeGlobalPhases(cast<ModuleOp>(module)))) {
+    auto* moduleOp = getOperation();
+    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
     }
@@ -1844,14 +1844,15 @@ protected:
                  ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
-    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+    if (applyPartialConversion(moduleOp, target, std::move(patterns))
+            .failed()) {
       signalPassFailure();
       return;
     }
 
-    patchCregYields(module, state);
+    patchCregYields(moduleOp, state);
 
-    if (cleanUp(module, state).failed()) {
+    if (cleanUp(moduleOp, state).failed()) {
       signalPassFailure();
     }
   }

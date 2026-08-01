@@ -16,9 +16,9 @@ namespace mlir {
 class ModuleOp;
 } // namespace mlir
 
-namespace mlir::quantum {
+namespace mlir::mqt {
 
-/// Normalize QC and QCO global phases in @p module.
-[[nodiscard]] LogicalResult normalizeGlobalPhases(ModuleOp module);
+/// Normalize QC and QCO global phases in @p moduleOp.
+[[nodiscard]] LogicalResult normalizeGlobalPhases(ModuleOp moduleOp);
 
-} // namespace mlir::quantum
+} // namespace mlir::mqt

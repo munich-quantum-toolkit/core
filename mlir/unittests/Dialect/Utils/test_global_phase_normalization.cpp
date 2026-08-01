@@ -65,35 +65,35 @@ protected:
     return parseSourceString<ModuleOp>(source, context.get());
   }
 
-  static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& module,
+  static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                       const std::size_t numQubits) {
-    const auto cloned = cast<ModuleOp>((*module)->clone());
+    const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
     OwningOpRef<ModuleOp> expected(cloned);
-    ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-    ASSERT_TRUE(verify(*module).succeeded());
-    mqt::test::expectFullUnitaryEqual(*expected, *module, numQubits);
+    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+    ASSERT_TRUE(verify(*moduleOp).succeeded());
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
   }
 
-  static void expectNormalizedQCUnitary(OwningOpRef<ModuleOp>& module,
+  static void expectNormalizedQCUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                         const std::size_t numQubits) {
-    const auto cloned = cast<ModuleOp>((*module)->clone());
+    const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
     OwningOpRef<ModuleOp> expected(cloned);
-    ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-    for (ModuleOp candidate : {expected.get(), module.get()}) {
+    for (ModuleOp candidate : {expected.get(), moduleOp.get()}) {
       PassManager pm(candidate.getContext());
       pm.addPass(createQCToQCO());
       ASSERT_TRUE(pm.run(candidate).succeeded());
       ASSERT_TRUE(verify(candidate).succeeded());
     }
-    mqt::test::expectFullUnitaryEqual(*expected, *module, numQubits);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
   }
 };
 
 } // namespace
 
 TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %c0 = arith.constant 0.25 : f64
@@ -105,10 +105,10 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = cast<func::FuncOp>(module->getBody()->front());
+  auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<qco::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
   EXPECT_EQ(phases.front()->getNextNode(),
@@ -121,7 +121,7 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        QCControlledExtractionPreservesFullUnitaryUnderOuterControl) {
-  auto module = mlir::qc::QCProgramBuilder::build(
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
         const auto outer = builder.staticQubit(0);
         const auto inner = builder.staticQubit(1);
@@ -135,13 +135,13 @@ TEST_F(GlobalPhaseNormalizationTest,
         });
         return builder.intConstant(0);
       });
-  ASSERT_TRUE(module);
-  expectNormalizedQCUnitary(module, 3);
+  ASSERT_TRUE(moduleOp);
+  expectNormalizedQCUnitary(moduleOp, 3);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
        QCInverseAndIntegralPowerPreserveFullUnitary) {
-  auto module = mlir::qc::QCProgramBuilder::build(
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
         const auto q0 = builder.staticQubit(0);
         const auto q1 = builder.staticQubit(1);
@@ -155,12 +155,12 @@ TEST_F(GlobalPhaseNormalizationTest,
         });
         return builder.intConstant(0);
       });
-  ASSERT_TRUE(module);
-  expectNormalizedQCUnitary(module, 2);
+  ASSERT_TRUE(moduleOp);
+  expectNormalizedQCUnitary(moduleOp, 2);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %a: f64, %b: f64) {
         qc.gphase(%a)
@@ -170,10 +170,10 @@ TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = cast<func::FuncOp>(module->getBody()->front());
+  auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
   auto add = phases.front().getTheta().getDefiningOp<arith::AddFOp>();
@@ -183,16 +183,16 @@ TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
 
   std::string once;
   llvm::raw_string_ostream onceStream(once);
-  module->print(onceStream);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  moduleOp->print(onceStream);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   std::string twice;
   llvm::raw_string_ostream twiceStream(twice);
-  module->print(twiceStream);
+  moduleOp->print(twiceStream);
   EXPECT_EQ(once, twice);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %condition: i1) -> !qco.qubit {
         %result = qco.if %condition args(%arg = %q) -> (!qco.qubit) {
@@ -210,10 +210,10 @@ TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto ifOp = *func.getBody().getOps<qco::IfOp>().begin();
   EXPECT_EQ(llvm::range_size(ifOp.getThenRegion().getOps<qco::GPhaseOp>()), 1);
   EXPECT_EQ(llvm::range_size(ifOp.getElseRegion().getOps<qco::GPhaseOp>()), 1);
@@ -221,7 +221,7 @@ TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest, FactorsInverseAndIntegralPower) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q0: !qco.qubit, %q1: !qco.qubit)
           -> (!qco.qubit, !qco.qubit) {
@@ -241,10 +241,10 @@ TEST_F(GlobalPhaseNormalizationTest, FactorsInverseAndIntegralPower) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto inv = *func.getBody().getOps<qco::InvOp>().begin();
   auto pow = *func.getBody().getOps<qco::PowOp>().begin();
   EXPECT_TRUE(inv.getBody()->getOps<qco::GPhaseOp>().empty());
@@ -253,7 +253,7 @@ TEST_F(GlobalPhaseNormalizationTest, FactorsInverseAndIntegralPower) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest, FractionalPowerRemainsBoundary) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %half = arith.constant 0.5 : f64
@@ -267,16 +267,16 @@ TEST_F(GlobalPhaseNormalizationTest, FractionalPowerRemainsBoundary) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto pow = *func.getBody().getOps<qco::PowOp>().begin();
   EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, DynamicPowerRemainsBoundary) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %exponent: f64) -> !qco.qubit {
         %phase = arith.constant 0.371 : f64
@@ -289,10 +289,10 @@ TEST_F(GlobalPhaseNormalizationTest, DynamicPowerRemainsBoundary) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto pow = *func.getBody().getOps<qco::PowOp>().begin();
   EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1);
   EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
@@ -301,10 +301,10 @@ TEST_F(GlobalPhaseNormalizationTest, DynamicPowerRemainsBoundary) {
 TEST_F(GlobalPhaseNormalizationTest, NonFinitePowerExponentsRemainBoundaries) {
   for (const double exponent : {std::numeric_limits<double>::quiet_NaN(),
                                 std::numeric_limits<double>::infinity()}) {
-    OwningOpRef module = ModuleOp::create(UnknownLoc::get(context.get()));
+    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
     OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(module->getBody());
-    const auto loc = module->getLoc();
+    builder.setInsertionPointToStart(moduleOp->getBody());
+    const auto loc = moduleOp->getLoc();
     const auto qubitType = qco::QubitType::get(context.get());
     auto function =
         func::FuncOp::create(builder, loc, "test",
@@ -320,15 +320,15 @@ TEST_F(GlobalPhaseNormalizationTest, NonFinitePowerExponentsRemainBoundaries) {
         });
     func::ReturnOp::create(builder, loc, pow.getOutputTarget(0));
 
-    ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-    ASSERT_TRUE(verify(*module).succeeded());
+    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+    ASSERT_TRUE(verify(*moduleOp).succeeded());
     EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1);
     EXPECT_TRUE(function.getBody().getOps<qco::GPhaseOp>().empty());
   }
 }
 
 TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%control: !qco.qubit, %target: !qco.qubit)
           -> (!qco.qubit, !qco.qubit) {
@@ -344,10 +344,10 @@ TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto ctrl = *func.getBody().getOps<qco::CtrlOp>().begin();
   EXPECT_TRUE(ctrl.getBody()->getOps<qco::GPhaseOp>().empty());
   ASSERT_EQ(llvm::range_size(func.getBody().getOps<qco::POp>()), 1);
@@ -359,7 +359,7 @@ TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        ControlledExtractionPreservesFullUnitaryUnderOuterControl) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%outer: !qco.qubit, %inner: !qco.qubit,
                       %target: !qco.qubit)
@@ -383,12 +383,12 @@ TEST_F(GlobalPhaseNormalizationTest,
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  expectNormalizedUnitary(module, 3);
+  ASSERT_TRUE(moduleOp);
+  expectNormalizedUnitary(moduleOp, 3);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, ThreeControlsPreserveFullUnitary) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q0: !qco.qubit, %q1: !qco.qubit,
                       %q2: !qco.qubit, %target: !qco.qubit)
@@ -407,10 +407,10 @@ TEST_F(GlobalPhaseNormalizationTest, ThreeControlsPreserveFullUnitary) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  expectNormalizedUnitary(module, 4);
+  ASSERT_TRUE(moduleOp);
+  expectNormalizedUnitary(moduleOp, 4);
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto controls = llvm::to_vector(func.getBody().getOps<qco::CtrlOp>());
   ASSERT_EQ(controls.size(), 2);
   EXPECT_EQ(controls.back().getNumControls(), 2);
@@ -418,7 +418,7 @@ TEST_F(GlobalPhaseNormalizationTest, ThreeControlsPreserveFullUnitary) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q0: !qco.qubit, %q1: !qco.qubit,
                       %q2: !qco.qubit, %target: !qco.qubit)
@@ -436,11 +436,11 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-  ASSERT_TRUE(verify(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto controls = llvm::to_vector(func.getBody().getOps<qco::CtrlOp>());
   ASSERT_EQ(controls.size(), 2);
   auto returnOp = cast<func::ReturnOp>(func.getBody().front().getTerminator());
@@ -451,7 +451,7 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest, MultipleTargetsPreserveFullUnitary) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%c0: !qco.qubit, %c1: !qco.qubit,
                       %t0: !qco.qubit, %t1: !qco.qubit)
@@ -470,8 +470,8 @@ TEST_F(GlobalPhaseNormalizationTest, MultipleTargetsPreserveFullUnitary) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  expectNormalizedUnitary(module, 4);
+  ASSERT_TRUE(moduleOp);
+  expectNormalizedUnitary(moduleOp, 4);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -492,10 +492,10 @@ TEST_F(GlobalPhaseNormalizationTest,
             return %out : !qco.qubit
           }
         })mlir";
-    auto module = parse(source);
-    ASSERT_TRUE(module) << exponent;
-    expectNormalizedUnitary(module, 1);
-    auto func = *module->getOps<func::FuncOp>().begin();
+    auto moduleOp = parse(source);
+    ASSERT_TRUE(moduleOp) << exponent;
+    expectNormalizedUnitary(moduleOp, 1);
+    auto func = *moduleOp->getOps<func::FuncOp>().begin();
     auto pow = *func.getBody().getOps<qco::PowOp>().begin();
     EXPECT_TRUE(pow.getBody()->getOps<qco::GPhaseOp>().empty()) << exponent;
   }
@@ -529,23 +529,23 @@ TEST_F(GlobalPhaseNormalizationTest,
       }
     }
   )mlir";
-  auto module = parse(source);
-  ASSERT_TRUE(module);
-  expectNormalizedUnitary(module, 2);
+  auto moduleOp = parse(source);
+  ASSERT_TRUE(moduleOp);
+  expectNormalizedUnitary(moduleOp, 2);
 
-  module->walk([&](qco::InvOp inv) {
+  moduleOp->walk([&](qco::InvOp inv) {
     EXPECT_TRUE(inv.getBody()->getOps<qco::GPhaseOp>().empty());
   });
-  module->walk([&](qco::PowOp pow) {
+  moduleOp->walk([&](qco::PowOp pow) {
     EXPECT_TRUE(pow.getBody()->getOps<qco::GPhaseOp>().empty());
   });
 }
 
 TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
-  OwningOpRef module = ModuleOp::create(UnknownLoc::get(context.get()));
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(module->getBody());
-  const auto loc = module->getLoc();
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
   const auto qubitType = qco::QubitType::get(context.get());
   auto function = func::FuncOp::create(
       builder, loc, "test", builder.getFunctionType({qubitType}, {qubitType}));
@@ -559,7 +559,7 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
         return out;
       });
   func::ReturnOp::create(builder, loc, ctrl.getOutputTarget(0));
-  expectNormalizedUnitary(module, 1);
+  expectNormalizedUnitary(moduleOp, 1);
 
   EXPECT_TRUE(ctrl.getBody()->getOps<qco::GPhaseOp>().empty());
   EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
@@ -567,7 +567,7 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        MemoryDependentAngleRemainsInsideModifier) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %angles: memref<1xf64>)
           -> !qco.qubit {
@@ -582,18 +582,18 @@ TEST_F(GlobalPhaseNormalizationTest,
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-  ASSERT_TRUE(verify(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto inv = *func.getBody().getOps<qco::InvOp>().begin();
   EXPECT_EQ(llvm::range_size(inv.getBody()->getOps<qco::GPhaseOp>()), 1);
   EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
 }
 
 TEST_F(GlobalPhaseNormalizationTest, CFGBlocksRemainIndependentScopes) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%condition: i1) {
         cf.cond_br %condition, ^then, ^else
@@ -612,11 +612,11 @@ TEST_F(GlobalPhaseNormalizationTest, CFGBlocksRemainIndependentScopes) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-  ASSERT_TRUE(verify(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   SmallVector<Block*> blocks;
   for (auto& block : func.getBlocks()) {
     blocks.push_back(&block);
@@ -629,7 +629,7 @@ TEST_F(GlobalPhaseNormalizationTest, CFGBlocksRemainIndependentScopes) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest, FunctionsRemainIndependentScopes) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @first() {
         %a = arith.constant 0.25 : f64
@@ -647,18 +647,18 @@ TEST_F(GlobalPhaseNormalizationTest, FunctionsRemainIndependentScopes) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
-  for (auto func : module->getOps<func::FuncOp>()) {
+  for (auto func : moduleOp->getOps<func::FuncOp>()) {
     EXPECT_EQ(llvm::range_size(func.getBody().getOps<qco::GPhaseOp>()), 1);
   }
-  EXPECT_TRUE(module->getBody()->getOps<qco::GPhaseOp>().empty());
+  EXPECT_TRUE(moduleOp->getBody()->getOps<qco::GPhaseOp>().empty());
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
        IndexSwitchRegionsRemainIndependentScopes) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%index: index, %q: !qco.qubit) -> !qco.qubit {
         %out = qco.index_switch %index -> !qco.qubit
@@ -678,11 +678,11 @@ TEST_F(GlobalPhaseNormalizationTest,
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-  ASSERT_TRUE(verify(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto switchOp = *func.getBody().getOps<qco::IndexSwitchOp>().begin();
   for (auto& region : switchOp->getRegions()) {
     EXPECT_EQ(llvm::range_size(region.getOps<qco::GPhaseOp>()), 1);
@@ -691,7 +691,7 @@ TEST_F(GlobalPhaseNormalizationTest,
 }
 
 TEST_F(GlobalPhaseNormalizationTest, SCFLoopRegionRemainsAnIndependentScope) {
-  auto module = parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @test() {
         %lb = arith.constant 0 : index
@@ -707,11 +707,11 @@ TEST_F(GlobalPhaseNormalizationTest, SCFLoopRegionRemainsAnIndependentScope) {
       }
     }
   )mlir");
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-  ASSERT_TRUE(verify(*module).succeeded());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
 
-  auto func = *module->getOps<func::FuncOp>().begin();
+  auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto loop = *func.getBody().getOps<scf::ForOp>().begin();
   EXPECT_EQ(llvm::range_size(loop.getBody()->getOps<qco::GPhaseOp>()), 1);
   EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
@@ -719,10 +719,10 @@ TEST_F(GlobalPhaseNormalizationTest, SCFLoopRegionRemainsAnIndependentScope) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        ExactSpecialConstantsCancelWithoutTolerance) {
-  OwningOpRef module = ModuleOp::create(UnknownLoc::get(context.get()));
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(module->getBody());
-  const auto loc = module->getLoc();
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
   auto function = func::FuncOp::create(builder, loc, "test",
                                        builder.getFunctionType({}, {}));
   auto* entry = function.addEntryBlock();
@@ -734,15 +734,15 @@ TEST_F(GlobalPhaseNormalizationTest,
   }
   func::ReturnOp::create(builder, loc);
 
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   EXPECT_TRUE(function.getBody().getOps<qco::GPhaseOp>().empty());
 }
 
 TEST_F(GlobalPhaseNormalizationTest, NonFiniteConstantsRemainExplicit) {
-  OwningOpRef module = ModuleOp::create(UnknownLoc::get(context.get()));
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(module->getBody());
-  const auto loc = module->getLoc();
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
   auto function = func::FuncOp::create(builder, loc, "test",
                                        builder.getFunctionType({}, {}));
   auto* entry = function.addEntryBlock();
@@ -757,8 +757,8 @@ TEST_F(GlobalPhaseNormalizationTest, NonFiniteConstantsRemainExplicit) {
                                 std::numeric_limits<double>::infinity()));
   func::ReturnOp::create(builder, loc);
 
-  ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
-  ASSERT_TRUE(verify(*module).succeeded());
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
   auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
   EXPECT_TRUE(phases.front().getTheta().getDefiningOp<arith::AddFOp>());
@@ -772,10 +772,10 @@ TEST_F(GlobalPhaseNormalizationTest, ScalesLinearlyAcrossLargePhaseScopes) {
 
   for (const auto size : sizes) {
     SCOPED_TRACE(size);
-    OwningOpRef module = ModuleOp::create(UnknownLoc::get(context.get()));
+    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
     OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(module->getBody());
-    const auto loc = module->getLoc();
+    builder.setInsertionPointToStart(moduleOp->getBody());
+    const auto loc = moduleOp->getLoc();
     auto function = func::FuncOp::create(builder, loc, "test",
                                          builder.getFunctionType({}, {}));
     auto* entry = function.addEntryBlock();
@@ -787,7 +787,7 @@ TEST_F(GlobalPhaseNormalizationTest, ScalesLinearlyAcrossLargePhaseScopes) {
     func::ReturnOp::create(builder, loc);
 
     const auto start = std::chrono::steady_clock::now();
-    ASSERT_TRUE(quantum::normalizeGlobalPhases(*module).succeeded());
+    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
     durations.emplace_back(std::chrono::steady_clock::now() - start);
     EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
   }

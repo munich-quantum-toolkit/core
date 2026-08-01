@@ -85,28 +85,28 @@ static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
-  if (norm == 0.0) {
+  if (std::abs(norm) < TOLERANCE) {
     // pow(r) folds to the identity: thread the input qubits to the results.
     rewriter.replaceOp(op, op.getQubitsIn());
     return success();
   }
-  if (std::abs(norm) == pi) {
+  if (std::abs(std::abs(norm) - pi) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<ZOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (norm == pi / 2.0) {
+  if (std::abs(norm - (pi / 2.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<SOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (norm == -pi / 2.0) {
+  if (std::abs(norm + (pi / 2.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<SdgOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (norm == pi / 4.0) {
+  if (std::abs(norm - (pi / 4.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<TOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (norm == -pi / 4.0) {
+  if (std::abs(norm + (pi / 4.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<TdgOp>(op, op.getInputTarget(0));
     return success();
   }
@@ -126,7 +126,7 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || *exponent != 1.0) {
+    if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
       return failure();
     }
 
@@ -142,7 +142,7 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || *exponent != 0.0) {
+    if (!exponent || std::abs(*exponent) > TOLERANCE) {
       return failure();
     }
 
@@ -388,11 +388,11 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(1/2) x => sx      (X^(1/2) = SX exactly)
             // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
             .Case<XOp>([&](auto) {
-              if (r == 0.5) {
+              if (std::abs(r - 0.5) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXOp>(op, op.getInputTarget(0));
                 return success();
               }
-              if (r == -0.5) {
+              if (std::abs(r + 0.5) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXdgOp>(op, op.getInputTarget(0));
                 return success();
               }
@@ -484,7 +484,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sx } => gphase(r*π/4); rx(r*π/2)
             // pow(±2) sx => x
             .Case<SXOp>([&](auto) {
-              if (std::abs(r) == 2.0) {
+              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
                 return success();
               }
@@ -501,7 +501,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sxdg } => gphase(-r*π/4); rx(-r*π/2)
             // pow(±2) sxdg => x
             .Case<SXdgOp>([&](auto) {
-              if (std::abs(r) == 2.0) {
+              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
                 return success();
               }
