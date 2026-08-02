@@ -180,12 +180,12 @@ TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
     builder.scfIf(true, [&] { builder.z(builder.loadQubit(reg, index)); });
   });
 
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   std::size_t qubitLoads = 0;
-  module->walk([&](memref::LoadOp load) {
+  moduleOp->walk([&](memref::LoadOp load) {
     if (isa<QubitType>(load.getMemRefType().getElementType())) {
       ++qubitLoads;
       EXPECT_EQ(load.getMemref(), reg);
@@ -200,20 +200,20 @@ TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
   builder.initialize();
   const auto reg = builder.allocQubitRegisterStorage(4);
 
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t allocations = 0;
   size_t qubitLoads = 0;
-  module->walk([&](memref::AllocOp allocation) {
+  moduleOp->walk([&](memref::AllocOp allocation) {
     if (isa<QubitType>(allocation.getType().getElementType())) {
       ++allocations;
       EXPECT_EQ(allocation.getResult(), reg);
       EXPECT_EQ(allocation.getType().getShape(), ArrayRef<int64_t>{4});
     }
   });
-  module->walk([&](memref::LoadOp load) {
+  moduleOp->walk([&](memref::LoadOp load) {
     qubitLoads += isa<QubitType>(load.getMemRefType().getElementType());
   });
   EXPECT_EQ(allocations, 1U);
@@ -353,9 +353,9 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
                    << "modifier=" << modifierName(modifier).str()
                    << ", operation="
                    << forbiddenOperationName(forbiddenOperation).str());
-      auto module = buildInvalidNestedModifierProgram(context.get(), modifier,
-                                                      forbiddenOperation);
-      ASSERT_TRUE(module);
+      auto moduleOp = buildInvalidNestedModifierProgram(context.get(), modifier,
+                                                        forbiddenOperation);
+      ASSERT_TRUE(moduleOp);
 
       bool sawExpectedDiagnostic = false;
       ScopedDiagnosticHandler handler(
@@ -366,7 +366,67 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
                               "operations or modify a quantum register");
             return success();
           });
-      EXPECT_TRUE(failed(verify(*module)));
+      EXPECT_TRUE(failed(verify(*moduleOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
+  }
+}
+
+static OwningOpRef<ModuleOp>
+buildInvalidModifierCaptureProgram(MLIRContext* context,
+                                   const VerifierModifierKind modifier,
+                                   const bool nested) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto captured = builder.allocQubit();
+  const auto control = builder.allocQubit();
+  const auto modifierBody = [&](const Value) {
+    if (nested) {
+      builder.scfIf(true, [&] { builder.x(captured); });
+      return;
+    }
+    builder.x(captured);
+  };
+
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case VerifierModifierKind::Ctrl:
+    builder.ctrl(control, target, modifierBody);
+    break;
+  case VerifierModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    for (const bool nested : {false, true}) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", nested=" << nested);
+      auto moduleOp =
+          buildInvalidModifierCaptureProgram(context.get(), modifier, nested);
+      ASSERT_TRUE(moduleOp);
+
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not capture qubits from above; use "
+                              "only its aliased block arguments");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(*moduleOp)));
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
   }

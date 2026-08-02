@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add storage-only qubit-register allocation and alias-safe point-of-use
+  access in QC-to-QCO and typed OpenQASM lowering ([#1987]) ([**@burgholzer**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
@@ -735,6 +737,7 @@ for previous changelogs._
 [#1994]: https://github.com/munich-quantum-toolkit/core/pull/1994
 [#1993]: https://github.com/munich-quantum-toolkit/core/pull/1993
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
+[#1987]: https://github.com/munich-quantum-toolkit/core/pull/1987
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983

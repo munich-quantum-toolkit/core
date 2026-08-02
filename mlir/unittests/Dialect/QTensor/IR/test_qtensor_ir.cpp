@@ -290,9 +290,9 @@ static OwningOpRef<ModuleOp>
 buildAdjacentInsertExtractProgram(MLIRContext* context,
                                   const AdjacentIndexKind indexKind) {
   const auto loc = UnknownLoc::get(context);
-  auto module = ModuleOp::create(loc);
+  auto moduleOp = ModuleOp::create(loc);
   ImplicitLocOpBuilder b(loc, context);
-  b.setInsertionPointToStart(module.getBody());
+  b.setInsertionPointToStart(moduleOp.getBody());
 
   const auto indexType = b.getIndexType();
   const auto functionType =
@@ -328,13 +328,13 @@ buildAdjacentInsertExtractProgram(MLIRContext* context,
   qtensor::DeallocOp::create(b, finalTensor);
   func::ReturnOp::create(b);
 
-  return module;
+  return moduleOp;
 }
 
-static LogicalResult canonicalize(ModuleOp module) {
-  PassManager manager(module.getContext());
+static LogicalResult canonicalize(ModuleOp moduleOp) {
+  PassManager manager(moduleOp.getContext());
   manager.addPass(createCanonicalizerPass());
-  return manager.run(module);
+  return manager.run(moduleOp);
 }
 
 static OwningOpRef<ModuleOp>
@@ -414,36 +414,36 @@ buildResetWithSameIndexInsertProgram(MLIRContext* context,
 namespace {
 
 TEST_F(QTensorTest, AdjacentInsertExtractFoldsEqualConstants) {
-  auto module = buildAdjacentInsertExtractProgram(
+  auto moduleOp = buildAdjacentInsertExtractProgram(
       context.get(), AdjacentIndexKind::EqualConstants);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(canonicalize(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(countOps<ExtractOp>(*module), 1U);
-  EXPECT_EQ(countOps<InsertOp>(*module), 1U);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 1U);
 }
 
 TEST_F(QTensorTest, AdjacentInsertExtractFoldsIdenticalDynamicValue) {
-  auto module = buildAdjacentInsertExtractProgram(
+  auto moduleOp = buildAdjacentInsertExtractProgram(
       context.get(), AdjacentIndexKind::IdenticalDynamicValue);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(canonicalize(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(countOps<ExtractOp>(*module), 1U);
-  EXPECT_EQ(countOps<InsertOp>(*module), 1U);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 1U);
 }
 
 TEST_F(QTensorTest, AdjacentInsertExtractKeepsPotentialDynamicAlias) {
-  auto module = buildAdjacentInsertExtractProgram(
+  auto moduleOp = buildAdjacentInsertExtractProgram(
       context.get(), AdjacentIndexKind::PotentiallyAliasingDynamicValues);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(canonicalize(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(countOps<ExtractOp>(*module), 2U);
-  EXPECT_EQ(countOps<InsertOp>(*module), 2U);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 2U);
+  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 2U);
 }
 
 TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {

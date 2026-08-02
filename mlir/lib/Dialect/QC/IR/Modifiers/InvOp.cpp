@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ModifierUtils.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -16,7 +17,6 @@
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -394,13 +394,7 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
 }
 
 LogicalResult InvOp::verify() {
-  if (utils::containsOperationOfType<AllocOp, DeallocOp, MeasureOp, ResetOp,
-                                     memref::LoadOp, memref::StoreOp>(
-          *getBody())) {
-    return emitOpError("body must not contain non-unitary quantum operations "
-                       "or modify a quantum register");
-  }
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,

@@ -538,9 +538,22 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
   return success(!distinctResult.wasInterrupted());
 }
 
-/** @brief Rejects forbidden operations recursively nested in QC modifiers. */
+/** @brief Rejects unsupported operations and qubit captures in QC modifiers. */
 [[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
+    if (isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(operation)) {
+      SetVector<Value> captures;
+      getUsedValuesDefinedAbove(operation->getRegions(), captures);
+      if (llvm::any_of(captures, [](const Value value) {
+            return isa<qc::QubitType>(value.getType());
+          })) {
+        operation->emitOpError(
+            "body must not capture qubits from above; use only its aliased "
+            "block arguments");
+        return WalkResult::interrupt();
+      }
+    }
+
     if (!isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
              memref::LoadOp, memref::StoreOp>(operation)) {
       return WalkResult::advance();
@@ -1751,7 +1764,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto* moduleOp = getOperation();
 
     // Create state object to track qubit value flow
     LoweringState state;
@@ -1760,14 +1773,14 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    if (failed(validateModifierBodies(module)) ||
-        failed(collectRegisterAccesses(module, state))) {
+    if (failed(validateModifierBodies(moduleOp)) ||
+        failed(collectRegisterAccesses(moduleOp, state))) {
       signalPassFailure();
       return;
     }
 
     // Get the quantum values captured by structured control-flow regions.
-    collectStructuredCaptures(module, state);
+    collectStructuredCaptures(moduleOp, state);
 
     // Configure conversion target
     target.addIllegalDialect<QCDialect>();
@@ -1846,7 +1859,7 @@ protected:
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Convert structured parents and their contents first.
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
       return;
     }
@@ -1884,7 +1897,7 @@ protected:
     RewritePatternSet terminatorPatterns(context);
     terminatorPatterns.add<ConvertSCFYieldOp, ConvertSCFConditionOp>(
         typeConverter, context, &state);
-    if (failed(applyPartialConversion(module, terminatorTarget,
+    if (failed(applyPartialConversion(moduleOp, terminatorTarget,
                                       std::move(terminatorPatterns)))) {
       signalPassFailure();
     }

@@ -884,10 +884,10 @@ static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   return {c, out};
 }
 
-static LogicalResult convertQCToQCO(ModuleOp module) {
-  PassManager manager(module.getContext());
+static LogicalResult convertQCToQCO(ModuleOp moduleOp) {
+  PassManager manager(moduleOp.getContext());
   manager.addPass(createQCToQCO());
-  return manager.run(module);
+  return manager.run(moduleOp);
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {

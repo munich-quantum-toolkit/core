@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ModifierUtils.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -15,7 +16,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -226,11 +226,8 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult CtrlOp::verify() {
-  if (utils::containsOperationOfType<AllocOp, DeallocOp, MeasureOp, ResetOp,
-                                     memref::LoadOp, memref::StoreOp>(
-          *getBody())) {
-    return emitOpError("body must not contain non-unitary quantum operations "
-                       "or modify a quantum register");
+  if (failed(detail::verifyModifierBody(getOperation(), *getBody()))) {
+    return failure();
   }
 
   SmallPtrSet<Value, 4> uniqueQubits;
