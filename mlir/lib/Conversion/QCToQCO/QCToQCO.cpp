@@ -454,16 +454,49 @@ static void commitQubits(LoweringState& state, Operation* anchor,
 /** @brief Collects stable register identifiers and load provenance. */
 [[nodiscard]] static LogicalResult
 collectRegisterAccesses(Operation* root, LoweringState& state) {
-  root->walk([&](memref::AllocOp op) {
-    if (isa<qc::QubitType>(op.getType().getElementType())) {
-      const auto reg = state.registerIds.size();
-      state.registerIds.try_emplace(op.getResult(), reg);
+  const auto allocationResult = root->walk([&](memref::AllocOp op) {
+    if (!isa<qc::QubitType>(op.getType().getElementType())) {
+      return WalkResult::advance();
     }
+
+    if (op.getType().getRank() != 1) {
+      op.emitOpError("requires one-dimensional qubit register storage");
+      return WalkResult::interrupt();
+    }
+
+    const auto reg = state.registerIds.size();
+    state.registerIds.try_emplace(op.getResult(), reg);
+    return WalkResult::advance();
   });
+  if (allocationResult.wasInterrupted()) {
+    return failure();
+  }
+
+  const auto registerUseResult = root->walk([&](Operation* operation) {
+    for (const auto operand : operation->getOperands()) {
+      const auto type = dyn_cast<MemRefType>(operand.getType());
+      if (!type || !isa<qc::QubitType>(type.getElementType()) ||
+          state.registerIds.contains(operand)) {
+        continue;
+      }
+
+      operation->emitOpError("requires a directly allocated qubit register");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (registerUseResult.wasInterrupted()) {
+    return failure();
+  }
 
   const auto result = root->walk([&](memref::LoadOp op) {
     if (!isa<qc::QubitType>(op.getMemRefType().getElementType())) {
       return WalkResult::advance();
+    }
+
+    if (op.getMemRefType().getRank() != 1 || op.getIndices().size() != 1) {
+      op.emitOpError("requires one-dimensional qubit register storage");
+      return WalkResult::interrupt();
     }
 
     const auto regIt = state.registerIds.find(op.getMemref());

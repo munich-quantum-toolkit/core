@@ -615,6 +615,69 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
+TEST_F(QCToQCORegressionTest, PreflightRejectsNonOneDimensionalQubitRegisters) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<!qc.qubit>
+    %q = memref.load %reg[] : memref<!qc.qubit>
+    qc.x %q : !qc.qubit
+    memref.dealloc %reg : memref<!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires one-dimensional qubit register storage");
+    return success();
+  });
+
+  PassManager pm(&context);
+  pm.enableVerifier(false);
+  pm.addPass(createQCToQCO());
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsNonAllocatedQubitRegisterBlockArguments) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%reg: memref<1x!qc.qubit>)
+      attributes {passthrough = ["entry_point"]} {
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires a directly allocated qubit register");
+    return success();
+  });
+
+  PassManager pm(&context);
+  pm.enableVerifier(false);
+  pm.addPass(createQCToQCO());
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
 TEST_F(QCToQCORegressionTest, CapturesQubitsUsedByPowInsideFor) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
