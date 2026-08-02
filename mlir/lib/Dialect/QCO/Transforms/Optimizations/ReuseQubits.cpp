@@ -13,7 +13,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Analysis/SliceAnalysis.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>

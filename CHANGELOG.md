@@ -70,7 +70,7 @@ releases may include breaking changes.
   [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
-  ([**@DRovara**])
+  ([**@DRovara**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
