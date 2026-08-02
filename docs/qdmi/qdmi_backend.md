@@ -33,7 +33,7 @@ uv pip install "mqt-core[qiskit]"
 :sync: pip
 
 ```console
-(.venv) $ python -m pip install "mqt-core[qiskit]"
+python -m pip install "mqt-core[qiskit]"
 ```
 
 :::
