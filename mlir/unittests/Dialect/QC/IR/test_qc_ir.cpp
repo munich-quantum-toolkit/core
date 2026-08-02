@@ -18,17 +18,23 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -230,6 +236,140 @@ TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getQubits().front(), qubit);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+namespace {
+
+enum class VerifierModifierKind : std::uint8_t { Inv, Ctrl, Pow };
+enum class ForbiddenModifierBodyOp : std::uint8_t {
+  Alloc,
+  Dealloc,
+  Measure,
+  Reset,
+  Load,
+  Store
+};
+
+} // namespace
+
+static StringRef modifierName(const VerifierModifierKind kind) {
+  switch (kind) {
+  case VerifierModifierKind::Inv:
+    return "inv";
+  case VerifierModifierKind::Ctrl:
+    return "ctrl";
+  case VerifierModifierKind::Pow:
+    return "pow";
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
+  switch (kind) {
+  case ForbiddenModifierBodyOp::Alloc:
+    return "alloc";
+  case ForbiddenModifierBodyOp::Dealloc:
+    return "dealloc";
+  case ForbiddenModifierBodyOp::Measure:
+    return "measure";
+  case ForbiddenModifierBodyOp::Reset:
+    return "reset";
+  case ForbiddenModifierBodyOp::Load:
+    return "load";
+  case ForbiddenModifierBodyOp::Store:
+    return "store";
+  }
+  llvm_unreachable("unknown forbidden modifier operation");
+}
+
+static void emitForbiddenModifierBodyOperation(
+    QCProgramBuilder& builder, const ForbiddenModifierBodyOp kind,
+    const Value argument, const Value reg, const Value index) {
+  switch (kind) {
+  case ForbiddenModifierBodyOp::Alloc:
+    AllocOp::create(builder);
+    return;
+  case ForbiddenModifierBodyOp::Dealloc:
+    DeallocOp::create(builder, argument);
+    return;
+  case ForbiddenModifierBodyOp::Measure:
+    MeasureOp::create(builder, argument);
+    return;
+  case ForbiddenModifierBodyOp::Reset:
+    ResetOp::create(builder, argument);
+    return;
+  case ForbiddenModifierBodyOp::Load:
+    memref::LoadOp::create(builder, reg, index);
+    return;
+  case ForbiddenModifierBodyOp::Store:
+    memref::StoreOp::create(builder, argument, reg, index);
+    return;
+  }
+  llvm_unreachable("unknown forbidden modifier operation");
+}
+
+static OwningOpRef<ModuleOp> buildInvalidNestedModifierProgram(
+    MLIRContext* context, const VerifierModifierKind modifier,
+    const ForbiddenModifierBodyOp forbiddenOperation) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto control = builder.allocQubit();
+  const auto reg = builder.allocQubitRegisterStorage(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto modifierBody = [&](const Value argument) {
+    builder.scfIf(true, [&] {
+      emitForbiddenModifierBodyOperation(builder, forbiddenOperation, argument,
+                                         reg, index.getResult());
+    });
+  };
+
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case VerifierModifierKind::Ctrl:
+    builder.ctrl(control, target, modifierBody);
+    break;
+  case VerifierModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+  constexpr std::array forbiddenOperations{
+      ForbiddenModifierBodyOp::Alloc,   ForbiddenModifierBodyOp::Dealloc,
+      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::Reset,
+      ForbiddenModifierBodyOp::Load,    ForbiddenModifierBodyOp::Store};
+
+  for (const auto modifier : modifiers) {
+    for (const auto forbiddenOperation : forbiddenOperations) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", operation="
+                   << forbiddenOperationName(forbiddenOperation).str());
+      auto module = buildInvalidNestedModifierProgram(context.get(), modifier,
+                                                      forbiddenOperation);
+      ASSERT_TRUE(module);
+
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not contain non-unitary quantum "
+                              "operations or modify a quantum register");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(*module)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
+  }
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp

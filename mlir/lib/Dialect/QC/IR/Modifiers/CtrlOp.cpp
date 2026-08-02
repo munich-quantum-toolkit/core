@@ -226,10 +226,9 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult CtrlOp::verify() {
-  if (llvm::any_of(*getBody(), [](Operation& op) {
-        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
-                   memref::StoreOp>(op);
-      })) {
+  if (utils::containsOperationOfType<AllocOp, DeallocOp, MeasureOp, ResetOp,
+                                     memref::LoadOp, memref::StoreOp>(
+          *getBody())) {
     return emitOpError("body must not contain non-unitary quantum operations "
                        "or modify a quantum register");
   }

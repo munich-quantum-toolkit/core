@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -395,10 +394,9 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
 }
 
 LogicalResult InvOp::verify() {
-  if (llvm::any_of(*getBody(), [](Operation& op) {
-        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
-                   memref::StoreOp>(op);
-      })) {
+  if (utils::containsOperationOfType<AllocOp, DeallocOp, MeasureOp, ResetOp,
+                                     memref::LoadOp, memref::StoreOp>(
+          *getBody())) {
     return emitOpError("body must not contain non-unitary quantum operations "
                        "or modify a quantum register");
   }

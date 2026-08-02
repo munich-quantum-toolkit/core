@@ -113,15 +113,6 @@ enum class AllocationMode : std::uint8_t {
  * - %q2 after the X gate
  */
 struct LoweringState {
-  struct ModifierFrame {
-    /// QC qubits yielded from the current modifier region, in yield order.
-    SmallVector<Value> qcQubits;
-
-    /// Latest QCO SSA values for QC qubits that are remapped inside the
-    /// modifier region.
-    DenseMap<Value, Value> currentQubits;
-  };
-
   struct StructuredValues {
     SmallVector<Value> qubits;
     SmallVector<RegisterId> registers;
@@ -144,6 +135,10 @@ struct LoweringState {
   /// Transient provenance for register-backed QC qubit references.
   DenseMap<Value, RegisterAccess> registerAccesses;
 
+  /// Transient canonical keys for modifier block arguments replaced by
+  /// dialect-conversion signature conversion.
+  DenseMap<Value, Value> convertedQubitAliases;
+
   /// Map from an operation to its used QC qubits inside its regions
   DenseMap<Operation*, SetVector<Value>> regionQubitMap;
 
@@ -155,8 +150,8 @@ struct LoweringState {
   /// remain legal.
   DenseMap<Operation*, StructuredValues> structuredValues;
 
-  /// Stack of active modifier regions
-  SmallVector<ModifierFrame> modifierFrames;
+  /// Qubit keys yielded by converted modifier regions, in yield order.
+  DenseMap<Region*, SmallVector<Value>> modifierRegionQubits;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -207,18 +202,6 @@ private:
 };
 } // namespace
 
-/** @brief Returns whether lowering currently processes a modifier body. */
-[[nodiscard]] static bool isInsideModifier(const LoweringState& state) {
-  return !state.modifierFrames.empty();
-}
-
-/** @brief Returns the active modifier frame. */
-[[nodiscard]] static LoweringState::ModifierFrame&
-currentModifierFrame(LoweringState& state) {
-  assert(isInsideModifier(state) && "expected active modifier frame");
-  return state.modifierFrames.back();
-}
-
 /** @brief Resolves the stable identifier for a source QC register value. */
 [[nodiscard]] static RegisterId lookupRegisterId(const LoweringState& state,
                                                  const Value memref) {
@@ -250,17 +233,21 @@ findRegionLocalMap(DenseMap<Region*, DenseMap<Key, Value>>& map,
   return {nullptr, nullptr};
 }
 
+/** @brief Canonicalizes a source qubit key after block signature conversion. */
+[[nodiscard]] static Value canonicalQubitKey(const LoweringState& state,
+                                             Value qubit) {
+  for (auto alias = state.convertedQubitAliases.find(qubit);
+       alias != state.convertedQubitAliases.end();
+       alias = state.convertedQubitAliases.find(qubit)) {
+    qubit = alias->second;
+  }
+  return qubit;
+}
+
 /** @brief Resolves the latest QCO SSA value for a QC qubit reference. */
 [[nodiscard]] static Value lookupMappedQubit(LoweringState& state,
                                              Operation* anchor, Value qcQubit) {
-  if (isInsideModifier(state)) {
-    auto& frame = currentModifierFrame(state);
-    if (auto it = frame.currentQubits.find(qcQubit);
-        it != frame.currentQubits.end()) {
-      return it->second;
-    }
-  }
-
+  qcQubit = canonicalQubitKey(state, qcQubit);
   const auto& [qubitMap, qubitValue] =
       findRegionLocalMap(state.qubitMap, anchor, qcQubit);
   assert(qubitMap != nullptr && qubitValue != nullptr && "QC qubit not found");
@@ -281,17 +268,7 @@ findRegionLocalMap(DenseMap<Region*, DenseMap<Key, Value>>& map,
 /** @brief Updates the latest QCO SSA value for a QC qubit reference. */
 static void assignMappedQubit(LoweringState& state, Operation* anchor,
                               Value qcQubit, Value qcoQubit) {
-  if (isInsideModifier(state)) {
-    auto& frame = currentModifierFrame(state);
-    if (auto it = frame.currentQubits.find(qcQubit);
-        it != frame.currentQubits.end()) {
-      it->second = qcoQubit;
-      return;
-    }
-    frame.currentQubits.try_emplace(qcQubit, qcoQubit);
-    return;
-  }
-
+  qcQubit = canonicalQubitKey(state, qcQubit);
   auto [qubitMap, qubitValue] =
       findRegionLocalMap(state.qubitMap, anchor, qcQubit);
   if (qubitValue != nullptr) {
@@ -363,22 +340,6 @@ static void assignMappedTensors(LoweringState& state, Operation* anchor,
   }
 }
 
-/** @brief Pushes a new modifier frame seeded with aliased target values. */
-static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
-                              ValueRange qcoTargets) {
-  auto& frame = state.modifierFrames.emplace_back();
-  llvm::append_range(frame.qcQubits, qcTargets);
-  for (auto [qcTarget, qcoTarget] : llvm::zip_equal(qcTargets, qcoTargets)) {
-    frame.currentQubits.try_emplace(qcTarget, qcoTarget);
-  }
-}
-
-/** @brief Pops the active modifier frame after lowering its yield. */
-static void popModifierFrame(LoweringState& state) {
-  assert(isInsideModifier(state) && "expected active modifier frame");
-  state.modifierFrames.pop_back();
-}
-
 /** @brief Returns the structured parent whose quantum values a terminator
  * yields. */
 [[nodiscard]] static Operation* structuredValueOwner(Operation* operation) {
@@ -396,7 +357,7 @@ static void seedRegionMappings(LoweringState& state, Region& region,
                                ValueRange qcoQubits, ValueRange tensors) {
   auto& qubitMap = state.qubitMap[&region];
   for (auto [qcQubit, qcoQubit] : llvm::zip_equal(qcQubits, qcoQubits)) {
-    qubitMap[qcQubit] = qcoQubit;
+    qubitMap[canonicalQubitKey(state, qcQubit)] = qcoQubit;
   }
   auto& tensorMap = state.tensorMap[&region];
   for (auto [reg, tensor] : llvm::zip_equal(registers, tensors)) {
@@ -577,6 +538,29 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
   return success(!distinctResult.wasInterrupted());
 }
 
+/** @brief Rejects forbidden operations recursively nested in QC modifiers. */
+[[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
+  const auto result = root->walk([&](Operation* operation) {
+    if (!isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
+             memref::LoadOp, memref::StoreOp>(operation)) {
+      return WalkResult::advance();
+    }
+
+    for (auto* parent = operation->getParentOp(); parent != nullptr;
+         parent = parent->getParentOp()) {
+      if (!isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(parent)) {
+        continue;
+      }
+      parent->emitOpError(
+          "body must not contain non-unitary quantum operations or modify a "
+          "quantum register");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return success(!result.wasInterrupted());
+}
+
 /** @brief Collects values captured by supported structured control flow. */
 static void collectStructuredCaptures(Operation* root, LoweringState& state) {
   root->walk([&](Operation* operation) {
@@ -590,6 +574,8 @@ static void collectStructuredCaptures(Operation* root, LoweringState& state) {
 
     auto& qubits = state.regionQubitMap[operation];
     auto& registers = state.regionRegisterMap[operation];
+    qubits.clear();
+    registers.clear();
     for (const auto value : captures) {
       if (const auto access = state.registerAccesses.find(value);
           access != state.registerAccesses.end()) {
@@ -606,6 +592,50 @@ static void collectStructuredCaptures(Operation* root, LoweringState& state) {
       }
     }
   });
+}
+
+/**
+ * @brief Canonicalizes preserved SCF capture keys after signature conversion.
+ */
+static void remapStructuredCaptures(Operation* root, LoweringState& state) {
+  root->walk([&](Operation* operation) {
+    if (!isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
+            operation)) {
+      return;
+    }
+
+    const auto captures = state.regionQubitMap.find(operation);
+    if (captures == state.regionQubitMap.end()) {
+      return;
+    }
+
+    SetVector<Value> remapped;
+    for (const auto qubit : captures->second) {
+      remapped.insert(canonicalQubitKey(state, qubit));
+    }
+    captures->second = std::move(remapped);
+  });
+}
+
+/** @brief Seeds region-owned modifier state after signature conversion. */
+static void initializeModifierRegionState(Operation* modifier,
+                                          ValueRange sourceArguments,
+                                          LoweringState& state) {
+  auto& region = modifier->getRegion(0);
+  const auto convertedArguments = region.front().getArguments();
+  for (auto [source, converted] :
+       llvm::zip_equal(sourceArguments, convertedArguments)) {
+    state.convertedQubitAliases[source] = converted;
+  }
+  state.modifierRegionQubits[&region] =
+      SmallVector<Value>(convertedArguments.begin(), convertedArguments.end());
+  seedRegionMappings(state, region, convertedArguments, {}, convertedArguments,
+                     {});
+
+  // Signature conversion replaces modifier block arguments. Refresh nested
+  // structured captures so they refer to the converted arguments owned by the
+  // moved region rather than source conversion keys.
+  remapStructuredCaptures(modifier, state);
 }
 
 namespace {
@@ -1117,7 +1147,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     llvm::append_range(qcoQubits, qcoOp.getTargetsOut());
     commitQubits(state, operation, qcQubits, qcoQubits, materialized, rewriter);
 
-    auto qcArgs = op.getRegion().front().getArguments();
+    const SmallVector<Value> sourceArguments(
+        op.getRegion().front().getArguments());
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
@@ -1125,7 +1156,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
       return failure();
     }
 
-    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
+    initializeModifierRegionState(qcoOp, sourceArguments, state);
 
     rewriter.eraseOp(op);
     return success();
@@ -1167,7 +1198,8 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     commitQubits(state, operation, qcTargets, qcoOp.getOutputTargets(),
                  materialized, rewriter);
 
-    auto qcArgs = op.getRegion().front().getArguments();
+    const SmallVector<Value> sourceArguments(
+        op.getRegion().front().getArguments());
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
@@ -1175,7 +1207,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
       return failure();
     }
 
-    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
+    initializeModifierRegionState(qcoOp, sourceArguments, state);
 
     rewriter.eraseOp(op);
     return success();
@@ -1218,7 +1250,8 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
     commitQubits(state, operation, qcTargets, qcoOp.getQubitsOut(),
                  materialized, rewriter);
 
-    auto qcArgs = op.getRegion().front().getArguments();
+    const SmallVector<Value> sourceArguments(
+        op.getRegion().front().getArguments());
 
     // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
@@ -1226,7 +1259,7 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
       return failure();
     }
 
-    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
+    initializeModifierRegionState(qcoOp, sourceArguments, state);
 
     rewriter.eraseOp(op);
     return success();
@@ -1253,10 +1286,16 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    auto& frame = currentModifierFrame(state);
-    auto targets = resolveMappedQubits(state, operation, frame.qcQubits);
+    auto* region = op->getParentRegion();
+    const auto frame = state.modifierRegionQubits.find(region);
+    if (frame == state.modifierRegionQubits.end()) {
+      return rewriter.notifyMatchFailure(op, "missing modifier region state");
+    }
+
+    auto targets = resolveMappedQubits(state, operation, frame->second);
     rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
-    popModifierFrame(state);
+    state.qubitMap.erase(region);
+    state.modifierRegionQubits.erase(frame);
     return success();
   }
 };
@@ -1721,7 +1760,8 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    if (failed(collectRegisterAccesses(module, state))) {
+    if (failed(validateModifierBodies(module)) ||
+        failed(collectRegisterAccesses(module, state))) {
       signalPassFailure();
       return;
     }
@@ -1816,6 +1856,7 @@ protected:
     // on.
     state.registerIds.clear();
     state.registerAccesses.clear();
+    state.convertedQubitAliases.clear();
     state.regionQubitMap.clear();
     state.regionRegisterMap.clear();
 
