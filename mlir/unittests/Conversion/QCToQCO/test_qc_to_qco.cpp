@@ -647,13 +647,13 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
-TEST_F(QCToQCORegressionTest,
-       PreflightRejectsNonAllocatedQubitRegisterBlockArguments) {
+TEST_F(QCToQCORegressionTest, PreflightRejectsDerivedQubitRegisterValues) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main(%reg: memref<1x!qc.qubit>)
-      attributes {passthrough = ["entry_point"]} {
-    memref.dealloc %reg : memref<1x!qc.qubit>
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %cast = memref.cast %reg : memref<1x!qc.qubit> to memref<?x!qc.qubit>
+    memref.dealloc %cast : memref<?x!qc.qubit>
     return
   }
 }
@@ -676,6 +676,116 @@ module {
   pm.addPass(createQCToQCO());
   EXPECT_TRUE(failed(pm.run(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumBlockArguments) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main(%q: !qc.qubit)
+      attributes {passthrough = ["entry_point"]} {
+    qc.x %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main(%reg: memref<1x!qc.qubit>)
+      attributes {passthrough = ["entry_point"]} {
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main(%reg: memref<*x!qc.qubit>)
+      attributes {passthrough = ["entry_point"]} {
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("cannot convert arbitrary qubit or qubit-register "
+                        "block arguments; only QC modifier qubit arguments are "
+                        "supported");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumRegionCaptures) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    scf.execute_region {
+      qc.x %q : !qc.qubit
+      scf.yield
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    scf.execute_region {
+      qc.x %q : !qc.qubit
+      scf.yield
+    }
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("cannot capture quantum values in an unsupported "
+                        "region-bearing operation");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
 }
 
 TEST_F(QCToQCORegressionTest, CapturesQubitsUsedByPowInsideFor) {

@@ -28,6 +28,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -201,6 +202,12 @@ private:
   LoweringState* state_;
 };
 } // namespace
+
+/** @brief Returns whether a type is ranked or unranked QC qubit storage. */
+[[nodiscard]] static bool isQubitMemrefType(const Type type) {
+  const auto memref = dyn_cast<BaseMemRefType>(type);
+  return memref && isa<qc::QubitType>(memref.getElementType());
+}
 
 /** @brief Resolves the stable identifier for a source QC register value. */
 [[nodiscard]] static RegisterId lookupRegisterId(const LoweringState& state,
@@ -451,43 +458,83 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   return qcoTargets;
 }
 
-/** @brief Collects stable register identifiers and load provenance. */
+/** @brief Rejects quantum SSA sources unsupported by the lowering state. */
 [[nodiscard]] static LogicalResult
-collectRegisterAccesses(Operation* root, LoweringState& state) {
-  const auto allocationResult = root->walk([&](memref::AllocOp op) {
-    if (!isa<qc::QubitType>(op.getType().getElementType())) {
-      return WalkResult::advance();
+validateQuantumValueSources(Operation* root) {
+  const auto result = root->walk([&](Operation* operation) {
+    const bool isModifier = isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(operation);
+    for (Region& region : operation->getRegions()) {
+      for (Block& block : region) {
+        for (const auto argument : block.getArguments()) {
+          const bool isQubit = isa<qc::QubitType>(argument.getType());
+          if ((!isQubit && !isQubitMemrefType(argument.getType())) ||
+              (isModifier && isQubit)) {
+            continue;
+          }
+
+          operation->emitOpError(
+              "cannot convert arbitrary qubit or qubit-register block "
+              "arguments; only QC modifier qubit arguments are supported");
+          return WalkResult::interrupt();
+        }
+      }
     }
 
-    if (op.getType().getRank() != 1) {
-      op.emitOpError("requires one-dimensional qubit register storage");
-      return WalkResult::interrupt();
-    }
-
-    const auto reg = state.registerIds.size();
-    state.registerIds.try_emplace(op.getResult(), reg);
-    return WalkResult::advance();
-  });
-  if (allocationResult.wasInterrupted()) {
-    return failure();
-  }
-
-  const auto registerUseResult = root->walk([&](Operation* operation) {
-    for (const auto operand : operation->getOperands()) {
-      const auto type = dyn_cast<MemRefType>(operand.getType());
-      if (!type || !isa<qc::QubitType>(type.getElementType()) ||
-          state.registerIds.contains(operand)) {
+    for (const auto value : operation->getResults()) {
+      if (isQubitMemrefType(value.getType())) {
+        auto allocation = dyn_cast<memref::AllocOp>(operation);
+        if (!allocation) {
+          operation->emitOpError(
+              "requires a directly allocated qubit register");
+          return WalkResult::interrupt();
+        }
+        if (allocation.getType().getRank() != 1) {
+          operation->emitOpError(
+              "requires one-dimensional qubit register storage");
+          return WalkResult::interrupt();
+        }
         continue;
       }
 
-      operation->emitOpError("requires a directly allocated qubit register");
-      return WalkResult::interrupt();
+      if (isa<qc::QubitType>(value.getType()) &&
+          !isa<qc::AllocOp, qc::StaticOp, memref::LoadOp>(operation)) {
+        operation->emitOpError(
+            "produces an unsupported qubit reference; use qc.alloc, "
+            "qc.static, a qubit-register load, or a QC modifier argument");
+        return WalkResult::interrupt();
+      }
+    }
+
+    const bool supportsQuantumCaptures =
+        isModifier ||
+        isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(operation);
+    if (!supportsQuantumCaptures && operation->getNumRegions() != 0) {
+      SetVector<Value> captures;
+      getUsedValuesDefinedAbove(operation->getRegions(), captures);
+      if (llvm::any_of(captures, [](const Value value) {
+            return isa<qc::QubitType>(value.getType()) ||
+                   isQubitMemrefType(value.getType());
+          })) {
+        operation->emitOpError(
+            "cannot capture quantum values in an unsupported region-bearing "
+            "operation; use scf.for, scf.while, scf.if, or scf.index_switch");
+        return WalkResult::interrupt();
+      }
     }
     return WalkResult::advance();
   });
-  if (registerUseResult.wasInterrupted()) {
-    return failure();
-  }
+  return success(!result.wasInterrupted());
+}
+
+/** @brief Collects stable register identifiers and load provenance. */
+[[nodiscard]] static LogicalResult
+collectRegisterAccesses(Operation* root, LoweringState& state) {
+  root->walk([&](memref::AllocOp op) {
+    if (isa<qc::QubitType>(op.getType().getElementType())) {
+      const auto reg = state.registerIds.size();
+      state.registerIds.try_emplace(op.getResult(), reg);
+    }
+  });
 
   const auto result = root->walk([&](memref::LoadOp op) {
     if (!isa<qc::QubitType>(op.getMemRefType().getElementType())) {
@@ -632,8 +679,7 @@ static void collectStructuredCaptures(Operation* root, LoweringState& state) {
         qubits.insert(value);
         continue;
       }
-      if (const auto type = dyn_cast<MemRefType>(value.getType());
-          type && isa<qc::QubitType>(type.getElementType())) {
+      if (isQubitMemrefType(value.getType())) {
         registers.insert(lookupRegisterId(state, value));
       }
     }
@@ -1807,6 +1853,7 @@ protected:
     QCToQCOTypeConverter typeConverter(context);
 
     if (failed(validateModifierBodies(moduleOp)) ||
+        failed(validateQuantumValueSources(moduleOp)) ||
         failed(collectRegisterAccesses(moduleOp, state))) {
       signalPassFailure();
       return;
@@ -1821,12 +1868,8 @@ protected:
                            qtensor::QTensorDialect>();
 
     target.addDynamicallyLegalDialect<memref::MemRefDialect>([](Operation* op) {
-      auto isQubitMemref = [](Type t) {
-        auto mt = dyn_cast<MemRefType>(t);
-        return mt && isa<qc::QubitType>(mt.getElementType());
-      };
-      return llvm::none_of(op->getOperandTypes(), isQubitMemref) &&
-             llvm::none_of(op->getResultTypes(), isQubitMemref);
+      return llvm::none_of(op->getOperandTypes(), isQubitMemrefType) &&
+             llvm::none_of(op->getResultTypes(), isQubitMemrefType);
     });
 
     target.addDynamicallyLegalDialect<scf::SCFDialect>([&](Operation* op) {
