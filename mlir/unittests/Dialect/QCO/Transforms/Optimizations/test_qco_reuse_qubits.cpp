@@ -255,8 +255,8 @@ TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
 
   auto main = module->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
-  std::size_t allocCount = 0;
-  std::size_t resetCount = 0;
+  size_t allocCount = 0;
+  size_t resetCount = 0;
   main.walk([&](AllocOp) { ++allocCount; });
   main.walk([&](ResetOp) { ++resetCount; });
   EXPECT_EQ(allocCount, 2);
