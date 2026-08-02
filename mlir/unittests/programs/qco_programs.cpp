@@ -22,6 +22,8 @@
 #include <cstdint>
 #include <numbers>
 #include <tuple>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace mlir::qco {
@@ -35,6 +37,32 @@ static Value measureAndReturnQTensor(QCOProgramBuilder& b, Value qTensor,
     qTensor = b.qtensorInsert(q2, qTensorOut, i);
   }
   return c;
+}
+
+static Value
+transformQTensorElement(QCOProgramBuilder& b, Value tensor,
+                        const std::variant<int64_t, Value>& index,
+                        const function_ref<Value(Value)> transform) {
+  auto [outTensor, qubit] = b.qtensorExtract(tensor, index);
+  return b.qtensorInsert(transform(qubit), outTensor, index);
+}
+
+static std::pair<Value, Value>
+measureQTensorElement(QCOProgramBuilder& b, Value tensor,
+                      const std::variant<int64_t, Value>& index) {
+  auto [outTensor, qubit] = b.qtensorExtract(tensor, index);
+  auto [outQubit, bit] = b.measure(qubit);
+  return {b.qtensorInsert(outQubit, outTensor, index), bit};
+}
+
+static Value
+measureQTensorElement(QCOProgramBuilder& b, Value tensor,
+                      const std::variant<int64_t, Value>& tensorIndex,
+                      Value classicalRegister,
+                      const std::variant<int64_t, Value>& classicalIndex) {
+  auto [outTensor, qubit] = b.qtensorExtract(tensor, tensorIndex);
+  auto [outQubit, bit] = b.measure(qubit, classicalRegister, classicalIndex);
+  return b.qtensorInsert(outQubit, outTensor, tensorIndex);
 }
 
 static Value measureToRegister(QCOProgramBuilder& b, ValueRange qubits) {
@@ -4105,6 +4133,77 @@ SmallVector<Value> ifWithCreg(QCOProgramBuilder& b) {
   return {c0, c1};
 }
 
+SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b) {
+  auto tensor = b.qtensorAlloc(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  tensor = transformQTensorElement(b, tensor, 0,
+                                   [&](Value qubit) { return b.h(qubit); });
+  tensor = measureQTensorElement(b, tensor, 0, c0, 0);
+  tensor = b.qcoIf(c0, 0, tensor, [&](ValueRange branchArgs) {
+    return SmallVector{transformQTensorElement(
+        b, branchArgs[0], 0, [&](Value qubit) { return b.x(qubit); })};
+  })[0];
+  measureQTensorElement(b, tensor, 0, c1, 0);
+  return {c0, c1};
+}
+
+SmallVector<Value> ifElseCompleteTensorState(QCOProgramBuilder& b) {
+  auto tensor = b.qtensorAlloc(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  tensor = transformQTensorElement(b, tensor, 0,
+                                   [&](Value qubit) { return b.h(qubit); });
+  tensor = measureQTensorElement(b, tensor, 0, c0, 0);
+  tensor = b.qcoIf(
+      c0, 0, tensor,
+      [&](ValueRange branchArgs) {
+        return SmallVector{transformQTensorElement(
+            b, branchArgs[0], 0, [&](Value qubit) { return b.x(qubit); })};
+      },
+      [&](ValueRange branchArgs) {
+        return SmallVector{transformQTensorElement(
+            b, branchArgs[0], 0, [&](Value qubit) { return b.z(qubit); })};
+      })[0];
+  measureQTensorElement(b, tensor, 0, c1, 0);
+  return {c0, c1};
+}
+
+SmallVector<Value> ifTwoQubitsCompleteTensorState(QCOProgramBuilder& b) {
+  auto tensor = b.qtensorAlloc(2);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(2);
+  tensor = transformQTensorElement(b, tensor, 0,
+                                   [&](Value qubit) { return b.h(qubit); });
+  tensor = measureQTensorElement(b, tensor, 0, c0, 0);
+  tensor = b.qcoIf(c0, 0, tensor, [&](ValueRange branchArgs) {
+    auto branchTensor = transformQTensorElement(
+        b, branchArgs[0], 0, [&](Value qubit) { return b.x(qubit); });
+    return SmallVector{transformQTensorElement(
+        b, branchTensor, 1, [&](Value qubit) { return b.x(qubit); })};
+  })[0];
+  tensor = measureQTensorElement(b, tensor, 0, c1, 0);
+  measureQTensorElement(b, tensor, 1, c1, 1);
+  return {c0, c1};
+}
+
+SmallVector<Value> ifWithMeasurementCompleteTensorState(QCOProgramBuilder& b) {
+  auto tensor = b.qtensorAlloc(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  tensor = transformQTensorElement(b, tensor, 0,
+                                   [&](Value qubit) { return b.h(qubit); });
+  tensor = measureQTensorElement(b, tensor, 0, c0, 0);
+  b.qcoIf(c0, 0, tensor, [&](ValueRange branchArgs) {
+    return SmallVector{measureQTensorElement(b, branchArgs[0], 0, c1, 0)};
+  });
+  return {c0, c1};
+}
+
+SmallVector<Value> ifWithCregCompleteTensorState(QCOProgramBuilder& b) {
+  return simpleIfCompleteTensorState(b);
+}
+
 Value ifOneQubitOneTensor(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto t0 = b.allocQubitRegister(1);
@@ -4273,6 +4372,69 @@ Value indexSwitchMultiCase(QCOProgramBuilder& b) {
       [&](ValueRange args) { return args; });
 
   return measureAndReturn(b, reg.qubits);
+}
+
+SmallVector<Value> simpleIndexSwitchCompleteTensorState(QCOProgramBuilder& b) {
+  auto tensor = b.qtensorAlloc(1);
+  tensor = transformQTensorElement(b, tensor, 0,
+                                   [&](Value qubit) { return b.h(qubit); });
+  auto [measuredTensor, bit0] = measureQTensorElement(b, tensor, 0);
+  const auto index =
+      arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
+  tensor = b.qcoIndexSwitch(
+      index, measuredTensor, SmallVector<int64_t>{0},
+      SmallVector<function_ref<Value(Value)>>{[&](Value branchTensor) {
+        return transformQTensorElement(b, branchTensor, 0,
+                                       [&](Value qubit) { return b.x(qubit); });
+      }},
+      [&](Value branchTensor) {
+        return transformQTensorElement(b, branchTensor, 0,
+                                       [&](Value qubit) { return b.z(qubit); });
+      });
+  auto [finalTensor, bit1] = measureQTensorElement(b, tensor, 0);
+  b.qtensorDealloc(finalTensor);
+  return {bit0, bit1};
+}
+
+Value indexSwitchMultiCaseCompleteTensorState(QCOProgramBuilder& b) {
+  constexpr int64_t size = 2;
+  auto tensor = b.qtensorAlloc(size);
+  auto c1 = arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(1))
+                .getResult();
+  auto condition =
+      arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(0))
+          .getResult();
+  for (int64_t i = 0; i < size; ++i) {
+    tensor = transformQTensorElement(b, tensor, i,
+                                     [&](Value qubit) { return b.h(qubit); });
+    auto [outTensor, bit] = measureQTensorElement(b, tensor, i);
+    tensor = outTensor;
+    const auto index =
+        arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
+    condition = arith::OrIOp::create(b, condition, index);
+    condition = arith::ShLIOp::create(b, condition, c1);
+  }
+
+  tensor = b.qcoIndexSwitch(
+      condition, tensor, SmallVector<int64_t>{1, 2, 3},
+      SmallVector<function_ref<Value(Value)>>{
+          [&](Value branchTensor) {
+            return transformQTensorElement(
+                b, branchTensor, 1, [&](Value qubit) { return b.x(qubit); });
+          },
+          [&](Value branchTensor) {
+            return transformQTensorElement(
+                b, branchTensor, 0, [&](Value qubit) { return b.x(qubit); });
+          },
+          [&](Value branchTensor) {
+            branchTensor = transformQTensorElement(
+                b, branchTensor, 0, [&](Value qubit) { return b.x(qubit); });
+            return transformQTensorElement(
+                b, branchTensor, 1, [&](Value qubit) { return b.x(qubit); });
+          }},
+      [&](Value branchTensor) { return branchTensor; });
+
+  return measureAndReturnQTensor(b, tensor, size);
 }
 
 Value qtensorAlloc(QCOProgramBuilder& b) {
@@ -4504,6 +4666,34 @@ Value nestedForLoopSwitchOp(QCOProgramBuilder& b) {
   })[0];
 
   return measureAndReturnQTensor(b, reg, n);
+}
+
+Value nestedForLoopSwitchOpCompleteTensorState(QCOProgramBuilder& b) {
+  constexpr int64_t size = 3;
+  auto tensor = b.qtensorAlloc(size);
+  auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
+  tensor = b.scfFor(0, size, 1, tensor, [&](Value iv, ValueRange iterArgs) {
+    auto remainder = arith::RemUIOp::create(b, iv, c3);
+    auto result = b.qcoIndexSwitch(
+        remainder, iterArgs[0], SmallVector<int64_t>{0, 1, 2},
+        SmallVector<function_ref<Value(Value)>>{
+            [&](Value branchTensor) {
+              return transformQTensorElement(
+                  b, branchTensor, iv, [&](Value qubit) { return b.x(qubit); });
+            },
+            [&](Value branchTensor) {
+              return transformQTensorElement(
+                  b, branchTensor, iv, [&](Value qubit) { return b.y(qubit); });
+            },
+            [&](Value branchTensor) {
+              return transformQTensorElement(
+                  b, branchTensor, iv,
+                  [&](Value qubit) { return b.y(b.x(qubit)); });
+            }},
+        [&](Value branchTensor) { return branchTensor; });
+    return SmallVector{result};
+  })[0];
+  return measureAndReturnQTensor(b, tensor, size);
 }
 
 Value nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {

@@ -1398,19 +1398,24 @@ Value ctrlPowSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a simple if operation with one qubit.
 SmallVector<Value> simpleIf(QCOProgramBuilder& b);
+SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with an else branch.
 SmallVector<Value> ifElse(QCOProgramBuilder& b);
+SmallVector<Value> ifElseCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
 SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b);
+SmallVector<Value> ifTwoQubitsCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit that measures a qubit inside an if operation.
 SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b);
+SmallVector<Value> ifWithMeasurementCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation conditioned on a bit loaded from a
 /// classical bit register.
 SmallVector<Value> ifWithCreg(QCOProgramBuilder& b);
+SmallVector<Value> ifWithCregCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with one qubit and one register.
 Value ifOneQubitOneTensor(QCOProgramBuilder& b);
@@ -1442,9 +1447,11 @@ Value nestedIfOpForLoop(QCOProgramBuilder& b);
 
 /// Creates a circuit with an index switch operation with one qubit.
 SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b);
+SmallVector<Value> simpleIndexSwitchCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an index switch operation with multiple cases.
 Value indexSwitchMultiCase(QCOProgramBuilder& b);
+Value indexSwitchMultiCaseCompleteTensorState(QCOProgramBuilder& b);
 
 // --- WhileOp -------------------------------------------------------------- //
 
@@ -1470,6 +1477,7 @@ Value nestedForLoopWhileOp(QCOProgramBuilder& b);
 /// Creates a circuit with a for operation with a register and a nested index
 /// switch operation.
 Value nestedForLoopSwitchOp(QCOProgramBuilder& b);
+Value nestedForLoopSwitchOpCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the

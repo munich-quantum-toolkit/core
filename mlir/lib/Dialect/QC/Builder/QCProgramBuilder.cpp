@@ -124,9 +124,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   qubits.reserve(size);
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
-    auto load = memref::LoadOp::create(*this, memref, index.getResult());
-    const auto& qubit = qubits.emplace_back(load.getResult());
-    allocatedQubits.insert(qubit);
+    qubits.emplace_back(loadQubit(memref, index));
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
@@ -760,9 +758,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   }
 
   for (auto qubit : allocatedQubits) {
-    if (!isa<memref::LoadOp>(qubit.getDefiningOp())) {
-      DeallocOp::create(*this, qubit);
-    }
+    DeallocOp::create(*this, qubit);
   }
   allocatedQubits.clear();
 

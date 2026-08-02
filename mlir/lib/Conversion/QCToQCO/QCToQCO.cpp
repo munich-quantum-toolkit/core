@@ -20,12 +20,14 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -39,6 +41,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/RegionUtils.h>
 
 #include <cassert>
 #include <cstddef>
@@ -66,6 +69,12 @@ struct RegisterAccess {
   RegisterId reg;
   /// Index of the qubit within its register
   Value index;
+};
+
+/** @brief Indices already used for one register by a quantum operation. */
+struct SeenRegisterIndices {
+  DenseMap<int64_t, Value> constants;
+  llvm::SmallDenseSet<Value, 4> dynamicValues;
 };
 
 /** @brief Qubit allocation mode */
@@ -108,17 +117,9 @@ struct LoweringState {
     /// QC qubits yielded from the current modifier region, in yield order.
     SmallVector<Value> qcQubits;
 
-    /// Qubit registers yielded from the current modifier region, in yield
-    /// order.
-    SmallVector<RegisterId> registers;
-
     /// Latest QCO SSA values for QC qubits that are remapped inside the
     /// modifier region.
     DenseMap<Value, Value> currentQubits;
-
-    /// Latest QTensor SSA values for registers that are remapped inside the
-    /// modifier region.
-    DenseMap<RegisterId, Value> currentRegisters;
   };
 
   struct StructuredValues {
@@ -270,14 +271,6 @@ findRegionLocalMap(DenseMap<Region*, DenseMap<Key, Value>>& map,
 [[nodiscard]] static Value lookupMappedTensor(LoweringState& state,
                                               Operation* anchor,
                                               const RegisterId reg) {
-
-  if (isInsideModifier(state)) {
-    auto& frame = currentModifierFrame(state);
-    if (auto it = frame.currentRegisters.find(reg);
-        it != frame.currentRegisters.end()) {
-      return it->second;
-    }
-  }
   const auto& [tensorMap, tensorValue] =
       findRegionLocalMap(state.tensorMap, anchor, reg);
   assert(tensorMap != nullptr && tensorValue != nullptr &&
@@ -316,17 +309,6 @@ static void assignMappedQubit(LoweringState& state, Operation* anchor,
 /** @brief Updates the latest QTensor SSA value for a QC register. */
 static void assignMappedTensor(LoweringState& state, Operation* anchor,
                                const RegisterId reg, Value tensor) {
-  if (isInsideModifier(state)) {
-    auto& frame = currentModifierFrame(state);
-    if (auto it = frame.currentRegisters.find(reg);
-        it != frame.currentRegisters.end()) {
-      it->second = tensor;
-      return;
-    }
-    frame.currentRegisters.try_emplace(reg, tensor);
-    return;
-  }
-
   auto [tensorMap, tensorValue] =
       findRegionLocalMap(state.tensorMap, anchor, reg);
 
@@ -384,13 +366,10 @@ static void assignMappedTensors(LoweringState& state, Operation* anchor,
 /** @brief Pushes a new modifier frame seeded with aliased target values. */
 static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
                               ValueRange qcoTargets) {
-  auto& [yieldOrder, registers, currentQubits, currentRegisters] =
-      state.modifierFrames.emplace_back();
-  static_cast<void>(registers);
-  static_cast<void>(currentRegisters);
-  llvm::append_range(yieldOrder, qcTargets);
+  auto& frame = state.modifierFrames.emplace_back();
+  llvm::append_range(frame.qcQubits, qcTargets);
   for (auto [qcTarget, qcoTarget] : llvm::zip_equal(qcTargets, qcoTargets)) {
-    currentQubits.try_emplace(qcTarget, qcoTarget);
+    frame.currentQubits.try_emplace(qcTarget, qcoTarget);
   }
 }
 
@@ -493,20 +472,14 @@ static void commitQubits(LoweringState& state, Operation* anchor,
                                                          Operation* anchor) {
   SmallVector<RegisterId> registers;
   SmallVector<Value> qcQubits;
-  if (isInsideModifier(state) && anchor->getNumRegions() == 0) {
-    auto& frame = currentModifierFrame(state);
-    registers = frame.registers;
-    qcQubits = frame.qcQubits;
+  auto* owner = structuredValueOwner(anchor);
+  if (const auto it = state.structuredValues.find(owner);
+      it != state.structuredValues.end()) {
+    llvm::append_range(registers, it->second.registers);
+    llvm::append_range(qcQubits, it->second.qubits);
   } else {
-    auto* owner = structuredValueOwner(anchor);
-    if (const auto it = state.structuredValues.find(owner);
-        it != state.structuredValues.end()) {
-      llvm::append_range(registers, it->second.registers);
-      llvm::append_range(qcQubits, it->second.qubits);
-    } else {
-      llvm::append_range(registers, state.regionRegisterMap[owner]);
-      llvm::append_range(qcQubits, state.regionQubitMap[owner]);
-    }
+    llvm::append_range(registers, state.regionRegisterMap[owner]);
+    llvm::append_range(qcQubits, state.regionQubitMap[owner]);
   }
 
   SmallVector<Value> qcoTargets;
@@ -554,60 +527,85 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     return WalkResult::advance();
   });
 
-  return success(!result.wasInterrupted());
-}
-
-/**
- * @brief Collects standalone qubits and registers used by structured control.
- */
-static std::pair<SetVector<Value>, SetVector<RegisterId>>
-collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
-  for (auto& region : op->getRegions()) {
-    // Skip empty regions e.g. empty else region of an If operation
-    if (region.empty()) {
-      continue;
-    }
-    // Check that the region has only one block
-    assert(region.hasOneBlock() && "Expected single-block region");
-    // Iterate through all operations of the current region
-    for (auto& operation : region.front().getOperations()) {
-      // Recursively walk through nested regions
-      if (operation.getNumRegions() > 0 &&
-          !isa<qc::CtrlOp, qc::InvOp>(operation)) {
-        auto [qubits, registers] =
-            collectQubitValuesInsideSCFOps(&operation, state);
-        auto& regionQubitMap = state->regionQubitMap[op];
-        regionQubitMap.set_union(qubits);
-        state->regionRegisterMap[op].set_union(registers);
-      }
-      auto& regionRegisterMap = state->regionRegisterMap[op];
-      if (auto loadOp = dyn_cast<memref::LoadOp>(operation);
-          loadOp &&
-          isa<qc::QubitType>(loadOp.getMemRefType().getElementType())) {
-        regionRegisterMap.insert(
-            state->registerAccesses.find(loadOp.getResult())->second.reg);
-        continue;
-      }
-      auto& regionQubitMap = state->regionQubitMap[op];
-      for (const auto& operand : operation.getOperands()) {
-        if (isa<qc::QubitType>(operand.getType())) {
-          if (const auto access = state->registerAccesses.find(operand);
-              access != state->registerAccesses.end()) {
-            regionRegisterMap.insert(access->second.reg);
-          } else {
-            regionQubitMap.insert(operand);
-          }
-        }
-        if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
-          if (isa<qc::QubitType>(memref.getElementType())) {
-            regionRegisterMap.insert(lookupRegisterId(*state, operand));
-          }
-        }
-      }
-    }
+  if (result.wasInterrupted()) {
+    return failure();
   }
 
-  return {state->regionQubitMap[op], state->regionRegisterMap[op]};
+  const auto distinctResult = root->walk([&](Operation* operation) {
+    auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
+    if (!unitary || unitary.getNumQubits() < 2) {
+      return WalkResult::advance();
+    }
+
+    llvm::SmallDenseSet<Value, 4> qubits;
+    DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
+    for (const auto qubit : unitary.getQubits()) {
+      if (!qubits.insert(qubit).second) {
+        operation->emitOpError("requires distinct qubit operands");
+        return WalkResult::interrupt();
+      }
+
+      const auto access = state.registerAccesses.find(qubit);
+      if (access == state.registerAccesses.end()) {
+        continue;
+      }
+
+      auto& seen = registerIndices[access->second.reg];
+      if (const auto constant = getConstantIntValue(access->second.index)) {
+        const auto [it, inserted] =
+            seen.constants.try_emplace(*constant, access->second.index);
+        if (!inserted &&
+            isEqualConstantIntOrValue(it->second, access->second.index)) {
+          operation->emitOpError(
+              "requires distinct qubit operands; register-backed operands "
+              "have the same constant index");
+          return WalkResult::interrupt();
+        }
+        continue;
+      }
+
+      if (!seen.dynamicValues.insert(access->second.index).second) {
+        operation->emitOpError(
+            "requires distinct qubit operands; register-backed operands use "
+            "the same dynamic index");
+        return WalkResult::interrupt();
+      }
+    }
+    return WalkResult::advance();
+  });
+
+  return success(!distinctResult.wasInterrupted());
+}
+
+/** @brief Collects values captured by supported structured control flow. */
+static void collectStructuredCaptures(Operation* root, LoweringState& state) {
+  root->walk([&](Operation* operation) {
+    if (!isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
+            operation)) {
+      return;
+    }
+
+    SetVector<Value> captures;
+    getUsedValuesDefinedAbove(operation->getRegions(), captures);
+
+    auto& qubits = state.regionQubitMap[operation];
+    auto& registers = state.regionRegisterMap[operation];
+    for (const auto value : captures) {
+      if (const auto access = state.registerAccesses.find(value);
+          access != state.registerAccesses.end()) {
+        registers.insert(access->second.reg);
+        continue;
+      }
+      if (isa<qc::QubitType>(value.getType())) {
+        qubits.insert(value);
+        continue;
+      }
+      if (const auto type = dyn_cast<MemRefType>(value.getType());
+          type && isa<qc::QubitType>(type.getElementType())) {
+        registers.insert(lookupRegisterId(state, value));
+      }
+    }
+  });
 }
 
 namespace {
@@ -1728,8 +1726,8 @@ protected:
       return;
     }
 
-    // Get the qubit values and registers used inside the scf ops.
-    collectQubitValuesInsideSCFOps(module, &state);
+    // Get the quantum values captured by structured control-flow regions.
+    collectStructuredCaptures(module, state);
 
     // Configure conversion target
     target.addIllegalDialect<QCDialect>();

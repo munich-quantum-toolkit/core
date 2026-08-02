@@ -210,9 +210,10 @@ public:
   Value staticQubit(uint64_t index);
 
   /**
-   * @brief Allocate a qubit register
+   * @brief Allocate a qubit tensor and eagerly extract every element
    * @param size Number of qubits (must be positive)
-   * @return A `QubitRegister` structure
+   * @return A `QubitRegister` containing the residual tensor and one standalone
+   * qubit value for every eagerly extracted element
    *
    * @par Example:
    * ```c++
@@ -254,11 +255,10 @@ public:
   /**
    * @brief Allocate a qubit tensor
    *
-   * @details
-   * Allocates a one-dimensional tensor of !qco.qubit types with the given size
-   * if the size is a constant, otherwise the tensor has dynamic size. The
-   * qubits are initialized in the |0> state. The resulting tensor is added to
-   * the tracking.
+   * @details Allocates and returns one intact, one-dimensional tensor of
+   * `!qco.qubit` values. No elements are extracted. If the size is a constant,
+   * the tensor has static size; otherwise it has dynamic size. Its qubits are
+   * initialized in the |0> state, and the tensor is tracked automatically.
    *
    * @param size Number of qubits (must be positive)
    * @return The allocated tensor

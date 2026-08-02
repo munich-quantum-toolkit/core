@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
@@ -23,16 +24,20 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
@@ -53,6 +58,7 @@ struct QCToQCOTestCase {
   mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectsCompleteTensorState = false;
+  bool skipReferenceComparison = false;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQCOTestCase& info);
@@ -118,6 +124,7 @@ public:
   static void expectOperationLocalRegisterAccesses(ModuleOp module) {
     std::size_t extracts = 0;
     std::size_t inserts = 0;
+    llvm::DenseSet<Operation*> committedExtracts;
     module.walk([&](qtensor::ExtractOp extract) {
       ++extracts;
       ASSERT_TRUE(extract.getResult().hasOneUse());
@@ -131,9 +138,32 @@ public:
       ASSERT_NE(producer, nullptr);
       EXPECT_EQ(producer->getDialect(),
                 module.getContext()->getOrLoadDialect<qco::QCODialect>());
+
+      Value input;
+      if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(producer)) {
+        input = unitary.getInputForOutput(insert.getScalar());
+      } else if (auto measure = dyn_cast<qco::MeasureOp>(producer)) {
+        EXPECT_EQ(insert.getScalar(), measure.getQubitOut());
+        input = measure.getQubitIn();
+      } else if (auto reset = dyn_cast<qco::ResetOp>(producer)) {
+        EXPECT_EQ(insert.getScalar(), reset.getQubitOut());
+        input = reset.getQubitIn();
+      }
+      ASSERT_TRUE(input);
+
+      auto extract = input.getDefiningOp<qtensor::ExtractOp>();
+      ASSERT_TRUE(extract);
+      EXPECT_TRUE(
+          isEqualConstantIntOrValue(extract.getIndex(), insert.getIndex()));
+      EXPECT_EQ(extract->getBlock(), producer->getBlock());
+      EXPECT_EQ(producer->getBlock(), insert->getBlock());
+      EXPECT_TRUE(extract->isBeforeInBlock(producer));
+      EXPECT_TRUE(producer->isBeforeInBlock(insert));
+      committedExtracts.insert(extract);
     });
     EXPECT_GT(extracts, 0U);
     EXPECT_EQ(extracts, inserts);
+    EXPECT_EQ(committedExtracts.size(), extracts);
 
     module.walk([&](memref::LoadOp load) {
       EXPECT_FALSE(isa<qc::QubitType>(load.getMemRefType().getElementType()));
@@ -157,6 +187,19 @@ public:
           llvm::any_of(operation->getResultTypes(), isQubitTensor);
       EXPECT_TRUE(hasTensorOperand);
       EXPECT_TRUE(hasTensorResult);
+      const auto tensorOperands = llvm::to_vector(
+          llvm::make_filter_range(operation->getOperandTypes(), isQubitTensor));
+      const auto tensorResults = llvm::to_vector(
+          llvm::make_filter_range(operation->getResultTypes(), isQubitTensor));
+      EXPECT_EQ(tensorOperands, tensorResults);
+      for (Region& region : operation->getRegions()) {
+        if (region.empty()) {
+          continue;
+        }
+        const auto tensorArguments = llvm::to_vector(llvm::make_filter_range(
+            region.front().getArgumentTypes(), isQubitTensor));
+        EXPECT_EQ(tensorArguments, tensorResults);
+      }
       sawStructuredQuantumState = true;
     });
     EXPECT_TRUE(sawStructuredQuantumState);
@@ -566,9 +609,135 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
+TEST_F(QCToQCORegressionTest, CapturesQubitsUsedByPowInsideFor) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %exponent = arith.constant 2.0 : f64
+    scf.for %i = %c0 to %c1 step %c1 {
+      qc.pow(%exponent) (%arg0 = %q) {
+        qc.x %arg0 : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::ForOp loop;
+  module->walk([&](scf::ForOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getNumResults(), 1);
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(0).getType()));
+  EXPECT_FALSE(loop.getBody()->getOps<qco::PowOp>().empty());
+  expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest, DoesNotCaptureQubitsAllocatedInsideIf) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1)
+      attributes {passthrough = ["entry_point"]} {
+    scf.if %condition {
+      %q = qc.alloc : !qc.qubit
+      qc.h %q : !qc.qubit
+      qc.dealloc %q : !qc.qubit
+    }
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  scf::IfOp ifOp;
+  module->walk([&](scf::IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  EXPECT_EQ(ifOp.getNumResults(), 0);
+  std::size_t allocations = 0;
+  ifOp.getThenRegion().walk([&](qco::AllocOp) { ++allocations; });
+  EXPECT_EQ(allocations, 1);
+  expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsSameDynamicRegisterIndexWithinOneOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%i: index) attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("use the same dynamic index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsEqualConstantRegisterIndicesWithinOneOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %lhs = arith.constant 0 : index
+    %rhs = arith.constant 0 : index
+    %q0 = memref.load %reg[%lhs] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%rhs] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("same constant index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
 TEST_P(QCToQCOTest, ProgramConversion) {
-  const auto& [_, programBuilder, referenceBuilder,
-               expectsCompleteTensorState] = GetParam();
+  const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
+               skipReferenceComparison] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
@@ -594,21 +763,20 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  if (expectsCompleteTensorState) {
-    return;
+  if (!skipReferenceComparison) {
+    auto reference =
+        mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+    ASSERT_TRUE(reference);
+    printer.record(reference.get(), "Reference QCO IR" + name);
+    EXPECT_TRUE(verify(*reference).succeeded());
+
+    EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
+    printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
+    EXPECT_TRUE(verify(*reference).succeeded());
+
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(program.get(), reference.get()));
   }
-
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
-  ASSERT_TRUE(reference);
-  printer.record(reference.get(), "Reference QCO IR" + name);
-  EXPECT_TRUE(verify(*reference).succeeded());
-
-  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
-  printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
-  EXPECT_TRUE(verify(*reference).succeeded());
-
-  EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 /// \name QCToQCO/QubitManagement/StaticOp.cpp
@@ -1190,16 +1358,20 @@ INSTANTIATE_TEST_SUITE_P(
     SCFIfOpTest, QCToQCOTest,
     testing::Values(
         QCToQCOTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
-                        MQT_NAMED_BUILDER(qco::simpleIf), true},
+                        MQT_NAMED_BUILDER(qco::simpleIfCompleteTensorState),
+                        true},
         QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
-                        MQT_NAMED_BUILDER(qco::ifElse), true},
+                        MQT_NAMED_BUILDER(qco::ifElseCompleteTensorState),
+                        true},
         QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qco::ifTwoQubits), true},
-        QCToQCOTestCase{"IfWithMeasurement",
-                        MQT_NAMED_BUILDER(qc::ifWithMeasurement),
-                        MQT_NAMED_BUILDER(qco::ifWithMeasurement), true},
+                        MQT_NAMED_BUILDER(qco::ifTwoQubitsCompleteTensorState),
+                        true},
+        QCToQCOTestCase{
+            "IfWithMeasurement", MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+            MQT_NAMED_BUILDER(qco::ifWithMeasurementCompleteTensorState), true},
         QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
-                        MQT_NAMED_BUILDER(qco::ifWithCreg), true},
+                        MQT_NAMED_BUILDER(qco::ifWithCregCompleteTensorState),
+                        true},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop), true}));
@@ -1210,12 +1382,13 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCOIndexSwitchOpTest, QCToQCOTest,
     testing::Values(
-        QCToQCOTestCase{"SimpleIndexSwitchOp",
-                        MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
-                        MQT_NAMED_BUILDER(qco::simpleIndexSwitch), true},
-        QCToQCOTestCase{"IndexSwitchMultiCase",
-                        MQT_NAMED_BUILDER(qc::indexSwitchMultiCase),
-                        MQT_NAMED_BUILDER(qco::indexSwitchMultiCase), true}));
+        QCToQCOTestCase{
+            "SimpleIndexSwitchOp", MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
+            MQT_NAMED_BUILDER(qco::simpleIndexSwitchCompleteTensorState), true},
+        QCToQCOTestCase{
+            "IndexSwitchMultiCase", MQT_NAMED_BUILDER(qc::indexSwitchMultiCase),
+            MQT_NAMED_BUILDER(qco::indexSwitchMultiCaseCompleteTensorState),
+            true}));
 /// @}
 
 /// \name QCToQCO/Operations/WhileOp.cpp
@@ -1240,12 +1413,14 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"NestedForLoopIfOp",
                         MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
                         MQT_NAMED_BUILDER(qco::nestedForLoopIfOp), true},
-        QCToQCOTestCase{"NestedForLoopWhileOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp), true},
-        QCToQCOTestCase{"NestedForLoopSwitchOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp), true},
+        QCToQCOTestCase{
+            "NestedForLoopWhileOp", MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
+            MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp), true, true},
+        QCToQCOTestCase{
+            "NestedForLoopSwitchOp",
+            MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
+            MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOpCompleteTensorState),
+            true},
         QCToQCOTestCase{
             "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),

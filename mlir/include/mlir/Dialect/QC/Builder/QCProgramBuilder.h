@@ -187,9 +187,10 @@ public:
   Value staticQubit(uint64_t index);
 
   /**
-   * @brief Allocate a qubit register
+   * @brief Allocate a qubit register and eagerly load every element
    * @param size Number of qubits (must be positive)
-   * @return A `QubitRegister` structure
+   * @return A `QubitRegister` containing the backing memref and one reference
+   * for every eagerly loaded element
    *
    * @par Example:
    * ```c++
@@ -209,8 +210,9 @@ public:
    * @param size Number of qubits (must be positive)
    * @return The memref value representing the qubit register
    *
-   * @details The register is tracked for automatic deallocation. Use
-   * `loadQubit` to obtain references to individual elements.
+   * @details The register is tracked for automatic deallocation and remains
+   * intact until an element is loaded. Use `loadQubit` to obtain references at
+   * their points of use.
    */
   Value allocQubitRegisterStorage(int64_t size);
 

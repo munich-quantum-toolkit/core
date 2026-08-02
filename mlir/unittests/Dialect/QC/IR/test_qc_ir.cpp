@@ -164,15 +164,14 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto reg = builder.allocQubitRegister(1);
+  const auto reg = builder.allocQubitRegisterStorage(1);
   const auto index = arith::ConstantIndexOp::create(builder, 0).getResult();
 
-  builder.h(builder.loadQubit(reg.value, index));
-  builder.x(builder.loadQubit(reg.value, index));
+  builder.h(builder.loadQubit(reg, index));
+  builder.x(builder.loadQubit(reg, index));
   builder.scfIf(true, [&] {
-    builder.y(builder.loadQubit(reg.value, index));
-    builder.scfIf(true,
-                  [&] { builder.z(builder.loadQubit(reg.value, index)); });
+    builder.y(builder.loadQubit(reg, index));
+    builder.scfIf(true, [&] { builder.z(builder.loadQubit(reg, index)); });
   });
 
   auto module = builder.finalize();
@@ -183,11 +182,11 @@ TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
   module->walk([&](memref::LoadOp load) {
     if (isa<QubitType>(load.getMemRefType().getElementType())) {
       ++qubitLoads;
-      EXPECT_EQ(load.getMemref(), reg.value);
+      EXPECT_EQ(load.getMemref(), reg);
       EXPECT_TRUE(isEqualConstantIntOrValue(load.getIndices().front(), index));
     }
   });
-  EXPECT_EQ(qubitLoads, 5U);
+  EXPECT_EQ(qubitLoads, 4U);
 }
 
 TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {

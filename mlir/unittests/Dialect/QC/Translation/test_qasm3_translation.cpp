@@ -9,11 +9,14 @@
  */
 
 #include "TestCaseUtils.h"
+#include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -21,7 +24,6 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -33,6 +35,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
@@ -76,7 +79,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, func::FuncDialect, math::MathDialect,
-                    memref::MemRefDialect, qc::QCDialect, scf::SCFDialect>();
+                    memref::MemRefDialect, qc::QCDialect, qco::QCODialect,
+                    qtensor::QTensorDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -880,43 +884,10 @@ static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   return {c, out};
 }
 
-/// Rewrite eager register references in legacy fixtures to the per-application
-/// loads emitted by the typed OpenQASM frontend.
-static void materializeRegisterOperandsAtUse(ModuleOp module) {
-  SmallVector<std::pair<Operation*, Operation*>> operations;
-  module.walk([&](Operation* operation) {
-    if (operation != module.getOperation() && !isa<memref::LoadOp>(operation)) {
-      operations.emplace_back(operation, operation->getPrevNode());
-    }
-  });
-
-  llvm::DenseMap<Value, Operation*> lastUser;
-  llvm::DenseMap<Value, Value> lastReload;
-  OpBuilder builder(module.getContext());
-  for (const auto [operation, previousOperation] : operations) {
-    for (auto& operand : operation->getOpOperands()) {
-      if (!isa<qc::QubitType>(operand.get().getType())) {
-        continue;
-      }
-      if (auto load = operand.get().getDefiningOp<memref::LoadOp>()) {
-        auto* const previousUser = lastUser.lookup(load.getResult());
-        const auto belongsToSameApplication =
-            previousUser == operation ||
-            (previousUser != nullptr && previousUser == previousOperation &&
-             (isa<qc::CtrlOp>(previousUser) || isa<qc::CtrlOp>(operation)));
-        Value reloaded = lastReload.lookup(load.getResult());
-        if (!belongsToSameApplication) {
-          builder.setInsertionPoint(operation);
-          reloaded = memref::LoadOp::create(builder, operation->getLoc(),
-                                            load.getMemref(), load.getIndices())
-                         .getResult();
-        }
-        operand.set(reloaded);
-        lastUser[load.getResult()] = operation;
-        lastReload[load.getResult()] = reloaded;
-      }
-    }
-  }
+static LogicalResult convertQCToQCO(ModuleOp module) {
+  PassManager manager(module.getContext());
+  manager.addPass(createQCToQCO());
+  return manager.run(module);
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -936,13 +907,21 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
   auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
-  materializeRegisterOperandsAtUse(reference.get());
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
+
+  ASSERT_TRUE(succeeded(convertQCToQCO(translated.get())));
+  ASSERT_TRUE(succeeded(convertQCToQCO(reference.get())));
+  ASSERT_TRUE(runQCOCleanupPipeline(translated.get()).succeeded());
+  ASSERT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
+  printer.record(translated.get(), "Lowered Translated QCO IR" + name);
+  printer.record(reference.get(), "Lowered Reference QCO IR" + name);
+  ASSERT_TRUE(verify(*translated).succeeded());
+  ASSERT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
