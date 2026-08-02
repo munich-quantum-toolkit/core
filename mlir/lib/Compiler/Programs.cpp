@@ -24,6 +24,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Support/Passes.h"
 
 #include <capnp/common.h>
@@ -268,6 +269,10 @@ bool QCProgram::cleanup() {
                              "failed to run the QC cleanup pipeline"));
 }
 
+bool QCProgram::normalizeGlobalPhases() {
+  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+}
+
 std::optional<QCOProgram> QCProgram::intoQCO() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
@@ -320,6 +325,10 @@ QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
 bool QCOProgram::cleanup() {
   return succeeded(runPasses(mod(), populateQCOCleanupPipeline,
                              "failed to run the QCO cleanup pipeline"));
+}
+
+bool QCOProgram::normalizeGlobalPhases() {
+  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,

@@ -1238,9 +1238,9 @@ TEST_F(QCOTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// pow(sx) inside a ctrl modifier expands into a GPhase + RX kept within the
-/// ctrl body, so the controlled global phase is preserved. Verify the CtrlOp
-/// survives and the nested PowOp is expanded into a GPhase + RX.
+/// pow(sx) inside a ctrl modifier expands into GPhase + RX. Global-phase
+/// normalization then turns the controlled GPhase into P on the control.
+/// Verify the CtrlOp survives and the relative phase remains observable.
 TEST_F(QCOTest, CtrlPowSxExpands) {
   auto program =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
@@ -1252,14 +1252,17 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
   int ctrlCount = 0;
   int powCount = 0;
   int gphaseCount = 0;
+  int pCount = 0;
   int rxCount = 0;
   program->walk([&](CtrlOp) { ++ctrlCount; });
   program->walk([&](PowOp) { ++powCount; });
   program->walk([&](GPhaseOp) { ++gphaseCount; });
+  program->walk([&](POp) { ++pCount; });
   program->walk([&](RXOp) { ++rxCount; });
   EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
   EXPECT_EQ(powCount, 0) << "PowOp inside ctrl must be expanded";
-  EXPECT_EQ(gphaseCount, 1) << "SX fold must emit a GPhase";
+  EXPECT_EQ(gphaseCount, 0) << "controlled GPhase must be extracted";
+  EXPECT_EQ(pCount, 1) << "controlled GPhase must become P on the control";
   EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
 }
 

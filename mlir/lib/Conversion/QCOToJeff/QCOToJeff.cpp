@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -1738,7 +1739,11 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto* moduleOp = getOperation();
+    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+      signalPassFailure();
+      return;
+    }
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1839,14 +1844,15 @@ protected:
                  ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
-    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+    if (applyPartialConversion(moduleOp, target, std::move(patterns))
+            .failed()) {
       signalPassFailure();
       return;
     }
 
-    patchCregYields(module, state);
+    patchCregYields(moduleOp, state);
 
-    if (cleanUp(module, state).failed()) {
+    if (cleanUp(moduleOp, state).failed()) {
       signalPassFailure();
     }
   }

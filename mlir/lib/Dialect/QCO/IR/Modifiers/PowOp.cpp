@@ -319,8 +319,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     const double r = *exponent;
     auto loc = op.getLoc();
 
-    // Pre-check: only proceed for gate types we can fold.
-    // HOp, ECROp, RCCXOp, and SWAPOp additionally require an integer exponent.
+    // Scaling a gate parameter represents a principal matrix power only for an
+    // integral exponent unless the parameter is known to remain within the
+    // principal branch. Keep arbitrary parameters inside fractional powers.
+    if (isa<GPhaseOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp, RZXOp, RZZOp,
+            XXPlusYYOp, XXMinusYYOp>(innerOp) &&
+        !utils::isIntegerExponent(r)) {
+      return failure();
+    }
+    // HOp, ECROp, RCCXOp, and SWAPOp also only have the simple parity fold for
+    // integral exponents.
     if (isa<HOp, ECROp, RCCXOp, SWAPOp>(innerOp) &&
         !utils::isIntegerExponent(r)) {
       return failure();
@@ -375,7 +383,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- Pauli gates: decompose to rotation + global phase ---
-            // pow(r) { x } => gphase(-r*π/2); rx(r*π)
+            // pow(r) { x } => gphase(r*π/2); rx(r*π)
             // pow(1/2) x => sx      (X^(1/2) = SX exactly)
             // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
             .Case<XOp>([&](auto) {
@@ -390,19 +398,19 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               GPhaseOp::create(
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (-std::numbers::pi / 2.0)));
+                                            r * (std::numbers::pi / 2.0)));
               rewriter.replaceOpWithNewOp<RXOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),
                                             r * std::numbers::pi));
               return success();
             })
-            // pow(r) { y } => gphase(-r*π/2); ry(r*π)
+            // pow(r) { y } => gphase(r*π/2); ry(r*π)
             .Case<YOp>([&](auto) {
               GPhaseOp::create(
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (-std::numbers::pi / 2.0)));
+                                            r * (std::numbers::pi / 2.0)));
               rewriter.replaceOpWithNewOp<RYOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),
@@ -472,7 +480,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- SX/SXdg gates: decompose to rotation + global phase ---
-            // pow(r) { sx } => gphase(-r*π/4); rx(r*π/2)
+            // pow(r) { sx } => gphase(r*π/4); rx(r*π/2)
             // pow(±2) sx => x
             .Case<SXOp>([&](auto) {
               if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
@@ -482,14 +490,14 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               GPhaseOp::create(
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (-std::numbers::pi / 4.0)));
+                                            r * (std::numbers::pi / 4.0)));
               rewriter.replaceOpWithNewOp<RXOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),
                                             r * (std::numbers::pi / 2.0)));
               return success();
             })
-            // pow(r) { sxdg } => gphase(r*π/4); rx(-r*π/2)
+            // pow(r) { sxdg } => gphase(-r*π/4); rx(-r*π/2)
             // pow(±2) sxdg => x
             .Case<SXdgOp>([&](auto) {
               if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
@@ -499,7 +507,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               GPhaseOp::create(
                   rewriter, loc,
                   utils::constantFromScalar(rewriter, op.getLoc(),
-                                            r * (std::numbers::pi / 4.0)));
+                                            r * (-std::numbers::pi / 4.0)));
               rewriter.replaceOpWithNewOp<RXOp>(
                   op, op.getInputTarget(0),
                   utils::constantFromScalar(rewriter, op.getLoc(),

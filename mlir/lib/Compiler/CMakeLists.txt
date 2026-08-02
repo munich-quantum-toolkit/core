@@ -18,6 +18,7 @@ add_mlir_library(
   MLIRPass
   MLIRTransforms
   MLIRTransformUtils
+  MLIRMQTTransforms
   MLIRQCToQCO
   MLIRQCOToQC
   MLIRQCOToJeff
