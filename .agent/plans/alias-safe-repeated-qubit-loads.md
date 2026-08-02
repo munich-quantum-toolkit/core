@@ -63,6 +63,28 @@ width-dependent `scf.index_switch`.
       the same two configured QDMI skips.
 - [x] (2026-08-01) Complete a fresh independent review of exact source revision
       `7a84fdf22de840efa423164cb967d5da10ecebf7`; no actionable findings remain.
+- [x] (2026-08-02) Address the subsequent exhaustive-review findings: replace
+      custom recursive SCF capture discovery with MLIR `RegionUtils`, remove
+      dead modifier register state and void casts, diagnose provably duplicate
+      simultaneous register operands, and distinguish intact tensor/storage
+      allocation from eager element extraction in the builder documentation.
+- [x] (2026-08-02) Replace the translation test's custom mutating IR normalizer
+      with the production QC-to-QCO conversion and strengthen structured
+      conversion checks to prove operation-local extract/use/insert linearity
+      and complete QTensor state.
+- [x] (2026-08-02) Make OpenQASM alias accounting and assertion emission sparse
+      by register, replace ordered barrier deduplication with LLVM dense
+      containers, and reject unavoidable whole-register/dynamic barrier aliases
+      during semantic analysis.
+- [x] (2026-08-02) Validate the remediation with LLVM 22.1.8 clang-tidy, every
+      repository hook, a complete 434-step release build, all 4,409 configured
+      CTest cases, all 419 Python tests (416 passed, three configured skips),
+      and QC/QCO/QIR `mqt-cc` smoke tests on a 99,999-qubit dynamic program.
+- [x] (2026-08-02) Integrate current `origin/main`
+      `ae7aff283c0c06da5e01e53349a3eaec8b322c1e` with a signed merge, then rerun
+      all repository hooks and the full Python 3.13 test session.
+- [ ] Obtain a fresh independent read-only review of the final exact source
+      revision.
 
 ## Surprises & Discoveries
 
@@ -104,8 +126,27 @@ width-dependent `scf.index_switch`.
 - Observation: Gates already rejected exact duplicate qubits during semantic
   analysis and asserted potentially aliasing dynamic operands at runtime, but
   barriers originally did neither. Reusing the runtime assertion path for
-  barriers and using an ordered set for exact semantic duplicates preserves the
-  linear QCO contract without quadratic checks over expanded whole registers.
+  barriers preserves the linear QCO contract. Grouping accesses by register and
+  using LLVM dense containers avoids quadratic scans over expanded whole
+  registers when all indices are statically distinct.
+- Observation: MLIR already provides `getUsedValuesDefinedAbove` for region
+  capture discovery. Using it for each supported SCF operation avoids
+  recursively interpreting block locality and correctly distinguishes values
+  captured from enclosing regions from qubits allocated inside a structured
+  region.
+- Observation: The QC modifier verifiers already reject register loads inside
+  modifier bodies. Register-specific modifier maps were therefore dead state;
+  modifier operands need only the existing standalone SSA alias mapping.
+- Observation: The legacy OpenQASM translation reference test repaired eager
+  register fixtures with a custom, order-sensitive IR mutation. Lowering both
+  modules through the production QC-to-QCO pass yields a stronger semantic
+  comparison and deletes that bespoke normalizer.
+- Observation: `QCOProgramBuilder::qtensorAlloc(1)` and
+  `QCOProgramBuilder::allocQubitRegister(1)` have intentionally different
+  linear-state results. The first returns one intact tensor, while the second
+  eagerly extracts its element and returns the residual tensor plus a standalone
+  qubit. The corresponding QC APIs now document the same storage-only versus
+  eager-reference distinction.
 
 ## Decision Log
 
@@ -139,10 +180,25 @@ width-dependent `scf.index_switch`.
   a multi-qubit gate; exact duplicates should fail in semantic analysis, while
   potentially equal runtime indices need `cf.assert`. Date/Author: 2026-08-01,
   Codex.
+- Decision: Use MLIR `RegionUtils` to discover structured captures and keep the
+  conversion's custom logic limited to classifying captured quantum values as
+  standalone qubits or register provenance. Rationale: Region ownership and
+  nested block locality are standard MLIR concerns and should not be
+  reimplemented recursively. Date/Author: 2026-08-02, Codex.
+- Decision: Reject only simultaneous register operands whose equality is
+  statically proven by identical SSA values or equal integer constants.
+  Rationale: QCO linearity makes those operations invalid, while distinct
+  dynamic values may alias only at runtime and remain the source frontend's
+  responsibility to guard. Date/Author: 2026-08-02, Codex.
+- Decision: Keep `qtensorAlloc`/storage-only allocation distinct from
+  `allocQubitRegister` eager extraction, but make the distinction explicit in
+  public documentation and use storage-only APIs whenever complete tensor state
+  is required. Rationale: Collapsing the APIs would either hide linear
+  extraction or break source compatibility. Date/Author: 2026-08-02, Codex.
 
 ## Outcomes & Retrospective
 
-The implementation now has the intended two-commit shape. Stage 1 makes
+The core implementation retains the intended two-stage shape. Stage 1 makes
 `memref.load` a stable QC register-access marker, lowers every quantum use to an
 operation-local QTensor extract/use/reverse-insert sequence, carries complete
 QTensor state through structured control flow, rejects unsupported escaping
@@ -151,33 +207,35 @@ cases. Stage 2 adds storage-only register allocation and makes the typed
 OpenQASM emitter produce checked point-of-use loads without quantum
 `scf.index_switch` expansion.
 
-The release build completed successfully. All 4,401 CTest tests passed; the two
-QDMI job-ID tests were reported as skipped by their existing test configuration.
-Focused QC, QCO, QTensor, QC-to-QCO, QCO-to-QC, Jeff round-trip, OpenQASM
-translation, and compiler suites pass. `mqt-cc` successfully emitted QC,
-operation-local QCO, and Adaptive QIR for dynamic gate, modifier, measurement,
-reset, and barrier access. The all-files nox lint session passed every
-configured hook.
+Independent review first found a barrier-specific alias gap in Stage 2. The
+initial remediation centralized runtime distinctness assertions across gates and
+barriers and rejected exact duplicate barrier operands. Two later scrutiny
+rounds then identified custom SCF capture discovery, redundant modifier state,
+provably invalid simultaneous register operands, shallow structured test
+oracles, a custom translation-test IR rewriter, ambiguous eager builder usage,
+and quadratic barrier bookkeeping.
 
-Independent review found one barrier-specific alias gap in Stage 2. The
-remediation centralizes dynamic distinctness assertions across gates and
-barriers, accounts for those assertions in the emission budget, and rejects
-exact duplicate scalar, static-register, and hardware barrier operands during
-semantic analysis. The focused OpenQASM target suite has 145 passing tests, and
-a barrier-only `mqt-cc --emit=qco` smoke test verifies the assertion followed by
-extract/barrier/reverse-insert. After rebuilding all affected dependents, the
-post-review full CTest matrix passes all 4,402 tests with the same two
-configured QDMI skips.
+The final remediation uses MLIR `RegionUtils`, removes the dead state and all
+new void casts, rejects statically proven simultaneous aliases before mutation,
+compares translation fixtures after the production QC-to-QCO pass, and verifies
+that every register access is an operation-local extract/use/insert triple.
+Structured tests now require complete tensor operands, region arguments, and
+results. OpenQASM emission counts and emits only pairs that may alias; a
+10,000-element static barrier emits no runtime alias checks and lowers in linear
+time.
 
-During finalization, `origin/main` advanced once more with modifier-body helper
-reuse. Both commits rebased cleanly onto
-`618c37fa4d5d15be282117d2c12f26a3b6e3dd75`; the overlapping QC/QCO modifier
-fixtures rebuilt without conflict, and all 4,404 tests on that base pass.
+The final release build completed all 434 steps. All 4,409 configured CTest
+cases passed, with the two existing QDMI job-ID skips. The full Python 3.13
+session passed 416 tests with three expected Qiskit compatibility skips. LLVM
+22.1.8 clang-tidy reported no diagnostics in the changed translation units,
+every repository hook passed, and `mqt-cc` emitted QC MLIR, QCO, and base QIR
+for repeated dynamic accesses into a 99,999-qubit register.
 
 No dialect operation, type, pass, command-line option, or external dependency
-was added. Direct QC-to-QIR conversion remains unchanged. A fresh independent
-exact-revision review found no remaining correctness, MLIR-legality, lifetime,
-alias-safety, SCF, QTensor-fold, direct-QIR, or emission-budget defect.
+was added. Direct QC-to-QIR conversion remains unchanged. The current base is
+`ae7aff283c0c06da5e01e53349a3eaec8b322c1e`; its maintenance-only changes do not
+overlap the MLIR implementation. A final independent exact-revision review is
+pending.
 
 ## Context and Orientation
 
@@ -189,22 +247,23 @@ qubit and whose `qtensor.insert` returns it.
 
 `mlir/include/mlir/Dialect/QC/Builder/QCProgramBuilder.h` and
 `mlir/lib/Dialect/QC/Builder/QCProgramBuilder.cpp` own the public builder.
-`allocQubitRegister` currently allocates a qubit memref and eagerly loads every
-constant element. `loadQubit` rejects entry-block and repeated loads using
-per-region maps.
+Before this work, `allocQubitRegister` allocated a qubit memref and eagerly
+loaded every constant element, while `loadQubit` rejected entry-block and
+repeated loads using per-region maps.
 
 `mlir/lib/Conversion/QCToQCO/QCToQCO.cpp` converts QC reference semantics to QCO
-value semantics. Its current load pattern extracts a qubit when the load is
-converted and keeps it live until a structured boundary or register
-deallocation. That is unsafe when another load may name the same element.
+value semantics. Its previous load pattern extracted a qubit when the load was
+converted and kept it live until a structured boundary or register deallocation.
+That was unsafe when another load could name the same element.
 
 `mlir/lib/Dialect/QTensor/IR/Operations/ExtractOp.cpp` and `InsertOp.cpp` own
-local tensor-chain canonicalization. They use constant-index equality when
-searching through a chain.
+local tensor-chain canonicalization. The former implementations searched
+constant-index chains; the replacements fold only direct producer/consumer pairs
+whose indices are equal by MLIR's standard value-or-constant utility.
 
 `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp` emits QC from the
-typed OpenQASM frontend. Non-scalar declarations currently retain vectors of
-eagerly loaded values. Dynamic references recursively construct
+typed OpenQASM frontend. Before Stage 2, non-scalar declarations retained
+vectors of eagerly loaded values and dynamic references recursively constructed
 `scf.index_switch` operations over those vectors.
 
 Tests belong under `mlir/unittests/Conversion/QCToQCO/`,
@@ -334,7 +393,7 @@ The selected implementation base is:
 
     e772dba5ce1c51cc7b8931b8a5031a826040f3d5
 
-At final validation the live base included three subsequent commits:
+The final validated base also includes:
 
     a4293f1473f4a716aec81707d3cbe01cd1a1b83a
     ✨ Expose DD serialization in Python (#1983)
@@ -344,6 +403,12 @@ At final validation the live base included three subsequent commits:
 
     618c37fa4d5d15be282117d2c12f26a3b6e3dd75
     ♻️ Reuse MLIR modifier body helpers (#1985)
+
+    907e30c1dc11d47ef0c2fe14659e8c7ac2c297ae
+    ⚡ Speed up documentation builds (#1988)
+
+    ae7aff283c0c06da5e01e53349a3eaec8b322c1e
+    🔧 Maintenance round (#1989)
 
 Issue #1893 is an enhancement/MLIR issue and is not labeled `good first issue`.
 No external GitHub mutation is authorized by this plan.
@@ -383,3 +448,7 @@ commit and recorded the exact-base release rebuild and 4,404-test result.
 
 Revision note (2026-08-01, Codex): Closed the plan after a fresh independent
 exact-revision review reported no actionable findings.
+
+Revision note (2026-08-02, Codex): Reopened and updated the plan for the two
+subsequent exhaustive remediation rounds, current-base integration, and final
+validation. A fresh exact-revision review remains pending.
