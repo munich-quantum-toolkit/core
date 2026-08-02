@@ -474,6 +474,19 @@ private:
                                 projectedEmission, source);
   }
 
+  [[nodiscard]] static llvm::SmallDenseSet<frontend::RegisterId, 4>
+  collectDynamicallyIndexedRegisters(
+      const ArrayRef<frontend::QubitReference> references) {
+    llvm::SmallDenseSet<frontend::RegisterId, 4> registers;
+    for (const auto& reference : references) {
+      if (reference.kind == frontend::QubitReferenceKind::Register &&
+          reference.dynamicIndex) {
+        registers.insert(reference.symbol);
+      }
+    }
+    return registers;
+  }
+
   [[nodiscard]] bool
   chargeQubitAccesses(const ArrayRef<frontend::QubitReference> references,
                       const size_t multiplicity, size_t& projectedEmission,
@@ -482,6 +495,8 @@ private:
       size_t total = 0;
       size_t dynamic = 0;
     };
+    const auto dynamicallyIndexedRegisters =
+        collectDynamicallyIndexedRegisters(references);
     llvm::DenseMap<frontend::RegisterId, RegisterAccessCounts> priorAccesses;
 
     for (const auto& reference : references) {
@@ -504,6 +519,9 @@ private:
         return false;
       }
 
+      if (!dynamicallyIndexedRegisters.contains(reference.symbol)) {
+        continue;
+      }
       auto& accesses = priorAccesses[reference.symbol];
       const auto comparisons =
           reference.dynamicIndex ? accesses.total : accesses.dynamic;
@@ -1484,6 +1502,12 @@ private:
   void
   emitDistinctQubitAssertions(ArrayRef<frontend::QubitReference> references,
                               ValueRange indices, const StringRef message) {
+    const auto dynamicallyIndexedRegisters =
+        collectDynamicallyIndexedRegisters(references);
+    if (dynamicallyIndexedRegisters.empty()) {
+      return;
+    }
+
     struct PriorRegisterAccesses {
       SmallVector<size_t> all;
       SmallVector<size_t> dynamic;
@@ -1492,7 +1516,8 @@ private:
 
     for (const auto [position, reference] : llvm::enumerate(references)) {
       if (reference.kind != frontend::QubitReferenceKind::Register ||
-          program.registers.at(reference.symbol).isScalar) {
+          program.registers.at(reference.symbol).isScalar ||
+          !dynamicallyIndexedRegisters.contains(reference.symbol)) {
         continue;
       }
       auto& accesses = priorAccesses[reference.symbol];

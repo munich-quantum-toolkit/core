@@ -2245,7 +2245,7 @@ private:
       qubits.insert(qubits.end(), selection.begin(), selection.end());
     }
 
-    if (!barrier.operands.empty()) {
+    if (barrier.operands.size() > 1) {
       llvm::DenseSet<std::pair<RegisterId, uint64_t>> staticRegisterQubits;
       llvm::DenseSet<std::pair<RegisterId, ExpressionId>> dynamicRegisterQubits;
       llvm::DenseSet<uint32_t> gateArguments;
