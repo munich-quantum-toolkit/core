@@ -196,6 +196,12 @@ public:
   /// Lift Hadamard gates away from measurements.
   [[nodiscard]] bool liftHadamards();
 
+  /// Reuse independent single-qubit allocations.
+  [[nodiscard]] bool reuseQubits();
+
+  /// Prepare the program for qubit reuse and reuse eligible qubits.
+  [[nodiscard]] bool runQubitReusePipeline();
+
   /// Decompose controlled X/Z gates, `qco.rccx`, and constant-angle phase
   /// gates with at least @p minControls controls (@p minControls must be at
   /// least 2).

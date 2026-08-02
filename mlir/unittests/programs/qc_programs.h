@@ -1286,4 +1286,12 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
 /// nested ctrl operation where the qubit is extracted from the register.
 Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
 
+// --- Qubit Reuse ---------------------------------------------------------- //
+
+/// Creates a circuit with two qubits and a H gate applied to both.
+SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with a single controlled X gate on two individual qubits.
+SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b);
+
 } // namespace mlir::qc

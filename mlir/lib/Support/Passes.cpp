@@ -52,12 +52,19 @@ void registerMQTCompilerPasses() {
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerFuseTwoQubitUnitaryRuns();
     qco::registerHadamardLifting();
+    qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
+    qco::registerReplaceClassicalControls();
+    qco::registerReuseQubits();
     mqt::registerNormalizeGlobalPhases();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
+    PassPipelineRegistration<>(
+        "mqt-qubit-reuse",
+        "Prepare a QCO program for qubit reuse and reuse eligible qubits.",
+        populateQubitReusePipeline);
     return true;
   }();
   static_cast<void>(REGISTERED);
@@ -65,6 +72,12 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+void populateQubitReusePipeline(OpPassManager& pm) {
+  pm.addPass(qco::createMeasurementLifting());
+  pm.addPass(qco::createReplaceClassicalControls());
+  pm.addPass(qco::createReuseQubits());
 }
 
 bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {

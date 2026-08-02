@@ -407,6 +407,13 @@ operations.)pb");
       .def("lift_hadamards",
            &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
            "Move Hadamard gates through compatible operations.")
+      .def("reuse_qubits",
+           &BooleanMemberAdapter<&mlir::QCOProgram::reuseQubits>::call,
+           "Reuse independent single-qubit allocations.")
+      .def(
+          "run_qubit_reuse_pipeline",
+          &BooleanMemberAdapter<&mlir::QCOProgram::runQubitReusePipeline>::call,
+          "Prepare the program for qubit reuse and reuse eligible qubits.")
       .def("decompose_multi_controlled",
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
