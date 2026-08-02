@@ -1623,6 +1623,30 @@ TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
   EXPECT_EQ(operationCount(2), operationCount(100'000));
 }
 
+TEST(OpenQASMTargetTest, LargeStaticBarrierAvoidsAliasChecks) {
+  constexpr size_t width = 10'000;
+  const auto source =
+      "OPENQASM 3.1;\nqubit[" + std::to_string(width) + "] q;\nbarrier q;\n";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t loads = 0;
+  size_t barriers = 0;
+  size_t assertions = 0;
+  moduleOp->walk([&](memref::LoadOp load) {
+    if (isa<qc::QubitType>(load.getType())) {
+      ++loads;
+    }
+  });
+  moduleOp->walk([&](qc::BarrierOp) { ++barriers; });
+  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
+  EXPECT_EQ(loads, width);
+  EXPECT_EQ(barriers, 1);
+  EXPECT_EQ(assertions, 0);
+}
+
 TEST(OpenQASMTargetTest, SupportsOrdinaryBitInitializationAndAssignment) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;

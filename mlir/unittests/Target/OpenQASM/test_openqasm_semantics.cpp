@@ -95,6 +95,7 @@ TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; barrier q, q;",
       "OPENQASM 3.1; qubit[2] q; barrier q[0], q[0];",
+      "OPENQASM 3.1; qubit[2] q; int i = 0; barrier q, q[i];",
       "OPENQASM 3.1; barrier $0, $0;",
   });
 

@@ -478,6 +478,12 @@ private:
   chargeQubitAccesses(const ArrayRef<frontend::QubitReference> references,
                       const size_t multiplicity, size_t& projectedEmission,
                       const oq3::frontend::SourceLocation& source) const {
+    struct RegisterAccessCounts {
+      size_t total = 0;
+      size_t dynamic = 0;
+    };
+    llvm::DenseMap<frontend::RegisterId, RegisterAccessCounts> priorAccesses;
+
     for (const auto& reference : references) {
       if (reference.kind != frontend::QubitReferenceKind::Register ||
           program.registers.at(reference.symbol).isScalar) {
@@ -497,21 +503,20 @@ private:
                                 source)) {
         return false;
       }
-    }
 
-    for (const auto [position, reference] : llvm::enumerate(references)) {
-      if (reference.kind != frontend::QubitReferenceKind::Register) {
-        continue;
+      auto& accesses = priorAccesses[reference.symbol];
+      const auto comparisons =
+          reference.dynamicIndex ? accesses.total : accesses.dynamic;
+      if (comparisons > PROJECTED_EMISSION_LIMIT / 2) {
+        return reportProjectedEmissionLimit(source);
       }
-      for (const auto& previous : ArrayRef(references).take_front(position)) {
-        if (previous.kind != frontend::QubitReferenceKind::Register ||
-            previous.symbol != reference.symbol ||
-            (!previous.dynamicIndex && !reference.dynamicIndex)) {
-          continue;
-        }
-        if (!chargeScaledEmission(2, multiplicity, projectedEmission, source)) {
-          return false;
-        }
+      if (!chargeScaledEmission(2 * comparisons, multiplicity,
+                                projectedEmission, source)) {
+        return false;
+      }
+      ++accesses.total;
+      if (reference.dynamicIndex) {
+        ++accesses.dynamic;
       }
     }
     return true;
@@ -1479,21 +1484,29 @@ private:
   void
   emitDistinctQubitAssertions(ArrayRef<frontend::QubitReference> references,
                               ValueRange indices, const StringRef message) {
+    struct PriorRegisterAccesses {
+      SmallVector<size_t> all;
+      SmallVector<size_t> dynamic;
+    };
+    llvm::DenseMap<frontend::RegisterId, PriorRegisterAccesses> priorAccesses;
+
     for (const auto [position, reference] : llvm::enumerate(references)) {
-      if (reference.kind != frontend::QubitReferenceKind::Register) {
+      if (reference.kind != frontend::QubitReferenceKind::Register ||
+          program.registers.at(reference.symbol).isScalar) {
         continue;
       }
-      for (const auto [previousPosition, previous] :
-           llvm::enumerate(ArrayRef(references).take_front(position))) {
-        if (previous.kind != frontend::QubitReferenceKind::Register ||
-            previous.symbol != reference.symbol ||
-            (!previous.dynamicIndex && !reference.dynamicIndex)) {
-          continue;
-        }
+      auto& accesses = priorAccesses[reference.symbol];
+      const ArrayRef<size_t> possibleAliases =
+          reference.dynamicIndex ? accesses.all : accesses.dynamic;
+      for (const auto previousPosition : possibleAliases) {
         auto distinct =
             arith::CmpIOp::create(builder, arith::CmpIPredicate::ne,
                                   indices[previousPosition], indices[position]);
         cf::AssertOp::create(builder, distinct, message);
+      }
+      accesses.all.push_back(position);
+      if (reference.dynamicIndex) {
+        accesses.dynamic.push_back(position);
       }
     }
   }
