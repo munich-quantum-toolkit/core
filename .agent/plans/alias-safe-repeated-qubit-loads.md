@@ -83,8 +83,36 @@ width-dependent `scf.index_switch`.
 - [x] (2026-08-02) Integrate current `origin/main`
       `ae7aff283c0c06da5e01e53349a3eaec8b322c1e` with a signed merge, then rerun
       all repository hooks and the full Python 3.13 test session.
-- [ ] Obtain a fresh independent read-only review of the final exact source
-      revision.
+- [x] (2026-08-02) Integrate the subsequently advanced `origin/main`
+      `1f9fd7ebfa085bd57e7224caac8ab3a73df36981` with signed merge `d8cb2b315`,
+      including the compiler-wide global-phase normalization.
+- [x] (2026-08-02) Address independent-review finding MF-07 by rejecting
+      implicit standalone and register-backed qubit captures in every QC
+      modifier verifier and in the verifier-independent QC-to-QCO preflight. Add
+      direct/nested coverage for all three modifiers and positive classical
+      capture coverage.
+- [x] (2026-08-02) Address the final quality findings by adding the Unreleased
+      changelog entry, adopting the live `moduleOp` naming policy, and
+      documenting the current review and validation state.
+- [x] (2026-08-02) Complete the exact-base release build and all 4,467 CTest
+      cases, every repository hook, LLVM 22.1.8 changed-line clang-tidy, the
+      affected MLIR suites, Python 3.10 (417 passed, three configured skips),
+      and compact QC/QCO/QIR `mqt-cc` smokes. The remaining Python-version
+      repetitions were intentionally omitted at the user's request after the
+      broad native validation was green.
+- [x] (2026-08-02) Address final independent-review robustness findings by
+      validating quantum SSA sources before mutation. Ranked and unranked qubit
+      memrefs, non-one-dimensional or derived register storage, unsupported
+      quantum block arguments/results, and quantum captures through unsupported
+      region-bearing operations now receive diagnostics instead of reaching an
+      assertion or invalid dominance state.
+- [x] (2026-08-02) Pass all 165 QC-to-QCO tests, including the six
+      verifier-disabled `PreflightRejects*` regressions, and rerun changed-line
+      clang-tidy and formatting for the final remediation.
+- [x] (2026-08-02) Obtain a fresh independent read-only review of exact source
+      revision `252010af9d58bea0371aede7a86880b9d74eba49`; no actionable
+      correctness, conversion-legality, C++20/LLVM 22 idiom, performance, or
+      test-coverage findings remain.
 
 ## Surprises & Discoveries
 
@@ -147,6 +175,29 @@ width-dependent `scf.index_switch`.
   eagerly extracts its element and returns the residual tensor plus a standalone
   qubit. The corresponding QC APIs now document the same storage-only versus
   eager-reference distinction.
+- Observation: QC modifier verification previously allowed a qubit from an
+  enclosing region to be used without appearing among the modifier operands.
+  QC-to-QCO maps only the aliased modifier block arguments, so such a capture
+  reached an assertion when pass verification was disabled. MLIR
+  `getUsedValuesDefinedAbove` provides the exact capture query needed by both
+  the verifier and conversion preflight while leaving classical captures valid.
+- Observation: Collecting load provenance must not assume that the source memref
+  is rank one. Rank-zero `memref<!qc.qubit>` is valid MLIR, and calling
+  `front()` on its empty index range asserted. The preflight now validates
+  storage shape and value origin before recording provenance.
+- Observation: `BaseMemRefType`, rather than `MemRefType`, is required when
+  classifying unsupported quantum storage. Otherwise unranked
+  `memref<*x!qc.qubit>` block arguments and operations can remain dynamically
+  legal and escape conversion unchanged.
+- Observation: Only `scf.for`, `scf.while`, `scf.if`, and `scf.index_switch`
+  participate in QC-to-QCO's explicit quantum-state threading. Capturing quantum
+  values through another region-bearing operation, such as `scf.execute_region`,
+  must be diagnosed before rewriting; purely classical uses of those operations
+  remain legal.
+- Observation: QIR Base intentionally requires single-block straight-line QC
+  input and does not lower SCF. Dynamic loop programs therefore target the
+  Adaptive profile; the Base-profile dynamic-loop failure is not caused by this
+  change, and the QC-to-QIR implementations remain untouched.
 
 ## Decision Log
 
@@ -195,6 +246,24 @@ width-dependent `scf.index_switch`.
   public documentation and use storage-only APIs whenever complete tensor state
   is required. Rationale: Collapsing the APIs would either hide linear
   extraction or break source compatibility. Date/Author: 2026-08-02, Codex.
+- Decision: Reject implicit qubit captures in QC modifiers at both operation
+  verification and conversion preflight. Rationale: Modifier bodies may capture
+  classical parameters, but every quantum value must enter through an aliased
+  modifier block argument so the QCO linear mapping is complete. Date/Author:
+  2026-08-02, Codex.
+- Decision: Centralize the supported QC quantum-value-source contract in a
+  read-only preflight using MLIR `BaseMemRefType` and
+  `getUsedValuesDefinedAbove`. Rationale: The lowering state can map only
+  `qc.alloc`, `qc.static`, direct rank-one register loads, QC modifier qubit
+  arguments, and captures through the four explicitly converted SCF operations;
+  diagnosing every other source before dialect conversion prevents assertion and
+  dominance failures without adding alias analysis. Date/Author: 2026-08-02,
+  Codex.
+- Decision: After the complete release build, CTest matrix, hooks, and one
+  Python session passed, limit the final iterations to the affected conversion
+  binary, changed-line clang-tidy, and compiler smokes. Rationale: The user
+  explicitly requested shorter iterations once the broad validation was working.
+  Date/Author: 2026-08-02, Codex.
 
 ## Outcomes & Retrospective
 
@@ -215,27 +284,38 @@ provably invalid simultaneous register operands, shallow structured test
 oracles, a custom translation-test IR rewriter, ambiguous eager builder usage,
 and quadratic barrier bookkeeping.
 
-The final remediation uses MLIR `RegionUtils`, removes the dead state and all
-new void casts, rejects statically proven simultaneous aliases before mutation,
-compares translation fixtures after the production QC-to-QCO pass, and verifies
-that every register access is an operation-local extract/use/insert triple.
-Structured tests now require complete tensor operands, region arguments, and
+The completed remediation uses MLIR `RegionUtils`, removes the dead state and
+all new void casts, rejects statically proven simultaneous aliases before
+mutation, compares translation fixtures after the production QC-to-QCO pass, and
+verifies that every register access is an operation-local extract/use/insert
+triple. Structured tests require complete tensor operands, region arguments, and
 results. OpenQASM emission counts and emits only pairs that may alias; a
 10,000-element static barrier emits no runtime alias checks and lowers in linear
 time.
 
-The final release build completed all 434 steps. All 4,409 configured CTest
-cases passed, with the two existing QDMI job-ID skips. The full Python 3.13
-session passed 416 tests with three expected Qiskit compatibility skips. LLVM
-22.1.8 clang-tidy reported no diagnostics in the changed translation units,
-every repository hook passed, and `mqt-cc` emitted QC MLIR, QCO, and base QIR
-for repeated dynamic accesses into a 99,999-qubit register.
+The final scrutiny rounds also closed the entire preflight contract. Modifier
+verifiers and conversion preflight reject implicit quantum captures while
+allowing classical captures. A centralized source validator uses
+`BaseMemRefType` and MLIR region-capture discovery to accept only the quantum
+SSA sources and region operations the lowering maps. Rank-zero, unranked,
+derived, block-argument, and unsupported-region inputs now fail with diagnostics
+before any delayed conversion state is created.
+
+After integrating the current base, the release build completed and all 4,467
+configured CTest cases passed, with the two existing QDMI job-ID skips. Every
+repository hook passed. Python 3.10 passed 417 tests with three expected Qiskit
+compatibility skips; the user requested that the remaining interpreter
+repetitions be skipped. LLVM 22.1.8 changed-line clang-tidy reported no
+diagnostics, the final QC-to-QCO suite passed all 165 tests, and compact
+`mqt-cc` smokes emitted direct-load QC, operation-local QCO, Adaptive QIR for
+dynamic SCF, and Base QIR for straight-line input.
 
 No dialect operation, type, pass, command-line option, or external dependency
 was added. Direct QC-to-QIR conversion remains unchanged. The current base is
-`ae7aff283c0c06da5e01e53349a3eaec8b322c1e`; its maintenance-only changes do not
-overlap the MLIR implementation. A final independent exact-revision review is
-pending.
+`1f9fd7ebfa085bd57e7224caac8ab3a73df36981`. A final independent review of exact
+source revision `252010af9d58bea0371aede7a86880b9d74eba49` reported no remaining
+findings. The remote PR still points to the older `004511d` revision, so its
+existing green checks do not validate these local commits.
 
 ## Context and Orientation
 
@@ -410,6 +490,9 @@ The final validated base also includes:
     ae7aff283c0c06da5e01e53349a3eaec8b322c1e
     🔧 Maintenance round (#1989)
 
+    1f9fd7ebfa085bd57e7224caac8ab3a73df36981
+    ✨ Normalize compiler-wide global phases (#1986)
+
 Issue #1893 is an enhancement/MLIR issue and is not labeled `good first issue`.
 No external GitHub mutation is authorized by this plan.
 
@@ -452,3 +535,9 @@ exact-revision review reported no actionable findings.
 Revision note (2026-08-02, Codex): Reopened and updated the plan for the two
 subsequent exhaustive remediation rounds, current-base integration, and final
 validation. A fresh exact-revision review remains pending.
+
+Revision note (2026-08-02, Codex): Closed the plan after integrating `1f9fd7eb`,
+fixing implicit modifier captures and the complete quantum-value preflight
+contract, recording the shortened final validation requested by the user, and
+receiving a clean independent review of exact source revision
+`252010af9d58bea0371aede7a86880b9d74eba49`.
