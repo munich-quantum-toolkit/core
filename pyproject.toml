@@ -323,6 +323,7 @@ docs = [
   "sphinx-autoapi>=3.6.1",
   "sphinx-copybutton>=0.5.2",
   "sphinx-design>=0.6.1",
+  "sphinx-llm",
   "sphinxcontrib-bibtex>=2.6.5",
   "sphinxext-opengraph>=0.13.0",
   "qiskit[visualization]>=1.1.0",
