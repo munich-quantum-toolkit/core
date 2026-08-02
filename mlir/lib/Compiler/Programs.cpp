@@ -382,6 +382,18 @@ bool QCOProgram::liftHadamards() {
       "failed to lift Hadamard gates"));
 }
 
+bool QCOProgram::reuseQubits() {
+  return succeeded(runPasses(
+      mod(), [](OpPassManager& pm) { pm.addPass(qco::createReuseQubits()); },
+      "failed to reuse qubits"));
+}
+
+bool QCOProgram::runQubitReusePipeline() {
+  return succeeded(runPasses(
+      mod(), [](OpPassManager& pm) { populateQubitReusePipeline(pm); },
+      "failed to run the qubit reuse pipeline"));
+}
+
 bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {
   return succeeded(runPasses(
       mod(),

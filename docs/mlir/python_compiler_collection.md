@@ -115,19 +115,29 @@ custom = compile_program(
 )
 ```
 
-For example, the compiler driver can enable qubit reuse directly:
+The raw qubit-reuse pass and its composite preparation pipeline are both
+available through the compiler collection:
 
-```console
-mqt-cc input.qasm --emit=qco-optimized --reuse-qubits
-mqt-cc input.qasm --emit=qco-optimized --reuse-qubits-full
+```{code-cell} ipython3
+raw_reuse = compile_program(bell_qasm, output=OutputFormat.QCO)
+raw_reuse.reuse_qubits()
+
+composite_reuse = compile_program(bell_qasm, output=OutputFormat.QCO)
+composite_reuse.run_qubit_reuse_pipeline()
 ```
 
-The second form also lifts measurements and replaces classical controls before
-reusing qubits. Both convenience options run before the default QCO optimization
-pipeline. They are mutually exclusive and cannot be combined with custom pass
-options. Use {code}`--pass-pipeline='builtin.module(reuse-qubits)'` or
-{code}`--pass-pipeline='builtin.module(reuse-qubits-full)'` when composing a
-custom pipeline instead.
+The same flows can be composed with the default optimization pipeline in the
+compiler driver:
+
+```console
+mqt-cc input.qasm --emit=qco-optimized \
+  --pass-pipeline='builtin.module(reuse-qubits,mqt-qco-default)'
+mqt-cc input.qasm --emit=qco-optimized \
+  --pass-pipeline='builtin.module(mqt-qubit-reuse,mqt-qco-default)'
+```
+
+The {code}`mqt-qubit-reuse` pipeline lifts measurements and replaces classical
+controls before applying the raw {code}`reuse-qubits` pass.
 
 The {code}`qco_pipeline` argument replaces the default QCO optimization
 pipeline. It is applied when compilation proceeds beyond the raw

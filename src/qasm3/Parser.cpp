@@ -859,8 +859,7 @@ std::pair<std::shared_ptr<TypeExpr>, bool> Parser::parseType() {
   std::shared_ptr<TypeExpr> type;
   bool isOldStyleDeclaration = false;
 
-  auto keyword = current().kind;
-  switch (keyword) {
+  switch (current().kind) {
   case Token::Kind::CReg:
     type = DesignatedType<std::shared_ptr<Expression>>::getBitTy(nullptr);
     isOldStyleDeclaration = true;
@@ -906,11 +905,6 @@ std::pair<std::shared_ptr<TypeExpr>, bool> Parser::parseType() {
     auto designator = parseTypeDesignator();
     type->setDesignator(std::move(designator));
     return std::pair{std::move(type), isOldStyleDeclaration};
-  }
-  if (keyword == Token::Kind::Qubit) {
-    return std::pair{
-        UnsizedType<std::shared_ptr<Expression>>::getSingleQubitTy(),
-        isOldStyleDeclaration};
   }
 
   return std::pair{std::move(type), isOldStyleDeclaration};

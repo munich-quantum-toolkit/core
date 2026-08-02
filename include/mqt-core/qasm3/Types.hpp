@@ -154,7 +154,7 @@ public:
   std::string designatorToString();
 };
 
-enum UnsizedTy : uint8_t { Bool, Duration, SingleQubit };
+enum UnsizedTy : uint8_t { Bool, Duration };
 
 template <typename T> class UnsizedType final : public Type<T> {
 public:
@@ -178,9 +178,6 @@ public:
   static std::shared_ptr<Type<T>> getDurationTy() {
     return std::make_shared<UnsizedType>(Duration);
   }
-  static std::shared_ptr<Type<T>> getSingleQubitTy() {
-    return std::make_shared<UnsizedType>(SingleQubit);
-  }
 
   T getDesignator() override {
     throw std::runtime_error("Unsized types do not have designators");
@@ -198,8 +195,6 @@ public:
       return "bool";
     case Duration:
       return "duration";
-    case SingleQubit:
-      return "qubit";
     }
     throw std::runtime_error("Unhandled type");
   }

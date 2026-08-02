@@ -299,6 +299,36 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_reuses_qubits() -> None:
+    """Expose the raw and composite qubit-reuse flows."""
+    independent_qubits = """
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %q1 = qco.alloc : !qco.qubit
+    %q0_h = qco.h %q0 : !qco.qubit -> !qco.qubit
+    %q1_h = qco.h %q1 : !qco.qubit -> !qco.qubit
+    %q0_m, %c0 = qco.measure %q0_h : !qco.qubit
+    %q1_m, %c1 = qco.measure %q1_h : !qco.qubit
+    qco.sink %q0_m : !qco.qubit
+    qco.sink %q1_m : !qco.qubit
+    return
+  }
+}
+"""
+    raw = QCOProgram.from_mlir_str(independent_qubits)
+    assert raw.ir.count("qco.alloc") == 2
+    raw.reuse_qubits()
+    assert raw.ir.count("qco.alloc") == 1
+    assert "qco.reset" in raw.ir
+
+    composite = QCOProgram.from_mlir_str(independent_qubits)
+    assert composite.ir.count("qco.alloc") == 2
+    composite.run_qubit_reuse_pipeline()
+    assert composite.ir.count("qco.alloc") == 1
+    assert "qco.reset" in composite.ir
+
+
 def test_qco_program_two_qubit_fusion_requires_native_gates() -> None:
     """Require callers to provide a non-empty native gate menu."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)

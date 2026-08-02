@@ -375,17 +375,7 @@ InferredType TypeCheckPass::visitMeasureExpression(
     error("Unknown identifier '" + indexedIdentifier->identifier + "'.");
     return InferredType::error();
   }
-  uint64_t width = 0;
-  const auto type = it->second.type;
-  if (type->allowsDesignator()) {
-    width = type->getDesignator();
-  } else {
-    const auto unsized = std::dynamic_pointer_cast<UnsizedType<uint64_t>>(type);
-    if (!unsized || unsized->type != qasm3::SingleQubit) {
-      return error("Cannot measure non-qubit type.");
-    }
-    width = 1;
-  }
+  const auto width = it->second.type->getDesignator();
   return InferredType{std::dynamic_pointer_cast<ResolvedType>(
       DesignatedType<uint64_t>::getBitTy(width))};
 }
