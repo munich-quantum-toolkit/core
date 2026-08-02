@@ -10,11 +10,13 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -47,7 +49,8 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, cf::ControlFlowDialect,
+                    func::FuncDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
@@ -220,6 +223,43 @@ TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
   ASSERT_EQ(callees.size(), 2);
   EXPECT_EQ(callees[0], "record1");
   EXPECT_EQ(callees[1], "record0");
+}
+
+/**
+ * @brief Qubit reuse must skip allocations with users in another block.
+ */
+TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
+  module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (i1, i1) attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q0_m, %c0 = qco.measure %q0 : !qco.qubit
+        qco.sink %q0_m : !qco.qubit
+        cf.br ^next
+      ^next:
+        %q1_h = qco.h %q1 : !qco.qubit -> !qco.qubit
+        %q1_m, %c1 = qco.measure %q1_h : !qco.qubit
+        qco.sink %q1_m : !qco.qubit
+        return %c0, %c1 : i1, i1
+      }
+    }
+  )mlir",
+                                       &context);
+  ASSERT_TRUE(module);
+
+  PassManager pm(&context);
+  pm.addPass(createReuseQubits());
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  size_t allocCount = 0;
+  size_t resetCount = 0;
+  main.walk([&](AllocOp) { ++allocCount; });
+  main.walk([&](ResetOp) { ++resetCount; });
+  EXPECT_EQ(allocCount, 2);
+  EXPECT_EQ(resetCount, 0);
 }
 
 /**

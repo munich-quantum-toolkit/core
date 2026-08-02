@@ -20,7 +20,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <utility>
@@ -64,15 +63,17 @@ struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
    * prospective reuse point without reordering observable side effects.
    * @param alloc The allocation whose users may need to move.
    * @param reusePoint The sink after which the replacement reset is inserted.
-   * @return Whether every operation that may need to move is side-effect-free.
+   * @return Whether every operation can be represented in the reuse point's
+   * block and every operation that may need to move is side-effect-free.
    */
   static bool canSafelyReorderUsers(AllocOp alloc, SinkOp reusePoint) {
     SetVector<mlir::Operation*> slice;
     getForwardSlice(alloc.getResult(), &slice);
 
     for (auto* op : slice) {
-      while (op->getBlock() != reusePoint->getBlock()) {
-        op = op->getParentOp();
+      op = reusePoint->getBlock()->findAncestorOpInBlock(*op);
+      if (op == nullptr) {
+        return false;
       }
       if (reusePoint->isBeforeInBlock(op) || isa<SinkOp>(op) ||
           isMemoryEffectFree(op)) {
@@ -102,6 +103,9 @@ struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
         // Move the user operation after the current operation.
 
         user = op->getBlock()->findAncestorOpInBlock(*user);
+        if (user == nullptr) {
+          continue;
+        }
         if (op->isBeforeInBlock(user)) {
           continue; // Already in the correct order.
         }

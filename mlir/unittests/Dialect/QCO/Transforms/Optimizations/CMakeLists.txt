@@ -16,6 +16,7 @@ add_executable(
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
+          MLIRControlFlowDialect
           MLIRQCOProgramBuilder
           MLIRQCOTransforms
           MLIRQCOUtils
