@@ -142,6 +142,9 @@ public:
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
+  /// Normalize scoped global phases in place.
+  [[nodiscard]] bool normalizeGlobalPhases();
+
   /// Consume this program and convert it to QCO.
   [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
 
@@ -169,6 +172,9 @@ public:
 
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] bool cleanup();
+
+  /// Normalize scoped global phases in place.
+  [[nodiscard]] bool normalizeGlobalPhases();
 
   /// Run an MLIR textual QCO pass pipeline in place.
   [[nodiscard]] bool runPassPipeline(std::string_view pipeline,

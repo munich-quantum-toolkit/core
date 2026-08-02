@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add compiler-wide scoped global-phase normalization with exact modifier
+  semantics and synthesis integration ([#1986]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
 - ✨ Make superconducting QDMI devices runtime configurable with session-owned
@@ -703,6 +705,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980

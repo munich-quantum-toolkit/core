@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
@@ -56,6 +57,7 @@ void registerMQTCompilerPasses() {
     qco::registerQuantumLoopUnroll();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
+    mqt::registerNormalizeGlobalPhases();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
@@ -109,13 +111,17 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 }
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
@@ -150,7 +156,7 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
       "Failed to run the QIR cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateJeffCleanupPipeline,
+[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp moduleOp) {
+  return runWithPassManager(moduleOp, populateJeffCleanupPipeline,
                             "Failed to run the jeff cleanup pipeline.");
 }

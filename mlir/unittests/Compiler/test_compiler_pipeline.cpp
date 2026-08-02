@@ -531,6 +531,47 @@ ratio = 2.0;
             (std::vector<std::string>{"i64", "memref<2xi1>", "f64"}));
 }
 
+TEST(OpenQASMCompilerOutputTest, GlobalPhasesTraverseQCQCOJeffAndQIRScopes) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+gate phased q {
+  gphase(0.371);
+  x q;
+}
+qubit[2] q;
+ctrl @ phased q[0], q[1];
+bit flag = measure q[0];
+if (flag) {
+  gphase(0.25);
+  h q[1];
+} else {
+  gphase(-0.5);
+  z q[1];
+}
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  ASSERT_TRUE(qc->cleanup());
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+
+  auto jeffInput = qco->copy();
+  auto jeff = std::move(jeffInput).intoJeff();
+  ASSERT_TRUE(jeff);
+  ASSERT_TRUE(jeff->cleanup());
+
+  auto restoredQC = std::move(*qco).intoQC();
+  ASSERT_TRUE(restoredQC);
+  ASSERT_TRUE(restoredQC->cleanup());
+  auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(qir);
+  ASSERT_TRUE(qir->cleanup());
+  EXPECT_TRUE(qir->llvmIR().has_value());
+}
+
 enum class OutputRecordingShape : std::uint8_t { AdaptiveArrays, BaseArrays };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
@@ -712,6 +753,50 @@ h q;
   ASSERT_TRUE(qcoFromQC);
   EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
   EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
+}
+
+/**
+ * @brief Test: typed programs expose idempotent global-phase normalization.
+ */
+TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
+  const std::string qcSource = R"mlir(module {
+    func.func @test(%q: !qc.qubit) {
+      %a = arith.constant 0.25 : f64
+      qc.gphase(%a)
+      qc.x %q : !qc.qubit
+      %b = arith.constant 0.5 : f64
+      qc.gphase(%b)
+      return
+    }
+  })mlir";
+  const std::string qcoSource = R"mlir(module {
+    func.func @test(%q: !qco.qubit) -> !qco.qubit {
+      %a = arith.constant 0.25 : f64
+      qco.gphase(%a)
+      %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+      %b = arith.constant 0.5 : f64
+      qco.gphase(%b)
+      return %q1 : !qco.qubit
+    }
+  })mlir";
+
+  auto qc = QCProgram::fromMLIRString(qcSource);
+  auto qco = QCOProgram::fromMLIRString(qcoSource);
+  ASSERT_TRUE(qc);
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qc->normalizeGlobalPhases());
+  ASSERT_TRUE(qco->normalizeGlobalPhases());
+  EXPECT_EQ(StringRef(qc->str()).count("qc.gphase"), 1);
+  EXPECT_EQ(StringRef(qco->str()).count("qco.gphase"), 1);
+
+  const auto once = qco->str();
+  ASSERT_TRUE(qco->normalizeGlobalPhases());
+  EXPECT_EQ(qco->str(), once);
+
+  auto textual = QCOProgram::fromMLIRString(qcoSource);
+  ASSERT_TRUE(textual);
+  ASSERT_TRUE(textual->runPassPipeline("normalize-global-phases"));
+  EXPECT_EQ(StringRef(textual->str()).count("qco.gphase"), 1);
 }
 
 /**

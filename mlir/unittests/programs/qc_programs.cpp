@@ -517,7 +517,7 @@ Value powThirdX(QCProgramBuilder& b) {
 
 Value powThirdXRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.gphase(-1.0 / 3.0 * std::numbers::pi / 2.0);
+  b.gphase(1.0 / 3.0 * std::numbers::pi / 2.0);
   b.rx(1.0 / 3.0 * std::numbers::pi, q[0]);
   return b.measure(q[0]);
 }
@@ -574,7 +574,7 @@ Value powHalfY(QCProgramBuilder& b) {
 
 Value powHalfYRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.gphase(-std::numbers::pi / 4.0);
+  b.gphase(std::numbers::pi / 4.0);
   b.ry(std::numbers::pi / 2.0, q[0]);
   return b.measure(q[0]);
 }
@@ -1039,7 +1039,7 @@ Value powThirdSx(QCProgramBuilder& b) {
 
 Value powThirdSxRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.gphase(-1.0 / 3.0 * std::numbers::pi / 4.0);
+  b.gphase(1.0 / 3.0 * std::numbers::pi / 4.0);
   b.rx(1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
   return b.measure(q[0]);
 }
@@ -1109,7 +1109,7 @@ Value powThirdSxdg(QCProgramBuilder& b) {
 
 Value powThirdSxdgRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.gphase(1.0 / 3.0 * std::numbers::pi / 4.0);
+  b.gphase(-1.0 / 3.0 * std::numbers::pi / 4.0);
   b.rx(-1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
   return b.measure(q[0]);
 }
@@ -2499,7 +2499,7 @@ Value ctrlPowSx(QCProgramBuilder& b) {
 Value ctrlPowSxRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](Value target) {
-    b.gphase(-std::numbers::pi / 12.0);
+    b.gphase(std::numbers::pi / 12.0);
     b.rx(std::numbers::pi / 6.0, target);
   });
   return measureAndReturn(b, q.qubits);

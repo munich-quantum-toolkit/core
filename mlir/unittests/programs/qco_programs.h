@@ -254,7 +254,7 @@ Value powNegHalfX(QCOProgramBuilder& b);
 /// Creates a circuit with pow(1/3) wrapping an X gate (general: gphase + rx).
 Value powThirdX(QCOProgramBuilder& b);
 
-/// Creates the reference for powThirdX: gphase(-π/6) + rx(π/3).
+/// Creates the reference for powThirdX: gphase(π/6) + rx(π/3).
 Value powThirdXRef(QCOProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
@@ -286,7 +286,7 @@ Value twoY(QCOProgramBuilder& b);
 /// Creates a circuit with pow(0.5) wrapping a Y gate (folds to gphase + RY).
 Value powHalfY(QCOProgramBuilder& b);
 
-/// Creates the reference for powHalfY: gphase(-π/4) followed by ry(π/2).
+/// Creates the reference for powHalfY: gphase(π/4) followed by ry(π/2).
 Value powHalfYRef(QCOProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
@@ -565,7 +565,7 @@ Value powTwoSxRef(QCOProgramBuilder& b);
 /// Creates a circuit with pow(1/3) wrapping an SX gate (default: gphase+rx).
 Value powThirdSx(QCOProgramBuilder& b);
 
-/// Creates the reference for powThirdSx: gphase(-π/12) + rx(π/6).
+/// Creates the reference for powThirdSx: gphase(π/12) + rx(π/6).
 Value powThirdSxRef(QCOProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
@@ -608,7 +608,7 @@ Value powTwoSxdgRef(QCOProgramBuilder& b);
 /// Creates a circuit with pow(1/3) wrapping an SXdg gate (default: gphase+rx).
 Value powThirdSxdg(QCOProgramBuilder& b);
 
-/// Creates the reference for powThirdSxdg: gphase(π/12) + rx(-π/6).
+/// Creates the reference for powThirdSxdg: gphase(-π/12) + rx(-π/6).
 Value powThirdSxdgRef(QCOProgramBuilder& b);
 
 // --- RXOp ----------------------------------------------------------------- //

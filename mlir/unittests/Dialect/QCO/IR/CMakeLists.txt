@@ -15,6 +15,7 @@ target_link_libraries(
           GTest::gtest_main
           MLIRQCOProgramBuilder
           MLIRQCOPrograms
+          MLIRQCODDFunctionality
           MLIRQCOUtils
           MQT::CoreDD)
 mqt_mlir_configure_unittest_target(${qco_ir_target})

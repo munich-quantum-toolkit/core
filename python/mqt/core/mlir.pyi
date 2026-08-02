@@ -102,6 +102,9 @@ class QCProgram(Program):
     def cleanup(self) -> None:
         """Run the standard QC cleanup pipeline in place."""
 
+    def normalize_global_phases(self) -> None:
+        """Normalize scoped global phases in place."""
+
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.
 
@@ -134,6 +137,9 @@ class QCOProgram(Program):
 
     def cleanup(self) -> None:
         """Run the standard QCO cleanup pipeline in place."""
+
+    def normalize_global_phases(self) -> None:
+        """Normalize scoped global phases in place."""
 
     def run_pass_pipeline(self, pipeline: str, *, enable_timing: bool = False, enable_statistics: bool = False) -> None:
         """Run a textual MLIR pass pipeline in place."""
