@@ -65,7 +65,6 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
-  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
 }
 
 bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
@@ -144,7 +143,7 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
       "Failed to run the QIR cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateJeffCleanupPipeline,
+[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp moduleOp) {
+  return runWithPassManager(moduleOp, populateJeffCleanupPipeline,
                             "Failed to run the jeff cleanup pipeline.");
 }

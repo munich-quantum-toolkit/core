@@ -13,6 +13,7 @@
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <variant>
 
@@ -24,4 +25,14 @@ void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
   auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, thetaOperand);
+}
+
+LogicalResult GPhaseOp::verify() {
+  const auto theta = valueToDouble(getTheta());
+  if (theta && !isValidGlobalPhaseAngle(*theta)) {
+    return emitOpError()
+           << "constant angle must be finite and have magnitude at most "
+           << MAX_GLOBAL_PHASE_ANGLE << " radians";
+  }
+  return success();
 }

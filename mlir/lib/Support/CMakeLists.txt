@@ -24,7 +24,7 @@ add_mlir_library(
   MLIRLLVMDialect
   MLIRFuncDialect
   MLIRArithDialect
-  MLIRQuantumTransforms
+  MLIRMQTTransforms
   MLIRQCTransforms
   MLIRQCOTransforms
   MLIRQIRTransforms

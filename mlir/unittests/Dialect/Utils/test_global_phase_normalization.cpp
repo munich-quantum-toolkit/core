@@ -41,7 +41,9 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <numbers>
@@ -743,31 +745,65 @@ TEST_F(GlobalPhaseNormalizationTest,
   EXPECT_TRUE(function.getBody().getOps<qco::GPhaseOp>().empty());
 }
 
-TEST_F(GlobalPhaseNormalizationTest, NonFiniteConstantsRemainExplicit) {
-  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-  OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(moduleOp->getBody());
-  const auto loc = moduleOp->getLoc();
-  auto function = func::FuncOp::create(builder, loc, "test",
-                                       builder.getFunctionType({}, {}));
-  auto* entry = function.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  qco::GPhaseOp::create(
-      builder, loc,
-      utils::constantFromScalar(builder, loc,
-                                std::numeric_limits<double>::quiet_NaN()));
-  qco::GPhaseOp::create(
-      builder, loc,
-      utils::constantFromScalar(builder, loc,
-                                std::numeric_limits<double>::infinity()));
-  func::ReturnOp::create(builder, loc);
+TEST_F(GlobalPhaseNormalizationTest,
+       PracticalAngleBoundaryPreservesFullUnitaryUnderControl) {
+  for (const std::string angle : {"10000.0", "-10000.0"}) {
+    const std::string source =
+        R"mlir(module {
+          func.func @test(%control: !qco.qubit, %target: !qco.qubit)
+              -> (!qco.qubit, !qco.qubit) {
+            %phase = arith.constant )mlir" +
+        angle + R"mlir( : f64
+            %control_out, %target_out = qco.ctrl(%control)
+                targets(%arg = %target) {
+              %x = qco.x %arg : !qco.qubit -> !qco.qubit
+              qco.gphase(%phase)
+              qco.yield %x : !qco.qubit
+            } : ({!qco.qubit}, {!qco.qubit})
+              -> ({!qco.qubit}, {!qco.qubit})
+            return %control_out, %target_out : !qco.qubit, !qco.qubit
+          }
+        })mlir";
+    auto moduleOp = parse(source);
+    ASSERT_TRUE(moduleOp) << angle;
+    expectNormalizedUnitary(moduleOp, 2);
+  }
+}
 
-  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-  ASSERT_TRUE(verify(*moduleOp).succeeded());
-  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
-  ASSERT_EQ(phases.size(), 1);
-  EXPECT_TRUE(phases.front().getTheta().getDefiningOp<arith::AddFOp>());
-  EXPECT_EQ(phases.front()->getNextNode(), entry->getTerminator());
+TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
+  const auto verifyAngle = [&](const double angle,
+                               const bool useQCO) -> LogicalResult {
+    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+    OpBuilder builder(context.get());
+    builder.setInsertionPointToStart(moduleOp->getBody());
+    const auto loc = moduleOp->getLoc();
+    auto function = func::FuncOp::create(builder, loc, "test",
+                                         builder.getFunctionType({}, {}));
+    auto* entry = function.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    const auto value = utils::constantFromScalar(builder, loc, angle);
+    if (useQCO) {
+      qco::GPhaseOp::create(builder, loc, value);
+    } else {
+      mlir::qc::GPhaseOp::create(builder, loc, value);
+    }
+    func::ReturnOp::create(builder, loc);
+    return verify(*moduleOp);
+  };
+
+  for (const bool useQCO : {false, true}) {
+    SCOPED_TRACE(useQCO ? "QCO" : "QC");
+    EXPECT_TRUE(succeeded(verifyAngle(utils::MAX_GLOBAL_PHASE_ANGLE, useQCO)));
+    for (const double angle :
+         {std::nextafter(utils::MAX_GLOBAL_PHASE_ANGLE,
+                         std::numeric_limits<double>::infinity()),
+          -std::nextafter(utils::MAX_GLOBAL_PHASE_ANGLE,
+                          std::numeric_limits<double>::infinity()),
+          std::numeric_limits<double>::quiet_NaN(),
+          std::numeric_limits<double>::infinity()}) {
+      EXPECT_TRUE(failed(verifyAngle(angle, useQCO)));
+    }
+  }
 }
 
 TEST_F(GlobalPhaseNormalizationTest, ScalesLinearlyAcrossLargePhaseScopes) {
@@ -802,4 +838,58 @@ TEST_F(GlobalPhaseNormalizationTest, ScalesLinearlyAcrossLargePhaseScopes) {
   RecordProperty("normalize_100000_ns", durations[2].count());
   EXPECT_LT(durations[1].count(), durations[0].count() * 50);
   EXPECT_LT(durations[2].count(), durations[1].count() * 50);
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       ScalesLinearlyAcrossNestedDynamicIntegralPowers) {
+  constexpr std::array<std::size_t, 4> depths{128, 256, 512, 1'024};
+  std::vector<std::chrono::nanoseconds> durations;
+  durations.reserve(depths.size());
+
+  for (const auto depth : depths) {
+    SCOPED_TRACE(depth);
+    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+    OpBuilder builder(context.get());
+    builder.setInsertionPointToStart(moduleOp->getBody());
+    const auto loc = moduleOp->getLoc();
+    const auto qubitType = qco::QubitType::get(context.get());
+    auto function = func::FuncOp::create(
+        builder, loc, "test",
+        builder.getFunctionType({qubitType, builder.getF64Type()},
+                                {qubitType}));
+    auto* entry = function.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+
+    std::function<Value(Value, std::size_t)> nestPower =
+        [&](const Value target, const std::size_t remaining) -> Value {
+      if (remaining == 0) {
+        auto localAngle = arith::AddFOp::create(
+            builder, loc, entry->getArgument(1), entry->getArgument(1));
+        qco::GPhaseOp::create(builder, loc, localAngle.getResult());
+        return target;
+      }
+      return qco::PowOp::create(builder, loc, target, -1.0,
+                                [&](const Value bodyTarget) {
+                                  return nestPower(bodyTarget, remaining - 1);
+                                })
+          .getOutputTarget(0);
+    };
+    const auto output = nestPower(entry->getArgument(0), depth);
+    func::ReturnOp::create(builder, loc, output);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+    durations.emplace_back(std::chrono::steady_clock::now() - start);
+    ASSERT_TRUE(verify(*moduleOp).succeeded());
+    EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
+    std::size_t multiplications = 0;
+    moduleOp->walk([&](arith::MulFOp) { ++multiplications; });
+    EXPECT_EQ(multiplications, depth);
+  }
+
+  RecordProperty("nested_pow_128_ns", durations[0].count());
+  RecordProperty("nested_pow_256_ns", durations[1].count());
+  RecordProperty("nested_pow_512_ns", durations[2].count());
+  RecordProperty("nested_pow_1024_ns", durations[3].count());
+  EXPECT_LT(durations.back().count(), durations.front().count() * 24);
 }

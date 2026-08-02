@@ -51,6 +51,21 @@ incorrect phase behind an equivalence-up-to-phase comparison.
 - [x] (2026-08-01) Refresh `origin/main`, inspect its two non-overlapping
   commits, rebase the three implementation stages, and repeat affected
   validation before handoff.
+- [x] (2026-08-02) Reproduce the review findings on the current PR head:
+      imprecise reduction of very large angles, dynamic overflow exposure, a
+      quadratic nested-modifier path, a duplicate default-pipeline
+      normalization, and generic build-system naming.
+- [x] (2026-08-02) Replace the non-finite and arbitrary-magnitude phase paths
+  with a shared practical angle contract and QC/QCO operation verifiers.
+- [x] (2026-08-02) Defer inverse and power arithmetic in a symbolic postfix
+      phase expression so nested modifiers perform linear work and materialize
+      SSA arithmetic only once.
+- [x] (2026-08-02) Remove the redundant default-pipeline normalizer and rename
+  transform library, TableGen, and documentation targets from `Quantum` to
+  `MQT`.
+- [x] (2026-08-02) Run final local clang-tidy, the complete release build, 4,431
+      configured tests, all repository hooks, focused post-format semantic
+      tests, and final diff/status checks.
 
 ## Surprises & Discoveries
 
@@ -89,6 +104,23 @@ incorrect phase behind an equivalence-up-to-phase comparison.
   4,427 cases in 38.63 seconds; two environment-dependent QDMI job-ID tests were
   reported by CTest as skipped. The all-files Nox lint session passed every
   hook, and the built Python 3.13 binding test passed.
+- Observation: before remediation, release-mode normalization of one dynamic
+  phase under 100, 200, 400, 800, 1,600, and 3,200 nested integral powers took
+  827 us, 2,855 us, 10,259 us, 33,470 us, 130,212 us, and 532,003 us,
+  respectively. Each modifier had materialized another SSA operation and the
+  next modifier walked the entire growing chain.
+- Observation: after deferring modifier arithmetic, 128, 256, 512, and 1,024
+  nested dynamic integral powers took 116,666 ns, 188,708 ns, 359,625 ns, and
+  754,500 ns in the focused release test. An eightfold increase in depth caused
+  approximately 6.5-fold runtime growth.
+- Observation: local clang-tidy 22.1.8 needs the active Xcode SDK and libc++
+  include paths passed explicitly on macOS. With those paths, the changed
+  normalizer source has no diagnostics; the generated TableGen headers still
+  produce their pre-existing diagnostics.
+- Observation: final validation passed all 4,431 configured tests in 44.61
+  seconds. The two environment-dependent QDMI job-ID tests were skipped. The
+  full release build, all repository hooks, final five-source clang-tidy run,
+  and 27 focused global-phase tests also passed.
 
 ## Decision Log
 
@@ -132,6 +164,23 @@ incorrect phase behind an equivalence-up-to-phase comparison.
   exposed double-or-SSA wrapper would add an unused abstraction. The shared
   normalizer already provides the common ordered accumulator for both numeric
   and SSA-valued contributions. Date/Author: 2026-08-01, Codex.
+- Decision: require constant `qc.gphase` and `qco.gphase` angles to be finite
+  and no larger than 10,000 radians in magnitude, with the same documented
+  runtime precondition for dynamic values. Rationale: this range is generous for
+  compiler workloads while keeping binary64 modulo reduction within the
+  exact-unitary test tolerance. A verifier makes malformed constants explicit
+  and removes the need for overflow, NaN, and infinity branches throughout the
+  normalizer. Date/Author: 2026-08-02, Codex.
+- Decision: represent a phase being transported through modifiers as a postfix
+  expression containing values, constants, ordered additions, negations, and
+  scales. Rationale: inverse and power transformations remain exact and retain
+  the original dynamic addition grouping, while the expression and its hoistable
+  value leaves are traversed linearly and materialized only at the stopping
+  scope. Date/Author: 2026-08-02, Codex.
+- Decision: rely on the compiler invariant that a program uses either QC or QCO,
+  never both, and assert this when contributions are combined. Rationale:
+  mixed-dialect recovery code would complicate a state that cannot arise in
+  supported programs. Date/Author: 2026-08-02, Codex.
 
 ## Outcomes & Retrospective
 
@@ -145,6 +194,14 @@ stubs, the built Python 3.13 binding test, all-files repository lint,
 `git diff --check`, and focused linear-scaling measurement passed. The three
 local commits are rebased onto `a5757fe95`. No remote branch, issue, or
 pull-request state has been changed.
+
+The follow-up review remediation is implemented and validated locally but not
+yet published. It uses a bounded-angle verifier instead of attempting full-f64
+argument reduction, keeps modifier transformations symbolic until their stopping
+scope, removes a duplicate default-pipeline traversal, and uses MQT-specific
+transform target names. The final release build, all 4,431 configured tests,
+repository hooks, focused exact-unitary and scaling tests, local clang-tidy, and
+diff checks pass.
 
 ## Context and Orientation
 
@@ -214,23 +271,24 @@ Next, add a common transform library and a module pass named
 `normalize-global-phases`. The traversal must recurse through child regions
 first, specially factor modifier-body phases when legal, then normalize direct
 phase operations in each block. It must collect contributions in textual order,
-sum all finite constants in C++, build nonconstant additions as an ordered
-`arith.addf` chain without fast-math, normalize the final finite constant modulo
-`2*pi`, and emit one phase immediately before the block terminator. It must not
-cancel symbolic opposites or fold non-finite constants into an apparent zero.
-Mixed QC/QCO blocks are outside normal typed-program operation; handle each
-dialect independently rather than choosing an arbitrary replacement type.
+sum constants in C++, build nonconstant additions as an ordered `arith.addf`
+chain without fast-math, normalize the final constant modulo `2*pi`, and emit
+one phase immediately before the block terminator. It must not cancel symbolic
+opposites. Constant global-phase angles outside the shared practical range are
+invalid IR; supported programs contain either QC or QCO operations, never a
+mixture.
 
 When factoring a modifier, first locate the one normalized direct phase at the
 body exit. If its angle is defined outside the modifier, reuse it. If defined
 inside, collect its backward SSA slice and move that slice only when every
 operation is speculatable, has no memory effects, and has no block-argument
-dependency. Otherwise leave the phase in place. Remove the phase and emit the
-negated or integer-scaled phase after inverse or power. For QCO control, remove
-the body phase, keep the original control for the remaining body, create `P` or
-a smaller `CtrlOp` on the original control outputs, and replace downstream uses
-of those control results while leaving target results unchanged. Implement the
-same operator order in QC. A zero-control modifier leaves the phase global.
+dependency. Otherwise leave the phase in place. Remove the phase and record the
+negation or integer scale symbolically until bubbling stops. For QCO control,
+remove the body phase, keep the original control for the remaining body, create
+`P` or a smaller `CtrlOp` on the original control outputs, and replace
+downstream uses of those control results while leaving target results unchanged.
+Implement the same operator order in QC. A zero-control modifier leaves the
+phase global.
 
 Register the pass and expose `normalizeGlobalPhases()` on both typed C++
 programs plus `normalize_global_phases()` in Python. Add it after generic

@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(LLVM_TARGET_DEFINITIONS Passes.td)
-mlir_tablegen(Passes.h.inc -gen-pass-decls -name Quantum)
-add_public_tablegen_target(MLIRQuantumTransformsIncGen)
+mlir_tablegen(Passes.h.inc -gen-pass-decls -name MQT)
+add_public_tablegen_target(MLIRMQTTransformsIncGen)
 
-add_mlir_doc(Passes QuantumTransforms Passes/ -gen-pass-doc)
+add_mlir_doc(Passes MQTTransforms Passes/ -gen-pass-doc)

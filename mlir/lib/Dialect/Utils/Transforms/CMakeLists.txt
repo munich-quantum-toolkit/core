@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 add_mlir_library(
-  MLIRQuantumTransforms
+  MLIRMQTTransforms
   NormalizeGlobalPhases.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms
@@ -20,9 +20,9 @@ add_mlir_library(
   MLIRQCODialect
   MLIRSideEffectInterfaces
   DEPENDS
-  MLIRQuantumTransformsIncGen)
+  MLIRMQTTransformsIncGen)
 
-mqt_mlir_target_use_project_options(MLIRQuantumTransforms)
+mqt_mlir_target_use_project_options(MLIRMQTTransforms)
 
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms/*.h)
@@ -30,7 +30,7 @@ file(GLOB_RECURSE PASSES_HEADERS_BUILD
      ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms/*.inc)
 
 target_sources(
-  MLIRQuantumTransforms
+  MLIRMQTTransforms
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS

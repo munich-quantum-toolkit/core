@@ -17,7 +17,7 @@ add_mlir_conversion_library(
   MLIRDialect
   MLIRJeff
   MLIRNativeToJeff
-  MLIRQuantumTransforms
+  MLIRMQTTransforms
   MLIRQCODialect
   MLIRTransforms)
 

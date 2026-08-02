@@ -19,7 +19,7 @@ target_link_libraries(
           MLIRIR
           MLIRMemRefDialect
           MLIRParser
-          MLIRQuantumTransforms
+          MLIRMQTTransforms
           MLIRQCProgramBuilder
           MLIRQCToQCO
           MLIRQCDialect

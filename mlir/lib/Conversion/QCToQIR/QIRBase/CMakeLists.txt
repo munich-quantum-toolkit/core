@@ -16,7 +16,7 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRQIRUtils
   MLIRQCToQIRCommon
-  MLIRQuantumTransforms
+  MLIRMQTTransforms
   MLIRLLVMDialect
   MLIRQCDialect
   MLIRArithDialect
