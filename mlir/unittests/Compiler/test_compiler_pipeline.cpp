@@ -1054,8 +1054,8 @@ h q;
 TEST_F(CompilerPipelineTest, TargetNativeRejectsInvalidMenuWithoutMutating) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
-qubit q;
-h q;
+qubit[1] q;
+h q[0];
 )";
   auto qc = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(qc);
