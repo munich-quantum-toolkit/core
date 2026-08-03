@@ -18,6 +18,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -2533,10 +2534,15 @@ private:
         llvm::APInt expectedBits;
         if (rhsSyntax.kind == Expr::Kind::Int &&
             !rhsSyntax.wideInteger.empty()) {
+          llvm::SmallString<64> digits;
+          for (const char value : rhsSyntax.wideInteger) {
+            if (value != '_') {
+              digits.push_back(value);
+            }
+          }
           const auto width = static_cast<unsigned>(
-              std::max<size_t>(bits.size(), rhsSyntax.wideInteger.size() * 4));
-          expectedBits =
-              llvm::APInt(width, rhsSyntax.wideInteger, /*radix=*/10);
+              std::max<size_t>(bits.size(), digits.size() * 4));
+          expectedBits = llvm::APInt(width, digits, /*radix=*/10);
         } else {
           const auto expected = evaluateConstant(*condition.rhs);
           if (!isInteger(expected.type) ||

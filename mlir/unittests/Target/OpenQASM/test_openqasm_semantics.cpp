@@ -1301,6 +1301,24 @@ if(c==1180591620717411303433) x q[0];
 }
 
 TEST(OpenQASMFrontendTest,
+     AcceptsWideIntegerLiteralWithDigitSeparatorsInOpenQASM2If) {
+  // Same value as above, spelled with grammar-legal digit separators.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==1_180_591_620_717_411_303_433) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+  }));
+}
+
+TEST(OpenQASMFrontendTest,
      FoldsNonFittingWideIntegerOpenQASM2RegisterCondition) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
@@ -1363,12 +1381,18 @@ if(c==-1) x q[0];
 }
 
 TEST(OpenQASMFrontendTest, RejectsWideIntegerLiteralInOrdinaryConstants) {
-  auto analyzed = oq3::frontend::analyzeOpenQASM(
-      "OPENQASM 3.1; int value = 999999999999999999999999999999;");
-  ASSERT_FALSE(analyzed);
-  ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(analyzed.diagnostics.front().message.find("exceeds 64-bit"),
-            std::string::npos);
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; int value = 999999999999999999999999999999;",
+      "OPENQASM 3.1; int value = 999_999_999_999_999_999_999_999_999_999;",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("exceeds 64-bit"),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
 }
 
 TEST(OpenQASMFrontendTest,

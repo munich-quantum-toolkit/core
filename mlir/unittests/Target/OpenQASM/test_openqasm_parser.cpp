@@ -611,13 +611,12 @@ TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
   ASSERT_TRUE(valid) << valid.diagnostics.front().message;
 }
 
-TEST(OpenQASMFrontendTest, RejectsWideIntegerLiteralsWithDigitSeparators) {
-  // Wide integers are accepted only without separators; a separator-bearing
-  // spelling that exceeds uint64_t is a lexer error rather than a wide int.
+TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralsWithDigitSeparators) {
+  // DecimalIntegerLiteral allows '_' separators; values beyond uint64_t are
+  // still valid tokens (wide integers). Constant evaluation may reject them.
   auto parsed = oq3::frontend::parseOpenQASM(
       "OPENQASM 3.1; int value = 999_999_999_999_999_999_999;");
-  ASSERT_FALSE(parsed);
-  ASSERT_FALSE(parsed.diagnostics.empty());
+  ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
 TEST(OpenQASMFrontendTest, SourceManagerOverloadsPreserveParseFailures) {
