@@ -148,6 +148,48 @@ inline void validateMemRefIndex(Value memref,
   return std::nullopt;
 }
 
+/// Recursively evaluate a pure `arith` constant expression tree to a double.
+///
+/// This folds `arith.constant` together with `addf` / `subf` / `mulf` / `negf`
+/// producers so phase-normalization can keep merged global phases inside the
+/// practical `gphase` angle contract instead of emitting long add-chains that
+/// later constant-fold past `MAX_GLOBAL_PHASE_ANGLE`.
+[[nodiscard]] inline std::optional<double> valueToConstantDouble(Value value) {
+  if (const auto constant = valueToDouble(value)) {
+    return constant;
+  }
+  if (auto addOp = value.getDefiningOp<arith::AddFOp>()) {
+    const auto lhs = valueToConstantDouble(addOp.getLhs());
+    const auto rhs = valueToConstantDouble(addOp.getRhs());
+    if (lhs && rhs) {
+      return *lhs + *rhs;
+    }
+    return std::nullopt;
+  }
+  if (auto subOp = value.getDefiningOp<arith::SubFOp>()) {
+    const auto lhs = valueToConstantDouble(subOp.getLhs());
+    const auto rhs = valueToConstantDouble(subOp.getRhs());
+    if (lhs && rhs) {
+      return *lhs - *rhs;
+    }
+    return std::nullopt;
+  }
+  if (auto mulOp = value.getDefiningOp<arith::MulFOp>()) {
+    const auto lhs = valueToConstantDouble(mulOp.getLhs());
+    const auto rhs = valueToConstantDouble(mulOp.getRhs());
+    if (lhs && rhs) {
+      return *lhs * *rhs;
+    }
+    return std::nullopt;
+  }
+  if (auto negOp = value.getDefiningOp<arith::NegFOp>()) {
+    if (const auto operand = valueToConstantDouble(negOp.getOperand())) {
+      return -*operand;
+    }
+  }
+  return std::nullopt;
+}
+
 /**
  * @brief Parse a list of aliased qubits.
  *

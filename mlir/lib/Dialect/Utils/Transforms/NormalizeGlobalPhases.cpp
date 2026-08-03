@@ -59,7 +59,7 @@ using PhaseInstruction = std::variant<double, Value, Add, Negate, Scale>;
 class PhaseExpression final {
 public:
   explicit PhaseExpression(Value angle) {
-    if (const auto constant = utils::valueToDouble(angle)) {
+    if (const auto constant = utils::valueToConstantDouble(angle)) {
       instructions.emplace_back(utils::normalizeAngle(*constant));
     } else {
       instructions.emplace_back(angle);
@@ -157,7 +157,14 @@ public:
           rewriter.createOrFold<arith::MulFOp>(loc, factorValue, operand));
     }
     assert(stack.size() == 1);
-    return stack.front();
+    const Value result = stack.front();
+    // Fold pure constant arith trees back to a single normalized angle so
+    // merged exit phases stay within the GPhase verifier contract.
+    if (const auto constant = utils::valueToConstantDouble(result)) {
+      return utils::constantFromScalar(rewriter, loc,
+                                       utils::normalizeAngle(*constant));
+    }
+    return result;
   }
 
 private:
@@ -419,7 +426,7 @@ private:
           dyn_cast<qc::GPhaseOp>(directPhases.front())
               ? cast<qc::GPhaseOp>(directPhases.front()).getTheta()
               : cast<qco::GPhaseOp>(directPhases.front()).getTheta();
-      const auto constant = utils::valueToDouble(angle);
+      const auto constant = utils::valueToConstantDouble(angle);
       if (!constant ||
           (utils::normalizeAngle(*constant) == *constant && *constant != 0.0)) {
         return std::nullopt;

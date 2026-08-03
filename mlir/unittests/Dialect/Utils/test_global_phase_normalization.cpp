@@ -127,6 +127,44 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
+       FoldsMulDerivedPhasesWithinPracticalAngleLimit) {
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  auto function = func::FuncOp::create(builder, loc, "test",
+                                       builder.getFunctionType({}, {}));
+  auto* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  constexpr int phaseCount = 4000;
+  constexpr double half = 1.5;
+  constexpr double two = 2.0;
+  const double expected =
+      utils::normalizeAngle(static_cast<double>(phaseCount) * half * two);
+  for (int i = 0; i < phaseCount; ++i) {
+    auto lhs = utils::constantFromScalar(builder, loc, half);
+    auto rhs = utils::constantFromScalar(builder, loc, two);
+    auto angle = arith::MulFOp::create(builder, loc, lhs, rhs);
+    qco::GPhaseOp::create(builder, loc, angle.getResult());
+  }
+  func::ReturnOp::create(builder, loc);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  auto constantOp =
+      phases.front().getTheta().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(constantOp);
+  const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
+  ASSERT_TRUE(value);
+  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
        QCControlledExtractionPreservesFullUnitaryUnderOuterControl) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
