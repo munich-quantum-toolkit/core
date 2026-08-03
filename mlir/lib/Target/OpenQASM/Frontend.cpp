@@ -58,7 +58,7 @@ struct ParseArtifacts {
 };
 
 constexpr size_t INCLUDE_NESTING_LIMIT = 64;
-constexpr size_t EXPANDED_STATEMENT_LIMIT = 100'000;
+constexpr size_t EXPANDED_STATEMENT_LIMIT = 1'000'000;
 
 } // namespace
 
