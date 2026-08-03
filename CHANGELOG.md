@@ -70,7 +70,7 @@ releases may include breaking changes.
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
   [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
-  [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
+  [#1911], [#1951]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
   ([**@DRovara**], [**@burgholzer**])
@@ -724,6 +724,7 @@ for previous changelogs._
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
+[#1951]: https://github.com/munich-quantum-toolkit/core/pull/1951
 [#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
