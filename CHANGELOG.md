@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
-  stable QDMI registry IDs ([**@burgholzer**])
+  stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
   semantics and synthesis integration ([#1986]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
@@ -707,6 +707,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
