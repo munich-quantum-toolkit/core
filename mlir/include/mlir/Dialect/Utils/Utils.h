@@ -151,12 +151,19 @@ inline void validateMemRefIndex(Value memref,
 /// Recursively evaluate a pure `arith` constant expression tree to a double.
 ///
 /// This folds `arith.constant` together with `addf` / `subf` / `mulf` / `negf`
-/// producers so phase-normalization can keep merged global phases inside the
-/// practical `gphase` angle contract instead of emitting long add-chains that
-/// later constant-fold past `MAX_GLOBAL_PHASE_ANGLE`.
+/// and integer-to-float casts (`sitofp` / `uitofp`) so phase-normalization can
+/// keep merged global phases inside the practical `gphase` angle contract
+/// instead of emitting long add-chains that later constant-fold past
+/// `MAX_GLOBAL_PHASE_ANGLE`.
 [[nodiscard]] inline std::optional<double> valueToConstantDouble(Value value) {
   if (const auto constant = valueToDouble(value)) {
     return constant;
+  }
+  if (auto sitofpOp = value.getDefiningOp<arith::SIToFPOp>()) {
+    return valueToConstantDouble(sitofpOp.getIn());
+  }
+  if (auto uitofpOp = value.getDefiningOp<arith::UIToFPOp>()) {
+    return valueToConstantDouble(uitofpOp.getIn());
   }
   if (auto addOp = value.getDefiningOp<arith::AddFOp>()) {
     const auto lhs = valueToConstantDouble(addOp.getLhs());
