@@ -7,66 +7,32 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-gen)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-config)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # Add library for device generation
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceGen)
+  # Add the runtime configuration parser library
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig)
 
   # add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
+  target_sources(${TARGET_NAME} PRIVATE Configuration.cpp)
 
   # add headers using file sets
   target_sources(
     ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
-                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Generator.hpp)
+                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Configuration.hpp)
 
-  # Link nlohmann_json and spdlog
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PUBLIC nlohmann_json::nlohmann_json)
 
-  # place the generated library in a predictable location where the executable can find it
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
+
+  # Place the library in the common output directories.
   set_target_properties(
     ${TARGET_NAME}
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
                ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
-endif()
-
-# Set target name
-set(TARGET_NAME mqt-core-qdmi-sc-device-generator)
-
-# If the target is not already defined
-if(NOT TARGET ${TARGET_NAME})
-  # Add executable for device generation
-  add_executable(${TARGET_NAME})
-
-  # add sources to target
-  target_sources(${TARGET_NAME} PRIVATE App.cpp)
-
-  # Link Generator library
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen MQT::ProjectOptions
-                                               MQT::ProjectWarnings spdlog::spdlog)
-
-  # set versioning information
-  set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
-                                                                             CoreScDeviceGen)
-  # place in the bin directory
-  set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
-                                                  "${CMAKE_BINARY_DIR}/bin")
-
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
-
-  # Make version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
-
-  # Create an alias for the target
-  add_executable(MQT::CoreQDMIScDeviceGenerator ALIAS ${TARGET_NAME})
 endif()
 
 # Set target name
@@ -78,24 +44,8 @@ set(QDMI_PREFIX "MQT_SC")
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # Set paths
-  set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/sc/device.json)
-  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/sc/DeviceMemberInitializers.hpp)
-
-  # Create include directory
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/sc)
-
-  # Generate definitions for device
-  add_custom_command(
-    OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreQDMIScDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
-    DEPENDS ${JSON_FILE} MQT::CoreQDMIScDeviceGenerator
-    COMMENT "Generating C++ header from ${JSON_FILE}")
-  add_custom_target(generate_qdmi_sc_device_header DEPENDS ${DEVICE_HDR})
-
   # Add library
   add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMIScDevice)
-  add_dependencies(${TARGET_NAME} generate_qdmi_sc_device_header)
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
@@ -113,14 +63,21 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
-           ${DEVICE_HDR}
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp
            ${QDMI_HDRS})
 
   # add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig
+                                               spdlog::spdlog)
 
-  mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.sc.default PREFIX ${QDMI_PREFIX})
+  mqt_configure_qdmi_device(
+    ${TARGET_NAME}
+    ID
+    mqt.sc.default
+    PREFIX
+    ${QDMI_PREFIX}
+    RUNTIME_FILES
+    ${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json)
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

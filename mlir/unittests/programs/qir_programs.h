@@ -593,4 +593,16 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to two gates.
 template <bool IntoRegister = false> Value ctrlTwo(QIRProgramBuilder& b);
 
+// --- Qubit Reuse----------------------------------------------------------- //
+
+/// Creates a circuit with two H gates applied on a single qubit with a
+/// measurement in between.
+Value hGatesAndResetsOnOneQubit(QIRProgramBuilder& b);
+
+/// Creates a circuit with a reused implementation of a single CX gate.
+Value reusedCX(QIRProgramBuilder& b);
+
+/// Creates a circuit with a single controlled X gate on two individual qubits.
+Value singleControlledXOnIndividualQubits(QIRProgramBuilder& b);
+
 } // namespace mlir::qir

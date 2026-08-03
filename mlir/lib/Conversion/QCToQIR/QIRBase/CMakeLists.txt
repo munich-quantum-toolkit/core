@@ -16,12 +16,15 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRQIRUtils
   MLIRQCToQIRCommon
+  MLIRMQTTransforms
   MLIRLLVMDialect
   MLIRQCDialect
   MLIRArithDialect
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
+  MLIRMathDialect
+  MLIRMathToLLVM
   MLIRReconcileUnrealizedCasts)
 
 mqt_mlir_target_use_project_options(MLIRQCToQIRBase)

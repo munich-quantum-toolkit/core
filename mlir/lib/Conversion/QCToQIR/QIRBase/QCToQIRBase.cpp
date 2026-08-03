@@ -14,18 +14,21 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -64,14 +67,14 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
   if (it == state.cregMeasurements.end()) {
     return Value{};
   }
-  const auto [allocOp, index] = it->second;
+  const auto [registerIndex, index] = it->second;
   const auto indexValue = getConstantIntValue(index);
   if (!indexValue) {
     op->emitError("QIR Base Profile requires constant classical-register "
                   "measurement indices");
     return failure();
   }
-  const auto& results = state.cregs.at(allocOp).results;
+  const auto& results = state.cregs[registerIndex].results;
   if (*indexValue < 0 || static_cast<size_t>(*indexValue) >= results.size()) {
     op->emitError("classical-register measurement index is out of bounds");
     return failure();
@@ -96,12 +99,12 @@ struct ConvertMemRefAllocOp final
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto it = state.cregs.find(op.getOperation());
-    if (it == state.cregs.end()) {
+    const auto it = state.cregIndices.find(op.getOperation());
+    if (it == state.cregIndices.end()) {
       rewriter.eraseOp(op);
       return success();
     }
-    auto& reg = it->second;
+    auto& reg = state.cregs[it->second];
     const auto* size = std::get_if<int64_t>(&reg.size);
     if (size == nullptr) {
       op.emitError(
@@ -462,6 +465,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
+    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
 
@@ -522,11 +529,13 @@ protected:
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
       target.addIllegalDialect<cf::ControlFlowDialect>();
+      target.addIllegalDialect<math::MathDialect>();
 
       cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
                                                       stdPatterns);
       cf::populateAssertToLLVMConversionPattern(typeConverter, stdPatterns);
       arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+      populateMathToLLVMConversionPatterns(typeConverter, stdPatterns);
 
       if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
               .failed()) {

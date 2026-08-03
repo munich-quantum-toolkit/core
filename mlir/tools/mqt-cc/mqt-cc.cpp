@@ -39,6 +39,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/AsmState.h>
@@ -55,6 +56,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -369,7 +371,7 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   return success();
 }
 
-int main(int argc, char** argv) {
+static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   registerMQTCompilerPasses();
@@ -395,10 +397,11 @@ int main(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
-                  qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  scf::SCFDialect, jeff::JeffDialect>();
+  registry
+      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              LLVM::LLVMDialect, math::MathDialect, memref::MemRefDialect,
+              qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+              scf::SCFDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 
@@ -596,4 +599,15 @@ int main(int argc, char** argv) {
   }
 
   return 0;
+}
+
+int main(int argc, char** argv) {
+  try {
+    return runCompiler(argc, argv);
+  } catch (const std::exception& error) {
+    llvm::errs() << "mqt-cc failed: " << error.what() << "\n";
+  } catch (...) {
+    llvm::errs() << "mqt-cc failed with an unknown exception\n";
+  }
+  return 1;
 }

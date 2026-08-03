@@ -342,6 +342,27 @@ def ReplaceClassicalControls
   }];
 }
 
+def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary =
+      "This pass attempts to utilize qubit reuse to reduce the number of "
+      "resources required for a quantum program. "
+      "It does so by looking for qubits that do not interact with each other "
+      "directly or indirectly and attempting to reset and reuse one of them "
+      "for the other. "
+      "By combining this pass with the `measurement-lifting` and "
+      "`replace-classical-controls` passes, it is possible to reduce the "
+      "number of qubits required for a quantum program significantly.";
+  let description = [{
+    This pass searches for qubits that do not interact with each other directly or indirectly and attempts to reset
+    and reuse one of them for the other. Improved results can be achieved by combining this pass with the
+    `measurement-lifting` and `replace-classical-controls` passes, which can reduce the number of qubits required for a quantum program significantly.
+    Only single-qubit allocations are considered for reuse, no `qtensor` allocations.
+
+    Use the `mqt-qubit-reuse` pipeline to run the preparation passes followed by this pass.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Decomposition Passes
 //===----------------------------------------------------------------------===//

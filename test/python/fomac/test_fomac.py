@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import cast
@@ -26,6 +27,7 @@ from mqt.core.fomac import (
     open_device,
     register_device,
     register_device_if_absent,
+    registered_device_ids,
 )
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
@@ -979,6 +981,19 @@ def test_register_device_if_absent_only_ignores_existing_id() -> None:
         register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
 
 
+def test_registered_device_ids_include_runtime_registrations_in_order() -> None:
+    """Stable-ID enumeration is ordered and does not load native libraries."""
+    ids_before = registered_device_ids()
+    register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
+    register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
+
+    assert registered_device_ids() == [
+        *ids_before,
+        "python.enumeration.first",
+        "python.enumeration.second",
+    ]
+
+
 def test_open_device_rejects_unknown_id() -> None:
     """Opening requires a stable registered ID."""
     with pytest.raises(IndexError, match="Unknown QDMI device ID"):
@@ -990,6 +1005,57 @@ def test_open_device_creates_a_fresh_session() -> None:
     first = open_device("mqt.na.default")
     second = open_device("mqt.na.default")
     assert first != second
+
+
+def test_device_configuration_arguments_are_mutually_exclusive() -> None:
+    """Typed device configuration must select exactly one source."""
+    DeviceDefinition(
+        "python.inline-config",
+        "/nonexistent/device.so",
+        "PREFIX",
+        device_config="{}",
+    )
+    DeviceDefinition(
+        "python.file-config",
+        "/nonexistent/device.so",
+        "PREFIX",
+        device_config_file="device.json",
+    )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        DeviceDefinition(
+            "python.config-conflict",
+            "/nonexistent/device.so",
+            "PREFIX",
+            device_config="{}",
+            device_config_file="device.json",
+        )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        open_device(
+            "mqt.na.default",
+            device_config="{}",
+            device_config_file="device.json",
+        )
+
+
+def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
+    """The built-in SC provider should materialize a per-open file model."""
+    configuration = json.loads(Path("json/sc/mqt-core-qdmi-sc-device.json").read_text(encoding="utf-8"))
+    configuration["name"] = "Python custom SC device"
+    configuration["numQubits"] = 5
+    configuration["couplings"] = [[0, 1], [1, 2], [2, 3], [3, 4]]
+    configuration["qubitProperties"]["overrides"] = []
+    for operation in configuration["operations"]:
+        operation.pop("sites", None)
+        operation["siteOverrides"] = []
+    configuration_file = tmp_path / "sc-device.json"
+    configuration_file.write_text(json.dumps(configuration), encoding="utf-8")
+
+    device = open_device(
+        "mqt.sc.default",
+        device_config_file=configuration_file,
+    )
+    assert device.name() == "Python custom SC device"
+    assert device.qubits_num() == 5
 
 
 def test_site_keeps_fresh_session_alive() -> None:

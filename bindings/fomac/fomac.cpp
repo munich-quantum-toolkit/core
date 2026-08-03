@@ -78,16 +78,31 @@ template <typename Query>
     std::optional<std::string> baseUrl, std::optional<std::string> token,
     std::optional<std::filesystem::path> authFile,
     std::optional<std::string> authUrl, std::optional<std::string> username,
-    std::optional<std::string> password, std::optional<std::string> custom1,
-    std::optional<std::string> custom2, std::optional<std::string> custom3,
-    std::optional<std::string> custom4, std::optional<std::string> custom5)
-    -> qdmi::DeviceSessionConfig {
+    std::optional<std::string> password,
+    std::optional<std::string> deviceConfig,
+    std::optional<std::filesystem::path> deviceConfigFile,
+    std::optional<std::string> custom1, std::optional<std::string> custom2,
+    std::optional<std::string> custom3, std::optional<std::string> custom4,
+    std::optional<std::string> custom5) -> qdmi::DeviceSessionConfig {
+  if (deviceConfig && deviceConfigFile) {
+    throw nb::value_error(
+        "device_config and device_config_file are mutually exclusive");
+  }
+  std::optional<qdmi::DeviceConfigurationSource> configuration;
+  if (deviceConfig) {
+    configuration =
+        qdmi::InlineDeviceConfiguration{.json = std::move(*deviceConfig)};
+  } else if (deviceConfigFile) {
+    configuration =
+        qdmi::FileDeviceConfiguration{.path = std::move(*deviceConfigFile)};
+  }
   return {.baseUrl = std::move(baseUrl),
           .token = std::move(token),
           .authFile = std::move(authFile),
           .authUrl = std::move(authUrl),
           .username = std::move(username),
           .password = std::move(password),
+          .deviceConfiguration = std::move(configuration),
           .custom1 = std::move(custom1),
           .custom2 = std::move(custom2),
           .custom3 = std::move(custom3),
@@ -649,6 +664,9 @@ when the custom slot is unsupported.)pb");
              const std::optional<std::string>& authUrl = std::nullopt,
              const std::optional<std::string>& username = std::nullopt,
              const std::optional<std::string>& password = std::nullopt,
+             const std::optional<std::string>& deviceConfig = std::nullopt,
+             const std::optional<std::filesystem::path>& deviceConfigFile =
+                 std::nullopt,
              const std::optional<std::string>& custom1 = std::nullopt,
              const std::optional<std::string>& custom2 = std::nullopt,
              const std::optional<std::string>& custom3 = std::nullopt,
@@ -660,15 +678,17 @@ when the custom slot is unsupported.)pb");
                 .prefix = std::move(prefix),
                 .session = makeDeviceSessionConfig(
                     baseUrl, token, authFile, authUrl, username, password,
-                    custom1, custom2, custom3, custom4, custom5)};
+                    deviceConfig, deviceConfigFile, custom1, custom2, custom3,
+                    custom4, custom5)};
           },
           "device_id"_a, "library_path"_a, "prefix"_a, nb::kw_only(),
           "base_url"_a = std::nullopt, "token"_a = std::nullopt,
           "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
           "username"_a = std::nullopt, "password"_a = std::nullopt,
-          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-          "custom5"_a = std::nullopt,
+          "device_config"_a = std::nullopt,
+          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
+          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
+          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
           R"pb(Create a device definition without loading its native library.
 
 Args:
@@ -681,6 +701,8 @@ Args:
     auth_url: Optional authentication server URL.
     username: Optional authentication username.
     password: Optional authentication password.
+    device_config: Optional inline JSON device description.
+    device_config_file: Optional device-description JSON file.
     custom1: Optional custom configuration parameter 1.
     custom2: Optional custom configuration parameter 2.
     custom3: Optional custom configuration parameter 3.
@@ -731,6 +753,14 @@ Raises:
     ValueError: If the definition is invalid.)pb");
 
   m.def(
+      "registered_device_ids",
+      [] { return qdmi::Driver::get().registeredDeviceIds(); },
+      R"pb(Return registered, enabled QDMI device IDs in registration order.
+
+This includes devices registered at runtime and does not load native device
+libraries or expose their definitions.)pb");
+
+  m.def(
       "open_device",
       [](const std::string& deviceId, std::optional<std::string> baseUrl,
          std::optional<std::string> token,
@@ -738,12 +768,15 @@ Raises:
          std::optional<std::string> authUrl,
          std::optional<std::string> username,
          std::optional<std::string> password,
+         std::optional<std::string> deviceConfig,
+         std::optional<std::filesystem::path> deviceConfigFile,
          std::optional<std::string> custom1, std::optional<std::string> custom2,
          std::optional<std::string> custom3, std::optional<std::string> custom4,
          std::optional<std::string> custom5) {
         const auto overrides = makeDeviceSessionConfig(
             std::move(baseUrl), std::move(token), std::move(authFile),
             std::move(authUrl), std::move(username), std::move(password),
+            std::move(deviceConfig), std::move(deviceConfigFile),
             std::move(custom1), std::move(custom2), std::move(custom3),
             std::move(custom4), std::move(custom5));
         return fomac::Session::openDevice(deviceId, overrides);
@@ -751,7 +784,8 @@ Raises:
       "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
       "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-      "password"_a = std::nullopt, "custom1"_a = std::nullopt,
+      "password"_a = std::nullopt, "device_config"_a = std::nullopt,
+      "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
       "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
       "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
       R"pb(Open a registered QDMI device by stable ID.
@@ -767,6 +801,8 @@ Args:
     auth_url: Optional authentication server URL override.
     username: Optional authentication username override.
     password: Optional authentication password override.
+    device_config: Optional inline JSON device-description override.
+    device_config_file: Optional device-description JSON file override.
     custom1: Optional custom configuration parameter 1 override.
     custom2: Optional custom configuration parameter 2 override.
     custom3: Optional custom configuration parameter 3 override.

@@ -668,17 +668,16 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   return flippedFromOriginal;
 }
 
-LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
-                                      Value qubit0, Value qubit1,
-                                      const Matrix4x4& target,
-                                      const NativeGateset& spec,
-                                      Value& outQubit0, Value& outQubit1) {
+FailureOr<SynthesizedUnitary2Q>
+synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
+                        Value qubit1, const Matrix4x4& target,
+                        const NativeGateset& spec) {
   const auto native = spec.decomposeTarget(target);
   if (!native || !spec.eulerBasis) {
     return failure();
   }
 
-  emitGPhaseIfNeeded(builder, loc, native->globalPhase);
+  double globalPhase = native->globalPhase;
 
   Value wire0 = qubit0;
   Value wire1 = qubit1;
@@ -701,7 +700,8 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
           "{0} (layer {1}, qubit {2})",
           index, index / 2, (index % 2 == 0) ? 1 : 0));
     }
-    wire = *synthesized;
+    wire = synthesized->qubit;
+    globalPhase += synthesized->globalPhase;
   };
   const auto emitEntangler = [&]() {
     if (spec.entangler == NativeGateKind::RXX) {
@@ -763,9 +763,8 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     }
   }
 
-  outQubit0 = wire0;
-  outQubit1 = wire1;
-  return success();
+  return SynthesizedUnitary2Q{
+      .qubit0 = wire0, .qubit1 = wire1, .globalPhase = globalPhase};
 }
 
 } // namespace mlir::qco::decomposition

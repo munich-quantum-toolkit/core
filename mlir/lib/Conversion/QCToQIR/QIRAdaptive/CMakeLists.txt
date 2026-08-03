@@ -15,6 +15,7 @@ add_mlir_conversion_library(
   QCToQIRAdaptiveIncGen
   LINK_LIBS
   MLIRQCToQIRCommon
+  MLIRMQTTransforms
   MLIRQIRUtils
   MLIRLLVMDialect
   MLIRQCDialect
@@ -22,6 +23,8 @@ add_mlir_conversion_library(
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
+  MLIRMathDialect
+  MLIRMathToLLVM
   MLIRSCFToControlFlow
   MLIRReconcileUnrealizedCasts)
 

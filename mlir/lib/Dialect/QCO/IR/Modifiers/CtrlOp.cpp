@@ -86,9 +86,12 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return utils::getValueFromBlockArgument(t, outerTargets);
     });
 
-    auto merged = CtrlOp::create(rewriter, op.getLoc(), controls, targets);
-    rewriter.inlineRegionBefore(innerCtrlOp.getRegion(), merged.getRegion(),
-                                merged.getRegion().end());
+    auto merged =
+        CtrlOp::create(rewriter, op.getLoc(), controls, targets,
+                       [&](ValueRange mergedTargets) -> SmallVector<Value> {
+                         return utils::inlineBodyReturningYields(
+                             *innerCtrlOp.getBody(), mergedTargets, rewriter);
+                       });
 
     // Every qubit output of the original control follows its input qubit to the
     // corresponding output of the merged control.
@@ -119,6 +122,8 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
       auto* body = op.getBody();
       auto* terminator = body->getTerminator();
+      // Controls are pass-through results outside the body yield, so the
+      // generic inlineModifierBody result mapping does not apply here.
       SmallVector<Value> outputs(op.getControlsIn());
       llvm::append_range(outputs, terminator->getOperands());
       rewriter.inlineBlockBefore(body, op, op.getTargetsIn());

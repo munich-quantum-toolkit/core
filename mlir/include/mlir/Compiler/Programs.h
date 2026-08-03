@@ -142,6 +142,9 @@ public:
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
+  /// Normalize scoped global phases in place.
+  [[nodiscard]] bool normalizeGlobalPhases();
+
   /// Consume this program and convert it to QCO.
   [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
 
@@ -170,6 +173,9 @@ public:
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] bool cleanup();
 
+  /// Normalize scoped global phases in place.
+  [[nodiscard]] bool normalizeGlobalPhases();
+
   /// Run an MLIR textual QCO pass pipeline in place.
   [[nodiscard]] bool runPassPipeline(std::string_view pipeline,
                                      bool enableTiming = false,
@@ -189,6 +195,12 @@ public:
 
   /// Lift Hadamard gates away from measurements.
   [[nodiscard]] bool liftHadamards();
+
+  /// Reuse independent single-qubit allocations.
+  [[nodiscard]] bool reuseQubits();
+
+  /// Prepare the program for qubit reuse and reuse eligible qubits.
+  [[nodiscard]] bool runQubitReusePipeline();
 
   /// Decompose controlled X/Z gates, `qco.rccx`, and constant-angle phase
   /// gates with at least @p minControls controls (@p minControls must be at

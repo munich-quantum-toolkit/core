@@ -11,8 +11,9 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from mqt.core.dd import BasisStates, DDPackage
+from mqt.core.dd import BasisStates, DDPackage, VectorDD
 
 
 def test_zero_state() -> None:
@@ -98,3 +99,16 @@ def test_from_vector() -> None:
             vec2 = dd.get_vector()
             assert np.allclose(vec, vec2)
             p.dec_ref_vec(dd)
+
+
+@pytest.mark.parametrize("binary", [False, True])
+def test_serialization(*, binary: bool) -> None:
+    """Test serializing and deserializing vector DDs."""
+    p = DDPackage(3)
+    for dd in (p.zero_state(0), p.ghz_state(3)):
+        data = dd.to_bytes(binary=binary)
+        assert isinstance(data, bytes)
+
+        restored = VectorDD.from_bytes(DDPackage(3), data, binary=binary)
+        assert np.allclose(restored.get_vector(), dd.get_vector())
+        p.dec_ref_vec(dd)

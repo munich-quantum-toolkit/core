@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
+#include "dd/Package.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -22,6 +23,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <ios>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -116,6 +118,49 @@ Returns:
 
 Raises:
     MemoryError: If the memory allocation fails.)pb");
+
+  mat.def(
+      "to_bytes",
+      [](const dd::mEdge& e, const bool binary = true) {
+        std::ostringstream os(std::ios::out | std::ios::binary);
+        serialize(e, os, binary);
+        const auto data = os.view();
+        return nb::bytes(data.data(), data.size());
+      },
+      "binary"_a = true, R"pb(Serialize the DD to bytes.
+
+Args:
+    binary: Whether to use the binary serialization format. Defaults to True.
+        If False, the textual serialization format is used.
+
+Returns:
+    The serialized DD.
+
+Notes:
+    The binary format is not portable across different architectures or platforms.)pb");
+
+  mat.def_static(
+      "from_bytes",
+      [](dd::Package& p, const nb::bytes& data, const bool binary = true) {
+        std::istringstream is(std::string(data.c_str(), data.size()),
+                              std::ios::in | std::ios::binary);
+        return p.deserialize<dd::mNode>(is, binary);
+      },
+      "dd_package"_a, "data"_a, "binary"_a = true,
+      // keep the DD package alive while the returned matrix DD is alive.
+      nb::keep_alive<0, 1>(), R"pb(Deserialize a DD from bytes.
+
+Args:
+    dd_package: The DD package that owns the deserialized DD.
+    data: The serialized DD.
+    binary: Whether the data uses the binary serialization format. Defaults to True.
+        If False, the textual serialization format is expected.
+
+Returns:
+    The deserialized DD.
+
+Notes:
+    The binary format is not portable across different architectures or platforms.)pb");
 
   mat.def(
       "to_dot",

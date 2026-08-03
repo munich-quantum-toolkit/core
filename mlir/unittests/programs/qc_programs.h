@@ -244,7 +244,7 @@ Value powNegHalfX(QCProgramBuilder& b);
 /// Creates a circuit with pow(1/3) wrapping an X gate (general: gphase + rx).
 Value powThirdX(QCProgramBuilder& b);
 
-/// Creates the reference for powThirdX: gphase(-π/6) + rx(π/3).
+/// Creates the reference for powThirdX: gphase(π/6) + rx(π/3).
 Value powThirdXRef(QCProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
@@ -273,7 +273,7 @@ Value inverseMultipleControlledY(QCProgramBuilder& b);
 /// Creates a circuit with pow(0.5) wrapping a Y gate (folds to gphase + RY).
 Value powHalfY(QCProgramBuilder& b);
 
-/// Creates the reference for powHalfY: gphase(-π/4) followed by ry(π/2).
+/// Creates the reference for powHalfY: gphase(π/4) followed by ry(π/2).
 Value powHalfYRef(QCProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
@@ -516,7 +516,7 @@ Value powTwoSxRef(QCProgramBuilder& b);
 /// Creates a circuit with pow(1/3) wrapping an SX gate (default: gphase+rx).
 Value powThirdSx(QCProgramBuilder& b);
 
-/// Creates the reference for powThirdSx: gphase(-π/12) + rx(π/6).
+/// Creates the reference for powThirdSx: gphase(π/12) + rx(π/6).
 Value powThirdSxRef(QCProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
@@ -553,7 +553,7 @@ Value powTwoSxdgRef(QCProgramBuilder& b);
 /// Creates a circuit with pow(1/3) wrapping an SXdg gate (default: gphase+rx).
 Value powThirdSxdg(QCProgramBuilder& b);
 
-/// Creates the reference for powThirdSxdg: gphase(π/12) + rx(-π/6).
+/// Creates the reference for powThirdSxdg: gphase(-π/12) + rx(-π/6).
 Value powThirdSxdgRef(QCProgramBuilder& b);
 
 // --- RXOp ----------------------------------------------------------------- //
@@ -1084,6 +1084,12 @@ Value nestedCtrlTwo(QCProgramBuilder& b);
 /// applied to two gates.
 Value ctrlInvTwo(QCProgramBuilder& b);
 
+/// Exercises modifier-body reuse with reordered control and target aliases.
+Value modifierBodyReuseReordered(QCProgramBuilder& b);
+
+/// Canonical reference for modifierBodyReuseReordered.
+Value modifierBodyReuseReorderedRef(QCProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with an empty inverse modifier.
@@ -1205,7 +1211,7 @@ Value negPowInvIswapRef(QCProgramBuilder& b);
 /// expands pow(p){SX} to gphase+rx inside ctrl.
 Value ctrlPowSx(QCProgramBuilder& b);
 
-/// Creates the reference for ctrlPowSx: controlled gphase(-pi/12) and RX(pi/6).
+/// Creates the reference for ctrlPowSx: controlled gphase(pi/12) and RX(pi/6).
 Value ctrlPowSxRef(QCProgramBuilder& b);
 
 /// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
@@ -1279,5 +1285,13 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
 Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
+
+// --- Qubit Reuse ---------------------------------------------------------- //
+
+/// Creates a circuit with two qubits and a H gate applied to both.
+SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with a single controlled X gate on two individual qubits.
+SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b);
 
 } // namespace mlir::qc

@@ -14,10 +14,12 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
+#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -25,6 +27,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -57,8 +60,8 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
   if (it == state.cregMeasurements.end()) {
     return nullptr;
   }
-  const auto [allocOp, index] = it->second;
-  auto& reg = state.cregs[allocOp];
+  const auto [registerIndex, index] = it->second;
+  auto& reg = state.cregs[registerIndex];
   assert(reg.array && "result array must be allocated");
   auto loc = op->getLoc();
   auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
@@ -75,12 +78,12 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
 static LogicalResult convertClassicalBitMemRefAllocOp(
     memref::AllocOp op, memref::AllocOp::Adaptor adaptor, LoweringState& state,
     ConversionPatternRewriter& rewriter) {
-  const auto it = state.cregs.find(op.getOperation());
-  if (it == state.cregs.end()) {
+  const auto it = state.cregIndices.find(op.getOperation());
+  if (it == state.cregIndices.end()) {
     rewriter.eraseOp(op);
     return success();
   }
-  auto& reg = it->second;
+  auto& reg = state.cregs[it->second];
 
   auto loc = op.getLoc();
   auto* ctx = op.getContext();
@@ -652,6 +655,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
+    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
     LoweringState state;
@@ -726,11 +733,13 @@ protected:
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
       target.addIllegalDialect<cf::ControlFlowDialect>();
+      target.addIllegalDialect<math::MathDialect>();
 
       cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
                                                       stdPatterns);
       cf::populateAssertToLLVMConversionPattern(typeConverter, stdPatterns);
       arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+      populateMathToLLVMConversionPatterns(typeConverter, stdPatterns);
 
       if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
               .failed()) {

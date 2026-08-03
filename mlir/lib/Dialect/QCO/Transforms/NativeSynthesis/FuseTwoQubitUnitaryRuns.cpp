@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -326,16 +327,17 @@ struct FuseTwoQubitUnitaryRunsPattern final
 
     auto firstOp = cast<UnitaryOpInterface>(run.ops.front());
     rewriter.setInsertionPoint(firstOp);
-    Value newA;
-    Value newB;
-    if (failed(synthesizeUnitary2QWeyl(
-            rewriter, firstOp.getLoc(), firstOp.getInputQubit(0),
-            firstOp.getInputQubit(1), run.composed, spec, newA, newB))) {
+    const auto synthesized = synthesizeUnitary2QWeyl(
+        rewriter, firstOp.getLoc(), firstOp.getInputQubit(0),
+        firstOp.getInputQubit(1), run.composed, spec);
+    if (failed(synthesized)) {
       firstOp->emitError("failed to emit synthesized two-qubit gate sequence");
       return failure();
     }
-    rewriter.replaceAllUsesWith(run.tailA, newA);
-    rewriter.replaceAllUsesWith(run.tailB, newB);
+    decomposition::emitGPhaseIfNeeded(rewriter, firstOp.getLoc(),
+                                      synthesized->globalPhase);
+    rewriter.replaceAllUsesWith(run.tailA, synthesized->qubit0);
+    rewriter.replaceAllUsesWith(run.tailB, synthesized->qubit1);
     eraseFusableRun(rewriter, run);
     return success();
   }
@@ -377,13 +379,15 @@ struct LowerTwoQubitOpPattern final
     }
 
     rewriter.setInsertionPoint(raw);
-    Value out0;
-    Value out1;
-    if (failed(synthesizeUnitary2QWeyl(rewriter, raw->getLoc(), in0, in1,
-                                       matrix, spec, out0, out1))) {
+    const auto synthesized = synthesizeUnitary2QWeyl(rewriter, raw->getLoc(),
+                                                     in0, in1, matrix, spec);
+    if (failed(synthesized)) {
       return failure();
     }
-    rewriter.replaceOp(raw, ValueRange{out0, out1});
+    decomposition::emitGPhaseIfNeeded(rewriter, raw->getLoc(),
+                                      synthesized->globalPhase);
+    rewriter.replaceOp(raw,
+                       ValueRange{synthesized->qubit0, synthesized->qubit1});
     return success();
   }
 };
@@ -393,28 +397,28 @@ struct LowerTwoQubitOpPattern final
 /// Fuses single-qubit runs (and lowers lone off-gateset single-qubit ops) by
 /// reusing the `fuse-single-qubit-unitary-runs` rewrite. `qco.ctrl` bodies are
 /// skipped so the `X`/`Z` bodies of native entanglers are preserved.
-static LogicalResult fuseSingleQubitRuns(ModuleOp module,
+static LogicalResult fuseSingleQubitRuns(ModuleOp moduleOp,
                                          const EulerBasis basis) {
-  RewritePatternSet patterns(module.getContext());
+  RewritePatternSet patterns(moduleOp.getContext());
   populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis,
                                              /*skipControlledBodies=*/true);
-  return applyPatternsGreedily(module, std::move(patterns));
+  return applyPatternsGreedily(moduleOp, std::move(patterns));
 }
 
 /// Fuses two-qubit runs, then lowers any remaining off-gateset two-qubit ops.
-static LogicalResult fuseAndLowerTwoQubitOps(ModuleOp module,
+static LogicalResult fuseAndLowerTwoQubitOps(ModuleOp moduleOp,
                                              const NativeGateset& spec) {
-  MLIRContext* ctx = module.getContext();
+  MLIRContext* ctx = moduleOp.getContext();
   {
     RewritePatternSet runPatterns(ctx);
     runPatterns.add<FuseTwoQubitUnitaryRunsPattern>(ctx, spec);
-    if (failed(applyPatternsGreedily(module, std::move(runPatterns)))) {
+    if (failed(applyPatternsGreedily(moduleOp, std::move(runPatterns)))) {
       return failure();
     }
   }
   RewritePatternSet lowerPatterns(ctx);
   lowerPatterns.add<LowerTwoQubitOpPattern>(ctx, spec);
-  return applyPatternsGreedily(module, std::move(lowerPatterns));
+  return applyPatternsGreedily(moduleOp, std::move(lowerPatterns));
 }
 
 namespace {
@@ -439,24 +443,28 @@ protected:
       return;
     }
     const EulerBasis basis = *spec->eulerBasis;
-    ModuleOp module = getOperation();
+    ModuleOp moduleOp = getOperation();
 
     // 1. Fuse single-qubit runs (also lowers lone off-gateset single-qubit
     // ops).
     // 2. Fuse two-qubit runs and lower remaining off-gateset two-qubit ops.
     // 3. Fuse the single-qubit seams introduced by two-qubit synthesis.
-    if (failed(fuseSingleQubitRuns(module, basis)) ||
-        failed(fuseAndLowerTwoQubitOps(module, *spec)) ||
-        failed(fuseSingleQubitRuns(module, basis))) {
+    if (failed(fuseSingleQubitRuns(moduleOp, basis)) ||
+        failed(fuseAndLowerTwoQubitOps(moduleOp, *spec)) ||
+        failed(fuseSingleQubitRuns(moduleOp, basis))) {
       signalPassFailure();
       return;
     }
 
-    if (Operation* leftover = findNonNativeOp(module, *spec)) {
+    if (Operation* leftover = findNonNativeOp(moduleOp, *spec)) {
       leftover->emitError()
           << "native gate synthesis: operation remains outside the native "
              "gateset (native-gates='"
           << nativeGates << "')";
+      signalPassFailure();
+      return;
+    }
+    if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
   }

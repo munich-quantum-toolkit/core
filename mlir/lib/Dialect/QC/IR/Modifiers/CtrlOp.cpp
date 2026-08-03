@@ -78,9 +78,11 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
           return utils::getValueFromBlockArgument(t, outerTargets);
         });
 
-    auto merged = CtrlOp::create(rewriter, op.getLoc(), controls, targets);
-    rewriter.inlineRegionBefore(innerCtrlOp.getRegion(), merged.getRegion(),
-                                merged.getRegion().end());
+    CtrlOp::create(rewriter, op.getLoc(), controls, targets,
+                   [&](ValueRange mergedTargets) {
+                     utils::inlineBodyReturningYields(*innerCtrlOp.getBody(),
+                                                      mergedTargets, rewriter);
+                   });
     rewriter.eraseOp(op);
     return success();
   }
