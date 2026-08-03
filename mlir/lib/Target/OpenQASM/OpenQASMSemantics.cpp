@@ -1049,6 +1049,10 @@ private:
       const auto& expression = syntax.expressions[id];
       switch (expression.kind) {
       case Expr::Kind::Int:
+        if (!expression.wideInteger.empty()) {
+          fail(expression.location,
+               "integer literal exceeds 64-bit constant evaluation");
+        }
         return expression.integer <= static_cast<uint64_t>(
                                          std::numeric_limits<int64_t>::max())
                    ? ScalarType::Int

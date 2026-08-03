@@ -1330,4 +1330,22 @@ TEST(OpenQASMFrontendTest, RejectsWideIntegerLiteralInOrdinaryConstants) {
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest,
+     RejectsWideIntegerLiteralInShortCircuitedConstantOperands) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; const bool value = false && "
+      "(999999999999999999999999999999 == 0);",
+      "OPENQASM 3.1; const bool value = true || "
+      "(999999999999999999999999999999 == 0);",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("exceeds 64-bit"),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
+}
+
 } // namespace
