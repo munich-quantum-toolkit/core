@@ -59,6 +59,11 @@ Invalid metadata is rejected once at construction.
       clang-tidy, and passed the complete repository lint. The macOS failure was
       an unrelated wall-clock assertion in an unchanged global-phase test and
       will rerun on the replacement head.
+- [x] (2026-08-03 13:10Z) Replaced two pointer declarations for `std::ranges`
+      results with portable iterator declarations after the Windows ARM build
+      exposed MSVC's non-pointer `std::array` iterator type. Rebuilt the target
+      and interface header and passed the 8 focused and all 218 compiler tests
+      plus the exact LLVM static-linkage check.
 
 ## Milestones
 
@@ -133,6 +138,10 @@ an explicit series-level item described below.
   came from the unchanged
   `GlobalPhaseNormalizationTest.ScalesLinearlyAcrossLargePhaseScopes` timing
   assertion: 84.6 ms exceeded a 79.8 ms threshold.
+- Observation: MSVC models `std::array` range results as class iterators rather
+  than raw pointers. Declaring the results of `std::ranges::find` and
+  `std::ranges::find_if` as `const auto` is portable across MSVC and libc++
+  while preserving the existing comparisons and dereferences.
 
 ## Decision Log
 
