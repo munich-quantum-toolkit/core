@@ -2123,11 +2123,14 @@ private:
       fail(location,
            "gate '" + declaration.identifier + "' is already declared");
     }
-    // OpenQASM 2 corpora commonly redefine qelib1 gates (e.g. `gate sx`).
-    // Allow those definitions to shadow the standard-library entry; OpenQASM 3
-    // keeps the stricter "no shadowing stdgates" rule.
     if (const auto* catalog = lookupGate(declaration.identifier);
-        catalog != nullptr && isGateAvailable(*catalog) && !program.openQASM2) {
+        catalog != nullptr && isGateAvailable(*catalog)) {
+      // OpenQASM 2 corpora often repeat qelib1 gate definitions (e.g. `gate
+      // sx`). Prefer the standard-library entry and skip the duplicate body to
+      // avoid later inlining overhead. OpenQASM 3 rejects shadowing stdgates.
+      if (program.openQASM2) {
+        return;
+      }
       fail(location,
            "gate '" + declaration.identifier + "' is already declared");
     }
@@ -2694,8 +2697,9 @@ private:
     if (standard != nullptr && !isGateAvailable(*standard)) {
       standard = nullptr;
     }
-    // A user-defined gate shadows the standard-library entry with the same
-    // name (needed for OpenQASM 2 qelib1 redefinitions).
+    // Prefer a user-defined gate when present. Available standard-library
+    // names are not registered as custom gates (OpenQASM 2 redefinitions are
+    // skipped), so this only applies to non-stdlib custom definitions.
     if (custom != customGates.end()) {
       standard = nullptr;
     }

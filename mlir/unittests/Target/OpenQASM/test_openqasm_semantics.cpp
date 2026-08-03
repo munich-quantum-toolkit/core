@@ -1237,8 +1237,9 @@ TEST(OpenQASMFrontendTest, AcceptsMixedPhysicalAndDeclaredQubits) {
   }
 }
 
-TEST(OpenQASMFrontendTest, AllowsOpenQASM2StdlibGateShadowing) {
-  // OpenQASM 2.0 commonly redefines qelib1 gates (e.g. sx) in the program body.
+TEST(OpenQASMFrontendTest, SkipsOpenQASM2StdlibGateRedefinition) {
+  // OpenQASM 2.0 corpora often repeat qelib1 gate definitions; keep the
+  // standard-library entry and drop the duplicate body.
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
 include "qelib1.inc";
@@ -1248,6 +1249,9 @@ sx q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::none_of(analyzed.program->gates, [](const auto& gate) {
+    return gate.name == "sx";
+  }));
 }
 
 TEST(OpenQASMFrontendTest, RejectsOpenQASM3StdlibGateShadowing) {
