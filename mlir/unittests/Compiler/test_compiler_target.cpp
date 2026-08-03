@@ -238,7 +238,7 @@ TEST(CompilerTargetTest, DistinguishesAbsentAndEmptyOperationSets) {
   EXPECT_FALSE(closed.synthesisBasis());
 }
 
-TEST(CompilerTargetTest, PreservesOrderedLociAndResolvesGlobalBasis) {
+TEST(CompilerTargetTest, PreservesRawLociAndResolvesBidirectionalBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const Operation globalU{"U3", 1, 3};
   const Operation symmetricCZ{
@@ -247,8 +247,11 @@ TEST(CompilerTargetTest, PreservesOrderedLociAndResolvesGlobalBasis) {
 
   EXPECT_TRUE(symmetric.supportsOperation("u", {0}, 3));
   EXPECT_TRUE(symmetric.supportsOperation(" U3 ", {2}, 3));
+  ASSERT_EQ(symmetric.operations().size(), 2U);
+  EXPECT_TRUE(symmetric.operations()[1].supports({1, 0}));
+  EXPECT_FALSE(symmetric.operations()[1].supports({0, 1}));
   EXPECT_TRUE(symmetric.supports(GateKind::CZ, {1, 0}));
-  EXPECT_FALSE(symmetric.supports(GateKind::CZ, {0, 1}));
+  EXPECT_TRUE(symmetric.supports(GateKind::CZ, {0, 1}));
   EXPECT_TRUE(
       llvm::is_contained(symmetric.globallySupportedGates(), GateKind::CZ));
   ASSERT_TRUE(symmetric.synthesisBasis());
@@ -297,7 +300,9 @@ TEST(CompilerTargetTest, ClassifiesEveryEntanglerOrientation) {
     const Target target{3, chain, std::vector{globalU, oneOrientation}};
     EXPECT_TRUE(llvm::is_contained(target.globallySupportedGates(), gate));
     EXPECT_TRUE(target.supports(gate, {1, 0}));
-    EXPECT_FALSE(target.supports(gate, {0, 1}));
+    EXPECT_TRUE(target.supports(gate, {0, 1}));
+    EXPECT_TRUE(target.supports(gate, {1, 2}));
+    EXPECT_TRUE(target.supports(gate, {2, 1}));
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->entangler, gate);
   }

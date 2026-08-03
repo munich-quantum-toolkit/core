@@ -192,7 +192,15 @@ public:
   /**
    * @brief Recognized globally usable single-qubit synthesis basis.
    */
-  enum class SingleQubitBasis : uint8_t { U, ZSXX, R, XZX, XYX, ZYZ };
+  enum class SingleQubitBasis : uint8_t {
+    U,    ///< `U(theta, phi, lambda)`.
+    ZSXX, ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
+    R,    ///< XYX synthesis expressed with `R(theta, phi)`.
+    XZX,  ///< `RX(phi) * RZ(theta) * RX(lambda)`.
+    XYX,  ///< `RX(phi) * RY(theta) * RX(lambda)`.
+    ZYZ,  ///< `RZ(phi) * RY(theta) * RZ(lambda)`.
+    ZXZ,  ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
+  };
 
   /**
    * @brief One single-qubit basis and entangler usable across the target.
@@ -300,21 +308,25 @@ public:
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
   /**
-   * @brief Return whether a canonical/provider operation is supported at an
-   * ordered hardware locus.
+   * @brief Return whether an operation is semantically supported at a hardware
+   * locus.
+   *
+   * @details Raw provider loci remain ordered. Recognized operand-symmetric
+   * gates are supported in both orientations of each reported two-site locus.
    */
   [[nodiscard]] bool
   supportsOperation(llvm::StringRef name, llvm::ArrayRef<SiteId> locus,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
   /**
-   * @brief Return whether a QCO operation is supported at an ordered locus.
+   * @brief Return whether a QCO operation is semantically supported at a locus.
    */
   [[nodiscard]] bool supports(::mlir::Operation* operation,
                               llvm::ArrayRef<SiteId> locus) const;
 
   /**
-   * @brief Return whether a recognized gate is supported at an ordered locus.
+   * @brief Return whether a recognized gate is semantically supported at a
+   * locus.
    */
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> locus) const;

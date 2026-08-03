@@ -14,8 +14,6 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/SynthesisBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -64,6 +62,8 @@ using mlir::qco::HOp;
 using mlir::qco::QCOProgramBuilder;
 using mlir::qco::RXXOp;
 using mlir::qco::SWAPOp;
+using mlir::qco::XOp;
+using mlir::qco::ZOp;
 
 [[nodiscard]] static mlir::func::FuncOp mainFunction(ModuleOp module) {
   return *module.getBody()->getOps<mlir::func::FuncOp>().begin();
@@ -199,26 +199,6 @@ TEST(TargetSynthesisPassContract, FactoriesAreIndependentlyConstructible) {
       mlir::arith::ArithDialect::getDialectNamespace()));
 }
 
-TEST(TargetSynthesisPassContract, AdaptsEverySupportedSynthesisBasis) {
-  using mlir::qco::decomposition::EulerBasis;
-  using mlir::qco::decomposition::NativeSynthesisBasis;
-
-  constexpr std::array singleQubitBases{
-      std::pair{Target::SingleQubitBasis::U, EulerBasis::U},
-      std::pair{Target::SingleQubitBasis::ZSXX, EulerBasis::ZSXX},
-      std::pair{Target::SingleQubitBasis::R, EulerBasis::R},
-      std::pair{Target::SingleQubitBasis::XZX, EulerBasis::XZX},
-      std::pair{Target::SingleQubitBasis::XYX, EulerBasis::XYX},
-      std::pair{Target::SingleQubitBasis::ZYZ, EulerBasis::ZYZ},
-  };
-  for (const auto [targetBasis, decompositionBasis] : singleQubitBases) {
-    const auto adapted = NativeSynthesisBasis::fromCompilerTarget(
-        {.singleQubit = targetBasis, .entangler = Target::GateKind::CX});
-    EXPECT_EQ(adapted.singleQubit, decompositionBasis);
-    EXPECT_EQ(adapted.entangler, Target::GateKind::CX);
-  }
-}
-
 TEST_F(TargetSynthesisTest, PreRoutingOptimizationRequiresStrictImprovement) {
   const auto adjacentCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
@@ -267,6 +247,26 @@ TEST_F(TargetSynthesisTest,
   expectEquivalent(expected, optimized);
 }
 
+TEST_F(TargetSynthesisTest, PreRoutingOptimizationEmitsSymmetricEntangler) {
+  const auto reducible = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    std::tie(q1, q0) = builder.cx(q1, q0);
+    std::tie(q1, q0) = builder.cx(q1, q0);
+    return builder.intConstant(0);
+  };
+  auto expected = build(reducible);
+  auto optimized = build(reducible);
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*optimized, mlir::qco::createOptimizeTwoQubitUnitaryRuns())));
+  EXPECT_EQ(countOps<CtrlOp>(*optimized), 1U);
+  EXPECT_EQ(countOps<ZOp>(*optimized), 1U);
+  EXPECT_EQ(countOps<XOp>(*optimized), 0U);
+  expectEquivalent(expected, optimized);
+}
+
 TEST_F(TargetSynthesisTest, PreRoutingOptimizationLeavesIndividualOpsAlone) {
   auto module = build([](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
@@ -274,10 +274,12 @@ TEST_F(TargetSynthesisTest, PreRoutingOptimizationLeavesIndividualOpsAlone) {
     std::tie(q0, q1) = builder.swap(q0, q1);
     return builder.intConstant(0);
   });
+  const auto before = printModule(*module);
   ASSERT_TRUE(mlir::succeeded(
       runPass(*module, mlir::qco::createOptimizeTwoQubitUnitaryRuns())));
   EXPECT_EQ(countOps<SWAPOp>(*module), 1U);
   EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
+  EXPECT_EQ(printModule(*module), before);
 }
 
 TEST_F(TargetSynthesisTest,
@@ -363,7 +365,7 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeSwap) {
 }
 
 TEST_F(TargetSynthesisTest,
-       TargetNativeSynthesisUsesSupportedSymmetricOrientation) {
+       TargetNativeSynthesisUsesBidirectionalSymmetricCapability) {
   const auto swap = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
@@ -372,19 +374,19 @@ TEST_F(TargetSynthesisTest,
   };
   auto expected = build(swap);
   auto synthesized = build(swap);
-  const Target reverseOnly{
+  const Target oneOrientation{
       std::vector{Site{0}, Site{1}}, std::nullopt,
       std::vector{Operation{"u", 1, 3},
                   Operation{"cz", 2, 0, std::vector{OperationLocus{{1, 0}}}}}};
-  ASSERT_TRUE(reverseOnly.synthesisBasis());
-  ASSERT_EQ(reverseOnly.synthesisBasis()->entangler, Target::GateKind::CZ);
+  ASSERT_TRUE(oneOrientation.synthesisBasis());
+  ASSERT_EQ(oneOrientation.synthesisBasis()->entangler, Target::GateKind::CZ);
 
   ASSERT_TRUE(mlir::succeeded(runPass(
-      *synthesized, mlir::qco::createTargetNativeSynthesis(reverseOnly))));
+      *synthesized, mlir::qco::createTargetNativeSynthesis(oneOrientation))));
   EXPECT_EQ(countOps<SWAPOp>(*synthesized), 0U);
   EXPECT_GT(countOps<CtrlOp>(*synthesized), 0U);
   ASSERT_TRUE(mlir::succeeded(runPass(
-      *synthesized, mlir::qco::createVerifyTargetConformance(reverseOnly))));
+      *synthesized, mlir::qco::createVerifyTargetConformance(oneOrientation))));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
   expectEquivalent(expected, synthesized);
 }
@@ -503,6 +505,28 @@ TEST_F(TargetSynthesisTest,
   EXPECT_NE(diagnostics.find("unitary matrix is not available at compile time"),
             std::string::npos)
       << diagnostics;
+}
+
+TEST_F(TargetSynthesisTest,
+       UnsupportedRuntimeParameterizedGateDoesNotPartiallyRewrite) {
+  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q3, %q4 = qco.rxx(%theta) %q2, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        return %q3, %q4 : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(module);
+  const auto before = printModule(*module);
+
+  static_cast<void>(expectFailure(
+      *module, mlir::qco::createTargetNativeSynthesis(makeUCxTarget())));
+  EXPECT_EQ(printModule(*module), before);
 }
 
 TEST_F(TargetSynthesisTest, ConformanceUsesProviderIdsAndOrderedLoci) {

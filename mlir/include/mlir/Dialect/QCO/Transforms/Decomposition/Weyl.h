@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
@@ -343,8 +344,6 @@ decomposeTwoQubitWithBasis(
     double basisFidelity = 1.0,
     std::optional<std::uint8_t> numBasisUses = std::nullopt);
 
-struct NativeSynthesisBasis;
-
 /** @brief Result of two-qubit synthesis, including its accumulated phase. */
 struct SynthesizedUnitary2Q {
   Value qubit0;
@@ -353,16 +352,19 @@ struct SynthesizedUnitary2Q {
 };
 
 /**
- * @brief Synthesizes a two-qubit unitary in the selected target @p basis.
- *
- * Set @p reverseEntanglerOperands only when the basis entangler is
- * operand-symmetric but the provider supports the reverse ordered locus.
- * Logical qubit outputs remain paired with their corresponding inputs.
+ * @brief Decomposes a two-qubit unitary using @p entangler.
  */
-[[nodiscard]] FailureOr<SynthesizedUnitary2Q>
-synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
-                        Value qubit1, const Matrix4x4& target,
-                        const NativeSynthesisBasis& basis,
-                        bool reverseEntanglerOperands = false);
+[[nodiscard]] TwoQubitNativeDecomposition
+decomposeUnitary2QWeyl(const Matrix4x4& target,
+                       CompilerTarget::GateKind entangler);
+
+/**
+ * @brief Emits a prepared two-qubit decomposition in the selected target
+ * @p basis.
+ */
+[[nodiscard]] SynthesizedUnitary2Q
+emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
+                  const TwoQubitNativeDecomposition& decomposition,
+                  CompilerTarget::SynthesisBasis basis);
 
 } // namespace mlir::qco::decomposition

@@ -68,27 +68,29 @@ static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
  * @brief Whether `op` is a gate that Euler synthesis emits for `basis`.
  *
  * @param op The operation to classify.
- * @param basis The target Euler basis.
+ * @param basis The single-qubit synthesis basis.
  * @return Whether `op` is in the gate set for `basis`.
  */
 static bool isTargetBasisGate(Operation* op,
-                              const decomposition::EulerBasis basis) {
-  using decomposition::EulerBasis;
+                              const decomposition::SingleQubitBasis basis) {
+  using decomposition::SingleQubitBasis;
   return TypeSwitch<Operation*, bool>(op)
       .Case<RZOp>([&](auto) {
-        return basis == EulerBasis::ZYZ || basis == EulerBasis::ZXZ ||
-               basis == EulerBasis::XZX || basis == EulerBasis::ZSXX;
+        return basis == SingleQubitBasis::ZYZ ||
+               basis == SingleQubitBasis::ZXZ ||
+               basis == SingleQubitBasis::XZX ||
+               basis == SingleQubitBasis::ZSXX;
       })
       .Case<RYOp>([&](auto) {
-        return basis == EulerBasis::ZYZ || basis == EulerBasis::XYX;
+        return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
       })
       .Case<RXOp>([&](auto) {
-        return basis == EulerBasis::ZXZ || basis == EulerBasis::XZX ||
-               basis == EulerBasis::XYX;
+        return basis == SingleQubitBasis::ZXZ ||
+               basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
       })
-      .Case<UOp>([&](auto) { return basis == EulerBasis::U; })
-      .Case<SXOp, XOp>([&](auto) { return basis == EulerBasis::ZSXX; })
-      .Case<ROp>([&](auto) { return basis == EulerBasis::R; })
+      .Case<UOp>([&](auto) { return basis == SingleQubitBasis::U; })
+      .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
+      .Case<ROp>([&](auto) { return basis == SingleQubitBasis::R; })
       .Default([](auto) { return false; });
 }
 
@@ -97,12 +99,12 @@ static bool isTargetBasisGate(Operation* op,
  *
  * @param head First gate of the run.
  * @param headMatrix Matrix already obtained while identifying the run head.
- * @param basis Target Euler basis.
+ * @param basis Single-qubit synthesis basis.
  * @return Composed matrix, gate count, and run tail.
  */
-static FusableRunScan scanFusableRun(UnitaryOpInterface head,
-                                     const Matrix2x2& headMatrix,
-                                     const decomposition::EulerBasis basis) {
+static FusableRunScan
+scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
+               const decomposition::SingleQubitBasis basis) {
   FusableRunScan scan;
   for (auto* op : WireRange(head.getOutputTarget(0))) {
     auto member = dyn_cast_or_null<UnitaryOpInterface>(op);
@@ -151,12 +153,12 @@ namespace {
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
-                                    const decomposition::EulerBasis basis,
+                                    const decomposition::SingleQubitBasis basis,
                                     const bool skipControlledBodies)
       : OpInterfaceRewritePattern(context), basis(basis),
         skipControlledBodies(skipControlledBodies) {}
 
-  decomposition::EulerBasis basis;
+  decomposition::SingleQubitBasis basis;
   bool skipControlledBodies;
 
   /**
@@ -220,10 +222,10 @@ protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
 
-    const auto parsed = decomposition::parseEulerBasis(basis);
+    const auto parsed = decomposition::parseSingleQubitBasis(basis);
     if (!parsed) {
       moduleOp.emitError()
-          << "Invalid Euler basis '" << basis
+          << "Invalid single-qubit synthesis basis '" << basis
           << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r.";
       signalPassFailure();
       return;
@@ -247,7 +249,7 @@ protected:
 namespace mlir::qco::decomposition {
 
 void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, const EulerBasis basis,
+    RewritePatternSet& patterns, const SingleQubitBasis basis,
     const bool skipControlledBodies) {
   patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
                                                   skipControlledBodies);

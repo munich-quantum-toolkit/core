@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/SynthesisBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -457,7 +456,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
 
 [[nodiscard]] static Synthesized2QCircuit
 synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
-                   const NativeSynthesisBasis& basis) {
+                   const CompilerTarget::SynthesisBasis basis) {
   OwningOpRef mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
   OpBuilder builder(ctx);
   builder.setInsertionPointToStart(mlirModule->getBody());
@@ -470,21 +469,19 @@ synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   auto* entry = func.addEntryBlock();
 
   builder.setInsertionPointToStart(entry);
+  const auto decomposition = decomposeUnitary2QWeyl(target, basis.entangler);
   const auto synthesized =
-      synthesizeUnitary2QWeyl(builder, loc, entry->getArgument(0),
-                              entry->getArgument(1), target, basis);
-  if (failed(synthesized)) {
-    ADD_FAILURE() << "synthesizeUnitary2QWeyl failed during test synthesis";
-  } else {
-    emitGPhaseIfNeeded(builder, loc, synthesized->globalPhase);
-    func::ReturnOp::create(
-        builder, loc, ValueRange{synthesized->qubit0, synthesized->qubit1});
-  }
+      emitUnitary2QWeyl(builder, loc, entry->getArgument(0),
+                        entry->getArgument(1), decomposition, basis);
+  emitGPhaseIfNeeded(builder, loc, synthesized.globalPhase);
+  func::ReturnOp::create(builder, loc,
+                         ValueRange{synthesized.qubit0, synthesized.qubit1});
   return {.mlirModule = std::move(mlirModule), .func = func};
 }
 
-static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
-                                      const NativeSynthesisBasis& basis) {
+static void
+expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
+                          const CompilerTarget::SynthesisBasis basis) {
   const auto circuit = synthesize2QMatrix(ctx, target, basis);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   const auto actual = computeTwoQubitUnitaryFromFunc(circuit.func);
@@ -531,8 +528,7 @@ protected:
 } // namespace
 
 TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
-  const auto basis = NativeSynthesisBasis::fromCompilerTarget(GetParam().basis);
-  expectSynthesized2QMatrix(mlir.ctx(), GetParam().target(), basis);
+  expectSynthesized2QMatrix(mlir.ctx(), GetParam().target(), GetParam().basis);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -601,10 +597,8 @@ TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
         CompilerTarget::GateKind::RZX, CompilerTarget::GateKind::RZZ,
         CompilerTarget::GateKind::ISWAP, CompilerTarget::GateKind::CZ,
         CompilerTarget::GateKind::CX, CompilerTarget::GateKind::ECR}) {
-    const auto basis = NativeSynthesisBasis::fromCompilerTarget(
-        {.singleQubit = CompilerTarget::SingleQubitBasis::U,
-         .entangler = entangler});
-    const auto native = basis.decomposeTarget(Matrix4x4::identity());
+    const auto native =
+        decomposeUnitary2QWeyl(Matrix4x4::identity(), entangler);
     EXPECT_EQ(native.numBasisUses, 0U);
   }
 }

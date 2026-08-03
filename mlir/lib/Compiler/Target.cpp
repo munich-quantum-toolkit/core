@@ -544,11 +544,28 @@ bool CompilerTarget::Storage::supportsOperation(
   if (found == capabilities.end()) {
     return false;
   }
-  return llvm::any_of(found->second, [&](const auto index) {
-    const auto& operation = (*operations)[index];
-    return (!numParameters || operation.numParameters() == *numParameters) &&
-           operation.supports(locus);
-  });
+  const auto supportsExactLocus = [&](const ArrayRef<SiteId> exactLocus) {
+    return llvm::any_of(found->second, [&](const auto index) {
+      const auto& operation = (*operations)[index];
+      return (!numParameters || operation.numParameters() == *numParameters) &&
+             operation.supports(exactLocus);
+    });
+  };
+  if (supportsExactLocus(locus)) {
+    return true;
+  }
+
+  const auto* const specification =
+      std::ranges::find_if(GATE_SPECIFICATIONS, [&](const auto& candidate) {
+        return candidate.name == canonical;
+      });
+  if (locus.size() != 2 || specification == GATE_SPECIFICATIONS.end() ||
+      !specification->symmetric ||
+      (numParameters && specification->numParameters != *numParameters)) {
+    return false;
+  }
+  const std::array reverseLocus{locus[1], locus[0]};
+  return supportsExactLocus(reverseLocus);
 }
 
 bool CompilerTarget::Storage::gateIsGloballySupported(
@@ -572,8 +589,7 @@ bool CompilerTarget::Storage::gateIsGloballySupported(
                                                    specification.numParameters);
     const auto supportsReverse = supportsOperation(specification.name, reverse,
                                                    specification.numParameters);
-    return specification.symmetric ? supportsForward || supportsReverse
-                                   : supportsForward && supportsReverse;
+    return supportsForward && supportsReverse;
   };
 
   if (couplings) {

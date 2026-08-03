@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <mlir/IR/Builders.h>
@@ -17,7 +18,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 
 namespace mlir {
@@ -26,18 +26,7 @@ class RewritePatternSet;
 
 namespace mlir::qco::decomposition {
 
-/**
- * @brief Native gate sets for single-qubit Euler synthesis.
- */
-enum class EulerBasis : std::uint8_t {
-  ZYZ = 0,  ///< `RZ(phi) * RY(theta) * RZ(lambda)`.
-  ZXZ = 1,  ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
-  XZX = 2,  ///< `RX(phi) * RZ(theta) * RX(lambda)`.
-  XYX = 3,  ///< `RX(phi) * RY(theta) * RX(lambda)`.
-  U = 4,    ///< `U(theta, phi, lambda)`.
-  ZSXX = 5, ///< `RZ` / `SX` / `X` synthesis via ZYZ decomposition.
-  R = 6,    ///< `R(.,0) * R(.,pi/2) * R(.,0)` (XYX with `Rx`/`Ry` as `R`).
-};
+using SingleQubitBasis = CompilerTarget::SingleQubitBasis;
 
 /**
  * @brief Parses a basis name (e.g. `zyz`, `zsxx`; case-insensitive).
@@ -45,7 +34,8 @@ enum class EulerBasis : std::uint8_t {
  * @param basis The basis name.
  * @return The parsed basis, or `std::nullopt` if unrecognized.
  */
-[[nodiscard]] std::optional<EulerBasis> parseEulerBasis(StringRef basis);
+[[nodiscard]] std::optional<SingleQubitBasis>
+parseSingleQubitBasis(StringRef basis);
 
 /**
  * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
@@ -53,7 +43,7 @@ enum class EulerBasis : std::uint8_t {
  *
  * The decomposition obeys `matrix == e^{i*phase} * K(phi) * A(theta) *
  * K(lambda)` where `(K, A)` are the rotation axes of the chosen @ref
- * EulerBasis.
+ * SingleQubitBasis.
  */
 struct EulerAngles {
   double theta = 0.0;  ///< Middle rotation angle.
@@ -77,11 +67,11 @@ struct SynthesizedUnitary1Q {
  * @brief Extracts `(theta, phi, lambda, phase)` of @p matrix in @p basis.
  *
  * @param matrix The single-qubit unitary to decompose.
- * @param basis The target Euler basis.
+ * @param basis The single-qubit synthesis basis.
  * @return The extracted Euler angles and global phase.
  */
 [[nodiscard]] EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
-                                            EulerBasis basis);
+                                            SingleQubitBasis basis);
 
 /**
  * @brief Synthesizes a composed single-qubit unitary as gates in @p basis.
@@ -96,14 +86,14 @@ struct SynthesizedUnitary1Q {
  * @param composed Composed unitary to synthesize.
  * @param runSize Number of gates in the run.
  * @param hasNonBasisGate Whether the run contains a gate outside @p basis.
- * @param basis The target Euler basis.
+ * @param basis The single-qubit synthesis basis.
  * @return The synthesized qubit and correction, or `std::nullopt` if synthesis
  * is skipped.
  */
 [[nodiscard]] std::optional<SynthesizedUnitary1Q>
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Matrix2x2& composed, std::size_t runSize,
-                         bool hasNonBasisGate, EulerBasis basis);
+                         bool hasNonBasisGate, SingleQubitBasis basis);
 
 /**
  * @brief Materializes one accumulated phase correction when needed.
@@ -122,7 +112,7 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
  * bodies are left untouched.
  */
 void populateFuseSingleQubitUnitaryRunsPatterns(
-    RewritePatternSet& patterns, EulerBasis basis,
+    RewritePatternSet& patterns, SingleQubitBasis basis,
     bool skipControlledBodies = false);
 
 } // namespace mlir::qco::decomposition

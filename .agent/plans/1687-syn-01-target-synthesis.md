@@ -21,8 +21,8 @@ actual type, arity, parameter count, provider site IDs, and ordered locus.
 After this change, C++ pipeline code can construct these three stages
 independently. Focused tests demonstrate a profitable CX cancellation, preserve
 isolated and runtime-parameterized gates before routing, lower SWAP to a
-target-selected U/CX basis after routing, and reject direction, operation,
-arity, parameter, and site mismatches.
+target-selected basis after routing, and reject direction, operation, arity,
+parameter, and site mismatches.
 
 ## Progress
 
@@ -47,9 +47,9 @@ arity, parameter, and site mismatches.
       completed source formatting, changed-file checks, repository lint, and
       initial diff checks.
 - [x] (2026-08-03 19:01Z) Resolved all three blockers from independent read-only
-      review: reverse-only symmetric-entangler loci, native SWAP authority, and
-      native `qco.pow` body handling. The reviewer approved the remediated code
-      and the focused suite passes all sixteen tests.
+      review: single-orientation symmetric-entangler loci, native SWAP
+      authority, and native `qco.pow` body handling. The reviewer approved the
+      remediated code and the focused suite passes all sixteen tests.
 - [x] (2026-08-03 19:20Z) Rebuilt and reran all three affected suites, reran
       changed-file hooks and full repository lint, completed focused
       `clang-tidy` checks and the final diff audit, and prepared one signed
@@ -74,6 +74,18 @@ arity, parameter, and site mismatches.
       undirected coupling input while removing the obsolete native-menu call,
       retained both PR links in the changelog, and passed 20/199/215 tests plus
       the focused high-level mapping API test.
+- [x] (2026-08-03 19:54Z) Addressed the latest design and efficiency review as
+      one simplification: made `CompilerTarget::SingleQubitBasis` the only basis
+      enum, deleted the decomposition adapter, removed entangler operand
+      reversal and redundant matrix assertions, selected U/CZ for generic
+      fusion, reused Weyl decompositions, cached provider-site provenance, and
+      made target lowering failure-atomic. A direct preplanned `IRRewriter`
+      traversal replaces general greedy machinery. Rebuilt the public
+      interface-header targets and observed 21/21 target-synthesis, 199/199
+      decomposition, and 215/215 compiler tests. Focused changed-source
+      `clang-tidy`, targeted hooks, full repository lint, stale-surface search,
+      and `git diff --check` pass. A fresh independent exact-working-tree review
+      approved the result with no correctness, bloat, or efficiency findings.
 
 ## Milestones
 
@@ -83,11 +95,10 @@ The completed first milestone removes
 `mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h` and its source. Gate
 identity, provider aliases, arity, parameter counts, global capability checks,
 and basis selection now remain in `mlir/include/mlir/Compiler/Target.h` and
-`mlir/lib/Compiler/Target.cpp`. The new decomposition-only
-`NativeSynthesisBasis` adapts the target-selected single-qubit basis to
-`EulerBasis` and caches a Weyl decomposer for the target-selected entangler. It
-contains no parser, menu, aliases, target classification, or independent basis
-selection.
+`mlir/lib/Compiler/Target.cpp`. `CompilerTarget::SingleQubitBasis` is also the
+single type consumed by Euler and Weyl synthesis; the duplicate `EulerBasis`
+enum and `NativeSynthesisBasis` adapter are deleted. Weyl retains only cached
+decomposers for the target-selected entangler.
 
 The generated `fuse-two-qubit-unitary-runs` pass and all of its string-menu
 surfaces are removed rather than retained as a synthetic target. The later PIPE
@@ -97,7 +108,7 @@ the three typed C++ pass factories.
 ### Milestone 2: Separate optimization, lowering, and verification
 
 The completed pre-routing stage scans maximal constant windows on one pair of
-linear QCO wires. It evaluates a canonical U/CX Weyl decomposition and rewrites
+linear QCO wires. It evaluates a canonical U/CZ Weyl decomposition and rewrites
 only when the synthesized entangler count is strictly smaller than the window's
 original two-qubit operation count. It does not accept a target and does not
 rewrite isolated or runtime-parameterized gates.
@@ -107,36 +118,36 @@ whether each one- or two-qubit unitary is supported at its ordered provider
 locus. Supported operations, including supported runtime-parameterized gates,
 remain untouched. Unsupported constant operations and all ordinary `qco.swap`
 operations that the target does not support are lowered through the target's
-globally usable synthesis basis. A target-native SWAP remains untouched. For a
-symmetric basis entangler available only at the reverse ordered locus, emission
-reverses the entangler operands while preserving logical wire identity. The pass
-asks for the basis only after finding an actual lowering need, so an incomplete
-target can still accept an already-conforming program. An unsupported runtime
-gate receives an operation-local matrix diagnostic.
+globally usable synthesis basis. A target-native SWAP remains untouched.
+Recognized operand-symmetric gates are semantically bidirectional even though
+raw provider loci retain their reported order, so synthesis emits every
+entangler in logical wire order. The pass preflights every lowering need before
+mutation, asks for a basis only when needed, and reports an unsupported runtime
+gate without partially rewriting the module.
 
 The completed conformance stage traces each qubit operand back to `qco.static`,
 including values passing through QCO `if`/`index_switch` and SCF `for`/`while`
 regions. It then calls `CompilerTarget::supports` on the real operation and
 ordered provider site IDs. It checks unitary, measurement, and reset operations
 and reports the actual operation spelling, arity, parameter count, and locus.
+Pass-local path compression makes repeated provider-site tracing linear in the
+valid SSA lineage rather than repeatedly walking to `qco.static`.
 
 ### Milestone 3: Prove the contracts and hand off one atomic change
 
 The focused target-synthesis test binary now proves the three stage boundaries,
 including unitary equivalence for profitable optimization, SWAP lowering, and a
-reverse-only symmetric entangler. It also proves that native SWAP and `qco.pow`
-shells remain untouched. The decomposition and compiler suites prove that typed
-bases still cover every supported entangler and that removing the old high-level
-menu API does not break the remaining compiler pipeline. Changelog curation,
-formatting and lint, and independent review are complete. After CT-01 was
-squash-merged, the same patch restacked without content conflicts onto the final
-target implementation. Post-restack validation and the final signed amend
-complete this milestone.
+single reported CZ orientation with bidirectional semantic support. It also
+proves explicit CZ emission, failure-atomic diagnostics, and that native SWAP
+and `qco.pow` shells remain untouched. The decomposition and compiler suites
+prove that the shared basis type covers every supported entangler and that
+removing the old high-level menu API does not break the remaining compiler
+pipeline.
 
 This slice must not add `compileForTarget`, alter default pipeline composition,
 or remove the coupling-only `placeAndRoute` overload; those are PIPE
-responsibilities. It must not push, open or modify a pull request, or mutate
-GitHub without separate authorization.
+responsibilities. Publishing this latest revision or otherwise mutating GitHub
+requires separate revision-scoped authorization.
 
 ## Surprises & Discoveries
 
@@ -152,9 +163,9 @@ GitHub without separate authorization.
   `CompilerTarget` permits sparse provider IDs. Evidence: the conformance tests
   use sites 10 and 20 and distinguish loci `[10, 20]` and `[20, 10]`.
 - Observation: Applying an MLIR greedy rewrite driver can reorder an unrelated
-  constant even when the quantum pattern does not match. The preservation test
-  therefore asserts that the isolated SWAP remains and no entangler is
-  introduced, rather than requiring byte-identical generic IR.
+  constant even when the quantum pattern does not match. The target-specific
+  transforms now precompute their work and use `IRRewriter` directly, so a no-op
+  optimization preserves the module byte-for-byte.
 - Observation: Initial configuration required network access to fetch pinned
   repository dependencies. Once fetched into the worktree-local build tree,
   focused compilation and tests were repeatable without source workarounds.
@@ -167,18 +178,21 @@ GitHub without separate authorization.
   decomposition, optional routing, and late native synthesis, with a test that
   routed SWAPs disappear. Its `targetNative` Python duck typing and coupling CLI
   are intentionally excluded.
-- Observation: `CompilerTarget` deliberately accepts an operand-symmetric
-  entangler as globally usable when either ordered orientation is available,
-  while exact operation support remains order-sensitive. Target-native emission
-  must therefore choose the supported orientation per mapped locus.
+- Observation: IQM reports each CZ edge once. Raw `Operation::loci()` and
+  `Operation::supports()` therefore remain ordered, while semantic
+  `CompilerTarget::supports()` normalizes recognized operand-symmetric gates
+  across both orientations. This establishes the bidirectional invariant before
+  synthesis and removes direction handling from emission.
 - Observation: `qco.pow`, like `qco.ctrl` and `qco.inv`, is a target-visible
   unitary shell with a region body. Synthesis and conformance must classify the
   shell and skip its implementation body.
-- Observation: Independent review also identified non-blocking follow-up
-  opportunities: failure-atomic preflight, sink-only source validation, and more
-  legacy scanner regressions. Dedicated `index_switch`/`while` and single-qubit
-  adapter regressions were subsequently added because they cover valid behavior
-  that Codecov showed was otherwise untested.
+- Observation: A generic walk rewrite driver cannot safely anchor this
+  multi-operation fusion at the run head because the rewrite erases operations
+  the driver has not visited. Precollecting non-overlapping run heads and using
+  `IRRewriter` directly is both safer and lighter.
+- Observation: Repeated provider-site tracing was quadratic on long SSA wire
+  chains, and profitable windows decomposed the same two-qubit matrix twice.
+  Path compression and split decomposition/emission remove both costs.
 
 ## Decision Log
 
@@ -187,26 +201,31 @@ GitHub without separate authorization.
   intentionally moves callers to a typed `CompilerTarget`; a synthetic menu
   target would preserve the parallel configuration model this change removes.
   Date/Author: 2026-08-03, GPT-5.6 via Codex.
-- Decision: Keep `NativeSynthesisBasis` as a minimal decomposition-only adapter
-  directly constructed from `CompilerTarget::SynthesisBasis`. Rationale: Euler
-  emission and cached Weyl decomposition need transform-specific values, but
-  target capability semantics and basis selection must remain centralized.
+- Decision: Use `CompilerTarget::SingleQubitBasis` directly throughout target,
+  Euler, and Weyl code and delete `NativeSynthesisBasis`. Rationale: one enum
+  and one synthesis-basis value remove a conversion switch, adapter files, and
+  an otherwise redundant coverage test while preserving dependency direction.
   Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Measure pre-routing profitability by a strict reduction in two-qubit
-  basis uses and materialize a canonical U/CX sequence only after the comparison
+  basis uses and materialize a canonical U/CZ sequence only after the comparison
   succeeds. Rationale: two-qubit operations drive routing cost, and selecting a
   hardware basis before routing would conflate optimization with target
-  legality. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+  legality; CZ avoids introducing an arbitrary control direction. Date/Author:
+  2026-08-03, GPT-5.6 via Codex.
 - Decision: Let `CompilerTarget::supports` decide whether an ordinary `qco.swap`
   requires post-routing lowering. Rationale: the target is the sole capability
   authority; routing SWAPs still lower on ordinary targets that do not report
   SWAP, while a target-native SWAP must remain legal even when the target has no
   global synthesis basis. Date/Author: 2026-08-03, GPT-5.6 via Codex.
-- Decision: For an operand-symmetric target basis supported only at the reverse
-  ordered locus, emit each entangler with reversed operands and map its results
-  back to the original logical wires. Rationale: global target basis selection
-  accepts either orientation for symmetric gates, but final conformance checks
-  the exact provider order. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+- Decision: Normalize recognized operand-symmetric capabilities inside
+  `CompilerTarget` and require every globally selected entangler to be
+  semantically supported in both directions. Rationale: raw calibration loci
+  retain provider order, IQM need not duplicate CZ data, and synthesis carries
+  no operand-reversal option. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+- Decision: Preflight all target-lowering needs, cache provider provenance, and
+  apply planned rewrites directly with `IRRewriter`. Rationale: failure remains
+  atomic, valid lineage tracing is amortized linear, and generic greedy/fixpoint
+  work is unnecessary. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Do not require `CompilerTarget::synthesisBasis()` at pass
   construction or pass entry. Rationale: absent operations mean all operations
   are native, and an incomplete explicit target can still describe a conforming
@@ -227,22 +246,25 @@ GitHub without separate authorization.
 ## Outcomes & Retrospective
 
 The implementation now has one capability authority and three separately
-observable transform stages. On the merged MAP-01 base, twenty focused tests
+observable transform stages. On the merged MAP-01 base, twenty-one focused tests
 pass along with all 199 decomposition and 215 compiler tests. The relevant CMake
 interface-header targets, CLI build and surface checks, and full Python stub
-regeneration pass; regeneration leaves the tracked stubs unchanged. Independent
-review approved the remediated code with no remaining code blockers.
-Changed-file hooks, full repository lint, stale-surface search, and
-`git diff --check` pass. Focused `clang-tidy` is clean for the new synthesis
-source, basis adapter, and both modified test sources; the Weyl source reports
-only three pre-existing warnings on unchanged header lines. The result is
-published as draft PR #1998. Its pre-MAP exact head passed every check,
-including 92.1% C++ patch coverage. The four focused commits are now restacked
-onto merged MAP-01, and replacement exact-head CI is the remaining publication
-gate.
+regeneration pass; regeneration leaves the tracked stubs unchanged. The latest
+working-tree review removes the decomposition basis adapter and general greedy
+rewrite machinery, while adding bidirectional symmetric-capability, explicit CZ
+emission, and failure-atomic lowering regressions. Changed-file hooks, full
+repository lint, stale-surface search, and `git diff --check` pass. Focused
+`clang-tidy` is clean for every changed implementation and test source and for
+the changed `Target.h` and `Euler.h` surfaces; `Weyl.h` reports only three
+pre-existing warnings on unchanged lines. Draft PR #1998's pre-MAP exact head
+passed every check, including 92.1% C++ patch coverage. Publication and
+replacement exact-head CI for this latest review revision remain. A fresh
+independent review approved the exact working tree with no must-fix or
+efficiency findings after independently rerunning the target-synthesis,
+compiler-target, and decomposition tests.
 
 The main design lesson is that target support and resynthesis profitability must
-not share a configuration surface. The canonical U/CX optimizer is useful
+not share a configuration surface. The canonical U/CZ optimizer is useful
 without hardware knowledge, while post-routing lowering and conformance require
 the exact target and provider-site order.
 
@@ -250,19 +272,20 @@ the exact target and provider-site order.
 
 `mlir/include/mlir/Compiler/Target.h` defines the immutable target. Its
 `supports(Operation*, locus)` query recognizes QCO operation semantics and
-checks provider site IDs, ordered loci, arity, and parameter count. Its
-`synthesisBasis()` query returns one globally usable single-qubit basis and
-entangler only when both exist.
+checks provider site IDs, semantic loci, arity, and parameter count while raw
+operation loci retain provider order. Its `synthesisBasis()` query returns one
+globally usable single-qubit basis and entangler only when both exist.
 
 `mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp` contains
 the constant-window scanner, three pass implementations, provider-site tracing,
 and diagnostics. Public factory declarations live in
 `mlir/include/mlir/Dialect/QCO/Transforms/Passes.h`.
 
-`mlir/include/mlir/Dialect/QCO/Transforms/Decomposition/SynthesisBasis.h` and
-its source adapt the typed target basis for the existing Euler and Weyl
-emitters. `mlir/lib/Dialect/QCO/Transforms/Decomposition/Weyl.cpp` emits the
-selected entangler and single-qubit factors.
+`mlir/include/mlir/Dialect/QCO/Transforms/Decomposition/Euler.h` aliases the
+target-owned `SingleQubitBasis`; no decomposition-layer basis DTO remains.
+`mlir/lib/Dialect/QCO/Transforms/Decomposition/Weyl.cpp` caches the selected
+entangler decomposer, returns a prepared decomposition, and emits its
+single-qubit factors without recomputing it.
 
 QCO qubits use linear static single assignment: each operation consumes a qubit
 value and returns its successor. A mapped hardware qubit starts at `qco.static`;
@@ -277,10 +300,10 @@ Typed basis coverage remains in
 
 ## Plan of Work
 
-The implementation first deletes the duplicate gateset files and rewires Weyl
-synthesis to the target-derived adapter. It then removes the obsolete generated
-pass, registration, CLI option, `QCOProgram` method, binding, stub, and their
-menu tests.
+The implementation deletes the duplicate gateset and basis-adapter files and
+rewires Euler and Weyl synthesis directly to the target-owned basis type. It
+also removes the obsolete generated pass, registration, CLI option, `QCOProgram`
+method, binding, stub, and their menu tests.
 
 The new source retains the proven two-qubit window scanner but separates its
 uses. The optimizer compares original and canonical entangler counts. Target
@@ -323,7 +346,7 @@ Build and run the three affected C++ suites:
 
 The current observed summaries are:
 
-    [  PASSED  ] 20 tests.
+    [  PASSED  ] 21 tests.
     [  PASSED  ] 199 tests.
     [  PASSED  ] 215 tests.
 
@@ -343,16 +366,20 @@ Acceptance requires the following observable behavior:
   behavior, while a three-CX SWAP form, an isolated SWAP, and a runtime RXX run
   remain quantum-structurally unchanged before routing.
 - Target-native synthesis removes unsupported ordinary SWAP and produces only
-  operations accepted by a U/CX target, preserving the complete unitary. A
-  target-native SWAP remains unchanged without requiring a synthesis basis.
-- A reverse-only symmetric entangler is emitted at the supported ordered locus
-  while preserving complete unitary behavior, and a native `qco.pow` shell is
-  checked without separately rejecting its implementation body.
+  operations accepted by the selected target basis, preserving the complete
+  unitary. A target-native SWAP remains unchanged without requiring a synthesis
+  basis.
+- One reported orientation of a recognized symmetric entangler establishes
+  semantic support in both directions while raw provider data remains ordered.
+  Synthesis preserves complete unitary behavior without an operand-reversal
+  option, and a native `qco.pow` shell is checked without separately rejecting
+  its implementation body.
 - An absent operation set succeeds without synthesis. An explicit incomplete
   target succeeds for supported operations and reports “no globally usable
   synthesis basis” only when an unsupported operation actually needs lowering.
 - A supported runtime-parameterized gate remains unchanged. An unsupported
-  runtime gate reports that its unitary matrix is unavailable at compile time.
+  runtime gate reports that its unitary matrix is unavailable at compile time
+  without partially rewriting an earlier constant gate.
 - Conformance distinguishes sparse provider IDs and ordered direction, rejects
   operation-type, arity, parameter-count, unknown-site, and measurement
   mismatches, and traces QCO and SCF structured control flow.
@@ -392,11 +419,11 @@ Relevant #1969 source commits are `3be6d8e43` for target-native naming and
 both authored by Simon Hofmann.
 
 Independent read-only review initially blocked the candidate on three issues:
-reverse-only symmetric-entangler loci, a SWAP capability override, and nested
-`qco.pow` body checking. The exact remediated source rebuilt successfully, all
-sixteen focused tests passed, and the reviewer reported that all three findings
-were closed with no new code blockers. The reviewer also reran
-`git diff --check` against the initial development base.
+single-orientation symmetric-entangler loci, a SWAP capability override, and
+nested `qco.pow` body checking. The exact remediated source rebuilt
+successfully, all sixteen focused tests passed, and the reviewer reported that
+all three findings were closed with no new code blockers. The reviewer also
+reran `git diff --check` against the initial development base.
 
 Pre-restack local validation rebuilt `mqt-core-mlir-unittest-target-synthesis`,
 `mqt-core-mlir-unittest-decomposition`, and `mqt-core-mlir-unittests-compiler`,
@@ -419,14 +446,12 @@ warnings on unchanged `Weyl.h` lines 167 and 171. Changed-file hooks, full
 repository lint, stale-surface search outside historical plans, both worktree
 and committed `git diff --check`, and the final status audit pass.
 
-The coverage follow-up added four behavioral regressions for every supported
-single-qubit basis mapping, profitable interleaved two-qubit optimization,
-constant single-qubit target lowering, and site tracing through `scf.while`,
-`qco.index_switch`, measurement, and reset. The target-synthesis and
-decomposition suites now pass 20 and 199 tests. Together, `SynthesisBasis.cpp`
-and `TargetSynthesis.cpp` reach 91% local line coverage; the remaining uncovered
-lines are defensive invalid-state paths rather than normal target-compilation
-behavior.
+The coverage follow-up added regressions for profitable interleaved two-qubit
+optimization, constant single-qubit target lowering, and site tracing through
+`scf.while`, `qco.index_switch`, measurement, and reset. The subsequent
+simplification deletes the basis-adapter coverage test and adds structural CZ
+emission plus failure-atomic lowering coverage. The target-synthesis and
+decomposition suites now pass 21 and 199 tests.
 
 After MAP-01 merged as `c9e0c0ca5`, the four SYN commits were rebased onto that
 commit. The integration range-diff removes only a compiler-target link already
@@ -439,8 +464,9 @@ synthesis, 199 decomposition, and 215 compiler tests, including the focused
 ## Interfaces and Dependencies
 
 `CompilerTarget` remains dependency-light and does not depend on transform
-libraries. `MLIRQCOTransforms` links privately to `MQTCompilerTarget`. The
-public, independently constructible factories are:
+libraries. `MLIRQCOTransforms` publicly links `MQTCompilerTarget` because its
+public decomposition headers use compiler-target basis types. The public,
+independently constructible factories are:
 
     std::unique_ptr<Pass> createOptimizeTwoQubitUnitaryRuns();
     std::unique_ptr<Pass>
