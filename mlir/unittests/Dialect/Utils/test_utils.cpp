@@ -151,6 +151,19 @@ TEST_F(UtilsTest, valueToConstantDoubleUIToFP) {
   EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
 }
 
+TEST_F(UtilsTest, valueToConstantDoubleSIToFP) {
+  constexpr int64_t expectedValue = -7;
+  auto intConst = arith::ConstantOp::create(
+      *builder,
+      builder->getIntegerAttr(builder->getIntegerType(64, /*isSigned=*/true),
+                              expectedValue));
+  auto op = arith::SIToFPOp::create(*builder, builder->getF64Type(),
+                                    intConst.getResult());
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
+}
+
 TEST_F(UtilsTest, valueToConstantDoubleDynamicOperand) {
   auto func =
       func::FuncOp::create(*builder, "dyn",
@@ -219,9 +232,21 @@ TEST_F(UtilsTest, valueToConstantDoubleSharedOperandsFailure) {
   auto* entry = func.addEntryBlock();
   OpBuilder::InsertionGuard guard(*builder);
   builder->setInsertionPointToStart(entry);
-  Value v = entry->getArgument(0);
+
+  const Value arg = entry->getArgument(0);
+  SmallVector<Value> nodes = {arg};
+  Value v = arg;
   for (int i = 0; i < depth; ++i) {
     v = arith::AddFOp::create(*builder, v, v);
+    nodes.push_back(v);
   }
-  EXPECT_FALSE(utils::valueToConstantDouble(v).has_value());
+
+  llvm::DenseMap<Value, std::optional<Attribute>> cache;
+  EXPECT_FALSE(utils::valueToConstantAttr(v, cache).has_value());
+  ASSERT_EQ(cache.size(), nodes.size());
+  for (const Value node : nodes) {
+    const auto it = cache.find(node);
+    ASSERT_NE(it, cache.end());
+    EXPECT_FALSE(it->second.has_value());
+  }
 }
