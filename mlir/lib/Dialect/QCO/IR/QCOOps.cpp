@@ -481,32 +481,34 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
 #include "mlir/Dialect/QCO/IR/QCOOpsDialect.cpp.inc"
 #include "mlir/Transforms/InliningUtils.h"
 
+namespace {
 // Define the opt-in rules for inlining the qc dialect
 struct QCOInlinerInterface : public mlir::DialectInlinerInterface {
   using DialectInlinerInterface::DialectInlinerInterface;
 
   // Tell MLIR that any operation from the qc dialect can be inlined
-  bool isLegalToInline(mlir::Operation* op, mlir::Region* dest,
-                       bool wouldBeCloned,
-                       mlir::IRMapping& valueMapping) const override {
+  bool isLegalToInline(mlir::Operation* /*op*/, mlir::Region* /*dest*/,
+                       bool /*wouldBeCloned*/,
+                       mlir::IRMapping& /*valueMapping*/) const override {
     return true;
   }
 
   // Tell MLIR that regions (like the inside of loops/ifs) in the qc dialect can
   // be inlined
-  bool isLegalToInline(mlir::Region* dest, mlir::Region* src,
-                       bool wouldBeCloned,
-                       mlir::IRMapping& valueMapping) const override {
+  bool isLegalToInline(mlir::Region* /*dest*/, mlir::Region* /*src*/,
+                       bool /*wouldBeCloned*/,
+                       mlir::IRMapping& /*valueMapping*/) const override {
     return true;
   }
 
   // Tell MLIR that it's safe to inline calls to functions containing qc
   // operations
-  bool isLegalToInline(mlir::Operation* call, mlir::Operation* callable,
-                       bool wouldBeCloned) const override {
+  bool isLegalToInline(mlir::Operation* /*call*/, mlir::Operation* /*callable*/,
+                       bool /*wouldBeCloned*/) const override {
     return true;
   }
 };
+} // namespace
 
 void QCODialect::initialize() {
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)

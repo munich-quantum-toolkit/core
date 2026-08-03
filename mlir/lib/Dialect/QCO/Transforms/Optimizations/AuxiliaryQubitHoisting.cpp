@@ -8,37 +8,36 @@
  * Licensed under the MIT License
  */
 
-#include "llvm/ADT/SCCIterator.h"
 #include "mlir/Analysis/CallGraph.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <array>
+#include <cstdint>
 #include <stdexcept>
-#include <string_view>
 #include <utility>
 
 namespace mlir::qco {
 
-namespace {
-
-SinkOp findDeallocForAlloc(AllocOp alloc) {
+static SinkOp findDeallocForAlloc(AllocOp alloc) {
   Value currentValue = alloc.getResult();
   uint64_t currentIndexInTensor = 0;
   bool isInTensor = false;
@@ -139,38 +138,43 @@ SinkOp findDeallocForAlloc(AllocOp alloc) {
   return nullptr;
 }
 
-bool isRecursiveHelper(CallGraphNode* current, CallGraphNode* target,
-                       llvm::DenseSet<CallGraphNode*>& visited) {
-  if (!visited.insert(current).second)
+static bool isRecursiveHelper(CallGraphNode* current, CallGraphNode* target,
+                              llvm::DenseSet<CallGraphNode*>& visited) {
+  if (!visited.insert(current).second) {
     return false; // Already visited
+  }
 
-  for (auto& edge : *current) {
+  for (const auto& edge : *current) {
     CallGraphNode* callee = edge.getTarget();
-    if (callee == target)
+    if (callee == target) {
       return true;
-    if (isRecursiveHelper(callee, target, visited))
+    }
+    if (isRecursiveHelper(callee, target, visited)) {
       return true;
+    }
   }
 
   return false;
 }
 
-bool isRecursive(CallGraph& cg, func::FuncOp func) {
+static bool isRecursive(CallGraph& cg, func::FuncOp func) {
   CallGraphNode* node = cg.lookupNode(func.getCallableRegion());
-  if (!node)
+  if (node == nullptr) {
     return false;
+  }
 
   llvm::DenseSet<CallGraphNode*> visited;
   // Start from the function's callees to avoid immediately returning true
-  for (auto& edge : *node) {
-    if (isRecursiveHelper(edge.getTarget(), node, visited))
+  for (const auto& edge : *node) {
+    if (isRecursiveHelper(edge.getTarget(), node, visited)) {
       return true;
+    }
   }
 
   return false;
 }
 
-void tryAuxiliaryQubitHoisting(func::FuncOp funcOp, SymbolTable& symbolTable) {
+static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
   funcOp.walk([&](AllocOp allocOp) {
     if (allocOp->getBlock()->getParentOp() != funcOp) {
       // Not directly in the function body, skip.
@@ -186,7 +190,7 @@ void tryAuxiliaryQubitHoisting(func::FuncOp funcOp, SymbolTable& symbolTable) {
 
     // Add a block argument for the auxiliary qubit.
     OpBuilder builder(dealloc);
-    auto block = allocOp->getBlock();
+    auto* block = allocOp->getBlock();
     auto loc = allocOp.getLoc();
     auto qubitType = allocOp.getType();
     auto newArg = block->addArgument(qubitType, loc);
@@ -227,7 +231,7 @@ void tryAuxiliaryQubitHoisting(func::FuncOp funcOp, SymbolTable& symbolTable) {
 
     // Update all call sites to handle the new return value
     // We use the SymbolTable to find all calls to this function
-    if (auto uses = symbolTable.getSymbolUses(funcOp, funcOp->getParentOp())) {
+    if (auto uses = SymbolTable::getSymbolUses(funcOp, funcOp->getParentOp())) {
       for (auto use : *uses) {
         if (auto callOp = dyn_cast<func::CallOp>(use.getUser())) {
           builder.setInsertionPoint(callOp);
@@ -255,9 +259,7 @@ void tryAuxiliaryQubitHoisting(func::FuncOp funcOp, SymbolTable& symbolTable) {
   });
 }
 
-}; // namespace
-
-void runAuxiliaryQubitHoisting(ModuleOp module, SymbolTable& symbolTable) {
+void runAuxiliaryQubitHoisting(ModuleOp module) {
   SmallVector<func::FuncOp> hoistingCandidates;
   CallGraph callGraph(module);
 
@@ -272,7 +274,7 @@ void runAuxiliaryQubitHoisting(ModuleOp module, SymbolTable& symbolTable) {
   });
 
   for (auto& func : hoistingCandidates) {
-    tryAuxiliaryQubitHoisting(func, symbolTable);
+    tryAuxiliaryQubitHoisting(func);
 
     RewritePatternSet patterns(module.getContext());
     if (!applyPatternsGreedily(module, std::move(patterns)).succeeded()) {

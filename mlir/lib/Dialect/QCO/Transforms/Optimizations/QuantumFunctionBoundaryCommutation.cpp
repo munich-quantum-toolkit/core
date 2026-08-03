@@ -8,45 +8,31 @@
  * Licensed under the MIT License
  */
 
-#include "llvm/ADT/SCCIterator.h"
-#include "mlir/Analysis/CallGraph.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include <mlir/Support/LLVM.h>
 
-#include <array>
-#include <stdexcept>
-#include <string_view>
-#include <utility>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
 
 namespace mlir::qco {
 
-namespace {
-
-func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
-  OpBuilder builder(funcOp);
-  builder.setInsertionPointAfter(funcOp);
-
+static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
   auto newFunc = funcOp.clone();
   newFunc.setName(newName.str());
 
   return newFunc;
 }
 
-bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
+static bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
   // For now, let's just consider self-inverses and single-qubit, non-controlled
   // gates.
   if (first.getOperation()->getName() != second.getOperation()->getName()) {
@@ -58,7 +44,7 @@ bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
   return false;
 }
 
-void tryBoundaryCommutation(
+static void tryBoundaryCommutation(
     func::CallOp call, SymbolTable& symbolTable, uint32_t parameter,
     std::unordered_map<std::string, func::FuncOp>& previousSpecializations) {
   auto calleeName = call.getCallee();
@@ -111,8 +97,6 @@ void tryBoundaryCommutation(
 
   call.setCallee(newFunc.getName());
 }
-
-}; // namespace
 
 void runQuantumFunctionBoundaryCommutation(ModuleOp module,
                                            SymbolTable& symbolTable) {

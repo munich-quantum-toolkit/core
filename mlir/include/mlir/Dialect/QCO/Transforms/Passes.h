@@ -28,8 +28,8 @@ namespace mlir::qco {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
-void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable);
-void runAuxiliaryQubitHoisting(ModuleOp module, SymbolTable& symbolTable);
+void runQuantumArgumentPromotion(ModuleOp module);
+void runAuxiliaryQubitHoisting(ModuleOp module);
 void runQuantumFunctionBoundaryCommutation(ModuleOp module,
                                            SymbolTable& symbolTable);
 

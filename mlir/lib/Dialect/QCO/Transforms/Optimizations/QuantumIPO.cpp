@@ -20,35 +20,41 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 // IWYU pragma: end_keep
 
-#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <algorithm>
 #include <array>
-#include <stdexcept>
-#include <string_view>
+#include <cmath>
+#include <cstdint>
+#include <map>
+#include <numbers>
+#include <string>
+#include <tuple>
 #include <utility>
 
 namespace mlir::qco {
 
-namespace {
-void updateSpecializedCall(func::CallOp callOp, func::FuncOp newCallee,
-                           PatternRewriter& rewriter) {
+static void updateSpecializedCall(func::CallOp callOp, func::FuncOp newCallee,
+                                  PatternRewriter& rewriter) {
   rewriter.modifyOpInPlace(callOp,
                            [&] { callOp.setCallee(newCallee.getName()); });
 }
 
-func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName,
-                          PatternRewriter& rewriter) {
+static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName,
+                                 PatternRewriter& rewriter) {
   const OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPointAfter(funcOp);
 
@@ -59,10 +65,10 @@ func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName,
   return newFunc;
 }
 
-} // namespace
-
 #define GEN_PASS_DEF_QUANTUMIPO
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+namespace {
 
 struct PreviousSpecializations {
   std::map<std::pair<std::string, uint32_t>, func::FuncOp> zeroSpecializations;
@@ -77,11 +83,14 @@ struct PreviousSpecializations {
 struct ContextSensitiveSpecializationPattern final
     : OpRewritePattern<func::CallOp> {
 
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
   SymbolTable& symbolTable;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
   PreviousSpecializations& previousSpecializations;
 
   constexpr static const auto ANGLES_TO_SPECIALIZE =
-      std::array<double, 5>{0.0, M_PI, M_PI_2, M_PI_2 + M_PI, 2 * M_PI};
+      std::array<double, 5>{0.0, std::numbers::pi, std::numbers::pi / 2,
+                            1.5 * std::numbers::pi, 2 * std::numbers::pi};
 
   static bool operationIsNopOnZero(Operation* op, Value zeroArgument) {
     if (auto ctrl = dyn_cast<CtrlOp>(op)) {
@@ -123,7 +132,7 @@ struct ContextSensitiveSpecializationPattern final
 
     auto* definingOp = argValue.getDefiningOp();
 
-    if (!definingOp) {
+    if (definingOp == nullptr) {
       return false;
     }
 
@@ -134,7 +143,7 @@ struct ContextSensitiveSpecializationPattern final
       }
       if (isa<HOp>(definingOp)) {
         const auto* precedingOp = definingOp->getOperand(0).getDefiningOp();
-        if (precedingOp &&
+        if (precedingOp != nullptr &&
             (isa<AllocOp>(precedingOp) || isa<ResetOp>(precedingOp))) {
           return trySpecializePlus(callOp, funcOp, operand, rewriter);
         }
@@ -280,6 +289,8 @@ struct ContextSensitiveSpecializationPattern final
   }
 };
 
+} // namespace
+
 /**
  * @brief Populates the given pattern set with the different IPO patterns.
  *
@@ -293,12 +304,15 @@ populateQuantumIPOPatterns(RewritePatternSet& patterns,
       patterns.getContext(), symbolTable, previousSpecializations);
 }
 
+namespace {
+
 /**
  * @brief This pass performs quantum inter-procedural optimizations (IPO).
  */
 struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
   using impl::QuantumIPOBase<QuantumIPO>::QuantumIPOBase;
 
+protected:
   void runOnOperation() override {
     // Get the current operation being operated on.
     auto op = getOperation();
@@ -315,11 +329,13 @@ struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
       signalPassFailure();
     }
 
-    runQuantumArgumentPromotion(op, symbolTable);
-    runAuxiliaryQubitHoisting(op, symbolTable);
+    runQuantumArgumentPromotion(op);
+    runAuxiliaryQubitHoisting(op);
     runQuantumFunctionBoundaryCommutation(op, symbolTable);
     runQuantumFunctionBoundaryCommutation(op, symbolTable);
   }
 };
+
+} // namespace
 
 } // namespace mlir::qco

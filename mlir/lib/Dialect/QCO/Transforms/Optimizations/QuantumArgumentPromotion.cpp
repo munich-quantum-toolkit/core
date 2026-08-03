@@ -12,29 +12,29 @@
  * @brief This pass performs quantum inter-procedural optimizations (IPO).
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include <mlir/Support/LLVM.h>
 
-#include <algorithm>
-#include <array>
-#include <stdexcept>
-#include <string_view>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <utility>
 
 namespace mlir::qco {
@@ -50,10 +50,12 @@ struct PromotedSlot {
   int64_t insertIndex;
 };
 
+} // namespace
+
 /// Follow the qubit produced by `extract` forward through gate-like operations
 /// until it is inserted back into a tensor at a compile-time constant index.
 /// Returns a null op if the qubit never comes back.
-qtensor::InsertOp findInsertForExtract(qtensor::ExtractOp extract) {
+static qtensor::InsertOp findInsertForExtract(qtensor::ExtractOp extract) {
   Value currentValue = extract.getResult();
   while (currentValue) {
     if (!currentValue.hasOneUse()) {
@@ -92,7 +94,7 @@ qtensor::InsertOp findInsertForExtract(qtensor::ExtractOp extract) {
 /// `qtensor.extract` or `qtensor.insert` at a constant index, that every
 /// extracted qubit is inserted back into the same chain, and that the chain
 /// ends in the function's first result.
-SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
+static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
   const auto tensorType = dyn_cast<RankedTensorType>(arg.getType());
   if (!tensorType || !isa<QubitType>(tensorType.getElementType())) {
     return {};
@@ -170,8 +172,7 @@ SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
 
 /// Replace the given tensor argument by one scalar qubit argument per slot in
 /// `slots`, and update every call site accordingly.
-void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
-                     SymbolTable& symTable) {
+static void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots) {
   Block* entryBlock = arg.getOwner();
   auto funcOp = cast<func::FuncOp>(entryBlock->getParentOp());
 
@@ -188,16 +189,20 @@ void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
   // ====================================================
 
   SmallVector<Type> newArgTypes = llvm::to_vector(funcOp.getArgumentTypes());
-  newArgTypes.erase(newArgTypes.begin() + argIndex);
+  newArgTypes.erase(std::next(newArgTypes.begin(), argIndex));
   for (size_t i = 0; i < numSlots; ++i) {
-    newArgTypes.insert(newArgTypes.begin() + argIndex + i, qubitType);
+    newArgTypes.insert(
+        std::next(newArgTypes.begin(), static_cast<ptrdiff_t>(argIndex + i)),
+        qubitType);
   }
 
   // `canPromoteArgument` guarantees that the first result is the tensor.
   SmallVector<Type> newResultTypes = llvm::to_vector(funcOp.getResultTypes());
   newResultTypes.erase(newResultTypes.begin());
   for (size_t i = 0; i < numSlots; ++i) {
-    newResultTypes.insert(newResultTypes.begin() + i, qubitType);
+    newResultTypes.insert(
+        std::next(newResultTypes.begin(), static_cast<ptrdiff_t>(i)),
+        qubitType);
   }
 
   funcOp.setFunctionType(FunctionType::get(ctx, newArgTypes, newResultTypes));
@@ -246,7 +251,8 @@ void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
   SmallVector<Value> newReturns = llvm::to_vector(returnOp.getOperands());
   newReturns.erase(newReturns.begin());
   for (size_t i = 0; i < numSlots; ++i) {
-    newReturns.insert(newReturns.begin() + i, returnedQubits[i]);
+    newReturns.insert(std::next(newReturns.begin(), static_cast<ptrdiff_t>(i)),
+                      returnedQubits[i]);
   }
   returnOp->setOperands(newReturns);
 
@@ -256,7 +262,7 @@ void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
   // 5. Update the call sites
   // ====================================================
 
-  auto uses = symTable.getSymbolUses(funcOp, funcOp->getParentOp());
+  auto uses = SymbolTable::getSymbolUses(funcOp, funcOp->getParentOp());
   if (!uses) {
     return;
   }
@@ -269,7 +275,7 @@ void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
 
     SmallVector<Value> newOperands = llvm::to_vector(callOp.getOperands());
     Value currentTensor = newOperands[argIndex];
-    newOperands.erase(newOperands.begin() + argIndex);
+    newOperands.erase(std::next(newOperands.begin(), argIndex));
 
     // Take the promoted qubits out of the tensor before the call, ...
     for (size_t i = 0; i < numSlots; ++i) {
@@ -278,8 +284,9 @@ void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
       auto extractOp =
           builder.create<qtensor::ExtractOp>(loc, currentTensor, index);
       currentTensor = extractOp.getOutTensor();
-      newOperands.insert(newOperands.begin() + argIndex + i,
-                         extractOp.getResult());
+      newOperands.insert(
+          std::next(newOperands.begin(), static_cast<ptrdiff_t>(argIndex + i)),
+          extractOp.getResult());
     }
 
     auto newCall = builder.create<func::CallOp>(loc, funcOp, newOperands);
@@ -302,9 +309,8 @@ void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots,
     callOp.erase();
   }
 }
-} // namespace
 
-void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable) {
+void runQuantumArgumentPromotion(ModuleOp module) {
   SmallVector<std::pair<BlockArgument, SmallVector<PromotedSlot>>>
       argsToPromote;
 
@@ -325,7 +331,7 @@ void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable) {
   });
 
   for (auto& [arg, slots] : argsToPromote) {
-    promoteArgument(arg, slots, symbolTable);
+    promoteArgument(arg, slots);
   }
 }
 
