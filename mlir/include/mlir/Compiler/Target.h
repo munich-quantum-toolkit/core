@@ -27,10 +27,9 @@ namespace mlir {
 class Operation;
 
 /**
- * @brief Immutable, provider-independent description of an MLIR compiler
- * target.
+ * @brief Immutable description of an MLIR compiler target.
  *
- * @details Hardware sites retain their provider-defined nonnegative i64
+ * @details Hardware sites retain their target-defined nonnegative i64
  * identifiers. Routing algorithms use dense zero-based vertices in site order.
  * An absent topology means all-to-all connectivity. An absent operation set
  * means that every operation is native; a present empty set means that no
@@ -53,7 +52,7 @@ public:
   public:
     DurationUnit(std::string unit, double scaleFactor);
 
-    /// Return the provider-defined duration unit.
+    /// Return the target's duration unit.
     [[nodiscard]] llvm::StringRef unit() const noexcept;
 
     /// Return the positive finite multiplier for raw timing values.
@@ -65,7 +64,7 @@ public:
   };
 
   /**
-   * @brief A hardware site and its optional provider metadata.
+   * @brief A hardware site and its optional target metadata.
    */
   class Site {
   public:
@@ -73,10 +72,10 @@ public:
                   std::optional<uint64_t> t1 = std::nullopt,
                   std::optional<uint64_t> t2 = std::nullopt);
 
-    /// Return the provider-defined nonnegative site identifier.
+    /// Return the target-defined nonnegative site identifier.
     [[nodiscard]] SiteId id() const noexcept;
 
-    /// Return the provider-defined site name, if available.
+    /// Return the reported site name, if available.
     [[nodiscard]] std::optional<llvm::StringRef> name() const noexcept;
 
     /// Return the raw T1 coherence time, if available.
@@ -93,15 +92,15 @@ public:
   };
 
   /**
-   * @brief An ordered hardware locus and its optional calibration data.
+   * @brief Calibration data for an ordered tuple of hardware sites.
    */
-  class OperationLocus {
+  class SiteTuple {
   public:
-    explicit OperationLocus(std::vector<SiteId> sites,
-                            std::optional<uint64_t> duration = std::nullopt,
-                            std::optional<double> fidelity = std::nullopt);
+    explicit SiteTuple(std::vector<SiteId> sites,
+                       std::optional<uint64_t> duration = std::nullopt,
+                       std::optional<double> fidelity = std::nullopt);
 
-    /// Return the ordered provider site identifiers.
+    /// Return the ordered target site identifiers.
     [[nodiscard]] llvm::ArrayRef<SiteId> sites() const noexcept;
 
     /// Return the raw operation duration, if available.
@@ -117,22 +116,22 @@ public:
   };
 
   /**
-   * @brief An operation capability reported by a target provider.
+   * @brief An operation capability described by a target.
    *
-   * @details The provider name is retained verbatim while @ref canonicalName
-   * contains its normalized compiler spelling. An absent locus set means the
-   * operation applies to every valid ordered tuple of its arity; a present
-   * empty set supports no locus.
+   * @details The reported name is retained verbatim while
+   * @ref canonicalName contains its normalized compiler spelling. Operations
+   * are available throughout the target; site tuples carry optional
+   * site-specific calibration data only.
    */
   class Operation {
   public:
-    Operation(std::string providerName, size_t numQubits, size_t numParameters,
-              std::optional<std::vector<OperationLocus>> loci = std::nullopt,
+    Operation(std::string name, size_t numQubits, size_t numParameters,
+              std::vector<SiteTuple> siteTuples = {},
               std::optional<uint64_t> duration = std::nullopt,
               std::optional<double> fidelity = std::nullopt);
 
-    /// Return the exact operation name reported by the provider.
-    [[nodiscard]] llvm::StringRef providerName() const noexcept;
+    /// Return the exact reported operation name.
+    [[nodiscard]] llvm::StringRef name() const noexcept;
 
     /// Return the canonical lower-case compiler operation name.
     [[nodiscard]] llvm::StringRef canonicalName() const noexcept;
@@ -143,11 +142,8 @@ public:
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
 
-    /// Return whether this operation is available at every valid locus.
-    [[nodiscard]] bool hasGlobalLoci() const noexcept;
-
-    /// Return the explicitly supported ordered loci.
-    [[nodiscard]] llvm::ArrayRef<OperationLocus> loci() const noexcept;
+    /// Return ordered site-specific calibration data.
+    [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
 
     /// Return the raw default operation duration, if available.
     [[nodiscard]] std::optional<uint64_t> duration() const noexcept;
@@ -155,15 +151,12 @@ public:
     /// Return the default operation fidelity, if available.
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
-    /// Return whether this capability supports an ordered hardware locus.
-    [[nodiscard]] bool supports(llvm::ArrayRef<SiteId> locus) const;
-
   private:
-    std::string providerName_;
+    std::string name_;
     std::string canonicalName_;
     size_t numQubits_;
     size_t numParameters_;
-    std::optional<std::vector<OperationLocus>> loci_;
+    std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
   };
@@ -232,7 +225,7 @@ public:
       std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
-   * @brief Construct an unnamed target from detailed provider sites.
+   * @brief Construct an unnamed target from detailed sites.
    */
   explicit CompilerTarget(
       std::vector<Site> sites,
@@ -241,7 +234,7 @@ public:
       std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
-   * @brief Construct a named target from detailed provider sites.
+   * @brief Construct a named target from detailed sites.
    */
   CompilerTarget(
       std::string name, std::vector<Site> sites,
@@ -254,7 +247,7 @@ public:
   CompilerTarget& operator=(const CompilerTarget&) noexcept = default;
   ~CompilerTarget() = default;
 
-  /// Return the target/device name, if provided.
+  /// Return the target name, if provided.
   [[nodiscard]] std::optional<llvm::StringRef> name() const noexcept;
 
   /// Return the unit shared by all raw timing metadata, if provided.
@@ -267,20 +260,20 @@ public:
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
 
-  /// Return provider site identifiers in dense compiler-vertex order.
+  /// Return target site identifiers in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<SiteId> siteIds() const noexcept;
 
-  /// Return the dense compiler vertex for a provider site identifier.
+  /// Return the dense compiler vertex for a target site identifier.
   [[nodiscard]] std::optional<size_t> vertexForSite(SiteId site) const noexcept;
 
-  /// Return the provider site identifier for a dense compiler vertex.
+  /// Return the target site identifier for a dense compiler vertex.
   [[nodiscard]] SiteId siteForVertex(size_t vertex) const;
 
   /// Return whether the target contains an explicit coupling topology.
   [[nodiscard]] bool hasExplicitTopology() const noexcept;
 
   /**
-   * @brief Return sorted canonical undirected couplings in provider site IDs.
+   * @brief Return sorted canonical undirected couplings in target site IDs.
    */
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
@@ -304,36 +297,24 @@ public:
   /// Return whether the target contains an explicit operation set.
   [[nodiscard]] bool hasExplicitOperations() const noexcept;
 
-  /// Return provider operation capabilities in provider order.
+  /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
   /**
-   * @brief Return whether an operation is semantically supported at a hardware
-   * locus.
-   *
-   * @details Raw provider loci remain ordered. Recognized operand-symmetric
-   * gates are supported in both orientations of each reported two-site locus.
+   * @brief Return whether an operation capability is supported by the target.
    */
   [[nodiscard]] bool
-  supportsOperation(llvm::StringRef name, llvm::ArrayRef<SiteId> locus,
+  supportsOperation(llvm::StringRef name, size_t numQubits,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
-  /**
-   * @brief Return whether a QCO operation is semantically supported at a locus.
-   */
-  [[nodiscard]] bool supports(::mlir::Operation* operation,
-                              llvm::ArrayRef<SiteId> locus) const;
+  /// Return whether a QCO operation is supported by the target.
+  [[nodiscard]] bool supports(::mlir::Operation* operation) const;
 
-  /**
-   * @brief Return whether a recognized gate is semantically supported at a
-   * locus.
-   */
-  [[nodiscard]] bool supports(GateKind gate,
-                              llvm::ArrayRef<SiteId> locus) const;
+  /// Return whether a recognized gate is supported by the target.
+  [[nodiscard]] bool supports(GateKind gate) const;
 
-  /// Return recognized gates that are usable across the complete target.
-  [[nodiscard]] llvm::ArrayRef<GateKind>
-  globallySupportedGates() const noexcept;
+  /// Return the recognized gates supported by the target.
+  [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 
   /// Return one complete globally usable synthesis basis, if available.
   [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;

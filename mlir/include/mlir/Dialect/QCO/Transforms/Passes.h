@@ -34,9 +34,9 @@ namespace mlir::qco {
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
 /**
- * @brief Create the target-independent pre-routing two-qubit optimizer.
+ * @brief Create target-independent two-qubit gate fusion.
  */
-[[nodiscard]] std::unique_ptr<Pass> createOptimizeTwoQubitUnitaryRuns();
+[[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
 
 /**
  * @brief Create post-routing synthesis for one immutable compiler target.

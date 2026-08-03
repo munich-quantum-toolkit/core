@@ -99,7 +99,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     uses only the target's undirected coupling topology: arbitrary one-qubit
     operations pass through, and every two-qubit operation is routed to adjacent
     target vertices. Higher-arity unitaries must be decomposed before mapping.
-    Provider-defined site identifiers are retained in the resulting
+    Target-defined site identifiers are retained in the resulting
     `qco.static` operations.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static

@@ -69,7 +69,7 @@ TEST(ScConfigurationTest, ParsesBundledDeviceStrictly) {
 TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
   const auto assertModel = [](const Device& device, const std::string& name,
                               const size_t qubits, const size_t couplings,
-                              const size_t czLoci) {
+                              const size_t czSiteTuples) {
     EXPECT_EQ(device.name, name);
     EXPECT_EQ(device.numQubits, qubits);
     EXPECT_EQ(device.couplings.size(), couplings);
@@ -91,16 +91,16 @@ TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
     EXPECT_EQ(device.operations[1].name, "cz");
     EXPECT_EQ(device.operations[1].numParameters, 0);
     EXPECT_EQ(device.operations[1].numQubits, 2);
-    EXPECT_EQ(device.operations[1].siteOverrides.size(), czLoci);
+    EXPECT_EQ(device.operations[1].siteOverrides.size(), czSiteTuples);
     EXPECT_EQ(device.operations[2].name, "measure");
     EXPECT_EQ(device.operations[2].numParameters, 0);
     EXPECT_EQ(device.operations[2].numQubits, 1);
     EXPECT_EQ(device.operations[2].siteOverrides.size(), qubits);
     for (const auto& operation : device.operations) {
       EXPECT_FALSE(operation.duration);
-      for (const auto& locus : operation.siteOverrides) {
-        EXPECT_FALSE(locus.duration);
-        EXPECT_TRUE(locus.fidelity);
+      for (const auto& siteOverride : operation.siteOverrides) {
+        EXPECT_FALSE(siteOverride.duration);
+        EXPECT_TRUE(siteOverride.fidelity);
       }
     }
   };

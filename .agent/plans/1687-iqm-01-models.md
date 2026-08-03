@@ -63,8 +63,8 @@ and command-line integration belong to later changes.
 ## Surprises & Discoveries
 
 - Observation: the SC schema already represents optional per-qubit T1/T2 and
-  optional per-locus duration/fidelity. It only lacks the optional site name
-  that QDMI already exposes through `QDMI_SITE_PROPERTY_NAME`.
+  optional per-site-tuple duration/fidelity. It only lacks the optional site
+  name that QDMI already exposes through `QDMI_SITE_PROPERTY_NAME`.
 - Observation: the IQM provider obtains site names from the ordered `qubits`
   array of the static architecture response and assigns the array position as
   the QDMI site index. IQM qubits in these captures use `QB1` through `QB20` for
@@ -88,8 +88,8 @@ and command-line integration belong to later changes.
   `api/v1/quantum-computers/%s/artifacts/static-quantum-architectures`,
   `api/v1/calibration-sets/%s/%s/dynamic-quantum-architecture`, and
   `api/v1/calibration-sets/%s/%s/metrics`. The first two select the computer and
-  return names/topology, the third returns default-calibration operation loci,
-  and the fourth returns T1/T2 and fidelity metrics.
+  return names/topology, the third returns default-calibration operation site
+  tuples, and the fourth returns T1/T2 and fidelity metrics.
 - Observation: CTest registers the individual GoogleTest cases, not targets
   named after the three executables. A target-name regular expression therefore
   selected no tests; running each built executable directly exercised 171 tests.
@@ -115,7 +115,7 @@ and command-line integration belong to later changes.
   nanosecond-level coherence precision through unit `us` with scale factor
   `0.001`. Date/Author: 2026-08-03, Codex.
 - Decision: do not add any duration field. Rationale: neither the captured
-  provider data nor the IQM QDMI interface supplied operation durations.
+  device data nor the IQM QDMI interface supplied operation durations.
   Date/Author: 2026-08-03, Codex.
 - Decision: extend `mqt_configure_qdmi_device` with a `CONFIGURATIONS` list
   whose entries pair a stable registry ID with the basename of an existing
@@ -176,24 +176,25 @@ entry has exactly an ID and filename and that the filename is among
 loops then package all three SC JSON files.
 
 Expand configuration tests to assert the model names, qubit and edge counts,
-exact operation names, calibration coverage, locus-fidelity counts, site-name
-endpoints, and complete absence of operation durations. Add schema coverage for
-name-only overrides and empty-name rejection. Expand provider tests to prove
-configured names are queryable and absent names remain unsupported. Expand
-registry and driver tests to prove that five built-in definitions exist, both
-stable IDs use packaged configuration files, and both models can be opened.
+exact operation names, calibration coverage, per-site-tuple fidelity counts,
+site-name endpoints, and complete absence of operation durations. Add schema
+coverage for name-only overrides and empty-name rejection. Expand provider tests
+to prove configured names are queryable and absent names remain unsupported.
+Expand registry and driver tests to prove that five built-in definitions exist,
+both stable IDs use packaged configuration files, and both models can be opened.
 
 Update `docs/qdmi/sc_device.md` to describe optional names and the two shared
 models. Record that topology and site names came from the static architecture,
-operation loci from the default dynamic architecture, and T1/T2/fidelities from
-default calibration-set quality metrics retrieved on 2 August 2026. State that
-the files contain no credentials or calibration identifiers and intentionally
-omit unavailable durations. In this ExecPlan, pin the interpretation to
-QDMI-on-IQM revision `5bef1d49245ae17877203618ad65865405fab361` and record its
-source paths and the fact that no provider source, documentation text, or raw
-service response is redistributed. Add one narrowly scoped `Unreleased`
-changelog entry without inventing a pull request reference; add the reference in
-a post-publication follow-up.
+operation site tuples from the default dynamic architecture, and
+T1/T2/fidelities from default calibration-set quality metrics retrieved on 2
+August 2026. State that the files contain no credentials or calibration
+identifiers and intentionally omit unavailable durations. In this ExecPlan, pin
+the interpretation to QDMI-on-IQM revision
+`5bef1d49245ae17877203618ad65865405fab361` and record its source paths and the
+fact that no provider source, documentation text, or raw service response is
+redistributed. Add one narrowly scoped `Unreleased` changelog entry without
+inventing a pull request reference; add the reference in a post-publication
+follow-up.
 
 ## Milestones
 
@@ -273,12 +274,12 @@ The implementation is accepted when:
 
 - Garnet parses as 20 sites and 30 ordered topology edges, and Emerald parses as
   54 sites and 90 ordered topology edges.
-- Both assets expose exactly `r`, `cz`, and `measure`; all recorded per-locus
-  fidelities remain available.
+- Both assets expose exactly `r`, `cz`, and `measure`; all recorded
+  per-site-tuple fidelities remain available.
 - Garnet exposes 20 T1 and 20 T2 values. Emerald exposes 53 T1 and 54 T2 values.
 - Site indices remain zero-based while reported names are `QB1` through `QB20`
   or `QB54`, respectively.
-- No operation or locus in either model reports a duration.
+- No operation or site tuple in either model reports a duration.
 - The IDs `mqt.sc.iqm.garnet` and `mqt.sc.iqm.emerald` resolve to the SC
   provider plus the correct packaged JSON file in a build-tree registry.
 - The two JSON files are included in the provider's runtime-file property and

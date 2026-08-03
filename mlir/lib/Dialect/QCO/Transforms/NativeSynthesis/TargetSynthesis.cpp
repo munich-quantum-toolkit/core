@@ -16,22 +16,20 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -42,7 +40,6 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <utility>
 
 namespace mlir::qco {
 
@@ -270,7 +267,7 @@ static void eraseFusableRun(RewriterBase& rewriter,
 
 /// Fuses a maximal constant run only when generic resynthesis strictly reduces
 /// its two-qubit operation count.
-static bool optimizeTwoQubitRun(IRRewriter& rewriter, UnitaryOpInterface head,
+static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 const Matrix4x4& headMatrix,
                                 const CompilerTarget::SynthesisBasis basis) {
   FusableTwoQubitRun run = scanFusableTwoQubitRun(head, headMatrix);
@@ -296,168 +293,16 @@ static bool optimizeTwoQubitRun(IRRewriter& rewriter, UnitaryOpInterface head,
   return true;
 }
 
-using SiteId = CompilerTarget::SiteId;
-
-static FailureOr<SiteId>
-resolveProviderSite(Value value, DenseMap<Value, SiteId>& resolvedSites) {
-  llvm::SmallDenseSet<Value, 16> visited;
-  SmallVector<Value, 16> path;
-  const auto remember = [&](const SiteId site) {
-    for (const Value traversed : path) {
-      resolvedSites.try_emplace(traversed, site);
-    }
-    return site;
-  };
-  while (value) {
-    if (const auto cached = resolvedSites.find(value);
-        cached != resolvedSites.end()) {
-      return remember(cached->second);
-    }
-    if (!visited.insert(value).second) {
-      return failure();
-    }
-    path.emplace_back(value);
-
-    if (auto argument = dyn_cast<BlockArgument>(value)) {
-      Operation* const parent = argument.getOwner()->getParentOp();
-      const auto index = argument.getArgNumber();
-      if (auto ifOp = dyn_cast_or_null<IfOp>(parent);
-          ifOp && index < ifOp.getQubits().size()) {
-        value = ifOp.getQubits()[index];
-        continue;
-      }
-      if (auto switchOp = dyn_cast_or_null<IndexSwitchOp>(parent);
-          switchOp && index < switchOp.getTargets().size()) {
-        value = switchOp.getTargets()[index];
-        continue;
-      }
-      if (auto forOp = dyn_cast_or_null<scf::ForOp>(parent);
-          forOp && index > 0 && index <= forOp.getInits().size()) {
-        value = forOp.getInits()[index - 1];
-        continue;
-      }
-      if (auto whileOp = dyn_cast_or_null<scf::WhileOp>(parent);
-          whileOp && index < whileOp.getInits().size()) {
-        value = whileOp.getInits()[index];
-        continue;
-      }
-      return failure();
-    }
-
-    Operation* const definingOp = value.getDefiningOp();
-    if (auto staticOp = dyn_cast_or_null<StaticOp>(definingOp)) {
-      return remember(static_cast<SiteId>(staticOp.getIndex()));
-    }
-    if (auto unitary = dyn_cast_or_null<UnitaryOpInterface>(definingOp)) {
-      value = unitary.getInputForOutput(value);
-      continue;
-    }
-    if (auto measureOp = dyn_cast_or_null<MeasureOp>(definingOp)) {
-      value = measureOp.getQubitIn();
-      continue;
-    }
-    if (auto resetOp = dyn_cast_or_null<ResetOp>(definingOp)) {
-      value = resetOp.getQubitIn();
-      continue;
-    }
-    if (auto forOp = dyn_cast_or_null<scf::ForOp>(definingOp)) {
-      auto result = dyn_cast<OpResult>(value);
-      if (!result) {
-        return failure();
-      }
-      value = forOp.getTiedLoopInit(result)->get();
-      continue;
-    }
-    if (auto whileOp = dyn_cast_or_null<scf::WhileOp>(definingOp)) {
-      auto result = dyn_cast<OpResult>(value);
-      if (!result || result.getResultNumber() >= whileOp.getInits().size()) {
-        return failure();
-      }
-      value = whileOp.getInits()[result.getResultNumber()];
-      continue;
-    }
-    if (auto ifOp = dyn_cast_or_null<IfOp>(definingOp)) {
-      auto result = dyn_cast<OpResult>(value);
-      if (!result) {
-        return failure();
-      }
-      OpOperand* const input = ifOp.getTiedQubit(result);
-      if (input == nullptr) {
-        return failure();
-      }
-      value = input->get();
-      continue;
-    }
-    if (auto switchOp = dyn_cast_or_null<IndexSwitchOp>(definingOp)) {
-      auto result = dyn_cast<OpResult>(value);
-      if (!result) {
-        return failure();
-      }
-      OpOperand* const input = switchOp.getTiedTarget(result);
-      if (input == nullptr) {
-        return failure();
-      }
-      value = input->get();
-      continue;
-    }
-    return failure();
-  }
-  return failure();
-}
-
-static FailureOr<SmallVector<SiteId>>
-providerLocus(Operation* operation, DenseMap<Value, SiteId>& resolvedSites) {
-  SmallVector<Value> qubits;
-  if (auto unitary = dyn_cast<UnitaryOpInterface>(operation)) {
-    llvm::append_range(qubits, unitary.getInputQubits());
-  } else if (auto measureOp = dyn_cast<MeasureOp>(operation)) {
-    qubits.emplace_back(measureOp.getQubitIn());
-  } else if (auto resetOp = dyn_cast<ResetOp>(operation)) {
-    qubits.emplace_back(resetOp.getQubitIn());
-  } else {
-    return failure();
-  }
-
-  SmallVector<SiteId> locus;
-  locus.reserve(qubits.size());
-  for (const Value qubit : qubits) {
-    const auto site = resolveProviderSite(qubit, resolvedSites);
-    if (failed(site)) {
-      return failure();
-    }
-    locus.emplace_back(*site);
-  }
-  return locus;
-}
-
 static bool requiresTargetSynthesis(Operation* operation,
-                                    const CompilerTarget& target,
-                                    const ArrayRef<SiteId> locus) {
-  return !target.supports(operation, locus);
-}
-
-static void appendProviderLocus(InFlightDiagnostic& diagnostic,
-                                const ArrayRef<SiteId> locus) {
-  diagnostic << '[';
-  for (const auto [index, site] : llvm::enumerate(locus)) {
-    if (index != 0) {
-      diagnostic << ", ";
-    }
-    diagnostic << site;
-  }
-  diagnostic << ']';
+                                    const CompilerTarget& target) {
+  return !target.supports(operation);
 }
 
 namespace {
 
-struct SynthesisNeed {
-  Operation* operation;
-  SmallVector<SiteId> locus;
-};
-
 struct SynthesisPlan {
-  std::optional<SynthesisNeed> firstNeed;
-  std::optional<SynthesisNeed> matrixUnavailable;
+  Operation* firstNeed = nullptr;
+  Operation* matrixUnavailable = nullptr;
   SmallVector<Operation*> operations;
 };
 
@@ -466,20 +311,17 @@ struct SynthesisPlan {
 static SynthesisPlan planTargetSynthesis(Operation* root,
                                          const CompilerTarget& target) {
   SynthesisPlan plan;
-  DenseMap<Value, SiteId> resolvedSites;
   root->walk([&](Operation* operation) {
     auto unitary = dyn_cast<UnitaryOpInterface>(operation);
     if (!unitary || !isWalkableUnitaryShell(operation) ||
         (unitary.getNumQubits() != 1 && unitary.getNumQubits() != 2)) {
       return WalkResult::advance();
     }
-    auto locus = providerLocus(operation, resolvedSites);
-    if (failed(locus) || !requiresTargetSynthesis(operation, target, *locus)) {
+    if (!requiresTargetSynthesis(operation, target)) {
       return WalkResult::advance();
     }
-    if (!plan.firstNeed) {
-      plan.firstNeed.emplace(
-          SynthesisNeed{.operation = operation, .locus = *locus});
+    if (plan.firstNeed == nullptr) {
+      plan.firstNeed = operation;
     }
 
     if (unitary.isSingleQubit()) {
@@ -495,8 +337,7 @@ static SynthesisPlan planTargetSynthesis(Operation* root,
         return WalkResult::advance();
       }
     }
-    plan.matrixUnavailable.emplace(
-        SynthesisNeed{.operation = operation, .locus = std::move(*locus)});
+    plan.matrixUnavailable = operation;
     return WalkResult::interrupt();
   });
   return plan;
@@ -543,7 +384,7 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
                      ValueRange{synthesized.qubit0, synthesized.qubit1});
 }
 
-static LogicalResult optimizeTwoQubitRuns(ModuleOp moduleOp) {
+static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
   constexpr CompilerTarget::SynthesisBasis basis{
       .singleQubit = CompilerTarget::SingleQubitBasis::U,
       .entangler = CompilerTarget::GateKind::CZ};
@@ -563,7 +404,7 @@ static LogicalResult optimizeTwoQubitRuns(ModuleOp moduleOp) {
     auto unitary = cast<UnitaryOpInterface>(operation);
     const auto matrix = twoQubitRunMemberMatrix(unitary);
     if (matrix) {
-      changed |= optimizeTwoQubitRun(rewriter, unitary, *matrix, basis);
+      changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis);
     }
   }
   if (!changed) {
@@ -574,9 +415,9 @@ static LogicalResult optimizeTwoQubitRuns(ModuleOp moduleOp) {
 
 namespace {
 
-struct OptimizeTwoQubitUnitaryRunsPass final
-    : PassWrapper<OptimizeTwoQubitUnitaryRunsPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(OptimizeTwoQubitUnitaryRunsPass)
+struct FuseTwoQubitGatesPass final
+    : PassWrapper<FuseTwoQubitGatesPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, arith::ArithDialect>();
@@ -585,7 +426,7 @@ struct OptimizeTwoQubitUnitaryRunsPass final
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
-    if (failed(optimizeTwoQubitRuns(moduleOp))) {
+    if (failed(fuseTwoQubitGates(moduleOp))) {
       signalPassFailure();
     }
   }
@@ -609,28 +450,24 @@ protected:
     }
     ModuleOp moduleOp = getOperation();
     const auto plan = planTargetSynthesis(moduleOp, target);
-    if (!plan.firstNeed) {
+    if (plan.firstNeed == nullptr) {
       return;
     }
 
     const auto targetBasis = target.synthesisBasis();
     if (!targetBasis) {
-      auto diagnostic = plan.firstNeed->operation->emitError()
-                        << "target-native synthesis cannot lower operation '"
-                        << plan.firstNeed->operation->getName()
-                        << "' at ordered provider locus ";
-      appendProviderLocus(diagnostic, plan.firstNeed->locus);
-      diagnostic << ": the target has no globally usable synthesis basis";
+      plan.firstNeed->emitError()
+          << "target-native synthesis cannot lower operation '"
+          << plan.firstNeed->getName()
+          << "': the target has no usable synthesis basis";
       signalPassFailure();
       return;
     }
-    if (plan.matrixUnavailable) {
-      auto diagnostic = plan.matrixUnavailable->operation->emitError()
-                        << "target-native synthesis cannot lower operation '"
-                        << plan.matrixUnavailable->operation->getName()
-                        << "' at ordered provider locus ";
-      appendProviderLocus(diagnostic, plan.matrixUnavailable->locus);
-      diagnostic << ": its unitary matrix is not available at compile time";
+    if (plan.matrixUnavailable != nullptr) {
+      plan.matrixUnavailable->emitError()
+          << "target-native synthesis cannot lower operation '"
+          << plan.matrixUnavailable->getName()
+          << "': its unitary matrix is not available at compile time";
       signalPassFailure();
       return;
     }
@@ -657,35 +494,57 @@ struct VerifyTargetConformancePass final
 
 protected:
   void runOnOperation() override {
-    DenseMap<Value, SiteId> resolvedSites;
     WalkResult result = getOperation()->walk([&](Operation* operation) {
+      if (auto function = dyn_cast<FunctionOpInterface>(operation);
+          function &&
+          llvm::any_of(function.getArgumentTypes(), [](const auto type) {
+            if (isa<QubitType>(type)) {
+              return true;
+            }
+            const auto tensor = dyn_cast<RankedTensorType>(type);
+            return tensor && isa<QubitType>(tensor.getElementType());
+          })) {
+        function.emitError()
+            << "target conformance requires quantum function inputs to be "
+               "assigned to qco.static target sites";
+        return WalkResult::interrupt();
+      }
+      if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+        const auto site =
+            static_cast<CompilerTarget::SiteId>(staticOp.getIndex());
+        if (target.vertexForSite(site)) {
+          return WalkResult::advance();
+        }
+        staticOp.emitError() << "target does not contain static site " << site;
+        return WalkResult::interrupt();
+      }
+      if (isa<AllocOp, qtensor::AllocOp>(operation)) {
+        operation->emitError()
+            << "target conformance requires qubits to be assigned to "
+               "qco.static target sites";
+        return WalkResult::interrupt();
+      }
+
+      size_t arity = 1;
       size_t parameterCount = 0;
       if (auto unitary = dyn_cast<UnitaryOpInterface>(operation)) {
         if (isExcludedFromTopLevelUnitaryWalk(operation)) {
           return WalkResult::advance();
         }
+        arity = unitary.getNumQubits();
         parameterCount = unitary.getNumParams();
       } else if (!isa<MeasureOp, ResetOp>(operation)) {
         return WalkResult::advance();
       }
 
-      const auto locus = providerLocus(operation, resolvedSites);
-      if (failed(locus)) {
-        operation->emitError()
-            << "target conformance requires every hardware qubit operand to "
-               "trace to a qco.static provider site";
-        return WalkResult::interrupt();
-      }
-      if (target.supports(operation, *locus)) {
+      if (target.supports(operation)) {
         return WalkResult::advance();
       }
 
       auto diagnostic = operation->emitError()
                         << "target does not support operation '"
-                        << operation->getName() << "' with arity "
-                        << locus->size() << " and " << parameterCount
-                        << " parameter(s) at ordered provider locus ";
-      appendProviderLocus(diagnostic, *locus);
+                        << operation->getName() << "' with arity " << arity
+                        << " and " << parameterCount << " parameter(s)";
       return WalkResult::interrupt();
     });
     if (result.wasInterrupted()) {
@@ -698,8 +557,8 @@ protected:
 
 } // namespace
 
-std::unique_ptr<Pass> createOptimizeTwoQubitUnitaryRuns() {
-  return std::make_unique<OptimizeTwoQubitUnitaryRunsPass>();
+std::unique_ptr<Pass> createFuseTwoQubitGates() {
+  return std::make_unique<FuseTwoQubitGatesPass>();
 }
 
 std::unique_ptr<Pass>

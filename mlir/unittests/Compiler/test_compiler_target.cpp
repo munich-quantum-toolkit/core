@@ -43,9 +43,9 @@ using Coupling = Target::Coupling;
 using DurationUnit = Target::DurationUnit;
 using GateKind = Target::GateKind;
 using Operation = Target::Operation;
-using OperationLocus = Target::OperationLocus;
 using Site = Target::Site;
 using SiteId = Target::SiteId;
+using SiteTuple = Target::SiteTuple;
 
 TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   std::vector<Site> sites;
@@ -56,8 +56,7 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   std::vector<Operation> operations;
   operations.emplace_back(
       " PRX ", 1, 2,
-      std::vector{OperationLocus{{7}, 0, 0.99}, OperationLocus{{2}, 5, 0.98}},
-      0, 0.97);
+      std::vector{SiteTuple{{7}, 0, 0.99}, SiteTuple{{2}, 5, 0.98}}, 0, 0.97);
 
   const Target target{"device", std::move(sites),
                       std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}},
@@ -78,15 +77,15 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(*target.sites()[0].name(), "left");
   EXPECT_EQ(target.sites()[0].t1(), 100);
   EXPECT_EQ(target.sites()[0].t2(), 80);
-  EXPECT_EQ(target.operations()[0].providerName(), " PRX ");
+  EXPECT_EQ(target.operations()[0].name(), " PRX ");
   EXPECT_EQ(target.operations()[0].canonicalName(), "r");
   EXPECT_EQ(target.operations()[0].numQubits(), 1);
   EXPECT_EQ(target.operations()[0].numParameters(), 2);
   EXPECT_EQ(target.operations()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].fidelity(), 0.97);
-  ASSERT_EQ(target.operations()[0].loci().size(), 2);
-  EXPECT_EQ(target.operations()[0].loci()[0].duration(), 0);
-  EXPECT_EQ(target.operations()[0].loci()[0].fidelity(), 0.99);
+  ASSERT_EQ(target.operations()[0].siteTuples().size(), 2);
+  EXPECT_EQ(target.operations()[0].siteTuples()[0].duration(), 0);
+  EXPECT_EQ(target.operations()[0].siteTuples()[0].fidelity(), 0.99);
 
   EXPECT_EQ(copy.sites().data(), target.sites().data());
   EXPECT_EQ(copy.couplings().data(), target.couplings().data());
@@ -166,22 +165,20 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
     static_cast<void>(
         DurationUnit{"ns", std::numeric_limits<double>::infinity()});
   });
-  expectInvalid([] { static_cast<void>(OperationLocus{{0, 0}}); });
-  expectInvalid(
-      [] { static_cast<void>(OperationLocus{{0}, std::nullopt, -0.1}); });
+  expectInvalid([] { static_cast<void>(SiteTuple{{0, 0}}); });
+  expectInvalid([] { static_cast<void>(SiteTuple{{0}, std::nullopt, -0.1}); });
   expectInvalid([] { static_cast<void>(Operation{"", 1, 0}); });
   expectInvalid([] { static_cast<void>(Operation{"x", 0, 0}); });
   expectInvalid([] {
+    static_cast<void>(Operation{"x", 1, 0, std::vector{SiteTuple{{0, 1}}}});
+  });
+  expectInvalid([] {
     static_cast<void>(
-        Operation{"x", 1, 0, std::vector{OperationLocus{{0, 1}}}});
+        Operation{"x", 1, 0, std::vector{SiteTuple{{0}}, SiteTuple{{0}}}});
   });
   expectInvalid([] {
     static_cast<void>(Operation{
-        "x", 1, 0, std::vector{OperationLocus{{0}}, OperationLocus{{0}}}});
-  });
-  expectInvalid([] {
-    static_cast<void>(Operation{"x", 1, 0, std::nullopt, std::nullopt,
-                                std::numeric_limits<double>::quiet_NaN()});
+        "x", 1, 0, {}, std::nullopt, std::numeric_limits<double>::quiet_NaN()});
   });
 
   expectInvalid([] { static_cast<void>(Target{std::vector<Site>{}}); });
@@ -191,12 +188,12 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
     static_cast<void>(Target{std::vector<Site>{Site{0, std::nullopt, 1}}});
   });
   expectInvalid([] {
-    static_cast<void>(Target{
-        1, std::nullopt, std::vector{Operation{"x", 1, 0, std::nullopt, 1}}});
+    static_cast<void>(
+        Target{1, std::nullopt, std::vector{Operation{"x", 1, 0, {}, 1}}});
   });
   expectInvalid([] {
     std::vector<Operation> operations;
-    operations.emplace_back("x", 1, 0, std::vector{OperationLocus{{0}, 1}});
+    operations.emplace_back("x", 1, 0, std::vector{SiteTuple{{0}, 1}});
     static_cast<void>(Target{1, std::nullopt, std::move(operations)});
   });
   expectInvalid(
@@ -207,123 +204,79 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
       [] { static_cast<void>(Target{3, std::vector<Coupling>{{0, 1}}}); });
   expectInvalid([] {
     std::vector<Operation> operations;
-    operations.emplace_back("x", 1, 0, std::vector{OperationLocus{{2}}});
+    operations.emplace_back("x", 1, 0, std::vector{SiteTuple{{2}}});
     static_cast<void>(Target{2, std::nullopt, std::move(operations)});
+  });
+  expectInvalid([] {
+    static_cast<void>(
+        Target{1, std::nullopt, std::vector{Operation{"cx", 2, 0}}});
   });
 }
 
 TEST(CompilerTargetTest, DistinguishesAbsentAndEmptyOperationSets) {
   const Target permissive{2};
   const Target closed{2, std::nullopt, std::vector<Operation>{}};
-  const Operation globalX{"x", 1, 0};
-  const Operation globalCX{"cx", 2, 0};
 
   EXPECT_FALSE(permissive.hasExplicitOperations());
   EXPECT_TRUE(permissive.operations().empty());
-  EXPECT_TRUE(permissive.supportsOperation("provider.operation", {0}));
-  EXPECT_TRUE(permissive.supports(GateKind::CX, {0, 1}));
-  EXPECT_FALSE(permissive.supportsOperation("x", {0, 0}));
-  EXPECT_FALSE(permissive.supportsOperation("x", {2}));
-  EXPECT_FALSE(permissive.supportsOperation("", {0}));
-  EXPECT_FALSE(permissive.supportsOperation("   ", {0}));
-  EXPECT_FALSE(permissive.supportsOperation("x", {}));
-  EXPECT_FALSE(globalX.supports({-1}));
-  EXPECT_FALSE(globalCX.supports({0, 0}));
+  EXPECT_TRUE(permissive.supportsOperation("device.operation", 1));
+  EXPECT_TRUE(permissive.supports(GateKind::CX));
+  EXPECT_FALSE(permissive.supportsOperation("", 1));
+  EXPECT_FALSE(permissive.supportsOperation("   ", 1));
+  EXPECT_FALSE(permissive.supportsOperation("x", 0));
+  EXPECT_FALSE(permissive.supportsOperation("x", 3));
 
   EXPECT_TRUE(closed.hasExplicitOperations());
   EXPECT_TRUE(closed.operations().empty());
-  EXPECT_FALSE(closed.supportsOperation("x", {0}));
-  EXPECT_FALSE(closed.supports(GateKind::CX, {0, 1}));
-  EXPECT_TRUE(closed.globallySupportedGates().empty());
+  EXPECT_FALSE(closed.supportsOperation("x", 1));
+  EXPECT_FALSE(closed.supports(GateKind::CX));
+  EXPECT_TRUE(closed.supportedGates().empty());
   EXPECT_FALSE(closed.synthesisBasis());
 }
 
-TEST(CompilerTargetTest, PreservesRawLociAndResolvesBidirectionalBasis) {
+TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const Operation globalU{"U3", 1, 3};
-  const Operation symmetricCZ{
-      "cz", 2, 0, std::vector{OperationLocus{{1, 0}}, OperationLocus{{1, 2}}}};
-  const Target symmetric{3, chain, std::vector{globalU, symmetricCZ}};
+  const Operation cz{"cz", 2, 0, std::vector{SiteTuple{{1, 0}, 5, 0.99}}};
+  const Target target{3, chain, std::vector{globalU, cz},
+                      DurationUnit{"ns", 1.}};
 
-  EXPECT_TRUE(symmetric.supportsOperation("u", {0}, 3));
-  EXPECT_TRUE(symmetric.supportsOperation(" U3 ", {2}, 3));
-  ASSERT_EQ(symmetric.operations().size(), 2U);
-  EXPECT_TRUE(symmetric.operations()[1].supports({1, 0}));
-  EXPECT_FALSE(symmetric.operations()[1].supports({0, 1}));
-  EXPECT_TRUE(symmetric.supports(GateKind::CZ, {1, 0}));
-  EXPECT_TRUE(symmetric.supports(GateKind::CZ, {0, 1}));
-  EXPECT_TRUE(
-      llvm::is_contained(symmetric.globallySupportedGates(), GateKind::CZ));
-  ASSERT_TRUE(symmetric.synthesisBasis());
-  EXPECT_EQ(symmetric.synthesisBasis()->singleQubit,
-            Target::SingleQubitBasis::U);
-  EXPECT_EQ(symmetric.synthesisBasis()->entangler, GateKind::CZ);
-
-  const Operation oneWayCX{
-      "CNOT", 2, 0,
-      std::vector{OperationLocus{{0, 1}}, OperationLocus{{1, 2}}}};
-  const Target oneWay{3, chain, std::vector{globalU, oneWayCX}};
-  EXPECT_TRUE(oneWay.supports(GateKind::CX, {0, 1}));
-  EXPECT_FALSE(oneWay.supports(GateKind::CX, {1, 0}));
-  EXPECT_FALSE(
-      llvm::is_contained(oneWay.globallySupportedGates(), GateKind::CX));
-  EXPECT_FALSE(oneWay.synthesisBasis());
-
-  const Operation twoWayCX{
-      "cnot", 2, 0,
-      std::vector{OperationLocus{{0, 1}}, OperationLocus{{1, 0}},
-                  OperationLocus{{1, 2}}, OperationLocus{{2, 1}}}};
-  const Target twoWay{3, chain, std::vector{globalU, twoWayCX}};
-  EXPECT_TRUE(
-      llvm::is_contained(twoWay.globallySupportedGates(), GateKind::CX));
-  ASSERT_TRUE(twoWay.synthesisBasis());
-  EXPECT_EQ(twoWay.synthesisBasis()->entangler, GateKind::CX);
+  EXPECT_TRUE(target.supportsOperation("u", 1, 3));
+  EXPECT_TRUE(target.supportsOperation(" U3 ", 1, 3));
+  EXPECT_TRUE(target.supports(GateKind::CZ));
+  EXPECT_TRUE(llvm::is_contained(target.supportedGates(), GateKind::CZ));
+  ASSERT_EQ(target.operations().size(), 2U);
+  ASSERT_EQ(target.operations()[1].siteTuples().size(), 1U);
+  EXPECT_EQ(target.operations()[1].siteTuples()[0].sites(),
+            (llvm::ArrayRef<SiteId>{1, 0}));
+  EXPECT_EQ(target.operations()[1].siteTuples()[0].duration(), 5);
+  EXPECT_EQ(target.operations()[1].siteTuples()[0].fidelity(), 0.99);
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
+  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CZ);
 }
 
-TEST(CompilerTargetTest, ClassifiesEveryEntanglerOrientation) {
+TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
   using Entangler = std::tuple<GateKind, std::string_view, size_t>;
-  const std::array symmetricEntanglers{
-      Entangler{GateKind::CZ, "cz", 0}, Entangler{GateKind::RXX, "rxx", 1},
-      Entangler{GateKind::RYY, "ryy", 1}, Entangler{GateKind::RZZ, "rzz", 1},
-      Entangler{GateKind::ISWAP, "iswap", 0}};
-  const std::array directionalEntanglers{Entangler{GateKind::CX, "cx", 0},
-                                         Entangler{GateKind::ECR, "ecr", 0},
-                                         Entangler{GateKind::RZX, "rzx", 1}};
+  const std::array entanglers{Entangler{GateKind::CZ, "cz", 0},
+                              Entangler{GateKind::RXX, "rxx", 1},
+                              Entangler{GateKind::RYY, "ryy", 1},
+                              Entangler{GateKind::RZZ, "rzz", 1},
+                              Entangler{GateKind::ISWAP, "iswap", 0},
+                              Entangler{GateKind::CX, "cx", 0},
+                              Entangler{GateKind::ECR, "ecr", 0},
+                              Entangler{GateKind::RZX, "rzx", 1}};
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const Operation globalU{"u", 1, 3};
 
-  for (const auto& [gate, name, numParameters] : symmetricEntanglers) {
+  for (const auto& [gate, name, numParameters] : entanglers) {
     SCOPED_TRACE(name);
-    const Operation oneOrientation{
-        std::string{name}, 2, numParameters,
-        std::vector{OperationLocus{{1, 0}}, OperationLocus{{1, 2}}}};
-    const Target target{3, chain, std::vector{globalU, oneOrientation}};
-    EXPECT_TRUE(llvm::is_contained(target.globallySupportedGates(), gate));
-    EXPECT_TRUE(target.supports(gate, {1, 0}));
-    EXPECT_TRUE(target.supports(gate, {0, 1}));
-    EXPECT_TRUE(target.supports(gate, {1, 2}));
-    EXPECT_TRUE(target.supports(gate, {2, 1}));
+    const Operation operation{std::string{name}, 2, numParameters};
+    const Target target{3, chain, std::vector{globalU, operation}};
+    EXPECT_TRUE(llvm::is_contained(target.supportedGates(), gate));
+    EXPECT_TRUE(target.supports(gate));
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->entangler, gate);
-  }
-
-  for (const auto& [gate, name, numParameters] : directionalEntanglers) {
-    SCOPED_TRACE(name);
-    const Operation oneOrientation{
-        std::string{name}, 2, numParameters,
-        std::vector{OperationLocus{{0, 1}}, OperationLocus{{1, 2}}}};
-    const Target oneWay{3, chain, std::vector{globalU, oneOrientation}};
-    EXPECT_FALSE(llvm::is_contained(oneWay.globallySupportedGates(), gate));
-    EXPECT_FALSE(oneWay.synthesisBasis());
-
-    const Operation bothOrientations{
-        std::string{name}, 2, numParameters,
-        std::vector{OperationLocus{{0, 1}}, OperationLocus{{1, 0}},
-                    OperationLocus{{1, 2}}, OperationLocus{{2, 1}}}};
-    const Target twoWay{3, chain, std::vector{globalU, bothOrientations}};
-    EXPECT_TRUE(llvm::is_contained(twoWay.globallySupportedGates(), gate));
-    ASSERT_TRUE(twoWay.synthesisBasis());
-    EXPECT_EQ(twoWay.synthesisBasis()->entangler, gate);
   }
 }
 
@@ -384,25 +337,24 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
 
   const Target target{
       std::vector<Site>{Site{10}, Site{20}}, std::nullopt,
-      std::vector{Operation{"x", 1, 0}, Operation{"measure", 1, 0},
-                  Operation{"reset", 1, 0},
-                  Operation{"cnot", 2, 0,
-                            std::vector{OperationLocus{{10, 20}},
-                                        OperationLocus{{20, 10}}}}}};
-  EXPECT_TRUE(target.supports(x, {10}));
-  EXPECT_FALSE(target.supports(x, {10, 20}));
-  EXPECT_TRUE(target.supports(cx, {10, 20}));
-  EXPECT_TRUE(target.supports(measure, {20}));
-  EXPECT_TRUE(target.supports(reset, {10}));
-  EXPECT_TRUE(target.supports(barrier, {10, 20}));
-  EXPECT_TRUE(target.supports(gphase, {}));
-  EXPECT_FALSE(target.supports(nullptr, {10}));
+      std::vector{
+          Operation{"x", 1, 0}, Operation{"measure", 1, 0},
+          Operation{"reset", 1, 0},
+          Operation{"cnot", 2, 0,
+                    std::vector{SiteTuple{{10, 20}}, SiteTuple{{20, 10}}}}}};
+  EXPECT_TRUE(target.supports(x));
+  EXPECT_TRUE(target.supports(cx));
+  EXPECT_TRUE(target.supports(measure));
+  EXPECT_TRUE(target.supports(reset));
+  EXPECT_TRUE(target.supports(barrier));
+  EXPECT_TRUE(target.supports(gphase));
+  EXPECT_FALSE(target.supports(nullptr));
 
   const Target closed{2, std::nullopt, std::vector<Operation>{}};
-  EXPECT_TRUE(closed.supports(barrier, {0, 1}));
-  EXPECT_TRUE(closed.supports(gphase, {}));
-  EXPECT_FALSE(closed.supports(x, {0}));
-  EXPECT_FALSE(closed.supports(measure, {0}));
+  EXPECT_TRUE(closed.supports(barrier));
+  EXPECT_TRUE(closed.supports(gphase));
+  EXPECT_FALSE(closed.supports(x));
+  EXPECT_FALSE(closed.supports(measure));
 }
 
 } // namespace
