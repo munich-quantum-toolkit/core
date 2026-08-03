@@ -1279,6 +1279,24 @@ if(c==1) x q[1];
 }
 
 TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralInOpenQASM2If) {
+  // 2^70 + 9 fits in an 80-bit register but exceeds uint64_t.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==1180591620717411303433) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+  }));
+}
+
+TEST(OpenQASMFrontendTest,
+     FoldsNonFittingWideIntegerOpenQASM2RegisterCondition) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
 include "qelib1.inc";
@@ -1289,11 +1307,22 @@ if(c==123456789012345678901234567890) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  const oq3::frontend::IfStatement* conditional = nullptr;
+  for (const auto statement : analyzed.program->body) {
+    conditional = std::get_if<oq3::frontend::IfStatement>(
+        &analyzed.program->statements[statement].data);
+    if (conditional != nullptr) {
+      break;
+    }
+  }
+  ASSERT_NE(conditional, nullptr);
+  const auto& condition = analyzed.program->conditions[conditional->condition];
+  ASSERT_EQ(condition.kind, oq3::frontend::ConditionKind::Literal);
+  EXPECT_FALSE(condition.literal);
 }
 
 TEST(OpenQASMFrontendTest, AcceptsNarrowConstantAgainstWideOpenQASM2Register) {
-  // A 64-bit constant against a >64-bit classical register must be zero-
-  // extended before per-bit comparison.
+  // Zero-extend a narrow constant across the full >64-bit register.
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
 include "qelib1.inc";
@@ -1304,6 +1333,13 @@ if(c==1) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  // Truncating to 64 bits would omit Not(c[79]).
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [&](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Not &&
+           analyzed.program->conditions[c.lhs].kind ==
+               oq3::frontend::ConditionKind::Bit &&
+           analyzed.program->conditions[c.lhs].bit.index == 79;
+  }));
 }
 
 TEST(OpenQASMFrontendTest, RejectsNegativeOpenQASM2RegisterCondition) {
