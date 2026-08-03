@@ -102,6 +102,9 @@ class QCProgram(Program):
     def cleanup(self) -> None:
         """Run the standard QC cleanup pipeline in place."""
 
+    def normalize_global_phases(self) -> None:
+        """Normalize scoped global phases in place."""
+
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.
 
@@ -135,6 +138,9 @@ class QCOProgram(Program):
     def cleanup(self) -> None:
         """Run the standard QCO cleanup pipeline in place."""
 
+    def normalize_global_phases(self) -> None:
+        """Normalize scoped global phases in place."""
+
     def run_pass_pipeline(self, pipeline: str, *, enable_timing: bool = False, enable_statistics: bool = False) -> None:
         """Run a textual MLIR pass pipeline in place."""
 
@@ -144,11 +150,20 @@ class QCOProgram(Program):
     def fuse_single_qubit_unitary_runs(self, *, basis: str = "zyz") -> None:
         """Fuse single-qubit unitary runs into the chosen decomposition basis."""
 
+    def fuse_two_qubit_unitary_runs(self, *, native_gates: str) -> None:
+        """Lower unitaries to a non-empty native gate menu via two-qubit run fusion."""
+
     def unroll_quantum_loops(self, *, unroll_factor: int = -1) -> None:
         """Unroll quantum loops, optionally using a maximum unroll factor."""
 
     def lift_hadamards(self) -> None:
         """Move Hadamard gates through compatible operations."""
+
+    def reuse_qubits(self) -> None:
+        """Reuse independent single-qubit allocations."""
+
+    def run_qubit_reuse_pipeline(self) -> None:
+        """Prepare the program for qubit reuse and reuse eligible qubits."""
 
     def decompose_multi_controlled(self, *, min_controls: int = 2) -> None:
         """Decompose controlled X/Z gates, qco.rccx, and constant-angle phase gates with at least min_controls controls (min_controls must be at least 2)."""

@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
@@ -150,10 +151,13 @@ namespace {
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
-                                    const decomposition::EulerBasis basis)
-      : OpInterfaceRewritePattern(context), basis(basis) {}
+                                    const decomposition::EulerBasis basis,
+                                    const bool skipControlledBodies)
+      : OpInterfaceRewritePattern(context), basis(basis),
+        skipControlledBodies(skipControlledBodies) {}
 
   decomposition::EulerBasis basis;
+  bool skipControlledBodies;
 
   /**
    * @brief Fuses the run anchored at `op` when beneficial.
@@ -167,6 +171,10 @@ struct FuseSingleQubitUnitaryRunsPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
+    if (skipControlledBodies &&
+        (op.getOperation()->getParentOfType<CtrlOp>() != nullptr)) {
+      return failure();
+    }
     if (!isRunMemberCandidate(op)) {
       return failure();
     }
@@ -181,14 +189,17 @@ struct FuseSingleQubitUnitaryRunsPattern final
     }
 
     FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
-    const auto qubitOut = decomposition::synthesizeUnitary1QEuler(
+    const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, op.getLoc(), op.getInputTarget(0), run.composed,
         run.gateCount, run.hasNonBasisGate, basis);
-    if (!qubitOut) {
+    if (!synthesized) {
       return failure();
     }
+    decomposition::emitGPhaseIfNeeded(rewriter, op.getLoc(),
+                                      synthesized->globalPhase);
 
-    rewriter.replaceAllUsesWith(run.tail.getOutputTarget(0), *qubitOut);
+    rewriter.replaceAllUsesWith(run.tail.getOutputTarget(0),
+                                synthesized->qubit);
     eraseFusableRun(rewriter, op, run.tail);
     return success();
   }
@@ -207,22 +218,23 @@ struct FuseSingleQubitUnitaryRunsPass final
 
 protected:
   void runOnOperation() override {
-    auto module = getOperation();
+    auto moduleOp = getOperation();
 
     const auto parsed = decomposition::parseEulerBasis(basis);
     if (!parsed) {
-      module.emitError() << "Invalid Euler basis '" << basis
-                         << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, "
-                            "r.";
+      moduleOp.emitError()
+          << "Invalid Euler basis '" << basis
+          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r.";
       signalPassFailure();
       return;
     }
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(),
-                                                    *parsed);
+    decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
+        patterns, *parsed, /*skipControlledBodies=*/false);
 
-    if (failed(applyPatternsGreedily(module, std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
+        failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
   }
@@ -231,3 +243,14 @@ protected:
 } // namespace
 
 } // namespace mlir::qco
+
+namespace mlir::qco::decomposition {
+
+void populateFuseSingleQubitUnitaryRunsPatterns(
+    RewritePatternSet& patterns, const EulerBasis basis,
+    const bool skipControlledBodies) {
+  patterns.add<FuseSingleQubitUnitaryRunsPattern>(patterns.getContext(), basis,
+                                                  skipControlledBodies);
+}
+
+} // namespace mlir::qco::decomposition

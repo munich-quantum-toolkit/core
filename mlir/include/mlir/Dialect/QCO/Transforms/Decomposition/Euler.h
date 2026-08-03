@@ -20,6 +20,10 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir {
+class RewritePatternSet;
+} // namespace mlir
+
 namespace mlir::qco::decomposition {
 
 /**
@@ -59,6 +63,17 @@ struct EulerAngles {
 };
 
 /**
+ * @brief Result of single-qubit synthesis, including its phase correction.
+ *
+ * The caller owns materialization of @ref globalPhase. Compound synthesis can
+ * therefore accumulate corrections in C++ and emit one `qco.gphase`.
+ */
+struct SynthesizedUnitary1Q {
+  Value qubit;
+  double globalPhase = 0.0;
+};
+
+/**
  * @brief Extracts `(theta, phi, lambda, phase)` of @p matrix in @p basis.
  *
  * @param matrix The single-qubit unitary to decompose.
@@ -72,8 +87,8 @@ struct EulerAngles {
  * @brief Synthesizes a composed single-qubit unitary as gates in @p basis.
  *
  * Returns `std::nullopt` when @p hasNonBasisGate is false and resynthesis
- * would not shorten a run of @p runSize gates; otherwise emits gates
- * (including `qco.gphase` when needed).
+ * would not shorten a run of @p runSize gates; otherwise emits gates and
+ * returns their global-phase correction separately.
  *
  * @param builder Builder for the emitted operations.
  * @param loc Location for the emitted operations.
@@ -82,21 +97,32 @@ struct EulerAngles {
  * @param runSize Number of gates in the run.
  * @param hasNonBasisGate Whether the run contains a gate outside @p basis.
  * @param basis The target Euler basis.
- * @return The synthesized qubit, or `std::nullopt` if synthesis is skipped.
+ * @return The synthesized qubit and correction, or `std::nullopt` if synthesis
+ * is skipped.
  */
-[[nodiscard]] std::optional<Value>
+[[nodiscard]] std::optional<SynthesizedUnitary1Q>
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Matrix2x2& composed, std::size_t runSize,
                          bool hasNonBasisGate, EulerBasis basis);
 
 /**
- * @brief Emits `qco.gphase` when @p phase is outside tolerance (after
- * `mod2pi`).
+ * @brief Materializes one accumulated phase correction when needed.
  *
  * @param builder Builder for the operation.
  * @param loc Location of the operation.
  * @param phase Global phase in radians.
  */
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
+
+/**
+ * @brief Populates @p patterns with the single-qubit run fusion rewrite for
+ * @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
+ *
+ * @param skipControlledBodies When set, single-qubit gates nested in `qco.ctrl`
+ * bodies are left untouched.
+ */
+void populateFuseSingleQubitUnitaryRunsPatterns(
+    RewritePatternSet& patterns, EulerBasis basis,
+    bool skipControlledBodies = false);
 
 } // namespace mlir::qco::decomposition

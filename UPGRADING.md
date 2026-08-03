@@ -6,12 +6,47 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### MLIR enabled by default for C++ and Python package builds
+### Runtime-configurable SC QDMI device
 
-The MLIR-based functionality within MQT Core has long been experimental and
-opt-in. Starting with this release, MLIR is enabled by default for C++ library
-builds. This means that LLVM 22.1+ (including MLIR) is now a required dependency
-for building MQT Core from source.
+The built-in superconducting QDMI provider now parses its device description
+when each session is initialized. The `mqt-core-qdmi-sc-device-gen` target,
+SC-specific generator executable, `sc::writeHeader`, `sc::writeJSONSchema`, and
+generated `DeviceMemberInitializers.hpp` file have been removed. Replace
+generator API use with `sc::Device` and the `sc::readJSON` functions declared in
+`qdmi/devices/sc/Configuration.hpp`.
+
+### Runtime-configurable neutral-atom QDMI device
+
+The built-in neutral-atom QDMI provider now parses its device description when
+each session is initialized. The `mqt-core-qdmi-na-device-gen` target,
+`mqt-core-qdmi-na-device-generator` executable, `na::writeHeader`, and generated
+`DeviceMemberInitializers.hpp` file have been removed. Replace generator API use
+with the `na::Device` configuration type and the `na::readJSON` functions in
+`qdmi/devices/na/Configuration.hpp`.
+
+At runtime, use the registry `session.device-config` field or Python
+`device_config` and `device_config_file` arguments. Direct QDMI v1 clients pass
+inline JSON through CUSTOM1 or a file path through CUSTOM2.
+
+### Bundled QDMI devices in embedded builds
+
+The bundled QDMI devices now have individual CMake options:
+`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
+`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
+standalone MQT Core build. They default to disabled when MQT Core is consumed
+through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
+enable only the devices they need before making MQT Core available. The QDMI
+driver and FoMaC libraries remain available independently.
+
+### LLVM/MLIR required for all source builds
+
+MQT Core now builds its MLIR-based compiler infrastructure unconditionally. LLVM
+22.1+ (including MLIR) is therefore required when building MQT Core from source,
+including as a CMake dependency or Python package. The `BUILD_MQT_CORE_MLIR`
+CMake option has been removed. The QIR runner and QIR support in the DDSIM QDMI
+Device are also built unconditionally, so the `BUILD_MQT_CORE_QIR_RUNNER` and
+`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` options have been removed. Remove these
+three options from build scripts and presets.
 
 We offer pre-built distributions for all supported platforms as part of the
 `setup-mlir` project at
@@ -20,25 +55,18 @@ Please follow the instructions there to install the distribution for your
 platform. You can then point CMake to the installation directory using the
 `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
 
-As of this release, MLIR is also enabled for Python package builds, since the
-package now exposes an MLIR-based compiler entry point in `mqt.core.mlir`.
-
 For local development, you can configure `MLIR_DIR` once in a repository-local
 `.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
 Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
 otherwise provided.
-
-The MLIR components can still be manually disabled by passing
-`-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
 
 Known limitations:
 
 - Our pre-built distributions are incompatible with GCC on macOS. Use
   (Apple)Clang instead or compile LLVM from source using your preferred
   compiler.
-- AppleClang 17+ is required to build MQT Core with MLIR enabled due to some
-  C++20 features being used that are not yet properly supported by older
-  versions.
+- AppleClang 17+ is required to build MQT Core due to some C++20 features that
+  are not yet properly supported by older versions.
 
 ### Removal of the density matrix support from the DD package
 
@@ -64,6 +92,84 @@ a consistent local development environment. Common IDEs like
 and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
+
+## [3.8.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.7` to `3.8`.
+Thus, consuming libraries need to update their wheel repair configuration for
+`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
+wheel repair step.
+
+### QDMI updated to version 1.3.2
+
+MQT Core already bundled QDMI 1.3.2 in the previous release, but now also
+requires at least that version when using a system-provided QDMI installation.
+
+### Bundled QDMI devices in embedded builds
+
+The bundled QDMI devices now have individual CMake options:
+`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
+`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
+standalone MQT Core build. They default to disabled when MQT Core is consumed
+through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
+enable only the devices they need before making MQT Core available. The QDMI
+driver and FoMaC libraries remain available independently.
+
+### QDMI runtime device registration
+
+The unstable runtime-loading helpers have been replaced with registration by a
+stable device ID followed by an explicit open. In Python, replace
+`add_dynamic_device_library(library_path, prefix, ...)` with:
+
+```python
+from mqt.core.fomac import DeviceDefinition, open_device, register_device
+
+definition = DeviceDefinition("my.device", library_path, prefix, base_url="https://device.example")
+register_device(definition)
+device = open_device("my.device")
+```
+
+Per-backend session values can be passed directly to
+`open_device("my.device", base_url=..., token=...)`. Every call creates a fresh
+device session without registering another device ID. Repeated integration setup
+can use `register_device_if_absent(definition)` instead of suppressing
+duplicate-ID errors; invalid definitions are still rejected, and a device
+disabled by higher-precedence configuration remains reserved.
+
+The equivalent C++ flow is:
+
+```cpp
+qdmi::DeviceDefinition definition{.id = "my.device",
+                                  .library = libraryPath,
+                                  .prefix = prefix};
+auto& driver = qdmi::Driver::get();
+driver.registerDevice(definition);
+auto device = fomac::Session::openDevice("my.device");
+```
+
+Registration validates and stores metadata without loading native code. Opening
+an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
+owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
+behavior for client callers.
+
+See the {doc}`QDMI device configuration guide <qdmi/configuration>` for the
+versioned JSON and TOML formats, configuration precedence, and relocatable
+device manifests.
+
+### FoMaC program payload handling
+
+FoMaC now distinguishes textual programs from exact binary payloads. In C++, use
+`Device::submitJob(const std::string&, ...)` for text formats and
+`Device::submitJob(std::span<const std::byte>, ...)` for binary formats. In
+Python, pass `str` for text and `bytes` for binary payloads. In particular, QIR
+`*_STRING` formats are text, while QIR `*_MODULE` formats are LLVM bitcode and
+must be submitted as bytes.
+
+`Job::getProgram()` and Python's `Job.program` remain the textual accessors and
+now reject binary or non-null-terminated payloads. Use `Job::getProgramBytes()`
+or `Job.program_bytes` to retrieve the exact submitted bytes. Calibration and
+batch-job formats cannot be submitted through these generic program APIs because
+their QDMI payloads have specialized representations.
 
 ### QDMI child devices
 
@@ -406,7 +512,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1

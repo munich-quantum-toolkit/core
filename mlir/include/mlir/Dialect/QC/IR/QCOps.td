@@ -101,39 +101,18 @@ def MeasureOp : QCOp<"measure"> {
         Measures a qubit in the computational (Z) basis, collapsing the state
         and returning a classical bit result.
 
-        Optionally, the measurement can be recorded to an output register by
-        specifying:
-        - `register_name`: Name of the classical register (e.g., "c")
-        - `register_size`: Total size of the register
-        - `register_index`: Index within the register for this measurement
-
-        Example (simple measurement):
+        Example:
         ```mlir
         %result = qc.measure %q : !qc.qubit -> i1
         ```
-
-        Example (measurement with output recording):
-        ```mlir
-        %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
-        ```
     }];
 
-  let arguments = (ins Arg<QubitType,
-                           "the qubit to measure", [MemRead, MemWrite]>:$qubit,
-      OptionalAttr<StrAttr>:$register_name,
-      OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
-      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
+  let arguments =
+      (ins Arg<QubitType, "the qubit to measure", [MemRead, MemWrite]>:$qubit);
   let results = (outs I1:$result);
   let assemblyFormat = [{
-        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
         $qubit `:` type($qubit) `->` type($result) attr-dict
     }];
-
-  let builders = [OpBuilder<(ins "Value":$qubit), [{
-            build($_builder, $_state, $_builder.getI1Type(), qubit, nullptr, nullptr, nullptr);
-        }]>];
-
-  let hasVerifier = 1;
 }
 
 def ResetOp : QCOp<"reset"> {
@@ -183,6 +162,9 @@ def GPhaseOp
   let description = [{
         Applies a global phase to the state.
 
+        Constant angles must be finite and have magnitude at most 10000
+        radians. Dynamic angles have the same runtime precondition.
+
         Example:
         ```mlir
         qc.gphase(%theta)
@@ -197,6 +179,8 @@ def GPhaseOp
     }];
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
+
+  let hasVerifier = 1;
 }
 
 def IdOp : QCOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {

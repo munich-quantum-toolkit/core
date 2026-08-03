@@ -668,17 +668,16 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   return flippedFromOriginal;
 }
 
-LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
-                                      Value qubit0, Value qubit1,
-                                      const Matrix4x4& target,
-                                      const NativeGateset& spec,
-                                      Value& outQubit0, Value& outQubit1) {
+FailureOr<SynthesizedUnitary2Q>
+synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
+                        Value qubit1, const Matrix4x4& target,
+                        const NativeGateset& spec) {
   const auto native = spec.decomposeTarget(target);
   if (!native || !spec.eulerBasis) {
     return failure();
   }
 
-  emitGPhaseIfNeeded(builder, loc, native->globalPhase);
+  double globalPhase = native->globalPhase;
 
   Value wire0 = qubit0;
   Value wire1 = qubit1;
@@ -691,7 +690,6 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
         "numBasisUses = {1}, got {2}",
         requiredFactors, numBasisUses, factors.size()));
   }
-  const bool emitCz = spec.entangler == NativeGateKind::CZ;
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
@@ -702,18 +700,59 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
           "{0} (layer {1}, qubit {2})",
           index, index / 2, (index % 2 == 0) ? 1 : 0));
     }
-    wire = *synthesized;
+    wire = synthesized->qubit;
+    globalPhase += synthesized->globalPhase;
   };
   const auto emitEntangler = [&]() {
-    auto ctrlOp =
-        CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
-          if (emitCz) {
-            return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
-          }
-          return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
-        });
-    wire0 = ctrlOp.getOutputControl(0);
-    wire1 = ctrlOp.getOutputTarget(0);
+    if (spec.entangler == NativeGateKind::RXX) {
+      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rxxOp.getOutputQubit(0);
+      wire1 = rxxOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::RYY) {
+      auto ryyOp = RYYOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = ryyOp.getOutputQubit(0);
+      wire1 = ryyOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::RZX) {
+      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rzxOp.getOutputQubit(0);
+      wire1 = rzxOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::RZZ) {
+      auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      wire0 = rzzOp.getOutputQubit(0);
+      wire1 = rzzOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::ISWAP) {
+      auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
+      wire0 = iswapOp.getOutputQubit(0);
+      wire1 = iswapOp.getOutputQubit(1);
+      return;
+    }
+    if (spec.entangler == NativeGateKind::CZ ||
+        spec.entangler == NativeGateKind::CX) {
+      const bool emitCz = spec.entangler == NativeGateKind::CZ;
+      auto ctrlOp =
+          CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
+            if (emitCz) {
+              return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
+            }
+            return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
+          });
+      wire0 = ctrlOp.getOutputControl(0);
+      wire1 = ctrlOp.getOutputTarget(0);
+      return;
+    }
+    assert(spec.entangler == NativeGateKind::ECR &&
+           "emitEntangler: unexpected NativeGateKind");
+    auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
+    wire0 = ecrOp.getOutputQubit(0);
+    wire1 = ecrOp.getOutputQubit(1);
   };
 
   for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {
@@ -724,9 +763,8 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     }
   }
 
-  outQubit0 = wire0;
-  outQubit1 = wire1;
-  return success();
+  return SynthesizedUnitary2Q{
+      .qubit0 = wire0, .qubit1 = wire1, .globalPhase = globalPhase};
 }
 
 } // namespace mlir::qco::decomposition

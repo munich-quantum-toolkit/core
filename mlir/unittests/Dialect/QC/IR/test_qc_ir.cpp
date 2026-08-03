@@ -118,6 +118,46 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, -1);
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, 1);
+      },
+      "Register index is out of bounds");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.scfIf(c, -1, [] {});
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.scfCondition(c, 1);
+      },
+      "Register index is out of bounds");
+}
+
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
@@ -155,7 +195,10 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
                    MQT_NAMED_BUILDER(fourControlledRxx)},
         QCTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
-                   MQT_NAMED_BUILDER(ctrlTwo)}));
+                   MQT_NAMED_BUILDER(ctrlTwo)},
+        QCTestCase{"ModifierBodyReuseReordered",
+                   MQT_NAMED_BUILDER(modifierBodyReuseReordered),
+                   MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
 /// @}
 
 /// \name QC/Modifiers/PowOp.cpp

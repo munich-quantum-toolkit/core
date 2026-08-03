@@ -27,8 +27,7 @@ from mqt.core.mlir import (
 )
 
 MLIR_STRING = r"""module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
-    %c0_i64 = arith.constant 0 : i64
+  func.func @main() -> memref<2xi1> attributes {passthrough = ["entry_point"]} {
     %c1 = arith.constant 1 : index
     %c0 = arith.constant 0 : index
     %alloc = memref.alloc() : memref<2x!qc.qubit>
@@ -39,8 +38,13 @@ MLIR_STRING = r"""module {
       qc.x %arg0 : !qc.qubit
       qc.yield
     } : {!qc.qubit}, {!qc.qubit}
+    %alloc_0 = memref.alloc() : memref<2xi1>
+    %2 = qc.measure %0 : !qc.qubit -> i1
+    memref.store %2, %alloc_0[%c0] : memref<2xi1>
+    %3 = qc.measure %1 : !qc.qubit -> i1
+    memref.store %3, %alloc_0[%c1] : memref<2xi1>
     memref.dealloc %alloc : memref<2x!qc.qubit>
-    return %c0_i64 : i64
+    return %alloc_0 : memref<2xi1>
   }
 }
 """
@@ -64,13 +68,12 @@ def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
     assert ir.count("qc.x ") == 1
 
     if not measured:
-        assert "qc.measure" not in ir
         assert "func.func @main() -> i64" in ir
+        assert "qc.measure" not in ir
         return
 
+    assert "func.func @main() -> memref<2xi1>" in ir
     assert ir.count("qc.measure") == 2
-    assert "func.func @main() -> (i1, i1)" in ir
-    assert ": i1, i1" in ir
 
 
 def test_compile_program_jeff_file() -> None:
@@ -294,6 +297,86 @@ def test_qco_program_runs_textual_pipeline() -> None:
 
     with pytest.raises(RuntimeError, match="MLIR operation failed"):
         qco.run_pass_pipeline("not-a-pass")
+
+
+def test_qco_program_reuses_qubits() -> None:
+    """Expose the raw and composite qubit-reuse flows."""
+    independent_qubits = """
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %q1 = qco.alloc : !qco.qubit
+    %q0_h = qco.h %q0 : !qco.qubit -> !qco.qubit
+    %q1_h = qco.h %q1 : !qco.qubit -> !qco.qubit
+    %q0_m, %c0 = qco.measure %q0_h : !qco.qubit
+    %q1_m, %c1 = qco.measure %q1_h : !qco.qubit
+    qco.sink %q0_m : !qco.qubit
+    qco.sink %q1_m : !qco.qubit
+    return
+  }
+}
+"""
+    raw = QCOProgram.from_mlir_str(independent_qubits)
+    assert raw.ir.count("qco.alloc") == 2
+    raw.reuse_qubits()
+    assert raw.ir.count("qco.alloc") == 1
+    assert "qco.reset" in raw.ir
+
+    composite = QCOProgram.from_mlir_str(independent_qubits)
+    assert composite.ir.count("qco.alloc") == 2
+    composite.run_qubit_reuse_pipeline()
+    assert composite.ir.count("qco.alloc") == 1
+    assert "qco.reset" in composite.ir
+
+
+def test_typed_programs_normalize_global_phases() -> None:
+    """Normalize QC and QCO phases through the typed Python APIs."""
+    qc = QCProgram.from_mlir_str(
+        """module {
+          func.func @test(%q: !qc.qubit) {
+            %a = arith.constant 0.25 : f64
+            qc.gphase(%a)
+            qc.x %q : !qc.qubit
+            %b = arith.constant 0.5 : f64
+            qc.gphase(%b)
+            return
+          }
+        }"""
+    )
+    qc.normalize_global_phases()
+    assert qc.ir.count("qc.gphase") == 1
+
+    qco = QCOProgram.from_mlir_str(
+        """module {
+          func.func @test(%q: !qco.qubit) -> !qco.qubit {
+            %a = arith.constant 0.25 : f64
+            qco.gphase(%a)
+            %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+            %b = arith.constant 0.5 : f64
+            qco.gphase(%b)
+            return %q1 : !qco.qubit
+          }
+        }"""
+    )
+    qco.normalize_global_phases()
+    assert qco.ir.count("qco.gphase") == 1
+    once = qco.ir
+    qco.normalize_global_phases()
+    assert qco.ir == once
+
+
+def test_qco_program_two_qubit_fusion_requires_native_gates() -> None:
+    """Require callers to provide a non-empty native gate menu."""
+    qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+
+    with pytest.raises(TypeError, match="incompatible function arguments"):
+        qco.fuse_two_qubit_unitary_runs()  # ty: ignore[missing-argument]
+
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        qco.fuse_two_qubit_unitary_runs(native_gates="")
+
+    qco.fuse_two_qubit_unitary_runs(native_gates="u,cx")
 
 
 def test_qco_program_decomposes_multi_controlled() -> None:

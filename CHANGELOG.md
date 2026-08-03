@@ -12,30 +12,35 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add compiler-wide scoped global-phase normalization with exact modifier
+  semantics and synthesis integration ([#1986]) ([**@burgholzer**])
+- ✨ Expose compressed vector and matrix DD serialization through bytes-based
+  Python APIs ([#1983]) ([**@burgholzer**])
+- ✨ Make superconducting QDMI devices runtime configurable with session-owned
+  topology, operations, and calibration data ([#1980]) ([**@burgholzer**])
+- ✨ Expose registered QDMI device IDs without loading device libraries
+  ([#1972]) ([**@burgholzer**])
+- ✨ Add typed runtime configuration transport and relocatable assets for QDMI
+  device descriptions ([#1967]) ([**@burgholzer**])
 - ✨ Add and improve QIR generation support in the MQT Compiler Collection
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
-  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933])
-  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
+  [#1979]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
+  unitary windows via Weyl/KAK resynthesis ([#1865], [#1961])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
-- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
-  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886])
-  ([**@simon1hofmann**])
+- ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
+  and direct QC emission, including lexical scope, assignment, inclusive ranges,
+  and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
-- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
-  ([#1897]) ([**@burgholzer**])
-- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
-  libraries ([#1895]) ([**@burgholzer**])
-- ✨ Add support for custom job parameters to C++ and Python FoMaC library
-  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
-- ✨ Add QIR Output Schemas support to the QIR runtime ([#1877])
-  ([**@rturrado**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
@@ -49,8 +54,6 @@ releases may include breaking changes.
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
   single-qubit unitary runs via Euler resynthesis ([#1672])
   ([**@simon1hofmann**], [**@burgholzer**])
-- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766], [#1815])
-  ([**@rturrado**], [**@burgholzer**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
   containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
@@ -66,8 +69,8 @@ releases may include breaking changes.
   [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
   [#1911], [#1951]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
-  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1924])
-  ([**@DRovara**])
+  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
+  ([**@DRovara**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
@@ -76,14 +79,17 @@ releases may include breaking changes.
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717],
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
-  [#1886], [#1914], [#1925], [#1935], [#1936], [#1938]) ([**@burgholzer**],
-  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
-  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
+  [#1976]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
-- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
-  ([**@burgholzer**])
+- 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
+  ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
+- 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
+  corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
   [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
@@ -96,8 +102,51 @@ releases may include breaking changes.
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
 
+## [3.8.0] - 2026-07-30
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
+
+### Added
+
+- ✨ Add binary-safe QDMI program submission and retrieval to FoMaC, including
+  explicit text and exact-byte APIs and all standard QDMI program formats
+  ([#1957]) ([**@burgholzer**])
+- ✨ Add versioned, relocatable configuration and stable-ID registration for
+  QDMI device libraries, including disabled-ID reservations, fresh device
+  sessions, idempotent registration, and external-device target metadata
+  ([#1912]) ([**@burgholzer**])
+- ✨ Add native relative-phase CCX (`rccx`) support across the IR, DD package,
+  ZX diagrams, OpenQASM import/export, and Python/Qiskit bindings ([#1886],
+  [#1950]) ([**@simon1hofmann**])
+- ✨ Add support for QDMI child devices to the driver and FoMaC libraries
+  ([#1897], [#1952]) ([**@burgholzer**])
+- ✨ Add typed custom property and result queries to the C++ and Python FoMaC
+  libraries ([#1895]) ([**@burgholzer**])
+- ✨ Add support for custom job parameters to C++ and Python FoMaC library
+  ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
+- ✨ Add labeled and ordered output schemas to the QIR runtime ([#1877])
+  ([**@rturrado**])
+- ✨ Add boolean, integer, floating-point, tuple, and array record output
+  functions to the QIR runtime ([#1799]) ([**@rturrado**])
+- ✨ Add the reusable in-process `MQT::CoreQIRJIT` library and QIR program
+  format support to the DDSIM QDMI device ([#1766]) ([**@rturrado**])
+
+### Changed
+
+- ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
+  ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Replace the unstable C++ `Driver::addDynamicDeviceLibrary` and Python
+  `add_dynamic_device_library` APIs with definition registration and stable-ID
+  opening ([#1912]) ([**@burgholzer**])
+
 ### Fixed
 
+- 🐛 Allow MQT Core to be embedded as a CMake subproject without target
+  collisions and make its bundled QDMI devices individually configurable
+  ([#1965]) ([**@burgholzer**])
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
 
 ## [3.7.0] - 2026-07-09
@@ -627,13 +676,14 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
 
 ## [2.7.0] - 2024-10-08
 
-_📚 Refer to the [GitHub Release
-Notes](https://github.com/munich-quantum-toolkit/core/releases) for previous
-changelogs._
+_📚 Refer to the
+[GitHub Release Notes](https://github.com/munich-quantum-toolkit/core/releases)
+for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.7.0
 [3.6.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.1
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
@@ -655,17 +705,37 @@ changelogs._
 
 <!-- PR links -->
 
+[#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
+[#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
+[#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
+[#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
+[#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979
+[#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
+[#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
+[#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
+[#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
+[#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
+[#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
+[#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
+[#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
+[#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
+[#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1951]: https://github.com/munich-quantum-toolkit/core/pull/1951
+[#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935
 [#1934]: https://github.com/munich-quantum-toolkit/core/pull/1934
 [#1933]: https://github.com/munich-quantum-toolkit/core/pull/1933
+[#1927]: https://github.com/munich-quantum-toolkit/core/pull/1927
 [#1925]: https://github.com/munich-quantum-toolkit/core/pull/1925
 [#1924]: https://github.com/munich-quantum-toolkit/core/pull/1924
+[#1923]: https://github.com/munich-quantum-toolkit/core/pull/1923
 [#1915]: https://github.com/munich-quantum-toolkit/core/pull/1915
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
+[#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
+[#1910]: https://github.com/munich-quantum-toolkit/core/pull/1910
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
@@ -676,6 +746,7 @@ changelogs._
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
 [#1870]: https://github.com/munich-quantum-toolkit/core/pull/1870
 [#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
+[#1865]: https://github.com/munich-quantum-toolkit/core/pull/1865
 [#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
@@ -699,6 +770,7 @@ changelogs._
 [#1805]: https://github.com/munich-quantum-toolkit/core/pull/1805
 [#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
 [#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
+[#1799]: https://github.com/munich-quantum-toolkit/core/pull/1799
 [#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
 [#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
 [#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782

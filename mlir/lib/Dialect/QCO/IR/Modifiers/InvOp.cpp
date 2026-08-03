@@ -75,15 +75,17 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
           return utils::getValueFromBlockArgument(t, outerQubits);
         });
 
-    auto newCtrl = CtrlOp::create(
-        rewriter, op.getLoc(), controls, targets,
-        [&](ValueRange targetArgs) -> SmallVector<Value> {
-          auto innerInv = InvOp::create(rewriter, op.getLoc(), targetArgs);
-          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
-                                      innerInv.getRegion(),
-                                      innerInv.getRegion().end());
-          return innerInv.getResults();
-        });
+    auto newCtrl =
+        CtrlOp::create(rewriter, op.getLoc(), controls, targets,
+                       [&](ValueRange targetArgs) -> SmallVector<Value> {
+                         auto innerInv = InvOp::create(
+                             rewriter, op.getLoc(), targetArgs,
+                             [&](ValueRange invArgs) -> SmallVector<Value> {
+                               return utils::inlineBodyReturningYields(
+                                   *innerCtrlOp.getBody(), invArgs, rewriter);
+                             });
+                         return innerInv.getResults();
+                       });
 
     // Each qubit output of the inverse modifier follows its input qubit to the
     // corresponding output of the new control modifier.

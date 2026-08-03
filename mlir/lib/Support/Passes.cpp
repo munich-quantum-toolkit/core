@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
@@ -49,12 +50,21 @@ void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerFuseTwoQubitUnitaryRuns();
     qco::registerHadamardLifting();
+    qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
+    qco::registerReplaceClassicalControls();
+    qco::registerReuseQubits();
+    mqt::registerNormalizeGlobalPhases();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
+    PassPipelineRegistration<>(
+        "mqt-qubit-reuse",
+        "Prepare a QCO program for qubit reuse and reuse eligible qubits.",
+        populateQubitReusePipeline);
     return true;
   }();
   static_cast<void>(REGISTERED);
@@ -62,6 +72,12 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+void populateQubitReusePipeline(OpPassManager& pm) {
+  pm.addPass(qco::createMeasurementLifting());
+  pm.addPass(qco::createReplaceClassicalControls());
+  pm.addPass(qco::createReuseQubits());
 }
 
 bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
@@ -95,13 +111,17 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 }
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
@@ -136,7 +156,7 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
       "Failed to run the QIR cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateJeffCleanupPipeline,
+[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp moduleOp) {
+  return runWithPassManager(moduleOp, populateJeffCleanupPipeline,
                             "Failed to run the jeff cleanup pipeline.");
 }

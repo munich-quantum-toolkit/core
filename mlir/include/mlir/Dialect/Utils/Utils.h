@@ -11,6 +11,7 @@
 #pragma once
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -18,6 +19,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -30,6 +32,10 @@
 #include <variant>
 
 namespace mlir::utils {
+
+/// Attribute used to retain a source-level classical-register name.
+inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
+    "mqt.classical_register_name";
 
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
@@ -59,6 +65,17 @@ namespace mlir::utils {
 /// phase-zero checks).
 constexpr auto TOLERANCE = 1e-15;
 
+/// Largest supported magnitude of a global-phase angle in radians.
+///
+/// Keeping phase angles in this generous practical range makes binary64 angle
+/// reduction accurate enough for exact-unitary compiler rewrites.
+constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
+
+/// Check the compiler-wide global-phase angle contract.
+[[nodiscard]] inline bool isValidGlobalPhaseAngle(const double theta) {
+  return std::isfinite(theta) && std::abs(theta) <= MAX_GLOBAL_PHASE_ANGLE;
+}
+
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
   return arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(v));
 }
@@ -80,12 +97,29 @@ inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
  * @return Value The parameter as a Value.
  */
 template <typename T>
-[[nodiscard]] Value variantToValue(OpBuilder& builder, Location loc,
-                                   const std::variant<T, Value>& parameter) {
-  if (std::holds_alternative<Value>(parameter)) {
-    return std::get<Value>(parameter);
+[[nodiscard]] inline Value
+variantToValue(OpBuilder& builder, Location loc,
+               const std::variant<T, Value>& parameter) {
+  if (const auto* value = std::get_if<Value>(&parameter)) {
+    return *value;
   }
   return constantFromScalar(builder, loc, std::get<T>(parameter));
+}
+
+inline void validateMemRefIndex(Value memref,
+                                const std::variant<int64_t, Value>& index) {
+  const auto* constant = std::get_if<int64_t>(&index);
+  if (constant == nullptr) {
+    return;
+  }
+  if (*constant < 0) {
+    llvm::reportFatalUsageError("Register index must be non-negative");
+  }
+  const auto type = dyn_cast<MemRefType>(memref.getType());
+  if (type && type.getRank() == 1 && !type.isDynamicDim(0) &&
+      *constant >= type.getDimSize(0)) {
+    llvm::reportFatalUsageError("Register index is out of bounds");
+  }
 }
 
 /**

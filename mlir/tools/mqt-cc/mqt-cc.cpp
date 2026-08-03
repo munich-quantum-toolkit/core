@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
 
@@ -37,6 +38,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/AsmState.h>
@@ -52,6 +54,7 @@
 #include <mlir/Target/LLVMIR/Export.h>
 
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -81,6 +84,13 @@ static llvm::cl::opt<std::string> outputFormat(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
         "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
+
+static llvm::cl::opt<std::string> nativeGates(
+    "native-gates",
+    llvm::cl::desc(
+        "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
+        "pass"),
+    llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
@@ -321,7 +331,7 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   return success();
 }
 
-int main(int argc, char** argv) {
+static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   registerMQTCompilerPasses();
@@ -347,10 +357,11 @@ int main(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
-                  qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  scf::SCFDialect, jeff::JeffDialect>();
+  registry
+      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              LLVM::LLVMDialect, math::MathDialect, memref::MemRefDialect,
+              qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+              scf::SCFDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 
@@ -383,6 +394,19 @@ int main(int argc, char** argv) {
       (*parsedOutputFormat == OutputFormat::QCImport ||
        *parsedOutputFormat == OutputFormat::QCO)) {
     llvm::errs() << "--pass-pipeline requires an output that passes through "
+                    "QCO optimization.\n";
+    return 1;
+  }
+  const llvm::StringRef nativeGateMenu =
+      llvm::StringRef(nativeGates.getValue()).trim();
+  if (nativeGates.getNumOccurrences() > 0 && nativeGateMenu.empty()) {
+    llvm::errs() << "--native-gates must not be empty.\n";
+    return 1;
+  }
+  if (nativeGates.getNumOccurrences() > 0 &&
+      (*parsedOutputFormat == OutputFormat::QCImport ||
+       *parsedOutputFormat == OutputFormat::QCO)) {
+    llvm::errs() << "--native-gates requires an output that passes through "
                     "QCO optimization.\n";
     return 1;
   }
@@ -435,6 +459,12 @@ int main(int argc, char** argv) {
             populateDefaultQCOOptimizationPipeline(pm);
           }
           populateQCOCleanupPipeline(pm);
+          if (!nativeGateMenu.empty()) {
+            pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
+                qco::FuseTwoQubitUnitaryRunsOptions{
+                    .nativeGates = nativeGateMenu.str(),
+                }));
+          }
           return success();
         }))) {
       return 1;
@@ -502,4 +532,15 @@ int main(int argc, char** argv) {
   }
 
   return 0;
+}
+
+int main(int argc, char** argv) {
+  try {
+    return runCompiler(argc, argv);
+  } catch (const std::exception& error) {
+    llvm::errs() << "mqt-cc failed: " << error.what() << "\n";
+  } catch (...) {
+    llvm::errs() << "mqt-cc failed with an unknown exception\n";
+  }
+  return 1;
 }

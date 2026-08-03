@@ -10,11 +10,14 @@
 
 #pragma once
 
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -25,34 +28,49 @@
 
 namespace mlir {
 
-/** @brief Qubit allocation mode */
+/// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
   Unset,  //!< No allocation mode has been established yet.
   Static, //!< The module uses static qubit allocation.
   Dynamic //!< The module uses dynamic qubit allocation.
 };
 
-/**
- * @brief State object for tracking lowering information during QIR conversion
- */
+/// Returns whether @p type represents a classical result register.
+[[nodiscard]] inline bool isClassicalBitRegister(const Type type) {
+  const auto memrefType = dyn_cast<MemRefType>(type);
+  return memrefType && memrefType.getRank() == 1 &&
+         memrefType.getElementType().isInteger(1);
+}
+
+/// State object for tracking lowering information during QIR conversion
 struct LoweringState {
+  /// Result-array pointers to be deallocated at the end of the program
+  DenseSet<Value> resultArrays;
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
-  /// Cache MemRef sizes for reuse
-  DenseMap<Value, Value> memrefSizes;
+  /// Cache qubit register sizes for reuse
+  DenseMap<Value, Value> qregSizes;
 
-  /// Map from register name to result-array pointer
-  llvm::StringMap<Value> resultArrays;
+  /// Classical registers owned by the lowering state.
+  SmallVector<qir::ClassicalRegister> cregs;
 
-  /// Map from (register name, index) to loaded result
-  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
+  /// Map from `memref::AllocOp` to its index in `cregs`.
+  DenseMap<Operation*, size_t> cregIndices;
 
-  // Map from register name to its offset
-  DenseMap<StringRef, int64_t> registerOffsets;
+  /// Returned classical-register indices in function-result order.
+  SmallVector<size_t> returnedCregs;
 
-  /// Map from index to result pointer for non-register results
-  DenseMap<int64_t, Value> resultPtrs;
+  /// Destination register index and bit index of each stored measurement.
+  DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
+
+  /// Map from index to `StaticResult`
+  DenseMap<int64_t, qir::StaticResult> staticResults;
+
+  /// Metadata for returned static measurement results. Each entry is a defining
+  /// `qc::MeasureOp`
+  DenseSet<Operation*> returnedStaticResults;
 
   /// Modifier information
   size_t inCtrlOp = 0;
@@ -66,15 +84,6 @@ struct LoweringState {
   Block* entryBlock{};
   Block* measurementsBlock{};
   Block* outputBlock{};
-
-  /// Set of MeasureOps whose results should be recorded in the output.
-  DenseSet<Operation*> returnedMeasurements;
-
-  /// Set of array register names that should be recorded in the output.
-  DenseSet<StringRef> recordedArrays;
-
-  /// Set of unnamed result indices that should be recorded in the output.
-  DenseSet<int64_t> recordedIndices;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -166,9 +175,9 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  *
  * @details
  * Walks all `func::ReturnOp` operations in the module to identify operands
- * that are directly defined by a `qc::MeasureOp`. For each such operand:
- * - The defining `MeasureOp` is added to `state.returnedMeasurements` so that
- *   it will be included in the QIR output recording.
+ * that correspond to measurement results. For each such operand:
+ * - The defining operations are added to the `state` so that they are included
+ * in the output recording.
  * - The operand is removed from the return statement.
  *
  * Non-measurement return values are preserved. After stripping, the enclosing
@@ -181,8 +190,16 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  * unaffected.
  *
  * @param moduleOp The top-level module operation to walk
- * @param state The lowering state; `returnedMeasurements` is populated
+ * @param state The lowering state; `returnedStaticResults` is populated
  */
-void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state);
+[[nodiscard]] LogicalResult stripReturnedMeasurements(Operation* moduleOp,
+                                                      LoweringState& state);
+
+/**
+ * @brief Returns a result pointer for a measurement that does not write into a
+ * returned classical bit register
+ */
+Value getResultPtr(LoweringState& state, Operation* op,
+                   ConversionPatternRewriter& rewriter);
 
 } // namespace mlir

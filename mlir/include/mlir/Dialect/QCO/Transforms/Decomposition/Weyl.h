@@ -345,11 +345,17 @@ decomposeTwoQubitWithBasis(
 
 struct NativeGateset;
 
+/** @brief Result of two-qubit synthesis, including its accumulated phase. */
+struct SynthesizedUnitary2Q {
+  Value qubit0;
+  Value qubit1;
+  double globalPhase = 0.0;
+};
+
 /** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
-[[nodiscard]] LogicalResult
+[[nodiscard]] FailureOr<SynthesizedUnitary2Q>
 synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
                         Value qubit1, const Matrix4x4& target,
-                        const NativeGateset& spec, Value& outQubit0,
-                        Value& outQubit1);
+                        const NativeGateset& spec);
 
 } // namespace mlir::qco::decomposition

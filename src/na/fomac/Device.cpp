@@ -12,7 +12,7 @@
 
 #include "fomac/FoMaC.hpp"
 #include "ir/Definitions.hpp"
-#include "qdmi/devices/na/Generator.hpp"
+#include "qdmi/devices/na/Configuration.hpp"
 
 #include <spdlog/spdlog.h>
 

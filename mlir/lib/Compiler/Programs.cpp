@@ -24,6 +24,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Support/Passes.h"
 
 #include <capnp/common.h>
@@ -268,6 +269,10 @@ bool QCProgram::cleanup() {
                              "failed to run the QC cleanup pipeline"));
 }
 
+bool QCProgram::normalizeGlobalPhases() {
+  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+}
+
 std::optional<QCOProgram> QCProgram::intoQCO() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
@@ -322,6 +327,10 @@ bool QCOProgram::cleanup() {
                              "failed to run the QCO cleanup pipeline"));
 }
 
+bool QCOProgram::normalizeGlobalPhases() {
+  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+}
+
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,
                                  const bool enableTiming,
                                  const bool enableStatistics) {
@@ -349,6 +358,21 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
       "failed to fuse single-qubit unitary runs"));
 }
 
+bool QCOProgram::fuseTwoQubitUnitaryRuns(const std::string_view nativeGates) {
+  if (StringRef(nativeGates).trim().empty()) {
+    mod().emitError("the native gate menu must not be empty");
+    return false;
+  }
+  qco::FuseTwoQubitUnitaryRunsOptions options;
+  options.nativeGates = nativeGates;
+  return succeeded(runPasses(
+      mod(),
+      [&options](OpPassManager& pm) {
+        pm.addPass(qco::createFuseTwoQubitUnitaryRuns(options));
+      },
+      "failed to fuse two-qubit unitary runs"));
+}
+
 bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
@@ -365,6 +389,18 @@ bool QCOProgram::liftHadamards() {
       mod(),
       [](OpPassManager& pm) { pm.addPass(qco::createHadamardLifting()); },
       "failed to lift Hadamard gates"));
+}
+
+bool QCOProgram::reuseQubits() {
+  return succeeded(runPasses(
+      mod(), [](OpPassManager& pm) { pm.addPass(qco::createReuseQubits()); },
+      "failed to reuse qubits"));
+}
+
+bool QCOProgram::runQubitReusePipeline() {
+  return succeeded(runPasses(
+      mod(), [](OpPassManager& pm) { populateQubitReusePipeline(pm); },
+      "failed to run the qubit reuse pipeline"));
 }
 
 bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {

@@ -95,9 +95,6 @@ def _run_tests(
     )
     if extra_command:
         session.run(*extra_command, env=env)
-    if "--cov" in session.posargs:
-        # try to use the lighter-weight `sys.monitoring` coverage core
-        env["COVERAGE_CORE"] = "sysmon"
     session.run(
         "uv",
         "run",
@@ -155,9 +152,14 @@ def docs(session: nox.Session) -> None:
 
     env = {
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Favor fast compilation for this short-lived documentation build.
+        "SKBUILD_CMAKE_BUILD_TYPE": "Debug",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
-        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_DOCUMENTATION=ON",
+        # Header-set verification and IPO remain enabled by default elsewhere.
+        "SKBUILD_CMAKE_ARGS": (
+            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;-DENABLE_IPO=OFF"
+        ),
     }
     # install build and docs dependencies on top of the existing environment
     session.run(

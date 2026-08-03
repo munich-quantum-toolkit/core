@@ -25,11 +25,14 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/PatternMatch.h>
@@ -76,7 +79,8 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    scf::SCFDialect, qtensor::QTensorDialect>();
+                    memref::MemRefDialect, scf::SCFDialect,
+                    qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -129,6 +133,47 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, -1);
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto q = builder.allocQubit();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.measure(q, c, 1);
+      },
+      "Register index is out of bounds");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.qcoIf(c, -1, ValueRange{},
+                      [](ValueRange) { return SmallVector<Value>{}; });
+      },
+      "Register index must be non-negative");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto c = builder.allocClassicalBitRegister(1);
+        builder.scfCondition(c, 1, ValueRange{});
+      },
+      "Register index is out of bounds");
+}
+
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -153,39 +198,45 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {
-  // Test If construction directly
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type(), builder.getI1Type()});
-  auto c0 = arith::ConstantIndexOp::create(builder, 0);
-  auto c1 = arith::ConstantIndexOp::create(builder, 1);
-  auto r0 = qtensor::AllocOp::create(builder, c1);
-  auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
+  auto memrefType = MemRefType::get({1}, builder.getI1Type());
+  builder.initialize({memrefType, memrefType});
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  auto one = arith::ConstantIndexOp::create(builder, 1);
+  auto r0 = qtensor::AllocOp::create(builder, one);
+  auto extractOp = qtensor::ExtractOp::create(builder, r0, zero);
   auto q1 = HOp::create(builder, extractOp.getResult());
+  auto c0 = builder.allocClassicalBitRegister(1);
+  auto c1 = builder.allocClassicalBitRegister(1);
   auto measureOp = MeasureOp::create(builder, q1);
-  auto ifOp = IfOp::create(
-      builder, measureOp.getResult(), measureOp.getQubitOut(),
-      [&](Value qubit) -> Value { return {XOp::create(builder, qubit)}; });
+  memref::StoreOp::create(builder, measureOp.getResult(), c0, ValueRange{zero});
+  auto condition = memref::LoadOp::create(builder, c0, ValueRange{zero});
+  auto ifOp = IfOp::create(builder, condition, measureOp.getQubitOut(),
+                           [&](ValueRange qubits) -> SmallVector<Value> {
+                             auto innerQubit = XOp::create(builder, qubits[0]);
+                             return SmallVector<Value>{innerQubit};
+                           });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
+  memref::StoreOp::create(builder, finalMeasureOp.getResult(), c1,
+                          ValueRange{zero});
   auto r2 = qtensor::InsertOp::create(builder, finalMeasureOp.getQubitOut(),
-                                      extractOp.getOutTensor(), c0);
+                                      extractOp.getOutTensor(), zero);
   qtensor::DeallocOp::create(builder, r2);
 
-  auto directBuilder =
-      builder.finalize({measureOp.getResult(), finalMeasureOp.getResult()});
-  ASSERT_TRUE(directBuilder);
-  EXPECT_TRUE(verify(*directBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*directBuilder).succeeded());
+  auto direct = builder.finalize({c0, c1});
+  ASSERT_TRUE(direct);
+  EXPECT_TRUE(verify(*direct).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(direct.get()).succeeded());
+  EXPECT_TRUE(verify(*direct).succeeded());
 
-  auto refBuilder =
+  auto ref =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
-  ASSERT_TRUE(refBuilder);
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
-                                                   refBuilder.get()));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(direct.get(), ref.get()));
 }
 
 TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
@@ -324,22 +375,20 @@ TEST_F(QCOTest, IfOpParser) {
         }
     })";
 
-  auto parsedSourceModule =
-      parseSourceString<ModuleOp>(mlirCode, context.get());
-  ASSERT_TRUE(parsedSourceModule);
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  auto parsed = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsed);
+  EXPECT_TRUE(verify(*parsed).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
+  EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto refBuilder = mqt::test::buildMLIRProgram(
+  auto ref = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor));
-  ASSERT_TRUE(refBuilder);
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
-                                                   refBuilder.get()));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsed.get(), ref.get()));
 }
 
 TEST_F(QCOTest, IfOpWithClassicalResultRoundTripsAndPreservesTies) {
@@ -561,11 +610,12 @@ TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> (i1, i1, i1) attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> memref<3xi1> attributes {passthrough = ["entry_point"]} {
             %c2 = arith.constant 2 : index
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index
             %c3 = arith.constant 3 : index
+            %c = memref.alloc() : memref<3xi1>
             %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
             %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
             %5 = arith.remui %arg0, %c3 : index
@@ -592,34 +642,35 @@ TEST_F(QCOTest, IndexSwitchParser) {
             }
             %out_tensor, %result = qtensor.extract %1[%c0] : tensor<3x!qco.qubit>
             %qubit_out, %result_0 = qco.measure %result : !qco.qubit
+            memref.store %result_0, %c[%c0] : memref<3xi1>
             %out_tensor_1, %result_2 = qtensor.extract %out_tensor[%c1] : tensor<3x!qco.qubit>
             %qubit_out_3, %result_4 = qco.measure %result_2 : !qco.qubit
+            memref.store %result_4, %c[%c1] : memref<3xi1>
             %out_tensor_5, %result_6 = qtensor.extract %out_tensor_1[%c2] : tensor<3x!qco.qubit>
             %2 = qtensor.insert %qubit_out into %out_tensor_5[%c0] : tensor<3x!qco.qubit>
             %3 = qtensor.insert %qubit_out_3 into %2[%c1] : tensor<3x!qco.qubit>
             %qubit_out_7, %result_8 = qco.measure %result_6 : !qco.qubit
+            memref.store %result_8, %c[%c2] : memref<3xi1>
             %4 = qtensor.insert %qubit_out_7 into %3[%c2] : tensor<3x!qco.qubit>
             qtensor.dealloc %4 : tensor<3x!qco.qubit>
-            return %result_0, %result_4, %result_8 : i1, i1, i1
+            return %c : memref<3xi1>
         }
     })";
 
-  auto parsedSourceModule =
-      parseSourceString<ModuleOp>(mlirCode, context.get());
-  ASSERT_TRUE(parsedSourceModule);
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
-  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  auto parsed = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsed);
+  EXPECT_TRUE(verify(*parsed).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
+  EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto refBuilder = mqt::test::buildMLIRProgram(
+  auto ref = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedForLoopSwitchOp));
-  ASSERT_TRUE(refBuilder);
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
-  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
-                                                   refBuilder.get()));
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsed.get(), ref.get()));
 }
 
 TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {
@@ -1044,7 +1095,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
                     MQT_NAMED_BUILDER(fourControlledRxx)},
         QCOTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
-                    MQT_NAMED_BUILDER(ctrlTwo)}));
+                    MQT_NAMED_BUILDER(ctrlTwo)},
+        QCOTestCase{"ModifierBodyReuseReordered",
+                    MQT_NAMED_BUILDER(modifierBodyReuseReordered),
+                    MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
@@ -1142,7 +1196,7 @@ TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
 }
 
 /// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
-/// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
+/// rxx(2θ). Verify cleanup and the hoisted parameter's SSA dominance.
 TEST_F(QCOTest, PowRxxFold) {
   auto program =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
@@ -1151,9 +1205,22 @@ TEST_F(QCOTest, PowRxxFold) {
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
-  int powCount = 0;
+  std::size_t powCount = 0;
+  SmallVector<RXXOp> rxxOps;
   program->walk([&](PowOp) { ++powCount; });
+  program->walk([&](RXXOp op) { rxxOps.push_back(op); });
   EXPECT_EQ(powCount, 0) << "PowOp around rxx should be folded away";
+  ASSERT_EQ(rxxOps.size(), 1);
+
+  auto rxx = rxxOps.front();
+  FloatAttr angle;
+  ASSERT_TRUE(matchPattern(rxx.getTheta(), m_Constant(&angle)));
+  EXPECT_NEAR(angle.getValueAsDouble(), 0.246, 1e-12);
+
+  auto* parameterDef = rxx.getTheta().getDefiningOp();
+  ASSERT_NE(parameterDef, nullptr);
+  const DominanceInfo dominance(program.get());
+  EXPECT_TRUE(dominance.properlyDominates(parameterDef, rxx.getOperation()));
 }
 
 /// pow(-0.5) { h } cannot fold a negative fractional exponent
@@ -1171,9 +1238,9 @@ TEST_F(QCOTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// pow(sx) inside a ctrl modifier expands into a GPhase + RX kept within the
-/// ctrl body, so the controlled global phase is preserved. Verify the CtrlOp
-/// survives and the nested PowOp is expanded into a GPhase + RX.
+/// pow(sx) inside a ctrl modifier expands into GPhase + RX. Global-phase
+/// normalization then turns the controlled GPhase into P on the control.
+/// Verify the CtrlOp survives and the relative phase remains observable.
 TEST_F(QCOTest, CtrlPowSxExpands) {
   auto program =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
@@ -1185,14 +1252,17 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
   int ctrlCount = 0;
   int powCount = 0;
   int gphaseCount = 0;
+  int pCount = 0;
   int rxCount = 0;
   program->walk([&](CtrlOp) { ++ctrlCount; });
   program->walk([&](PowOp) { ++powCount; });
   program->walk([&](GPhaseOp) { ++gphaseCount; });
+  program->walk([&](POp) { ++pCount; });
   program->walk([&](RXOp) { ++rxCount; });
   EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
   EXPECT_EQ(powCount, 0) << "PowOp inside ctrl must be expanded";
-  EXPECT_EQ(gphaseCount, 1) << "SX fold must emit a GPhase";
+  EXPECT_EQ(gphaseCount, 0) << "controlled GPhase must be extracted";
+  EXPECT_EQ(pCount, 1) << "controlled GPhase must become P on the control";
   EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
 }
 

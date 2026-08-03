@@ -147,18 +147,22 @@ decodeStandardGate(UnitaryOpInterface unitary) {
   return std::optional{std::move(decoded)};
 }
 
-/// QCO matrices are MSB-first (operand 0 = high bit); DD is LSB-first.
+/// QCO matrices are MSB-first (operand 0 = high bit).
+[[nodiscard]] static size_t qcoIndexFromDdIndex(const size_t ddIndex,
+                                                const size_t numQubits) {
+  const auto shift = static_cast<unsigned>(64 - numQubits);
+  return llvm::reverseBits(ddIndex) >> shift;
+}
+
 [[nodiscard]] static dd::CMat toCMatInDdBasis(const DynamicMatrix& qcoMatrix,
                                               size_t numQubits) {
   const auto dim = static_cast<size_t>(qcoMatrix.rows());
-  const auto shift = static_cast<unsigned>(64 - numQubits);
   dd::CMat out(dim, dd::CVec(dim));
   for (size_t row = 0; row < dim; ++row) {
     for (size_t col = 0; col < dim; ++col) {
-      const auto qcoRow = llvm::reverseBits(row) >> shift;
-      const auto qcoCol = llvm::reverseBits(col) >> shift;
       out[row][col] =
-          qcoMatrix(static_cast<int64_t>(qcoRow), static_cast<int64_t>(qcoCol));
+          qcoMatrix(static_cast<int64_t>(qcoIndexFromDdIndex(row, numQubits)),
+                    static_cast<int64_t>(qcoIndexFromDdIndex(col, numQubits)));
     }
   }
   return out;
@@ -213,6 +217,19 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     }
     state = dd.applyOperation(dd.makeTwoQubitGateDD(mat, wires[0], wires[1]),
                               state);
+    return qubits.remapUnitary(unitary);
+  }
+
+  if (wires.size() == 3) {
+    dd::ThreeQubitGateMatrix mat{};
+    for (size_t row = 0; row < mat.size(); ++row) {
+      for (size_t col = 0; col < mat[row].size(); ++col) {
+        mat[row][col] =
+            local(static_cast<int64_t>(row), static_cast<int64_t>(col));
+      }
+    }
+    state = dd.applyOperation(
+        dd.makeThreeQubitGateDD(mat, wires[0], wires[1], wires[2]), state);
     return qubits.remapUnitary(unitary);
   }
 

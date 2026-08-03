@@ -404,6 +404,49 @@ public:
                            qc::Qubit target1);
 
   /**
+   * @brief Creates the DD for a three-qubit gate
+   * @param mat Matrix representation of the gate
+   * @param target0 First target qubit
+   * @param target1 Second target qubit
+   * @param target2 Third target qubit
+   * @return DD representing the gate
+   * @throws std::runtime_error if the number of qubits is larger than the
+   * package configuration
+   */
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, qc::Qubit target0,
+                             qc::Qubit target1, qc::Qubit target2);
+
+  /**
+   * @brief Creates the DD for a three-qubit gate
+   * @param mat Matrix representation of the gate
+   * @param control Control qubit of the three-qubit gate
+   * @param target0 First target qubit
+   * @param target1 Second target qubit
+   * @param target2 Third target qubit
+   * @return DD representing the gate
+   * @throws std::runtime_error if the number of qubits is larger than the
+   * package configuration
+   */
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                             const qc::Control& control, qc::Qubit target0,
+                             qc::Qubit target1, qc::Qubit target2);
+
+  /**
+   * @brief Creates the DD for a three-qubit gate
+   * @param mat Matrix representation of the gate
+   * @param controls Control qubits of the three-qubit gate
+   * @param target0 First target qubit
+   * @param target1 Second target qubit
+   * @param target2 Third target qubit
+   * @return DD representing the gate
+   * @throws std::runtime_error if the number of qubits is larger than the
+   * package configuration
+   */
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                             const qc::Controls& controls, qc::Qubit target0,
+                             qc::Qubit target1, qc::Qubit target2);
+
+  /**
    * @brief Converts a given matrix to a decision diagram
    * @param matrix A complex matrix to convert to a DD.
    * @return A decision diagram representing the matrix.
@@ -1634,7 +1677,7 @@ public:
   template <class Node, class Edge = Edge<Node>,
             std::size_t N = std::tuple_size_v<decltype(Node::e)>>
   Edge deserialize(std::istream& is, const bool readBinary = false) {
-    auto result = CachedEdge<Node>{};
+    auto result = CachedEdge<Node>::one();
     ComplexValue rootweight{};
 
     std::unordered_map<std::int64_t, Node*> nodes{};

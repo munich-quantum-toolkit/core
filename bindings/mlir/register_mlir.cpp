@@ -332,6 +332,9 @@ before conversion to QCO.)pb");
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
            "Run the standard QC cleanup pipeline in place.")
+      .def("normalize_global_phases",
+           &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
+           "Normalize scoped global phases in place.")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -372,6 +375,10 @@ operations.)pb");
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
            "Run the standard QCO cleanup pipeline in place.")
+      .def(
+          "normalize_global_phases",
+          &BooleanMemberAdapter<&mlir::QCOProgram::normalizeGlobalPhases>::call,
+          "Normalize scoped global phases in place.")
       .def("run_pass_pipeline",
            &BooleanMemberAdapter<&mlir::QCOProgram::runPassPipeline>::call,
            "pipeline"_a, nb::kw_only(), "enable_timing"_a = false,
@@ -387,6 +394,12 @@ operations.)pb");
               &mlir::QCOProgram::fuseSingleQubitUnitaryRuns>::call,
           nb::kw_only(), "basis"_a = "zyz",
           "Fuse single-qubit unitary runs into the chosen decomposition basis.")
+      .def("fuse_two_qubit_unitary_runs",
+           &BooleanMemberAdapter<
+               &mlir::QCOProgram::fuseTwoQubitUnitaryRuns>::call,
+           nb::kw_only(), "native_gates"_a,
+           "Lower unitaries to a non-empty native gate menu via two-qubit run "
+           "fusion.")
       .def("unroll_quantum_loops",
            &BooleanMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
            nb::kw_only(), "unroll_factor"_a = -1,
@@ -394,6 +407,13 @@ operations.)pb");
       .def("lift_hadamards",
            &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
            "Move Hadamard gates through compatible operations.")
+      .def("reuse_qubits",
+           &BooleanMemberAdapter<&mlir::QCOProgram::reuseQubits>::call,
+           "Reuse independent single-qubit allocations.")
+      .def(
+          "run_qubit_reuse_pipeline",
+          &BooleanMemberAdapter<&mlir::QCOProgram::runQubitReusePipeline>::call,
+          "Prepare the program for qubit reuse and reuse eligible qubits.")
       .def("decompose_multi_controlled",
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
