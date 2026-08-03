@@ -358,7 +358,7 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
     and reuse one of them for the other. Improved results can be achieved by combining this pass with the
     `measurement-lifting` and `replace-classical-controls` passes, which can reduce the number of qubits required for a quantum program significantly.
     Only single-qubit allocations are considered for reuse, no `qtensor` allocations.
-    
+
     Use the `mqt-qubit-reuse` pipeline to run the preparation passes followed by this pass.
   }];
 }
@@ -373,7 +373,7 @@ def QuantumIPO : Pass<"quantum-ipo", "mlir::ModuleOp"> {
                            "::mlir::arith::ArithDialect",
                            "::mlir::tensor::TensorDialect",
                            "mlir::qco::QCODialect"];
-  }];
+}];
 }
 
 //===----------------------------------------------------------------------===//
