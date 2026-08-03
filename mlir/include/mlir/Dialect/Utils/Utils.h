@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
@@ -159,10 +160,19 @@ inline void validateMemRefIndex(Value memref,
   return attributeToDouble(constantOp.getValue());
 }
 
-/// Recursively constant-fold a pure SSA expression tree to an attribute.
-[[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
+/// Recursively constant-fold a pure SSA expression DAG to an attribute.
+///
+/// @p cache memoizes successfully resolved values so shared SSA operands are
+/// evaluated once (linear in the expression DAG, not exponential in reuse).
+[[nodiscard]] inline std::optional<Attribute>
+valueToConstantAttr(Value value, llvm::DenseMap<Value, Attribute>& cache) {
+  if (const auto it = cache.find(value); it != cache.end()) {
+    return it->second;
+  }
+
   Attribute attr;
   if (matchPattern(value, m_Constant(&attr))) {
+    cache[value] = attr;
     return attr;
   }
 
@@ -174,7 +184,7 @@ inline void validateMemRefIndex(Value memref,
   SmallVector<Attribute> operands;
   operands.reserve(op->getNumOperands());
   for (const Value operand : op->getOperands()) {
-    const auto folded = valueToConstantAttr(operand);
+    const auto folded = valueToConstantAttr(operand, cache);
     if (!folded) {
       return std::nullopt;
     }
@@ -187,14 +197,25 @@ inline void validateMemRefIndex(Value memref,
   }
   if (const auto resultAttr =
           llvm::dyn_cast_if_present<Attribute>(results.front())) {
+    cache[value] = resultAttr;
     return resultAttr;
   }
   // Identity-style folds may return an existing SSA value (e.g. `addf x, -0`).
   if (const auto resultValue =
           llvm::dyn_cast_if_present<Value>(results.front())) {
-    return valueToConstantAttr(resultValue);
+    const auto folded = valueToConstantAttr(resultValue, cache);
+    if (folded) {
+      cache[value] = *folded;
+    }
+    return folded;
   }
   return std::nullopt;
+}
+
+/// Recursively constant-fold a pure SSA expression DAG to an attribute.
+[[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
+  llvm::DenseMap<Value, Attribute> cache;
+  return valueToConstantAttr(value, cache);
 }
 
 /// Recursively constant-fold a pure SSA expression tree to a double.

@@ -234,3 +234,17 @@ TEST_F(UtilsTest, valueToConstantAttrIdentityFold) {
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(*stdValue, expectedValue);
 }
+
+TEST_F(UtilsTest, valueToConstantAttrSharedOperands) {
+  // Repeated doubling reuses the same SSA value as both operands. Without
+  // memoization this is exponential in `depth`; with a cache it is linear.
+  constexpr int depth = 40;
+  Value v = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
+  for (int i = 0; i < depth; ++i) {
+    v = arith::AddFOp::create(*builder, v, v);
+  }
+
+  const auto stdValue = utils::valueToConstantDouble(v);
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(1ULL << depth));
+}
