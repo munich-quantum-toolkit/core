@@ -14,6 +14,8 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/SynthesisBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -38,6 +40,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -57,6 +60,7 @@ using mlir::ModuleOp;
 using mlir::OwningOpRef;
 using mlir::Value;
 using mlir::qco::CtrlOp;
+using mlir::qco::HOp;
 using mlir::qco::QCOProgramBuilder;
 using mlir::qco::RXXOp;
 using mlir::qco::SWAPOp;
@@ -195,6 +199,26 @@ TEST(TargetSynthesisPassContract, FactoriesAreIndependentlyConstructible) {
       mlir::arith::ArithDialect::getDialectNamespace()));
 }
 
+TEST(TargetSynthesisPassContract, AdaptsEverySupportedSynthesisBasis) {
+  using mlir::qco::decomposition::EulerBasis;
+  using mlir::qco::decomposition::NativeSynthesisBasis;
+
+  constexpr std::array singleQubitBases{
+      std::pair{Target::SingleQubitBasis::U, EulerBasis::U},
+      std::pair{Target::SingleQubitBasis::ZSXX, EulerBasis::ZSXX},
+      std::pair{Target::SingleQubitBasis::R, EulerBasis::R},
+      std::pair{Target::SingleQubitBasis::XZX, EulerBasis::XZX},
+      std::pair{Target::SingleQubitBasis::XYX, EulerBasis::XYX},
+      std::pair{Target::SingleQubitBasis::ZYZ, EulerBasis::ZYZ},
+  };
+  for (const auto [targetBasis, decompositionBasis] : singleQubitBases) {
+    const auto adapted = NativeSynthesisBasis::fromCompilerTarget(
+        {.singleQubit = targetBasis, .entangler = Target::GateKind::CX});
+    EXPECT_EQ(adapted.singleQubit, decompositionBasis);
+    EXPECT_EQ(adapted.entangler, Target::GateKind::CX);
+  }
+}
+
 TEST_F(TargetSynthesisTest, PreRoutingOptimizationRequiresStrictImprovement) {
   const auto adjacentCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
@@ -221,6 +245,26 @@ TEST_F(TargetSynthesisTest, PreRoutingOptimizationRequiresStrictImprovement) {
   ASSERT_TRUE(mlir::succeeded(
       runPass(*nonImproving, mlir::qco::createOptimizeTwoQubitUnitaryRuns())));
   EXPECT_EQ(countOps<CtrlOp>(*nonImproving), 3U);
+}
+
+TEST_F(TargetSynthesisTest,
+       PreRoutingOptimizationFusesInterleavedSingleQubitGates) {
+  const auto interleaved = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    q1 = builder.x(q1);
+    q0 = builder.z(q0);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    return builder.intConstant(0);
+  };
+  auto expected = build(interleaved);
+  auto optimized = build(interleaved);
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*optimized, mlir::qco::createOptimizeTwoQubitUnitaryRuns())));
+  EXPECT_EQ(countOps<CtrlOp>(*optimized), 0U);
+  expectEquivalent(expected, optimized);
 }
 
 TEST_F(TargetSynthesisTest, PreRoutingOptimizationLeavesIndividualOpsAlone) {
@@ -276,6 +320,25 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisRemovesOrdinarySwap) {
   ASSERT_TRUE(mlir::succeeded(
       runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisLowersConstantSingleQubitGate) {
+  const auto hadamard = [](QCOProgramBuilder& builder) {
+    auto qubit = builder.staticQubit(0);
+    qubit = builder.h(qubit);
+    return builder.intConstant(0);
+  };
+  auto expected = build(hadamard);
+  auto synthesized = build(hadamard);
+  const auto target = makeUCxTarget();
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesized, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<HOp>(*synthesized), 0U);
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
   expectEquivalent(expected, synthesized);
 }
 
@@ -555,6 +618,44 @@ TEST_F(TargetSynthesisTest, ConformanceTracesStructuredControlFlow) {
   });
   const Target target{std::vector{Site{10}}, std::nullopt,
                       std::vector{Operation{"h", 1, 0}, Operation{"x", 1, 0}}};
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*module, mlir::qco::createTargetNativeSynthesis(target))));
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*module, mlir::qco::createVerifyTargetConformance(target))));
+}
+
+TEST_F(TargetSynthesisTest, ConformanceTracesWhileSwitchMeasurementAndReset) {
+  auto module = build([](QCOProgramBuilder& builder) {
+    auto qubit = builder.staticQubit(10);
+    qubit = builder
+                .scfWhile(
+                    mlir::ValueRange{qubit},
+                    [&](mlir::ValueRange arguments) {
+                      auto [measured, result] =
+                          builder.measure(arguments.front());
+                      builder.scfCondition(result, measured);
+                      return mlir::SmallVector<Value>{measured};
+                    },
+                    [&](mlir::ValueRange arguments) {
+                      return mlir::SmallVector<Value>{
+                          builder.reset(arguments.front())};
+                    })
+                .front();
+    qubit = builder.qcoIndexSwitch(
+        0, qubit, mlir::SmallVector<int64_t>{0},
+        mlir::SmallVector<mlir::function_ref<Value(Value)>>{
+            [&](Value argument) { return builder.h(argument); }},
+        [&](Value argument) { return builder.h(argument); });
+    auto [measured, result] = builder.measure(qubit);
+    static_cast<void>(result);
+    static_cast<void>(builder.h(builder.reset(measured)));
+    return builder.intConstant(0);
+  });
+  const Target target{std::vector{Site{10}}, std::nullopt,
+                      std::vector{Operation{"h", 1, 0},
+                                  Operation{"measure", 1, 0},
+                                  Operation{"reset", 1, 0}}};
 
   ASSERT_TRUE(mlir::succeeded(
       runPass(*module, mlir::qco::createTargetNativeSynthesis(target))));

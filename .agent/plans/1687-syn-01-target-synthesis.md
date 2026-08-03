@@ -62,6 +62,18 @@ arity, parameter, and site mismatches.
       interface and stub checks, focused `clang-tidy`, hooks, lint,
       stale-surface search, and diff audits on the final CT-01 base, then
       amended this evidence into the single signed commit.
+- [x] (2026-08-03 19:55Z) Published draft PR #1998, fixed its sole changed-file
+      `clang-tidy` finding, and added four focused regressions after Codecov
+      exposed untested adapter, lowering, optimization, and provenance paths.
+      The resulting 20/199 focused tests pass and the two implementation files
+      reach 91% combined local line coverage.
+- [x] (2026-08-03 20:43Z) Observed terminal all-green CI for exact published
+      head `b0a520372`, including 92.1% C++ patch coverage and strict
+      documentation, then restacked the four SYN commits onto merged MAP-01
+      commit `c9e0c0ca5`. Resolved the compiler test by retaining MAP-01's
+      undirected coupling input while removing the obsolete native-menu call,
+      retained both PR links in the changelog, and passed 20/199/215 tests plus
+      the focused high-level mapping API test.
 
 ## Milestones
 
@@ -163,10 +175,10 @@ GitHub without separate authorization.
   unitary shell with a region body. Synthesis and conformance must classify the
   shell and skip its implementation body.
 - Observation: Independent review also identified non-blocking follow-up
-  opportunities: failure-atomic preflight, sink-only source validation,
-  dedicated `index_switch`/`while` regressions, all single-qubit adapter bases,
-  and more legacy scanner regressions. These are classified as future hardening
-  rather than expanding this slice after its requested contracts pass.
+  opportunities: failure-atomic preflight, sink-only source validation, and more
+  legacy scanner regressions. Dedicated `index_switch`/`while` and single-qubit
+  adapter regressions were subsequently added because they cover valid behavior
+  that Codecov showed was otherwise untested.
 
 ## Decision Log
 
@@ -206,16 +218,17 @@ GitHub without separate authorization.
   represented by generic pass options, and separate factories make each stage
   independently testable and benchmarkable. Date/Author: 2026-08-03, GPT-5.6 via
   Codex.
-- Decision: Preserve Simon Hofmann's authorship in the final commit. Rationale:
-  the implementation materially carries forward the progressive post-routing
-  behavior and SWAP-removal coverage from his #1969 work while excluding the
-  unapproved Python and CLI designs. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+- Decision: Preserve Simon Hofmann's authorship in the implementation commit.
+  Rationale: the implementation materially carries forward the progressive
+  post-routing behavior and SWAP-removal coverage from his #1969 work while
+  excluding the unapproved Python and CLI designs. Date/Author: 2026-08-03,
+  GPT-5.6 via Codex.
 
 ## Outcomes & Retrospective
 
 The implementation now has one capability authority and three separately
-observable transform stages. On the final CT-01 base, sixteen focused tests pass
-along with all 199 decomposition and 215 compiler tests. The relevant CMake
+observable transform stages. On the merged MAP-01 base, twenty focused tests
+pass along with all 199 decomposition and 215 compiler tests. The relevant CMake
 interface-header targets, CLI build and surface checks, and full Python stub
 regeneration pass; regeneration leaves the tracked stubs unchanged. Independent
 review approved the remediated code with no remaining code blockers.
@@ -223,8 +236,10 @@ Changed-file hooks, full repository lint, stale-surface search, and
 `git diff --check` pass. Focused `clang-tidy` is clean for the new synthesis
 source, basis adapter, and both modified test sources; the Weyl source reports
 only three pre-existing warnings on unchanged header lines. The result is
-contained in one signed local commit directly on the final CT-01 squash and is
-not pushed.
+published as draft PR #1998. Its pre-MAP exact head passed every check,
+including 92.1% C++ patch coverage. The four focused commits are now restacked
+onto merged MAP-01, and replacement exact-head CI is the remaining publication
+gate.
 
 The main design lesson is that target support and resynthesis profitability must
 not share a configuration surface. The canonical U/CX optimizer is useful
@@ -272,11 +287,12 @@ uses. The optimizer compares original and canonical entangler counts. Target
 synthesis classifies actual mapped operations and rewrites only lowering needs.
 Conformance performs an independent read-only walk and exact target query.
 
-The final work updates the existing Unreleased changelog entry without inventing
-a pull-request reference or upgrade note, formats changed sources, runs focused
-and repository-required validation, obtains an independent read-only review,
-addresses findings, and creates one signed commit with `Assisted-by` and Simon
-Hofmann `Co-authored-by` trailers.
+The final work updates the existing Unreleased changelog entry without an
+upgrade note, formats changed sources, runs focused and repository-required
+validation, obtains independent read-only reviews, and publishes signed, focused
+commits. The implementation commit preserves Simon Hofmann's `Co-authored-by`
+trailer; later metadata, lint, and coverage follow-ups carry the required
+`Assisted-by` trailer.
 
 ## Concrete Steps
 
@@ -305,9 +321,9 @@ Build and run the three affected C++ suites:
       build/release/mlir/unittests/Compiler/\
       mqt-core-mlir-unittests-compiler
 
-The observed summaries are:
+The current observed summaries are:
 
-    [  PASSED  ] 16 tests.
+    [  PASSED  ] 20 tests.
     [  PASSED  ] 199 tests.
     [  PASSED  ] 215 tests.
 
@@ -344,9 +360,9 @@ Acceptance requires the following observable behavior:
   and generated pass surfaces are absent.
 - Focused tests, decomposition tests, compiler tests, changed-file checks,
   repository lint, and `git diff --check` pass.
-- The final commit is signed, carries the required `Assisted-by` and
-  `Co-authored-by: Simon Hofmann <simon.t.hofmann@tum.de>` trailers, and is not
-  pushed.
+- Every commit is signed and carries the required `Assisted-by` trailer. The
+  implementation commit additionally carries
+  `Co-authored-by: Simon Hofmann <simon.t.hofmann@tum.de>`.
 
 ## Idempotence and Recovery
 
@@ -358,16 +374,18 @@ an environment boundary.
 
 Do not reset or clean the worktree. Inspect status and remove only
 task-generated artifacts if necessary. Do not modify another task's worktree or
-shared branch metadata. External publication remains unauthorized.
+shared branch metadata. External publication requires separate authorization;
+draft PR #1998 was published only after that authorization was granted.
 
 ## Artifacts and Notes
 
 Initial development used CT-01 commit
-`b6eb95521cb76224c137496f113f38b9ce295854`. The final one-commit SYN patch is
+`b6eb95521cb76224c137496f113f38b9ce295854`. The SYN implementation patch is
 restacked directly onto the squash-merged CT-01 base
 `f775395a25fddba0a3b54996416d1311bc6ebe71`. The stable patch ID before and after
 the restack is `fb73dd9d29254dfca2edf68df7eb9bf983284cc4`, proving that no SYN
-patch content changed during the history rewrite.
+implementation content changed during the history rewrite. Changelog,
+changed-file lint, and coverage follow-ups remain separate focused commits.
 
 Relevant #1969 source commits are `3be6d8e43` for target-native naming and
 `1aa4c975b` for progressive post-routing synthesis and SWAP-removal coverage,
@@ -401,6 +419,23 @@ warnings on unchanged `Weyl.h` lines 167 and 171. Changed-file hooks, full
 repository lint, stale-surface search outside historical plans, both worktree
 and committed `git diff --check`, and the final status audit pass.
 
+The coverage follow-up added four behavioral regressions for every supported
+single-qubit basis mapping, profitable interleaved two-qubit optimization,
+constant single-qubit target lowering, and site tracing through `scf.while`,
+`qco.index_switch`, measurement, and reset. The target-synthesis and
+decomposition suites now pass 20 and 199 tests. Together, `SynthesisBasis.cpp`
+and `TargetSynthesis.cpp` reach 91% local line coverage; the remaining uncovered
+lines are defensive invalid-state paths rather than normal target-compilation
+behavior.
+
+After MAP-01 merged as `c9e0c0ca5`, the four SYN commits were rebased onto that
+commit. The integration range-diff removes only a compiler-target link already
+provided by MAP-01, retains MAP-01's canonical undirected coupling input in the
+compiler API test, and keeps both PR links in the changelog. The lint and
+coverage follow-up patches remain identical. Fresh release builds pass 20 target
+synthesis, 199 decomposition, and 215 compiler tests, including the focused
+`QCOProgramOptimizationAPIs` test.
+
 ## Interfaces and Dependencies
 
 `CompilerTarget` remains dependency-light and does not depend on transform
@@ -415,3 +450,9 @@ public, independently constructible factories are:
 
 There is no textual target-native pass, synthetic target, native-gate menu, or
 parallel capability model.
+
+Revision note (2026-08-03): Updated the completed plan after PR publication, CI
+feedback, and the MAP-01 merge. This records the focused coverage regressions,
+current test and coverage evidence, multi-commit publication state, the
+integration conflict resolutions, and the fact that Simon Hofmann's authorship
+belongs to the implementation commit rather than every follow-up.
