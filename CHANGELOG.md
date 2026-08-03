@@ -34,7 +34,7 @@ releases may include breaking changes.
   QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add profitable target-independent two-qubit unitary-window optimization,
   target-native post-routing synthesis, and exact operation/locus conformance
-  ([#1865], [#1961]) ([**@simon1hofmann**], [**@burgholzer**])
+  ([#1865], [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
@@ -709,6 +709,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
