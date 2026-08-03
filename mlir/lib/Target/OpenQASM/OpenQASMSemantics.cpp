@@ -15,6 +15,7 @@
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
@@ -51,7 +52,7 @@ constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
 constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
 constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
-constexpr size_t TYPED_STATEMENT_LIMIT = 100'000;
+constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
 
 class SemanticError final : public std::runtime_error {
 public:
@@ -797,6 +798,10 @@ private:
       const auto& expression = syntax.expressions[id];
       switch (expression.kind) {
       case Expr::Kind::Int:
+        if (!expression.wideInteger.empty()) {
+          fail(expression.location,
+               "integer literal exceeds 64-bit constant evaluation");
+        }
         if (expression.integer <=
             static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
           return {.type = ScalarType::Int,
@@ -2071,8 +2076,10 @@ private:
          .width = width,
          .isScalar = !declaration.size.has_value(),
          .location = getSourceLocation(location)});
+    // OpenQASM 2 classical bits are zero-initialized; OpenQASM 3 bits are not.
+    const bool initiallyInitialized = !isQubit && program.openQASM2;
     initializedBits.push_back(
-        std::make_shared<BitInitialization>(width, false));
+        std::make_shared<BitInitialization>(width, initiallyInitialized));
     dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
     bitGenerations.push_back(0);
     declare(location, declaration.identifier,
@@ -2112,8 +2119,11 @@ private:
       fail(location,
            "gate '" + declaration.identifier + "' is already declared");
     }
+    // OpenQASM 2 corpora commonly redefine qelib1 gates (e.g. `gate sx`).
+    // Allow those definitions to shadow the standard-library entry; OpenQASM 3
+    // keeps the stricter "no shadowing stdgates" rule.
     if (const auto* catalog = lookupGate(declaration.identifier);
-        catalog != nullptr && isGateAvailable(*catalog)) {
+        catalog != nullptr && isGateAvailable(*catalog) && !program.openQASM2) {
       fail(location,
            "gate '" + declaration.identifier + "' is already declared");
     }
@@ -2508,36 +2518,54 @@ private:
           lhsSymbol != nullptr && lhsSymbol->kind == SymbolKind::Register &&
           program.registers[lhsSymbol->id].kind == RegisterKind::Bit &&
           isConstantExpression(*condition.rhs)) {
-        const auto expected = evaluateConstant(*condition.rhs);
-        if (!isInteger(expected.type) ||
-            (expected.type == ScalarType::Int &&
-             std::get<int64_t>(expected.value) < 0)) {
-          fail(condition.location,
-               "OpenQASM 2 register conditions require an unsigned integer");
-        }
-        const auto expectedValue =
-            expected.type == ScalarType::Uint
-                ? std::get<uint64_t>(expected.value)
-                : static_cast<uint64_t>(std::get<int64_t>(expected.value));
+        const auto& rhsSyntax = syntax.expressions[*condition.rhs];
         auto bits = resolveBits({.location = lhsSyntax.location,
                                  .identifier = lhsSyntax.identifier});
-        for (const auto& bit : bits) {
-          ensureBitInitialized(bit, condition.location);
+        // OpenQASM 2 classical bits default to 0, so partially written
+        // registers are valid in `if (c == k)` (e.g. mid-circuit feedback).
+        llvm::APInt expectedBits;
+        if (rhsSyntax.kind == Expr::Kind::Int &&
+            !rhsSyntax.wideInteger.empty()) {
+          const auto width = static_cast<unsigned>(
+              std::max<size_t>(bits.size(), rhsSyntax.wideInteger.size() * 4));
+          expectedBits =
+              llvm::APInt(width, rhsSyntax.wideInteger, /*radix=*/10);
+        } else {
+          const auto expected = evaluateConstant(*condition.rhs);
+          if (!isInteger(expected.type) ||
+              (expected.type == ScalarType::Int &&
+               std::get<int64_t>(expected.value) < 0)) {
+            fail(condition.location,
+                 "OpenQASM 2 register conditions require an unsigned integer");
+          }
+          const auto expectedValue =
+              expected.type == ScalarType::Uint
+                  ? std::get<uint64_t>(expected.value)
+                  : static_cast<uint64_t>(std::get<int64_t>(expected.value));
+          expectedBits = llvm::APInt(/*numBits=*/64, expectedValue);
         }
-        const bool fits =
-            bits.size() >= 64 || (expectedValue >> bits.size()) == 0;
+        if (expectedBits.getActiveBits() > bits.size()) {
+          // Value cannot equal the register contents.
+          return addCondition(
+              {.kind = ConditionKind::Literal,
+               .location = getSourceLocation(condition.location),
+               .literal = false});
+        }
+        if (expectedBits.getBitWidth() < bits.size()) {
+          expectedBits = expectedBits.zext(static_cast<unsigned>(bits.size()));
+        } else if (expectedBits.getBitWidth() > bits.size()) {
+          expectedBits = expectedBits.trunc(static_cast<unsigned>(bits.size()));
+        }
         auto result =
             addCondition({.kind = ConditionKind::Literal,
                           .location = getSourceLocation(condition.location),
-                          .literal = fits});
+                          .literal = true});
         for (const auto [index, bit] : llvm::enumerate(bits)) {
           auto bitCondition =
               addCondition({.kind = ConditionKind::Bit,
                             .location = getSourceLocation(condition.location),
                             .bit = bit});
-          const bool expectedBit =
-              index < 64 && ((expectedValue >> index) & 1U) != 0;
-          if (!expectedBit) {
+          if (!expectedBits[index]) {
             bitCondition =
                 addCondition({.kind = ConditionKind::Not,
                               .location = getSourceLocation(condition.location),
@@ -2660,6 +2688,11 @@ private:
       }
     }
     if (standard != nullptr && !isGateAvailable(*standard)) {
+      standard = nullptr;
+    }
+    // A user-defined gate shadows the standard-library entry with the same
+    // name (needed for OpenQASM 2 qelib1 redefinitions).
+    if (custom != customGates.end()) {
       standard = nullptr;
     }
     if (standard == nullptr && custom == customGates.end()) {

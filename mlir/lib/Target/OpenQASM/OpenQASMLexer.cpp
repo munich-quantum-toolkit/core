@@ -325,9 +325,16 @@ Token Lexer::lexNumber(const char* start) {
     }
   } else {
     token.kind = TokenKind::IntegerLiteral;
-    if (invalidSeparators ||
-        StringRef(normalized).getAsInteger(10, token.intValue)) {
+    if (invalidSeparators) {
       token.kind = TokenKind::Error;
+    } else if (StringRef(normalized).getAsInteger(10, token.intValue)) {
+      if (StringRef(normalized) != text) {
+        token.kind = TokenKind::Error;
+      } else {
+        token.wideInteger = true;
+        token.stringValue = text;
+        token.intValue = 0;
+      }
     }
   }
   return token;

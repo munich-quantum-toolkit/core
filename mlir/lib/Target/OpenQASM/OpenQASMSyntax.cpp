@@ -100,6 +100,7 @@ SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
                           .floatingPoint = current->floatValue,
                           .boolean = current->boolValue,
                           .identifier = current->identifier,
+                          .wideInteger = current->wideInteger,
                           .hardwareQubit = current->hardwareQubit};
     if (current->lhs != nullptr) {
       copy.lhs = copies.lookup(current->lhs);

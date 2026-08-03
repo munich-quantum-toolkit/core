@@ -312,9 +312,9 @@ TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
       llvm::MemoryBuffer::getMemBufferCopy(
           "OPENQASM 3.1; include \"level-0.inc\";", "main.qasm"),
       llvm::SMLoc());
-  for (size_t index = 0; index < 18; ++index) {
+  for (size_t index = 0; index < 21; ++index) {
     std::string source;
-    if (index == 17) {
+    if (index == 20) {
       source = "int leaf = 1;";
     } else {
       const auto next = "level-" + std::to_string(index + 1) + ".inc";
@@ -517,8 +517,6 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
        .source = "OPENQASM 3.1; include \"missing.inc\";"},
       {.name = "invalid-hardware-qubit",
        .source = "OPENQASM 3.1; qubit q; x $;"},
-      {.name = "integer-overflow",
-       .source = "OPENQASM 3.1; int value = 999999999999999999999999999999;"},
       {.name = "float-overflow",
        .source = "OPENQASM 3.1; float value = 1e99999;"},
       {.name = "unsupported-angle", .source = "OPENQASM 3.1; angle theta;"},

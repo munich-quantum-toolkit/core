@@ -38,6 +38,7 @@ struct SyntaxExpression {
   double floatingPoint = 0.0;
   bool boolean = false;
   StringRef identifier;
+  StringRef wideInteger;
   std::optional<uint64_t> hardwareQubit;
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;

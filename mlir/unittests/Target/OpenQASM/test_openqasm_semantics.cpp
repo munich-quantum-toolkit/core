@@ -1236,4 +1236,68 @@ TEST(OpenQASMFrontendTest, AcceptsMixedPhysicalAndDeclaredQubits) {
   }
 }
 
+TEST(OpenQASMFrontendTest, AllowsOpenQASM2StdlibGateShadowing) {
+  // OpenQASM 2.0 commonly redefines qelib1 gates (e.g. sx) in the program body.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+gate sx a { U(pi/2, -pi/2, pi/2) a; }
+sx q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, RejectsOpenQASM3StdlibGateShadowing) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+gate sx a { U(pi/2, -pi/2, pi/2) a; }
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("already declared"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, AcceptsOpenQASM2PartialClassicalRegisterIf) {
+  // Classic OpenQASM 2.0: if (c == k) after measuring only some bits of c.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+measure q[0] -> c[0];
+if(c==1) x q[1];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralInOpenQASM2If) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==123456789012345678901234567890) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, RejectsWideIntegerLiteralInOrdinaryConstants) {
+  auto analyzed = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; int value = 999999999999999999999999999999;");
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("exceeds 64-bit"),
+            std::string::npos);
+}
+
 } // namespace
