@@ -264,7 +264,7 @@ class QDMIBackend(BackendV2):
 
         Subclasses may override this to customize how an individual device
         operation is represented in the Target, e.g. substituting fictional
-        qubit-qubit loci for an operation that natively acts on non-qubit
+        pairs of qubit sites for an operation that natively acts on non-qubit
         sites (such as a qubit-resonator gate).
 
         Args:

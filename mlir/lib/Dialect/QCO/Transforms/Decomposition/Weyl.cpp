@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
@@ -21,7 +21,6 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
@@ -72,6 +71,67 @@ struct ChamberState {
 
 static constexpr double PI = std::numbers::pi;
 static constexpr double PI_OVER_4 = PI / 4.0;
+static constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
+                            0.0, 1.0, 0.0, 0.0,  // row 1
+                            0.0, 0.0, 0.0, 1.0,  // row 2
+                            0.0, 0.0, 1.0, 0.0); // row 3
+static constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
+    Matrix4x4::fromDiagonal(1., 1., 1., -1.);
+
+static const TwoQubitBasisDecomposer&
+cachedNativeBasisDecomposer(const CompilerTarget::GateKind entangler) {
+  using GateKind = CompilerTarget::GateKind;
+  switch (entangler) {
+  case GateKind::RXX: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(
+            RXXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::RYY: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(
+            RYYOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::RZX: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(
+            RZXOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::RZZ: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(
+            RZZOp::unitaryMatrix(std::numbers::pi / 2.0), 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::ISWAP: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(iSWAPOp::getUnitaryMatrix(), 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::CZ: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::CX: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_X, 1.0);
+    return DECOMPOSER;
+  }
+  case GateKind::ECR: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(ECROp::getUnitaryMatrix(), 1.0);
+    return DECOMPOSER;
+  }
+  default:
+    llvm_unreachable(
+        "only RXX/RYY/RZX/RZZ/ISWAP/CZ/CX/ECR are valid entanglers");
+  }
+}
 
 static constexpr Matrix2x2 I_PAULI_X = Matrix2x2::fromElements(0, 1i, 1i, 0);
 static constexpr Matrix2x2 I_PAULI_Y = Matrix2x2::fromElements(0, 1, -1, 0);
@@ -597,9 +657,9 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   }
   case Specialization::ControlledEquiv: {
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        anglesFromUnitary(k2l_, EulerBasis::XYX);
+        anglesFromUnitary(k2l_, SingleQubitBasis::XYX);
     const auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
-        anglesFromUnitary(k2r_, EulerBasis::XYX);
+        anglesFromUnitary(k2r_, SingleQubitBasis::XYX);
     b_ = 0.;
     c_ = 0.;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
@@ -611,9 +671,9 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   }
   case Specialization::MirrorControlledEquiv: {
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        anglesFromUnitary(k2l_, EulerBasis::ZYZ);
+        anglesFromUnitary(k2l_, SingleQubitBasis::ZYZ);
     const auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
-        anglesFromUnitary(k2r_, EulerBasis::ZYZ);
+        anglesFromUnitary(k2r_, SingleQubitBasis::ZYZ);
     a_ = PI_OVER_4;
     b_ = PI_OVER_4;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
@@ -625,7 +685,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   }
   case Specialization::FSimaabEquiv: {
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        anglesFromUnitary(k2l_, EulerBasis::ZYZ);
+        anglesFromUnitary(k2l_, SingleQubitBasis::ZYZ);
     const auto ab = (a_ + b_) / 2.;
     a_ = ab;
     b_ = ab;
@@ -638,7 +698,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   }
   case Specialization::FSimabbEquiv: {
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        anglesFromUnitary(k2l_, EulerBasis::XYX);
+        anglesFromUnitary(k2l_, SingleQubitBasis::XYX);
     const auto bc = (b_ + c_) / 2.;
     b_ = bc;
     c_ = bc;
@@ -651,7 +711,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   }
   case Specialization::FSimabmbEquiv: {
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        anglesFromUnitary(k2l_, EulerBasis::XYX);
+        anglesFromUnitary(k2l_, SingleQubitBasis::XYX);
     const auto bc = (b_ - c_) / 2.;
     b_ = bc;
     c_ = -bc;
@@ -668,35 +728,42 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   return flippedFromOriginal;
 }
 
-FailureOr<SynthesizedUnitary2Q>
-synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
-                        Value qubit1, const Matrix4x4& target,
-                        const NativeGateset& spec) {
-  const auto native = spec.decomposeTarget(target);
-  if (!native || !spec.eulerBasis) {
-    return failure();
+TwoQubitNativeDecomposition
+decomposeUnitary2QWeyl(const Matrix4x4& target,
+                       const CompilerTarget::GateKind entangler) {
+  auto decomposition =
+      cachedNativeBasisDecomposer(entangler).decomposeTarget(target);
+  if (!decomposition) {
+    llvm::reportFatalInternalError(
+        "target-selected entangler failed to decompose a two-qubit unitary");
   }
+  return std::move(*decomposition);
+}
 
-  double globalPhase = native->globalPhase;
+SynthesizedUnitary2Q
+emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
+                  const TwoQubitNativeDecomposition& decomposition,
+                  const CompilerTarget::SynthesisBasis basis) {
+  double globalPhase = decomposition.globalPhase;
 
   Value wire0 = qubit0;
   Value wire1 = qubit1;
-  const auto& factors = native->singleQubitFactors;
-  const std::uint8_t numBasisUses = native->numBasisUses;
+  const auto& factors = decomposition.singleQubitFactors;
+  const std::uint8_t numBasisUses = decomposition.numBasisUses;
   const std::size_t requiredFactors = singleQubitFactorCount(numBasisUses);
   if (factors.size() != requiredFactors) {
     llvm::reportFatalInternalError(llvm::formatv(
-        "synthesizeUnitary2QWeyl: expected {0} single-qubit factors for "
+        "emitUnitary2QWeyl: expected {0} single-qubit factors for "
         "numBasisUses = {1}, got {2}",
         requiredFactors, numBasisUses, factors.size()));
   }
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, *spec.eulerBasis);
+        /*hasNonBasisGate=*/true, basis.singleQubit);
     if (!synthesized) {
       llvm::reportFatalInternalError(llvm::formatv(
-          "synthesizeUnitary2QWeyl: euler synthesis failed for factor index "
+          "emitUnitary2QWeyl: euler synthesis failed for factor index "
           "{0} (layer {1}, qubit {2})",
           index, index / 2, (index % 2 == 0) ? 1 : 0));
     }
@@ -704,39 +771,39 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
     globalPhase += synthesized->globalPhase;
   };
   const auto emitEntangler = [&]() {
-    if (spec.entangler == NativeGateKind::RXX) {
+    if (basis.entangler == CompilerTarget::GateKind::RXX) {
       auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
       wire0 = rxxOp.getOutputQubit(0);
       wire1 = rxxOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RYY) {
+    if (basis.entangler == CompilerTarget::GateKind::RYY) {
       auto ryyOp = RYYOp::create(builder, loc, wire0, wire1, PI / 2.0);
       wire0 = ryyOp.getOutputQubit(0);
       wire1 = ryyOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RZX) {
+    if (basis.entangler == CompilerTarget::GateKind::RZX) {
       auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
       wire0 = rzxOp.getOutputQubit(0);
       wire1 = rzxOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RZZ) {
+    if (basis.entangler == CompilerTarget::GateKind::RZZ) {
       auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, PI / 2.0);
       wire0 = rzzOp.getOutputQubit(0);
       wire1 = rzzOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::ISWAP) {
+    if (basis.entangler == CompilerTarget::GateKind::ISWAP) {
       auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
       wire0 = iswapOp.getOutputQubit(0);
       wire1 = iswapOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::CZ ||
-        spec.entangler == NativeGateKind::CX) {
-      const bool emitCz = spec.entangler == NativeGateKind::CZ;
+    if (basis.entangler == CompilerTarget::GateKind::CZ ||
+        basis.entangler == CompilerTarget::GateKind::CX) {
+      const bool emitCz = basis.entangler == CompilerTarget::GateKind::CZ;
       auto ctrlOp =
           CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
             if (emitCz) {
@@ -748,8 +815,8 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
       wire1 = ctrlOp.getOutputTarget(0);
       return;
     }
-    assert(spec.entangler == NativeGateKind::ECR &&
-           "emitEntangler: unexpected NativeGateKind");
+    assert(basis.entangler == CompilerTarget::GateKind::ECR &&
+           "emitEntangler: unexpected compiler target gate");
     auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
     wire0 = ecrOp.getOutputQubit(0);
     wire1 = ecrOp.getOutputQubit(1);

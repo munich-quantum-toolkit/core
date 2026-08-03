@@ -365,20 +365,6 @@ def test_typed_programs_normalize_global_phases() -> None:
     assert qco.ir == once
 
 
-def test_qco_program_two_qubit_fusion_requires_native_gates() -> None:
-    """Require callers to provide a non-empty native gate menu."""
-    qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
-    assert isinstance(qco, QCOProgram)
-
-    with pytest.raises(TypeError, match="incompatible function arguments"):
-        qco.fuse_two_qubit_unitary_runs()  # ty: ignore[missing-argument]
-
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
-        qco.fuse_two_qubit_unitary_runs(native_gates="")
-
-    qco.fuse_two_qubit_unitary_runs(native_gates="u,cx")
-
-
 def test_qco_program_decomposes_multi_controlled() -> None:
     """Decompose multi-controlled gates through the typed QCOProgram API."""
     qc = QuantumComputation(3)

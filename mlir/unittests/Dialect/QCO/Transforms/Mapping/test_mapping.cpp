@@ -607,7 +607,7 @@ TEST_P(MappingPassTest, MapTopologyOnlyWithEmptyOperationSet) {
   EXPECT_GT(numSwaps, 0);
 }
 
-TEST_P(MappingPassTest, PreserveNoncontiguousProviderSiteIds) {
+TEST_P(MappingPassTest, PreserveNoncontiguousTargetSiteIds) {
   std::vector<CompilerTarget::Site> sites;
   sites.emplace_back(7);
   sites.emplace_back(19);

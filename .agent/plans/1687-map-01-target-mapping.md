@@ -12,7 +12,7 @@ repository root.
 After this change, callers can run the QCO `place-and-route` pass against an
 immutable `mlir::CompilerTarget` instead of constructing a second graph wrapper
 from a dense coupling set. The mapper uses the target's validated topology for
-placement and routing, emits provider-defined site identifiers in `qco.static`
+placement and routing, emits device-defined site identifiers in `qco.static`
 operations, and continues to insert ordinary `qco.swap` operations without
 making target-native gate or direction decisions.
 
@@ -49,7 +49,7 @@ pipeline integration task.
       allocations and higher-arity unitaries before mutation, and reuses its
       records for routing and placement.
 - [x] (2026-08-03 13:09Z) Materialized only program qubits and vacant target
-      vertices used by the selected routing plan, with provider site IDs in
+      vertices used by the selected routing plan, with target site IDs in
       output.
 - [x] (2026-08-03 13:09Z) Added focused mapping, diagnostic, allocation,
       sparse-workspace, empty-operation-set, and noncontiguous-ID tests while
@@ -131,7 +131,7 @@ pipeline integration task.
 - Decision: use dense zero-based compiler vertices for `Layout`, A* search, and
   restoration, and translate through `CompilerTarget::siteForVertex` only when
   creating `qco.static`. Rationale: layout algorithms require dense indices,
-  while output IR must retain provider-defined identifiers. Date/Author:
+  while output IR must retain device-defined identifiers. Date/Author:
   2026-08-03, Codex.
 - Decision: route every one-qubit unitary directly and every two-qubit unitary
   solely according to undirected target adjacency. Do not query operation
@@ -167,7 +167,7 @@ pipeline integration task.
 
 Implementation and validation are complete. The mapper now owns a cheap
 `CompilerTarget` value, uses its dense topology throughout placement and
-routing, translates to provider site IDs only for `qco.static`, supports scalar
+routing, translates to target site IDs only for `qco.static`, supports scalar
 and mixed allocation forms, and materializes only active or preview-touched
 workspace qubits. The single discovery/planning walk makes unsupported nested
 allocations and higher-arity operations fail before mutation.
@@ -183,7 +183,7 @@ same result against the merged compiler-target foundation.
 
 `mlir::CompilerTarget`, declared in `mlir/include/mlir/Compiler/Target.h` and
 implemented in `mlir/lib/Compiler/Target.cpp`, is an immutable target model.
-Provider site identifiers can be sparse or noncontiguous, but the target stores
+Device site identifiers can be sparse or noncontiguous, but the target stores
 them in a stable site order and exposes dense compiler vertices for algorithms.
 An absent topology denotes all-to-all connectivity; an explicit topology is
 validated as a connected undirected graph and has cached distances.
@@ -268,7 +268,7 @@ comments, pass documentation, and diagnostics so they describe target topology
 and the supported one-/two-qubit boundary accurately.
 
 Refactor the mapping test fixture to hold a `CompilerTarget`. Adapt executable
-checking to translate static provider IDs back to dense vertices before testing
+checking to translate static target IDs back to dense vertices before testing
 adjacency. Preserve the existing nine-qubit grid and every current regression.
 Add focused tests that demonstrate arbitrary one- and two-qubit unitary names
 are routed without native-capability checks; nested higher-arity operations and
@@ -332,8 +332,8 @@ The implementation is accepted when the mapping test binary passes every
 pre-existing test, including index-switch vote-and-restore, and the following
 new behavior is observed.
 
-A `CompilerTarget` with noncontiguous provider IDs maps using dense internal
-vertices, while every emitted `qco.static` index is one of the provider IDs.
+A `CompilerTarget` with noncontiguous target IDs maps using dense internal
+vertices, while every emitted `qco.static` index is one of the target IDs.
 Arbitrary one- and two-qubit QCO unitaries pass through the topology-only
 mapper; two-qubit operations are adjacent after routing regardless of target
 operation metadata or operand direction. Inserted routing operations remain
@@ -389,7 +389,7 @@ The current restack evidence is:
     Patch comparison:
       final range-diff differs only in this plan; non-plan stable patch IDs match
     Current target API:
-      dense vertices plus provider site IDs, validated connected topology,
+      dense vertices plus target site IDs, validated connected topology,
       cached adjacency, neighbours, distances, and maximum degree
     Current mapper:
       CompilerTarget directly, with no coupling-set overload or adapter
@@ -460,8 +460,8 @@ declares:
 
 `MappingPass` owns a `CompilerTarget` value. It uses only `numQubits`,
 `siteForVertex`, `areAdjacent`, `distanceBetween`, `forEachNeighbour`, and
-`maxDegree` from that target. Operation-capability, native-gate, calibration,
-duration, fidelity, and directed-locus APIs are deliberately out of scope.
+`maxDegree` from that target. Operation capabilities, native gates, and
+calibration metadata are deliberately out of scope.
 
 `MLIRQCOTransforms` and `MQTCompilerPipeline` depend on `MQTCompilerTarget`. The
 mapping test target also links the target library directly when needed. No new

@@ -86,12 +86,12 @@ and `mqt.sc.iqm.emerald`.
 The snapshots were derived from authenticated IQM architecture and calibration
 data retrieved on 2 August 2026 through
 [QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM). Site names and
-topology came from each static architecture, operation loci from its default
-dynamic architecture, and available T1, T2, and per-locus fidelities from its
-default calibration-set quality metrics. Coherence times were rounded to the
-nearest nanosecond and stored as integral values using unit `us` and scale
-factor `0.001`. They are historical compiler-facing snapshots, not claims about
-current hardware calibration.
+topology came from each static architecture, operation sites from its default
+dynamic architecture, and available T1, T2, and fidelities for individual site
+tuples from its default calibration-set quality metrics. Coherence times were
+rounded to the nearest nanosecond and stored as integral values using unit `us`
+and scale factor `0.001`. They are historical compiler-facing snapshots, not
+claims about current hardware calibration.
 
 The IQM interface did not report operation durations, so the files intentionally
 omit them.
