@@ -168,13 +168,20 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let summary = "This pass ensures that a program meets the connectivity "
                 "constraints of a target architecture.";
   let description = [{
-    This pass maps the dynamically allocated qubits in a quantum program to the static qubits of a target architecture.
-    The pass performs both placement and routing of the qubits to ensure that all two-qubit operations in the program
-    can be executed on the target architecture.
+    This pass maps top-level scalar and tensor-backed dynamically allocated
+    qubits in a quantum program to the static sites of a `CompilerTarget`. It
+    uses only the target's undirected coupling topology: arbitrary one-qubit
+    operations pass through, and every two-qubit operation is routed to adjacent
+    target vertices. Higher-arity unitaries must be decomposed before mapping.
+    Provider-defined site identifiers are retained in the resulting
+    `qco.static` operations.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
-    mapping, which is referred to as the initial layout. Then, it traverses the circuit and inserts `SWAP` operations to
-    ensure that all two-qubit operations are executable on the target architecture, a process known as routing.
+    mapping, which is referred to as the initial layout. The layout covers the
+    complete target virtually, while only program qubits and vacant sites used
+    as routing workspace are materialized. Then, the pass traverses the circuit
+    and inserts `qco.swap` operations to ensure that all two-qubit operations
+    are executable on the target architecture, a process known as routing.
 
     For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
     or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
