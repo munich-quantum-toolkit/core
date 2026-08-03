@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add immutable MLIR compiler targets and a canonical target compilation
+  pipeline for decomposition, optimization, mapping, native synthesis, and
+  conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
@@ -710,10 +713,12 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999
 [#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
 [#1996]: https://github.com/munich-quantum-toolkit/core/pull/1996
 [#1994]: https://github.com/munich-quantum-toolkit/core/pull/1994
+[#1993]: https://github.com/munich-quantum-toolkit/core/pull/1993
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984

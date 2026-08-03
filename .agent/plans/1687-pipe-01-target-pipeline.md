@@ -73,8 +73,18 @@ the revision ready for publication.
       compiler interface-header set; passed 217 compiler, 27 mapping, 21 target
       synthesis, 229 decomposition, and 25 focused Python MLIR tests; passed
       changed-source clang-tidy 22.1.8, repository lint, and diff checks.
-- [ ] Run an independent exact-head `mqt-pr-review`, address every finding, and
-      prepare the revision for publication.
+- [x] (2026-08-04) Completed two independent exact-head review rounds. The first
+      had one nonblocking QIR site-ID test improvement, which was implemented;
+      the amended head `81d55fe0e4f2397f51b074a9dd93ff967c15b00f` passed the
+      second review with no findings.
+- [x] (2026-08-04) Published draft PR #1999 from the exact current `main` base
+      and added its consolidated compiler-target changelog entry together with
+      foundation PR #1993.
+- [x] (2026-08-04) Corrected the consolidated changelog attribution after the
+      publication review identified Simon Hofmann's co-authorship of foundation
+      PR #1993.
+- [ ] Confirm the final changelog-bearing head independently and monitor PR
+      #1999's exact-head CI.
 
 ## Surprises & Discoveries
 
@@ -116,6 +126,9 @@ the revision ready for publication.
   Its only nonblocking follow-up was to prove explicitly that sparse target site
   IDs survive QIR conversion. The target-aware QIR test now walks the generated
   `llvm.inttoptr` operands and checks all three site IDs.
+- Observation: the publication review found that the consolidated changelog
+  entry initially omitted Simon Hofmann despite his co-authorship of foundation
+  PR #1993. The entry now credits both contributors.
 
 ## Decision Log
 
@@ -183,8 +196,9 @@ plus direct QIR coverage and explicit rejection of Jeff because its current
 lowering cannot preserve physical site assignments. All focused C++, Python,
 header, clang-tidy, lint, and diff validation passes. The first independent
 exact-head review found no required changes, and its sole nonblocking QIR
-site-ID follow-up is addressed. Final exact-head confirmation and the
-PR-numbered changelog reference remain before publication.
+site-ID follow-up is addressed. Draft PR #1999 now carries the consolidated
+compiler-target changelog entry with the complete #1993 attribution. Final
+exact-head confirmation and CI remain.
 
 ## Context and Orientation
 
@@ -447,6 +461,10 @@ Current validation evidence:
     independent review:
       no required changes; the sole nonblocking QIR site-ID follow-up was
       implemented and revalidated
+      the publication review's missing #1993 co-author credit was corrected
+    publication:
+      draft PR #1999 created from exact head
+      81d55fe0e4f2397f51b074a9dd93ff967c15b00f
 
 ## Interfaces and Dependencies
 
@@ -493,3 +511,10 @@ and made the validation commands portable and complete.
 Revision note (2026-08-04, GPT-5.6 via Codex): recorded the first independent
 exact-head review and addressed its sole nonblocking follow-up by asserting that
 sparse physical site IDs survive target-aware QIR conversion.
+
+Revision note (2026-08-04, GPT-5.6 via Codex): recorded the no-finding amended
+head review, draft PR #1999 publication, and consolidated compiler-target
+changelog entry.
+
+Revision note (2026-08-04, GPT-5.6 via Codex): recorded and corrected the
+publication review's missing co-author attribution for foundation PR #1993.
