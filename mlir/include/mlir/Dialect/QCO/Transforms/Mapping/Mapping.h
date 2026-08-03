@@ -12,14 +12,9 @@
 
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/Support/LogicalResult.h>
-#include <mlir/IR/Region.h>
 #include <mlir/Pass/Pass.h>
 
-#include <cstddef>
 #include <memory>
-#include <utility>
 
 namespace mlir {
 
@@ -33,14 +28,6 @@ namespace qco {
  */
 std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
                                         MappingPassOptions options);
-
-/**
- * @brief Create a mapping pass instance for a legacy symmetric coupling set.
- * @returns a pass object.
- */
-std::unique_ptr<Pass>
-createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
-                  MappingPassOptions options);
 
 } // namespace qco
 } // namespace mlir

@@ -24,8 +24,9 @@ unused target sites are not all materialized as IR operations.
 
 This task is based on the merged compiler-target foundation at
 `f775395a25fddba0a3b54996416d1311bc6ebe71`. It changes the mapper and its tests
-only. The high-level `QCOProgram::placeAndRoute` coupling-set API remains in
-place for a later pipeline integration task.
+plus the compiler pipeline's sole mapping-pass call site. The high-level
+`QCOProgram::placeAndRoute` coupling-set API remains in place for a later
+pipeline integration task.
 
 ## Progress
 
@@ -68,6 +69,18 @@ place for a later pipeline integration task.
       test interfaces against the merged base; passed 27 mapping tests, all 218
       compiler tests, changed-source clang-tidy 22.1.8, targeted hooks, full
       repository lint, and `git diff --check`.
+- [x] (2026-08-03 17:51Z) Confirmed the sole unresolved review thread requested
+      deletion of the coupling-set mapping factory, removed its declaration,
+      conversion helper, and implementation, and migrated `Programs.cpp` to
+      construct and pass a `CompilerTarget` directly.
+- [x] (2026-08-03 17:57Z) Rebuilt the target, transforms, compiler pipeline, and
+      affected tests; passed 27 mapping tests, all 218 compiler tests, the
+      focused high-level mapping test, changed-file clang-tidy 22.1.8, targeted
+      hooks, full repository lint, and `git diff --check`.
+- [x] (2026-08-03 18:01Z) An independent read-only review approved the exact
+      worktree diff with no required changes or new findings.
+- [x] (2026-08-03 18:02Z) Created the focused signed review follow-up commit
+      with the required AI-assistance trailer.
 
 ## Surprises & Discoveries
 
@@ -102,6 +115,12 @@ place for a later pipeline integration task.
   version when invoked without `MLIR_DIR`. Re-running the same release
   configuration with the installed LLVM 22.1.3 MLIR package path explicit
   succeeded without a source or build-system change.
+- Observation: the coupling-set factory was used only by
+  `QCOProgram::placeAndRoute`; all mapping tests and every other pass caller
+  already used `CompilerTarget`. Moving the unavoidable coupling-to-target
+  conversion to that high-level API boundary removes 50 lines from the mapping
+  implementation and 13 lines from its public header without changing mapping
+  behavior.
 
 ## Decision Log
 
@@ -136,14 +155,13 @@ place for a later pipeline integration task.
   implementation unchanged except where the target topology abstraction or
   sparse-wire bookkeeping requires mechanical adaptation. Rationale: the #1951
   regressions are the current mapping contract. Date/Author: 2026-08-03, Codex.
-- Decision: add the target-taking factory while retaining the coupling-set
-  factory as a compatibility adapter that constructs a `CompilerTarget`.
-  Rationale: MAP-01 must expose a benchmarkable target factory, while the
-  existing high-level `QCOProgram::placeAndRoute` API remains owned by the later
-  pipeline task. This is not a new supported compatibility path: PIPE must
-  delete the coupling-set declaration, adapter, and associated includes as soon
-  as `Programs.cpp` is migrated. No MAP-01 documentation or test promotes the
-  adapter. Date/Author: 2026-08-03, Codex.
+- Decision: expose only the target-taking mapping factory. Convert the current
+  high-level `QCOProgram::placeAndRoute` coupling input directly into a
+  `CompilerTarget` inside `Programs.cpp`, where that legacy surface is already
+  isolated, and link `MQTCompilerPipeline` to `MQTCompilerTarget`. Rationale:
+  the mapping library should have one target-native contract and no forwarding
+  shim; PIPE can later remove the remaining high-level coupling API without
+  touching Mapping again. Date/Author: 2026-08-03, Codex.
 
 ## Outcomes & Retrospective
 
@@ -157,8 +175,8 @@ allocations and higher-arity operations fail before mutation.
 The existing mapping suite, including #1951 vote-and-restore behavior, passes
 with the focused new coverage. The compiler suite, changed-source clang-tidy,
 and repository lint also pass. High-level pipeline ownership remains unchanged,
-and the temporary coupling-set forwarder is explicitly left for PIPE to delete.
-The conflict-free, patch-equivalent restack and fresh validation demonstrate the
+while the mapping library now exposes only its target-native factory. The
+conflict-free, patch-equivalent restack and fresh validation demonstrate the
 same result against the merged compiler-target foundation.
 
 ## Context and Orientation
@@ -175,11 +193,10 @@ The QCO mapping pass lives in
 in `mlir/include/mlir/Dialect/QCO/Transforms/Mapping/Mapping.h`. The
 target-taking factory stores a cheap `CompilerTarget` value, runs SABRE-style
 layout refinement and A* routing against its topology, and rewrites dynamic
-qubits to `qco.static`. A temporary legacy factory converts its symmetric
-`llvm::DenseSet` input into a target only to keep `Programs.cpp` building until
-PIPE removes that seam. A `Layout` remains a complete virtual permutation, but
-the IR materializes only active program qubits and vacant indices touched by
-routing.
+qubits to `qco.static`. `QCOProgram::placeAndRoute` constructs a target at its
+existing coupling-input boundary and calls this same factory. A `Layout` remains
+a complete virtual permutation, but the IR materializes only active program
+qubits and vacant indices touched by routing.
 
 The mapper walks linear qubit SSA chains using `WireIterator`. Scalar
 `qco.alloc` produces one chain directly. A `qtensor.alloc` produces a tensor;
@@ -195,19 +212,20 @@ behavior tests. Its executable is
 The current suite covers straight-line programs, nested structured control flow,
 layout convergence, and the #1951 index-switch vote-and-restore regression.
 
-The task may modify the mapper header and implementation, their CMake link
-dependencies, the mapping unit tests, this ExecPlan, and the existing mapping
-entry in `CHANGELOG.md`. It must not remove or redesign
-`QCOProgram::placeAndRoute`; pipeline integration is owned by a later task. No
-other worktree may be modified, and no GitHub action is authorized.
+The task may modify the mapper header and implementation, the compiler
+pipeline's direct mapping caller and target link, their CMake link dependencies,
+the mapping unit tests, this ExecPlan, and the existing mapping entry in
+`CHANGELOG.md`. It must not remove or redesign `QCOProgram::placeAndRoute`;
+pipeline integration is owned by a later task. No other worktree may be
+modified, and no GitHub action is authorized.
 
 ## Plan of Work
 
-First, add a public mapping factory taking `const CompilerTarget&`. Retain the
-dense coupling-set overload as a compatibility adapter that validates its legacy
-symmetric input and constructs a target before creating the same pass. Link the
+First, add one public mapping factory taking `const CompilerTarget&`. Link the
 QCO transforms library and mapping unit test to `MQTCompilerTarget` without
-creating a dependency cycle. Retain the pass options so benchmark code can
+creating a dependency cycle. At the existing high-level coupling-input boundary
+in `Programs.cpp`, construct a validated `CompilerTarget` and call the
+target-taking factory directly. Retain the pass options so benchmark code can
 construct a pass directly for a given target.
 
 In `Mapping.cpp`, remove `AugmentedDevice` and store `CompilerTarget` directly.
@@ -374,7 +392,7 @@ The current restack evidence is:
       dense vertices plus provider site IDs, validated connected topology,
       cached adjacency, neighbours, distances, and maximum degree
     Current mapper:
-      CompilerTarget directly, with a temporary coupling-set forwarding adapter
+      CompilerTarget directly, with no coupling-set overload or adapter
 
 Fresh validation evidence after the restack:
 
@@ -400,6 +418,37 @@ Fresh validation evidence after the restack:
     whitespace:
       git diff --check passed
 
+Focused validation evidence after removing the legacy factory:
+
+    live PR head:
+      1b8c4a2abf63d72385cfb5bcc032a0c4c1c1dbbc
+    live base and refreshed origin/main:
+      f775395a25fddba0a3b54996416d1311bc6ebe71
+    focused build:
+      MQTCompilerTarget, MLIRQCOTransforms, MQTCompilerPipeline,
+      mqt-core-mlir-unittest-mapping,
+      mqt-core-mlir-unittests-compiler
+      passed
+    focused compiler API test:
+      CompilerPipelineTest.QCOProgramOptimizationAPIs passed
+    mapping tests:
+      27 tests from 1 suite passed
+    compiler tests:
+      218 tests from 8 suites passed
+    clang-tidy:
+      LLVM 22.1.8, explicit Xcode SDK/libc++ paths;
+      Programs.cpp, Mapping.cpp, Mapping.h, and
+      test_compiler_pipeline.cpp passed without diagnostics
+    targeted hooks and repository lint:
+      passed
+    source audit:
+      every createMappingPass call passes CompilerTarget and no coupling-set
+      factory declaration, definition, adapter, or helper remains
+    independent review:
+      approved with no required changes or new findings
+    whitespace:
+      git diff --check passed
+
 ## Interfaces and Dependencies
 
 At completion, `mlir/include/mlir/Dialect/QCO/Transforms/Mapping/Mapping.h`
@@ -409,25 +458,19 @@ declares:
     createMappingPass(const CompilerTarget& target,
                       MappingPassOptions options);
 
-It also temporarily retains the existing coupling-set overload solely to keep
-the current `QCOProgram::placeAndRoute` implementation building; the adapter
-creates a `CompilerTarget`, and no mapping algorithm consumes the set directly.
-PIPE must remove this declaration and implementation rather than preserve or
-document it as a supported compatibility API.
-
 `MappingPass` owns a `CompilerTarget` value. It uses only `numQubits`,
 `siteForVertex`, `areAdjacent`, `distanceBetween`, `forEachNeighbour`, and
 `maxDegree` from that target. Operation-capability, native-gate, calibration,
 duration, fidelity, and directed-locus APIs are deliberately out of scope.
 
-`MLIRQCOTransforms` depends on `MQTCompilerTarget`. The mapping test target also
-links the target library directly when needed. No new third-party dependency is
-introduced.
+`MLIRQCOTransforms` and `MQTCompilerPipeline` depend on `MQTCompilerTarget`. The
+mapping test target also links the target library directly when needed. No new
+third-party dependency is introduced.
 
 Revision note: the initial plan recorded the exact pre-squash stacked base,
 current vote-and-restore contract, approved MAP-01 scope, implementation
 strategy, and required validation before feature edits began. This revision
 records the conflict-free, patch-equivalent restack onto the merged
-compiler-target squash and the temporary compatibility forwarder that PIPE must
-delete. It also records the single discovery/planning traversal, completed
+compiler-target squash and the review-driven removal of the compatibility
+forwarder. It also records the single discovery/planning traversal, completed
 implementation, and validation evidence.

@@ -52,9 +52,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
-#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -1640,58 +1638,9 @@ private:
 
 } // namespace
 
-[[nodiscard]] static CompilerTarget
-makeCompilerTarget(const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
-  if (couplingSet.empty()) {
-    llvm::reportFatalUsageError("Expected a non-empty coupling set.");
-  }
-
-  DenseSet<size_t> uniqueSites;
-  std::vector<CompilerTarget::Coupling> couplings;
-  couplings.reserve(couplingSet.size() / 2);
-  for (const auto& [source, target] : couplingSet) {
-    if (source == target) {
-      llvm::reportFatalUsageError("Found an invalid (u, u) edge.");
-    }
-    if (!couplingSet.contains({target, source})) {
-      llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
-                                  Twine(source) + ", " + Twine(target) +
-                                  ") exists but (" + Twine(target) + ", " +
-                                  Twine(source) + ") does not.");
-    }
-    if (source > static_cast<size_t>(std::numeric_limits<int64_t>::max()) ||
-        target > static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
-      llvm::reportFatalUsageError(
-          "Coupling-set site ID exceeds the nonnegative i64 domain.");
-    }
-
-    uniqueSites.insert(source);
-    uniqueSites.insert(target);
-    if (source < target) {
-      couplings.emplace_back(static_cast<int64_t>(source),
-                             static_cast<int64_t>(target));
-    }
-  }
-
-  auto siteIds = llvm::to_vector(uniqueSites);
-  std::ranges::sort(siteIds);
-  std::vector<CompilerTarget::Site> sites;
-  sites.reserve(siteIds.size());
-  for (const auto site : siteIds) {
-    sites.emplace_back(static_cast<int64_t>(site));
-  }
-  return CompilerTarget(std::move(sites), std::move(couplings));
-}
-
 std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
                                         MappingPassOptions options) {
   return std::make_unique<MappingPass>(target, options);
-}
-
-std::unique_ptr<Pass>
-createMappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
-                  MappingPassOptions options) {
-  return createMappingPass(makeCompilerTarget(couplingSet), options);
 }
 
 } // namespace mlir::qco
