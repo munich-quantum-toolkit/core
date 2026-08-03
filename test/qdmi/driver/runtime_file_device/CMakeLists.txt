@@ -18,6 +18,17 @@ include("${MQT_CORE_QDMI_HELPER}")
 
 add_library(mqt-core-qdmi-runtime-file-device SHARED
             "${MQT_CORE_QDMI_TEST_SOURCE_DIR}/metadata_device.cpp")
+set(configurations "test.runtime-file.variant|metadata-runtime.json")
+if(MQT_CORE_QDMI_INVALID_CONFIGURATION STREQUAL "empty-id")
+  set(configurations "|metadata-runtime.json")
+elseif(MQT_CORE_QDMI_INVALID_CONFIGURATION STREQUAL "empty-file")
+  set(configurations "test.runtime-file.variant|")
+elseif(MQT_CORE_QDMI_INVALID_CONFIGURATION STREQUAL "duplicate-base-id")
+  set(configurations "test.runtime-file|metadata-runtime.json")
+elseif(MQT_CORE_QDMI_INVALID_CONFIGURATION STREQUAL "duplicate-configured-id")
+  set(configurations "test.runtime-file.variant|metadata-runtime.json"
+                     "test.runtime-file.variant|metadata-runtime.json")
+endif()
 mqt_configure_qdmi_device(
   mqt-core-qdmi-runtime-file-device
   ID
@@ -25,4 +36,6 @@ mqt_configure_qdmi_device(
   PREFIX
   TEST_RUNTIME
   RUNTIME_FILES
-  "${MQT_CORE_QDMI_TEST_SOURCE_DIR}/metadata-runtime.json")
+  "${MQT_CORE_QDMI_TEST_SOURCE_DIR}/metadata-runtime.json"
+  CONFIGURATIONS
+  ${configurations})

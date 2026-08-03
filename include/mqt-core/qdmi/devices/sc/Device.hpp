@@ -30,6 +30,7 @@ struct MQT_SC_QDMI_Device_Session_impl_d;
 struct MQT_SC_QDMI_Site_impl_d {
   MQT_SC_QDMI_Device_Session_impl_d* owner = nullptr;
   uint64_t id = 0;
+  std::optional<std::string> name;
   std::optional<uint64_t> t1;
   std::optional<uint64_t> t2;
 
