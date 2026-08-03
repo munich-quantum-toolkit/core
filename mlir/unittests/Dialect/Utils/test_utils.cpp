@@ -11,8 +11,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -48,65 +46,57 @@ protected:
     builder = std::make_unique<ImplicitLocOpBuilder>(loc, &context);
     builder->setInsertionPointToStart(module->getBody());
   }
-
-  [[nodiscard]] arith::AddFOp createAddition(const double a, const double b) {
-    auto firstOperand =
-        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(a));
-    auto secondOperand =
-        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(b));
-    return arith::AddFOp::create(*builder, firstOperand, secondOperand);
-  }
 };
 
 } // namespace
 
 TEST_F(UtilsTest, valueToDouble) {
-  constexpr double expectedValue = 1.234;
-  auto op = arith::ConstantOp::create(*builder,
-                                      builder->getF64FloatAttr(expectedValue));
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
-}
-
-TEST_F(UtilsTest, valueToDoubleCastFromInteger) {
-  constexpr int expectedValue = 42;
-  auto op = arith::ConstantOp::create(
-      *builder, builder->getI32IntegerAttr(expectedValue));
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
-}
-
-TEST_F(UtilsTest, valueToDoubleCastFromNegativeInteger) {
-  constexpr int expectedValue = -123;
-  auto op = arith::ConstantOp::create(
-      *builder, builder->getSI32IntegerAttr(expectedValue));
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
-}
-
-TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
-  constexpr auto expectedValue = std::numeric_limits<uint64_t>::max();
-  constexpr auto bitCount = 64;
-  auto op = arith::ConstantOp::create(
-      *builder,
-      builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
-                              APInt::getMaxValue(bitCount)));
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  // cast to double will lose precision, but difference to maximum value of
-  // int64_t is large enough that the check still makes sense
-  EXPECT_DOUBLE_EQ(stdValue.value(), static_cast<double>(expectedValue));
+  {
+    constexpr double expectedValue = 1.234;
+    auto op = arith::ConstantOp::create(
+        *builder, builder->getF64FloatAttr(expectedValue));
+    const auto stdValue = utils::valueToDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue, expectedValue);
+  }
+  {
+    auto op =
+        arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(42));
+    const auto stdValue = utils::valueToDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue, 42.0);
+  }
+  {
+    auto op =
+        arith::ConstantOp::create(*builder, builder->getSI32IntegerAttr(-123));
+    const auto stdValue = utils::valueToDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue, -123.0);
+  }
+  {
+    constexpr auto bitCount = 64;
+    auto op = arith::ConstantOp::create(
+        *builder,
+        builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
+                                APInt::getMaxValue(bitCount)));
+    const auto stdValue = utils::valueToDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue,
+                     static_cast<double>(std::numeric_limits<uint64_t>::max()));
+  }
+  {
+    auto op =
+        arith::ConstantOp::create(*builder, builder->getStringAttr("test"));
+    EXPECT_FALSE(utils::valueToDouble(op.getResult()).has_value());
+  }
+  {
+    auto lhs =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(9.5));
+    auto rhs =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(21.5));
+    auto op = arith::AddFOp::create(*builder, lhs, rhs);
+    EXPECT_FALSE(utils::valueToDouble(op.getResult()).has_value());
+  }
 }
 
 TEST_F(UtilsTest, attributeToDoubleI128) {
@@ -129,132 +119,87 @@ TEST_F(UtilsTest, attributeToDoubleI128) {
   EXPECT_DOUBLE_EQ(*unsignedValue, std::ldexp(1.0, 127));
 }
 
-TEST_F(UtilsTest, valueToDoubleWrongType) {
-  auto op = arith::ConstantOp::create(*builder, builder->getStringAttr("test"));
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToDouble(op.getResult());
-  EXPECT_FALSE(stdValue.has_value());
+TEST_F(UtilsTest, valueToConstantDouble) {
+  // Nested binary folds, unary fold, and int-to-float cast fold.
+  {
+    auto lhs =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
+    auto num =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
+    auto den =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.0));
+    auto quot = arith::DivFOp::create(*builder, num, den);
+    auto op = arith::SubFOp::create(*builder, lhs, quot);
+    const auto stdValue = utils::valueToConstantDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue, 4.5);
+  }
+  {
+    auto operand =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.25));
+    auto op = arith::NegFOp::create(*builder, operand);
+    const auto stdValue = utils::valueToConstantDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue, -2.25);
+  }
+  {
+    constexpr uint64_t expectedValue = 7;
+    auto intConst = arith::ConstantOp::create(
+        *builder, builder->getIntegerAttr(builder->getIntegerType(64, false),
+                                          expectedValue));
+    auto op = arith::UIToFPOp::create(*builder, builder->getF64Type(),
+                                      intConst.getResult());
+    const auto stdValue = utils::valueToConstantDouble(op.getResult());
+    ASSERT_TRUE(stdValue.has_value());
+    EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
+  }
+  // Dynamic operand cannot be folded.
+  {
+    auto func = func::FuncOp::create(
+        *builder, "dyn",
+        FunctionType::get(&context, {builder->getF64Type()},
+                          {builder->getF64Type()}));
+    auto* entry = func.addEntryBlock();
+    OpBuilder::InsertionGuard guard(*builder);
+    builder->setInsertionPointToStart(entry);
+    auto lhs =
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
+    auto op = arith::SubFOp::create(*builder, lhs, entry->getArgument(0));
+    EXPECT_FALSE(utils::valueToConstantDouble(op.getResult()).has_value());
+  }
 }
 
-TEST_F(UtilsTest, valueToDoubleNonStaticValue) {
-  auto op = createAddition(9.5, 21.5);
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToDouble(op.getResult());
-  EXPECT_FALSE(stdValue.has_value());
-}
-
-TEST_F(UtilsTest, valueToDoubleFoldedConstant) {
-  auto op = createAddition(1.5, 2.0);
-  ASSERT_TRUE(op);
-
-  SmallVector<Value> tmp;
-  SmallVector<Operation*> newConstants;
-  ASSERT_TRUE(builder->tryFold(op, tmp, &newConstants).succeeded());
-  ASSERT_EQ(newConstants.size(), 1);
-  auto cst = dyn_cast<arith::ConstantOp>(newConstants[0]);
-  ASSERT_TRUE(cst);
-  const auto stdValue = utils::valueToDouble(cst.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(stdValue.value(), 3.5);
-}
-
-TEST_F(UtilsTest, valueToConstantDoubleAddF) {
-  auto op = createAddition(1.25, 2.5);
-  ASSERT_TRUE(op);
-
-  const auto stdValue = utils::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, 3.75);
-}
-
-TEST_F(UtilsTest, valueToConstantDoubleSubF) {
-  auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
-  auto rhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.5));
-  auto op = arith::SubFOp::create(*builder, lhs, rhs);
-
-  const auto stdValue = utils::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, 3.5);
-}
-
-TEST_F(UtilsTest, valueToConstantDoubleDivF) {
-  auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
-  auto num = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
-  auto den = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.0));
-  auto quot = arith::DivFOp::create(*builder, num, den);
-  auto op = arith::SubFOp::create(*builder, lhs, quot);
-
-  const auto stdValue = utils::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, 4.5);
-}
-
-TEST_F(UtilsTest, valueToConstantDoubleDynamicOperand) {
-  auto func =
-      func::FuncOp::create(*builder, "dyn",
-                           FunctionType::get(&context, {builder->getF64Type()},
-                                             {builder->getF64Type()}));
-  auto* entry = func.addEntryBlock();
-  OpBuilder::InsertionGuard guard(*builder);
-  builder->setInsertionPointToStart(entry);
-  auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
-  auto op = arith::SubFOp::create(*builder, lhs, entry->getArgument(0));
-
-  EXPECT_FALSE(utils::valueToConstantDouble(op.getResult()).has_value());
-}
-
-TEST_F(UtilsTest, valueToConstantDoubleNegF) {
-  auto operand =
-      arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.25));
-  auto op = arith::NegFOp::create(*builder, operand);
-
-  const auto stdValue = utils::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, -2.25);
-}
-
-TEST_F(UtilsTest, valueToConstantDoubleUIToFP) {
-  constexpr uint64_t expectedValue = 7;
-  auto intConst = arith::ConstantOp::create(
-      *builder, builder->getIntegerAttr(builder->getIntegerType(64, false),
-                                        expectedValue));
-  auto op = arith::UIToFPOp::create(*builder, builder->getF64Type(),
-                                    intConst.getResult());
-
-  const auto stdValue = utils::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
-}
-
-TEST_F(UtilsTest, valueToConstantAttrFoldFailure) {
-  // Integer division by zero refuses to fold.
-  auto lhs = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(1));
-  auto rhs = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(0));
-  auto op = arith::DivSIOp::create(*builder, lhs, rhs);
-
-  EXPECT_FALSE(utils::valueToConstantAttr(op.getResult()).has_value());
-  EXPECT_FALSE(utils::valueToConstantDouble(op.getResult()).has_value());
-}
-
-TEST_F(UtilsTest, valueToConstantAttrIdentityFold) {
-  // select(true, x, y) / addf(x, -0) fold to an existing SSA value, not an
-  // Attribute.
-  constexpr double expectedValue = 3.25;
-  auto cond = arith::ConstantOp::create(*builder, builder->getBoolAttr(true));
-  auto x = arith::ConstantOp::create(*builder,
-                                     builder->getF64FloatAttr(expectedValue));
-  auto y = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(9.0));
-  auto op = arith::SelectOp::create(*builder, cond, x, y);
-
-  const auto attr = utils::valueToConstantAttr(op.getResult());
-  ASSERT_TRUE(attr.has_value());
-  EXPECT_DOUBLE_EQ(*utils::attributeToDouble(*attr), expectedValue);
-
-  const auto stdValue = utils::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, expectedValue);
+TEST_F(UtilsTest, valueToConstantAttrRejectsAndIdentity) {
+  // Pure op whose fold fails (shift >= bitwidth).
+  {
+    auto lhs =
+        arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(1));
+    auto rhs =
+        arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(32));
+    auto op = arith::ShLIOp::create(*builder, lhs, rhs);
+    EXPECT_FALSE(utils::valueToConstantAttr(op.getResult()).has_value());
+  }
+  // Multi-result fold (addui_extended) yields size != 1.
+  {
+    auto lhs =
+        arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(1));
+    auto rhs =
+        arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(2));
+    auto op = arith::AddUIExtendedOp::create(*builder, lhs, rhs);
+    EXPECT_FALSE(utils::valueToConstantAttr(op.getSum()).has_value());
+  }
+  // Identity-style fold returns an SSA value, not an Attribute.
+  {
+    constexpr double expectedValue = 3.25;
+    auto cond = arith::ConstantOp::create(*builder, builder->getBoolAttr(true));
+    auto x = arith::ConstantOp::create(*builder,
+                                       builder->getF64FloatAttr(expectedValue));
+    auto y = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(9.0));
+    auto op = arith::SelectOp::create(*builder, cond, x, y);
+    const auto attr = utils::valueToConstantAttr(op.getResult());
+    ASSERT_TRUE(attr.has_value());
+    EXPECT_DOUBLE_EQ(*utils::attributeToDouble(*attr), expectedValue);
+  }
 }
 
 TEST_F(UtilsTest, valueToConstantDoubleSharedOperands) {

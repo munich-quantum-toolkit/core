@@ -195,21 +195,20 @@ valueToConstantAttr(Value value, llvm::DenseMap<Value, Attribute>& cache) {
   if (failed(op->fold(operands, results)) || results.size() != 1) {
     return std::nullopt;
   }
+  std::optional<Attribute> folded;
   if (const auto resultAttr =
           llvm::dyn_cast_if_present<Attribute>(results.front())) {
-    cache[value] = resultAttr;
-    return resultAttr;
+    folded = resultAttr;
+  } else if (const auto resultValue =
+                 llvm::dyn_cast_if_present<Value>(results.front())) {
+    // Identity-style folds may return an existing SSA value (e.g. `addf x,
+    // -0`).
+    folded = valueToConstantAttr(resultValue, cache);
   }
-  // Identity-style folds may return an existing SSA value (e.g. `addf x, -0`).
-  if (const auto resultValue =
-          llvm::dyn_cast_if_present<Value>(results.front())) {
-    const auto folded = valueToConstantAttr(resultValue, cache);
-    if (folded) {
-      cache[value] = *folded;
-    }
-    return folded;
+  if (folded) {
+    cache[value] = *folded;
   }
-  return std::nullopt;
+  return folded;
 }
 
 /// Recursively constant-fold a pure SSA expression DAG to an attribute.
