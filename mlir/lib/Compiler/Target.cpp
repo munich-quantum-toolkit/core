@@ -133,7 +133,8 @@ constexpr std::array GATE_SPECIFICATIONS{
 
 [[nodiscard]] static const GateSpecification&
 gateSpecification(const GateKind gate) {
-  const decltype(GATE_SPECIFICATIONS.cbegin()) found =
+  // NOLINTNEXTLINE(readability-qualified-auto)
+  const auto found =
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   if (found == GATE_SPECIFICATIONS.end()) {
     throw std::invalid_argument("Unknown compiler target gate kind");
@@ -616,7 +617,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::RXX,   GateKind::RYY, GateKind::RZX, GateKind::RZZ,
       GateKind::ISWAP, GateKind::CZ,  GateKind::CX,  GateKind::ECR,
   };
-  const decltype(entanglerPreference.cbegin()) entangler =
+  // NOLINTNEXTLINE(readability-qualified-auto)
+  const auto entangler =
       std::ranges::find_if(entanglerPreference, [&](const auto candidate) {
         return hasGlobalGate(candidate);
       });
