@@ -37,7 +37,7 @@ releases may include breaking changes.
   ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
-  threshold ([#1810]) ([**@simon1hofmann**])
+  threshold ([#1810], [#1996]) ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
@@ -707,6 +707,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1996]: https://github.com/munich-quantum-toolkit/core/pull/1996
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
