@@ -375,15 +375,16 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
 }
 
 /**
- * @brief Emits the gates described by @p plan and returns the output qubit.
+ * @brief Emits the gates described by @p plan and returns the output plus
+ * phase.
  *
  * @param builder Builder for the emitted operations.
  * @param loc Location for the emitted operations.
  * @param qubit Input qubit value.
  * @param plan Precomputed synthesis plan.
- * @return Qubit value after all planned gates (and `gphase` when needed).
+ * @return Qubit value after all planned gates and the unmaterialized phase.
  */
-[[nodiscard]] static Value
+[[nodiscard]] static SynthesizedUnitary1Q
 emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
                        const Unitary1QEulerPlan& plan) {
   for (const auto& [kind, theta, phi, lambda] : plan.steps) {
@@ -412,8 +413,7 @@ emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
       break;
     }
   }
-  emitGPhaseIfNeeded(builder, loc, plan.phase);
-  return qubit;
+  return {.qubit = qubit, .globalPhase = plan.phase};
 }
 
 std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
@@ -428,7 +428,7 @@ std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
       .Default(std::nullopt);
 }
 
-std::optional<Value>
+std::optional<SynthesizedUnitary1Q>
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Matrix2x2& composed, const std::size_t runSize,
                          const bool hasNonBasisGate, const EulerBasis basis) {

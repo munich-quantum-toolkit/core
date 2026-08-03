@@ -12,6 +12,12 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add compiler-wide scoped global-phase normalization with exact modifier
+  semantics and synthesis integration ([#1986]) ([**@burgholzer**])
+- ✨ Expose compressed vector and matrix DD serialization through bytes-based
+  Python APIs ([#1983]) ([**@burgholzer**])
+- ✨ Make superconducting QDMI devices runtime configurable with session-owned
+  topology, operations, and calibration data ([#1980]) ([**@burgholzer**])
 - ✨ Expose registered QDMI device IDs without loading device libraries
   ([#1972]) ([**@burgholzer**])
 - ✨ Add typed runtime configuration transport and relocatable assets for QDMI
@@ -30,6 +36,9 @@ releases may include breaking changes.
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810]) ([**@simon1hofmann**])
+- ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
+  and direct QC emission, including lexical scope, assignment, inclusive ranges,
+  and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -58,10 +67,10 @@ releases may include breaking changes.
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
   [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
-  [#1911]) ([**@MatthiasReumann**], [**@burgholzer**])
+  [#1911], [#1951]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
-  ([**@DRovara**])
+  ([**@DRovara**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
@@ -77,6 +86,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
+  ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -665,9 +676,9 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
 
 ## [2.7.0] - 2024-10-08
 
-_📚 Refer to the [GitHub Release
-Notes](https://github.com/munich-quantum-toolkit/core/releases) for previous
-changelogs._
+_📚 Refer to the
+[GitHub Release Notes](https://github.com/munich-quantum-toolkit/core/releases)
+for previous changelogs._
 
 <!-- Version links -->
 
@@ -694,6 +705,10 @@ changelogs._
 
 <!-- PR links -->
 
+[#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
+[#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
+[#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
+[#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979
 [#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
@@ -705,6 +720,7 @@ changelogs._
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
+[#1951]: https://github.com/munich-quantum-toolkit/core/pull/1951
 [#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
@@ -719,6 +735,7 @@ changelogs._
 [#1914]: https://github.com/munich-quantum-toolkit/core/pull/1914
 [#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
+[#1910]: https://github.com/munich-quantum-toolkit/core/pull/1910
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895

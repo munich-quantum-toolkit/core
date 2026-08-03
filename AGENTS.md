@@ -70,7 +70,13 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 The C++ code targets C++20 and uses GoogleTest. Use Doxygen-style documentation,
 `#pragma once` in headers, and existing project abstractions. Prefer C++20
 standard-library facilities over custom equivalents. Within `mlir/`, prefer LLVM
-types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate.
+types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate. Do
+not use C-style casts, including casts to `void`; use the appropriate C++ cast
+or adjust the code so that no cast is needed. Use C standard-library typedefs
+such as `size_t` and fixed-width integer types such as `uint64_t` without the
+`std::` namespace qualifier, while directly including the header that provides
+them. Do not use `module` as a C++ variable or parameter name because it
+conflicts with the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values.
 
 ### Python and Bindings
 

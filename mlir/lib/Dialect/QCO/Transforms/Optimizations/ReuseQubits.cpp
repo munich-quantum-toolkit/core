@@ -13,15 +13,14 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Analysis/SliceAnalysis.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
-#include <cstddef>
-#include <iterator>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco {
@@ -30,64 +29,72 @@ namespace mlir::qco {
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
+class ReuseAnalysis {
+public:
+  [[nodiscard]] static std::optional<ReuseAnalysis> analyze(AllocOp alloc) {
+    ReuseAnalysis analysis(alloc->getBlock());
+    getForwardSlice(alloc.getResult(), &analysis.forwardSlice);
+
+    for (auto* operation : analysis.forwardSlice) {
+      auto* ancestor = analysis.block->findAncestorOpInBlock(*operation);
+      if (ancestor == nullptr) {
+        return std::nullopt;
+      }
+      analysis.users.insert(ancestor);
+    }
+
+    for (auto& operation : *analysis.block) {
+      if (!analysis.users.contains(&operation) || isa<SinkOp>(operation) ||
+          isMemoryEffectFree(&operation)) {
+        continue;
+      }
+      analysis.firstEffectfulUser = &operation;
+      break;
+    }
+    return analysis;
+  }
+
+  [[nodiscard]] bool canReuse(SinkOp sink) const {
+    return !forwardSlice.contains(sink.getOperation()) &&
+           (firstEffectfulUser == nullptr ||
+            sink->isBeforeInBlock(firstEffectfulUser));
+  }
+
+  void moveUsersAfter(Operation* insertionPoint,
+                      PatternRewriter& rewriter) const {
+    assert(insertionPoint->getBlock() == block &&
+           "reuse point must be in the analyzed block");
+
+    SmallVector<Operation*> operationsToMove;
+    for (auto& operation : *block) {
+      if (&operation == insertionPoint) {
+        break;
+      }
+      if (users.contains(&operation)) {
+        operationsToMove.push_back(&operation);
+      }
+    }
+
+    for (auto* operation : operationsToMove) {
+      rewriter.moveOpAfter(operation, insertionPoint);
+      insertionPoint = operation;
+    }
+  }
+
+private:
+  explicit ReuseAnalysis(Block* const block) : block(block) {}
+
+  Block* block;
+  SetVector<Operation*> forwardSlice;
+  llvm::DenseSet<Operation*> users;
+  Operation* firstEffectfulUser = nullptr;
+};
+
 /**
  * @brief This is the main qubit reuse pattern.
  */
 struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
-
-  explicit ReuseQubitsPattern(MLIRContext* context)
-      : OpRewritePattern(context) {}
-
-  /**
-   * @brief Finds all reachable `SinkOp` operation starting from some
-   * qubit.
-   * @param allocQubit The starting qubit to check (e.g. a newly  allocated
-   * qubit).
-   * @return A set of all SinkOp operations reachable from the given qubit
-   */
-  static llvm::DenseSet<Operation*> findAllReachableDeallocs(Value allocQubit) {
-    SetVector<Operation*> slice;
-    getForwardSlice(allocQubit, &slice);
-
-    llvm::DenseSet<Operation*> sinkOps;
-    for (Operation* op : slice) {
-      if (isa<SinkOp>(op)) {
-        sinkOps.insert(op);
-      }
-    }
-    return sinkOps;
-  }
-
-  /**
-   * @brief Reorders the users of the given operation to ensure that they are
-   * after it.
-   * @param startingOp The operation whose users should be reordered.
-   * @param rewriter The pattern rewriter to use for moving operations.
-   */
-  static void reorderUsers(Operation* startingOp, PatternRewriter& rewriter) {
-    // Search for operations that need re-ordering using BFS.
-    SmallVector<Operation*> toVisit{startingOp};
-    SetVector<Operation*> visited;
-
-    size_t head = 0;
-    while (head < toVisit.size()) {
-      auto* op = toVisit[head++];
-      visited.insert(op);
-      for (auto* user : op->getUsers()) {
-        // Move the user operation after the current operation.
-
-        user = op->getBlock()->findAncestorOpInBlock(*user);
-        if (op->isBeforeInBlock(user)) {
-          continue; // Already in the correct order.
-        }
-        rewriter.moveOpAfter(user, op);
-
-        if (!visited.contains(user)) {
-          toVisit.emplace_back(user);
-        }
-      }
-    }
-  }
+  using OpRewritePattern::OpRewritePattern;
 
   /**
    * @brief Rewrites the given `AllocOp` and `SinkOp` to reuse the
@@ -98,15 +105,15 @@ struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
    * operation.
    * @param rewriter The pattern rewriter to use for the rewrite.
    */
-  static void rewriteForReuse(AllocOp alloc, Operation* sink,
+  static void rewriteForReuse(AllocOp alloc, SinkOp sink,
+                              const ReuseAnalysis& analysis,
                               PatternRewriter& rewriter) {
     rewriter.setInsertionPointAfter(sink);
-    const Value originalInput = sink->getOperand(0);
     auto reset = rewriter.replaceOpWithNewOp<ResetOp>(
-        alloc, alloc.getResult().getType(), originalInput);
+        alloc, alloc.getResult().getType(), sink.getQubit());
     rewriter.eraseOp(sink);
 
-    reorderUsers(reset, rewriter);
+    analysis.moveUsersAfter(reset, rewriter);
   }
 
   LogicalResult matchAndRewrite(AllocOp op,
@@ -115,29 +122,23 @@ struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
     // if any of them are disjoint from the qubit being allocated, indicating
     // potential for reuse.
 
-    auto* currentBlock = op->getBlock();
-    auto deallocs = currentBlock->getOps<SinkOp>();
-    llvm::DenseSet<Operation*> reachableDeallocs =
-        findAllReachableDeallocs(op.getResult());
-    // We search `reverse(deallocs)` rather than `deallocs` because this tends
-    // to give more readable results.
-    auto reversedDeallocs = llvm::reverse(deallocs);
-    auto reusableDeallocs =
-        llvm::find_if(reversedDeallocs, [&](SinkOp dealloc) {
-          // Check if the qubit to be deallocated is disjoint from the qubit to
-          // be allocated.
-          return !reachableDeallocs.contains(dealloc);
-        });
-
-    if (reusableDeallocs == reversedDeallocs.end()) {
+    const auto analysis = ReuseAnalysis::analyze(op);
+    if (!analysis) {
       return failure();
-      // No reusable dealloc found.
-      // We could also check `reset` operations next, which would
-      // always result in the optimal solution, but the complexity explodes.
-      // Therefore, we only check for deallocs here.
     }
 
-    rewriteForReuse(op, *reusableDeallocs, rewriter);
+    auto sinks = op->getBlock()->getOps<SinkOp>();
+    // We search `reverse(sinks)` rather than `sinks` because this tends
+    // to give more readable results.
+    auto reversedSinks = llvm::reverse(sinks);
+    const auto reusableSink = llvm::find_if(
+        reversedSinks, [&](SinkOp sink) { return analysis->canReuse(sink); });
+
+    if (reusableSink == reversedSinks.end()) {
+      return failure();
+    }
+
+    rewriteForReuse(op, *reusableSink, *analysis, rewriter);
     return success();
   }
 };

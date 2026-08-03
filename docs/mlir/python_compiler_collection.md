@@ -115,6 +115,30 @@ custom = compile_program(
 )
 ```
 
+The raw qubit-reuse pass and its composite preparation pipeline are both
+available through the compiler collection:
+
+```{code-cell} ipython3
+raw_reuse = compile_program(bell_qasm, output=OutputFormat.QCO)
+raw_reuse.reuse_qubits()
+
+composite_reuse = compile_program(bell_qasm, output=OutputFormat.QCO)
+composite_reuse.run_qubit_reuse_pipeline()
+```
+
+The same flows can be composed with the default optimization pipeline in the
+compiler driver:
+
+```console
+mqt-cc input.qasm --emit=qco-optimized \
+  --pass-pipeline='builtin.module(reuse-qubits,mqt-qco-default)'
+mqt-cc input.qasm --emit=qco-optimized \
+  --pass-pipeline='builtin.module(mqt-qubit-reuse,mqt-qco-default)'
+```
+
+The {code}`mqt-qubit-reuse` pipeline lifts measurements and replaces classical
+controls before applying the raw {code}`reuse-qubits` pass.
+
 The {code}`qco_pipeline` argument replaces the default QCO optimization
 pipeline. It is applied when compilation proceeds beyond the raw
 {code}`OutputFormat.QCO` checkpoint.

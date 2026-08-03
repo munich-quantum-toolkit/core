@@ -290,13 +290,14 @@ synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix, EulerBasis basis) {
 
   builder.setInsertionPointToStart(entry);
   Value q = entry->getArgument(0);
-  const std::optional<Value> qubitOut =
+  const auto synthesized =
       synthesizeUnitary1QEuler(builder, loc, q, matrix, 0, true, basis);
-  if (!qubitOut) {
+  if (!synthesized) {
     llvm::report_fatal_error(
         "synthesizeUnitary1QEuler failed during test synthesis");
   }
-  func::ReturnOp::create(builder, loc, *qubitOut);
+  emitGPhaseIfNeeded(builder, loc, synthesized->globalPhase);
+  func::ReturnOp::create(builder, loc, synthesized->qubit);
   return SynthesizedCircuit{.mlirModule = std::move(mlirModule), .func = func};
 }
 

@@ -23,6 +23,7 @@
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
@@ -38,6 +39,7 @@
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -80,12 +82,6 @@ private:
   using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
   enum class RoutingMode : bool { Cold, Hot };
-
-  /// Return the qubit values in `values`, preserving their relative order.
-  static SmallVector<Value> getQubitValues(ValueRange values) {
-    return to_vector(llvm::make_filter_range(
-        values, [](Value value) { return isa<QubitType>(value.getType()); }));
-  }
 
   class AugmentedDevice {
   public:
@@ -410,6 +406,12 @@ protected:
   }
 
 private:
+  /// Return the qubit values in `values`, preserving their relative order.
+  static SmallVector<Value> getQubitValues(ValueRange values) {
+    return to_vector(llvm::make_filter_range(
+        values, [](Value value) { return isa<QubitType>(value.getType()); }));
+  }
+
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
@@ -970,6 +972,8 @@ private:
       curr.swap(unhappy->first, unhappy->second);
     }
 
+    assert(curr == to);
+
     return swaps;
   }
 
@@ -1026,6 +1030,30 @@ private:
     assert(layouts[0] == layouts[1]);
 
     return {layouts[0], std::move(swaps[0]), std::move(swaps[1])};
+  }
+
+  /// Return the "average" layout by computing the borda count, where each
+  /// layout is a voter and each hardware index counts as a candidate. One vote
+  /// is the order (the permutation) of program-to-hardware indices.
+  template <typename Range> static Layout vote(Range layouts) {
+    assert(!layouts.empty() && "expected at least one layout");
+    const auto ncandidates = (*layouts.begin()).nqubits();
+
+    SmallVector<size_t> scores(ncandidates, 0);
+    for (const Layout& layout : layouts) {
+      for (const auto [rank, hw] : enumerate(layout.getProgramToHardware())) {
+        scores[hw] += ncandidates - rank - 1;
+      }
+    }
+
+    auto mapping = llvm::to_vector(llvm::seq(ncandidates));
+    llvm::sort(mapping, [&](const size_t lhs, const size_t rhs) {
+      return scores[lhs] != scores[rhs]
+                 ? scores[lhs] > scores[rhs]
+                 : lhs < rhs; // Ensure order on borda equality.
+    });
+
+    return Layout::fromMapping(mapping);
   }
 
   /// Skip to the end of the two-qubit block for both wire iterators, where
@@ -1176,15 +1204,23 @@ private:
       for (const auto& [op, indices] : ready) {
         if (isa<BarrierOp>(op)) {
           released.emplace_back(op);
-        } else if (isa<UnitaryOpInterface>(op)) {
+          continue;
+        }
+
+        if (isa<UnitaryOpInterface>(op)) {
           const auto prog0 = infos.lookupProgram(indices[0]);
           const auto prog1 = infos.lookupProgram(indices[1]);
           if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
               device->areAdjacent(hw0, hw1)) {
             released.emplace_back(op);
           }
-        } else if (visited.insert(op).second) {
+          continue;
+        }
+
+        if (op->getNumRegions() > 0 && visited.insert(op).second) {
+          assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
           stack.emplace_back(op, indices);
+          continue;
         }
       }
 
@@ -1232,28 +1268,31 @@ private:
     const auto& [op, indices] = item;
 
     SmallVector<size_t> permutation(indices.size());
-    SmallVector<RoutingBundle, 2> children =
-        TypeSwitch<Operation*, SmallVector<RoutingBundle, 2>>(op)
+    SmallVector<RoutingBundle, 0> children =
+        TypeSwitch<Operation*, SmallVector<RoutingBundle, 0>>(op)
             .template Case<scf::ForOp, scf::WhileOp>([&](auto) {
-              return SmallVector<RoutingBundle, 2>{
+              return SmallVector<RoutingBundle, 0>{
                   RoutingBundle{.layout = parent.layout}};
             })
             .template Case<IfOp>([&](IfOp) {
-              return SmallVector<RoutingBundle, 2>{
-                  RoutingBundle{.layout = parent.layout},
-                  RoutingBundle{.layout = parent.layout}};
+              return SmallVector<RoutingBundle, 0>(
+                  2, RoutingBundle{.layout = parent.layout});
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-              return SmallVector<RoutingBundle, 2>(
+              return SmallVector<RoutingBundle, 0>(
                   switchOp.getNumRegions(),
                   RoutingBundle{.layout = parent.layout});
+            })
+            .Default([](Operation* op) -> SmallVector<RoutingBundle, 0> {
+              report_fatal_error("unhandled region op in dispatch: " +
+                                 op->getName().getStringRef());
             });
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
     size_t numQubitResults = 0;
-    for (const auto [resultIndex, result] : llvm::enumerate(op->getResults())) {
-      if (isa<QubitType>(result.getType())) {
-        resultToQubitIndex[resultIndex] = numQubitResults++;
+    for (const auto res : op->getResults()) {
+      if (isa<QubitType>(res.getType())) {
+        resultToQubitIndex[res.getResultNumber()] = numQubitResults++;
       }
     }
     assert(numQubitResults == indices.size());
@@ -1274,72 +1313,52 @@ private:
       const auto resNum = res.getResultNumber();
       const auto qubitResNum = *resultToQubitIndex[resNum];
 
+      const auto append = [&](RoutingBundle& child, Value arg, Value yielded) {
+        child.infos.insertOrUpdate(child.infos.size(), prog);
+        child.wires.emplace_back([&] -> Value {
+          if constexpr (Direction == WireDirection::Forward) {
+            return arg;
+          } else {
+            return yielded;
+          }
+        }());
+      };
+
       TypeSwitch<Operation*>(op)
           .template Case<scf::ForOp>([&](scf::ForOp forOp) {
-            children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
-            children[0].wires.emplace_back([&] -> Value {
-              const auto arg = forOp.getTiedLoopRegionIterArg(res);
-              if constexpr (Direction == WireDirection::Forward) {
-                return arg;
-              } else {
-                return forOp.getTiedLoopYieldedValue(arg)->get();
-              }
-            }());
+            const auto arg = forOp.getTiedLoopRegionIterArg(res);
+            const auto yielded = forOp.getTiedLoopYieldedValue(arg)->get();
+            append(children[0], arg, yielded);
           })
           .template Case<scf::WhileOp>([&](scf::WhileOp) {
-            children[0].infos.insertOrUpdate(children[0].infos.size(), prog);
-            children[0].wires.emplace_back([&] -> Value {
-              const auto arg = whileBeforeQubits[qubitResNum];
-              if constexpr (Direction == WireDirection::Forward) {
-                return arg;
-              } else {
-                return whileConditionQubits[qubitResNum];
-              }
-            }());
+            const auto arg = whileBeforeQubits[qubitResNum];
+            const auto yielded = whileConditionQubits[qubitResNum];
+            append(children[0], arg, yielded);
           })
           .template Case<IfOp>([&](IfOp ifOp) {
-            assert(ifOp.getNumRegions() == 2);
-
             OpOperand* const qubit = ifOp.getTiedQubit(res);
-            for (size_t i = 0; i < 2; ++i) {
-              Region& region = ifOp.getRegion(i);
+            const auto thenArg = ifOp.getTiedThenBlockArgument(qubit);
+            const auto thenYielded =
+                ifOp.getTiedThenYieldedValue(thenArg)->get();
+            const auto elseArg = ifOp.getTiedElseBlockArgument(qubit);
+            const auto elseYielded =
+                ifOp.getTiedElseYieldedValue(elseArg)->get();
 
-              const auto arg = region.getRegionNumber() == 0
-                                   ? ifOp.getTiedThenBlockArgument(qubit)
-                                   : ifOp.getTiedElseBlockArgument(qubit);
-              children[i].infos.insertOrUpdate(children[i].infos.size(), prog);
-              children[i].wires.emplace_back([&] -> Value {
-                if constexpr (Direction == WireDirection::Forward) {
-                  return arg;
-                } else {
-                  return region.getRegionNumber() == 0
-                             ? ifOp.getTiedThenYieldedValue(arg)->get()
-                             : ifOp.getTiedElseYieldedValue(arg)->get();
-                }
-              }());
-            }
+            append(children[0], thenArg, thenYielded);
+            append(children[1], elseArg, elseYielded);
           })
           .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-            OpOperand* const target = switchOp.getTiedTarget(res);
-            for (Region* region : switchOp.getRegions()) {
-              const auto regionNumber = region->getRegionNumber();
-              const auto arg =
-                  regionNumber == 0
-                      ? switchOp.getTiedDefaultBlockArgument(target)
-                      : switchOp.getTiedCaseBlockArgument(target,
-                                                          regionNumber - 1);
-              auto& child = children[regionNumber];
-              child.infos.insertOrUpdate(child.infos.size(), prog);
-              child.wires.emplace_back([&] -> Value {
-                if constexpr (Direction == WireDirection::Forward) {
-                  return arg;
-                }
-                return regionNumber == 0
-                           ? switchOp.getTiedDefaultYieldedValue(arg)->get()
-                           : switchOp
-                                 .getTiedCaseYieldedValue(arg, regionNumber - 1)
-                                 ->get();
-              }());
+            OpOperand* const qubit = switchOp.getTiedTarget(res);
+            const auto defaultArg = switchOp.getTiedDefaultBlockArgument(qubit);
+            const auto defaultYielded =
+                switchOp.getTiedDefaultYieldedValue(defaultArg)->get();
+            append(children[0], defaultArg, defaultYielded);
+
+            for (size_t r = 1; r < switchOp.getNumRegions(); ++r) {
+              const auto arg = switchOp.getTiedCaseBlockArgument(qubit, r - 1);
+              const auto yielded =
+                  switchOp.getTiedCaseYieldedValue(arg, r - 1)->get();
+              append(children[r], arg, yielded);
             }
           });
 
@@ -1376,9 +1395,8 @@ private:
         return cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator())
             .getResults();
       }();
-      const auto rng = getQubitValues(values);
 
-      for (const auto& [i, arg] : llvm::enumerate(rng)) {
+      for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
         const auto hw = permutation[i];
         const auto prog = children[0].layout.getProgramIndex(hw);
         children[1].wires.emplace_back(arg);
@@ -1394,31 +1412,25 @@ private:
       }
     }
 
+    // Find (insert) the epilogue SWAP sequence for (into) the child region
+    // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
+    // and restore (IndexSwitchOp) strategies.
+
     const Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
-              // Find (insert) the epilogue SWAP sequence for (into) the child
-              // region using the restore strategy.
-
               const auto swaps = restore(children[0].layout, parent.layout);
               insertSWAPs<Mode>(swaps, children[0], stats, rewriter);
               return parent.layout;
             })
             .template Case<scf::WhileOp>([&](scf::WhileOp) {
-              // Find (insert) the epilogue SWAP sequence for (into) the after
-              // region using the restore strategy.
-
               const auto swaps = restore(children[1].layout, parent.layout);
               insertSWAPs<Mode>(swaps, children[1], stats, rewriter);
-
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
             })
             .template Case<IfOp>([&](IfOp) {
-              // Find (insert) the epilogue SWAP sequence for (into) each child
-              // branch using the "converge" strategy.
-
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
               insertSWAPs<Mode>(fst, children[0], stats, rewriter);
@@ -1426,58 +1438,57 @@ private:
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
-              for (auto& child : children) {
-                const auto swaps = restore(child.layout, parent.layout);
+              auto winner = vote(map_range(
+                  children, [](const RoutingBundle& b) -> const Layout& {
+                    return b.layout;
+                  }));
+              for (RoutingBundle& child : children) {
+                const auto swaps = restore(child.layout, winner);
                 insertSWAPs<Mode>(swaps, child, stats, rewriter);
               }
-              return parent.layout;
+              return winner;
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
+      // Realign terminator values to ensure that i-th input qubit and the
+      // i-th output qubit represent the equivalent hardware qubit. This is
+      // redundant for scf::ForOp because its layout is restored, but handling
+      // every supported region operation uniformly keeps this path simple.
 
-      // Realign terminator values to ensure that i-th input qubit and the i-th
-      // output qubit represent the equivalent hardware qubit. Note: Because
-      // we restore the layout at the end of the scf::ForOp, we don't require
-      // this procedure.
+      for (const auto& [region, child] :
+           llvm::zip_equal(op->getRegions(), children)) {
+        assert(region.hasOneBlock());
 
-      TypeSwitch<Operation*>(op)
-          .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-            auto condOp = cast<scf::ConditionOp>(
-                whileOp.getBeforeBody()->getTerminator());
-            rewriter->setInsertionPoint(condOp);
-            rewriter->replaceOpWithNewOp<scf::ConditionOp>(
-                condOp, condOp.getCondition(),
-                realignQubitValues(condOp.getArgs(), permutation, children[0]));
+        Block* const block = &region.front();
+        Operation* const terminator = block->getTerminator();
 
-            auto yieldOp =
-                cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator());
-            rewriter->setInsertionPoint(yieldOp);
-            rewriter->replaceOpWithNewOp<scf::YieldOp>(
-                yieldOp, realignQubitValues(yieldOp.getResults(), permutation,
-                                            children[1]));
-          })
-          .template Case<IfOp, IndexSwitchOp>([&](auto branchOp) {
-            for (const auto [region, child] :
-                 llvm::zip_equal(branchOp->getRegions(), children)) {
-              auto yieldOp = cast<YieldOp>(region.front().getTerminator());
-              rewriter->setInsertionPoint(yieldOp);
+        rewriter->setInsertionPoint(terminator);
+        TypeSwitch<Operation*>(terminator)
+            .template Case<scf::YieldOp>([&](scf::YieldOp yieldOp) {
+              rewriter->replaceOpWithNewOp<scf::YieldOp>(
+                  yieldOp,
+                  realignQubitValues(yieldOp.getResults(), permutation, child));
+            })
+            .template Case<scf::ConditionOp>([&](scf::ConditionOp condOp) {
+              rewriter->replaceOpWithNewOp<scf::ConditionOp>(
+                  condOp, condOp.getCondition(),
+                  realignQubitValues(condOp.getArgs(), permutation, child));
+            })
+            .template Case<YieldOp>([&](YieldOp yieldOp) {
               rewriter->replaceOpWithNewOp<YieldOp>(
                   yieldOp,
                   realignQubitValues(yieldOp.getTargets(), permutation, child));
-            }
-          });
+            });
 
-      // Sort topologically to fix any occurring SSA dominance errors.
+        // Sort topologically to fix any occurring SSA dominance errors.
 
-      for (Region& region : op->getRegions()) {
-        assert(region.hasOneBlock());
-        sortTopologically(&region.front());
+        sortTopologically(block);
       }
     }
 
-    // If the operation is a scf::ForOp, where the parent.layout = child.layout,
-    // we are done. Otherwise, propagate the final layout and index-to-program
-    // mapping to the parent.
+    // If the operation is a scf::ForOp, where the parent.layout =
+    // child.layout, we are done. Otherwise, propagate the final layout and
+    // index-to-program mapping to the parent.
 
     if (!isa<scf::ForOp>(op)) {
       WireInfos realigendInfos;

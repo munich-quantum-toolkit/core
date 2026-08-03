@@ -469,13 +469,14 @@ synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   auto* entry = func.addEntryBlock();
 
   builder.setInsertionPointToStart(entry);
-  Value out0;
-  if (Value out1; failed(synthesizeUnitary2QWeyl(
-          builder, loc, entry->getArgument(0), entry->getArgument(1), target,
-          spec, out0, out1))) {
+  const auto synthesized = synthesizeUnitary2QWeyl(
+      builder, loc, entry->getArgument(0), entry->getArgument(1), target, spec);
+  if (failed(synthesized)) {
     ADD_FAILURE() << "synthesizeUnitary2QWeyl failed during test synthesis";
   } else {
-    func::ReturnOp::create(builder, loc, ValueRange{out0, out1});
+    emitGPhaseIfNeeded(builder, loc, synthesized->globalPhase);
+    func::ReturnOp::create(
+        builder, loc, ValueRange{synthesized->qubit0, synthesized->qubit1});
   }
   return {.mlirModule = std::move(mlirModule), .func = func};
 }
@@ -614,11 +615,9 @@ TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEulerBasis) {
                                    funcTy);
   auto* entry = func.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  Value out0;
-  Value out1;
   EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
       builder, func.getLoc(), entry->getArgument(0), entry->getArgument(1),
-      TWO_QUBIT_CONTROLLED_X01, spec, out0, out1)));
+      TWO_QUBIT_CONTROLLED_X01, spec)));
 }
 
 TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEntangler) {
@@ -631,11 +630,9 @@ TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEntangler) {
                                    funcTy);
   auto* entry = func.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  Value out0;
-  Value out1;
   EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
       builder, func.getLoc(), entry->getArgument(0), entry->getArgument(1),
-      TWO_QUBIT_CONTROLLED_X01, spec, out0, out1)));
+      TWO_QUBIT_CONTROLLED_X01, spec)));
 }
 
 TEST(WeylSynthesisTest, EntanglerCountFailsWithoutEntangler) {

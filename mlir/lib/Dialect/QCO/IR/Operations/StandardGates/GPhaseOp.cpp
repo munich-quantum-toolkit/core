@@ -56,6 +56,16 @@ void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, thetaOperand);
 }
 
+LogicalResult GPhaseOp::verify() {
+  const auto theta = valueToDouble(getTheta());
+  if (theta && !isValidGlobalPhaseAngle(*theta)) {
+    return emitOpError()
+           << "constant angle must be finite and have magnitude at most "
+           << MAX_GLOBAL_PHASE_ANGLE << " radians";
+  }
+  return success();
+}
+
 void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
   results.add<RemoveTrivialGPhase>(context);

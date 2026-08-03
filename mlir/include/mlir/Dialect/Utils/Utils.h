@@ -65,6 +65,17 @@ inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
 /// phase-zero checks).
 constexpr auto TOLERANCE = 1e-15;
 
+/// Largest supported magnitude of a global-phase angle in radians.
+///
+/// Keeping phase angles in this generous practical range makes binary64 angle
+/// reduction accurate enough for exact-unitary compiler rewrites.
+constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
+
+/// Check the compiler-wide global-phase angle contract.
+[[nodiscard]] inline bool isValidGlobalPhaseAngle(const double theta) {
+  return std::isfinite(theta) && std::abs(theta) <= MAX_GLOBAL_PHASE_ANGLE;
+}
+
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
   return arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(v));
 }

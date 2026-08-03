@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import cast
@@ -1034,6 +1035,27 @@ def test_device_configuration_arguments_are_mutually_exclusive() -> None:
             device_config="{}",
             device_config_file="device.json",
         )
+
+
+def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
+    """The built-in SC provider should materialize a per-open file model."""
+    configuration = json.loads(Path("json/sc/mqt-core-qdmi-sc-device.json").read_text(encoding="utf-8"))
+    configuration["name"] = "Python custom SC device"
+    configuration["numQubits"] = 5
+    configuration["couplings"] = [[0, 1], [1, 2], [2, 3], [3, 4]]
+    configuration["qubitProperties"]["overrides"] = []
+    for operation in configuration["operations"]:
+        operation.pop("sites", None)
+        operation["siteOverrides"] = []
+    configuration_file = tmp_path / "sc-device.json"
+    configuration_file.write_text(json.dumps(configuration), encoding="utf-8")
+
+    device = open_device(
+        "mqt.sc.default",
+        device_config_file=configuration_file,
+    )
+    assert device.name() == "Python custom SC device"
+    assert device.qubits_num() == 5
 
 
 def test_site_keeps_fresh_session_alive() -> None:
