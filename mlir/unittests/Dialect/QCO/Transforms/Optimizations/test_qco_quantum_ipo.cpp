@@ -26,7 +26,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <cmath>
+#include <numbers>
 #include <tuple>
 
 namespace {
@@ -354,7 +354,7 @@ TEST_F(QCOQuantumIPOTest, specializeConstantRotationAngle) {
   programBuilder.endFunction({programBuilder.rz(args[1], args[0])});
 
   auto q = programBuilder.allocQubit();
-  auto angle = programBuilder.floatConstant(M_PI);
+  auto angle = programBuilder.floatConstant(std::numbers::pi);
   auto results = programBuilder.call("f", {q, angle});
   programBuilder.sink(results[0]);
   module = programBuilder.finalize();
@@ -368,10 +368,11 @@ TEST_F(QCOQuantumIPOTest, specializeConstantRotationAngle) {
   // reads it; the angle becomes a constant in the body.
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.rz(M_PI, specArgs[0])});
+  referenceBuilder.endFunction(
+      {referenceBuilder.rz(std::numbers::pi, specArgs[0])});
 
   auto refQ = referenceBuilder.allocQubit();
-  auto refAngle = referenceBuilder.floatConstant(M_PI);
+  auto refAngle = referenceBuilder.floatConstant(std::numbers::pi);
   auto refResults =
       referenceBuilder.call("f_spec_fixed_angle_1", {refQ, refAngle});
   referenceBuilder.sink(refResults[0]);
@@ -393,7 +394,7 @@ TEST_F(QCOQuantumIPOTest, specializeHalfPiRotationAngle) {
   programBuilder.endFunction({programBuilder.rx(args[1], args[0])});
 
   auto q = programBuilder.allocQubit();
-  auto angle = programBuilder.floatConstant(M_PI_2);
+  auto angle = programBuilder.floatConstant(std::numbers::pi / 2);
   auto results = programBuilder.call("f", {q, angle});
   programBuilder.sink(results[0]);
   module = programBuilder.finalize();
@@ -405,10 +406,11 @@ TEST_F(QCOQuantumIPOTest, specializeHalfPiRotationAngle) {
 
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.rx(M_PI_2, specArgs[0])});
+  referenceBuilder.endFunction(
+      {referenceBuilder.rx(std::numbers::pi / 2, specArgs[0])});
 
   auto refQ = referenceBuilder.allocQubit();
-  auto refAngle = referenceBuilder.floatConstant(M_PI_2);
+  auto refAngle = referenceBuilder.floatConstant(std::numbers::pi / 2);
   auto refResults =
       referenceBuilder.call("f_spec_fixed_angle_1", {refQ, refAngle});
   referenceBuilder.sink(refResults[0]);
@@ -986,7 +988,7 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.x(programBuilder.allocQubit());
   auto prepared = programBuilder.call("prepare", {q0});
-  auto angle = programBuilder.floatConstant(M_PI_2);
+  auto angle = programBuilder.floatConstant(std::numbers::pi / 2);
   auto rotated = programBuilder.call("rotate", {q1, angle});
   auto flipped = programBuilder.call("flip", {q2});
   programBuilder.sink(prepared[0]);
@@ -1010,7 +1012,7 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   auto rotateSpecArgs = referenceBuilder.startFunction(
       "rotate_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
   referenceBuilder.endFunction(
-      {referenceBuilder.rz(M_PI_2, rotateSpecArgs[0])});
+      {referenceBuilder.rz(std::numbers::pi / 2, rotateSpecArgs[0])});
 
   auto refFlipArgs =
       referenceBuilder.startFunction("flip", {qubitType}, {qubitType});
@@ -1024,7 +1026,7 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   auto refQ1 = referenceBuilder.allocQubit();
   auto refQ2 = referenceBuilder.allocQubit();
   auto refPrepared = referenceBuilder.call("prepare_spec_zero_arg_0", {refQ0});
-  auto refAngle = referenceBuilder.floatConstant(M_PI_2);
+  auto refAngle = referenceBuilder.floatConstant(std::numbers::pi / 2);
   auto refRotated =
       referenceBuilder.call("rotate_spec_fixed_angle_1", {refQ1, refAngle});
   auto refFlipped =

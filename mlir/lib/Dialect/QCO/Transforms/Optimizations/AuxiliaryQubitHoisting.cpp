@@ -15,18 +15,18 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -59,7 +59,7 @@ static SinkOp findDeallocForAlloc(AllocOp alloc) {
           // Dynamic index, cannot tell whether it is our qubit.
           return nullptr;
         }
-        if (static_cast<uint64_t>(*index) == currentIndexInTensor) {
+        if (std::cmp_equal(*index, currentIndexInTensor)) {
           currentValue = extractOp.getResult();
           isInTensor = false;
         } else {
@@ -69,7 +69,7 @@ static SinkOp findDeallocForAlloc(AllocOp alloc) {
       }
       if (auto insertOp = dyn_cast<qtensor::InsertOp>(user)) {
         const auto index = getConstantIntValue(insertOp.getIndex());
-        if (!index || static_cast<uint64_t>(*index) == currentIndexInTensor) {
+        if (!index || std::cmp_equal(*index, currentIndexInTensor)) {
           // Dynamic index, or our slot is overwritten by another qubit.
           return nullptr;
         }

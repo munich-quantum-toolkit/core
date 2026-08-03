@@ -38,6 +38,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
