@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
+  stable QDMI registry IDs ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
   semantics and synthesis integration ([#1986]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based

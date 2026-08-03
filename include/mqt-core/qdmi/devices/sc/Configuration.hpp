@@ -38,6 +38,7 @@ struct Device {
 
   struct QubitOverride : QubitCalibration {
     uint64_t qubit = 0;
+    std::optional<std::string> name;
   };
 
   struct QubitProperties {

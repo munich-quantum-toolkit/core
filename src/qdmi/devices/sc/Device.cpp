@@ -90,6 +90,9 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     }
     for (const auto& override : configuration.qubitProperties.overrides) {
       auto& site = newSiteStorage.at(override.qubit);
+      if (override.name) {
+        site->name = override.name;
+      }
       if (override.t1) {
         site->t1 = override.t1;
       }
@@ -302,6 +305,13 @@ int MQT_SC_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property property,
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, id, property,
                             size, value, sizeRet)
+  if (property == QDMI_SITE_PROPERTY_NAME) {
+    if (!name) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    ADD_STRING_PROPERTY(QDMI_SITE_PROPERTY_NAME, name->c_str(), property, size,
+                        value, sizeRet)
+  }
   if (property == QDMI_SITE_PROPERTY_T1) {
     if (!t1) {
       return QDMI_ERROR_NOTSUPPORTED;
