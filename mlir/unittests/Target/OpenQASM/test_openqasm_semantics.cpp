@@ -1291,6 +1291,36 @@ if(c==123456789012345678901234567890) x q[0];
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 
+TEST(OpenQASMFrontendTest, AcceptsNarrowConstantAgainstWideOpenQASM2Register) {
+  // A 64-bit constant against a >64-bit classical register must be zero-
+  // extended before per-bit comparison.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==1) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, RejectsNegativeOpenQASM2RegisterCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[2];
+if(c==-1) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("unsigned integer"),
+            std::string::npos);
+}
+
 TEST(OpenQASMFrontendTest, RejectsWideIntegerLiteralInOrdinaryConstants) {
   auto analyzed = oq3::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; int value = 999999999999999999999999999999;");
