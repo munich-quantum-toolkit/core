@@ -114,6 +114,7 @@ struct Expr {
   double floatValue = 0.0;
   bool boolValue = false;
   StringRef identifier;
+  StringRef wideInteger;
   std::optional<uint64_t> hardwareQubit;
   const Expr* lhs = nullptr;
   const Expr* rhs = nullptr;
@@ -1517,6 +1518,9 @@ private:
     case TokenKind::IntegerLiteral:
       expr->kind = Expr::Kind::Int;
       expr->intValue = current().intValue;
+      if (current().wideInteger) {
+        expr->wideInteger = current().stringValue;
+      }
       advance();
       return expr;
     case TokenKind::Identifier: {
