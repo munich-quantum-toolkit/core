@@ -135,11 +135,11 @@ inline void validateMemRefIndex(Value memref,
     return floatAttr.getValueAsDouble();
   }
   if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
-    if (intAttr.getType().isUnsignedInteger()) {
-      return static_cast<double>(intAttr.getValue().getZExtValue());
-    }
-    // interpret both signed+signless as signed integers
-    return static_cast<double>(intAttr.getValue().getSExtValue());
+    const bool isSigned = !intAttr.getType().isUnsignedInteger();
+    APFloat apf(APFloat::IEEEdouble(), APInt::getZero(64));
+    apf.convertFromAPInt(intAttr.getValue(), isSigned,
+                         APFloat::rmNearestTiesToEven);
+    return apf.convertToDouble();
   }
   return std::nullopt;
 }

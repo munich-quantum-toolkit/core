@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -24,6 +25,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -105,6 +107,26 @@ TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
   // cast to double will lose precision, but difference to maximum value of
   // int64_t is large enough that the check still makes sense
   EXPECT_DOUBLE_EQ(stdValue.value(), static_cast<double>(expectedValue));
+}
+
+TEST_F(UtilsTest, attributeToDoubleI128) {
+  constexpr unsigned bitWidth = 128;
+  // Signed: all-ones is -1; also outside the getSExtValue range.
+  const auto signedAttr = builder->getIntegerAttr(
+      builder->getIntegerType(bitWidth, /*isSigned=*/true),
+      APInt::getAllOnes(bitWidth));
+  const auto signedValue = utils::attributeToDouble(signedAttr);
+  ASSERT_TRUE(signedValue.has_value());
+  EXPECT_DOUBLE_EQ(*signedValue, -1.0);
+
+  // Unsigned: 2^127 is outside the getZExtValue range.
+  APInt unsignedBits(bitWidth, 0);
+  unsignedBits.setBit(127);
+  const auto unsignedAttr = builder->getIntegerAttr(
+      builder->getIntegerType(bitWidth, /*isSigned=*/false), unsignedBits);
+  const auto unsignedValue = utils::attributeToDouble(unsignedAttr);
+  ASSERT_TRUE(unsignedValue.has_value());
+  EXPECT_DOUBLE_EQ(*unsignedValue, std::ldexp(1.0, 127));
 }
 
 TEST_F(UtilsTest, valueToDoubleWrongType) {
