@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -21,11 +22,11 @@
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
@@ -51,9 +52,9 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <random>
 #include <ranges>
@@ -83,51 +84,10 @@ private:
 
   enum class RoutingMode : bool { Cold, Hot };
 
-  class AugmentedDevice {
-  public:
-    explicit AugmentedDevice(
-        const DenseSet<std::pair<size_t, size_t>>& couplingSet)
-        : coupling_(couplingSet), dist_(coupling_.getDistMatrix()) {}
-
-    /// Return the device's number of qubits.
-    [[nodiscard]] size_t nqubits() const { return coupling_.getNumNodes(); }
-
-    /// Return true if two qubits are adjacent.
-    [[nodiscard]] bool areAdjacent(const size_t u, const size_t v) const {
-      return dist_[u][v] == 1UL;
-    }
-
-    /// Return the length of the shortest path between two qubits.
-    [[nodiscard]] size_t distanceBetween(const size_t u, const size_t v) const {
-      const auto dist = dist_[u][v];
-      if (dist == UINT64_MAX) {
-        report_fatal_error("Failed to compute the distance between qubits " +
-                           Twine(u) + " and " + Twine(v));
-      }
-      return dist;
-    }
-
-    /// Return the qubit identifiers.
-    [[nodiscard]] SmallVector<size_t> qubits() const {
-      return coupling_.getNodes();
-    }
-
-    /// Return all neighbours of a qubit.
-    [[nodiscard]] ArrayRef<size_t> neighboursOf(const size_t u) const {
-      return coupling_.getNeighbours(u);
-    }
-
-    /// Return the max degree (connectivity) of any qubit of the device.
-    [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
-
-  private:
-    Graph coupling_;
-    Graph::DistanceMatrix dist_;
-  };
-
   struct WireInfos {
     /// Return the mapped wire index of a program index.
     [[nodiscard]] size_t lookupIndex(const size_t prog) const {
+      assert(containsProgram(prog) && "program index is not mapped");
       return programToIndex_[prog];
     }
 
@@ -147,6 +107,12 @@ private:
       }
       indexToProgram_[index] = prog;
       programToIndex_[prog] = index;
+      programs_.insert(prog);
+    }
+
+    /// Return whether a program index has a corresponding wire.
+    [[nodiscard]] bool containsProgram(const size_t prog) const {
+      return programs_.contains(prog);
     }
 
     /// Swap two program indices.
@@ -165,11 +131,27 @@ private:
     SmallVector<size_t> indexToProgram_;
     /// Maps a program index to the i-th wire index.
     SmallVector<size_t> programToIndex_;
+    /// Program indices that have corresponding wires.
+    DenseSet<size_t> programs_;
+  };
+
+  struct TensorAllocation {
+    qtensor::AllocOp allocation;
+    SmallVector<Operation*> operations;
+  };
+
+  struct Computation {
+    Wires wires;
+    WireInfos infos;
+    SmallVector<AllocOp> scalarAllocations;
+    SmallVector<TensorAllocation> tensorAllocations;
+    bool hasTwoQubitOperations{false};
   };
 
   /// Statistics collected while routing.
   struct Statistics {
     size_t nswaps{0};
+    DenseSet<size_t> touchedPrograms;
   };
 
   /// Parameters influencing the behavior of the A* search algorithm.
@@ -207,20 +189,20 @@ private:
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const AugmentedDevice& device, const Parameters& params)
+         const CompilerTarget& target, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
-      f = g(params.alpha) + h(window, device, params); // NOLINT
+      f = g(params.alpha) + h(window, target, params); // NOLINT
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
     /// executable.
     [[nodiscard]] bool isGoal(const IndexPairType& front,
-                              const AugmentedDevice& device) const {
+                              const CompilerTarget& target) const {
       const auto [hw0, hw1] =
           layout.getHardwareIndices(front.first, front.second);
-      return device.areAdjacent(hw0, hw1);
+      return target.areAdjacent(hw0, hw1);
     }
 
   private:
@@ -237,7 +219,7 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const AugmentedDevice& device,
+    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
@@ -245,7 +227,7 @@ private:
       for (const auto& [i, progs] : enumerate(window)) {
         const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const size_t nswaps = device.distanceBetween(hw0, hw1) - 1;
+        const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
@@ -255,19 +237,20 @@ private:
 
   /// Describes the graph F of arXiv:1602.05150v3.
   struct FGraph {
-    explicit FGraph(std::shared_ptr<AugmentedDevice> device)
-        : f_(device->qubits()), device_(std::move(device)) {};
+    explicit FGraph(const CompilerTarget& target)
+        : f_(llvm::to_vector(llvm::seq(target.numQubits()))),
+          target_(&target) {};
 
     /// Build F-graph: Add edges to F for each edge in the coupling graph.
     /// Note that this assumes that the coupling graph is directed, but
     /// symmetric (essentially: undirected).
     void construct(const Layout& from, const Layout& to) {
-      for (const auto u : device_->qubits()) {
-        for (const auto v : device_->neighboursOf(u)) {
+      for (size_t u = 0; u < target_->numQubits(); ++u) {
+        target_->forEachNeighbour(u, [&](const auto v) {
           if (shouldAddEdge(u, v, from, to)) {
             f_.addEdge(u, v);
           }
-        }
+        });
       }
     }
 
@@ -316,12 +299,12 @@ private:
                                      const Layout& from,
                                      const Layout& to) const {
       const auto dest = to.getHardwareIndex(from.getProgramIndex(u));
-      return device_->distanceBetween(v, dest) <
-             device_->distanceBetween(u, dest);
+      return target_->distanceBetween(v, dest) <
+             target_->distanceBetween(u, dest);
     }
 
     Graph f_;
-    std::shared_ptr<AugmentedDevice> device_;
+    const CompilerTarget* target_;
   };
 
 public:
@@ -332,11 +315,10 @@ public:
   explicit MappingPass(const MappingPassOptions& options)
       : MappingPassBase(options) {}
 
-  /// Construct mapping from coupling set.
-  explicit MappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
+  /// Construct mapping for a compiler target.
+  explicit MappingPass(const CompilerTarget& compilerTarget,
                        const MappingPassOptions& options)
-      : MappingPassBase(options),
-        device(std::make_shared<AugmentedDevice>(couplingSet)) {}
+      : MappingPassBase(options), target(compilerTarget) {}
 
 protected:
   void runOnOperation() override {
@@ -344,8 +326,8 @@ protected:
     assert(niterations > 0 && "expected niterations > 0");
     assert(ntrials > 0 && "expected ntrials > 0");
 
-    if (!device) {
-      llvm::reportFatalUsageError("No device specified!");
+    if (!target) {
+      llvm::reportFatalUsageError("No compiler target specified!");
     }
 
     IRRewriter rewriter(&getContext());
@@ -358,20 +340,21 @@ protected:
       return;
     }
 
-    auto comp = getComputation(func);
+    auto comp = discoverComputation(func);
     if (failed(comp)) {
       signalPassFailure();
       return;
     }
 
     auto& body = func.getFunctionBody();
-    auto& [wires, infos] = *comp;
+    auto& wires = comp->wires;
+    auto& infos = comp->infos;
 
-    if (wires.size() > device->nqubits()) {
+    if (wires.size() > target->numQubits()) {
       func.emitError()
           << "requires " + Twine(wires.size()) +
                  " qubits. However, the architecture only supports " +
-                 Twine(device->nqubits()) + "qubits.";
+                 Twine(target->numQubits()) + " qubits.";
       signalPassFailure();
       return;
     }
@@ -383,7 +366,26 @@ protected:
       return;
     }
 
-    std::tie(wires, infos) = std::move(place(body, *layout, rewriter));
+    SmallVector<size_t> materializedPrograms(wires.size());
+    std::iota(materializedPrograms.begin(), materializedPrograms.end(), 0);
+    if (comp->hasTwoQubitOperations) {
+      RoutingBundle preview{.wires = wires, .infos = infos, .layout = *layout};
+      Statistics previewStats;
+      if (failed(route<WireDirection::Forward>(preview, previewStats))) {
+        func.emitError() << "failed to plan target routing";
+        signalPassFailure();
+        return;
+      }
+      for (const auto prog : previewStats.touchedPrograms) {
+        if (prog >= wires.size()) {
+          materializedPrograms.emplace_back(prog);
+        }
+      }
+      std::ranges::sort(materializedPrograms);
+    }
+
+    std::tie(wires, infos) = std::move(
+        place(body, *layout, *target, materializedPrograms, *comp, rewriter));
 
     Statistics stats;
     RoutingBundle bundle{.wires = std::move(wires),
@@ -545,11 +547,11 @@ private:
   }
 
   /// Return the wires of a dynamic computation.
-  /// The mapping pass currently assumes that
-  /// - there are no `qco.alloc` operation
-  /// - there is an "extraction" and "insertion" phase, where the i-th extract
-  ///   defines the i-th program qubit
-  /// Thus, supported programs have the following structure:
+  /// Scalar `qco.alloc` operations define program qubits directly. For
+  /// `qtensor` allocations, the mapping pass assumes an extraction and
+  /// insertion phase where the i-th extract defines the i-th tensor-backed
+  /// program qubit. Thus, supported tensor programs have the following
+  /// structure:
   ///
   ///   T ⨉ [qtensor::AllocOp]
   /// → N ⨉ [qtensor::ExtractOp]
@@ -559,81 +561,130 @@ private:
   ///
   /// If any of the above assumptions are violated, the function returns
   /// failure.
-  static FailureOr<std::pair<Wires, WireInfos>>
-  getComputation(func::FuncOp func) {
-    if (!func.getOps<AllocOp>().empty()) {
-      return func.emitError() << "must not contain qco.alloc operations";
+  static FailureOr<Computation> discoverComputation(func::FuncOp func) {
+    Computation computation;
+
+    const auto discovery = func.walk([&](Operation* op) {
+      if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+        if (isa<BarrierOp>(op)) {
+          return WalkResult::advance();
+        }
+        if (unitary.getNumQubits() > 2) {
+          unitary.emitError()
+              << "cannot route an operation acting on "
+              << unitary.getNumQubits()
+              << " qubits; decompose it to one- and two-qubit operations "
+                 "first";
+          return WalkResult::interrupt();
+        }
+        computation.hasTwoQubitOperations |= unitary.getNumQubits() == 2;
+      }
+
+      if (!isa<AllocOp, qtensor::AllocOp>(op)) {
+        return WalkResult::advance();
+      }
+      if (op->getParentRegion() == &func.getFunctionBody()) {
+        TypeSwitch<Operation*>(op)
+            .Case<AllocOp>([&](AllocOp alloc) {
+              computation.scalarAllocations.emplace_back(alloc);
+            })
+            .Case<qtensor::AllocOp>([&](qtensor::AllocOp alloc) {
+              computation.tensorAllocations.emplace_back(
+                  TensorAllocation{.allocation = alloc});
+            });
+        return WalkResult::advance();
+      }
+
+      op->emitError()
+          << "target mapping requires dynamic qubit allocations in the entry "
+             "function body";
+      return WalkResult::interrupt();
+    });
+    if (discovery.wasInterrupted()) {
+      return failure();
     }
 
-    Wires wires;
-    WireInfos infos;
+    for (auto alloc : computation.scalarAllocations) {
+      const auto index = computation.wires.size();
+      computation.wires.emplace_back(alloc.getResult());
+      computation.infos.insertOrUpdate(index, index);
+    }
 
-    for (auto alloc : func.getOps<qtensor::AllocOp>()) {
+    for (auto& tensor : computation.tensorAllocations) {
       bool isInitPhase = true;
-      TensorIterator it(alloc.getResult());
+      TensorIterator it(tensor.allocation.getResult());
       for (; it != std::default_sentinel; ++it) {
-        if (auto extract = dyn_cast<ExtractOp>(it.operation())) {
+        Operation* const operation = it.operation();
+        tensor.operations.emplace_back(operation);
+
+        if (auto extract = dyn_cast<ExtractOp>(operation)) {
           if (!isInitPhase) {
             return func.emitError()
                    << "must extract and insert all qubits at once.";
           }
 
           const auto qubit = extract.getResult();
-          const auto index = wires.size();
+          const auto index = computation.wires.size();
 
-          wires.emplace_back(qubit);
-          infos.insertOrUpdate(index, index);
+          computation.wires.emplace_back(qubit);
+          computation.infos.insertOrUpdate(index, index);
 
           continue;
         }
 
-        if (isa<InsertOp>(it.operation())) {
+        if (isa<InsertOp>(operation)) {
           isInitPhase = false;
           continue;
         }
       }
     }
 
-    return std::make_pair(wires, infos);
+    return computation;
   }
 
-  /// Perform placement by
-  /// - initializing as many hardware qubits as the architecture supports
-  /// - replacing dynamic with static qubits
-  /// - extending the inputs of `scf::ForOp` to all hardware qubits.
+  /// Perform placement by replacing dynamic qubits with static target sites
+  /// and extending control-flow operations with target sites used for routing.
   ///
-  /// Analogously to the getComputation function, the i-th extract
+  /// Analogously to the discoverComputation function, the i-th extract
   /// operation defines the i-th program qubit.
-  static std::pair<Wires, WireInfos> place(Region& body, const Layout& layout,
-                                           IRRewriter& rewriter) {
-    SmallVector<StaticOp> staticOps;
-    staticOps.reserve(layout.nqubits());
+  static std::pair<Wires, WireInfos>
+  place(Region& body, const Layout& layout,
+        const CompilerTarget& compilerTarget,
+        const ArrayRef<size_t> materializedPrograms, Computation& computation,
+        IRRewriter& rewriter) {
+    SmallVector<Value> staticQubits(layout.nqubits());
 
-    // Create and save static qubit operations.
     rewriter.setInsertionPointToStart(&body.front());
-    for (size_t i = 0; i < layout.nqubits(); ++i) {
-      const auto op = StaticOp::create(rewriter, body.getLoc(), i);
-      staticOps.emplace_back(op);
+    for (const auto prog : materializedPrograms) {
+      const auto hw = layout.getHardwareIndex(prog);
+      const auto site = compilerTarget.siteForVertex(hw);
+      auto op = StaticOp::create(rewriter, body.getLoc(), site);
+      staticQubits[prog] = op.getQubit();
       rewriter.setInsertionPointAfter(op);
     }
-
-    // Replace extract ops and collect in program-qubit order.
 
     Wires wires;
     WireInfos infos;
 
-    for (auto alloc : make_early_inc_range(body.getOps<qtensor::AllocOp>())) {
-      TensorIterator it(alloc.getResult());
-      while (it != std::default_sentinel) {
-        // Get the operation and early increment to avoid issues after erasure.
-        Operation* curr = it.operation();
-        ++it;
+    for (auto alloc : computation.scalarAllocations) {
+      const auto prog = wires.size();
+      const auto qubit = staticQubits[prog];
+      assert(qubit && "expected program qubit to be materialized");
 
-        TypeSwitch<Operation*>(curr)
+      rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
+      rewriter.eraseOp(alloc);
+
+      wires.emplace_back(qubit);
+      infos.insertOrUpdate(prog, prog);
+    }
+
+    for (auto& tensor : computation.tensorAllocations) {
+      for (Operation* const operation : tensor.operations) {
+        TypeSwitch<Operation*>(operation)
             .Case<ExtractOp>([&](auto op) {
               const auto prog = wires.size();
-              const auto hw = layout.getHardwareIndex(prog);
-              const auto qubit = staticOps[hw].getQubit();
+              const auto qubit = staticQubits[prog];
+              assert(qubit && "expected program qubit to be materialized");
 
               rewriter.replaceAllUsesWith(op.getResult(), qubit);
               rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
@@ -651,25 +702,22 @@ private:
             .Case<DeallocOp>([&](auto op) { rewriter.eraseOp(op); });
       }
 
-      rewriter.eraseOp(alloc);
+      rewriter.eraseOp(tensor.allocation);
     }
 
-    // Create sinks for remaining, unused, static qubits.
-
+    const auto numProgramQubits = wires.size();
     rewriter.setInsertionPoint(body.back().getTerminator());
-    for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
-      const auto hw = layout.getHardwareIndex(prog);
-      const auto qubit = staticOps[hw].getQubit();
+    for (const auto prog : materializedPrograms) {
+      if (prog < numProgramQubits) {
+        continue;
+      }
+      const auto qubit = staticQubits[prog];
 
       wires.emplace_back(qubit);
-      infos.insertOrUpdate(prog, prog);
+      infos.insertOrUpdate(wires.size() - 1, prog);
 
       SinkOp::create(rewriter, body.getLoc(), qubit);
     }
-
-    // Finally, update the SCF operations such that they take all static qubits
-    // as input. To handle recursively nested SCF operations, use a stack of
-    // (region, mapping) pairs.
 
     SmallVector<std::pair<Region&, DenseSet<Value>>> stack;
     stack.emplace_back(body, DenseSet<Value>{});
@@ -688,7 +736,7 @@ private:
               }
             })
             .Case<scf::ForOp>([&](scf::ForOp forOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == materializedPrograms.size());
 
               llvm::for_each(getQubitValues(forOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
@@ -709,7 +757,7 @@ private:
                   DenseSet<Value>(regionQubits.begin(), regionQubits.end()));
             })
             .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == materializedPrograms.size());
 
               llvm::for_each(getQubitValues(whileOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
@@ -735,7 +783,7 @@ private:
                   DenseSet<Value>(afterArgs.begin(), afterArgs.end()));
             })
             .Case<IfOp>([&](IfOp ifOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == materializedPrograms.size());
 
               llvm::for_each(ifOp.getQubits(),
                              [&](Value v) { qubits.erase(v); });
@@ -758,7 +806,7 @@ private:
                   DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
             })
             .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == materializedPrograms.size());
 
               llvm::for_each(switchOp.getTargets(),
                              [&](Value value) { qubits.erase(value); });
@@ -813,7 +861,7 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(device->nqubits(), rng())});
+                        .layout = Layout::random(target->numQubits(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -859,7 +907,7 @@ private:
                                                const Layout& layout) const {
     constexpr size_t cap = 25'000'000UL;
 
-    const size_t b = device->maxDegree() * ((device->nqubits() + 1) / 2);
+    const size_t b = target->maxDegree() * ((target->numQubits() + 1) / 2);
     const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -870,7 +918,7 @@ private:
 
     // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
-    if (root->isGoal(window.front(), *device)) {
+    if (root->isGoal(window.front(), *target)) {
       return SmallVector<IndexPairType>{};
     }
 
@@ -904,7 +952,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), *device)) {
+      if (curr->isGoal(window.front(), *target)) {
         SmallVector<IndexPairType> seq(curr->depth);
         size_t j = seq.size() - 1;
         for (const Node* n = curr; n->parent != nullptr; n = n->parent) {
@@ -920,18 +968,18 @@ private:
 
       expansionSet.clear();
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
-        for (const auto hw0 = curr->layout.getHardwareIndex(prog);
-             const auto hw1 : device->neighboursOf(hw0)) {
+        const auto hw0 = curr->layout.getHardwareIndex(prog);
+        target->forEachNeighbour(hw0, [&](const auto hw1) {
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
           if (is_contained(expansionSet, swap)) {
-            continue;
+            return;
           }
           expansionSet.push_back(swap);
 
           frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                             window, *device, params));
-        }
+                                             window, *target, params));
+        });
       }
 
       ++i;
@@ -945,7 +993,7 @@ private:
   [[nodiscard]] SmallVector<IndexPairType> restore(const Layout& from,
                                                    const Layout& to) const {
     Layout curr(from);
-    FGraph f(device);
+    FGraph f(*target);
     SmallVector<IndexPairType> swaps;
 
     while (true) {
@@ -984,7 +1032,7 @@ private:
                            SmallVector<IndexPairType>>
   converge(const Layout& lhs, const Layout& rhs) const {
     std::array layouts{Layout(lhs), Layout(rhs)};
-    std::array graphs{FGraph(device), FGraph(device)};
+    std::array graphs{FGraph(*target), FGraph(*target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
 
     std::mt19937 gen(seed);
@@ -1148,9 +1196,13 @@ private:
                           Statistics& stats, IRRewriter* rewriter) {
     auto& [wires, infos, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
-      if constexpr (Mode == RoutingMode::Hot) {
-        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
+      const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
+      stats.touchedPrograms.insert(prog0);
+      stats.touchedPrograms.insert(prog1);
 
+      if constexpr (Mode == RoutingMode::Hot) {
+        assert(infos.containsProgram(prog0) && infos.containsProgram(prog1) &&
+               "expected the routing preview to materialize SWAP operands");
         const auto i0 = infos.lookupIndex(prog0);
         const auto i1 = infos.lookupIndex(prog1);
 
@@ -1211,7 +1263,7 @@ private:
           const auto prog0 = infos.lookupProgram(indices[0]);
           const auto prog1 = infos.lookupProgram(indices[1]);
           if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-              device->areAdjacent(hw0, hw1)) {
+              target->areAdjacent(hw0, hw1)) {
             released.emplace_back(op);
           }
           continue;
@@ -1581,32 +1633,14 @@ private:
     return success();
   }
 
-  std::shared_ptr<AugmentedDevice> device;
+  std::optional<CompilerTarget> target;
 };
 
 } // namespace
 
-std::unique_ptr<Pass>
-createMappingPass(const DenseSet<std::pair<size_t, size_t>>& couplingSet,
-                  MappingPassOptions options) {
-
-  // Verify the assumption that the coupling set is symmetric:
-  // For every edge (u, v) in the set, (v, u) must also be present.
-
-  for (const auto& [u, v] : couplingSet) {
-    if (u == v) {
-      llvm::reportFatalUsageError("Found an invalid (u, u) edge.");
-    }
-
-    if (!couplingSet.contains({v, u})) {
-      llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
-                                  Twine(u) + ", " + Twine(v) +
-                                  ") exists but (" + Twine(v) + ", " +
-                                  Twine(u) + ") does not.");
-    }
-  }
-
-  return std::make_unique<MappingPass>(couplingSet, options);
+std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
+                                        MappingPassOptions options) {
+  return std::make_unique<MappingPass>(target, options);
 }
 
 } // namespace mlir::qco

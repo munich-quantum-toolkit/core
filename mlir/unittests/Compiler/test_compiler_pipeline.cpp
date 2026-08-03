@@ -921,8 +921,8 @@ cx q[0], q[2];
   const auto beforeTwoQubitFusion = qco.str();
   EXPECT_TRUE(qco.fuseTwoQubitUnitaryRuns("u,cx"));
   EXPECT_NE(qco.str(), beforeTwoQubitFusion);
-  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {
-      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
+                                                                     {1, 2}};
   EXPECT_TRUE(qco.placeAndRoute(coupling));
   EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
 
