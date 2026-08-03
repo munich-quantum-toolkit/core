@@ -205,3 +205,32 @@ TEST_F(UtilsTest, valueToConstantDoubleUIToFP) {
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
 }
+
+TEST_F(UtilsTest, valueToConstantAttrFoldFailure) {
+  // Integer division by zero refuses to fold.
+  auto lhs = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(1));
+  auto rhs = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(0));
+  auto op = arith::DivSIOp::create(*builder, lhs, rhs);
+
+  EXPECT_FALSE(utils::valueToConstantAttr(op.getResult()).has_value());
+  EXPECT_FALSE(utils::valueToConstantDouble(op.getResult()).has_value());
+}
+
+TEST_F(UtilsTest, valueToConstantAttrIdentityFold) {
+  // select(true, x, y) / addf(x, -0) fold to an existing SSA value, not an
+  // Attribute.
+  constexpr double expectedValue = 3.25;
+  auto cond = arith::ConstantOp::create(*builder, builder->getBoolAttr(true));
+  auto x = arith::ConstantOp::create(*builder,
+                                     builder->getF64FloatAttr(expectedValue));
+  auto y = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(9.0));
+  auto op = arith::SelectOp::create(*builder, cond, x, y);
+
+  const auto attr = utils::valueToConstantAttr(op.getResult());
+  ASSERT_TRUE(attr.has_value());
+  EXPECT_DOUBLE_EQ(*utils::attributeToDouble(*attr), expectedValue);
+
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, expectedValue);
+}
