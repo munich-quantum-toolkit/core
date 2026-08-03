@@ -52,6 +52,13 @@ Invalid metadata is rejected once at construction.
   resolved all four blocking findings: intrinsic locus validation, complete
   entangler-table coverage, C++/policy diagnostics, and the stale plan. The
   final tree is prepared for one signed atomic commit without a push.
+- [x] (2026-08-03 12:35Z) Diagnosed the exact-head CI failures after
+      publication. Moved five file-local helpers out of the anonymous namespace
+      so LLVM 22's preferred static-linkage check passes. Rebuilt the target,
+      passed the 8 focused and all 218 compiler tests, reran changed-file
+      clang-tidy, and passed the complete repository lint. The macOS failure was
+      an unrelated wall-clock assertion in an unchanged global-phase test and
+      will rerun on the replacement head.
 
 ## Milestones
 
@@ -119,6 +126,13 @@ an explicit series-level item described below.
   and stale plan sections. The final implementation validates those query
   boundaries, covers all eight required entanglers, and passes the repeated
   static checks.
+- Observation: CI's LLVM 22 lint enables
+  `llvm-prefer-static-over-anonymous-namespace`, which the local repository lint
+  does not surface. Five file-local helpers therefore needed explicit `static`
+  linkage outside the anonymous namespace. The simultaneous macOS debug failure
+  came from the unchanged
+  `GlobalPhaseNormalizationTest.ScalesLinearlyAcrossLargePhaseScopes` timing
+  assertion: 84.6 ms exceeded a 79.8 ms threshold.
 
 ## Decision Log
 

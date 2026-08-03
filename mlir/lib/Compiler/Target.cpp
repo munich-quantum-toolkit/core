@@ -129,7 +129,10 @@ constexpr std::array GATE_SPECIFICATIONS{
                       .symmetric = false},
 };
 
-[[nodiscard]] const GateSpecification& gateSpecification(const GateKind gate) {
+} // namespace
+
+[[nodiscard]] static const GateSpecification&
+gateSpecification(const GateKind gate) {
   const auto* const found =
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   if (found == GATE_SPECIFICATIONS.end()) {
@@ -138,7 +141,8 @@ constexpr std::array GATE_SPECIFICATIONS{
   return *found;
 }
 
-[[nodiscard]] std::string canonicalOperationName(const StringRef providerName) {
+[[nodiscard]] static std::string
+canonicalOperationName(const StringRef providerName) {
   auto canonical = providerName.trim().lower();
   if (canonical == "prx") {
     canonical = "r";
@@ -150,15 +154,15 @@ constexpr std::array GATE_SPECIFICATIONS{
   return canonical;
 }
 
-void validatePositiveCoherenceTime(const std::optional<uint64_t> time,
-                                   const StringRef description) {
+static void validatePositiveCoherenceTime(const std::optional<uint64_t> time,
+                                          const StringRef description) {
   if (time && *time == 0) {
     throw std::invalid_argument((description + " must be positive").str());
   }
 }
 
-void validateFidelity(const std::optional<double> fidelity,
-                      const StringRef description) {
+static void validateFidelity(const std::optional<double> fidelity,
+                             const StringRef description) {
   if (fidelity &&
       (!std::isfinite(*fidelity) || *fidelity < 0. || *fidelity > 1.)) {
     throw std::invalid_argument(
@@ -166,7 +170,7 @@ void validateFidelity(const std::optional<double> fidelity,
   }
 }
 
-[[nodiscard]] std::vector<CompilerTarget::Site>
+[[nodiscard]] static std::vector<CompilerTarget::Site>
 makeDenseSites(const size_t numQubits) {
   if (numQubits == 0) {
     throw std::invalid_argument(
@@ -186,8 +190,6 @@ makeDenseSites(const size_t numQubits) {
   }
   return sites;
 }
-
-} // namespace
 
 CompilerTarget::DurationUnit::DurationUnit(std::string unit,
                                            const double scaleFactor)
