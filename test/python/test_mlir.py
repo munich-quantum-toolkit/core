@@ -299,6 +299,72 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_reuses_qubits() -> None:
+    """Expose the raw and composite qubit-reuse flows."""
+    independent_qubits = """
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q0 = qco.alloc : !qco.qubit
+    %q1 = qco.alloc : !qco.qubit
+    %q0_h = qco.h %q0 : !qco.qubit -> !qco.qubit
+    %q1_h = qco.h %q1 : !qco.qubit -> !qco.qubit
+    %q0_m, %c0 = qco.measure %q0_h : !qco.qubit
+    %q1_m, %c1 = qco.measure %q1_h : !qco.qubit
+    qco.sink %q0_m : !qco.qubit
+    qco.sink %q1_m : !qco.qubit
+    return
+  }
+}
+"""
+    raw = QCOProgram.from_mlir_str(independent_qubits)
+    assert raw.ir.count("qco.alloc") == 2
+    raw.reuse_qubits()
+    assert raw.ir.count("qco.alloc") == 1
+    assert "qco.reset" in raw.ir
+
+    composite = QCOProgram.from_mlir_str(independent_qubits)
+    assert composite.ir.count("qco.alloc") == 2
+    composite.run_qubit_reuse_pipeline()
+    assert composite.ir.count("qco.alloc") == 1
+    assert "qco.reset" in composite.ir
+
+
+def test_typed_programs_normalize_global_phases() -> None:
+    """Normalize QC and QCO phases through the typed Python APIs."""
+    qc = QCProgram.from_mlir_str(
+        """module {
+          func.func @test(%q: !qc.qubit) {
+            %a = arith.constant 0.25 : f64
+            qc.gphase(%a)
+            qc.x %q : !qc.qubit
+            %b = arith.constant 0.5 : f64
+            qc.gphase(%b)
+            return
+          }
+        }"""
+    )
+    qc.normalize_global_phases()
+    assert qc.ir.count("qc.gphase") == 1
+
+    qco = QCOProgram.from_mlir_str(
+        """module {
+          func.func @test(%q: !qco.qubit) -> !qco.qubit {
+            %a = arith.constant 0.25 : f64
+            qco.gphase(%a)
+            %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+            %b = arith.constant 0.5 : f64
+            qco.gphase(%b)
+            return %q1 : !qco.qubit
+          }
+        }"""
+    )
+    qco.normalize_global_phases()
+    assert qco.ir.count("qco.gphase") == 1
+    once = qco.ir
+    qco.normalize_global_phases()
+    assert qco.ir == once
+
+
 def test_qco_program_two_qubit_fusion_requires_native_gates() -> None:
     """Require callers to provide a non-empty native gate menu."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)

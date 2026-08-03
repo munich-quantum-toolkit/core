@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/FunctionalityConstruction.hpp"
+#include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -26,6 +28,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -57,6 +60,88 @@ void checkEquivalence(const qc::QuantumComputation& qc1,
     ASSERT_LT(q, qc1.getNqubits());
     EXPECT_TRUE(d1.connected(d1.getInput(q), d1.getOutput(q)));
   }
+}
+
+void addDirtyAncillaMcx(qc::QuantumComputation& circuit,
+                        const std::vector<qc::Qubit>& controls,
+                        const qc::Qubit target,
+                        const std::vector<qc::Qubit>& ancillas) {
+  if (controls.size() == 1) {
+    circuit.cx(controls.front(), target);
+    return;
+  }
+  if (controls.size() == 2) {
+    circuit.mcx({controls.front(), controls.back()}, target);
+    return;
+  }
+
+  const auto requiredAncillas = controls.size() - 2;
+  for (std::size_t pass = 0; pass < 2; ++pass) {
+    circuit.mcx({controls.back(), ancillas[requiredAncillas - 1]}, target);
+    for (auto i = requiredAncillas - 1; i-- > 0;) {
+      circuit.h(ancillas[i + 1]);
+      circuit.t(ancillas[i + 1]);
+      circuit.cx(controls[i + 2], ancillas[i + 1]);
+      circuit.tdg(ancillas[i + 1]);
+      circuit.cx(ancillas[i], ancillas[i + 1]);
+    }
+    circuit.rccx(controls[0], controls[1], ancillas[0]);
+    for (std::size_t i = 0; i + 1 < requiredAncillas; ++i) {
+      circuit.cx(ancillas[i], ancillas[i + 1]);
+      circuit.t(ancillas[i + 1]);
+      circuit.cx(controls[i + 2], ancillas[i + 1]);
+      circuit.tdg(ancillas[i + 1]);
+      circuit.h(ancillas[i + 1]);
+    }
+  }
+}
+
+void addReferenceMcphase(qc::QuantumComputation& circuit, const double phase,
+                         const std::vector<qc::Qubit>& controls,
+                         const qc::Qubit target) {
+  if (controls.size() == 1) {
+    circuit.cp(phase, controls.front(), target);
+    return;
+  }
+  if (controls.size() == 2) {
+    const auto halfPhase = phase / 2.0;
+    circuit.p(halfPhase, target);
+    circuit.mcx({controls.front(), controls.back()}, target);
+    circuit.p(-halfPhase, target);
+    circuit.mcx({controls.front(), controls.back()}, target);
+    circuit.cp(halfPhase, controls.front(), controls.back());
+    return;
+  }
+
+  const auto split =
+      controls.begin() + static_cast<std::ptrdiff_t>((controls.size() + 1) / 2);
+  const std::vector<qc::Qubit> first(controls.begin(), split);
+  const std::vector<qc::Qubit> second(split, controls.end());
+  const auto quarterPhase = phase / 4.0;
+  addDirtyAncillaMcx(circuit, first, target, second);
+  circuit.p(-quarterPhase, target);
+  addDirtyAncillaMcx(circuit, second, target, first);
+  circuit.p(quarterPhase, target);
+  addDirtyAncillaMcx(circuit, first, target, second);
+  circuit.p(-quarterPhase, target);
+  addDirtyAncillaMcx(circuit, second, target, first);
+  circuit.p(quarterPhase, target);
+
+  addReferenceMcphase(
+      circuit, phase / 2.0,
+      std::vector<qc::Qubit>(controls.begin(), controls.end() - 1),
+      controls.back());
+}
+
+qc::QuantumComputation makeReferenceMcx(const std::size_t numControls) {
+  const auto numQubits = numControls + 1;
+  qc::QuantumComputation reference(numQubits);
+  std::vector<qc::Qubit> controls(numControls);
+  std::iota(controls.begin(), controls.end(), 1U);
+  reference.h(0);
+  addReferenceMcphase(reference, PI, controls, 0);
+  reference.h(0);
+  return reference;
 }
 
 } // namespace
@@ -263,6 +348,35 @@ TEST_F(ZXFunctionalityTest, MCX1) {
   qcPrime.cx(1, 0);
 
   checkEquivalence(qc, qcPrime, {0, 1});
+}
+
+TEST_F(ZXFunctionalityTest, LargeMCX) {
+  for (const std::size_t numControls : {5U, 8U}) {
+    const auto numQubits = numControls + 1;
+    qc::Controls controls;
+    for (qc::Qubit q = 1; q < numQubits; ++q) {
+      controls.emplace(q);
+    }
+
+    qc = qc::QuantumComputation(numQubits);
+    qc.mcx(controls, 0);
+
+    const auto reference = makeReferenceMcx(numControls);
+    std::vector<qc::Qubit> qubits(numQubits);
+    std::iota(qubits.begin(), qubits.end(), 0U);
+
+    checkEquivalence(qc, reference, qubits);
+
+    const auto diag = FunctionalityConstruction::buildFunctionality(&qc);
+    EXPECT_LT(diag.getNVertices(), 22U * numControls * numControls);
+
+    dd::Package package(numQubits);
+    const auto actual = dd::buildFunctionality(qc, package);
+    const auto expected = dd::buildFunctionality(reference, package);
+    EXPECT_EQ(actual.p, expected.p);
+    package.decRef(actual);
+    package.decRef(expected);
+  }
 }
 
 TEST_F(ZXFunctionalityTest, MCZ) {

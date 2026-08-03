@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -464,6 +465,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
+    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
 

@@ -166,6 +166,9 @@ def GPhaseOp
   let description = [{
         Applies a global phase to the state.
 
+        Constant angles must be finite and have magnitude at most 10000
+        radians. Dynamic angles have the same runtime precondition.
+
         Example:
         ```mlir
         qco.gphase(%theta)
@@ -184,6 +187,7 @@ def GPhaseOp
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
 
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
 }
 
 def IdOp

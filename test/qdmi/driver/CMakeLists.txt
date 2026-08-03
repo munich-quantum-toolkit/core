@@ -68,6 +68,7 @@ if(TARGET MQT::CoreQDMIDriver)
       "MQT_CORE_QDMI_NA_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMINaDevice>\""
       "MQT_CORE_QDMI_CUSTOM_NA_FILE=\"${custom_na_file}\""
       "MQT_CORE_QDMI_DEFAULT_NA_FILE=\"${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json\""
+      "MQT_CORE_QDMI_SC_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\""
       "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMINaDevice>\", \"MQT_NA\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
   )
 
