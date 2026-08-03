@@ -10,7 +10,6 @@
 
 import enum
 import os
-from collections.abc import Sequence
 from typing import Literal, overload
 
 import qiskit
@@ -164,19 +163,6 @@ class QCOProgram(Program):
 
     def decompose_multi_controlled(self, *, min_controls: int = 2) -> None:
         """Decompose controlled X/Z gates, qco.rccx, and constant-angle phase gates with at least min_controls controls (min_controls must be at least 2)."""
-
-    def place_and_route(
-        self,
-        coupling: Sequence[tuple[int, int]],
-        *,
-        nlookahead: int = 1,
-        alpha: float = 1.0,
-        lambda_: float = 0.5,
-        niterations: int = 1,
-        ntrials: int = 4,
-        seed: int = 42,
-    ) -> None:
-        """Place and route the program for a coupling graph."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.

@@ -11,14 +11,18 @@
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qasm_programs.h"
@@ -188,6 +192,20 @@ protected:
 
 } // namespace
 
+[[nodiscard]] static CompilerTarget
+makeSparseUCZTarget(const bool includeMeasure) {
+  using Operation = CompilerTarget::Operation;
+  using Site = CompilerTarget::Site;
+
+  std::vector operations{Operation{"u", 1, 3}, Operation{"cz", 2, 0}};
+  if (includeMeasure) {
+    operations.emplace_back("measure", 1, 0);
+  }
+  return CompilerTarget{"sparse-line", std::vector{Site{5}, Site{9}, Site{17}},
+                        std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
+                        std::move(operations)};
+}
+
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();
   const auto name = " (" + testCase.name + ")";
@@ -219,7 +237,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   auto compiled = runDefaultPipeline(
       CompilerInput{std::move(*input)},
       testCase.convertToQIR ? ProgramFormat::QIRAdaptive : ProgramFormat::QC,
-      testCase.qcoPipeline);
+      nullptr, testCase.qcoPipeline);
   ASSERT_TRUE(compiled);
 
   OwningOpRef<ModuleOp> expected;
@@ -269,9 +287,9 @@ h q;
 )";
   auto input = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(input);
-  auto result =
-      runDefaultPipeline(CompilerInput{std::move(*input)},
-                         ProgramFormat::QCOOptimized, "hadamard-lifting");
+  auto result = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                   ProgramFormat::QCOOptimized, nullptr,
+                                   "hadamard-lifting");
   ASSERT_TRUE(result);
   EXPECT_FALSE(std::get<QCOProgram>(*result).str().empty());
 }
@@ -918,9 +936,6 @@ cx q[0], q[2];
 
   EXPECT_TRUE(qco.fuseSingleQubitUnitaryRuns("zyz"));
   EXPECT_NE(qco.str(), beforeFusion);
-  const std::vector<std::pair<std::size_t, std::size_t>> coupling = {{0, 1},
-                                                                     {1, 2}};
-  EXPECT_TRUE(qco.placeAndRoute(coupling));
   EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
 
   auto loopModule = mqt::test::buildMLIRProgram(
@@ -934,6 +949,93 @@ cx q[0], q[2];
   EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
   EXPECT_TRUE(loopProgram->unrollQuantumLoops());
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: target compilation decomposes, maps, synthesizes, and verifies.
+ */
+TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
+  auto qc = QCProgram::fromQASMString(qasm::multipleControlledX);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+
+  const auto target = makeSparseUCZTarget(true);
+  ASSERT_TRUE(qco->compileForTarget(target));
+
+  auto compiled = parseRecordedModule(qco->str());
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(verify(*compiled).succeeded());
+
+  size_t numStatic = 0;
+  size_t numDynamic = 0;
+  size_t numSwaps = 0;
+  size_t numHigherArity = 0;
+  compiled->walk([&](Operation* operation) {
+    if (auto staticOp = dyn_cast<qco::StaticOp>(operation)) {
+      ++numStatic;
+      EXPECT_TRUE(llvm::is_contained(
+          target.siteIds(),
+          static_cast<CompilerTarget::SiteId>(staticOp.getIndex())));
+    }
+    numDynamic += isa<qco::AllocOp, qtensor::AllocOp>(operation);
+    numSwaps += isa<qco::SWAPOp>(operation);
+    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation);
+        unitary && unitary.getNumQubits() > 2) {
+      ++numHigherArity;
+    }
+  });
+  EXPECT_EQ(numStatic, 3);
+  EXPECT_EQ(numDynamic, 0);
+  EXPECT_EQ(numSwaps, 0);
+  EXPECT_EQ(numHigherArity, 0);
+
+  auto unsupportedQC = QCProgram::fromQASMString(qasm::multipleControlledX);
+  ASSERT_TRUE(unsupportedQC);
+  auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
+  ASSERT_TRUE(unsupportedQCO);
+  EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
+}
+
+/**
+ * @brief Test: the default pipeline accepts an optional compiler target.
+ */
+TEST_F(CompilerPipelineTest, DefaultPipelineCompilesForTarget) {
+  auto input = QCProgram::fromQASMString(qasm::multipleControlledX);
+  ASSERT_TRUE(input);
+  const auto target = makeSparseUCZTarget(true);
+
+  auto result = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                   ProgramFormat::QCOOptimized, &target);
+  ASSERT_TRUE(result);
+  ASSERT_TRUE(std::holds_alternative<QCOProgram>(*result));
+  const auto& qco = std::get<QCOProgram>(*result);
+  EXPECT_NE(qco.str().find("qco.static"), std::string::npos);
+  EXPECT_EQ(qco.str().find("qco.swap"), std::string::npos);
+
+  auto qirInput = QCProgram::fromQASMString(qasm::multipleControlledX);
+  ASSERT_TRUE(qirInput);
+  auto qirResult = runDefaultPipeline(CompilerInput{std::move(*qirInput)},
+                                      ProgramFormat::QIRBase, &target);
+  ASSERT_TRUE(qirResult);
+  ASSERT_TRUE(std::holds_alternative<QIRProgram>(*qirResult));
+  const auto& qir = std::get<QIRProgram>(*qirResult);
+  auto qirModule = parseRecordedModule(qir.str());
+  ASSERT_TRUE(qirModule);
+  std::vector<int64_t> qirSiteIds;
+  qirModule->walk([&](LLVM::IntToPtrOp intToPtr) {
+    auto constant = intToPtr.getArg().getDefiningOp<LLVM::ConstantOp>();
+    if (!constant) {
+      return;
+    }
+    if (const auto value = dyn_cast<IntegerAttr>(constant.getValue())) {
+      qirSiteIds.emplace_back(value.getInt());
+    }
+  });
+  for (const auto siteId : target.siteIds()) {
+    EXPECT_TRUE(llvm::is_contained(qirSiteIds, siteId));
+  }
+  EXPECT_TRUE(qir.llvmIR());
 }
 
 /**
@@ -1003,7 +1105,7 @@ h q;
   auto profiledInput = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(profiledInput);
   auto profiled = runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
-                                     ProgramFormat::QCOOptimized,
+                                     ProgramFormat::QCOOptimized, nullptr,
                                      "mqt-qco-default", true, true);
   ASSERT_TRUE(profiled);
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
@@ -1012,7 +1114,26 @@ h q;
   ASSERT_TRUE(customPipelineInput);
   EXPECT_FALSE(runDefaultPipeline(
       CompilerInput{std::move(*customPipelineInput)}, ProgramFormat::QCO,
-      "builtin.module(merge-single-qubit-rotation-gates)"));
+      nullptr, "builtin.module(merge-single-qubit-rotation-gates)"));
+
+  const CompilerTarget target{1};
+  auto targetedImport = QCProgram::fromQASMString(qasm);
+  auto targetedRawQCO = QCProgram::fromQASMString(qasm);
+  auto targetedJeff = QCProgram::fromQASMString(qasm);
+  auto targetedCustom = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(targetedImport);
+  ASSERT_TRUE(targetedRawQCO);
+  ASSERT_TRUE(targetedJeff);
+  ASSERT_TRUE(targetedCustom);
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(*targetedImport)},
+                                  ProgramFormat::QCImport, &target));
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(*targetedRawQCO)},
+                                  ProgramFormat::QCO, &target));
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(*targetedJeff)},
+                                  ProgramFormat::Jeff, &target));
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(*targetedCustom)},
+                                  ProgramFormat::QCOOptimized, &target,
+                                  "hadamard-lifting"));
 
   auto base = compile(ProgramFormat::QIRBase);
   ASSERT_TRUE(base);
@@ -1039,7 +1160,7 @@ h q;
   EXPECT_FALSE(
       runDefaultPipeline(CompilerInput{qco->copy()}, ProgramFormat::QCImport));
   EXPECT_FALSE(runDefaultPipeline(CompilerInput{qco->copy()},
-                                  ProgramFormat::QCImport,
+                                  ProgramFormat::QCImport, nullptr,
                                   "merge-single-qubit-rotation-gates"));
   auto fromQCO =
       runDefaultPipeline(CompilerInput{std::move(*qco)}, ProgramFormat::QC);

@@ -11,7 +11,7 @@
 #include "mlir/Compiler/Programs.h"
 
 #include "ir/QuantumComputation.hpp"
-#include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -22,7 +22,6 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
@@ -33,6 +32,7 @@
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -59,7 +59,6 @@
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/ModuleTranslation.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -67,11 +66,9 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -162,12 +159,19 @@ parseTypedProgram(const StringRef dialect, Parse&& parse) {
   return ProgramType({.context = std::move(context), .mod = std::move(*mod)});
 }
 
-template <class PopulatePasses>
-[[nodiscard]] static LogicalResult runPasses(ModuleOp mod,
-                                             PopulatePasses&& populatePasses,
-                                             const StringRef failureMessage) {
+[[nodiscard]] static LogicalResult
+runPasses(ModuleOp mod,
+          const llvm::function_ref<void(OpPassManager&)> populatePasses,
+          const StringRef failureMessage, const bool enableTiming = false,
+          const bool enableStatistics = false) {
   PassManager pm(mod.getContext());
-  std::forward<PopulatePasses>(populatePasses)(pm);
+  if (enableTiming) {
+    pm.enableTiming();
+  }
+  if (enableStatistics) {
+    pm.enableStatistics();
+  }
+  populatePasses(pm);
   if (failed(pm.run(mod))) {
     return mod.emitError(failureMessage);
   }
@@ -401,52 +405,16 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {
       "failed to decompose multi-controlled gates"));
 }
 
-bool QCOProgram::placeAndRoute(
-    const std::span<const std::pair<std::size_t, std::size_t>> coupling,
-    const std::size_t nlookahead, const float alpha, const float lambda,
-    const std::size_t niterations, const std::size_t ntrials,
-    const std::size_t seed) {
-  std::vector<CompilerTarget::SiteId> siteIds;
-  siteIds.reserve(coupling.size() * 2);
-  std::vector<CompilerTarget::Coupling> couplings;
-  couplings.reserve(coupling.size());
-  for (const auto [source, target] : coupling) {
-    if (source > static_cast<std::size_t>(
-                     std::numeric_limits<CompilerTarget::SiteId>::max()) ||
-        target > static_cast<std::size_t>(
-                     std::numeric_limits<CompilerTarget::SiteId>::max())) {
-      throw std::invalid_argument(
-          "Coupling site ID exceeds the nonnegative i64 domain");
-    }
-    const auto sourceId = static_cast<CompilerTarget::SiteId>(source);
-    const auto targetId = static_cast<CompilerTarget::SiteId>(target);
-    siteIds.emplace_back(sourceId);
-    siteIds.emplace_back(targetId);
-    couplings.emplace_back(sourceId, targetId);
-  }
-  std::ranges::sort(siteIds);
-  const auto [duplicates, end] = std::ranges::unique(siteIds);
-  siteIds.erase(duplicates, end);
-  std::vector<CompilerTarget::Site> sites;
-  sites.reserve(siteIds.size());
-  for (const auto site : siteIds) {
-    sites.emplace_back(site);
-  }
-  const CompilerTarget target(std::move(sites), std::move(couplings));
-
-  qco::MappingPassOptions options;
-  options.nlookahead = nlookahead;
-  options.alpha = alpha;
-  options.lambda = lambda;
-  options.niterations = niterations;
-  options.ntrials = ntrials;
-  options.seed = seed;
+bool QCOProgram::compileForTarget(const CompilerTarget& target,
+                                  const bool enableTiming,
+                                  const bool enableStatistics) {
   return succeeded(runPasses(
       mod(),
-      [&target, &options](OpPassManager& pm) {
-        pm.addPass(qco::createMappingPass(target, options));
+      [&target](OpPassManager& pm) {
+        populateTargetCompilationPipeline(pm, target);
       },
-      "failed to place and route the QCO program"));
+      "failed to compile the QCO program for the target", enableTiming,
+      enableStatistics));
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {
@@ -632,8 +600,21 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
 
 std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
+                   const CompilerTarget* const target,
                    const std::string_view qcoPipeline, const bool enableTiming,
                    const bool enableStatistics) {
+  if (target != nullptr &&
+      (output == ProgramFormat::QCImport || output == ProgramFormat::QCO ||
+       output == ProgramFormat::Jeff)) {
+    llvm::errs()
+        << "a compiler target requires QCOOptimized, QC, or QIR output.\n";
+    return std::nullopt;
+  }
+  if (target != nullptr && qcoPipeline != "mqt-qco-default") {
+    llvm::errs() << "a custom QCO pass pipeline cannot be combined with a "
+                    "compiler target.\n";
+    return std::nullopt;
+  }
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
     llvm::errs() << "a custom QCO pass pipeline cannot be used with an output "
@@ -665,10 +646,16 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
     return CompilerProgram(std::move(*qco));
   }
 
-  if (!qco->cleanup() ||
-      !qco->runPassPipeline(qcoPipeline, enableTiming, enableStatistics) ||
-      !qco->cleanup()) {
-    return std::nullopt;
+  if (target != nullptr) {
+    if (!qco->compileForTarget(*target, enableTiming, enableStatistics)) {
+      return std::nullopt;
+    }
+  } else {
+    if (!qco->cleanup() ||
+        !qco->runPassPipeline(qcoPipeline, enableTiming, enableStatistics) ||
+        !qco->cleanup()) {
+      return std::nullopt;
+    }
   }
   if (output == ProgramFormat::QCOOptimized) {
     return CompilerProgram(std::move(*qco));

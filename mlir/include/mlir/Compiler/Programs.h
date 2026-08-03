@@ -36,6 +36,7 @@ class QCProgram;
 class QCOProgram;
 class JeffProgram;
 class QIRProgram;
+class CompilerTarget;
 
 /**
  * @brief The QIR profile represented by a QIR program.
@@ -204,12 +205,10 @@ public:
   /// least 2).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minControls = 2);
 
-  /// Place and route the program on a coupling graph.
-  [[nodiscard]] bool
-  placeAndRoute(std::span<const std::pair<std::size_t, std::size_t>> coupling,
-                std::size_t nlookahead = 1, float alpha = 1.F,
-                float lambda = 0.5F, std::size_t niterations = 1,
-                std::size_t ntrials = 4, std::size_t seed = 42);
+  /// Compile this program for a target.
+  [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
+                                      bool enableTiming = false,
+                                      bool enableStatistics = false);
 
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
@@ -293,6 +292,7 @@ using CompilerProgram =
  */
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
+                   const CompilerTarget* target = nullptr,
                    std::string_view qcoPipeline = "mqt-qco-default",
                    bool enableTiming = false, bool enableStatistics = false);
 
