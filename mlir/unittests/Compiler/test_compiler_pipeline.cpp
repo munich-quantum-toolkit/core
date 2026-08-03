@@ -216,11 +216,6 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   module->print(sourceStream);
   auto input = QCProgram::fromMLIRString(source);
   ASSERT_TRUE(input);
-  std::string pipeline = "mqt-qco-default";
-  for (const auto& param : testCase.pipelineParams) {
-    pipeline += "," + param;
-  }
-
   auto compiled = runDefaultPipeline(
       CompilerInput{std::move(*input)},
       testCase.convertToQIR ? ProgramFormat::QIRAdaptive : ProgramFormat::QC,
