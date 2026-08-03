@@ -1238,7 +1238,7 @@ TEST(OpenQASMFrontendTest, AcceptsMixedPhysicalAndDeclaredQubits) {
 }
 
 TEST(OpenQASMFrontendTest, SkipsOpenQASM2StdlibGateRedefinition) {
-  // OpenQASM 2.0 corpora often repeat qelib1 gate definitions; keep the
+  // OpenQASM 2.0 programs often repeat standard library gate definitions; keep the
   // standard-library entry and drop the duplicate body.
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
