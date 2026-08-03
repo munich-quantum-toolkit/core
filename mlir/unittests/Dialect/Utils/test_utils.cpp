@@ -235,7 +235,7 @@ TEST_F(UtilsTest, valueToConstantAttrIdentityFold) {
   EXPECT_DOUBLE_EQ(*stdValue, expectedValue);
 }
 
-TEST_F(UtilsTest, valueToConstantAttrSharedOperands) {
+TEST_F(UtilsTest, valueToConstantDoubleSharedOperands) {
   // Repeated doubling reuses the same SSA value as both operands. Without
   // memoization this is exponential in `depth`; with a cache it is linear.
   constexpr int depth = 40;
