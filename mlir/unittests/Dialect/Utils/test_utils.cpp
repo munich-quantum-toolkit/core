@@ -135,3 +135,56 @@ TEST_F(UtilsTest, valueToDoubleFoldedConstant) {
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(stdValue.value(), 3.5);
 }
+
+TEST_F(UtilsTest, valueToConstantDoubleAddF) {
+  auto op = createAddition(1.25, 2.5);
+  ASSERT_TRUE(op);
+
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, 3.75);
+}
+
+TEST_F(UtilsTest, valueToConstantDoubleSubF) {
+  auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
+  auto rhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.5));
+  auto op = arith::SubFOp::create(*builder, lhs, rhs);
+
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, 3.5);
+}
+
+TEST_F(UtilsTest, valueToConstantDoubleSubFDynamicRhs) {
+  auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
+  // `divf` is intentionally not folded by valueToConstantDouble.
+  auto num = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
+  auto den = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.0));
+  auto dyn = arith::DivFOp::create(*builder, num, den);
+  auto op = arith::SubFOp::create(*builder, lhs, dyn);
+
+  EXPECT_FALSE(utils::valueToConstantDouble(op.getResult()).has_value());
+}
+
+TEST_F(UtilsTest, valueToConstantDoubleNegF) {
+  auto operand =
+      arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.25));
+  auto op = arith::NegFOp::create(*builder, operand);
+
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, -2.25);
+}
+
+TEST_F(UtilsTest, valueToConstantDoubleUIToFP) {
+  constexpr uint64_t expectedValue = 7;
+  auto intConst = arith::ConstantOp::create(
+      *builder, builder->getIntegerAttr(builder->getIntegerType(64, false),
+                                        expectedValue));
+  auto op = arith::UIToFPOp::create(*builder, builder->getF64Type(),
+                                    intConst.getResult());
+
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
+}
