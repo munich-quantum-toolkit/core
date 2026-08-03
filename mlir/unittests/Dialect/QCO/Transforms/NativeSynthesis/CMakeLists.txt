@@ -6,22 +6,22 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-fuse-two-qubit-unitary-runs)
-add_executable(${target_name} test_fuse_two_qubit_unitary_runs.cpp)
+set(target_name mqt-core-mlir-unittest-target-synthesis)
+add_executable(${target_name} test_target_synthesis.cpp)
 
 target_link_libraries(
   ${target_name}
   PRIVATE MLIRParser
           GTest::gtest_main
-          MLIRQCPrograms
+          MQTCompilerTarget
           MLIRQCOProgramBuilder
           MLIRQCODDFunctionality
           MLIRQCOUtils
-          MLIRQCToQCO
           MLIRQCOTransforms
           MLIRPass
           MLIRFuncDialect
           MLIRArithDialect
+          MLIRSCFDialect
           MLIRIR
           MLIRSupport
           LLVMSupport)

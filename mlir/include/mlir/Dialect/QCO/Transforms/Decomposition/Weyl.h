@@ -343,7 +343,7 @@ decomposeTwoQubitWithBasis(
     double basisFidelity = 1.0,
     std::optional<std::uint8_t> numBasisUses = std::nullopt);
 
-struct NativeGateset;
+struct NativeSynthesisBasis;
 
 /** @brief Result of two-qubit synthesis, including its accumulated phase. */
 struct SynthesizedUnitary2Q {
@@ -352,10 +352,17 @@ struct SynthesizedUnitary2Q {
   double globalPhase = 0.0;
 };
 
-/** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
+/**
+ * @brief Synthesizes a two-qubit unitary in the selected target @p basis.
+ *
+ * Set @p reverseEntanglerOperands only when the basis entangler is
+ * operand-symmetric but the provider supports the reverse ordered locus.
+ * Logical qubit outputs remain paired with their corresponding inputs.
+ */
 [[nodiscard]] FailureOr<SynthesizedUnitary2Q>
 synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
                         Value qubit1, const Matrix4x4& target,
-                        const NativeGateset& spec);
+                        const NativeSynthesisBasis& basis,
+                        bool reverseEntanglerOperands = false);
 
 } // namespace mlir::qco::decomposition

@@ -10,9 +10,10 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/SynthesisBasis.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
@@ -671,18 +672,15 @@ bool TwoQubitWeylDecomposition::applySpecialization(
 FailureOr<SynthesizedUnitary2Q>
 synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
                         Value qubit1, const Matrix4x4& target,
-                        const NativeGateset& spec) {
-  const auto native = spec.decomposeTarget(target);
-  if (!native || !spec.eulerBasis) {
-    return failure();
-  }
-
-  double globalPhase = native->globalPhase;
+                        const NativeSynthesisBasis& basis,
+                        const bool reverseEntanglerOperands) {
+  const auto native = basis.decomposeTarget(target);
+  double globalPhase = native.globalPhase;
 
   Value wire0 = qubit0;
   Value wire1 = qubit1;
-  const auto& factors = native->singleQubitFactors;
-  const std::uint8_t numBasisUses = native->numBasisUses;
+  const auto& factors = native.singleQubitFactors;
+  const std::uint8_t numBasisUses = native.numBasisUses;
   const std::size_t requiredFactors = singleQubitFactorCount(numBasisUses);
   if (factors.size() != requiredFactors) {
     llvm::reportFatalInternalError(llvm::formatv(
@@ -693,7 +691,7 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, *spec.eulerBasis);
+        /*hasNonBasisGate=*/true, basis.singleQubit);
     if (!synthesized) {
       llvm::reportFatalInternalError(llvm::formatv(
           "synthesizeUnitary2QWeyl: euler synthesis failed for factor index "
@@ -704,55 +702,62 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
     globalPhase += synthesized->globalPhase;
   };
   const auto emitEntangler = [&]() {
-    if (spec.entangler == NativeGateKind::RXX) {
-      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
-      wire0 = rxxOp.getOutputQubit(0);
-      wire1 = rxxOp.getOutputQubit(1);
+    Value& entanglerWire0 = reverseEntanglerOperands ? wire1 : wire0;
+    Value& entanglerWire1 = reverseEntanglerOperands ? wire0 : wire1;
+    if (basis.entangler == CompilerTarget::GateKind::RXX) {
+      auto rxxOp =
+          RXXOp::create(builder, loc, entanglerWire0, entanglerWire1, PI / 2.0);
+      entanglerWire0 = rxxOp.getOutputQubit(0);
+      entanglerWire1 = rxxOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RYY) {
-      auto ryyOp = RYYOp::create(builder, loc, wire0, wire1, PI / 2.0);
-      wire0 = ryyOp.getOutputQubit(0);
-      wire1 = ryyOp.getOutputQubit(1);
+    if (basis.entangler == CompilerTarget::GateKind::RYY) {
+      auto ryyOp =
+          RYYOp::create(builder, loc, entanglerWire0, entanglerWire1, PI / 2.0);
+      entanglerWire0 = ryyOp.getOutputQubit(0);
+      entanglerWire1 = ryyOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RZX) {
-      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
-      wire0 = rzxOp.getOutputQubit(0);
-      wire1 = rzxOp.getOutputQubit(1);
+    if (basis.entangler == CompilerTarget::GateKind::RZX) {
+      auto rzxOp =
+          RZXOp::create(builder, loc, entanglerWire0, entanglerWire1, PI / 2.0);
+      entanglerWire0 = rzxOp.getOutputQubit(0);
+      entanglerWire1 = rzxOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::RZZ) {
-      auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, PI / 2.0);
-      wire0 = rzzOp.getOutputQubit(0);
-      wire1 = rzzOp.getOutputQubit(1);
+    if (basis.entangler == CompilerTarget::GateKind::RZZ) {
+      auto rzzOp =
+          RZZOp::create(builder, loc, entanglerWire0, entanglerWire1, PI / 2.0);
+      entanglerWire0 = rzzOp.getOutputQubit(0);
+      entanglerWire1 = rzzOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::ISWAP) {
-      auto iswapOp = iSWAPOp::create(builder, loc, wire0, wire1);
-      wire0 = iswapOp.getOutputQubit(0);
-      wire1 = iswapOp.getOutputQubit(1);
+    if (basis.entangler == CompilerTarget::GateKind::ISWAP) {
+      auto iswapOp =
+          iSWAPOp::create(builder, loc, entanglerWire0, entanglerWire1);
+      entanglerWire0 = iswapOp.getOutputQubit(0);
+      entanglerWire1 = iswapOp.getOutputQubit(1);
       return;
     }
-    if (spec.entangler == NativeGateKind::CZ ||
-        spec.entangler == NativeGateKind::CX) {
-      const bool emitCz = spec.entangler == NativeGateKind::CZ;
-      auto ctrlOp =
-          CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
+    if (basis.entangler == CompilerTarget::GateKind::CZ ||
+        basis.entangler == CompilerTarget::GateKind::CX) {
+      const bool emitCz = basis.entangler == CompilerTarget::GateKind::CZ;
+      auto ctrlOp = CtrlOp::create(
+          builder, loc, entanglerWire0, entanglerWire1, [&](Value targetQubit) {
             if (emitCz) {
               return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
             }
             return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
           });
-      wire0 = ctrlOp.getOutputControl(0);
-      wire1 = ctrlOp.getOutputTarget(0);
+      entanglerWire0 = ctrlOp.getOutputControl(0);
+      entanglerWire1 = ctrlOp.getOutputTarget(0);
       return;
     }
-    assert(spec.entangler == NativeGateKind::ECR &&
-           "emitEntangler: unexpected NativeGateKind");
-    auto ecrOp = ECROp::create(builder, loc, wire0, wire1);
-    wire0 = ecrOp.getOutputQubit(0);
-    wire1 = ecrOp.getOutputQubit(1);
+    assert(basis.entangler == CompilerTarget::GateKind::ECR &&
+           "emitEntangler: unexpected compiler target gate");
+    auto ecrOp = ECROp::create(builder, loc, entanglerWire0, entanglerWire1);
+    entanglerWire0 = ecrOp.getOutputQubit(0);
+    entanglerWire1 = ecrOp.getOutputQubit(1);
   };
 
   for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {

@@ -85,13 +85,6 @@ static llvm::cl::opt<std::string> outputFormat(
         "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
 
-static llvm::cl::opt<std::string> nativeGates(
-    "native-gates",
-    llvm::cl::desc(
-        "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
-        "pass"),
-    llvm::cl::value_desc("csv"), llvm::cl::init(""));
-
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
 enum class InputDialect : std::uint8_t { QC, QCO };
@@ -397,19 +390,6 @@ static int runCompiler(int argc, char** argv) {
                     "QCO optimization.\n";
     return 1;
   }
-  const llvm::StringRef nativeGateMenu =
-      llvm::StringRef(nativeGates.getValue()).trim();
-  if (nativeGates.getNumOccurrences() > 0 && nativeGateMenu.empty()) {
-    llvm::errs() << "--native-gates must not be empty.\n";
-    return 1;
-  }
-  if (nativeGates.getNumOccurrences() > 0 &&
-      (*parsedOutputFormat == OutputFormat::QCImport ||
-       *parsedOutputFormat == OutputFormat::QCO)) {
-    llvm::errs() << "--native-gates requires an output that passes through "
-                    "QCO optimization.\n";
-    return 1;
-  }
   if (enableDecomposeMultiControlled &&
       !isDecomposeMultiControlledConfigValid(
           decomposeMultiControlledMinControls.getValue())) {
@@ -459,12 +439,6 @@ static int runCompiler(int argc, char** argv) {
             populateDefaultQCOOptimizationPipeline(pm);
           }
           populateQCOCleanupPipeline(pm);
-          if (!nativeGateMenu.empty()) {
-            pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
-                qco::FuseTwoQubitUnitaryRunsOptions{
-                    .nativeGates = nativeGateMenu.str(),
-                }));
-          }
           return success();
         }))) {
       return 1;
