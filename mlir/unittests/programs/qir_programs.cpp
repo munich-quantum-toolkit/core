@@ -1061,6 +1061,32 @@ template <bool IntoRegister> Value ctrlTwo(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
+Value hGatesAndResetsOnOneQubit(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  b.measure(q, 0);
+  b.reset(q);
+  b.h(q);
+  b.measure(q, 1);
+  return b.intConstant(0);
+}
+
+Value reusedCX(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  auto c1 = b.measure(q, 0);
+  b.reset(q);
+  b.scfIf(c1, [&] { b.x(q); });
+  b.measure(q, 1);
+  return b.intConstant(0);
+}
+
+Value singleControlledXOnIndividualQubits(QIRProgramBuilder& b) {
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.cx(q1, q2);
+  return measureAndRecord(b, {q1, q2}, false);
+}
+
 // Instantiate the templates for IntoRegister = false
 template Value emptyQIR<false>(QIRProgramBuilder& builder);
 template Value allocQubit<false>(QIRProgramBuilder& b);

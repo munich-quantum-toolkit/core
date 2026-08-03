@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage
+from mqt.core.dd import DDPackage, MatrixDD
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -129,3 +129,17 @@ def test_from_matrix() -> None:
             dd = p.from_matrix(mat)
             mat2 = dd.get_matrix(i)
             assert np.allclose(mat, mat2)
+
+
+@pytest.mark.parametrize("binary", [False, True])
+def test_serialization(*, binary: bool) -> None:
+    """Test serializing and deserializing matrix DDs."""
+    p = DDPackage(3)
+    hadamard = np.array([[1, 1], [1, -1]], dtype=np.complex128) / np.sqrt(2)
+    matrix_dds = ((p.identity(), 0), (p.single_qubit_gate(hadamard, 2), 3))
+    for dd, num_qubits in matrix_dds:
+        data = dd.to_bytes(binary=binary)
+        assert isinstance(data, bytes)
+
+        restored = MatrixDD.from_bytes(DDPackage(3), data, binary=binary)
+        assert np.allclose(restored.get_matrix(num_qubits), dd.get_matrix(num_qubits))

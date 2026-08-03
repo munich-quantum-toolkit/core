@@ -21,6 +21,8 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -80,6 +82,21 @@ static bool allOpsNative(OwningOpRef<ModuleOp>& moduleOp,
     return WalkResult::advance();
   });
   return ok;
+}
+
+static void expectNormalizedPhaseScopes(Operation* root) {
+  for (auto& region : root->getRegions()) {
+    for (auto& block : region) {
+      const auto phases = llvm::to_vector(block.getOps<GPhaseOp>());
+      ASSERT_LE(phases.size(), 1);
+      if (!phases.empty()) {
+        EXPECT_EQ(phases.front()->getNextNode(), block.getTerminator());
+      }
+      for (auto& nested : block) {
+        expectNormalizedPhaseScopes(&nested);
+      }
+    }
+  }
 }
 
 // --- DD-based equivalence ------------------------------------------------ //
@@ -436,6 +453,7 @@ protected:
         mlir::qc::QCProgramBuilder::build(context.get(), program);
     runFusePipeline(synthesized, nativeGates);
     EXPECT_TRUE(allOpsNative(synthesized, nativeGates));
+    expectNormalizedPhaseScopes(synthesized->getOperation());
     expectQcoModulesEquivalent(expected, synthesized);
   }
 

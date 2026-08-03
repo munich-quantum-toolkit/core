@@ -31,7 +31,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
 
 set(CMAKE_VERIFY_INTERFACE_HEADER_SETS
     ON
-    CACHE BOOL "Verify interface header sets" FORCE)
+    CACHE BOOL "Verify interface header sets")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   add_compile_options(-fcolor-diagnostics)

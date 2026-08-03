@@ -32,6 +32,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/PatternMatch.h>
@@ -1094,7 +1095,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
                     MQT_NAMED_BUILDER(fourControlledRxx)},
         QCOTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
-                    MQT_NAMED_BUILDER(ctrlTwo)}));
+                    MQT_NAMED_BUILDER(ctrlTwo)},
+        QCOTestCase{"ModifierBodyReuseReordered",
+                    MQT_NAMED_BUILDER(modifierBodyReuseReordered),
+                    MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
@@ -1192,7 +1196,7 @@ TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
 }
 
 /// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
-/// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
+/// rxx(2θ). Verify cleanup and the hoisted parameter's SSA dominance.
 TEST_F(QCOTest, PowRxxFold) {
   auto program =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
@@ -1201,9 +1205,22 @@ TEST_F(QCOTest, PowRxxFold) {
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
-  int powCount = 0;
+  std::size_t powCount = 0;
+  SmallVector<RXXOp> rxxOps;
   program->walk([&](PowOp) { ++powCount; });
+  program->walk([&](RXXOp op) { rxxOps.push_back(op); });
   EXPECT_EQ(powCount, 0) << "PowOp around rxx should be folded away";
+  ASSERT_EQ(rxxOps.size(), 1);
+
+  auto rxx = rxxOps.front();
+  FloatAttr angle;
+  ASSERT_TRUE(matchPattern(rxx.getTheta(), m_Constant(&angle)));
+  EXPECT_NEAR(angle.getValueAsDouble(), 0.246, 1e-12);
+
+  auto* parameterDef = rxx.getTheta().getDefiningOp();
+  ASSERT_NE(parameterDef, nullptr);
+  const DominanceInfo dominance(program.get());
+  EXPECT_TRUE(dominance.properlyDominates(parameterDef, rxx.getOperation()));
 }
 
 /// pow(-0.5) { h } cannot fold a negative fractional exponent
@@ -1221,9 +1238,9 @@ TEST_F(QCOTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// pow(sx) inside a ctrl modifier expands into a GPhase + RX kept within the
-/// ctrl body, so the controlled global phase is preserved. Verify the CtrlOp
-/// survives and the nested PowOp is expanded into a GPhase + RX.
+/// pow(sx) inside a ctrl modifier expands into GPhase + RX. Global-phase
+/// normalization then turns the controlled GPhase into P on the control.
+/// Verify the CtrlOp survives and the relative phase remains observable.
 TEST_F(QCOTest, CtrlPowSxExpands) {
   auto program =
       mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
@@ -1235,14 +1252,17 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
   int ctrlCount = 0;
   int powCount = 0;
   int gphaseCount = 0;
+  int pCount = 0;
   int rxCount = 0;
   program->walk([&](CtrlOp) { ++ctrlCount; });
   program->walk([&](PowOp) { ++powCount; });
   program->walk([&](GPhaseOp) { ++gphaseCount; });
+  program->walk([&](POp) { ++pCount; });
   program->walk([&](RXOp) { ++rxCount; });
   EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
   EXPECT_EQ(powCount, 0) << "PowOp inside ctrl must be expanded";
-  EXPECT_EQ(gphaseCount, 1) << "SX fold must emit a GPhase";
+  EXPECT_EQ(gphaseCount, 0) << "controlled GPhase must be extracted";
+  EXPECT_EQ(pCount, 1) << "controlled GPhase must become P on the control";
   EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
 }
 
