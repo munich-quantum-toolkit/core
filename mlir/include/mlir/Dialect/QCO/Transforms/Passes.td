@@ -373,7 +373,6 @@ def QuantumIPO : Pass<"quantum-ipo", "mlir::ModuleOp"> {
                            "::mlir::arith::ArithDialect",
                            "::mlir::qtensor::QTensorDialect",
                            "mlir::qco::QCODialect"];
-}];
 }
 
 //===----------------------------------------------------------------------===//
