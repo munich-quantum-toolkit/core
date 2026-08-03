@@ -19,8 +19,8 @@ operation is native at an ordered hardware locus, and inspect one typed native
 synthesis basis that is usable across the complete target.
 
 The focused compiler unit test demonstrates the result. It constructs targets
-with sparse signed site identifiers, provider gate aliases, calibrated
-operation loci, and one-way topology input; verifies canonicalized topology and
+with sparse signed site identifiers, provider gate aliases, calibrated operation
+loci, and one-way topology input; verifies canonicalized topology and
 capabilities; creates real QCO operations; and observes correct support answers.
 Invalid metadata is rejected once at construction.
 
@@ -37,9 +37,9 @@ Invalid metadata is rejected once at construction.
   operation capabilities, typed synthesis basis, and real-QCO-operation
   support.
 - [x] (2026-08-03 11:32Z) Added the standalone `MQTCompilerTarget` library with
-  only `MLIRIR` and `MLIRQCODialect` as public link dependencies, assigned
-  `Target.h` to its build-tree public header file set, and excluded that header
-  from `MQTCompilerPipeline`.
+      only `MLIRIR` and `MLIRQCODialect` as public link dependencies, assigned
+      `Target.h` to its build-tree public header file set, and excluded that
+      header from `MQTCompilerPipeline`.
 - [x] (2026-08-03 11:52Z) Added eight focused tests covering all four
   constructor forms, validation, cheap copies, topology, every required
   symmetric and directional entangler, synthesis-basis resolution, and real
@@ -57,13 +57,13 @@ Invalid metadata is rejected once at construction.
 
 ### Milestone 1: Establish one immutable target contract
 
-The goal was a compiler-owned model that can be constructed without QDMI,
-FoMaC, CoreIR, or a live device. The work added value types for timing units,
-sites, operation loci, and operation capabilities plus a shared immutable
-target storage object. The result preserves provider metadata while validating
-the cross-object contract once, including timing units, ordered loci, and
-explicit operation absence versus emptiness. The focused construction and
-rejection tests prove the observable contract.
+The goal was a compiler-owned model that can be constructed without QDMI, FoMaC,
+CoreIR, or a live device. The work added value types for timing units, sites,
+operation loci, and operation capabilities plus a shared immutable target
+storage object. The result preserves provider metadata while validating the
+cross-object contract once, including timing units, ordered loci, and explicit
+operation absence versus emptiness. The focused construction and rejection tests
+prove the observable contract.
 
 ### Milestone 2: Centralize topology and synthesis facts
 
@@ -77,14 +77,14 @@ complete entangler-orientation tests prove these paths.
 
 ### Milestone 3: Isolate and verify the foundation
 
-The goal was a dependency-pure MLIR library with independently compilable
-public headers. The work created `MQTCompilerTarget`, linked it publicly only
-to `MLIRIR` and `MLIRQCODialect`, and assigned `Target.h` to that target's
-header file set. The result builds without QDMI, FoMaC, CoreIR,
-`MQT::MLIRSupport`, or transformation libraries. The interface-header target,
-8 focused tests, 218-test compiler suite, changed-file clang-tidy, repository
-lint, diff checks, and independent review provide the proof. Installed CMake
-consumer support remains an explicit series-level item described below.
+The goal was a dependency-pure MLIR library with independently compilable public
+headers. The work created `MQTCompilerTarget`, linked it publicly only to
+`MLIRIR` and `MLIRQCODialect`, and assigned `Target.h` to that target's header
+file set. The result builds without QDMI, FoMaC, CoreIR, `MQT::MLIRSupport`, or
+transformation libraries. The interface-header target, 8 focused tests, 218-test
+compiler suite, changed-file clang-tidy, repository lint, diff checks, and
+independent review provide the proof. Installed CMake consumer support remains
+an explicit series-level item described below.
 
 ## Surprises & Discoveries
 
@@ -103,10 +103,10 @@ consumer support remains an explicit series-level item described below.
   target would make the foundation depend on synthesis details. The target can
   instead expose a small stable `GateKind`, `SingleQubitBasis`, and
   `SynthesisBasis` view that a later pipeline change can adapt.
-- Observation: The initial configure could not reach upstream dependency
-  hosts from the sandbox. Reconfiguring with the repository's already-fetched,
-  revision-compatible dependency source trees produced a local release build;
-  no source or lockfile was changed for this environment workaround.
+- Observation: The initial configure could not reach upstream dependency hosts
+  from the sandbox. Reconfiguring with the repository's already-fetched,
+  revision-compatible dependency source trees produced a local release build; no
+  source or lockfile was changed for this environment workaround.
 - Observation: `add_mlir_library` in this out-of-tree project installs only
   component archives. Component-install probes for `MQTCompilerTarget`,
   `MQTCompilerPipeline`, and `MLIRSupportMQT` installed their static archives
@@ -126,16 +126,16 @@ consumer support remains an explicit series-level item described below.
   `mlir/include/mlir/Compiler/Target.h` and implementation in
   `mlir/lib/Compiler/Target.cpp`. Rationale: The data structures expose
   compiler-specific dense vertices, QCO operation semantics, and synthesis
-  capabilities, so the MLIR compiler owns them. Date/Author: 2026-08-03,
-  GPT-5.6 via Codex.
+  capabilities, so the MLIR compiler owns them. Date/Author: 2026-08-03, GPT-5.6
+  via Codex.
 - Decision: Store target state behind `std::shared_ptr<const Storage>` and
   expose only const views and queries. Rationale: Default copies share all
   validated topology and capability caches, while construction remains
   value-oriented and no mutable alias can invalidate a cache. Date/Author:
   2026-08-03, GPT-5.6 via Codex.
 - Decision: Declare only copy construction and copy assignment for the shared
-  target handle. Rvalues therefore use the same cheap shared-pointer copy and
-  do not leave a null moved-from handle whose queries would dereference empty
+  target handle. Rvalues therefore use the same cheap shared-pointer copy and do
+  not leave a null moved-from handle whose queries would dereference empty
   storage. Rationale: An immutable handle has no expensive ownership to
   transfer, and retaining a valid source removes an otherwise undocumented
   invalid state. Date/Author: 2026-08-03, GPT-5.6 via Codex.
@@ -144,26 +144,26 @@ consumer support remains an explicit series-level item described below.
   Rationale: Callers constructing a target from a count should not invent a
   device name, while real devices should retain useful identity metadata.
   Date/Author: 2026-08-03, GPT-5.6 via Codex.
-- Decision: Represent every hardware site identifier as signed `int64_t`,
-  reject negative and duplicate identifiers, and generate `0..N-1` for a
-  count-based target after overflow validation. Rationale: `qco.static` carries
-  a nonnegative i64 identifier, so the target must guarantee representability
+- Decision: Represent every hardware site identifier as signed `int64_t`, reject
+  negative and duplicate identifiers, and generate `0..N-1` for a count-based
+  target after overflow validation. Rationale: `qco.static` carries a
+  nonnegative i64 identifier, so the target must guarantee representability
   before any IR mutation. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Treat an absent topology as all-to-all. For an explicit topology,
-  normalize each edge to the smaller site identifier first, remove duplicate
-  and reversed duplicate edges, build dense adjacency, and reject self-edges,
-  unknown sites, or disconnected graphs. Rationale: Mapping needs an
-  undirected connected routing graph, and checking that contract once keeps
-  downstream passes simple. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+  normalize each edge to the smaller site identifier first, remove duplicate and
+  reversed duplicate edges, build dense adjacency, and reject self-edges,
+  unknown sites, or disconnected graphs. Rationale: Mapping needs an undirected
+  connected routing graph, and checking that contract once keeps downstream
+  passes simple. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Treat an absent operation collection as every operation being
   native; distinguish it from a present empty collection, which supports no
   hardware operation. Preserve provider names while caching a lower-case
-  canonical name and the aliases `prx` to `r`, `u3` to `u`, and `cnot` to
-  `cx`. Rationale: This retains provider metadata and adopts the useful,
-  narrowly scoped alias insight from Simon Hofmann's #1969 work without
-  importing its targeting, CLI, Python, or synthesis APIs. The final commit
-  will preserve Simon Hofmann's authorship because this semantic source is
-  materially reused. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+  canonical name and the aliases `prx` to `r`, `u3` to `u`, and `cnot` to `cx`.
+  Rationale: This retains provider metadata and adopts the useful, narrowly
+  scoped alias insight from Simon Hofmann's #1969 work without importing its
+  targeting, CLI, Python, or synthesis APIs. The final commit will preserve
+  Simon Hofmann's authorship because this semantic source is materially reused.
+  Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Require every operation capability to have a positive fixed arity.
   Rationale: Final conformance cannot soundly validate an operation whose arity
   is unknown; the later device adapter must reject a provider operation that
@@ -186,11 +186,11 @@ consumer support remains an explicit series-level item described below.
   the whole target must not be inferred from a provider operation that is
   unavailable on some sites or from an unimplemented operand-reversal
   assumption. Date/Author: 2026-08-03, GPT-5.6 via Codex.
-- Decision: Accept a target whose capabilities do not form a complete
-  synthesis basis and expose `std::nullopt` from `synthesisBasis()`. Rationale:
-  Such a target remains useful for support checking and future diagnostics;
-  SYN-01 can decide how to report or augment an incomplete basis without
-  burdening this foundation. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+- Decision: Accept a target whose capabilities do not form a complete synthesis
+  basis and expose `std::nullopt` from `synthesisBasis()`. Rationale: Such a
+  target remains useful for support checking and future diagnostics; SYN-01 can
+  decide how to report or augment an incomplete basis without burdening this
+  foundation. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Keep full Euler/Weyl decomposition and menu-string construction out
   of `MQTCompilerTarget`. Rationale: CT-01 is the cycle-free target foundation;
   pipeline integration can map the typed basis to the synthesis library later.
@@ -216,11 +216,11 @@ consumer support remains an explicit series-level item described below.
 ## Outcomes & Retrospective
 
 CT-01 now provides an immutable, cheaply copied `mlir::CompilerTarget` with
-named and unnamed count/detailed constructors; validated site, timing,
-topology, and operation metadata; dense site mapping; cached routing distances;
-ordered capability checks; real QCO-operation checks; and a typed global
-synthesis basis. `MQTCompilerTarget` is a separate build-tree library whose
-public link interface is limited to `MLIRIR` and `MLIRQCODialect`.
+named and unnamed count/detailed constructors; validated site, timing, topology,
+and operation metadata; dense site mapping; cached routing distances; ordered
+capability checks; real QCO-operation checks; and a typed global synthesis
+basis. `MQTCompilerTarget` is a separate build-tree library whose public link
+interface is limited to `MLIRIR` and `MLIRQCODialect`.
 
 Validation completed successfully: the public-header verification target
 compiled; all 8 focused target tests and all 218 compiler tests passed;
@@ -233,9 +233,8 @@ installed headers and a consumable CMake export. The existing AddMLIR
 integration installs only archives for all probed MQT MLIR libraries and emits
 no target export. PIPE/INT must install and export the complete MQT MLIR
 dependency closure coherently, then validate a clean external consumer with
-`find_package` and a link against the exported target. The build-tree
-`FILE_SET` and interface-header verification in CT-01 are not a substitute for
-that work.
+`find_package` and a link against the exported target. The build-tree `FILE_SET`
+and interface-header verification in CT-01 are not a substitute for that work.
 
 ## Context and Orientation
 
@@ -245,14 +244,14 @@ directory contains only the typed program API in `Programs.h` and
 `Programs.cpp`; `mlir/lib/Compiler/CMakeLists.txt` builds them as the large
 `MQTCompilerPipeline` library.
 
-The QCO dialect is the compiler's quantum-operation intermediate
-representation. Its operation declarations are generated from
+The QCO dialect is the compiler's quantum-operation intermediate representation.
+Its operation declarations are generated from
 `mlir/include/mlir/Dialect/QCO/IR/QCOOps.td`, and
 `mlir/include/mlir/Dialect/QCO/IR/QCOInterfaces.td` defines
 `UnitaryOpInterface`. A dense compiler vertex is a zero-based position used by
 routing algorithms. A hardware site identifier is the provider-visible signed
-integer that later appears in `qco.static`; the two are not interchangeable
-when providers use sparse identifiers.
+integer that later appears in `qco.static`; the two are not interchangeable when
+providers use sparse identifiers.
 
 A capability states that an operation with a canonical name, arity, and
 parameter count is allowed at an ordered locus. A locus is an ordered list of
@@ -261,35 +260,34 @@ global for every valid tuple of its arity; a present empty collection means it
 supports no tuple. A synthesis basis is one recognized single-qubit Euler basis
 plus one recognized two-qubit entangling gate that is usable over the entire
 target. CT-01 only describes that basis; the existing native-synthesis
-implementation remains under
-`mlir/lib/Dialect/QCO/Transforms/Decomposition/`.
+implementation remains under `mlir/lib/Dialect/QCO/Transforms/Decomposition/`.
 
 The focused compiler unit test executable is configured by
 `mlir/unittests/Compiler/CMakeLists.txt` and produced at
 `build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`.
 `add_mlir_library` builds component libraries in this out-of-tree project, but
 its generated component install rule currently installs only archives. Public
-header file sets still provide build-tree ownership and CMake's
-interface-header verification target.
+header file sets still provide build-tree ownership and CMake's interface-header
+verification target.
 
 ## Plan of Work
 
 Add `mlir/include/mlir/Compiler/Target.h`. Define
 `CompilerTarget::DurationUnit`, `Site`, `OperationLocus`, and `Operation` as
 immutable public value types with constructors that validate their local scalar
-data. Operation arity is mandatory. Define `GateKind`,
-`SingleQubitBasis`, and `SynthesisBasis` as typed compiler capabilities. Define
-named and unnamed `CompilerTarget` overloads for both a qubit count and detailed
-sites. The constructors accept optional topology and operation collections so
-absence remains semantically distinct from an explicit empty collection.
+data. Operation arity is mandatory. Define `GateKind`, `SingleQubitBasis`, and
+`SynthesisBasis` as typed compiler capabilities. Define named and unnamed
+`CompilerTarget` overloads for both a qubit count and detailed sites. The
+constructors accept optional topology and operation collections so absence
+remains semantically distinct from an explicit empty collection.
 
 Add `mlir/lib/Compiler/Target.cpp`. Build a private shared `Storage` object,
 validate cross-references and the timing-unit invariant, cache site identifiers
 and the site-to-vertex map, canonicalize and validate explicit topology, build
 its dense adjacency and all-pairs distance matrix, check connectivity once,
 group operations by canonical name, determine globally supported typed gates,
-and resolve the preferred synthesis basis. Implement queries for metadata,
-dense mapping, adjacency and distance, canonical operation support, typed gate
+and resolve the preferred synthesis basis. Implement queries for metadata, dense
+mapping, adjacency and distance, canonical operation support, typed gate
 support, and QCO `Operation*` support. Structural QCO barrier and global-phase
 operations require no hardware capability; controlled single-X and single-Z
 bodies map to `cx` and `cz`; measure and reset map to arity-one,
@@ -299,11 +297,11 @@ zero-real-parameter capabilities; other unitary operations use
 Update `mlir/lib/Compiler/CMakeLists.txt` to build `Target.cpp` as the separate
 `MQTCompilerTarget` library linked publicly only against the MLIR IR and QCO
 dialect libraries. Give `Target.h` to this target's public header file set and
-exclude it from the existing pipeline's recursive header collection. This
-keeps build-tree ownership unambiguous, enables interface-header verification,
-and prevents the foundational library from linking QDMI or CoreIR. Do not
-claim this creates an installed CMake consumer until the complete MQT MLIR
-dependency closure is exported by the PIPE/INT series.
+exclude it from the existing pipeline's recursive header collection. This keeps
+build-tree ownership unambiguous, enables interface-header verification, and
+prevents the foundational library from linking QDMI or CoreIR. Do not claim this
+creates an installed CMake consumer until the complete MQT MLIR dependency
+closure is exported by the PIPE/INT series.
 
 Add `mlir/unittests/Compiler/test_compiler_target.cpp` and include it in the
 existing compiler test executable. Cover both constructor families, optional
@@ -379,8 +377,8 @@ An explicit topology reports only its validated edges and returns cached
 shortest-path distances. Dense vertex/site translations are stable for sparse,
 unsorted provider identifiers.
 
-An absent operation collection supports every well-formed hardware operation.
-A present empty collection supports none except structural barrier and
+An absent operation collection supports every well-formed hardware operation. A
+present empty collection supports none except structural barrier and
 global-phase operations. Provider spelling is retained while canonical lookup
 recognizes case, whitespace, `prx`, `u3`, and `cnot`. Ordered loci remain
 directional.
@@ -397,8 +395,8 @@ capability queries for actual QCO primitives and controlled X/Z operations.
 contains `MLIRIR` and `MLIRQCODialect` but neither QDMI, FoMaC, CoreIR,
 `MQT::MLIRSupport`, nor transformation libraries. `Target.h` compiles through
 the generated interface-header verification target. The focused and complete
-compiler unit test runs pass, lint passes, and the final diff contains only
-this ExecPlan, compiler-target source/header, and compiler CMake/test updates.
+compiler unit test runs pass, lint passes, and the final diff contains only this
+ExecPlan, compiler-target source/header, and compiler CMake/test updates.
 
 Installed headers and a CMake-exported target are not accepted by this slice:
 the repository's existing AddMLIR integration installs only archives for the
@@ -423,9 +421,9 @@ Starting evidence:
     branch agent/1687-ct-01-compiler-target
     status clean
 
-The checked-out `cmake/ExternalDependencies.cmake` has no QDMI `SYSTEM`
-property after `FetchContent_MakeAvailable`, so the review cleanup is already
-present in the foundation base.
+The checked-out `cmake/ExternalDependencies.cmake` has no QDMI `SYSTEM` property
+after `FetchContent_MakeAvailable`, so the review cleanup is already present in
+the foundation base.
 
 Final validation evidence:
 
@@ -508,13 +506,13 @@ orientation, while directional operations require both ordered orientations.
 Also recorded that incomplete synthesis capability is a valid target state.
 
 Revision note (2026-08-03): Refined the foundation while the first
-implementation draft was still uncompiled: operation arity is mandatory,
-timing data requires a target-wide unit/scale, and explicit topology owns the
-all-pairs distance cache consumed by later mapping work. Confirmed measure and
-reset are explicit arity-one operation semantics.
+implementation draft was still uncompiled: operation arity is mandatory, timing
+data requires a target-wide unit/scale, and explicit topology owns the all-pairs
+distance cache consumed by later mapping work. Confirmed measure and reset are
+explicit arity-one operation semantics.
 
 Revision note (2026-08-03): Recorded completed implementation and validation,
 the independent-review remediations, and the repository-wide installed-export
-boundary. Per series coordination, CT-01 remains the dependency-pure
-build-tree foundation, while PIPE/INT owns coherent installed CMake consumer
-support for the complete MQT MLIR dependency closure.
+boundary. Per series coordination, CT-01 remains the dependency-pure build-tree
+foundation, while PIPE/INT owns coherent installed CMake consumer support for
+the complete MQT MLIR dependency closure.
