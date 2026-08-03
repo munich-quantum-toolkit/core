@@ -380,9 +380,10 @@ def DecomposeMultiControlled
 
     - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
       when `min-controls` is at most 2.
-    - Four or five controls (X/Z): specialized ancilla-free cores (relative-
-      phase `C^4(Z)`; Vale MCP(π) hybrid residual).
-    - Six or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
+    - Four controls (X/Z): specialized ancilla-free relative-phase `C^4(Z)`.
+    - Five through 32 controls (X/Z): da Silva-Park SP22 MCP(π) core
+      (`H · MCP(π) · H` for X).
+    - 33 or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
       synthesis with a compile-time CX policy table.
     - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
       residual at four) for three and four controls; da Silva-Park SP22
