@@ -2126,7 +2126,7 @@ private:
     }
     if (const auto* catalog = lookupGate(declaration.identifier);
         catalog != nullptr && isGateAvailable(*catalog)) {
-      // OpenQASM 2 corpora often repeat qelib1 gate definitions (e.g. `gate
+      // OpenQASM 2 programs often repeat standard library gate definitions (e.g. `gate
       // sx`). Prefer the standard-library entry and skip the duplicate body to
       // avoid later inlining overhead. OpenQASM 3 rejects shadowing stdgates.
       if (program.openQASM2) {
