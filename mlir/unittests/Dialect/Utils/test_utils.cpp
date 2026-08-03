@@ -13,8 +13,10 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -37,7 +39,7 @@ protected:
   std::unique_ptr<ImplicitLocOpBuilder> builder;
 
   void SetUp() override {
-    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<arith::ArithDialect, func::FuncDialect>();
 
     auto loc = FileLineColLoc::get(&context, "<utils-test-builder>", 1, 1);
     module = ModuleOp::create(loc);
@@ -155,13 +157,28 @@ TEST_F(UtilsTest, valueToConstantDoubleSubF) {
   EXPECT_DOUBLE_EQ(*stdValue, 3.5);
 }
 
-TEST_F(UtilsTest, valueToConstantDoubleSubFDynamicRhs) {
+TEST_F(UtilsTest, valueToConstantDoubleDivF) {
   auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
-  // `divf` is intentionally not folded by valueToConstantDouble.
   auto num = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
   auto den = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.0));
-  auto dyn = arith::DivFOp::create(*builder, num, den);
-  auto op = arith::SubFOp::create(*builder, lhs, dyn);
+  auto quot = arith::DivFOp::create(*builder, num, den);
+  auto op = arith::SubFOp::create(*builder, lhs, quot);
+
+  const auto stdValue = utils::valueToConstantDouble(op.getResult());
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(*stdValue, 4.5);
+}
+
+TEST_F(UtilsTest, valueToConstantDoubleDynamicOperand) {
+  auto func =
+      func::FuncOp::create(*builder, "dyn",
+                           FunctionType::get(&context, {builder->getF64Type()},
+                                             {builder->getF64Type()}));
+  auto* entry = func.addEntryBlock();
+  OpBuilder::InsertionGuard guard(*builder);
+  builder->setInsertionPointToStart(entry);
+  auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
+  auto op = arith::SubFOp::create(*builder, lhs, entry->getArgument(0));
 
   EXPECT_FALSE(utils::valueToConstantDouble(op.getResult()).has_value());
 }

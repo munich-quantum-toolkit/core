@@ -11,6 +11,7 @@
 #pragma once
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -21,14 +22,20 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/Matchers.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 namespace mlir::utils {
@@ -122,6 +129,20 @@ inline void validateMemRefIndex(Value memref,
   }
 }
 
+[[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {
+  if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
+    return floatAttr.getValueAsDouble();
+  }
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
+    if (intAttr.getType().isUnsignedInteger()) {
+      return static_cast<double>(intAttr.getValue().getZExtValue());
+    }
+    // interpret both signed+signless as signed integers
+    return static_cast<double>(intAttr.getValue().getSExtValue());
+  }
+  return std::nullopt;
+}
+
 /**
  * @brief Try to convert a mlir::Value to a standard C++ double
  *
@@ -135,64 +156,55 @@ inline void validateMemRefIndex(Value memref,
   if (!constantOp) {
     return std::nullopt;
   }
-  if (auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue())) {
-    return floatAttr.getValueAsDouble();
+  return attributeToDouble(constantOp.getValue());
+}
+
+/// Recursively constant-fold a pure SSA expression tree to an attribute.
+[[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
+  Attribute attr;
+  if (matchPattern(value, m_Constant(&attr))) {
+    return attr;
   }
-  if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
-    if (intAttr.getType().isUnsignedInteger()) {
-      return static_cast<double>(intAttr.getValue().getZExtValue());
+
+  Operation* op = value.getDefiningOp();
+  if (op == nullptr || op->getNumRegions() != 0 || !isPure(op)) {
+    return std::nullopt;
+  }
+
+  SmallVector<Attribute> operands;
+  operands.reserve(op->getNumOperands());
+  for (const Value operand : op->getOperands()) {
+    const auto folded = valueToConstantAttr(operand);
+    if (!folded) {
+      return std::nullopt;
     }
-    // interpret both signed+signless as signed integers
-    return static_cast<double>(intAttr.getValue().getSExtValue());
+    operands.push_back(*folded);
+  }
+
+  SmallVector<OpFoldResult, 1> results;
+  if (failed(op->fold(operands, results)) || results.size() != 1) {
+    return std::nullopt;
+  }
+  if (const auto resultAttr =
+          llvm::dyn_cast_if_present<Attribute>(results.front())) {
+    return resultAttr;
+  }
+  // Identity-style folds may return an existing SSA value (e.g. `addf x, -0`).
+  if (const auto resultValue =
+          llvm::dyn_cast_if_present<Value>(results.front())) {
+    return valueToConstantAttr(resultValue);
   }
   return std::nullopt;
 }
 
-/// Recursively evaluate a pure `arith` constant expression tree to a double.
+/// Recursively constant-fold a pure SSA expression tree to a double.
 ///
-/// This folds `arith.constant` together with `addf` / `subf` / `mulf` / `negf`
-/// and integer-to-float casts (`sitofp` / `uitofp`) so phase-normalization can
-/// keep merged global phases inside the practical `gphase` angle contract
-/// instead of emitting long add-chains that later constant-fold past
-/// `MAX_GLOBAL_PHASE_ANGLE`.
+/// Used by global-phase normalization so merged phases stay inside the
+/// practical `gphase` angle contract instead of emitting long add-chains that
+/// later constant-fold past `MAX_GLOBAL_PHASE_ANGLE`.
 [[nodiscard]] inline std::optional<double> valueToConstantDouble(Value value) {
-  if (const auto constant = valueToDouble(value)) {
-    return constant;
-  }
-  if (auto sitofpOp = value.getDefiningOp<arith::SIToFPOp>()) {
-    return valueToConstantDouble(sitofpOp.getIn());
-  }
-  if (auto uitofpOp = value.getDefiningOp<arith::UIToFPOp>()) {
-    return valueToConstantDouble(uitofpOp.getIn());
-  }
-  if (auto addOp = value.getDefiningOp<arith::AddFOp>()) {
-    const auto lhs = valueToConstantDouble(addOp.getLhs());
-    const auto rhs = valueToConstantDouble(addOp.getRhs());
-    if (lhs && rhs) {
-      return *lhs + *rhs;
-    }
-    return std::nullopt;
-  }
-  if (auto subOp = value.getDefiningOp<arith::SubFOp>()) {
-    const auto lhs = valueToConstantDouble(subOp.getLhs());
-    const auto rhs = valueToConstantDouble(subOp.getRhs());
-    if (lhs && rhs) {
-      return *lhs - *rhs;
-    }
-    return std::nullopt;
-  }
-  if (auto mulOp = value.getDefiningOp<arith::MulFOp>()) {
-    const auto lhs = valueToConstantDouble(mulOp.getLhs());
-    const auto rhs = valueToConstantDouble(mulOp.getRhs());
-    if (lhs && rhs) {
-      return *lhs * *rhs;
-    }
-    return std::nullopt;
-  }
-  if (auto negOp = value.getDefiningOp<arith::NegFOp>()) {
-    if (const auto operand = valueToConstantDouble(negOp.getOperand())) {
-      return -*operand;
-    }
+  if (const auto attr = valueToConstantAttr(value)) {
+    return attributeToDouble(*attr);
   }
   return std::nullopt;
 }

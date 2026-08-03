@@ -142,7 +142,7 @@ public:
         assert(stack.size() >= 2);
         const auto rhs = stack.pop_back_val();
         const auto lhs = stack.pop_back_val();
-        stack.push_back(arith::AddFOp::create(rewriter, loc, lhs, rhs));
+        stack.push_back(rewriter.createOrFold<arith::AddFOp>(loc, lhs, rhs));
         continue;
       }
       assert(!stack.empty());
