@@ -133,8 +133,8 @@ operation. A mismatched definition is rejected.
 
 The `_mqt_` prefix is reserved for generated composite-modifier gates,
 temporaries, and collision-safe identifiers. Existing classical-register
-allocation names are reused when valid; scalar output names are generated
-deterministically.
+allocation names are reused when valid and distinct from catalog gates; scalar
+output names are generated deterministically.
 
 Output types follow a deliberately small canonical mapping:
 

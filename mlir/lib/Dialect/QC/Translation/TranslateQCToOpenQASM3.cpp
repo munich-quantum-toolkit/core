@@ -114,12 +114,9 @@ struct GateCall {
 }
 
 [[nodiscard]] static bool isValidOutputName(const StringRef value) {
-  const auto* gate = oq3::frontend::lookupGate(value);
-  const bool isCompatibilityGate =
-      gate != nullptr &&
-      gate->availability == oq3::frontend::GateAvailability::Compatibility;
   return isOpenQASMIdentifier(value) && !value.starts_with("_mqt_") &&
-         !isReservedOpenQASMIdentifier(value) && !isCompatibilityGate;
+         !isReservedOpenQASMIdentifier(value) &&
+         oq3::frontend::lookupGate(value) == nullptr;
 }
 
 [[nodiscard]] static std::optional<int64_t>

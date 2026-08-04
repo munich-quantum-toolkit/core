@@ -88,10 +88,10 @@ instead of reverse-engineering the importer machinery.
 - [x] (2026-08-04 22:53Z) Completed release, coverage, clang-tidy, Python,
       generated-stub, documentation, and repository-lint validation for the
       simplified subset.
-- [x] (2026-08-04 23:08Z) Addressed the fresh independent review by preventing
-      preserved outputs from colliding with compatibility helpers, documenting
-      the frontend's scalar-cast round-trip boundary, and correcting stale
-      acceptance text.
+- [x] (2026-08-04 23:18Z) Addressed both exact-head independent review passes by
+      preventing preserved outputs from colliding with compatibility or standard
+      gates, documenting the frontend's scalar-cast round-trip boundary, and
+      correcting stale acceptance text.
 - [ ] Run a fresh independent review, commit the follow-up with a signature,
       push PR #2003, and refresh its CI and review state.
 
@@ -230,14 +230,14 @@ with location-based diagnostics before buffered output is committed.
 Validation of the simplified subset completed on the follow-up diff:
 
 - the complete release build succeeded;
-- all 157 OpenQASM frontend tests, 278 QC translation tests, and 225 compiler
+- all 157 OpenQASM frontend tests, 279 QC translation tests, and 225 compiler
   tests passed;
 - all 44 Python MLIR tests passed;
 - generated Python stubs completed successfully without a diff;
 - Sphinx completed in nitpicky warnings-as-errors mode;
 - all changed translation and test units completed clang-tidy without findings;
 - focused C++ patch line coverage is 96.8% (60 of 62 instrumented added lines);
-- all five executable lines in the independent-review fix are covered;
+- all seven executable lines in the independent-review fixes are covered;
 - the repository-wide lint session and `git diff --check` passed.
 
 The complete local coverage build remains blocked while linking an unrelated

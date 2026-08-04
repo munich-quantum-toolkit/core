@@ -133,6 +133,32 @@ r = measure q;
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> memref<1xi1> {
+      %bits = memref.alloc() {mqt.classical_register_name = "x"}
+          : memref<1xi1>
+      %index = arith.constant 0 : index
+      %value = arith.constant false
+      memref.store %value, %bits[%index] : memref<1xi1>
+      return %bits : memref<1xi1>
+    }
+  })mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, EmitsStatementOnlyStructuredControl) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
