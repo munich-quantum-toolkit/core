@@ -312,22 +312,26 @@ def DecomposeMultiControlled
     Supported shapes: `qco.ctrl` with a `qco.x`, `qco.z`, `qco.swap`, or
     constant-angle `qco.p` body, and `qco.rccx`.
 
-    - Three qubits (X/Z): elementary CCX/CCZ; `rccx` when `min-qubits` is at
-      most 3.
-    - Four qubits (X/Z): elementary CCCX/CCCZ.
-    - Five qubits (X/Z): specialized ancilla-free relative-phase `C^4(Z)`.
-    - Six through 33 qubits (X/Z): da Silva-Park SP22 MCP(π) core
-      (`H · MCP(π) · H` for X).
-    - 34 or more qubits (X/Z): Huang-Palsberg (HP24) borrowed-helper synthesis
-      with a compile-time CX policy table.
-    - Phase: optimized `C^2(P)` at three qubits; Vale (Barenco-relative
-      residual) for four and five qubits; da Silva-Park SP22 linear-depth
-      decomposition at six and above. A compile-time angle of `±π` is routed
-      through the Z path for every width.
-    - Controlled SWAP: `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)`,
-      where `C ∪ {b}` is the original control set together with SWAP target
-      `b` and the MCX target is the other SWAP qubit `a`. The emitted MCX is
-      then lowered by the X path under the same `min-qubits` threshold.
+    | Family | Width (qubits) | Decomposition |
+    | ------ | -------------- | ------------- |
+    | X/Z | 3 | Elementary CCX/CCZ; `rccx` when `min-qubits` is at most 3 |
+    | X/Z | 4 | Elementary CCCX/CCCZ |
+    | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
+    | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with a compile-time CX policy table |
+    | Phase | 3 | Optimized `C^2(P)` |
+    | Phase | 4–5 | Vale (Barenco-relative residual) |
+    | Phase | ≥6 | da Silva-Park SP22 linear-depth |
+    | Phase | any (`±π`) | Routed through the Z path |
+    | SWAP | ≥ `min-qubits` | `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)` |
+
+    Width is the total number of qubits the gate acts on (controls plus
+    targets).
+
+    For controlled SWAP, `C ∪ {b}` is the original control set together with
+    SWAP target `b`, and the MCX target is the other SWAP qubit `a`. The
+    emitted MCX is then lowered by the X path under the same `min-qubits`
+    threshold.
 
     Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
     `min-qubits` keeps them; the greedy rewriter lowers further when the
