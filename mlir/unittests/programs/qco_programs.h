@@ -1394,6 +1394,20 @@ Value negPowInvIswapRef(QCOProgramBuilder& b);
 /// so the pow survives canonicalization and reaches ConvertQCOPowOp.
 Value ctrlPowSx(QCOProgramBuilder& b);
 
+/// Creates a circuit with pow(2) wrapping a DCX gate. DCX has no fold in
+/// FoldPowIntoGate, so the power modifier survives canonicalization.
+Value powDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping inv wrapping a DCX gate.
+Value powInverseDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow(2) wrapping a DCX gate.
+Value powMultipleControlledDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping a U gate. U has no fold in
+/// FoldPowIntoGate, so the power modifier survives canonicalization.
+Value powU(QCOProgramBuilder& b);
+
 // --- IfOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.

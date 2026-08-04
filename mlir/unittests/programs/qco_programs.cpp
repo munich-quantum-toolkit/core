@@ -4021,6 +4021,49 @@ Value ctrlPowSx(QCOProgramBuilder& b) {
       b, llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut)));
 }
 
+Value powDcx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto [q0, q1] = b.dcx(qubits[0], qubits[1]);
+    return SmallVector{q0, q1};
+  });
+  return measureAndReturn(b, powOut);
+}
+
+Value powInverseDcx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange invArgs) {
+      auto [q0, q1] = b.dcx(invArgs[0], invArgs[1]);
+      return SmallVector{q0, q1};
+    });
+    return llvm::to_vector(inner);
+  });
+  return measureAndReturn(b, powOut);
+}
+
+Value powMultipleControlledDcx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  const auto& [controlsOut, targetsOut] =
+      b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+        auto inner =
+            b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
+              auto [q0, q1] = b.dcx(powArgs[0], powArgs[1]);
+              return SmallVector{q0, q1};
+            });
+        return llvm::to_vector(inner);
+      });
+  return measureAndReturn(
+      b, llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut)));
+}
+
+Value powU(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut = b.pow(
+      3.0, q[0], [&](Value qubits) { return b.u(0.1, 0.2, 0.3, qubits); });
+  return measureToRegister(b, powOut);
+}
+
 SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto c0 = b.allocClassicalBitRegister(1);

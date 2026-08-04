@@ -429,6 +429,30 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
 /// @}
 
+/// \name JeffRoundTrip/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOPowOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"PowDCX", MQT_NAMED_BUILDER(qco::powDcx),
+                              MQT_NAMED_BUILDER(qco::powDcx)},
+        JeffRoundTripTestCase{"PowInverseDCX",
+                              MQT_NAMED_BUILDER(qco::powInverseDcx),
+                              MQT_NAMED_BUILDER(qco::powInverseDcx)},
+        JeffRoundTripTestCase{"PowMultipleControlledDCX",
+                              MQT_NAMED_BUILDER(qco::powMultipleControlledDcx),
+                              MQT_NAMED_BUILDER(qco::powMultipleControlledDcx)},
+        JeffRoundTripTestCase{"PowU", MQT_NAMED_BUILDER(qco::powU),
+                              MQT_NAMED_BUILDER(qco::powU)},
+        JeffRoundTripTestCase{"PowEvenH", MQT_NAMED_BUILDER(qco::powEvenH),
+                              MQT_NAMED_BUILDER(qco::alloc1QubitRegister)},
+        JeffRoundTripTestCase{"PowOddH", MQT_NAMED_BUILDER(qco::powOddH),
+                              MQT_NAMED_BUILDER(qco::h)},
+        JeffRoundTripTestCase{"PowRxScaled",
+                              MQT_NAMED_BUILDER(qco::powRxScaled),
+                              MQT_NAMED_BUILDER(qco::rxScaled)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
