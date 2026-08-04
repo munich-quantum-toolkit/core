@@ -314,4 +314,47 @@ SyntaxBuilder::whileStmt(SMLoc location, const Expr& condition,
   return success();
 }
 
+LogicalResult
+SyntaxBuilder::switchStmt(SMLoc location, const Expr& control,
+                          function_ref<LogicalResult()> continuation) {
+  SyntaxSwitch statement{.control = copyExpression(control)};
+  switchStack.push_back(&statement);
+  const auto result = continuation();
+  switchStack.pop_back();
+  if (failed(result)) {
+    return failure();
+  }
+  std::ignore = addStatement(location, std::move(statement));
+  return success();
+}
+
+LogicalResult
+SyntaxBuilder::switchCase(SMLoc /*location*/,
+                          const ArrayRef<const Expr*> labels,
+                          function_ref<LogicalResult()> continuation) {
+  SyntaxSwitchCase switchCase;
+  switchCase.labels.reserve(labels.size());
+  for (const auto* label : labels) {
+    switchCase.labels.push_back(copyExpression(*label));
+  }
+  auto body = parseNestedBody(continuation);
+  if (failed(body)) {
+    return failure();
+  }
+  switchCase.body = std::move(*body);
+  switchStack.back()->cases.push_back(std::move(switchCase));
+  return success();
+}
+
+LogicalResult
+SyntaxBuilder::switchDefault(SMLoc /*location*/,
+                             function_ref<LogicalResult()> continuation) {
+  auto body = parseNestedBody(continuation);
+  if (failed(body)) {
+    return failure();
+  }
+  switchStack.back()->defaultStatements = std::move(*body);
+  return success();
+}
+
 } // namespace mlir::oq3::frontend::detail

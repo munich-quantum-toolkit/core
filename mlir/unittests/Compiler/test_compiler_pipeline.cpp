@@ -798,7 +798,10 @@ bit[2] c = measure q;
   ASSERT_TRUE(direct);
   EXPECT_TRUE(directQC->isValid());
   EXPECT_TRUE(direct->source().starts_with("OPENQASM 3.1;\n"));
+  EXPECT_EQ(direct->str(), direct->source());
   EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
+  EXPECT_FALSE(direct->write(std::filesystem::path(testing::TempDir()) /
+                             "missing" / "typed_program_output.qasm"));
 
   const auto path =
       std::filesystem::path(testing::TempDir()) / "typed_program_output.qasm";
@@ -821,6 +824,19 @@ bit[2] c = measure q;
   ASSERT_TRUE(reparsed);
   auto adaptiveQIR = std::move(*reparsed).intoQIR(QIRProfile::Adaptive);
   EXPECT_TRUE(adaptiveQIR);
+}
+
+TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%value: i64) {
+      %qubit = qc.alloc : !qc.qubit
+      qc.dealloc %qubit : !qc.qubit
+      return
+    }
+  })mlir";
+  auto program = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  EXPECT_FALSE(program->toOpenQASM3());
 }
 
 /**

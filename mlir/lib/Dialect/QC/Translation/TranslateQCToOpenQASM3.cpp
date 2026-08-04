@@ -11,41 +11,44 @@
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/UB/IR/UBOps.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/IndentedOstream.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -81,9 +84,11 @@ struct GateCall {
   SmallVector<std::string> qubits;
 };
 
-[[nodiscard]] bool isOpenQASMIdentifier(const StringRef value) {
+} // namespace
+
+[[nodiscard]] static bool isOpenQASMIdentifier(const StringRef value) {
   if (value.empty() ||
-      !(llvm::isAlpha(value.front()) || value.front() == '_')) {
+      (!llvm::isAlpha(value.front()) && value.front() != '_')) {
     return false;
   }
   return llvm::all_of(value.drop_front(), [](const char character) {
@@ -91,7 +96,7 @@ struct GateCall {
   });
 }
 
-[[nodiscard]] bool isReservedOpenQASMIdentifier(const StringRef value) {
+[[nodiscard]] static bool isReservedOpenQASMIdentifier(const StringRef value) {
   return llvm::StringSwitch<bool>(value)
       .Cases("OPENQASM", "include", "input", "output", "const", true)
       .Cases("let", "fixed", "gate", "def", "extern", true)
@@ -108,22 +113,25 @@ struct GateCall {
       .Default(false);
 }
 
-[[nodiscard]] bool isValidOutputName(const StringRef value) {
+[[nodiscard]] static bool isValidOutputName(const StringRef value) {
   return isOpenQASMIdentifier(value) && !value.starts_with("_mqt_") &&
          !isReservedOpenQASMIdentifier(value);
 }
 
-[[nodiscard]] std::optional<int64_t> getConstantInteger(const Value value) {
+[[nodiscard]] static std::optional<int64_t>
+getConstantInteger(const Value value) {
   return getConstantIntValue(value);
 }
 
-[[nodiscard]] std::string join(const ArrayRef<std::string> values,
-                               const StringRef separator) {
+[[nodiscard]] static std::string join(const ArrayRef<std::string> values,
+                                      const StringRef separator) {
   std::string result;
   llvm::raw_string_ostream stream(result);
   llvm::interleave(values, stream, separator);
   return result;
 }
+
+namespace {
 
 class OpenQASMEmitter {
 public:
@@ -176,15 +184,15 @@ private:
   size_t nextLoop = 0;
   size_t nextHelper = 0;
 
-  [[nodiscard]] LogicalResult fail(Operation* operation,
-                                   const Twine& message) const {
-    operation->emitError() << "OpenQASM 3 emission error: " << message;
+  [[nodiscard]] static LogicalResult fail(Operation* operation,
+                                          const Twine& message) {
+    operation->emitError() << "OpenQASM emission error: " << message;
     return failure();
   }
 
-  [[nodiscard]] FailureOr<std::string>
-  failExpression(const Value value, const Twine& message) const {
-    emitError(value.getLoc()) << "OpenQASM 3 emission error: " << message;
+  [[nodiscard]] static FailureOr<std::string>
+  failExpression(const Value value, const Twine& message) {
+    emitError(value.getLoc()) << "OpenQASM emission error: " << message;
     return failure();
   }
 
@@ -487,7 +495,7 @@ private:
       return std::string("float");
     }
     emitError(function.getLoc())
-        << "OpenQASM 3 emission error: unsupported scalar type " << type;
+        << "OpenQASM emission error: unsupported scalar type " << type;
     return failure();
   }
 
@@ -777,8 +785,8 @@ private:
                           "unsupported expression operation '" + name + "'");
   }
 
-  [[nodiscard]] FailureOr<std::string>
-  emitConstant(arith::ConstantOp constant) const {
+  [[nodiscard]] static FailureOr<std::string>
+  emitConstant(arith::ConstantOp constant) {
     if (auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
       if (integer.getType().isInteger(1)) {
         return integer.getValue().isZero() ? std::string("false")
@@ -792,7 +800,7 @@ private:
       const auto& value = floating.getValue();
       if (!value.isFinite()) {
         emitError(constant.getLoc())
-            << "OpenQASM 3 emission error: non-finite floating-point "
+            << "OpenQASM emission error: non-finite floating-point "
                "constants are not supported";
         return failure();
       }
@@ -806,7 +814,7 @@ private:
       return text.str().str();
     }
     emitError(constant.getLoc())
-        << "OpenQASM 3 emission error: unsupported constant attribute";
+        << "OpenQASM emission error: unsupported constant attribute";
     return failure();
   }
 
@@ -1171,20 +1179,19 @@ private:
       return emitBlock(switchOp.getDefaultBlock(), resultNames, resultTypes,
                        false);
     }
+    *output << "switch (" << *argument << ") {\n";
+    output->indent();
     for (const auto [index, caseValue] : llvm::enumerate(cases)) {
-      if (index != 0) {
-        *output << "} else {\n";
-        output->indent();
-      }
-      *output << "if (" << *argument << " == " << caseValue << ") {\n";
+      *output << "case " << caseValue << " {\n";
       output->indent();
       if (failed(emitBlock(switchOp.getCaseBlock(static_cast<unsigned>(index)),
                            resultNames, resultTypes, false))) {
         return failure();
       }
       output->unindent();
+      *output << "}\n";
     }
-    *output << "} else {\n";
+    *output << "default {\n";
     output->indent();
     if (failed(emitBlock(switchOp.getDefaultBlock(), resultNames, resultTypes,
                          false))) {
@@ -1192,10 +1199,8 @@ private:
     }
     output->unindent();
     *output << "}\n";
-    for (size_t index = 1; index < cases.size(); ++index) {
-      output->unindent();
-      *output << "}\n";
-    }
+    output->unindent();
+    *output << "}\n";
     return success();
   }
 
@@ -1275,11 +1280,15 @@ private:
     }
 
     GateCall call;
-    auto symbol = portableGateSymbol(unitary.getBaseSymbol());
+    const auto baseSymbol = unitary.getBaseSymbol();
+    auto symbol = portableGateSymbol(baseSymbol);
     if (failed(symbol)) {
       return failure();
     }
     call.symbol = std::move(*symbol);
+    if (baseSymbol == "sxdg") {
+      call.modifiers = "inv @ ";
+    }
     for (const auto parameter : unitary.getParameters()) {
       auto expression = emitExpression(parameter);
       if (failed(expression)) {
@@ -1501,29 +1510,34 @@ private:
 
   [[nodiscard]] FailureOr<std::string>
   portableGateSymbol(const StringRef symbol) {
-    constexpr std::array STANDARD_GATES{
+    if (symbol == "sxdg") {
+      return std::string("sx");
+    }
+    if (symbol == "u") {
+      return std::string("U");
+    }
+    constexpr std::array standardGates{
         StringLiteral("gphase"), StringLiteral("id"),  StringLiteral("x"),
         StringLiteral("y"),      StringLiteral("z"),   StringLiteral("h"),
         StringLiteral("s"),      StringLiteral("sdg"), StringLiteral("t"),
         StringLiteral("tdg"),    StringLiteral("sx"),  StringLiteral("p"),
         StringLiteral("rx"),     StringLiteral("ry"),  StringLiteral("rz"),
-        StringLiteral("swap"),
+        StringLiteral("swap"),   StringLiteral("u2"),
     };
-    if (llvm::is_contained(STANDARD_GATES, symbol)) {
+    if (llvm::is_contained(standardGates, symbol)) {
       return symbol.str();
     }
-    constexpr std::array HELPER_GATES{
-        StringLiteral("sxdg"),        StringLiteral("r"),
-        StringLiteral("u2"),          StringLiteral("u"),
-        StringLiteral("iswap"),       StringLiteral("dcx"),
-        StringLiteral("ecr"),         StringLiteral("rxx"),
-        StringLiteral("ryy"),         StringLiteral("rzx"),
-        StringLiteral("rzz"),         StringLiteral("xx_plus_yy"),
-        StringLiteral("xx_minus_yy"), StringLiteral("rccx"),
+    constexpr std::array helperGates{
+        StringLiteral("r"),          StringLiteral("iswap"),
+        StringLiteral("dcx"),        StringLiteral("ecr"),
+        StringLiteral("rxx"),        StringLiteral("ryy"),
+        StringLiteral("rzx"),        StringLiteral("rzz"),
+        StringLiteral("xx_plus_yy"), StringLiteral("xx_minus_yy"),
+        StringLiteral("rccx"),
     };
-    if (!llvm::is_contained(HELPER_GATES, symbol)) {
+    if (!llvm::is_contained(helperGates, symbol)) {
       emitError(function.getLoc())
-          << "OpenQASM 3 emission error: unsupported quantum gate '" << symbol
+          << "OpenQASM emission error: unsupported quantum gate '" << symbol
           << "'";
       return failure();
     }
@@ -1532,22 +1546,12 @@ private:
   }
 
   void emitFixedHelpers(llvm::raw_ostream& stream) const {
-    struct HelperDefinition {
-      StringLiteral symbol;
-      StringLiteral definition;
-    };
-    constexpr std::array HELPERS{
-        HelperDefinition{"sxdg", "gate _mqt_sxdg q {\n  inv @ sx q;\n}\n"},
+    using HelperDefinition = std::pair<StringLiteral, StringLiteral>;
+    constexpr std::array helpers{
         HelperDefinition{"r", "gate _mqt_r(p0, p1) q {\n"
                               "  rz(-p1) q;\n"
                               "  rx(p0) q;\n"
                               "  rz(p1) q;\n"
-                              "}\n"},
-        HelperDefinition{"u2", "gate _mqt_u2(p0, p1) q {\n"
-                               "  U(pi / 2, p0, p1) q;\n"
-                               "}\n"},
-        HelperDefinition{"u", "gate _mqt_u(p0, p1, p2) q {\n"
-                              "  U(p0, p1, p2) q;\n"
                               "}\n"},
         HelperDefinition{"iswap", "gate _mqt_iswap q0, q1 {\n"
                                   "  s q0;\n"
@@ -1641,15 +1645,16 @@ private:
                          "  s q0;\n"
                          "}\n"},
     };
-    for (const auto& helper : HELPERS) {
-      if (fixedHelpers.contains(helper.symbol)) {
-        if (helper.symbol == "ecr" && !fixedHelpers.contains("rzx")) {
-          const auto rzx = llvm::find_if(HELPERS, [](const auto& candidate) {
-            return candidate.symbol == "rzx";
-          });
-          stream << rzx->definition << '\n';
+    for (const auto& helper : helpers) {
+      if (fixedHelpers.contains(helper.first)) {
+        if (helper.first == "ecr" && !fixedHelpers.contains("rzx")) {
+          const auto* const rzx =
+              llvm::find_if(helpers, [](const auto& candidate) {
+                return candidate.first == "rzx";
+              });
+          stream << rzx->second << '\n';
         }
-        stream << helper.definition << '\n';
+        stream << helper.second << '\n';
       }
     }
   }

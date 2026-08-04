@@ -14,8 +14,8 @@ releases may include breaking changes.
 
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
   `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
-- ✨ Add structured OpenQASM 3.1 emission from the QC dialect to the C++ and
-  Python compiler APIs and `mqt-cc` ([**@burgholzer**])
+- ✨ Add structured OpenQASM emission from the QC dialect to the C++ and Python
+  compiler APIs and `mqt-cc` ([#2003]) ([**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
   conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -719,6 +719,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
+[#2003]: https://github.com/munich-quantum-toolkit/core/pull/2003
 [#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
 [#2000]: https://github.com/munich-quantum-toolkit/core/pull/2000
 [#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999

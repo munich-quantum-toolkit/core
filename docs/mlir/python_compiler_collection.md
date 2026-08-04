@@ -72,7 +72,7 @@ Select an output format to stop the pipeline at a particular representation:
 | Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`      |
 | Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
 | Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`       |
-| Emit an optimized OpenQASM 3.1 program   | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
 | Serialize a compiler program             | `OutputFormat.JEFF`                                    | `JeffProgram`     |
 | Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 

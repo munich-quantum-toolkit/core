@@ -13,9 +13,9 @@ MQT Core can currently translate OpenQASM 3 into the MLIR QC dialect, optimize
 that program through QCO, and emit QIR, but it cannot turn the resulting QC
 program back into a standardized circuit language. After this work, C++ and
 Python clients can request an `OpenQASMProgram`, and `mqt-cc` can write OpenQASM
-3.1 text with `--emit=openqasm3`. A user can demonstrate the feature by
-compiling a Bell-state program to OpenQASM, parsing the emitted source with the
-existing strict frontend, and compiling the reparsed program onward.
+text with `--emit=openqasm3`. A user can demonstrate the feature by compiling a
+Bell-state program to OpenQASM, parsing the emitted source with the existing
+strict frontend, and compiling the reparsed program onward.
 
 The exporter is deliberately independent of the legacy `include/mqt-core/qasm3`,
 `src/qasm3`, `include/mqt-core/ir`, and `src/ir` components. It reads the QC,
@@ -46,6 +46,22 @@ instead of reverse-engineering the importer machinery.
 - [x] (2026-08-04 13:16Z) Refreshed `origin/main`, confirmed it remains at the
   implementation base, and completed self-review without modifying remote
   state.
+- [x] (2026-08-04 16:35Z) Remediated PR feedback: replaced nonstandard gate
+      helpers with `inv @ sx`, `u2`, and `U`; implemented native OpenQASM switch
+      parsing, semantic analysis, QC lowering, and emission; and rewrote the
+      user documentation with input before output.
+- [x] (2026-08-04 16:35Z) Cleared changed-file clang-tidy findings and raised
+      focused translator line coverage from 75% to 89.1% with tests for
+      structured results, loop-carried state, type inference, casts, and
+      explicit rejection boundaries.
+- [x] (2026-08-04 16:35Z) Rebuilt release and passed 154 OpenQASM target tests,
+      284 QC translation tests, 219 compiler tests, and 40 Python MLIR tests.
+- [x] (2026-08-04 18:20Z) Addressed the independent review's switch-budget and
+      changelog findings, rebased onto `origin/main` at `2e0778f9d`, and passed
+      the complete release build plus focused release and coverage suites.
+- [x] (2026-08-04 18:20Z) Revalidated all changed translation units with
+      clang-tidy, regenerated Python stubs without a diff, and completed the
+      repository lint and warnings-as-errors documentation builds.
 
 ## Surprises & Discoveries
 
@@ -80,6 +96,18 @@ instead of reverse-engineering the importer machinery.
   assumes binding targets exist. The final documentation validation generated
   MLIR reference pages with bindings enabled, then ran Sphinx in nitpicky,
   warnings-as-errors mode.
+- Observation: The OpenQASM standard library defines `sx` and the compatibility
+  alias `u2`, but not `sxdg`; the language-level `U` gate covers QC `u`.
+  Emitting `inv @ sx`, `u2`, and `U` removes three unnecessary helper
+  definitions.
+- Observation: OpenQASM switch cases permit multiple constant integer labels and
+  do not fall through. Representing them directly as `scf.index_switch`
+  preserves structured control and eliminates the exporter's nested-if
+  reconstruction.
+- Observation: Lowering a source case with several labels creates one
+  `scf.index_switch` region per label. The importer's projected-emission
+  preflight must therefore multiply the case body cost by its label count; doing
+  so keeps the existing operation budget effective before constructing any IR.
 
 ## Decision Log
 
@@ -114,6 +142,10 @@ instead of reverse-engineering the importer machinery.
   `MLIRQCTranslation`. Rationale: Compiler clients can use either OpenQASM
   direction without linking `MQT::CoreIR`, while existing users retain the
   aggregate target. Date/Author: 2026-08-04 / Codex.
+- Decision: Parse and emit native `switch`/`case`/`default` statements and map
+  them directly to `scf.index_switch`. Rationale: This follows the language
+  construct, supports carried state, and is simpler than synthesizing nested
+  conditionals. Date/Author: 2026-08-04 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -132,19 +164,23 @@ runtime safety machinery, arbitrary CFGs, and other deliberately unsupported
 categories fail with location-based diagnostics before buffered output is
 committed.
 
-Validation completed on the refreshed `origin/main` base:
+Validation completed after rebasing onto `origin/main` at `2e0778f9d`:
 
 - the complete release build succeeded;
-- all 275 QC translation tests and all 218 compiler tests passed;
+- all 155 OpenQASM frontend tests, 284 QC translation tests, and 219 compiler
+  tests passed in both release and coverage builds;
 - all 40 Python MLIR tests passed, including 14 full-matrix helper-gate
   comparisons and compiler round trips;
-- generated Python stubs completed successfully;
+- generated Python stubs completed successfully without a diff;
 - CLI file emission followed by strict re-import completed successfully;
 - Sphinx completed in nitpicky warnings-as-errors mode after generating the MLIR
   reference pages;
-- the repository-wide lint session and `git diff --check` passed.
-
-No commit, push, pull request, review, or other remote mutation was performed.
+- all changed translation units completed clang-tidy without findings;
+- focused translator line coverage is 89.1% (983 of 1103 lines), up from 75%;
+- the repository-wide lint session and `git diff --check` passed;
+- an independent `$mqt-pr-review` pass found no remaining correctness, API,
+  documentation, C++20, MLIR-style, or scope findings after its three
+  publication blockers were resolved.
 
 ## Context and Orientation
 

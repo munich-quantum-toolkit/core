@@ -33,7 +33,7 @@ inline constexpr llvm::StringLiteral OPENQASM_OUTPUT_KIND_ATTR =
     "qc.openqasm.output_kind";
 
 /**
- * @brief Translate a QC module to portable OpenQASM 3.1.
+ * @brief Translate a QC module to portable OpenQASM.
  *
  * @details Translation is buffered. The output stream is unchanged when the
  * module contains an unsupported construct or cannot be translated.
@@ -42,7 +42,7 @@ LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
                                      llvm::raw_ostream& output);
 
 /**
- * @brief Translate a QC module to an owned OpenQASM 3.1 source string.
+ * @brief Translate a QC module to an owned OpenQASM source string.
  */
 FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp);
 

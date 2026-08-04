@@ -553,6 +553,11 @@ private:
               } else if constexpr (std::is_same_v<T, ForStatement> ||
                                    std::is_same_v<T, WhileStatement>) {
                 self(self, data.body, callback);
+              } else if constexpr (std::is_same_v<T, SwitchStatement>) {
+                for (const auto& switchCase : data.cases) {
+                  self(self, switchCase.body, callback);
+                }
+                self(self, data.defaultStatements, callback);
               }
             },
             statement.data);
@@ -1890,6 +1895,8 @@ private:
             destination.push_back(analyzeFor(statement.location, data));
           } else if constexpr (std::is_same_v<T, SyntaxWhile>) {
             destination.push_back(analyzeWhile(statement.location, data));
+          } else if constexpr (std::is_same_v<T, SyntaxSwitch>) {
+            destination.push_back(analyzeSwitch(statement.location, data));
           }
         },
         statement.data);
@@ -2438,6 +2445,98 @@ private:
     for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
       bitGenerations[reg] =
           std::max(beforeBitGenerations[reg], afterBodyBitGenerations[reg]);
+    }
+    return addStatement(location, std::move(result));
+  }
+
+  [[nodiscard]] StatementId analyzeSwitch(SMLoc location,
+                                          const SyntaxSwitch& switchSyntax) {
+    SwitchStatement result{.control = analyzeExpression(switchSyntax.control)};
+    if (!isInteger(program.expressions[result.control].type)) {
+      fail(location, "switch control expression must have integer type");
+    }
+
+    std::set<int64_t> labels;
+    const auto beforeBitsInitialized = initializedBits;
+    const auto beforeInitialized = initializedScalars;
+    const auto beforeGenerations = scalarGenerations;
+    const auto beforeBitGenerations = bitGenerations;
+    const auto beforeDynamicBitFacts = dynamicBitFacts;
+    auto mergedScalarGenerations = beforeGenerations;
+    auto mergedBitGenerations = beforeBitGenerations;
+    std::vector<std::vector<std::shared_ptr<BitInitialization>>>
+        branchBitsInitialized;
+    std::vector<std::vector<bool>> branchScalarsInitialized;
+    const auto analyzeBranch =
+        [&](const ArrayRef<SyntaxStatementId> syntaxStatements,
+            std::vector<StatementId>& statements) {
+          restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
+                             beforeGenerations, beforeBitGenerations);
+          restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+          scopes.emplace_back();
+          analyzeBody(syntaxStatements, statements, /*global=*/false);
+          scopes.pop_back();
+          branchBitsInitialized.push_back(initializedBits);
+          branchScalarsInitialized.push_back(initializedScalars);
+          for (size_t index = 0; index < beforeGenerations.size(); ++index) {
+            mergedScalarGenerations[index] = std::max(
+                mergedScalarGenerations[index], scalarGenerations[index]);
+          }
+          for (size_t index = 0; index < beforeBitGenerations.size(); ++index) {
+            mergedBitGenerations[index] =
+                std::max(mergedBitGenerations[index], bitGenerations[index]);
+          }
+        };
+
+    result.cases.reserve(switchSyntax.cases.size());
+    for (const auto& syntaxCase : switchSyntax.cases) {
+      SwitchCase switchCase;
+      switchCase.labels.reserve(syntaxCase.labels.size());
+      for (const auto labelExpression : syntaxCase.labels) {
+        if (!isConstantExpression(labelExpression)) {
+          fail(syntax.expressions[labelExpression].location,
+               "switch case labels must be constant integer expressions");
+        }
+        const auto label = evaluateConstant(labelExpression);
+        if (!isInteger(label.type)) {
+          fail(syntax.expressions[labelExpression].location,
+               "switch case labels must have integer type");
+        }
+        if (label.type == ScalarType::Uint &&
+            std::get<uint64_t>(label.value) >
+                static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+          fail(syntax.expressions[labelExpression].location,
+               "switch case label does not fit in signed i64");
+        }
+        const auto value = asSigned(label);
+        if (!labels.insert(value).second) {
+          fail(syntax.expressions[labelExpression].location,
+               "duplicate switch case label");
+        }
+        switchCase.labels.push_back(value);
+      }
+      analyzeBranch(syntaxCase.body, switchCase.body);
+      result.cases.push_back(std::move(switchCase));
+    }
+    analyzeBranch(switchSyntax.defaultStatements, result.defaultStatements);
+
+    restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
+                       mergedScalarGenerations, mergedBitGenerations);
+    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+    for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
+      auto& initialized =
+          mutableBitInitialization(static_cast<RegisterId>(reg));
+      for (size_t bit = 0; bit < initialized.size(); ++bit) {
+        initialized[bit] =
+            llvm::all_of(branchBitsInitialized, [&](const auto& branch) {
+              return (*branch[reg])[bit];
+            });
+      }
+    }
+    for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
+      initializedScalars[scalar] =
+          llvm::all_of(branchScalarsInitialized,
+                       [&](const auto& branch) { return branch[scalar]; });
     }
     return addStatement(location, std::move(result));
   }

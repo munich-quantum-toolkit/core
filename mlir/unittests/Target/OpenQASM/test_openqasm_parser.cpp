@@ -535,6 +535,14 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
        .source = "OPENQASM 3.1; for int i in [:] {}"},
       {.name = "missing-while-condition",
        .source = "OPENQASM 3.1; while () {}"},
+      {.name = "switch-without-cases",
+       .source = "OPENQASM 3.1; int value = 0; switch (value) {}"},
+      {.name = "switch-case-after-default",
+       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                 "default {} case 0 {} }"},
+      {.name = "switch-with-repeated-default",
+       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                 "case 0 {} default {} default {} }"},
       {.name = "const-without-initializer",
        .source = "OPENQASM 3.1; const int value;"},
   });
@@ -550,12 +558,10 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",      "cal",        "defcal",   "extern",
-      "box",           "let",      "break",      "continue", "end",
-      "return",        "switch",   "case",       "default",  "pragma",
-      "input",         "readonly", "mutable",    "complex",  "array",
-      "void",          "stretch",  "durationof", "delay",    "im",
-      "#dim",          "#pragma",
+      "defcalgrammar", "def",        "cal",      "defcal",  "extern", "box",
+      "let",           "break",      "continue", "end",     "return", "pragma",
+      "input",         "readonly",   "mutable",  "complex", "array",  "void",
+      "stretch",       "durationof", "delay",    "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());

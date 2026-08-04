@@ -311,7 +311,8 @@ private:
       const auto& data = program.statements.at(id).data;
       if (std::holds_alternative<oq3::frontend::ForStatement>(data) ||
           std::holds_alternative<oq3::frontend::WhileStatement>(data) ||
-          std::holds_alternative<oq3::frontend::IfStatement>(data)) {
+          std::holds_alternative<oq3::frontend::IfStatement>(data) ||
+          std::holds_alternative<oq3::frontend::SwitchStatement>(data)) {
         return true;
       }
       const auto* application =
@@ -698,6 +699,36 @@ private:
           }
           if (!preflightStatements(loop->body, projectedEmission,
                                    multiplicity)) {
+            return false;
+          }
+        } else if (const auto* switchStatement =
+                       std::get_if<oq3::frontend::SwitchStatement>(
+                           &statement.data)) {
+          if (!chargeExpressionEmission(switchStatement->control, multiplicity,
+                                        projectedEmission,
+                                        statement.location) ||
+              !chargeScaledEmission(3, multiplicity, projectedEmission,
+                                    statement.location)) {
+            return false;
+          }
+          for (const auto& switchCase : switchStatement->cases) {
+            const auto labelCount = switchCase.labels.size();
+            if (!chargeScaledEmission(labelCount, multiplicity,
+                                      projectedEmission, statement.location)) {
+              return false;
+            }
+            if (labelCount != 0 &&
+                multiplicity > PROJECTED_EMISSION_LIMIT / labelCount) {
+              return reportProjectedEmissionLimit(statement.location);
+            }
+            const auto caseMultiplicity = multiplicity * labelCount;
+            if (!preflightStatements(switchCase.body, projectedEmission,
+                                     caseMultiplicity)) {
+              return false;
+            }
+          }
+          if (!preflightStatements(switchStatement->defaultStatements,
+                                   projectedEmission, multiplicity)) {
             return false;
           }
         } else if (const auto* declaration =
@@ -2298,6 +2329,15 @@ private:
             for (const auto nested : data.body) {
               collectMutations(nested, mutationKeys, mutations);
             }
+          } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
+            for (const auto& switchCase : data.cases) {
+              for (const auto nested : switchCase.body) {
+                collectMutations(nested, mutationKeys, mutations);
+              }
+            }
+            for (const auto nested : data.defaultStatements) {
+              collectMutations(nested, mutationKeys, mutations);
+            }
           }
         },
         statement.data);
@@ -2401,6 +2441,8 @@ private:
             emitFor(data, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::WhileStatement>) {
             emitWhile(data, gateParameters, gateQubits);
+          } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
+            emitSwitch(data, gateParameters, gateQubits);
           }
         },
         statement.data);
@@ -2800,6 +2842,50 @@ private:
     scalarValues = savedScalars;
     bitValues = savedBits;
     assignState(slots, whileOp.getResults());
+  }
+
+  void emitSwitch(const frontend::SwitchStatement& switchStatement,
+                  ValueRange gateParameters, ValueRange gateQubits) {
+    SmallVector<frontend::StatementId> nestedStatements;
+    SmallVector<int64_t> labels;
+    for (const auto& switchCase : switchStatement.cases) {
+      llvm::append_range(nestedStatements, switchCase.body);
+      llvm::append_range(labels, switchCase.labels);
+    }
+    llvm::append_range(nestedStatements, switchStatement.defaultStatements);
+    const auto slots = mutatedState(nestedStatements);
+    const auto initialValues = stateValues(slots);
+    const auto savedScalars = scalarValues;
+    const auto savedBits = bitValues;
+
+    auto control = emitExpression(builder, switchStatement.control, {});
+    auto selector =
+        arith::IndexCastOp::create(builder, builder.getIndexType(), control);
+    auto switchOp = scf::IndexSwitchOp::create(
+        builder, ValueRange(initialValues).getTypes(), selector, labels,
+        labels.size());
+    OpBuilder::InsertionGuard guard(builder);
+    const auto emitBranch =
+        [&](Region& region, const ArrayRef<frontend::StatementId> statements) {
+          auto& block = region.emplaceBlock();
+          builder.setInsertionPointToEnd(&block);
+          scalarValues = savedScalars;
+          bitValues = savedBits;
+          for (const auto statement : statements) {
+            emitStatement(statement, gateParameters, gateQubits);
+          }
+          scf::YieldOp::create(builder, stateValues(slots));
+        };
+    size_t region = 0;
+    for (const auto& switchCase : switchStatement.cases) {
+      for ([[maybe_unused]] const auto label : switchCase.labels) {
+        emitBranch(switchOp.getCaseRegions()[region++], switchCase.body);
+      }
+    }
+    emitBranch(switchOp.getDefaultRegion(), switchStatement.defaultStatements);
+    scalarValues = savedScalars;
+    bitValues = savedBits;
+    assignState(slots, switchOp.getResults());
   }
 };
 

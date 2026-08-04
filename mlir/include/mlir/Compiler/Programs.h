@@ -61,7 +61,7 @@ enum class ProgramFormat : uint8_t {
   QCOOptimized,
   /// QC after the optimized QCO round trip.
   QC,
-  /// Portable OpenQASM 3.1 after the optimized QCO round trip.
+  /// Portable OpenQASM after the optimized QCO round trip.
   OpenQASM3,
   /// Serializable `jeff` MLIR.
   Jeff,
@@ -114,19 +114,19 @@ private:
 };
 
 /**
- * @brief An owned OpenQASM 3 source artifact.
+ * @brief An owned OpenQASM source artifact.
  */
 class OpenQASMProgram final {
 public:
   explicit OpenQASMProgram(std::string source) : source_(std::move(source)) {}
 
-  /// Return the OpenQASM 3 source.
+  /// Return the OpenQASM source.
   [[nodiscard]] const std::string& source() const noexcept;
 
-  /// Return the OpenQASM 3 source.
+  /// Return the OpenQASM source.
   [[nodiscard]] const std::string& str() const noexcept;
 
-  /// Write the OpenQASM 3 source to a file.
+  /// Write the OpenQASM source to a file.
   [[nodiscard]] bool write(const std::filesystem::path& path) const;
 
 private:
@@ -169,7 +169,7 @@ public:
   /// Normalize scoped global phases in place.
   [[nodiscard]] bool normalizeGlobalPhases();
 
-  /// Translate this program to portable OpenQASM 3.1 without consuming it.
+  /// Translate this program to portable OpenQASM without consuming it.
   [[nodiscard]] std::optional<OpenQASMProgram> toOpenQASM3() const;
 
   /// Consume this program and convert it to QCO.
