@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -191,47 +190,10 @@ public:
     if (emissionBudget.isExhausted()) {
       return nullptr;
     }
-    annotateOutputs(*moduleOp);
     return moduleOp;
   }
 
 private:
-  void annotateOutputs(ModuleOp moduleOp) {
-    auto mainFunc = utils::getEntryPoint(moduleOp);
-    for (const auto [index, output] : llvm::enumerate(program.outputs)) {
-      StringRef name;
-      StringRef kind;
-      if (output.kind == frontend::OutputKind::BitRegister) {
-        const auto& declaration = program.registers.at(output.symbol);
-        name = declaration.name;
-        if (declaration.isScalar) {
-          kind = "bit";
-        }
-      } else {
-        const auto& declaration = program.scalars.at(output.symbol);
-        name = declaration.name;
-        switch (declaration.type) {
-        case frontend::ScalarType::Bool:
-        case frontend::ScalarType::Int:
-        case frontend::ScalarType::Float:
-        case frontend::ScalarType::Angle:
-          break;
-        case frontend::ScalarType::Uint:
-          kind = "uint";
-          break;
-        }
-      }
-      NamedAttrList attrs(mainFunc.getResultAttrDict(index));
-      attrs.set(utils::OPENQASM_OUTPUT_NAME_ATTR, builder.getStringAttr(name));
-      if (!kind.empty()) {
-        attrs.set(utils::OPENQASM_OUTPUT_KIND_ATTR,
-                  builder.getStringAttr(kind));
-      }
-      mainFunc.setResultAttrs(static_cast<unsigned>(index),
-                              attrs.getDictionary(builder.getContext()));
-    }
-  }
-
   // The engine cannot exist without the program and context that outlive it.
   const oq3::frontend::TypedProgram&
       program; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)

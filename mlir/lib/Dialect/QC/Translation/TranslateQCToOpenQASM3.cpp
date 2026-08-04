@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
@@ -23,7 +24,6 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/StringSwitch.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -34,7 +34,6 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
@@ -150,7 +149,7 @@ public:
     output = &bodyOutput;
 
     if (failed(emitDeclarations()) ||
-        failed(emitBlock(function.getBody().front(), {}, {}, false))) {
+        failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
     bodyOutput.flush();
@@ -214,15 +213,6 @@ private:
     return uniqueName("out", nextScalar);
   }
 
-  [[nodiscard]] static StringAttr getResultStringAttr(func::FuncOp funcOp,
-                                                      const unsigned index,
-                                                      const StringRef name) {
-    if (const auto attrs = funcOp.getResultAttrDict(index)) {
-      return attrs.getAs<StringAttr>(name);
-    }
-    return {};
-  }
-
   [[nodiscard]] LogicalResult preflight() {
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     if (functions.size() != 1) {
@@ -277,32 +267,18 @@ private:
       if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
         continue;
       }
-      const auto nameAttr =
-          getResultStringAttr(function, static_cast<unsigned>(index),
-                              utils::OPENQASM_OUTPUT_NAME_ATTR);
-      const auto kindAttr =
-          getResultStringAttr(function, static_cast<unsigned>(index),
-                              utils::OPENQASM_OUTPUT_KIND_ATTR);
       if (isa<MemRefType>(value.getType())) {
         returnedMemrefs.insert(value);
         continue;
       }
-      auto kind = kindAttr ? kindAttr.getValue().str() : inferScalarKind(value);
+      auto kind = inferScalarKind(value);
       if (kind.empty()) {
-        return fail(returnOp,
-                    "cannot infer signedness or an OpenQASM type for function "
-                    "result " +
-                        Twine(index));
-      }
-      if (!isCompatibleScalarKind(kind, value.getType())) {
-        return fail(returnOp, "OpenQASM output kind '" + Twine(kind) +
-                                  "' conflicts with function result " +
+        return fail(returnOp, "unsupported scalar output type for function "
+                              "result " +
                                   Twine(index));
       }
       scalarOutputs.push_back(
-          {.value = value,
-           .name = outputName(nameAttr ? nameAttr.getValue() : StringRef{}),
-           .kind = std::move(kind)});
+          {.value = value, .name = outputName({}), .kind = std::move(kind)});
     }
 
     for (Operation& operation : function.getBody().front().getOperations()) {
@@ -340,37 +316,12 @@ private:
       } else {
         resource.output = returnedMemrefs.contains(alloc.getResult());
         StringRef requested;
-        size_t returnIndex = returnOp.getNumOperands();
-        if (resource.output) {
-          returnIndex = llvm::find(returnOp.getOperands(), alloc.getResult()) -
-                        returnOp.getOperands().begin();
-          if (returnIndex < returnOp.getNumOperands()) {
-            if (const auto nameAttr = getResultStringAttr(
-                    function, static_cast<unsigned>(returnIndex),
-                    utils::OPENQASM_OUTPUT_NAME_ATTR)) {
-              requested = nameAttr.getValue();
-            }
-          }
-        }
         if (const auto attr = alloc->getAttrOfType<StringAttr>(
-                utils::CLASSICAL_REGISTER_NAME_ATTR);
-            requested.empty() && attr) {
+                utils::CLASSICAL_REGISTER_NAME_ATTR)) {
           requested = attr.getValue();
         }
         resource.name =
             resource.output ? outputName(requested) : uniqueName("c", nextBit);
-        if (returnIndex < returnOp.getNumOperands()) {
-          if (const auto kindAttr = getResultStringAttr(
-                  function, static_cast<unsigned>(returnIndex),
-                  utils::OPENQASM_OUTPUT_KIND_ATTR)) {
-            if (kindAttr.getValue() != "bit" &&
-                kindAttr.getValue() != "bit_array") {
-              return fail(returnOp, "bit memref output kind must be 'bit' or "
-                                    "'bit_array'");
-            }
-            resource.scalar = kindAttr.getValue() == "bit";
-          }
-        }
       }
       resources.try_emplace(alloc.getResult(), resource);
       resourceOrder.push_back(alloc.getResult());
@@ -385,22 +336,13 @@ private:
       if (resource.kind != ResourceKind::Bit) {
         return fail(returnOp, "only classical bit memrefs may be outputs");
       }
-      if (resource.scalar && resource.width != 1) {
-        return fail(returnOp, "a scalar bit output must have width one");
-      }
     }
     return success();
   }
 
-  [[nodiscard]] bool isCanonicalStatus(const Value value,
-                                       const size_t resultIndex) const {
+  [[nodiscard]] static bool isCanonicalStatus(const Value value,
+                                              const size_t resultIndex) {
     if (resultIndex != 0 || !value.getType().isInteger(64)) {
-      return false;
-    }
-    if (getResultStringAttr(function, static_cast<unsigned>(resultIndex),
-                            utils::OPENQASM_OUTPUT_NAME_ATTR) ||
-        getResultStringAttr(function, static_cast<unsigned>(resultIndex),
-                            utils::OPENQASM_OUTPUT_KIND_ATTR)) {
       return false;
     }
     auto constant = value.getDefiningOp<arith::ConstantOp>();
@@ -410,57 +352,17 @@ private:
   }
 
   [[nodiscard]] static std::string inferScalarKind(const Value value) {
-    return TypeSwitch<Type, std::string>(value.getType())
-        .Case<IntegerType>([&](const IntegerType type) {
-          if (type.getWidth() == 1) {
-            if (value.getDefiningOp<qc::MeasureOp>()) {
-              return std::string("bit");
-            }
-            if (auto load = value.getDefiningOp<memref::LoadOp>()) {
-              if (auto memref = dyn_cast<MemRefType>(load.getMemRefType());
-                  memref && memref.getElementType().isInteger(1)) {
-                return std::string("bit");
-              }
-            }
-            return std::string("bool");
-          }
-          if (type.getWidth() != 64) {
-            return std::string{};
-          }
-          auto* operation = value.getDefiningOp();
-          if (operation == nullptr) {
-            return std::string{};
-          }
-          const auto name = operation->getName().getStringRef();
-          if (name == "arith.divui" || name == "arith.remui" ||
-              name == "arith.extui" || name == "arith.index_castui" ||
-              name == "arith.fptoui") {
-            return std::string("uint");
-          }
-          if (name == "arith.divsi" || name == "arith.remsi" ||
-              name == "arith.extsi" || name == "arith.fptosi") {
-            return std::string("int");
-          }
-          return std::string("int");
-        })
-        .Case<FloatType>([](FloatType type) {
-          return type.getWidth() == 64 ? std::string("float") : std::string{};
-        })
-        .Default([](const Type) { return std::string{}; });
-  }
-
-  [[nodiscard]] static bool isCompatibleScalarKind(const StringRef kind,
-                                                   const Type type) {
+    const auto type = value.getType();
     if (type.isInteger(1)) {
-      return kind == "bit" || kind == "bool";
+      return value.getDefiningOp<qc::MeasureOp>() ? "bit" : "bool";
     }
-    if (type.isInteger(64)) {
-      return kind == "int" || kind == "uint";
+    if (type.isInteger(64) || type.isIndex()) {
+      return "int";
     }
     if (type.isF64()) {
-      return kind == "float";
+      return "float";
     }
-    return false;
+    return {};
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
@@ -484,31 +386,10 @@ private:
     return success();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitType(const Type type,
-                                                const StringRef hint = {}) {
-    if (!hint.empty()) {
-      return hint.str();
-    }
-    if (type.isInteger(1)) {
-      return std::string("bool");
-    }
-    if (type.isInteger(64) || type.isIndex()) {
-      return std::string("int");
-    }
-    if (type.isF64()) {
-      return std::string("float");
-    }
-    emitError(function.getLoc())
-        << "OpenQASM emission error: unsupported scalar type " << type;
-    return failure();
-  }
-
-  [[nodiscard]] LogicalResult
-  emitBlock(Block& block, const ArrayRef<std::string> yieldTargets,
-            const ArrayRef<Type> yieldTypes, const bool simultaneousYield) {
+  [[nodiscard]] LogicalResult emitBlock(Block& block) {
     for (Operation& operation : block.getOperations()) {
-      if (auto yield = dyn_cast<scf::YieldOp>(&operation)) {
-        return emitYield(yield, yieldTargets, yieldTypes, simultaneousYield);
+      if (isa<scf::YieldOp>(&operation)) {
+        return success();
       }
       if (isa<scf::ConditionOp, qc::YieldOp>(&operation)) {
         return fail(&operation, "unexpected region terminator");
@@ -517,15 +398,12 @@ private:
         return failure();
       }
     }
-    if (!yieldTargets.empty()) {
-      return fail(block.getParentOp(), "structured region has no scf.yield");
-    }
     return success();
   }
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
-    if (auto select = dyn_cast<arith::SelectOp>(&operation)) {
-      return emitSelect(select);
+    if (isa<arith::SelectOp>(&operation)) {
+      return fail(&operation, "arith.select is not supported");
     }
     if (isa<arith::ConstantOp, memref::LoadOp, memref::AllocOp,
             memref::DeallocOp, qc::AllocOp, qc::DeallocOp, qc::StaticOp>(
@@ -660,13 +538,6 @@ private:
       return failExpression(indexValue,
                             "bit indices must be constant and in bounds");
     }
-    if (resource->second.scalar) {
-      if (*index != 0) {
-        return failExpression(indexValue,
-                              "scalar bit output may only use index zero");
-      }
-      return resource->second.name;
-    }
     return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
   }
 
@@ -704,15 +575,6 @@ private:
       }
       return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
     }
-    if (auto select = dyn_cast<arith::SelectOp>(operation)) {
-      if (const auto found = valueNames.find(select.getResult());
-          found != valueNames.end()) {
-        return found->second;
-      }
-      return failExpression(value,
-                            "arith.select must be materialized before use");
-    }
-
     const auto name = operation->getName().getStringRef();
     if (const auto binary = binaryOperator(name); !binary.empty()) {
       if (operation->getNumOperands() != 2) {
@@ -816,8 +678,8 @@ private:
         .Cases("arith.addi", "arith.addf", "+")
         .Cases("arith.subi", "arith.subf", "-")
         .Cases("arith.muli", "arith.mulf", "*")
-        .Cases("arith.divsi", "arith.divui", "arith.divf", "/")
-        .Cases("arith.remsi", "arith.remui", "arith.remf", "%")
+        .Cases("arith.divsi", "arith.divf", "/")
+        .Cases("arith.remsi", "arith.remf", "%")
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")
         .Case("arith.xori", "!=")
@@ -832,17 +694,18 @@ private:
     case arith::CmpIPredicate::ne:
       return "!=";
     case arith::CmpIPredicate::slt:
-    case arith::CmpIPredicate::ult:
       return "<";
     case arith::CmpIPredicate::sle:
-    case arith::CmpIPredicate::ule:
       return "<=";
     case arith::CmpIPredicate::sgt:
-    case arith::CmpIPredicate::ugt:
       return ">";
     case arith::CmpIPredicate::sge:
-    case arith::CmpIPredicate::uge:
       return ">=";
+    case arith::CmpIPredicate::ult:
+    case arith::CmpIPredicate::ule:
+    case arith::CmpIPredicate::ugt:
+    case arith::CmpIPredicate::uge:
+      return {};
     }
     return {};
   }
@@ -869,22 +732,17 @@ private:
 
   [[nodiscard]] static bool isScalarCast(const StringRef name) {
     return llvm::StringSwitch<bool>(name)
-        .Cases("arith.extsi", "arith.extui", "arith.trunci", true)
-        .Cases("arith.index_cast", "arith.index_castui", true)
-        .Cases("arith.sitofp", "arith.uitofp", true)
-        .Cases("arith.fptosi", "arith.fptoui", true)
+        .Cases("arith.extsi", "arith.trunci", true)
+        .Case("arith.index_cast", true)
+        .Case("arith.sitofp", true)
+        .Case("arith.fptosi", true)
         .Default(false);
   }
 
   [[nodiscard]] static StringRef castTarget(const StringRef name,
                                             const Type resultType) {
-    if (name == "arith.sitofp" || name == "arith.uitofp" ||
-        resultType.isF64()) {
+    if (name == "arith.sitofp" || resultType.isF64()) {
       return "float";
-    }
-    if (name == "arith.fptoui" || name == "arith.extui" ||
-        name == "arith.index_castui") {
-      return "uint";
     }
     if (resultType.isInteger(1)) {
       return "bool";
@@ -937,60 +795,24 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult emitSelect(arith::SelectOp select) {
-    auto type = emitType(select.getType());
-    auto condition = emitExpression(select.getCondition());
-    auto trueValue = emitExpression(select.getTrueValue());
-    auto falseValue = emitExpression(select.getFalseValue());
-    if (failed(type) || failed(condition) || failed(trueValue) ||
-        failed(falseValue)) {
-      return failure();
-    }
-    const auto name = uniqueName("v", nextScalar);
-    valueNames.try_emplace(select.getResult(), name);
-    *output << *type << ' ' << name << ";\n";
-    *output << "if (" << *condition << ") {\n";
-    output->indent();
-    *output << name << " = " << *trueValue << ";\n";
-    output->unindent();
-    *output << "} else {\n";
-    output->indent();
-    *output << name << " = " << *falseValue << ";\n";
-    output->unindent();
-    *output << "}\n";
-    return success();
-  }
-
   [[nodiscard]] LogicalResult emitIf(scf::IfOp ifOp) {
+    if (ifOp.getNumResults() != 0) {
+      return fail(ifOp, "scf.if results are not supported");
+    }
     auto condition = emitExpression(ifOp.getCondition());
     if (failed(condition)) {
       return failure();
     }
-    SmallVector<std::string> resultNames;
-    SmallVector<Type> resultTypes;
-    for (const auto result : ifOp.getResults()) {
-      auto type = emitType(result.getType());
-      if (failed(type)) {
-        return failure();
-      }
-      const auto name = uniqueName("v", nextScalar);
-      valueNames.try_emplace(result, name);
-      resultNames.push_back(name);
-      resultTypes.push_back(result.getType());
-      *output << *type << ' ' << name << ";\n";
-    }
     *output << "if (" << *condition << ") {\n";
     output->indent();
-    if (failed(emitBlock(ifOp.getThenRegion().front(), resultNames, resultTypes,
-                         false))) {
+    if (failed(emitBlock(ifOp.getThenRegion().front()))) {
       return failure();
     }
     output->unindent();
     if (!ifOp.getElseRegion().empty()) {
       *output << "} else {\n";
       output->indent();
-      if (failed(emitBlock(ifOp.getElseRegion().front(), resultNames,
-                           resultTypes, false))) {
+      if (failed(emitBlock(ifOp.getElseRegion().front()))) {
         return failure();
       }
       output->unindent();
@@ -1000,6 +822,9 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitFor(scf::ForOp forOp) {
+    if (!forOp.getInitArgs().empty() || forOp.getNumResults() != 0) {
+      return fail(forOp, "scf.for loop-carried values are not supported");
+    }
     const auto lower = getConstantInteger(forOp.getLowerBound());
     const auto upper = getConstantInteger(forOp.getUpperBound());
     const auto step = getConstantInteger(forOp.getStep());
@@ -1008,14 +833,6 @@ private:
                          "constant step");
     }
     if (*lower >= *upper) {
-      for (const auto [result, initial] :
-           llvm::zip_equal(forOp.getResults(), forOp.getInitArgs())) {
-        auto expression = emitExpression(initial);
-        if (failed(expression)) {
-          return failure();
-        }
-        valueNames.try_emplace(result, std::move(*expression));
-      }
       return success();
     }
     const APInt lowerWide(65, static_cast<uint64_t>(*lower), true);
@@ -1025,28 +842,8 @@ private:
         lowerWide + ((upperWide - 1 - lowerWide).sdiv(stepWide) * stepWide);
     const auto last = lastWide.getSExtValue();
 
-    SmallVector<std::string> stateNames;
-    SmallVector<Type> stateTypes;
-    for (const auto [result, initial] :
-         llvm::zip_equal(forOp.getResults(), forOp.getInitArgs())) {
-      auto type = emitType(result.getType());
-      auto expression = emitExpression(initial);
-      if (failed(type) || failed(expression)) {
-        return failure();
-      }
-      const auto name = uniqueName("state", nextLoop);
-      valueNames.try_emplace(result, name);
-      stateNames.push_back(name);
-      stateTypes.push_back(result.getType());
-      *output << *type << ' ' << name << " = " << *expression << ";\n";
-    }
-
     const auto induction = uniqueName("i", nextLoop);
     valueNames.try_emplace(forOp.getInductionVar(), induction);
-    for (const auto [argument, name] :
-         llvm::zip_equal(forOp.getRegionIterArgs(), stateNames)) {
-      valueNames.try_emplace(argument, name);
-    }
 
     *output << "for int " << induction << " in [" << *lower;
     if (*step != 1) {
@@ -1054,7 +851,7 @@ private:
     }
     *output << ':' << last << "] {\n";
     output->indent();
-    if (failed(emitBlock(*forOp.getBody(), stateNames, stateTypes, true))) {
+    if (failed(emitBlock(*forOp.getBody()))) {
       return failure();
     }
     output->unindent();
@@ -1067,52 +864,21 @@ private:
     auto& after = whileOp.getAfter().front();
     auto conditionOp = dyn_cast<scf::ConditionOp>(before.getTerminator());
     auto yieldOp = dyn_cast<scf::YieldOp>(after.getTerminator());
-    if (!conditionOp || !yieldOp ||
-        conditionOp.getArgs().size() != after.getNumArguments() ||
-        whileOp.getInits().size() != before.getNumArguments()) {
+    if (!conditionOp || !yieldOp) {
       return fail(whileOp, "malformed scf.while regions");
     }
-    for (const auto [initial, result, beforeArgument, afterArgument] :
-         llvm::zip_equal(whileOp.getInits(), whileOp.getResults(),
-                         before.getArguments(), after.getArguments())) {
-      if (initial.getType() != result.getType() ||
-          beforeArgument.getType() != result.getType() ||
-          afterArgument.getType() != result.getType()) {
-        return fail(whileOp,
-                    "scf.while requires type-preserving carried state");
-      }
-    }
-
-    SmallVector<std::string> stateNames;
-    SmallVector<Type> stateTypes;
-    for (const auto [result, initial] :
-         llvm::zip_equal(whileOp.getResults(), whileOp.getInits())) {
-      auto type = emitType(result.getType());
-      auto expression = emitExpression(initial);
-      if (failed(type) || failed(expression)) {
-        return failure();
-      }
-      const auto name = uniqueName("state", nextLoop);
-      valueNames.try_emplace(result, name);
-      stateNames.push_back(name);
-      stateTypes.push_back(result.getType());
-      *output << *type << ' ' << name << " = " << *expression << ";\n";
-    }
-    for (const auto [argument, name] :
-         llvm::zip_equal(before.getArguments(), stateNames)) {
-      valueNames.try_emplace(argument, name);
-    }
-    for (const auto [forwarded, beforeArgument, afterArgument] :
-         llvm::zip_equal(conditionOp.getArgs(), before.getArguments(),
-                         after.getArguments())) {
-      if (forwarded != beforeArgument) {
-        return fail(conditionOp,
-                    "scf.while condition may only forward carried values "
-                    "unchanged");
-      }
-      valueNames.try_emplace(afterArgument, valueNames.at(beforeArgument));
+    if (!whileOp.getInits().empty() || whileOp.getNumResults() != 0 ||
+        before.getNumArguments() != 0 || after.getNumArguments() != 0 ||
+        !conditionOp.getArgs().empty() || yieldOp.getNumOperands() != 0) {
+      return fail(whileOp, "scf.while loop-carried values are not supported");
     }
     for (Operation& operation : before.without_terminator()) {
+      if (auto load = dyn_cast<memref::LoadOp>(operation)) {
+        if (failed(emitExpression(load.getResult()))) {
+          return failure();
+        }
+        continue;
+      }
       if (!isInlineExpressionOperation(operation) ||
           !isMemoryEffectFree(&operation)) {
         return fail(&operation,
@@ -1128,7 +894,7 @@ private:
     }
     *output << "while (" << *condition << ") {\n";
     output->indent();
-    if (failed(emitBlock(after, stateNames, stateTypes, true))) {
+    if (failed(emitBlock(after))) {
       return failure();
     }
     output->unindent();
@@ -1137,37 +903,25 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitIndexSwitch(scf::IndexSwitchOp switchOp) {
+    if (switchOp.getNumResults() != 0) {
+      return fail(switchOp, "scf.index_switch results are not supported");
+    }
     auto argument = emitExpression(switchOp.getArg());
     if (failed(argument)) {
       return failure();
     }
 
-    SmallVector<std::string> resultNames;
-    SmallVector<Type> resultTypes;
-    for (const auto result : switchOp.getResults()) {
-      auto type = emitType(result.getType());
-      if (failed(type)) {
-        return failure();
-      }
-      const auto name = uniqueName("v", nextScalar);
-      valueNames.try_emplace(result, name);
-      resultNames.push_back(name);
-      resultTypes.push_back(result.getType());
-      *output << *type << ' ' << name << ";\n";
-    }
-
     const auto cases = switchOp.getCases();
     if (cases.empty()) {
-      return emitBlock(switchOp.getDefaultBlock(), resultNames, resultTypes,
-                       false);
+      return emitBlock(switchOp.getDefaultBlock());
     }
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto [index, caseValue] : llvm::enumerate(cases)) {
       *output << "case " << caseValue << " {\n";
       output->indent();
-      if (failed(emitBlock(switchOp.getCaseBlock(static_cast<unsigned>(index)),
-                           resultNames, resultTypes, false))) {
+      if (failed(
+              emitBlock(switchOp.getCaseBlock(static_cast<unsigned>(index))))) {
         return failure();
       }
       output->unindent();
@@ -1175,55 +929,13 @@ private:
     }
     *output << "default {\n";
     output->indent();
-    if (failed(emitBlock(switchOp.getDefaultBlock(), resultNames, resultTypes,
-                         false))) {
+    if (failed(emitBlock(switchOp.getDefaultBlock()))) {
       return failure();
     }
     output->unindent();
     *output << "}\n";
     output->unindent();
     *output << "}\n";
-    return success();
-  }
-
-  [[nodiscard]] LogicalResult emitYield(scf::YieldOp yield,
-                                        const ArrayRef<std::string> targets,
-                                        const ArrayRef<Type> types,
-                                        const bool simultaneous) {
-    if (yield.getNumOperands() != targets.size() ||
-        targets.size() != types.size()) {
-      return fail(yield, "scf.yield arity does not match region results");
-    }
-    SmallVector<std::string> expressions;
-    for (const auto operand : yield.getOperands()) {
-      auto expression = emitExpression(operand);
-      if (failed(expression)) {
-        return failure();
-      }
-      expressions.push_back(std::move(*expression));
-    }
-    if (!simultaneous) {
-      for (const auto [target, expression] :
-           llvm::zip_equal(targets, expressions)) {
-        *output << target << " = " << expression << ";\n";
-      }
-      return success();
-    }
-    SmallVector<std::string> temporaries;
-    for (const auto [typeValue, expression] :
-         llvm::zip_equal(types, expressions)) {
-      auto type = emitType(typeValue);
-      if (failed(type)) {
-        return failure();
-      }
-      const auto temporary = uniqueName("next", nextLoop);
-      temporaries.push_back(temporary);
-      *output << *type << ' ' << temporary << " = " << expression << ";\n";
-    }
-    for (const auto [target, temporary] :
-         llvm::zip_equal(targets, temporaries)) {
-      *output << target << " = " << temporary << ";\n";
-    }
     return success();
   }
 
@@ -1498,44 +1210,29 @@ private:
     if (symbol == "u") {
       return std::string("U");
     }
-    constexpr std::array standardGates{
-        StringLiteral("gphase"), StringLiteral("id"),  StringLiteral("x"),
-        StringLiteral("y"),      StringLiteral("z"),   StringLiteral("h"),
-        StringLiteral("s"),      StringLiteral("sdg"), StringLiteral("t"),
-        StringLiteral("tdg"),    StringLiteral("sx"),  StringLiteral("p"),
-        StringLiteral("rx"),     StringLiteral("ry"),  StringLiteral("rz"),
-        StringLiteral("swap"),   StringLiteral("u2"),
-    };
-    if (llvm::is_contained(standardGates, symbol)) {
-      return symbol.str();
-    }
-    constexpr std::array helperGates{
-        StringLiteral("r"),          StringLiteral("iswap"),
-        StringLiteral("dcx"),        StringLiteral("ecr"),
-        StringLiteral("rxx"),        StringLiteral("ryy"),
-        StringLiteral("rzx"),        StringLiteral("rzz"),
-        StringLiteral("xx_plus_yy"), StringLiteral("xx_minus_yy"),
-        StringLiteral("rccx"),
-    };
-    if (!llvm::is_contained(helperGates, symbol)) {
+    const auto* gate = oq3::frontend::lookupGate(symbol);
+    if (gate == nullptr ||
+        gate->availability == oq3::frontend::GateAvailability::QELib1) {
       emitError(function.getLoc())
           << "OpenQASM emission error: unsupported quantum gate '" << symbol
           << "'";
       return failure();
     }
-    fixedHelpers.insert(symbol);
-    return (Twine("_mqt_") + symbol).str();
+    if (gate->availability == oq3::frontend::GateAvailability::Compatibility) {
+      fixedHelpers.insert(symbol);
+    }
+    return symbol.str();
   }
 
   void emitFixedHelpers(llvm::raw_ostream& stream) const {
     using HelperDefinition = std::pair<StringLiteral, StringLiteral>;
     constexpr std::array helpers{
-        HelperDefinition{"r", "gate _mqt_r(p0, p1) q {\n"
+        HelperDefinition{"r", "gate r(p0, p1) q {\n"
                               "  rz(-p1) q;\n"
                               "  rx(p0) q;\n"
                               "  rz(p1) q;\n"
                               "}\n"},
-        HelperDefinition{"iswap", "gate _mqt_iswap q0, q1 {\n"
+        HelperDefinition{"iswap", "gate iswap q0, q1 {\n"
                                   "  s q0;\n"
                                   "  s q1;\n"
                                   "  h q0;\n"
@@ -1543,11 +1240,11 @@ private:
                                   "  ctrl @ x q1, q0;\n"
                                   "  h q1;\n"
                                   "}\n"},
-        HelperDefinition{"dcx", "gate _mqt_dcx q0, q1 {\n"
+        HelperDefinition{"dcx", "gate dcx q0, q1 {\n"
                                 "  ctrl @ x q0, q1;\n"
                                 "  ctrl @ x q1, q0;\n"
                                 "}\n"},
-        HelperDefinition{"rxx", "gate _mqt_rxx(p0) q0, q1 {\n"
+        HelperDefinition{"rxx", "gate rxx(p0) q0, q1 {\n"
                                 "  h q0;\n"
                                 "  h q1;\n"
                                 "  ctrl @ x q0, q1;\n"
@@ -1556,7 +1253,7 @@ private:
                                 "  h q0;\n"
                                 "  h q1;\n"
                                 "}\n"},
-        HelperDefinition{"ryy", "gate _mqt_ryy(p0) q0, q1 {\n"
+        HelperDefinition{"ryy", "gate ryy(p0) q0, q1 {\n"
                                 "  rx(pi / 2) q0;\n"
                                 "  rx(pi / 2) q1;\n"
                                 "  ctrl @ x q0, q1;\n"
@@ -1565,26 +1262,26 @@ private:
                                 "  rx(-pi / 2) q0;\n"
                                 "  rx(-pi / 2) q1;\n"
                                 "}\n"},
-        HelperDefinition{"rzz", "gate _mqt_rzz(p0) q0, q1 {\n"
+        HelperDefinition{"rzz", "gate rzz(p0) q0, q1 {\n"
                                 "  ctrl @ x q0, q1;\n"
                                 "  rz(p0) q1;\n"
                                 "  ctrl @ x q0, q1;\n"
                                 "}\n"},
-        HelperDefinition{"rzx", "gate _mqt_rzx(p0) q0, q1 {\n"
+        HelperDefinition{"rzx", "gate rzx(p0) q0, q1 {\n"
                                 "  h q1;\n"
                                 "  ctrl @ x q0, q1;\n"
                                 "  rz(p0) q1;\n"
                                 "  ctrl @ x q0, q1;\n"
                                 "  h q1;\n"
                                 "}\n"},
-        HelperDefinition{"ecr", "gate _mqt_ecr q0, q1 {\n"
+        HelperDefinition{"ecr", "gate ecr q0, q1 {\n"
                                 "  gphase(-pi / 4);\n"
                                 "  s q0;\n"
                                 "  sx q1;\n"
                                 "  ctrl @ x q0, q1;\n"
                                 "  x q0;\n"
                                 "}\n"},
-        HelperDefinition{"rccx", "gate _mqt_rccx q0, q1, q2 {\n"
+        HelperDefinition{"rccx", "gate rccx q0, q1, q2 {\n"
                                  "  h q2;\n"
                                  "  t q2;\n"
                                  "  ctrl @ x q1, q2;\n"
@@ -1595,7 +1292,7 @@ private:
                                  "  tdg q2;\n"
                                  "  h q2;\n"
                                  "}\n"},
-        HelperDefinition{"xx_plus_yy", "gate _mqt_xx_plus_yy(p0, p1) q0, q1 {\n"
+        HelperDefinition{"xx_plus_yy", "gate xx_plus_yy(p0, p1) q0, q1 {\n"
                                        "  rz(p1) q0;\n"
                                        "  sdg q1;\n"
                                        "  s q0;\n"
@@ -1611,23 +1308,22 @@ private:
                                        "  inv @ sx q1;\n"
                                        "  s q1;\n"
                                        "}\n"},
-        HelperDefinition{"xx_minus_yy",
-                         "gate _mqt_xx_minus_yy(p0, p1) q0, q1 {\n"
-                         "  sdg q0;\n"
-                         "  rz(-p1) q1;\n"
-                         "  sx q0;\n"
-                         "  s q1;\n"
-                         "  s q0;\n"
-                         "  ctrl @ x q0, q1;\n"
-                         "  ry(p0 / 2) q0;\n"
-                         "  ry(-p0 / 2) q1;\n"
-                         "  ctrl @ x q0, q1;\n"
-                         "  sdg q0;\n"
-                         "  sdg q1;\n"
-                         "  inv @ sx q0;\n"
-                         "  rz(p1) q1;\n"
-                         "  s q0;\n"
-                         "}\n"},
+        HelperDefinition{"xx_minus_yy", "gate xx_minus_yy(p0, p1) q0, q1 {\n"
+                                        "  sdg q0;\n"
+                                        "  rz(-p1) q1;\n"
+                                        "  sx q0;\n"
+                                        "  s q1;\n"
+                                        "  s q0;\n"
+                                        "  ctrl @ x q0, q1;\n"
+                                        "  ry(p0 / 2) q0;\n"
+                                        "  ry(-p0 / 2) q1;\n"
+                                        "  ctrl @ x q0, q1;\n"
+                                        "  sdg q0;\n"
+                                        "  sdg q1;\n"
+                                        "  inv @ sx q0;\n"
+                                        "  rz(p1) q1;\n"
+                                        "  s q0;\n"
+                                        "}\n"},
     };
     for (const auto& helper : helpers) {
       if (fixedHelpers.contains(helper.first)) {

@@ -82,6 +82,14 @@ instead of reverse-engineering the importer machinery.
       documentation findings, rebased onto `origin/main` at `a132638c8`, and
       revalidated the 22 focused emitter tests, compiler integration test, and
       15 affected Python tests against the rebased release build.
+- [x] (2026-08-04 22:53Z) Removed OpenQASM-specific result metadata, narrowed
+      SCF emission to statement-only control, and made compatibility-gate
+      definitions round-trip through the shared gate catalog under native names.
+- [x] (2026-08-04 22:53Z) Completed release, coverage, clang-tidy, Python,
+      generated-stub, documentation, and repository-lint validation for the
+      simplified subset.
+- [ ] Run a fresh independent review, commit the follow-up with a signature,
+      push PR #2003, and refresh its CI and review state.
 
 ## Surprises & Discoveries
 
@@ -132,10 +140,14 @@ instead of reverse-engineering the importer machinery.
   iterator, not a pointer. Removing the ECR helper dependency lookup eliminated
   both the non-portable pointer deduction and an unnecessary two-RZX
   decomposition.
-- Observation: The importer only erases two output-type distinctions needed by
-  the exporter: scalar `bit` versus `bit[1]`, and `uint` versus signless `i64`.
-  Boolean, signed integer, floating-point, and bit-array outputs are inferred
-  directly from QC types and operations.
+- Observation: Source output spelling is not needed for the practical export
+  subset. A canonical mapping from QC types and direct measurement provenance
+  removes the result metadata entirely and makes the accepted semantics
+  explicit.
+- Observation: Zero-state `scf.while` conditions imported from mutable classical
+  variables contain read-only `memref.load` operations. Accepting those loads
+  while rejecting writes and other effects preserves practical statement-only
+  loops.
 
 ## Decision Log
 
@@ -160,11 +172,12 @@ instead of reverse-engineering the importer machinery.
   non-consuming direct method on `QCProgram`. Rationale: The compiler output
   should reflect normal optimization, while callers inspecting frontend QC need
   a predictable direct path. Date/Author: 2026-08-04 / Codex.
-- Decision: Preserve output names and add output-kind metadata only for scalar
-  `bit` and `uint`. Rationale: QC types and defining operations infer all other
-  supported output kinds. Standard MLIR result attributes retain the two
-  genuinely erased distinctions without an exporter-specific side table or
-  preservation pass. Date/Author: 2026-08-04 / Codex.
+- Decision: Do not attach OpenQASM-specific attributes to function results.
+  Canonicalize bit memrefs to bit arrays, direct measurements to scalar bits,
+  other `i1` values to booleans, integers to signed `int`, and `f64` to `float`.
+  Rationale: The smaller contract is predictable, requires no metadata
+  transport, and explicitly rejects operations whose unsigned meaning cannot be
+  preserved. Date/Author: 2026-08-05 / Codex.
 - Decision: Run the existing QC cleanup pipeline on a copy before direct
   `QCProgram` export. Rationale: Dead importer scaffolding should be removed by
   MLIR passes, not by a recursive exporter heuristic, while the caller's QC
@@ -177,43 +190,54 @@ instead of reverse-engineering the importer machinery.
   aggregate target. Date/Author: 2026-08-04 / Codex.
 - Decision: Parse and emit native `switch`/`case`/`default` statements and map
   them directly to `scf.index_switch`. Rationale: This follows the language
-  construct, supports carried state, and is simpler than synthesizing nested
-  conditionals. Date/Author: 2026-08-04 / Codex.
+  construct and is simpler than synthesizing nested conditionals. The export
+  subset accepts only result-free switches. Date/Author: 2026-08-04 / Codex.
+- Decision: Emit compatibility gates under their catalog names and have the
+  default MQT-compatible frontend prefer a matching catalog signature over the
+  helper body. Rationale: Strict consumers retain self-contained definitions,
+  while MQT round trips recover native QC operations without a duplicate helper
+  name list. Date/Author: 2026-08-05 / Codex.
+- Decision: Restrict structured control to result-free `if` and `switch`,
+  constant `for` without iterated state, and zero-state `while`; reject
+  `arith.select`. Rationale: This covers practical structured quantum programs
+  while deleting result declarations, yield-target plumbing, and carried-state
+  bookkeeping. Date/Author: 2026-08-05 / Codex.
 
 ## Outcomes & Retrospective
 
-The implementation now provides a deterministic OpenQASM 3.1 boundary format for
-practical QC programs through the translation API, compiler artifact, Python
-bindings, and `mqt-cc`. It handles static logical and physical qubits,
-measurement and classical outputs, the QC gate set and nested modifiers,
-printable scalar expressions, and structured SCF control with simultaneous
-state-update semantics. Extended gates are emitted as focused private
-definitions only when used.
+The implementation provides deterministic OpenQASM output through the
+translation API, compiler artifact, Python bindings, and `mqt-cc`. The canonical
+subset covers static logical and physical qubits, measurement and classical
+outputs, the QC gate set and nested modifiers, signed and floating-point scalar
+expressions, and statement-only structured SCF control.
 
-The importer retains output names and only the scalar-bit and unsigned-integer
-kind distinctions that QC otherwise erases. Ordinary MLIR result-attribute
-transport carries them through QC/QCO; the exporter infers the remaining
-supported kinds. Dynamic indices, runtime safety machinery, arbitrary CFGs, and
-other deliberately unsupported categories fail with location-based diagnostics
-before buffered output is committed.
+Compatibility helpers use their shared catalog names. Strict consumers analyze
+the emitted definitions, while the default MQT-compatible importer recognizes a
+matching signature and reconstructs the native QC operation. Generated
+composite-modifier gates and collision-safe identifiers alone use the `_mqt_`
+prefix.
 
-Validation completed after rebasing onto `origin/main` at `2e0778f9d`:
+No OpenQASM-specific result metadata is attached to QC functions. Outputs are
+derived canonically from QC types and direct measurement provenance. Unsigned
+operations, dynamic indices, runtime safety machinery, SCF results and carried
+state, `arith.select`, arbitrary CFGs, and other unsupported categories fail
+with location-based diagnostics before buffered output is committed.
+
+Validation of the simplified subset completed on the follow-up diff:
 
 - the complete release build succeeded;
-- all 155 OpenQASM frontend tests, 287 QC translation tests, and 219 compiler
-  tests passed in both release and coverage builds;
-- all 40 Python MLIR tests passed, including 14 full-matrix helper-gate
-  comparisons and compiler round trips;
+- all 157 OpenQASM frontend tests, 277 QC translation tests, and 225 compiler
+  tests passed;
+- all 44 Python MLIR tests passed;
 - generated Python stubs completed successfully without a diff;
-- CLI file emission followed by strict re-import completed successfully;
-- Sphinx completed in nitpicky warnings-as-errors mode after generating the MLIR
-  reference pages;
-- all changed translation units completed clang-tidy without findings;
-- focused translator line coverage is 91.7% (993 of 1083 lines), up from 75%;
-- the repository-wide lint session and `git diff --check` passed;
-- an independent `$mqt-pr-review` pass found no remaining correctness, API,
-  documentation, C++20, MLIR-style, or scope findings after its three
-  publication blockers were resolved.
+- Sphinx completed in nitpicky warnings-as-errors mode;
+- all changed translation and test units completed clang-tidy without findings;
+- focused C++ patch line coverage is 96.8% (60 of 62 instrumented added lines);
+- the repository-wide lint session and `git diff --check` passed.
+
+The complete local coverage build remains blocked while linking an unrelated
+macOS QDMI device target against `libgcov`; the focused coverage targets build
+and pass, and their counters produced the patch-coverage result above.
 
 ## Context and Orientation
 
@@ -263,16 +287,15 @@ surface.
 
 Render statically indexed qubit and bit storage, measurements, reset, barrier,
 arithmetic, comparisons, scalar conversions, and math expressions. Render
-single-block `scf.if`, constant-bound `scf.for`, expression-only `scf.while`,
-and `scf.index_switch`. Declare result variables before structured statements
-and assign yielded values through fresh next-state temporaries before updating
-loop-carried variables.
+result-free single-block `scf.if`, constant-bound `scf.for` without iterated
+state, zero-state expression-only `scf.while`, and result-free
+`scf.index_switch`. Reject SCF results and `arith.select`.
 
-Add optional function-result attributes `qc.openqasm.output_name` and
-`qc.openqasm.output_kind` in the frontend so output names and the
-`bit`/`bool`/signedness distinction survive conversion. The exporter must also
-handle QC without these hints, using operation provenance where unambiguous and
-diagnosing user-visible ambiguity.
+Use a canonical output model without OpenQASM-specific result attributes:
+rank-one bit memrefs remain bit arrays, direct measurement results become scalar
+bits, other `i1` values become booleans, signless integers become signed
+integers, and floating-point values remain floats. Preserve valid bit-register
+allocation names and generate deterministic scalar output names.
 
 Add `OpenQASMProgram`, direct QC export, the program format enum entry, and the
 default pipeline branch. Then add the nanobind class, enum member, stub

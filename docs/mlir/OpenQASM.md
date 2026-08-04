@@ -25,12 +25,12 @@ from_string = QCProgram.from_qasm_str(source)
 from_file = QCProgram.from_qasm_file("program.qasm")
 ```
 
-`mqt-cc` recognizes `.qasm` files automatically. Use `--input=qasm` when the
-filename does not identify the format:
+`mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=qasm` when
+the filename does not identify the format:
 
 ```console
 mqt-cc program.qasm
-mqt-cc --input=qasm program.txt
+mqt-cc --input-format=qasm program.txt
 ```
 
 ### Input support
@@ -121,27 +121,46 @@ bypasses that QCO optimization round trip.
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body becomes a private generated gate.                                                                                                                           |
 | Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, casts, and supported math functions.                                                                                 |
-| Branches                  | `scf.if`, `arith.select`, and `scf.index_switch`. Index switches use native OpenQASM `switch`, `case`, and `default` statements.                                                                                             |
-| Loops                     | Constant-range `scf.for` and expression-based `scf.while` with type-preserving scalar or bit state.                                                                                                                          |
-| Results                   | Multiple scalar and bit outputs. Branch and loop results use temporary next-state values to preserve simultaneous-yield semantics.                                                                                           |
+| Structured control        | Result-free `scf.if` and `scf.index_switch`, constant-range `scf.for` without iterated state, and zero-state expression-based `scf.while`. Index switches use native `switch`, `case`, and `default` statements.             |
+| Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                    |
 
-The exporter writes a 3.1 version declaration and includes `stdgates.inc`.
-Extended gates used by the program receive compact definitions under the
-reserved `_mqt_` prefix. Generated qubit, temporary, and helper names use the
-same prefix and are collision safe. Valid source output names are retained when
-available.
+The exporter writes an OpenQASM 3.1 version declaration and includes
+`stdgates.inc`. Gates in MQT Core's compatibility catalog, such as `r`, `rzz`,
+and `ecr`, receive definitions under their catalog names. Strict consumers use
+those definitions. MQT Core's default compatibility mode recognizes a matching
+definition and imports the call directly as the corresponding native QC
+operation. A mismatched definition is rejected.
 
-Scalar declarations use unsized `bool`, `bit`, `int`, `uint`, and `float` types.
-The exporter infers these types from QC values and operations. Signless `i64`
-results default to `int`; explicit unsigned operations and the few source-level
-distinctions erased during import retain a compact result attribute.
+The `_mqt_` prefix is reserved for generated composite-modifier gates,
+temporaries, and collision-safe identifiers. Existing classical-register
+allocation names are reused when valid; scalar output names are generated
+deterministically.
+
+Output types follow a deliberately small canonical mapping:
+
+| QC result                         | OpenQASM output |
+| --------------------------------- | --------------- |
+| `memref<Nxi1>`                    | `bit[N]`        |
+| `i1` produced directly by measure | `bit`           |
+| Other `i1`                        | `bool`          |
+| `i64` or `index`                  | `int`           |
+| `f64`                             | `float`         |
+
+A lone constant-zero `i64` result is treated as the frontend's status return and
+is not emitted. Import and export do not preserve `uint`, angle spelling,
+scalar-versus-one-element bit spelling, or scalar output names. Unsigned
+constants therefore normalize to `int`. Operations whose signedness affects
+their meaning, such as unsigned division, comparison, or conversion, are
+rejected instead of being approximated.
 
 ### Export limitations
 
 Export accepts exactly one defined, argument-free function. It rejects calls,
 arbitrary CFGs, multi-block SCF regions, dynamic indices or ranges, general
 memrefs, unsupported integer widths, packed bit-vector operations, unknown
-operations, and non-unitary content inside modifier regions.
+operations, and non-unitary content inside modifier regions. SCF results,
+loop-carried values, nonempty `scf.yield`, and `arith.select` are outside the
+export subset.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,
