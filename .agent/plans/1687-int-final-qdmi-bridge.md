@@ -68,8 +68,20 @@ than retaining its historical merge-heavy implementation.
 - [x] (2026-08-04) Committed the reviewed ordered-site fix as `2d562a2fa` and
       completed a fresh independent exact-head verification with no material
       findings.
-- [ ] Rewrite the existing PR branch with an exact force-with-lease, replace the
-      obsolete PR description, verify the replacement head, and monitor CI.
+- [x] (2026-08-04) Rewrote the existing PR branch with an exact
+      force-with-lease, replaced the obsolete PR description, verified the
+      signed replacement head, and resolved all 35 historical review threads.
+- [x] (2026-08-04) Monitored exact head `11ec5816d` through the complete Actions
+      matrix: every C++ and Python build, test, lint, documentation, aggregate,
+      and total-coverage check passed. The sole failure was the C++ patch
+      coverage gate at 78.4 percent.
+- [x] (2026-08-04) Centralized adapter preconditions and CLI diagnostics so the
+      existing behavioral tests cover the shared failure contracts. Independent
+      review caught and corrected diagnostic-precedence drift before
+      publication; the original fail-fast order and four irreducible CLI tests
+      remain.
+- [ ] Publish the signed coverage follow-up and monitor replacement CI to a
+      terminal result.
 
 ### Surprises & Discoveries
 
@@ -120,6 +132,11 @@ than retaining its historical merge-heavy implementation.
   and unknown operations while allowing proven operand-symmetric gates such as
   CZ to report each edge once. Missing two-qubit site information is likewise
   insufficient when a device reports an explicit topology.
+- Observation: exact-head C++ patch coverage reported 42 uncovered lines, all in
+  the adapter and CLI. Most were duplicated defensive throw-and-print bodies,
+  not missing user workflows. Central shared precondition and diagnostic paths
+  let the existing invalid-device and successful CLI tests cover the same
+  contracts without adding subprocess fixtures solely for line coverage.
 
 ### Decision Log
 
@@ -190,6 +207,12 @@ than retaining its historical merge-heavy implementation.
   would be unusable. The documented C++ and CLI workflows are explicitly
   source-build workflows; packaged Python target compilation remains covered.
   Date/Author: 2026-08-04, GPT-5.6 via Codex.
+- Decision: centralize adapter preconditions and CLI diagnostics while retaining
+  the four irreducible subprocess checks. Rationale: normal devices execute the
+  positive contracts, existing negative adapter tests exercise one shared
+  exception path, and the CLI does not gain redundant tests for every
+  combination of equivalent option errors. Date/Author: 2026-08-04, GPT-5.6 via
+  Codex.
 
 ### Outcomes & Retrospective
 
@@ -207,7 +230,10 @@ their compact one-tuple-per-edge representation. The source-build C++ and CLI
 workflows and packaged Python workflow are proven. A distributable MLIR C++ SDK
 remains a separate packaging concern because the current repository does not
 export the compiler dialects, generated headers, or pipeline dependency closure.
-Publication and replacement-head CI are still pending.
+The replacement branch and PR description are published, all historical review
+threads are resolved, and the full exact-head Actions matrix is green. A compact
+follow-up is in progress for the remaining C++ patch-coverage gate; fresh
+replacement-head CI and human re-review remain pending.
 
 ### Context and Orientation
 
@@ -419,9 +445,9 @@ then use a newly verified exact lease. Never use an unqualified force push.
 ### Artifacts and Notes
 
 The historical PR head `dd9619bd27a34ced8ed68a4ee4533cb85771f144` is evidence
-only. No historical commit or implementation file should be cherry-picked. The
-useful prerequisite behavior is already merged through PRs `#1992`, `#1993`,
-`#1997`, `#1998`, and `#1999`.
+only. No historical commit or implementation file was cherry-picked. The useful
+prerequisite behavior is merged through PRs `#1992`, `#1993`, `#1997`, `#1998`,
+and `#1999`; the rewritten integration was published at `11ec5816d`.
 
 The unresolved historical review threads map either to those merged
 prerequisites or to this slice's adapter, bindings, CLI, and workflow

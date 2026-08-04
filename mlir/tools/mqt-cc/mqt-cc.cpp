@@ -27,6 +27,7 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
+#include <llvm/ADT/Twine.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -213,9 +214,21 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
     llvm::cl::init(3));
 
 /**
+ * @brief Report a violated QDMI command-line constraint.
+ */
+[[nodiscard]] static LogicalResult reportQDMIErrorIf(const bool condition,
+                                                     const Twine& message) {
+  if (!condition) {
+    return success();
+  }
+  llvm::errs() << message << "\n";
+  return failure();
+}
+
+/**
  * @brief Configure the QDMI registry before initializing its singleton.
  */
-static LogicalResult configureQDMIRegistry(const StringRef path) {
+[[nodiscard]] static LogicalResult configureQDMIRegistry(const StringRef path) {
 #ifdef _WIN32
   const auto status =
       _putenv_s("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str());
@@ -225,12 +238,9 @@ static LogicalResult configureQDMIRegistry(const StringRef path) {
       setenv("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str(), 1);
   // NOLINTEND(misc-include-cleaner)
 #endif
-  if (status == 0) {
-    return success();
-  }
-  llvm::errs() << "Failed to configure the QDMI registry from '" << path
-               << "'.\n";
-  return failure();
+  return reportQDMIErrorIf(
+      status != 0,
+      Twine("Failed to configure the QDMI registry from '") + path + "'.");
 }
 
 /**
@@ -376,24 +386,22 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
-  if (!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) {
+  if ((!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) ||
+      reportQDMIErrorIf(
+          qdmiListDevices && !qdmiDevice.empty(),
+          "--qdmi-list-devices cannot be combined with --qdmi-device.")
+          .failed() ||
+      reportQDMIErrorIf(
+          !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
+          "--qdmi-config requires --qdmi-device or --qdmi-list-devices.")
+          .failed()) {
     return 1;
   }
   if (qdmiListDevices) {
-    if (!qdmiDevice.empty()) {
-      llvm::errs()
-          << "--qdmi-list-devices cannot be combined with --qdmi-device.\n";
-      return 1;
-    }
     for (const auto& id : qdmi::Driver::get().registeredDeviceIds()) {
       llvm::outs() << id << "\n";
     }
     return 0;
-  }
-  if (!qdmiConfig.empty() && qdmiDevice.empty()) {
-    llvm::errs()
-        << "--qdmi-config requires --qdmi-device or --qdmi-list-devices.\n";
-    return 1;
   }
 
   const auto parsedInputFormat = parseInputFormat(inputFormat, inputFilename);
@@ -410,22 +418,22 @@ static int runCompiler(int argc, char** argv) {
 
   std::optional<CompilerTarget> compilerTarget;
   if (!qdmiDevice.empty()) {
-    if (*parsedOutputFormat == OutputFormat::QCImport ||
-        *parsedOutputFormat == OutputFormat::QCO ||
-        *parsedOutputFormat == OutputFormat::Jeff) {
-      llvm::errs()
-          << "--qdmi-device requires qco-optimized, qc/mlir, qir-base, or "
-             "qir-adaptive output.\n";
-      return 1;
-    }
-    if (passPipeline.hasAnyOccurrences()) {
-      llvm::errs() << "--qdmi-device cannot be combined with --passes.\n";
-      return 1;
-    }
-    if (enableDecomposeMultiControlled) {
-      llvm::errs() << "--qdmi-device cannot be combined with "
-                      "--decompose-multi-controlled; target compilation "
-                      "already performs the required decomposition.\n";
+    if (reportQDMIErrorIf(
+            *parsedOutputFormat == OutputFormat::QCImport ||
+                *parsedOutputFormat == OutputFormat::QCO ||
+                *parsedOutputFormat == OutputFormat::Jeff,
+            "--qdmi-device requires qco-optimized, qc/mlir, qir-base, or "
+            "qir-adaptive output.")
+            .failed() ||
+        reportQDMIErrorIf(passPipeline.hasAnyOccurrences(),
+                          "--qdmi-device cannot be combined with --passes.")
+            .failed() ||
+        reportQDMIErrorIf(
+            enableDecomposeMultiControlled,
+            "--qdmi-device cannot be combined with "
+            "--decompose-multi-controlled; target compilation already "
+            "performs the required decomposition.")
+            .failed()) {
       return 1;
     }
     const auto device = fomac::Session::openDevice(qdmiDevice);
