@@ -28,6 +28,7 @@ add_mlir_library(
   MQTCompilerPipeline
   PARTIAL_SOURCES_INTENDED
   Programs.cpp
+  TargetCompilation.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
   LINK_LIBS
