@@ -161,8 +161,8 @@ class QCOProgram(Program):
     def run_qubit_reuse_pipeline(self) -> None:
         """Prepare the program for qubit reuse and reuse eligible qubits."""
 
-    def decompose_multi_controlled(self, *, min_controls: int = 2) -> None:
-        """Decompose controlled X/Z gates, qco.rccx, and constant-angle phase gates with at least min_controls controls (min_controls must be at least 2)."""
+    def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
+        """Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.

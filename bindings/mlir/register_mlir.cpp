@@ -408,10 +408,10 @@ operations.)pb");
       .def("decompose_multi_controlled",
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
-           nb::kw_only(), "min_controls"_a = 2,
-           "Decompose controlled X/Z gates, qco.rccx, and constant-angle phase "
-           "gates with at least min_controls controls (min_controls must be at "
-           "least 2).")
+           nb::kw_only(), "min_qubits"_a = 3,
+           "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
+           "phase gates that act on at least min_qubits qubits (min_qubits "
+           "must be at least 3; default 3 means wider than two-qubit).")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

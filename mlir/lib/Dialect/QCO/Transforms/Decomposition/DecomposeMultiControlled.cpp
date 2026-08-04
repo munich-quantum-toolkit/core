@@ -123,7 +123,7 @@ public:
     h(target);
   }
 
-  // Building blocks left as QCO ops (further lowered by min-controls)
+  // Building blocks left as QCO ops (further lowered by min-qubits)
   void emitCcx(size_t c0, size_t c1, size_t target) {
     emitCtrl({c0, c1}, target, [](OpBuilder& builder, Location loc, Value arg) {
       return XOp::create(builder, loc, arg).getOutputQubit(0);
@@ -1281,6 +1281,44 @@ matchControlledTarget(UnitaryOpInterface inner) {
   return std::nullopt;
 }
 
+/// Rewrite controlled-SWAP (Fredkin) as CX–MCX–CX.
+///
+/// Identity: MCSWAP(C, a, b) = CX(a, b) · MCX(C ∪ {b}, a) · CX(a, b).
+/// Callers gate on the controlled-SWAP's total qubit count (`min-qubits`).
+static SmallVector<Value>
+synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
+                         Value targetA, Value targetB) {
+  auto cx1 = CtrlOp::create(builder, loc, targetA, targetB, [&](Value t) {
+    return XOp::create(builder, loc, t).getOutputQubit(0);
+  });
+  Value a1 = cx1.getControlsOut()[0];
+  Value b1 = cx1.getTargetsOut()[0];
+
+  SmallVector<Value> mcxControls;
+  mcxControls.reserve(controls.size() + 1);
+  mcxControls.append(controls.begin(), controls.end());
+  mcxControls.push_back(b1);
+  auto mcx =
+      CtrlOp::create(builder, loc, ValueRange(mcxControls), a1, [&](Value t) {
+        return XOp::create(builder, loc, t).getOutputQubit(0);
+      });
+
+  SmallVector<Value> results;
+  results.reserve(controls.size() + 2);
+  for (size_t i = 0; i < controls.size(); ++i) {
+    results.push_back(mcx.getControlsOut()[i]);
+  }
+  Value b2 = mcx.getControlsOut()[controls.size()];
+  Value a2 = mcx.getTargetsOut()[0];
+
+  auto cx2 = CtrlOp::create(builder, loc, a2, b2, [&](Value t) {
+    return XOp::create(builder, loc, t).getOutputQubit(0);
+  });
+  results.push_back(cx2.getControlsOut()[0]);
+  results.push_back(cx2.getTargetsOut()[0]);
+  return results;
+}
+
 //===----------------------------------------------------------------------===//
 // Patterns and pass
 //===----------------------------------------------------------------------===//
@@ -1289,17 +1327,32 @@ namespace {
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
-                                          uint64_t minControls)
-      : OpRewritePattern<CtrlOp>(context), minControls_(minControls) {}
+                                          uint64_t minQubits)
+      : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits) {}
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto numControls = op.getNumControls();
-    if (numControls < minControls_ || op.getNumTargets() != 1) {
+    if (op.getNumQubits() < minQubits_) {
       return failure();
     }
+
+    const auto numControls = op.getNumControls();
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
+      return failure();
+    }
+
+    // Controlled-SWAP → CX(a,b)·MCX(C∪{b},a)·CX(a,b). Default min-qubits=3
+    // lowers OpenQASM `cswap` (3 qubits).
+    if (op.getNumTargets() == 2 && isa<SWAPOp>(inner.getOperation())) {
+      rewriter.setInsertionPoint(op);
+      rewriter.replaceOp(op, synthesizeControlledSwap(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), op.getInputTarget(1)));
+      return success();
+    }
+
+    if (op.getNumTargets() != 1) {
       return failure();
     }
     const auto spec = matchControlledTarget(inner);
@@ -1309,8 +1362,8 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
     ControlledTarget gate = spec->gate;
     // A compile-time phase of +/- pi is exactly Z; route it through the
-    // multi-controlled-Z path (elementary at k=2/3, relative-phase / Vale at
-    // k=4/5, else HP24).
+    // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase / Vale
+    // at 5–6 qubits, else HP24).
     if (gate == ControlledTarget::Phase && spec->theta &&
         std::abs(std::abs(*spec->theta) - K_PI) <= utils::TOLERANCE) {
       gate = ControlledTarget::Z;
@@ -1324,7 +1377,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       return success();
     }
     if (numControls < 3) {
-      // Exactly two controls (k < 2 is rejected by min-controls >= 2).
+      // Exactly two controls (k < 2 is rejected by min-qubits >= 3).
       rewriter.replaceOp(op, synthesizeTwoControlled(
                                  rewriter, op.getLoc(), op.getControlsIn()[0],
                                  op.getControlsIn()[1], op.getInputTarget(0),
@@ -1344,16 +1397,16 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   }
 
 private:
-  uint64_t minControls_;
+  uint64_t minQubits_;
 };
 
 struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
-  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minControls)
-      : OpRewritePattern<RCCXOp>(context), minControls_(minControls) {}
+  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits)
+      : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits) {}
 
   LogicalResult matchAndRewrite(RCCXOp op,
                                 PatternRewriter& rewriter) const override {
-    if (minControls_ > 2) {
+    if (op.getNumQubits() < minQubits_) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
@@ -1364,7 +1417,7 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
   }
 
 private:
-  uint64_t minControls_;
+  uint64_t minQubits_;
 };
 
 struct DecomposeMultiControlled final
@@ -1373,16 +1426,16 @@ struct DecomposeMultiControlled final
 
 protected:
   void runOnOperation() override {
-    if (minControls < 2) {
+    if (minQubits < 3) {
       getOperation().emitError()
-          << "decompose-multi-controlled requires min-controls >= 2";
+          << "decompose-multi-controlled requires min-qubits >= 3";
       signalPassFailure();
       return;
     }
 
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
-        &getContext(), minControls);
+        &getContext(), minQubits);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
