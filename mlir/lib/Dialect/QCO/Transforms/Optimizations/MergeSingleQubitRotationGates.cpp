@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -539,15 +540,39 @@ struct MergeSingleQubitRotationGatesPattern final
     // safe2 = beta not within boundary eps around PI: |beta - PI| >= eps
     auto safe2 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
                                        absBetaMinusPi, constants.eps);
-    // is safe (not in gimbal lock) when both hold (safe1 AND safe2)
-    auto safe = arith::AndIOp::create(rewriter, loc, safe1, safe2);
+
+    // Pure Z (and other XY-axis-aligned) quaternions have x = y = 0.
+    // MLIR's math.atan2 constant folder returns NaN for both-zero operands
+    // (unlike IEEE libm, which returns ±0 / ±π). Floating-point drift can also
+    // make |beta| sit just above eps, wrongly selecting the "safe" branch and
+    // poisoning later folds. Force the gimbal path when |x| and |y| are tiny.
+    auto absX = math::AbsFOp::create(rewriter, loc, q.x);
+    auto absY = math::AbsFOp::create(rewriter, loc, q.y);
+    auto xNearZero = arith::CmpFOp::create(
+        rewriter, loc, arith::CmpFPredicate::OLT, absX, constants.eps);
+    auto yNearZero = arith::CmpFOp::create(
+        rewriter, loc, arith::CmpFPredicate::OLT, absY, constants.eps);
+    auto xyNearZero =
+        arith::AndIOp::create(rewriter, loc, xNearZero, yNearZero);
+    auto i1False =
+        arith::ConstantOp::create(rewriter, loc, rewriter.getBoolAttr(false));
+    auto notXyNearZero = arith::CmpIOp::create(
+        rewriter, loc, arith::CmpIPredicate::eq, xyNearZero, i1False);
+
+    // is safe (not in gimbal lock) when both beta checks hold and (x, y) is
+    // not axis-aligned in the XY plane.
+    auto safeBeta = arith::AndIOp::create(rewriter, loc, safe1, safe2);
+    auto safe = arith::AndIOp::create(rewriter, loc, safeBeta, notXyNearZero);
 
     // intermediate angles for z-rotations alpha and gamma
     // theta+ = atan2(z, w)
-    // theta- = atan2(-x, y)
+    // theta- = atan2(-x, y) — use y=1 when (x,y)≈0 so MLIR's atan2 folder
+    // never sees both-zero args (which it folds to NaN).
     auto xMinus = arith::NegFOp::create(rewriter, loc, q.x);
     auto thetaPlus = math::Atan2Op::create(rewriter, loc, q.z, q.w);
-    auto thetaMinus = math::Atan2Op::create(rewriter, loc, xMinus, q.y);
+    auto yForAtan2 =
+        arith::SelectOp::create(rewriter, loc, xyNearZero, constants.one, q.y);
+    auto thetaMinus = math::Atan2Op::create(rewriter, loc, xMinus, yForAtan2);
 
     // intermediate angles for gimbal lock cases
     // twoTheta+ = 2 * theta+
@@ -648,7 +673,12 @@ struct MergeSingleQubitRotationGatesPattern final
     auto inputPhase = phaseAccum.value_or(constants.zero);
     auto correction =
         arith::SubFOp::create(rewriter, loc, inputPhase, outPhase);
-    GPhaseOp::create(rewriter, loc, correction.getResult());
+    Value phaseCorrection = correction.getResult();
+    if (const auto constant = utils::valueToConstantDouble(phaseCorrection)) {
+      phaseCorrection = utils::constantFromScalar(
+          rewriter, loc, utils::normalizeAngle(*constant));
+    }
+    GPhaseOp::create(rewriter, loc, phaseCorrection);
 
     // Replace the head operation with the merged UOp
     rewriter.replaceOpWithNewOp<UOp>(
