@@ -274,8 +274,7 @@ static void loopGHZ(QCOProgramBuilder& builder, Value& tensor,
 
 namespace {
 
-class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<CompilerTarget> {
+class MappingPassFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
@@ -295,6 +294,9 @@ protected:
 
   std::unique_ptr<MLIRContext> context;
 };
+
+class MappingPassTest : public MappingPassFixture,
+                        public testing::WithParamInterface<CompilerTarget> {};
 
 }; // namespace
 
@@ -1567,6 +1569,80 @@ TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
   // The three routed cases agree on the voted exit layout; only the default
   // case must be restored to it. Restoring every case to the parent needs 12.
   EXPECT_EQ(numSwaps, 4UL);
+}
+
+namespace {
+
+CompilerTarget getFourByFourSquareGrid() {
+  constexpr size_t side = 4;
+  constexpr size_t numTarget = side * side;
+  std::vector<CompilerTarget::Coupling> couplings;
+  couplings.reserve(2 * side * (side - 1));
+  for (size_t r = 0; r < side; ++r) {
+    for (size_t c = 0; c < side; ++c) {
+      const auto i = static_cast<int64_t>(r * side + c);
+      if (c + 1 < side) {
+        couplings.emplace_back(i, i + 1);
+      }
+      if (r + 1 < side) {
+        couplings.emplace_back(i, i + static_cast<int64_t>(side));
+      }
+    }
+  }
+  return CompilerTarget(numTarget, std::move(couplings));
+}
+
+/// Build an 11-qubit CX/CZ circuit used with a larger square target.
+OwningOpRef<ModuleOp> buildPaddedSquareRoutingModule(MLIRContext* context) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  constexpr size_t nprog = 11;
+  SmallVector<Value> qs;
+  qs.reserve(nprog);
+  for (size_t i = 0; i < nprog; ++i) {
+    qs.push_back(builder.allocQubit());
+  }
+  for (size_t i = 0; i + 1 < nprog; ++i) {
+    std::tie(qs[i], qs[i + 1]) = builder.cx(qs[i], qs[i + 1]);
+  }
+  for (size_t i = 0; i + 2 < nprog; ++i) {
+    std::tie(qs[i], qs[i + 2]) = builder.cz(qs[i], qs[i + 2]);
+  }
+  for (Value q : qs) {
+    builder.sink(q);
+  }
+  return builder.finalize();
+}
+
+} // namespace
+
+/**
+ * @brief Hot routing replays the cold-preview SWAP plan on padded targets.
+ *
+ * On targets with more sites than program qubits, cold preview materializes
+ * only vacant layout indices touched by its plan. Hot must replay that plan
+ * (not re-run A*) so every SWAP operand has a wire. Sweep a few seeds and
+ * assert each result is executable with sparse workspace.
+ */
+TEST_F(MappingPassFixture, HotRouteRespectsColdPreviewWorkspace) {
+  const CompilerTarget target = getFourByFourSquareGrid();
+
+  for (size_t seed = 0; seed < 16; ++seed) {
+    auto module = buildPaddedSquareRoutingModule(context.get());
+    ASSERT_TRUE(runPass(module.get(), target,
+                        MappingPassOptions{
+                            .niterations = 1, .ntrials = 1, .seed = seed})
+                    .succeeded())
+        << "seed " << seed;
+    ASSERT_TRUE(succeeded(verify(*module))) << "seed " << seed;
+    EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target))
+        << "seed " << seed;
+
+    size_t numStatics = 0;
+    module->walk([&](StaticOp) { ++numStatics; });
+    EXPECT_GE(numStatics, 11U) << "seed " << seed;
+    EXPECT_LT(numStatics, target.numQubits()) << "seed " << seed;
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,

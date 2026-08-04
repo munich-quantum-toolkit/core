@@ -52,6 +52,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -153,6 +154,9 @@ private:
     size_t nswaps{0};
     DenseSet<size_t> touchedPrograms;
   };
+
+  /// Whether A* SWAP batches are recorded (cold preview) or replayed (hot).
+  enum class SwapPlanMode : uint8_t { Off, Record, Replay };
 
   /// Parameters influencing the behavior of the A* search algorithm.
   struct Parameters {
@@ -369,9 +373,16 @@ protected:
     SmallVector<size_t> materializedPrograms(wires.size());
     std::iota(materializedPrograms.begin(), materializedPrograms.end(), 0);
     if (comp->hasTwoQubitOperations) {
+      // Cold preview records the A* SWAP plan that Hot must reproduce after
+      // sparse workspace materialization.
+      swapPlan.clear();
+      swapPlanCursor = 0;
+      swapPlanMode = SwapPlanMode::Record;
+
       RoutingBundle preview{.wires = wires, .infos = infos, .layout = *layout};
       Statistics previewStats;
       if (failed(route<WireDirection::Forward>(preview, previewStats))) {
+        swapPlanMode = SwapPlanMode::Off;
         func.emitError() << "failed to plan target routing";
         signalPassFailure();
         return;
@@ -392,10 +403,24 @@ protected:
                          .infos = std::move(infos),
                          .layout = std::move(*layout)};
 
+    if (comp->hasTwoQubitOperations) {
+      swapPlanCursor = 0;
+      swapPlanMode = SwapPlanMode::Replay;
+    }
+
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
         bundle, stats, &rewriter);
-    if (res.failed()) {
+    const bool planExhausted =
+        !comp->hasTwoQubitOperations || swapPlanCursor == swapPlan.size();
+    swapPlanMode = SwapPlanMode::Off;
+    if (failed(res)) {
       func.emitError() << "failed to map the function";
+      signalPassFailure();
+      return;
+    }
+    if (!planExhausted) {
+      func.emitError()
+          << "hot routing did not consume the full cold-preview SWAP plan";
       signalPassFailure();
       return;
     }
@@ -1192,17 +1217,30 @@ private:
   /// (`RoutingMode::Cold`) or into the IR (`RoutingMode::Hot`). The function
   /// expects that each wire points at the correct insertion point.
   template <RoutingMode Mode>
-  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
-                          Statistics& stats, IRRewriter* rewriter) {
+  static LogicalResult insertSWAPs(ArrayRef<IndexPairType> swaps,
+                                   RoutingBundle& bundle, Statistics& stats,
+                                   IRRewriter* rewriter) {
     auto& [wires, infos, layout] = bundle;
+
+    // Hot: validate the full batch against a layout probe before mutating IR,
+    // so a missing workspace program cannot leave a partially applied batch.
+    if constexpr (Mode == RoutingMode::Hot) {
+      Layout probe = layout;
+      for (const auto& [hw0, hw1] : swaps) {
+        const auto [prog0, prog1] = probe.getProgramIndices(hw0, hw1);
+        if (!infos.containsProgram(prog0) || !infos.containsProgram(prog1)) {
+          return failure();
+        }
+        probe.swap(hw0, hw1);
+      }
+    }
+
     for (const auto& [hw0, hw1] : swaps) {
       const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
       stats.touchedPrograms.insert(prog0);
       stats.touchedPrograms.insert(prog1);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        assert(infos.containsProgram(prog0) && infos.containsProgram(prog1) &&
-               "expected the routing preview to materialize SWAP operands");
         const auto i0 = infos.lookupIndex(prog0);
         const auto i1 = infos.lookupIndex(prog1);
 
@@ -1231,6 +1269,7 @@ private:
     }
 
     stats.nswaps += swaps.size();
+    return success();
   }
 
   /// Advance past all executable gates and return operations with nested
@@ -1468,16 +1507,23 @@ private:
     // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
     // and restore (IndexSwitchOp) strategies.
 
+    LogicalResult epilogueStatus = success();
     const Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
               const auto swaps = restore(children[0].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[0], stats, rewriter);
+              if (failed(
+                      insertSWAPs<Mode>(swaps, children[0], stats, rewriter))) {
+                epilogueStatus = failure();
+              }
               return parent.layout;
             })
             .template Case<scf::WhileOp>([&](scf::WhileOp) {
               const auto swaps = restore(children[1].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[1], stats, rewriter);
+              if (failed(
+                      insertSWAPs<Mode>(swaps, children[1], stats, rewriter))) {
+                epilogueStatus = failure();
+              }
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
@@ -1485,8 +1531,12 @@ private:
             .template Case<IfOp>([&](IfOp) {
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
-              insertSWAPs<Mode>(fst, children[0], stats, rewriter);
-              insertSWAPs<Mode>(snd, children[1], stats, rewriter);
+              if (failed(
+                      insertSWAPs<Mode>(fst, children[0], stats, rewriter)) ||
+                  failed(
+                      insertSWAPs<Mode>(snd, children[1], stats, rewriter))) {
+                epilogueStatus = failure();
+              }
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
@@ -1496,10 +1546,16 @@ private:
                   }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, winner);
-                insertSWAPs<Mode>(swaps, child, stats, rewriter);
+                if (failed(insertSWAPs<Mode>(swaps, child, stats, rewriter))) {
+                  epilogueStatus = failure();
+                  break;
+                }
               }
               return winner;
             });
+    if (failed(epilogueStatus)) {
+      return failure();
+    }
 
     if constexpr (Mode == RoutingMode::Hot) {
       // Realign terminator values to ensure that i-th input qubit and the
@@ -1565,11 +1621,11 @@ private:
     return success();
   }
 
-  /// Iterates over a dynamically computed window of layers and uses A* search
-  /// to find a SWAP sequence that makes each layer executable. Depending on
-  /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. The function returns `failure` if A* is
-  /// unable to find a solution.
+  /// Iterates over a dynamically computed window of layers and obtains a SWAP
+  /// sequence (via A* search, or by replaying the cold-preview plan in Hot
+  /// mode) that makes each layer executable. Depending on the template
+  /// parameter, this function only updates the layout or also inserts the
+  /// SWAPs into the IR. Returns `failure` if no solution is available.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   LogicalResult route(RoutingBundle& bundle, Statistics& stats,
@@ -1596,7 +1652,7 @@ private:
         break;
       }
 
-      const auto swaps = search(window, layout);
+      const auto swaps = obtainSwaps(window, layout);
       if (failed(swaps)) {
         return failure();
       }
@@ -1614,7 +1670,18 @@ private:
         }
       }
 
-      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+      if (failed(insertSWAPs<Mode>(*swaps, bundle, stats, rewriter))) {
+        return failure();
+      }
+
+      // After replay (or search), the front layer must be hardware-adjacent.
+      if (swapPlanMode == SwapPlanMode::Replay) {
+        const auto [prog0, prog1] = window.front();
+        const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+        if (!target->areAdjacent(hw0, hw1)) {
+          return failure();
+        }
+      }
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -1633,9 +1700,29 @@ private:
     return success();
   }
 
+  /// Resolve the next A* SWAP batch: search (and optionally record), or replay
+  /// the cold-preview plan during hot routing.
+  FailureOr<SmallVector<IndexPairType>> obtainSwaps(const Window& window,
+                                                    const Layout& layout) {
+    if (swapPlanMode == SwapPlanMode::Replay) {
+      if (swapPlanCursor >= swapPlan.size()) {
+        return failure();
+      }
+      return swapPlan[swapPlanCursor++];
+    }
+
+    auto swaps = search(window, layout);
+    if (succeeded(swaps) && swapPlanMode == SwapPlanMode::Record) {
+      swapPlan.push_back(*swaps);
+    }
+    return swaps;
+  }
+
+  SwapPlanMode swapPlanMode{SwapPlanMode::Off};
+  SmallVector<SmallVector<IndexPairType>, 0> swapPlan;
+  size_t swapPlanCursor{0};
   std::optional<CompilerTarget> target;
 };
-
 } // namespace
 
 std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
