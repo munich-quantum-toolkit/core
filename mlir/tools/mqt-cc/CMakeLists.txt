@@ -7,11 +7,12 @@
 # Licensed under the MIT License
 
 # Build the compiler driver executable
-add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline SUPPORT_PLUGINS)
+add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline MQTCompilerFoMaCAdapter SUPPORT_PLUGINS)
 llvm_map_components_to_libnames(llvm_native_libs bitwriter)
 target_link_libraries(
   mqt-cc
-  PRIVATE MQTCompilerPipeline
+  PRIVATE MQTCompilerFoMaCAdapter
+          MQTCompilerPipeline
           MLIRParser
           MLIRSupport
           MLIRQCTranslation
@@ -25,6 +26,12 @@ target_link_libraries(
           ${llvm_native_libs})
 
 mqt_mlir_target_use_project_options(mqt-cc)
+
+mqt_get_qdmi_device_targets(qdmi_device_targets)
+if(qdmi_device_targets)
+  mqt_copy_qdmi_runtime(mqt-cc ${qdmi_device_targets})
+endif()
+
 llvm_update_compile_flags(mqt-cc)
 mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)

@@ -5,7 +5,9 @@ quantum-classical compilation framework built on the Multi-Level Intermediate
 Representation (MLIR). For an overview, see {cite:p}`MQTCompilerCollection2026`.
 
 The {doc}`Python compiler guide <python_compiler_collection>` describes how to
-compile and inspect quantum programs from Python. The remaining pages are the
+compile and inspect quantum programs from Python. The
+{doc}`target-compilation guide <target_compilation>` shows how to compile for
+QDMI devices from Python, C++, and `mqt-cc`. The remaining pages are the
 technical reference for the underlying MLIR infrastructure.
 
 We define multiple dialects, each with its dedicated purpose:
@@ -29,6 +31,7 @@ interoperability, we provide {doc}`conversions <Conversions>` between dialects.
 :maxdepth: 2
 
 python_compiler_collection
+target_compilation
 QC
 QCO
 QTensor

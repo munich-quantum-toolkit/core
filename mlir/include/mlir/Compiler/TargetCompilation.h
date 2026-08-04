@@ -20,8 +20,8 @@ class OpPassManager;
  *
  * @details Decomposes supported multi-controlled gates, performs
  * target-independent optimization, maps to the target topology, synthesizes
- * native operations, verifies target conformance, and cleans up the resulting
- * QCO program.
+ * native operations, performs a final local cleanup, and verifies target
+ * conformance.
  */
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target);
