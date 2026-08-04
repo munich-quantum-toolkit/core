@@ -39,8 +39,9 @@ releases may include breaking changes.
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
-  RCCX, and constant-angle phase gates with a configurable `min-controls`
-  threshold ([#1810], [#1996]) ([**@simon1hofmann**])
+  SWAP, RCCX, and constant-angle phase gates with a configurable `min-qubits`
+  threshold (default 3: wider than two-qubit) ([#1810], [#1996], [#2001])
+  ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   and structured control flow ([#1910], [#1994]) ([**@burgholzer**],
@@ -68,7 +69,7 @@ releases may include breaking changes.
   rotation gates using quaternions ([#1407], [#1674], [#2002]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
+  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
   [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
   circuits to compiler-target topologies while preserving target site IDs and
@@ -714,6 +715,8 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2002]: https://github.com/munich-quantum-toolkit/core/pull/2002
+[#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
+[#2000]: https://github.com/munich-quantum-toolkit/core/pull/2000
 [#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999
 [#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
