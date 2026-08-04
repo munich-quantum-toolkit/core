@@ -19,4 +19,5 @@ DDSIM QDMI Device <ddsim_device>
 QDMI Driver <driver>
 QDMI device configuration <configuration>
 QDMI-Qiskit Backend <qdmi_backend>
+QDMI-PennyLane device <pennylane_device>
 ```

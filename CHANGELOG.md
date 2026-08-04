@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a modern PennyLane device for gate-based QDMI providers with OpenQASM
+  3-first conversion, an OpenQASM 2 fallback, and a DDSIM QAOA demonstration
+  ([**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
   conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
