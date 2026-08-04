@@ -157,7 +157,7 @@ filterwarnings = [
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
   'ignore:.*datetime\.datetime\.utcfromtimestamp.*:DeprecationWarning:',
   # Autograd 1.8 uses control flow that Python 3.14 reports while compiling the module.
-  "ignore:'return' in a 'finally' block:SyntaxWarning:autograd\\.wrap_util",
+  "ignore:'return' in a 'finally' block:SyntaxWarning",
   # Qiskit 1.2 deprecations
   'ignore:.*no need for these schema-conformant objects.*:DeprecationWarning:',
   # Qiskit 1.3 deprecations
