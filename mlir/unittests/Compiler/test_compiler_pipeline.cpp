@@ -1198,7 +1198,7 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
   const auto before = qco->copy();
-  ASSERT_TRUE(qco->decomposeMultiControlled(2));
+  ASSERT_TRUE(qco->decomposeMultiControlled(3));
   EXPECT_NE(qco->str(), before.str());
 }
 
@@ -1216,15 +1216,14 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
   ASSERT_TRUE(qco);
   ASSERT_TRUE(qco->cleanup());
   const auto before = qco->copy();
-  ASSERT_TRUE(
-      qco->runPassPipeline("decompose-multi-controlled{min-controls=2}"));
+  ASSERT_TRUE(qco->runPassPipeline("decompose-multi-controlled{min-qubits=3}"));
   EXPECT_NE(qco->str(), before.str());
 }
 
 TEST_F(CompilerPipelineTest,
-       RejectsDecomposeMultiControlledMinControlsBelowTwo) {
-  EXPECT_FALSE(isDecomposeMultiControlledConfigValid(1U));
-  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(2U));
+       RejectsDecomposeMultiControlledMinQubitsBelowThree) {
+  EXPECT_FALSE(isDecomposeMultiControlledConfigValid(2U));
+  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(3U));
 
   auto module = mlir::qc::QCProgramBuilder::build(
       context.get(), mlir::qc::multipleControlledX);
@@ -1236,7 +1235,7 @@ TEST_F(CompilerPipelineTest,
   ASSERT_TRUE(input);
   auto qco = std::move(*input).intoQCO();
   ASSERT_TRUE(qco);
-  EXPECT_FALSE(qco->decomposeMultiControlled(1));
+  EXPECT_FALSE(qco->decomposeMultiControlled(2));
 }
 
 TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
@@ -1254,7 +1253,7 @@ TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
   module->print(beforeStream);
 
   PassManager pm(module->getContext());
-  populateDecomposeMultiControlledPipeline(pm, 2);
+  populateDecomposeMultiControlledPipeline(pm, 3);
   ASSERT_TRUE(pm.run(module.get()).succeeded());
 
   std::string after;
