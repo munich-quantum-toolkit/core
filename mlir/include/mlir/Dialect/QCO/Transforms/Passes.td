@@ -324,8 +324,10 @@ def DecomposeMultiControlled
       residual) for four and five qubits; da Silva-Park SP22 linear-depth
       decomposition at six and above. A compile-time angle of `±π` is routed
       through the Z path for every width.
-    - Controlled SWAP: `CX(a,b) · MCX(C∪{b}, a) · CX(a,b)`; the emitted MCX
-      is then lowered by the X path under the same `min-qubits` threshold.
+    - Controlled SWAP: `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)`,
+      where `C ∪ {b}` is the original control set together with SWAP target
+      `b` and the MCX target is the other SWAP qubit `a`. The emitted MCX is
+      then lowered by the X path under the same `min-qubits` threshold.
 
     Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
     `min-qubits` keeps them; the greedy rewriter lowers further when the

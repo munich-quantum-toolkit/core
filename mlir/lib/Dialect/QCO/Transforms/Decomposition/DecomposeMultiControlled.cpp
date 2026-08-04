@@ -1288,34 +1288,23 @@ matchControlledTarget(UnitaryOpInterface inner) {
 static SmallVector<Value>
 synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
                          Value targetA, Value targetB) {
-  auto cx1 = CtrlOp::create(builder, loc, targetA, targetB, [&](Value t) {
+  const auto makeX = [&](Value t) {
     return XOp::create(builder, loc, t).getOutputQubit(0);
-  });
-  Value a1 = cx1.getControlsOut()[0];
-  Value b1 = cx1.getTargetsOut()[0];
+  };
 
-  SmallVector<Value> mcxControls;
-  mcxControls.reserve(controls.size() + 1);
-  mcxControls.append(controls.begin(), controls.end());
-  mcxControls.push_back(b1);
+  auto cx1 = CtrlOp::create(builder, loc, targetA, targetB, makeX);
+
+  SmallVector<Value, 4> mcxControls(controls);
+  mcxControls.push_back(cx1.getOutputTarget(0));
   auto mcx =
-      CtrlOp::create(builder, loc, ValueRange(mcxControls), a1, [&](Value t) {
-        return XOp::create(builder, loc, t).getOutputQubit(0);
-      });
+      CtrlOp::create(builder, loc, mcxControls, cx1.getOutputControl(0), makeX);
 
-  SmallVector<Value> results;
-  results.reserve(controls.size() + 2);
-  for (size_t i = 0; i < controls.size(); ++i) {
-    results.push_back(mcx.getControlsOut()[i]);
-  }
-  Value b2 = mcx.getControlsOut()[controls.size()];
-  Value a2 = mcx.getTargetsOut()[0];
+  auto cx2 = CtrlOp::create(builder, loc, mcx.getOutputTarget(0),
+                            mcx.getOutputControl(controls.size()), makeX);
 
-  auto cx2 = CtrlOp::create(builder, loc, a2, b2, [&](Value t) {
-    return XOp::create(builder, loc, t).getOutputQubit(0);
-  });
-  results.push_back(cx2.getControlsOut()[0]);
-  results.push_back(cx2.getTargetsOut()[0]);
+  SmallVector<Value> results(mcx.getOutputControls().drop_back());
+  results.push_back(cx2.getOutputControl(0));
+  results.push_back(cx2.getOutputTarget(0));
   return results;
 }
 
@@ -1342,8 +1331,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Controlled-SWAP → CX(a,b)·MCX(C∪{b},a)·CX(a,b). Default min-qubits=3
-    // lowers OpenQASM `cswap` (3 qubits).
+    // MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b).
     if (op.getNumTargets() == 2 && isa<SWAPOp>(inner.getOperation())) {
       rewriter.setInsertionPoint(op);
       rewriter.replaceOp(op, synthesizeControlledSwap(
