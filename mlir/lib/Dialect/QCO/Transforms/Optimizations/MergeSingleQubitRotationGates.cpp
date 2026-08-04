@@ -563,6 +563,8 @@ struct MergeSingleQubitRotationGatesPattern final
     // not axis-aligned in the XY plane.
     auto safeBeta = arith::AndIOp::create(rewriter, loc, safe1, safe2);
     auto safe = arith::AndIOp::create(rewriter, loc, safeBeta, notXyNearZero);
+    auto usePiGimbalFormula =
+        arith::AndIOp::create(rewriter, loc, safe1, notXyNearZero);
 
     // intermediate angles for z-rotations alpha and gamma
     // theta+ = atan2(z, w)
@@ -594,8 +596,8 @@ struct MergeSingleQubitRotationGatesPattern final
     // when beta = 0  then alpha = 2 * (atan2(z, w))
     // when beta = PI then alpha = 2 * (atan2(-x, y))
     // gamma is set to zero in both cases
-    auto alphaUnsafe = arith::SelectOp::create(rewriter, loc, safe1,
-                                               twoThetaMinus, twoThetaPlus);
+    auto alphaUnsafe = arith::SelectOp::create(
+        rewriter, loc, usePiGimbalFormula, twoThetaMinus, twoThetaPlus);
 
     // choose correct alpha and gamma whether safe or not
     auto alpha =

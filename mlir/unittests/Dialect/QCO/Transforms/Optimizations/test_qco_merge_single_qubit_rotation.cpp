@@ -812,28 +812,27 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
 }
 
 /**
- * @brief Pure-Z merges must not emit a NaN gphase.
+ * @brief Pure-Z merges must preserve RZ(a);RZ(b) ≡ U(0, a+b, 0) (up to
+ * gphase).
  *
  * Consecutive RZ gates previously failed gphase verification when MLIR's
  * math.atan2 constant folder returned NaN for both-zero operands (unlike
- * IEEE libm) and poisoned Euler extraction under slight beta FP drift.
+ * IEEE libm). With only a NaN guard, slight beta FP drift can still select the
+ * beta≈π gimbal formula and collapse the Z angle to 0.
  */
 TEST_F(MergeSingleQubitRotationGatesTest,
        mergePureZRotationsDoesNotEmitNanGPhase) {
   // Angles like 0.3 are enough for cos^2+sin^2 drift to push |beta| just
-  // above eps and hit the poisoned path without the gimbal guard.
+  // above eps while (x,y)≈0.
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {0.3}},
                              {.type = GateType::RZ, .angles = {0.3}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RZOp>(), 0);
 
-  auto params = getUGateParams();
-  ASSERT_TRUE(params.has_value());
-  auto [theta, phi, lambda] = *params;
-  EXPECT_FALSE(std::isnan(theta));
-  EXPECT_FALSE(std::isnan(phi));
-  EXPECT_FALSE(std::isnan(lambda));
+  // RZ(0.3);RZ(0.3) → RZ(0.6) → U(0, 0.6, 0); allow tiny beta from float noise.
+  expectUGateParams(/*expectedTheta=*/0., /*expectedPhi=*/0.6,
+                    /*expectedLambda=*/0., /*tolerance=*/1e-6);
 
   auto phase = getGPhaseParam();
   if (phase.has_value()) {
