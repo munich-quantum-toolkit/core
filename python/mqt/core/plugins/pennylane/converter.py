@@ -135,7 +135,7 @@ def _preferred_format(device: fomac.Device) -> fomac.ProgramFormat:
         The selected QDMI program format.
 
     Raises:
-        UnsupportedFormatError: If neither OpenQASM version is advertised.
+        PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
     """
     formats = set(device.supported_program_formats())
     if fomac.ProgramFormat.QASM3 in formats:
@@ -205,7 +205,7 @@ def _finite_parameter(parameter: object, operation_name: str) -> float:
         The finite scalar parameter.
 
     Raises:
-        ValidationError: If the value is unbound, non-scalar, or non-finite.
+        PennyLaneValidationError: If the value is unbound, non-scalar, or non-finite.
     """
     try:
         value = float(qp.math.toarray(parameter))
@@ -231,7 +231,7 @@ def _validate_operation_shape(operation: Operator, spec: _OperationSpec) -> None
     """Validate the operation-table arity and parameter contract.
 
     Raises:
-        ValidationError: If the operation does not match its typed table row.
+        PennyLaneValidationError: If the operation does not match its typed table row.
     """
     if len(operation.wires) != spec.wires:
         msg = f"Operation '{operation.name}' requires {spec.wires} wires, but received {len(operation.wires)}."
@@ -257,7 +257,7 @@ def _validate_qdmi_contract(
     """Validate operation metadata and any loci advertised by QDMI.
 
     Raises:
-        ValidationError: If arity, parameters, or topology do not match.
+        PennyLaneValidationError: If arity, parameters, or topology do not match.
     """
     qdmi_wires = qdmi_operation.qubits_num()
     if qdmi_wires is not None and qdmi_wires != spec.wires:
@@ -312,8 +312,8 @@ def _convert_qasm3(
         The converted QDMI program.
 
     Raises:
-        UnsupportedOperationError: If no advertised spelling exists.
-        ValidationError: If parameters, wires, or topology are invalid.
+        PennyLaneUnsupportedOperationError: If no advertised spelling exists.
+        PennyLaneValidationError: If parameters, wires, or topology are invalid.
     """
     wire_map = _wire_mapping(device_wires)
     advertised = _device_operations(device)
@@ -363,8 +363,8 @@ def _convert_qasm2(
         The converted QDMI program.
 
     Raises:
-        UnsupportedOperationError: If the serializer/device intersection is empty.
-        TranslationError: If PennyLane cannot serialize the program.
+        PennyLaneUnsupportedOperationError: If the serializer/device intersection is empty.
+        PennyLaneTranslationError: If PennyLane cannot serialize the program.
     """
     advertised = _device_operations(device)
     for operation in tape.operations:

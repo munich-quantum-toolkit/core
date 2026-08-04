@@ -251,6 +251,7 @@ default.extend-ignore-re = [
 [tool.typos.default.extend-words]
 wille = "wille"
 anc = "anc"
+braket = "braket"
 mch = "mch"
 ket = "ket"
 optin = "optin"

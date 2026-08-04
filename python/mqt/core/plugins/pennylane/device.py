@@ -77,7 +77,7 @@ def _validate_parameter_names(parameters: Mapping[str, object], allowed: frozens
     """Reject unknown FoMaC configuration fields before opening or submission.
 
     Raises:
-        ConfigurationError: If an unknown parameter name is present.
+        PennyLaneConfigurationError: If an unknown parameter name is present.
     """
     unknown = sorted(set(parameters) - allowed)
     if unknown:
@@ -93,7 +93,7 @@ def _validate_finite_shots(tape: QuantumScript) -> tuple[tuple[QuantumScript], A
         The unchanged finite-shot tape and its scalar postprocessor.
 
     Raises:
-        ValidationError: If the tape requests analytic execution.
+        PennyLaneValidationError: If the tape requests analytic execution.
     """
     if not tape.shots:
         msg = "QDMI devices require a finite number of shots."
@@ -125,7 +125,7 @@ class QDMIDevice(Device):
         """Initialize and open a fresh QDMI device session.
 
         Raises:
-            ConfigurationError: If configuration or requested wires are invalid.
+            PennyLaneConfigurationError: If configuration or requested wires are invalid.
         """
         self._device_id = device_id
         self._session_parameters = dict(session_parameters or {})
@@ -186,7 +186,7 @@ class QDMIDevice(Device):
             The selected QDMI program format.
 
         Raises:
-            UnsupportedFormatError: If neither OpenQASM version is advertised.
+            PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
         """
         formats = set(self._qdmi_device.supported_program_formats())
         if fomac.ProgramFormat.QASM3 in formats:
@@ -237,7 +237,7 @@ class QDMIDevice(Device):
             One positive shot count per required QDMI job.
 
         Raises:
-            ValidationError: If execution is analytic.
+            PennyLaneValidationError: If execution is analytic.
         """
         if not shots:
             msg = "QDMI devices require a finite number of shots."
@@ -252,7 +252,7 @@ class QDMIDevice(Device):
             One QDMI bit string per shot.
 
         Raises:
-            ExecutionError: If the job exposes neither result representation.
+            PennyLaneExecutionError: If the job exposes neither result representation.
         """
         try:
             shots = job.get_shots()
@@ -275,7 +275,7 @@ class QDMIDevice(Device):
             A shot-by-wire array in PennyLane measurement order.
 
         Raises:
-            ExecutionError: If QDMI returns malformed or incomplete results.
+            PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
         """
         bitstrings = self._shots_or_counts(job)
         if len(bitstrings) != shots:
@@ -301,7 +301,7 @@ class QDMIDevice(Device):
         """Require successful QDMI completion.
 
         Raises:
-            ExecutionError: If the terminal QDMI status is not ``DONE``.
+            PennyLaneExecutionError: If the terminal QDMI status is not ``DONE``.
         """
         status = job.check()
         if status != fomac.Job.Status.DONE:
@@ -315,7 +315,7 @@ class QDMIDevice(Device):
             The successfully completed job.
 
         Raises:
-            ExecutionError: If submission, waiting, or execution fails.
+            PennyLaneExecutionError: If submission, waiting, or execution fails.
         """
         try:
             job = self._qdmi_device.submit_job(
