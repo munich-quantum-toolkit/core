@@ -504,9 +504,9 @@ def test_device_rejects_formats_without_generic_payload(ddsim_device: Device, pr
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
-    """Compile and execute a QIR program with the DDSIM device."""
+    """Compile for and execute a QIR program with the DDSIM device."""
     # Keep this lazy to cover loading MLIR after the QIR-enabled device.
-    from mqt.core.mlir import OutputFormat, compile_program  # ruff:ignore[import-outside-top-level]
+    from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program  # ruff:ignore[import-outside-top-level]
 
     qasm3_program = """
 OPENQASM 3.0;
@@ -517,14 +517,17 @@ h q[0];
 cx q[0], q[1];
 c = measure q;
 """
-    program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE)
+    target = CompilerTarget.from_device(ddsim_device)
+    program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE, target=target)
     assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
 
-    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=10)
+    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=1024)
     job.wait()
 
     assert job.check() == Job.Status.DONE
-    assert sum(job.get_counts().values()) == 10
+    counts = job.get_counts()
+    assert set(counts) == {"00", "11"}
+    assert sum(counts.values()) == 1024
 
 
 def test_device_executes_binary_qir_program(ddsim_device: Device) -> None:
