@@ -222,6 +222,61 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
   return c;
 }
 
+static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, q] : llvm::enumerate(qubits)) {
+    b.measure(q, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
+
+// DCX and U are the only gates that `FoldPowIntoGate` leaves alone, so they are
+// the only way to get a power modifier past the QCO cleanup pipeline and into
+// the jeff conversion.
+
+static Value powDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto [q0, q1] = b.dcx(qubits[0], qubits[1]);
+    return SmallVector{q0, q1};
+  });
+  return measureToRegister(b, powOut);
+}
+
+static Value powInverseDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange invArgs) {
+      auto [q0, q1] = b.dcx(invArgs[0], invArgs[1]);
+      return SmallVector{q0, q1};
+    });
+    return llvm::to_vector(inner);
+  });
+  return measureToRegister(b, powOut);
+}
+
+static Value powMultipleControlledDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  const auto& [controlsOut, targetsOut] =
+      b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+        auto inner =
+            b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
+              auto [q0, q1] = b.dcx(powArgs[0], powArgs[1]);
+              return SmallVector{q0, q1};
+            });
+        return llvm::to_vector(inner);
+      });
+  return measureToRegister(
+      b, {controlsOut[0], controlsOut[1], targetsOut[0], targetsOut[1]});
+}
+
+static Value powU(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut =
+      b.pow(3.0, q[0], [&](Value qubit) { return b.u(0.1, 0.2, 0.3, qubit); });
+  return b.measure(powOut).second;
+}
+
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToJeff());
@@ -434,16 +489,15 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCOPowOpTest, JeffRoundTripTest,
     testing::Values(
-        JeffRoundTripTestCase{"PowDCX", MQT_NAMED_BUILDER(qco::powDcx),
-                              MQT_NAMED_BUILDER(qco::powDcx)},
-        JeffRoundTripTestCase{"PowInverseDCX",
-                              MQT_NAMED_BUILDER(qco::powInverseDcx),
-                              MQT_NAMED_BUILDER(qco::powInverseDcx)},
+        JeffRoundTripTestCase{"PowDCX", MQT_NAMED_BUILDER(powDcx),
+                              MQT_NAMED_BUILDER(powDcx)},
+        JeffRoundTripTestCase{"PowInverseDCX", MQT_NAMED_BUILDER(powInverseDcx),
+                              MQT_NAMED_BUILDER(powInverseDcx)},
         JeffRoundTripTestCase{"PowMultipleControlledDCX",
-                              MQT_NAMED_BUILDER(qco::powMultipleControlledDcx),
-                              MQT_NAMED_BUILDER(qco::powMultipleControlledDcx)},
-        JeffRoundTripTestCase{"PowU", MQT_NAMED_BUILDER(qco::powU),
-                              MQT_NAMED_BUILDER(qco::powU)},
+                              MQT_NAMED_BUILDER(powMultipleControlledDcx),
+                              MQT_NAMED_BUILDER(powMultipleControlledDcx)},
+        JeffRoundTripTestCase{"PowU", MQT_NAMED_BUILDER(powU),
+                              MQT_NAMED_BUILDER(powU)},
         JeffRoundTripTestCase{"PowEvenH", MQT_NAMED_BUILDER(qco::powEvenH),
                               MQT_NAMED_BUILDER(qco::alloc1QubitRegister)},
         JeffRoundTripTestCase{"PowOddH", MQT_NAMED_BUILDER(qco::powOddH),
