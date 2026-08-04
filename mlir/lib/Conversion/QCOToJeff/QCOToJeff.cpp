@@ -94,12 +94,11 @@ struct LoweringState {
   CtrlOp ctrlOp;
   InvOp invOp;
   PowOp powOp;
-  /// Exponent of the enclosing `qco.pow`, or 1 outside of one
-  uint8_t power = 1;
   SmallVector<Value> controlsIn;
   SmallVector<Value> controlsOut;
   SmallVector<Value> targetsIn;
   SmallVector<Value> targetsOut;
+  uint8_t power = 1;
 
   [[nodiscard]] bool inModifier() const {
     return inCtrlOp || inInvOp || inPowOp;
@@ -1263,9 +1262,7 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
               "Run the canonicalization pass before the conversion");
     }
 
-    // jeff repeats a gate a compile-time known number of times, so only
-    // non-negative integer exponents that fit into the power attribute are
-    // representable.
+    // jeff only supports compile-time integer exponents between 0 and 255
     const auto exponent = op.getExponentValue();
     if (!exponent || !utils::isIntegerExponent(*exponent) || *exponent < 0.0 ||
         *exponent > std::numeric_limits<uint8_t>::max()) {
