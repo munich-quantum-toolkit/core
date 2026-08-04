@@ -15,7 +15,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -877,7 +876,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   SmallVector<RZOp> rzs;
   module->walk([&](RZOp op) { rzs.push_back(op); });
-  ASSERT_EQ(rzs.size(), 2u);
+  ASSERT_EQ(rzs.size(), 2U);
   rzs[0].getThetaMutable().assign(funcOp.getArgument(0));
   rzs[1].getThetaMutable().assign(funcOp.getArgument(1));
 

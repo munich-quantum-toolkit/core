@@ -54,8 +54,8 @@ template <typename T> struct Val {
   static_assert(std::is_same_v<T, double> || std::is_same_v<T, Value>,
                 "Val supports double and Value only");
 
-  T v;
-  PatternRewriter* rewriter;
+  T v{};
+  PatternRewriter* rewriter = nullptr;
   Location loc;
 
   using Pred = std::conditional_t<std::is_same_v<T, double>, bool, Value>;
@@ -243,6 +243,8 @@ template <typename T> struct ScalarConsts {
   Val<T> pi;
 };
 
+} // namespace
+
 /**
  * @brief Creates shared f64 constants for the merge algorithm.
  *
@@ -250,7 +252,7 @@ template <typename T> struct ScalarConsts {
  * https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
  */
 template <typename T>
-ScalarConsts<T> makeConsts(PatternRewriter& rewriter, Location loc) {
+static ScalarConsts<T> makeConsts(PatternRewriter& rewriter, Location loc) {
   auto c = [&](double x) { return Val<T>::constant(rewriter, loc, x); };
   return {.negOne = c(-1.0),
           .zero = c(0.0),
@@ -266,7 +268,8 @@ ScalarConsts<T> makeConsts(PatternRewriter& rewriter, Location loc) {
  * Uses floor-based modular arithmetic:
  *   normalize(a) = a - floor((a + π) / 2π) * 2π
  */
-template <typename T> Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
+template <typename T>
+static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
   const auto twoPi = c.two * c.pi;
   const auto floored = ((angle + c.pi) / twoPi).floor();
   return angle - (floored * twoPi);
@@ -285,7 +288,7 @@ template <typename T> Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
  * @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
  */
 template <typename T>
-Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
+static Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
   return {
       .w = (q1.w * q2.w) - (q1.x * q2.x) - (q1.y * q2.y) - (q1.z * q2.z),
       .x = (q1.w * q2.x) + (q1.x * q2.w) + (q1.y * q2.z) - (q1.z * q2.y),
@@ -306,8 +309,8 @@ Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
  * https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
  */
 template <typename T>
-Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
-                       const ScalarConsts<T>& c) {
+static Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
+                              const ScalarConsts<T>& c) {
   const auto half = angle / c.two;
   const auto cos = half.cos();
   const auto sin = half.sin();
@@ -341,8 +344,8 @@ Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
  * (phi+lambda)/2 separately via globalPhaseOf.
  */
 template <typename T>
-Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
-                          const ScalarConsts<T>& c) {
+static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
+                                 const ScalarConsts<T>& c) {
   const auto qTheta = axisQuaternion(theta, RotationAxis::Y, c);
   const auto qPhi = axisQuaternion(phi, RotationAxis::Z, c);
   const auto qLambda = axisQuaternion(lambda, RotationAxis::Z, c);
@@ -361,8 +364,9 @@ static std::optional<RotationAxis> getRotationAxis(Operation* op) {
 }
 
 template <typename T>
-std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
-                                PatternRewriter& rewriter, Location loc) {
+static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
+                                       PatternRewriter& rewriter,
+                                       Location loc) {
   Value p = op.getParameter(i);
   if constexpr (std::is_same_v<T, double>) {
     const auto folded = utils::valueToConstantDouble(p);
@@ -388,9 +392,9 @@ std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
  *         (static path: unfoldable SSA value).
  */
 template <typename T>
-std::optional<Quat<T>> quaternionFromRotation(UnitaryOpInterface op,
-                                              const ScalarConsts<T>& c,
-                                              PatternRewriter& rewriter) {
+static std::optional<Quat<T>>
+quaternionFromRotation(UnitaryOpInterface op, const ScalarConsts<T>& c,
+                       PatternRewriter& rewriter) {
   const Location loc = op->getLoc();
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
@@ -453,9 +457,9 @@ std::optional<Quat<T>> quaternionFromRotation(UnitaryOpInterface op,
  *         on the static (`double`) path.
  */
 template <typename T>
-std::optional<Val<T>> globalPhaseOf(UnitaryOpInterface op,
-                                    const ScalarConsts<T>& c,
-                                    PatternRewriter& rewriter) {
+static std::optional<Val<T>> globalPhaseOf(UnitaryOpInterface op,
+                                           const ScalarConsts<T>& c,
+                                           PatternRewriter& rewriter) {
   const Location loc = op->getLoc();
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
@@ -509,8 +513,8 @@ std::optional<Val<T>> globalPhaseOf(UnitaryOpInterface op,
  * @return {theta, phi, lambda} = {beta, alpha, gamma} suitable for UOp
  */
 template <typename T>
-std::array<Val<T>, 3> anglesFromQuaternion(const Quat<T>& q,
-                                           const ScalarConsts<T>& c) {
+static std::array<Val<T>, 3> anglesFromQuaternion(const Quat<T>& q,
+                                                  const ScalarConsts<T>& c) {
   PatternRewriter& rewriter = *q.w.rewriter;
   const Location loc = q.w.loc;
 
@@ -565,6 +569,8 @@ static bool isMergeable(Operation* op) {
 static bool areQuaternionMergeable(Operation* a, Operation* b) {
   return isMergeable(a) && isMergeable(b);
 }
+
+namespace {
 
 /**
  * @brief Pattern that merges consecutive rotation gates using quaternion
