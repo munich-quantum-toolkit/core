@@ -326,7 +326,6 @@ def DecomposeMultiControlled
       through the Z path for every width.
     - Controlled SWAP: `CX(a,b) · MCX(C∪{b}, a) · CX(a,b)`; the emitted MCX
       is then lowered by the X path under the same `min-qubits` threshold.
-      With the default `min-qubits=3`, this includes OpenQASM `cswap`.
 
     Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
     `min-qubits` keeps them; the greedy rewriter lowers further when the
