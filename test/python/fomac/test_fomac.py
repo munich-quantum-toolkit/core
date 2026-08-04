@@ -29,6 +29,7 @@ from mqt.core.fomac import (
     register_device_if_absent,
     registered_device_ids,
 )
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
@@ -505,9 +506,6 @@ def test_device_rejects_formats_without_generic_payload(ddsim_device: Device, pr
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
     """Compile for and execute a QIR program with the DDSIM device."""
-    # Keep this lazy to cover loading MLIR after the QIR-enabled device.
-    from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program  # ruff:ignore[import-outside-top-level]
-
     qasm3_program = """
 OPENQASM 3.0;
 include "stdgates.inc";
@@ -532,8 +530,6 @@ c = measure q;
 
 def test_device_executes_binary_qir_program(ddsim_device: Device) -> None:
     """Submit and retrieve an exact QIR module byte payload."""
-    from mqt.core.mlir import OutputFormat, compile_program  # ruff:ignore[import-outside-top-level]
-
     qasm3_program = """
 OPENQASM 3.0;
 include "stdgates.inc";
