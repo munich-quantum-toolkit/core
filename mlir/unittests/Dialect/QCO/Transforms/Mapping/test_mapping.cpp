@@ -1571,16 +1571,14 @@ TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
   EXPECT_EQ(numSwaps, 4UL);
 }
 
-namespace {
-
-CompilerTarget getFourByFourSquareGrid() {
+static CompilerTarget getFourByFourSquareGrid() {
   constexpr size_t side = 4;
   constexpr size_t numTarget = side * side;
   std::vector<CompilerTarget::Coupling> couplings;
   couplings.reserve(2 * side * (side - 1));
   for (size_t r = 0; r < side; ++r) {
     for (size_t c = 0; c < side; ++c) {
-      const auto i = static_cast<int64_t>(r * side + c);
+      const auto i = static_cast<int64_t>((r * side) + c);
       if (c + 1 < side) {
         couplings.emplace_back(i, i + 1);
       }
@@ -1593,7 +1591,8 @@ CompilerTarget getFourByFourSquareGrid() {
 }
 
 /// Build an 11-qubit CX/CZ circuit used with a larger square target.
-OwningOpRef<ModuleOp> buildPaddedSquareRoutingModule(MLIRContext* context) {
+static OwningOpRef<ModuleOp>
+buildPaddedSquareRoutingModule(MLIRContext* context) {
   QCOProgramBuilder builder(context);
   builder.initialize();
   constexpr size_t nprog = 11;
@@ -1613,8 +1612,6 @@ OwningOpRef<ModuleOp> buildPaddedSquareRoutingModule(MLIRContext* context) {
   }
   return builder.finalize();
 }
-
-} // namespace
 
 /**
  * @brief Hot routing replays the cold-preview SWAP plan on padded targets.
