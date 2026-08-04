@@ -65,8 +65,9 @@ than retaining its historical merge-heavy implementation.
       preserves two-way ordered calibration, and retains IQM's symmetric CZ
       convention. All 223 compiler tests, ten focused adapter/CLI CTests,
       changed-source clang-tidy, repository lint, and `git diff --check` pass.
-- [ ] Commit the reviewed ordered-site fix and complete a fresh independent
-      exact-head verification with no material findings.
+- [x] (2026-08-04) Committed the reviewed ordered-site fix as `2d562a2fa` and
+      completed a fresh independent exact-head verification with no material
+      findings.
 - [ ] Rewrite the existing PR branch with an exact force-with-lease, replace the
       obsolete PR description, verify the replacement head, and monitor CI.
 
@@ -206,7 +207,7 @@ their compact one-tuple-per-edge representation. The source-build C++ and CLI
 workflows and packaged Python workflow are proven. A distributable MLIR C++ SDK
 remains a separate packaging concern because the current repository does not
 export the compiler dialects, generated headers, or pipeline dependency closure.
-Fresh exact-head verification and publication are still pending.
+Publication and replacement-head CI are still pending.
 
 ### Context and Orientation
 
