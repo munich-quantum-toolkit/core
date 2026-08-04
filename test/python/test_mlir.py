@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -289,62 +290,70 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert raw.ir != optimized.ir
 
 
-def _iqm_like_target() -> CompilerTarget:
-    """Construct a two-site target with the IQM gate set.
+@pytest.fixture(scope="module")
+def garnet_target() -> CompilerTarget:
+    """Snapshot the bundled IQM Garnet device.
 
     Returns:
-        A target with sparse site IDs, one coupling, and the IQM native gates.
+        The detached compiler target.
     """
-    return CompilerTarget(
-        "IQM-like target",
-        [
-            CompilerTarget.Site(10, name="QB1"),
-            CompilerTarget.Site(20, name="QB2"),
-        ],
+    return CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
+
+
+def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
+    """Compile through the canonical target pipeline for a QDMI device."""
+    result = compile_program(
+        QASM_STRING,
+        output=OutputFormat.QCO_OPTIMIZED,
+        target=garnet_target,
+    )
+
+    assert isinstance(result, QCOProgram)
+    static_sites = {int(site) for site in re.findall(r"qco\.static (\d+)", result.ir)}
+    assert len(static_sites) == 2
+    assert static_sites <= {site.id for site in garnet_target.sites}
+    assert "qco.r(" in result.ir
+    assert "qco.ctrl" in result.ir
+    assert "qco.z " in result.ir
+    assert result.ir.count("qco.measure") == 2
+    assert "qco.rx" not in result.ir
+    assert "qco.ry" not in result.ir
+
+
+def test_qco_program_compiles_for_direct_sparse_target() -> None:
+    """Expose direct target construction and typed QCO compilation."""
+    target = CompilerTarget(
+        "sparse target",
+        [CompilerTarget.Site(10), CompilerTarget.Site(20)],
         couplings=[(10, 20)],
         operations=[
-            CompilerTarget.Operation("r", 1, 2),
+            CompilerTarget.Operation("u", 1, 3),
             CompilerTarget.Operation("cz", 2, 0),
             CompilerTarget.Operation("measure", 1, 0),
         ],
     )
+    assert target.name == "sparse target"
+    assert [site.id for site in target.sites] == [10, 20]
+    assert target.couplings == [(10, 20)]
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.U
+    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.CZ
 
-
-def _assert_iqm_native(program: QCOProgram) -> None:
-    """Check target assignment and the IQM native gate set."""
-    assert "qco.static 10" in program.ir
-    assert "qco.static 20" in program.ir
-    assert "qco.r(" in program.ir
-    assert "qco.measure" in program.ir
-    assert "qco.rx" not in program.ir
-    assert "qco.ry" not in program.ir
-
-
-def test_compile_program_for_target() -> None:
-    """Compile through the canonical target pipeline."""
-    result = compile_program(
-        QASM_STRING,
-        output=OutputFormat.QCO_OPTIMIZED,
-        target=_iqm_like_target(),
-    )
-
-    assert isinstance(result, QCOProgram)
-    _assert_iqm_native(result)
-
-
-def test_qco_program_compiles_for_target() -> None:
-    """Expose target compilation on typed QCO programs."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
 
-    qco.compile_for_target(_iqm_like_target())
+    qco.compile_for_target(target)
 
-    _assert_iqm_native(qco)
+    assert {int(site) for site in re.findall(r"qco\.static (\d+)", qco.ir)} == {10, 20}
+    assert "qco.u(" in qco.ir
+    assert "qco.ctrl" in qco.ir
+    assert "qco.z " in qco.ir
+    assert qco.ir.count("qco.measure") == 2
 
 
-def test_compiler_target_snapshots_qdmi_device() -> None:
+def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:
     """Retain IQM topology and calibration independently of the live device."""
-    target = CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
+    target = garnet_target
 
     assert target.name == "IQM Garnet"
     assert target.num_qubits == 20

@@ -80,8 +80,26 @@ than retaining its historical merge-heavy implementation.
       review caught and corrected diagnostic-precedence drift before
       publication; the original fail-fast order and four irreducible CLI tests
       remain.
-- [ ] Publish the signed coverage follow-up and monitor replacement CI to a
-      terminal result.
+- [x] (2026-08-04) Published the signed coverage follow-up as `5d2ad837a`;
+      Codecov reports 93.1 percent C++ patch coverage, and every completed
+      replacement check passed before the next review revision superseded it.
+- [x] (2026-08-04) Simplified the test-build boundary so the complete test suite
+      requires all bundled QDMI providers while provider-selective non-test
+      builds remain supported. Removed the resulting conditional test
+      registration and replaced the synthetic IQM-like Python fixture with one
+      real Garnet integration test plus one direct sparse-target API test.
+- [x] (2026-08-04) Rebuilt the complete release target and passed all 223
+      compiler tests, ten adapter/CLI CTests, 29 Python MLIR tests, 15 registry
+      tests, 114 driver tests, 263 circuit FoMaC tests, two neutral-atom FoMaC
+      tests, strict documentation, repository lint, and `git diff --check`. Also
+      verified that a provider-free non-test build still configures and builds
+      the adapter and `mqt-cc`, while a test build with providers disabled fails
+      at configuration with the intended diagnostic.
+- [x] (2026-08-04) Completed an independent exact-diff review with no actionable
+      findings, then regenerated the release build from the current CMake
+      sources and repeated the complete affected suites.
+- [ ] Publish the streamlined test revision and monitor its replacement exact
+      head.
 
 ### Surprises & Discoveries
 
@@ -122,9 +140,10 @@ than retaining its historical merge-heavy implementation.
   compilation exposed this issue; unit tests that stopped at conformance did
   not.
 - Observation: a clean build with all three built-in QDMI providers disabled
-  exposed that provider-backed test sources and runtime copying must be
-  conditional. The compiler test target now builds without provider libraries,
-  while normal CI retains full live-device coverage.
+  initially motivated conditional provider-backed tests. Follow-up review
+  established a simpler boundary: the complete MQT Core test suite requires all
+  bundled providers, while embedded and other non-test builds may still select
+  or omit providers independently.
 - Observation: QDMI operation site tuples are ordered, while the compiler
   deliberately models an undirected topology and homogeneous bidirectional gate
   support. Canonicalizing a one-way two-qubit site list would silently widen the
@@ -213,6 +232,17 @@ than retaining its historical merge-heavy implementation.
   exception path, and the CLI does not gain redundant tests for every
   combination of equivalent option errors. Date/Author: 2026-08-04, GPT-5.6 via
   Codex.
+- Decision: retain the three provider build options for embedded and other
+  non-test consumers, but require every bundled provider when
+  `BUILD_MQT_CORE_TESTS` is enabled. Rationale: the full suite can register its
+  provider integration tests unconditionally without removing the useful
+  provider-free production boundary. Date/Author: 2026-08-04, GPT-5.6 via Codex.
+- Decision: use the bundled Garnet target only for the Python QDMI integration
+  path and retain one small direct sparse target for constructor and typed
+  compilation coverage. Rationale: the two tests now exercise distinct public
+  contracts without maintaining a misleading partial IQM model or asserting a
+  particular placement chosen by the mapper. Date/Author: 2026-08-04, GPT-5.6
+  via Codex.
 
 ### Outcomes & Retrospective
 
@@ -231,9 +261,12 @@ workflows and packaged Python workflow are proven. A distributable MLIR C++ SDK
 remains a separate packaging concern because the current repository does not
 export the compiler dialects, generated headers, or pipeline dependency closure.
 The replacement branch and PR description are published, all historical review
-threads are resolved, and the full exact-head Actions matrix is green. A compact
-follow-up is in progress for the remaining C++ patch-coverage gate; fresh
-replacement-head CI and human re-review remain pending.
+threads are resolved, and the published C++ patch coverage is 93.1 percent. The
+latest local revision also makes the full test suite's provider requirement
+explicit, removes the resulting conditional registration, and separates real
+Garnet integration coverage from direct target-construction coverage. A fresh
+independent review found no actionable issue. Replacement-head CI and human
+re-review remain pending.
 
 ### Context and Orientation
 
@@ -338,10 +371,10 @@ configuration, reject an unknown ID, and compile the Bell program for Garnet.
 
 The third milestone proves cohesion and publication readiness. Generate the MLIR
 reference documentation, run strict Sphinx documentation, changed-source
-clang-tidy, complete relevant C++ suites, provider-disabled configuration, stub
-generation, and repository lint. An independent exact-head `mqt-pr-review` must
-find no material correctness, bloat, packaging, or documentation issue before
-the historical PR branch is replaced.
+clang-tidy, complete relevant C++ suites, a provider-disabled non-test compiler
+build, stub generation, and repository lint. An independent exact-head
+`mqt-pr-review` must find no material correctness, bloat, packaging, or
+documentation issue before the historical PR branch is replaced.
 
 ### Concrete Steps
 
@@ -408,13 +441,13 @@ the adapter, mapping, synthesis, conformance, or full compiler suites.
 The final revision must build all touched targets, pass the focused and relevant
 complete tests, regenerate stubs without an uncommitted delta, pass strict
 documentation, changed-source clang-tidy, repository lint, `git diff --check`,
-and an independent exact-head `mqt-pr-review`. A provider-disabled build must
-configure and build the compiler test target without expecting unavailable
-runtime libraries. The packaged Python extension and QDMI provider assets must
-be exercised by the Python test session. The source-build-only C++ adapter and
-CLI must be labeled as such; a full installed MLIR SDK consumer is deliberately
-outside this thin bridge because the repository does not yet expose that package
-boundary. C++ patch coverage must be at least 90 percent in CI.
+and an independent exact-head `mqt-pr-review`. A provider-disabled non-test
+build must configure and build the compiler adapter and CLI without expecting
+unavailable runtime libraries. The packaged Python extension and QDMI provider
+assets must be exercised by the Python test session. The source-build-only C++
+adapter and CLI must be labeled as such; a full installed MLIR SDK consumer is
+deliberately outside this thin bridge because the repository does not yet expose
+that package boundary. C++ patch coverage must be at least 90 percent in CI.
 
 Before publication, refresh `origin/main`, the remote #1687 head, review
 threads, and PR metadata. Replace the historical branch only with:
