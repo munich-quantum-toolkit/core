@@ -919,9 +919,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 /**
  * @brief Two phase-bearing dynamic gates exercise SSA phase accumulation.
  *
- * `mergeDynamicChain` seeds `phaseAccum` from the first P/U/U2, then adds each
- * subsequent contribution via `phaseAccum ? (*phaseAccum + *phase) : phase`.
- * P(a);P(b) hits that accumulation branch (a single dynamic P cannot).
+ * `mergeDynamicChain` sums each gate's global-phase contribution. P(a);P(b)
+ * accumulates both unfoldable angles into the emitted `gphase` SSA.
  */
 TEST_F(MergeSingleQubitRotationGatesTest,
        mergeDynamicPhaseGatesAccumulatesGlobalPhase) {

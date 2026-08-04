@@ -34,9 +34,9 @@ def MergeSingleQubitRotationGates
     The global phase of each gate is tracked alongside and combined together.
 
     When every angle in the chain is a compile-time constant, the same algorithm
-    runs on host scalars (`Val<double>` / STL math) and emits constant `U` /
-    `gphase` results directly. Otherwise it lowers through `arith` / `math`
-    SSA (`Val<Value>`).
+    runs on host scalars and emits constant `U` / `gphase` results directly.
+    Otherwise it emits `arith` / `math` operations that compute the merged
+    parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
     Each merge computes a global-phase correction of

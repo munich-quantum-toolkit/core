@@ -27,6 +27,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <algorithm>
@@ -223,7 +224,7 @@ template <typename T> struct Val {
   }
 };
 
-enum class RotationAxis : std::uint8_t { X, Y, Z };
+enum class RotationAxis : uint8_t { X, Y, Z };
 
 /// Unit quaternion w + x i + y j + z k over the dual-backend scalar type.
 template <typename T> struct Quat {
@@ -448,42 +449,43 @@ quaternionFromRotation(UnitaryOpInterface op, const ScalarConsts<T>& c,
  * Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
  * is the quaternion-representable part and phase is the global phase:
  *
- * - RX, RY, RZ, R         -> none (already SU(2), no global phase)
+ * - RX, RY, RZ, R         -> 0 (already SU(2))
  * - P(theta)              -> theta / 2 (P = e^{i * theta / 2} * RZ(theta))
  * - U(theta, phi, lambda) -> (phi + lambda) / 2
  * - U2(phi, lambda)       -> (phi + lambda) / 2
  *
- * @return nullopt for SU(2) gates, or when a required parameter does not fold
- *         on the static (`double`) path.
+ * @return Success with the phase contribution, including an explicit zero for
+ *         SU(2) gates. Failure if a required parameter does not fold on the
+ *         static (`double`) path, or if @p op is not a mergeable rotation.
  */
 template <typename T>
-static std::optional<Val<T>> globalPhaseOf(UnitaryOpInterface op,
-                                           const ScalarConsts<T>& c,
-                                           PatternRewriter& rewriter) {
+static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
+                                       const ScalarConsts<T>& c,
+                                       PatternRewriter& rewriter) {
   const Location loc = op->getLoc();
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
-  return TypeSwitch<Operation*, std::optional<Val<T>>>(op.getOperation())
+  return TypeSwitch<Operation*, FailureOr<Val<T>>>(op.getOperation())
       .template Case<RXOp, RYOp, RZOp, ROp>(
-          [](auto) -> std::optional<Val<T>> { return std::nullopt; })
-      .template Case<POp>([&](auto) -> std::optional<Val<T>> {
+          [&](auto) -> FailureOr<Val<T>> { return c.zero; })
+      .template Case<POp>([&](auto) -> FailureOr<Val<T>> {
         const auto theta = param(0);
         if (!theta) {
-          return std::nullopt;
+          return failure();
         }
         return *theta / c.two;
       })
-      .template Case<UOp, U2Op>([&](auto) -> std::optional<Val<T>> {
+      .template Case<UOp, U2Op>([&](auto) -> FailureOr<Val<T>> {
         // phi is at different indexes for UOp and U2Op
         const auto phiIdx = isa<UOp>(op.getOperation()) ? 1U : 0U;
         const auto phi = param(phiIdx);
         const auto lambda = param(phiIdx + 1);
         if (!phi || !lambda) {
-          return std::nullopt;
+          return failure();
         }
         return (*phi + *lambda) / c.two;
       })
-      .Default([](auto) -> std::optional<Val<T>> { return std::nullopt; });
+      .Default([](auto) -> FailureOr<Val<T>> { return failure(); });
 }
 
 /**
@@ -639,13 +641,11 @@ struct MergeSingleQubitRotationGatesPattern final
       if (!qi) {
         return failure();
       }
-      if (isa<POp, UOp, U2Op>(chainOp.getOperation())) {
-        const auto phase = globalPhaseOf<double>(chainOp, consts, rewriter);
-        if (!phase) {
-          return failure();
-        }
-        phaseAccum = phaseAccum + *phase;
+      const auto phase = globalPhaseOf<double>(chainOp, consts, rewriter);
+      if (failed(phase)) {
+        return failure();
       }
+      phaseAccum = phaseAccum + *phase;
       qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
     }
 
@@ -677,38 +677,53 @@ struct MergeSingleQubitRotationGatesPattern final
    *   outPhase = (phi + lambda) / 2
    *   correction = totalInputPhase - outPhase
    * Foldable corrections are normalized into the practical gphase range.
+   *
+   * Converts every gate before rewriting so a missing conversion Case cannot
+   * leave partially rewired ops.
    */
-  static void mergeDynamicChain(MutableArrayRef<UnitaryOpInterface> chain,
-                                PatternRewriter& rewriter) {
+  static LogicalResult
+  mergeDynamicChain(MutableArrayRef<UnitaryOpInterface> chain,
+                    PatternRewriter& rewriter) {
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<Value>(rewriter, loc);
 
-    auto qAccum =
-        *quaternionFromRotation<Value>(chain.front(), consts, rewriter);
-    std::optional<Val<Value>> phaseAccum =
-        globalPhaseOf<Value>(chain.front(), consts, rewriter);
-
-    for (auto chainOp : llvm::drop_begin(chain)) {
-      auto qi = *quaternionFromRotation<Value>(chainOp, consts, rewriter);
-      qAccum = hamiltonProduct(qi, qAccum);
-      if (auto phase = globalPhaseOf<Value>(chainOp, consts, rewriter)) {
-        phaseAccum = phaseAccum ? (*phaseAccum + *phase) : phase;
+    SmallVector<Quat<Value>, 4> quats;
+    quats.reserve(chain.size());
+    Val<Value> phaseAccum = consts.zero;
+    for (UnitaryOpInterface chainOp : chain) {
+      auto qi = quaternionFromRotation<Value>(chainOp, consts, rewriter);
+      if (!qi) {
+        return failure();
       }
-      rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
+      const auto phase = globalPhaseOf<Value>(chainOp, consts, rewriter);
+      if (failed(phase)) {
+        return failure();
+      }
+      quats.push_back(*qi);
+      phaseAccum = phaseAccum + *phase;
+    }
+
+    Quat<Value> qAccum = quats.front();
+    for (const Quat<Value>& qi : llvm::drop_begin(quats)) {
+      qAccum = hamiltonProduct(qi, qAccum);
     }
 
     const auto [theta, phi, lambda] = anglesFromQuaternion(qAccum, consts);
     const auto outPhase = (phi + lambda) / consts.two;
-    const auto inputPhase = phaseAccum.value_or(consts.zero);
-    Val<Value> phaseCorrection = inputPhase - outPhase;
+    Val<Value> phaseCorrection = phaseAccum - outPhase;
     if (const auto constant = utils::valueToConstantDouble(phaseCorrection.v)) {
       phaseCorrection =
           Val<Value>::constant(rewriter, loc, utils::normalizeAngle(*constant));
+    }
+
+    for (auto chainOp : llvm::drop_begin(chain)) {
+      rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
     GPhaseOp::create(rewriter, loc, phaseCorrection.v);
     rewriter.replaceOpWithNewOp<UOp>(chain.front(),
                                      chain.front().getInputQubit(0), theta.v,
                                      phi.v, lambda.v);
+    return success();
   }
 
   /**
@@ -737,8 +752,7 @@ struct MergeSingleQubitRotationGatesPattern final
     if (succeeded(tryMergeStaticChain(chain, rewriter))) {
       return success();
     }
-    mergeDynamicChain(chain, rewriter);
-    return success();
+    return mergeDynamicChain(chain, rewriter);
   }
 };
 
