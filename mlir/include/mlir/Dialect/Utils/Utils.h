@@ -45,6 +45,14 @@ namespace mlir::utils {
 inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
     "mqt.classical_register_name";
 
+/// Function-result attribute retaining an OpenQASM output identifier.
+inline constexpr llvm::StringLiteral OPENQASM_OUTPUT_NAME_ATTR =
+    "qc.openqasm.output_name";
+
+/// Function-result attribute retaining an otherwise erased OpenQASM type.
+inline constexpr llvm::StringLiteral OPENQASM_OUTPUT_KIND_ATTR =
+    "qc.openqasm.output_kind";
+
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
   return r == std::floor(r) && std::isfinite(r);

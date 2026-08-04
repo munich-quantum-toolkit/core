@@ -356,7 +356,7 @@ class QCProgram(Program):
         """Normalize scoped global phases in place."""
 
     def to_openqasm3(self) -> OpenQASMProgram:
-        """Emit this QC program as OpenQASM 3 without optimizing it."""
+        """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.
@@ -469,7 +469,7 @@ class JeffProgram(Program):
         """
 
 class OpenQASMProgram:
-    """An immutable compiler output artifact containing OpenQASM 3 source."""
+    """An immutable compiler program containing OpenQASM 3 source."""
 
     @property
     def source(self) -> str:
@@ -513,7 +513,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
     inplace: bool = False,
@@ -530,7 +531,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
     inplace: bool = False,
@@ -547,7 +549,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.OPENQASM3],
     inplace: bool = False,
@@ -563,7 +566,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.JEFF],
     inplace: bool = False,
@@ -580,7 +584,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
@@ -597,7 +602,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: OutputFormat,
     inplace: bool = False,

@@ -309,7 +309,11 @@ bool QCProgram::normalizeGlobalPhases() {
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
-  auto source = qc::translateQCToOpenQASM3(mod());
+  auto cleaned = copy();
+  if (!cleaned.cleanup()) {
+    return std::nullopt;
+  }
+  auto source = qc::translateQCToOpenQASM3(cleaned.mod());
   if (failed(source)) {
     return std::nullopt;
   }
@@ -658,11 +662,19 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
     return std::nullopt;
   }
   if (output == ProgramFormat::QCImport) {
-    if (!std::holds_alternative<QCProgram>(program)) {
-      llvm::errs() << "QCImport output is only available for QC input.\n";
-      return std::nullopt;
+    if (std::holds_alternative<QCProgram>(program)) {
+      return CompilerProgram(std::move(std::get<QCProgram>(program)));
     }
-    return CompilerProgram(std::move(std::get<QCProgram>(program)));
+    if (std::holds_alternative<OpenQASMProgram>(program)) {
+      auto qc = QCProgram::fromQASMString(
+          std::get<OpenQASMProgram>(program).source());
+      if (qc) {
+        return CompilerProgram(std::move(*qc));
+      }
+    }
+    llvm::errs() << "QCImport output is only available for QC or OpenQASM "
+                    "input.\n";
+    return std::nullopt;
   }
 
   auto qco = std::visit(
@@ -670,6 +682,12 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
         using ProgramType = std::remove_cvref_t<T>;
         if constexpr (std::is_same_v<ProgramType, QCOProgram>) {
           return std::forward<T>(value);
+        } else if constexpr (std::is_same_v<ProgramType, OpenQASMProgram>) {
+          auto qc = QCProgram::fromQASMString(value.source());
+          if (!qc) {
+            return std::nullopt;
+          }
+          return std::move(*qc).intoQCO();
         } else {
           return std::forward<T>(value).intoQCO();
         }

@@ -264,6 +264,13 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert "output bit[2] c;" in optimized.source
     _assert_bell_program(QCProgram.from_qasm_str(optimized.source), measured=True)
 
+    imported = compile_program(direct, output=OutputFormat.QC_IMPORT)
+    assert isinstance(imported, QCProgram)
+    _assert_bell_program(imported, measured=True)
+
+    compiled = compile_program(direct, output=OutputFormat.QIR_ADAPTIVE)
+    assert isinstance(compiled, QIRProgram)
+
 
 @pytest.mark.parametrize(
     "gate",

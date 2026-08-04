@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
@@ -205,29 +204,29 @@ private:
       if (output.kind == frontend::OutputKind::BitRegister) {
         const auto& declaration = program.registers.at(output.symbol);
         name = declaration.name;
-        kind = declaration.isScalar ? "bit" : "bit_array";
+        if (declaration.isScalar) {
+          kind = "bit";
+        }
       } else {
         const auto& declaration = program.scalars.at(output.symbol);
         name = declaration.name;
         switch (declaration.type) {
         case frontend::ScalarType::Bool:
-          kind = "bool";
-          break;
         case frontend::ScalarType::Int:
-          kind = "int";
+        case frontend::ScalarType::Float:
+        case frontend::ScalarType::Angle:
           break;
         case frontend::ScalarType::Uint:
           kind = "uint";
           break;
-        case frontend::ScalarType::Float:
-        case frontend::ScalarType::Angle:
-          kind = "float";
-          break;
         }
       }
       NamedAttrList attrs(mainFunc.getResultAttrDict(index));
-      attrs.set(OPENQASM_OUTPUT_NAME_ATTR, builder.getStringAttr(name));
-      attrs.set(OPENQASM_OUTPUT_KIND_ATTR, builder.getStringAttr(kind));
+      attrs.set(utils::OPENQASM_OUTPUT_NAME_ATTR, builder.getStringAttr(name));
+      if (!kind.empty()) {
+        attrs.set(utils::OPENQASM_OUTPUT_KIND_ATTR,
+                  builder.getStringAttr(kind));
+      }
       mainFunc.setResultAttrs(static_cast<unsigned>(index),
                               attrs.getDictionary(builder.getContext()));
     }

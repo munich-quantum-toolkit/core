@@ -1,8 +1,7 @@
 # OpenQASM input and output
 
 MQT Core accepts OpenQASM as a compiler input and can export structured programs
-from the QC dialect. OpenQASM is a boundary format: the compiler uses QC, QCO,
-and standard MLIR operations internally.
+from the QC dialect.
 
 The [OpenQASM specification](https://openqasm.com/index.html) defines the
 language. This page describes the subset supported by MQT Core.
@@ -74,12 +73,14 @@ if (mlir::failed(source)) {
 }
 ```
 
-The compiler API returns an owned textual artifact:
+The compiler API returns an owned textual program:
 
 ```cpp
 auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
-auto direct = qc->toOpenQASM3(); // Export the current QC program unchanged.
+auto direct = qc->toOpenQASM3(); // Export without QCO optimization.
 direct->write("direct.qasm");
+auto reimported = mlir::runDefaultPipeline(
+    mlir::CompilerInput{*direct}, mlir::ProgramFormat::QCImport);
 
 auto optimized = mlir::runDefaultPipeline(
     mlir::CompilerInput{std::move(*qc)}, mlir::ProgramFormat::OpenQASM3);
@@ -109,7 +110,8 @@ mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
 The compiler-pipeline path performs target compilation when requested, runs the
 QCO optimization pipeline, converts back to QC, and then exports. Calling
 {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` or
-{code}`mlir::QCProgram::toOpenQASM3` bypasses that optimization round trip.
+{code}`mlir::QCProgram::toOpenQASM3` applies the QC cleanup pipeline but
+bypasses that QCO optimization round trip.
 
 ### Export and round-trip support
 
@@ -130,9 +132,9 @@ same prefix and are collision safe. Valid source output names are retained when
 available.
 
 Scalar declarations use unsized `bool`, `bit`, `int`, `uint`, and `float` types.
-Signedness is taken from an explicit operation or imported output type. If a
-user-visible signless `i64` result is ambiguous, export fails with a diagnostic
-instead of guessing.
+The exporter infers these types from QC values and operations. Signless `i64`
+results default to `int`; explicit unsigned operations and the few source-level
+distinctions erased during import retain a compact result attribute.
 
 ### Export limitations
 

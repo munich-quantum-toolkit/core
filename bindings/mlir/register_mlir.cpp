@@ -211,6 +211,9 @@ programFromPath(const std::filesystem::path& path) {
     return inplace ? mlir::CompilerInput(std::move(value))
                    : mlir::CompilerInput(value.copy());
   }
+  if (nb::isinstance<mlir::OpenQASMProgram>(program)) {
+    return {nb::cast<const mlir::OpenQASMProgram&>(program)};
+  }
 
   const auto programType =
       nb::cast<std::string>(program.type().attr("__name__"));
@@ -580,7 +583,8 @@ before conversion to QCO.)pb");
            "Normalize scoped global phases in place.")
       .def("to_openqasm3",
            &OptionalMemberAdapter<&mlir::QCProgram::toOpenQASM3>::call,
-           "Emit this QC program as OpenQASM 3 without optimizing it.")
+           "Clean up and emit this QC program as OpenQASM 3 without QCO "
+           "optimization.")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -732,7 +736,7 @@ Set ``copy=True`` to preserve it.)pb");
 
   nb::class_<mlir::OpenQASMProgram>(
       m, "OpenQASMProgram",
-      "An immutable compiler output artifact containing OpenQASM 3 source.")
+      "An immutable compiler program containing OpenQASM 3 source.")
       .def_prop_ro("source", &mlir::OpenQASMProgram::source,
                    "The emitted OpenQASM 3 source.")
       .def("write", &BooleanMemberAdapter<&mlir::OpenQASMProgram::write>::call,

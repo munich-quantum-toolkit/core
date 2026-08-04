@@ -794,9 +794,11 @@ bit[2] c = measure q;
 )";
   auto directQC = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(directQC);
+  const auto importedIR = directQC->str();
   auto direct = directQC->toOpenQASM3();
   ASSERT_TRUE(direct);
   EXPECT_TRUE(directQC->isValid());
+  EXPECT_EQ(directQC->str(), importedIR);
   EXPECT_TRUE(direct->source().starts_with("OPENQASM 3.1;\n"));
   EXPECT_EQ(direct->str(), direct->source());
   EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
@@ -811,6 +813,17 @@ bit[2] c = measure q;
                             std::istreambuf_iterator<char>());
   EXPECT_EQ(written, direct->source());
   EXPECT_TRUE(QCProgram::fromQASMFile(path));
+
+  auto imported =
+      runDefaultPipeline(CompilerInput(*direct), ProgramFormat::QCImport);
+  ASSERT_TRUE(imported);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(*imported));
+
+  auto compiled =
+      runDefaultPipeline(CompilerInput(OpenQASMProgram(direct->source())),
+                         ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<QIRProgram>(*compiled));
 
   auto pipelineQC = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(pipelineQC);

@@ -109,10 +109,15 @@ with TemporaryDirectory() as directory:
 assert reparsed.is_valid
 ```
 
-Use {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` to export the current QC
-program without optimizing it. OpenQASM output is an artifact, not a compiler
-input object; its {py:attr}`~mqt.core.mlir.OpenQASMProgram.source` string or
-written file can be passed through the existing OpenQASM input path.
+Use {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` to clean up and export the
+current QC program without QCO optimization. The resulting
+{py:class}`~mqt.core.mlir.OpenQASMProgram` can be passed directly to
+{py:func}`~mqt.core.mlir.compile_program`:
+
+```{code-cell} ipython3
+recompiled = compile_program(openqasm, output=OutputFormat.QC_IMPORT)
+assert isinstance(recompiled, QCProgram)
+```
 
 The exporter targets practical structured programs with static qubit and bit
 indices. Dynamic indexing, dynamic ranges, surviving runtime assertions,
@@ -122,10 +127,11 @@ See {doc}`OpenQASM` for the complete support table.
 ## Run passes explicitly
 
 {code}`QCProgram`, {code}`QCOProgram`, {code}`JeffProgram`, and
-{code}`QIRProgram` own their MLIR modules. {code}`OpenQASMProgram` instead owns
-immutable source text. A dialect conversion consumes its source program by
-default, avoiding an implicit copy of a potentially large module. Pass
-{code}`copy=True` when the source must remain available.
+{code}`QIRProgram` own their MLIR modules. Conversions between these MLIR-backed
+program objects consume their source by default, avoiding an implicit copy of a
+potentially large module. Pass {code}`copy=True` when the source must remain
+available. {code}`OpenQASMProgram` instead owns immutable source text and
+remains reusable when passed to {code}`compile_program`.
 
 The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:

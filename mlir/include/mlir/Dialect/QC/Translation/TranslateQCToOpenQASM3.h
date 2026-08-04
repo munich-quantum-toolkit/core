@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <llvm/ADT/StringRef.h>
 #include <mlir/Support/LLVM.h>
 
 #include <string>
@@ -23,14 +22,6 @@ namespace mlir {
 class ModuleOp;
 
 namespace qc {
-
-/// Function-result attribute retaining an OpenQASM output identifier.
-inline constexpr llvm::StringLiteral OPENQASM_OUTPUT_NAME_ATTR =
-    "qc.openqasm.output_name";
-
-/// Function-result attribute retaining an OpenQASM output type category.
-inline constexpr llvm::StringLiteral OPENQASM_OUTPUT_KIND_ATTR =
-    "qc.openqasm.output_kind";
 
 /**
  * @brief Translate a QC module to portable OpenQASM.

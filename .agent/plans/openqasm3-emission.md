@@ -66,6 +66,22 @@ instead of reverse-engineering the importer machinery.
       separate Codecov C++ patch check reported 88.1%, raising focused
       translator line coverage to 92.1% and covering structured-control
       rejection propagation without broadening the supported subset.
+- [x] (2026-08-04 20:44Z) Fixed the Windows-only iterator deduction failure and
+      ignored-result warnings, simplified ECR to one controlled-X plus local
+      corrections, and removed the redundant exporter-specific dead-expression
+      traversal in favor of the existing QC cleanup pipeline.
+- [x] (2026-08-04 20:44Z) Made `OpenQASMProgram` a direct compiler input, moved
+      shared output-attribute names to the existing dialect utilities, and
+      reduced imported type metadata to the scalar-bit and unsigned-integer
+      distinctions that QC otherwise erases.
+- [x] (2026-08-04 20:56Z) Rebuilt release and coverage configurations; passed
+      287 QC translation tests, 219 compiler tests, the 15 affected Python
+      emission/input and gate-matrix tests, changed-source clang-tidy, complete
+      repository lint, and the warnings-as-errors documentation build.
+- [x] (2026-08-04 21:10Z) Addressed the independent PR review's two
+      documentation findings, rebased onto `origin/main` at `a132638c8`, and
+      revalidated the 22 focused emitter tests, compiler integration test, and
+      15 affected Python tests against the rebased release build.
 
 ## Surprises & Discoveries
 
@@ -112,6 +128,14 @@ instead of reverse-engineering the importer machinery.
   `scf.index_switch` region per label. The importer's projected-emission
   preflight must therefore multiply the case body cost by its label count; doing
   so keeps the existing operation budget effective before constructing any IR.
+- Observation: MSVC models `llvm::find_if` over `std::array` as an array
+  iterator, not a pointer. Removing the ECR helper dependency lookup eliminated
+  both the non-portable pointer deduction and an unnecessary two-RZX
+  decomposition.
+- Observation: The importer only erases two output-type distinctions needed by
+  the exporter: scalar `bit` versus `bit[1]`, and `uint` versus signless `i64`.
+  Boolean, signed integer, floating-point, and bit-array outputs are inferred
+  directly from QC types and operations.
 
 ## Decision Log
 
@@ -127,20 +151,25 @@ instead of reverse-engineering the importer machinery.
   checked-index scaffolding as unsupported. Rationale: The user explicitly
   prefers a focused practical exporter over reconstruction of importer safety
   machinery. Date/Author: 2026-08-04 / Codex.
-- Decision: Make `OpenQASMProgram` an owned textual artifact rather than an MLIR
-  `Program` subclass. Rationale: OpenQASM output owns source text, not an MLIR
-  context and module, and can be re-entered through the existing string or file
-  input APIs. Date/Author: 2026-08-04 / Codex.
+- Decision: Make `OpenQASMProgram` an owned textual value rather than an MLIR
+  `Program` subclass, and accept that value directly as compiler input.
+  Rationale: OpenQASM owns source text rather than an MLIR context and module;
+  reparsing it at the compiler boundary is straightforward and keeps the value
+  reusable. Date/Author: 2026-08-04 / Codex.
 - Decision: Export from optimized QC in the coordinated pipeline but expose a
   non-consuming direct method on `QCProgram`. Rationale: The compiler output
   should reflect normal optimization, while callers inspecting frontend QC need
   a predictable direct path. Date/Author: 2026-08-04 / Codex.
-- Decision: Preserve only two optional function-result strings from the
-  importer: output name and output kind. Rationale: Standard MLIR result
-  attributes already survive QC/QCO conversion, and the exporter can generate
-  deterministic names or diagnose ambiguous user-visible types when hints are
-  absent. No exporter-specific side table or preservation pass is warranted.
-  Date/Author: 2026-08-04 / Codex.
+- Decision: Preserve output names and add output-kind metadata only for scalar
+  `bit` and `uint`. Rationale: QC types and defining operations infer all other
+  supported output kinds. Standard MLIR result attributes retain the two
+  genuinely erased distinctions without an exporter-specific side table or
+  preservation pass. Date/Author: 2026-08-04 / Codex.
+- Decision: Run the existing QC cleanup pipeline on a copy before direct
+  `QCProgram` export. Rationale: Dead importer scaffolding should be removed by
+  MLIR passes, not by a recursive exporter heuristic, while the caller's QC
+  program and the low-level translator's strict validation contract remain
+  unchanged. Date/Author: 2026-08-04 / Codex.
 - Decision: Split the modern OpenQASM translations into
   `MLIRQCOpenQASMTranslation` and retain the legacy circuit translations in
   `MLIRQCTranslation`. Rationale: Compiler clients can use either OpenQASM
@@ -161,17 +190,17 @@ printable scalar expressions, and structured SCF control with simultaneous
 state-update semantics. Extended gates are emitted as focused private
 definitions only when used.
 
-The importer adds only optional output name/kind result attributes. Ordinary
-MLIR attribute transport carries them through QC/QCO; modules without hints
-remain exportable where naming and type intent are unambiguous. Dynamic indices,
-runtime safety machinery, arbitrary CFGs, and other deliberately unsupported
-categories fail with location-based diagnostics before buffered output is
-committed.
+The importer retains output names and only the scalar-bit and unsigned-integer
+kind distinctions that QC otherwise erases. Ordinary MLIR result-attribute
+transport carries them through QC/QCO; the exporter infers the remaining
+supported kinds. Dynamic indices, runtime safety machinery, arbitrary CFGs, and
+other deliberately unsupported categories fail with location-based diagnostics
+before buffered output is committed.
 
 Validation completed after rebasing onto `origin/main` at `2e0778f9d`:
 
 - the complete release build succeeded;
-- all 155 OpenQASM frontend tests, 285 QC translation tests, and 219 compiler
+- all 155 OpenQASM frontend tests, 287 QC translation tests, and 219 compiler
   tests passed in both release and coverage builds;
 - all 40 Python MLIR tests passed, including 14 full-matrix helper-gate
   comparisons and compiler round trips;
@@ -180,7 +209,7 @@ Validation completed after rebasing onto `origin/main` at `2e0778f9d`:
 - Sphinx completed in nitpicky warnings-as-errors mode after generating the MLIR
   reference pages;
 - all changed translation units completed clang-tidy without findings;
-- focused translator line coverage is 92.1% (1016 of 1103 lines), up from 75%;
+- focused translator line coverage is 91.7% (993 of 1083 lines), up from 75%;
 - the repository-wide lint session and `git diff --check` passed;
 - an independent `$mqt-pr-review` pass found no remaining correctness, API,
   documentation, C++20, MLIR-style, or scope findings after its three
@@ -303,10 +332,12 @@ A module with `cf.assert`, live poison, dynamic memref indexing, an unsupported
 type, arbitrary CFG, multiple functions, calls, or an unknown operation fails
 with a location-based diagnostic. The destination stream remains empty.
 
-`QCProgram::toOpenQASM3()` returns an artifact without consuming the QC program.
-`runDefaultPipeline(..., ProgramFormat::OpenQASM3)` returns the artifact after
-the normal QCO optimization round trip. Python exposes the same behaviors and
-`mqt-cc --emit=openqasm3` writes plain text to stdout and files.
+`QCProgram::toOpenQASM3()` runs the existing QC cleanup pipeline on a copy and
+returns an `OpenQASMProgram` without consuming or mutating the QC program.
+`runDefaultPipeline(..., ProgramFormat::OpenQASM3)` returns the textual program
+after the normal QCO optimization round trip. An `OpenQASMProgram` may also be
+passed directly as compiler input and remains reusable. Python exposes the same
+behaviors and `mqt-cc --emit=openqasm3` writes plain text to stdout and files.
 
 The focused native and Python suites pass, generated stubs match the binding,
 documentation builds, lint passes, and `git diff --check` reports no whitespace
@@ -358,7 +389,7 @@ The final C++ translation interface is:
     }
 
 `OpenQASMProgram` owns a `std::string`, provides `source()` and `write(path)`,
-and appears only in `CompilerProgram`, not `CompilerInput`. `QCProgram` provides
+and appears in both `CompilerProgram` and `CompilerInput`. `QCProgram` provides
 `std::optional<OpenQASMProgram> toOpenQASM3() const`.
 
 The translation target may link MLIR Arith, ControlFlow, Func, Math, MemRef,

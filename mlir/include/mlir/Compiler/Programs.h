@@ -114,7 +114,7 @@ private:
 };
 
 /**
- * @brief An owned OpenQASM source artifact.
+ * @brief An owned OpenQASM source program.
  */
 class OpenQASMProgram final {
 public:
@@ -304,7 +304,8 @@ private:
 };
 
 /// Valid input variants for the default compiler pipeline.
-using CompilerInput = std::variant<QCProgram, QCOProgram, JeffProgram>;
+using CompilerInput =
+    std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram>;
 
 /// The program variants returned by the default compiler pipeline.
 using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,

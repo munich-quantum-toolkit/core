@@ -52,6 +52,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -238,12 +239,13 @@ private:
     }
     const auto walkResult = function.walk([&](Operation* operation) {
       if (isa<func::CallOp>(operation)) {
-        fail(operation, "function calls are not supported");
+        std::ignore = fail(operation, "function calls are not supported");
         return WalkResult::interrupt();
       }
       for (Region& region : operation->getRegions()) {
         if (!region.empty() && region.getBlocks().size() != 1) {
-          fail(operation, "multi-block regions are not supported");
+          std::ignore =
+              fail(operation, "multi-block regions are not supported");
           return WalkResult::interrupt();
         }
       }
@@ -275,10 +277,12 @@ private:
       if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
         continue;
       }
-      const auto nameAttr = getResultStringAttr(
-          function, static_cast<unsigned>(index), OPENQASM_OUTPUT_NAME_ATTR);
-      const auto kindAttr = getResultStringAttr(
-          function, static_cast<unsigned>(index), OPENQASM_OUTPUT_KIND_ATTR);
+      const auto nameAttr =
+          getResultStringAttr(function, static_cast<unsigned>(index),
+                              utils::OPENQASM_OUTPUT_NAME_ATTR);
+      const auto kindAttr =
+          getResultStringAttr(function, static_cast<unsigned>(index),
+                              utils::OPENQASM_OUTPUT_KIND_ATTR);
       if (isa<MemRefType>(value.getType())) {
         returnedMemrefs.insert(value);
         continue;
@@ -343,7 +347,7 @@ private:
           if (returnIndex < returnOp.getNumOperands()) {
             if (const auto nameAttr = getResultStringAttr(
                     function, static_cast<unsigned>(returnIndex),
-                    OPENQASM_OUTPUT_NAME_ATTR)) {
+                    utils::OPENQASM_OUTPUT_NAME_ATTR)) {
               requested = nameAttr.getValue();
             }
           }
@@ -358,7 +362,7 @@ private:
         if (returnIndex < returnOp.getNumOperands()) {
           if (const auto kindAttr = getResultStringAttr(
                   function, static_cast<unsigned>(returnIndex),
-                  OPENQASM_OUTPUT_KIND_ATTR)) {
+                  utils::OPENQASM_OUTPUT_KIND_ATTR)) {
             if (kindAttr.getValue() != "bit" &&
                 kindAttr.getValue() != "bit_array") {
               return fail(returnOp, "bit memref output kind must be 'bit' or "
@@ -394,9 +398,9 @@ private:
       return false;
     }
     if (getResultStringAttr(function, static_cast<unsigned>(resultIndex),
-                            OPENQASM_OUTPUT_NAME_ATTR) ||
+                            utils::OPENQASM_OUTPUT_NAME_ATTR) ||
         getResultStringAttr(function, static_cast<unsigned>(resultIndex),
-                            OPENQASM_OUTPUT_KIND_ATTR)) {
+                            utils::OPENQASM_OUTPUT_KIND_ATTR)) {
       return false;
     }
     auto constant = value.getDefiningOp<arith::ConstantOp>();
@@ -437,7 +441,7 @@ private:
               name == "arith.extsi" || name == "arith.fptosi") {
             return std::string("int");
           }
-          return std::string{};
+          return std::string("int");
         })
         .Case<FloatType>([](FloatType type) {
           return type.getWidth() == 64 ? std::string("float") : std::string{};
@@ -603,10 +607,6 @@ private:
 
   [[nodiscard]] LogicalResult
   validateInlineExpressionOperation(Operation& operation) {
-    DenseSet<Operation*> visited;
-    if (isDeadExpressionTree(operation, visited)) {
-      return success();
-    }
     if (operation.getNumResults() == 0) {
       return fail(&operation, "malformed scalar expression operation");
     }
@@ -621,24 +621,6 @@ private:
       }
     }
     return success();
-  }
-
-  [[nodiscard]] static bool
-  isDeadExpressionTree(Operation& operation, DenseSet<Operation*>& visited) {
-    if (!visited.insert(&operation).second) {
-      return true;
-    }
-    for (const auto result : operation.getResults()) {
-      for (Operation* user : result.getUsers()) {
-        const auto name = user->getName().getStringRef();
-        if ((!name.starts_with("arith.") && !name.starts_with("math.")) ||
-            !isMemoryEffectFree(user) ||
-            !isDeadExpressionTree(*user, visited)) {
-          return false;
-        }
-      }
-    }
-    return true;
   }
 
   [[nodiscard]] FailureOr<std::string> emitQubit(const Value value) {
@@ -1596,9 +1578,11 @@ private:
                                 "  h q1;\n"
                                 "}\n"},
         HelperDefinition{"ecr", "gate _mqt_ecr q0, q1 {\n"
-                                "  _mqt_rzx(pi / 4) q0, q1;\n"
+                                "  gphase(-pi / 4);\n"
+                                "  s q0;\n"
+                                "  sx q1;\n"
+                                "  ctrl @ x q0, q1;\n"
                                 "  x q0;\n"
-                                "  _mqt_rzx(-pi / 4) q0, q1;\n"
                                 "}\n"},
         HelperDefinition{"rccx", "gate _mqt_rccx q0, q1, q2 {\n"
                                  "  h q2;\n"
@@ -1647,13 +1631,6 @@ private:
     };
     for (const auto& helper : helpers) {
       if (fixedHelpers.contains(helper.first)) {
-        if (helper.first == "ecr" && !fixedHelpers.contains("rzx")) {
-          const auto* const rzx =
-              llvm::find_if(helpers, [](const auto& candidate) {
-                return candidate.first == "rzx";
-              });
-          stream << rzx->second << '\n';
-        }
         stream << helper.second << '\n';
       }
     }

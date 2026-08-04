@@ -12,9 +12,12 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/Passes.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -68,6 +71,58 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
 }
 
+TEST(OpenQASM3EmissionTest, RetainsOnlyErasedOutputTypeDistinctions) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+output bit measured;
+output bit[1] vector;
+output bool flag;
+output int signed_value;
+output uint unsigned_value;
+output float real;
+qubit q;
+measured = measure q;
+vector[0] = measured;
+flag = true;
+signed_value = 1;
+unsigned_value = 1;
+real = 1.0;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto function = utils::getEntryPoint(*moduleOp);
+  ASSERT_EQ(function.getNumResults(), 6U);
+
+  const auto getResultAttr = [&](const unsigned index,
+                                 const llvm::StringRef name) {
+    return function.getResultAttrDict(index).getAs<StringAttr>(name);
+  };
+  constexpr std::array expectedNames{"measured",     "vector",         "flag",
+                                     "signed_value", "unsigned_value", "real"};
+  for (const auto [index, expected] : llvm::enumerate(expectedNames)) {
+    const auto name = getResultAttr(static_cast<unsigned>(index),
+                                    utils::OPENQASM_OUTPUT_NAME_ATTR);
+    ASSERT_TRUE(name);
+    EXPECT_EQ(name.getValue(), expected);
+  }
+
+  const auto scalarBit = getResultAttr(0, utils::OPENQASM_OUTPUT_KIND_ATTR);
+  const auto unsignedInteger =
+      getResultAttr(4, utils::OPENQASM_OUTPUT_KIND_ATTR);
+  ASSERT_TRUE(scalarBit);
+  ASSERT_TRUE(unsignedInteger);
+  EXPECT_EQ(scalarBit.getValue(), "bit");
+  EXPECT_EQ(unsignedInteger.getValue(), "uint");
+  for (const auto index : {1U, 2U, 3U, 5U}) {
+    EXPECT_FALSE(getResultAttr(index, utils::OPENQASM_OUTPUT_KIND_ATTR));
+  }
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context));
+}
+
 TEST(OpenQASM3EmissionTest, PreservesRepresentativeStructuredControl) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -85,6 +140,7 @@ for int i in [0:2] {
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
@@ -650,7 +706,7 @@ module {
   }
 }
 
-TEST(OpenQASM3EmissionTest, DefinesECRDependencyWhenUsedAlone) {
+TEST(OpenQASM3EmissionTest, DefinesECRWithOneEntanglingGate) {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
                   qc::QCDialect>();
@@ -666,8 +722,31 @@ TEST(OpenQASM3EmissionTest, DefinesECRDependencyWhenUsedAlone) {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_NE(emitted->find("gate _mqt_rzx"), std::string::npos);
+  EXPECT_EQ(emitted->find("gate _mqt_rzx"), std::string::npos);
   EXPECT_NE(emitted->find("gate _mqt_ecr"), std::string::npos);
+  EXPECT_NE(emitted->find("gphase(-pi / 4);"), std::string::npos);
+  EXPECT_EQ(llvm::StringRef(*emitted).count("ctrl @ x"), 1U);
+}
+
+TEST(OpenQASM3EmissionTest, DefaultsSignlessIntegerOutputsToInt) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i64 {
+    %value = arith.constant 1 : i64
+    return %value : i64
+  }
+}
+)mlir";
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("output int _mqt_out0;"), std::string::npos);
 }
 
 TEST(OpenQASM3EmissionTest, EmitsInternalStorageAndSelectTypes) {
@@ -740,12 +819,6 @@ TEST(OpenQASM3EmissionTest, DiagnosesUnsupportedProgramShapesAndTypes) {
                 scf.yield
               }
               return
-            }
-          })mlir"},
-      Fixture{.name = "ambiguous-integer-output", .source = R"mlir(module {
-            func.func @main() -> i64 {
-              %value = arith.constant 1 : i64
-              return %value : i64
             }
           })mlir"},
       Fixture{.name = "conflicting-output-kind", .source = R"mlir(module {
