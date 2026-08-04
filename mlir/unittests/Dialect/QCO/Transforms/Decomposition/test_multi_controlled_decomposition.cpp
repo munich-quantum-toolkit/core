@@ -22,6 +22,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -43,6 +44,7 @@
 #include <numbers>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 using namespace mlir;
@@ -65,7 +67,7 @@ static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
 static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
     21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33};
 
-/// Expected elementary Ctrl@X counts after default `min-controls=2` lowering.
+/// Expected elementary Ctrl@X counts after default `min-qubits=3` lowering.
 /// Indexed by control count `k`; unused slots are zero.
 /// For `5 ≤ k ≤ 32`, MCX uses SP22 MCP(π); each CRX expands to 2 Ctrl@X while
 /// CP stays as Ctrl@P, so elementary CX is `4k² − 8k + 4`. k=33 is the first
@@ -397,11 +399,12 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   dd->decRef(referenceDD);
 }
 
-[[nodiscard]] static size_t countMultiControlledOps(ModuleOp moduleOp,
-                                                    size_t minControls = 2) {
+/// Count `CtrlOp`s whose control operand count is at least @p minControlCount.
+[[nodiscard]] static size_t
+countMultiControlledOps(ModuleOp moduleOp, size_t minControlCount = 2) {
   size_t count = 0;
-  moduleOp.walk([&count, minControls](CtrlOp op) {
-    if (op.getNumControls() >= minControls) {
+  moduleOp.walk([&count, minControlCount](CtrlOp op) {
+    if (op.getNumControls() >= minControlCount) {
       ++count;
     }
   });
@@ -645,26 +648,130 @@ TEST_F(MultiControlledDecompositionTest, DecomposesRCCX) {
   EXPECT_EQ(countRCCXOps(moduleOp.get()), 0U);
 }
 
-TEST_F(MultiControlledDecompositionTest, LeavesRCCXWhenMinControlsIsThree) {
+TEST_F(MultiControlledDecompositionTest, LeavesRCCXWhenMinQubitsIsFour) {
   auto moduleOp = buildRCCXModule(context());
   ASSERT_TRUE(moduleOp);
   DecomposeMultiControlledOptions options;
-  options.minControls = 3;
+  options.minQubits = 4;
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
   EXPECT_EQ(countRCCXOps(moduleOp.get()), 1U);
 }
 
-TEST_F(MultiControlledDecompositionTest, MinControlsThreshold) {
+TEST_F(MultiControlledDecompositionTest, MinQubitsThreshold) {
   auto moduleOp = buildMcxModule(context(), 2);
   ASSERT_TRUE(moduleOp);
   DecomposeMultiControlledOptions options;
-  options.minControls = 3;
+  options.minQubits = 4;
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
   EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 1U);
 
-  options.minControls = 1;
+  options.minQubits = 2;
   EXPECT_FALSE(
       runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+}
+
+TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        std::ignore =
+            builder.cswap(builder.staticQubit(0), builder.staticQubit(1),
+                          builder.staticQubit(2));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+  expectFullyLowered(moduleOp.get());
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectFullyDecomposed(funcOp);
+
+  const auto numQubits = countStaticQubits(funcOp);
+  ASSERT_EQ(numQubits, 3U);
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto decomposedDD = buildFunctionality(funcOp, *dd);
+  ASSERT_TRUE(succeeded(decomposedDD));
+
+  qc::QuantumComputation referenceQc(numQubits);
+  referenceQc.cswap(0, 1, 2);
+  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  EXPECT_EQ(*decomposedDD, referenceDD);
+  dd->decRef(*decomposedDD);
+  dd->decRef(referenceDD);
+}
+
+TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        std::ignore =
+            builder.mcswap({builder.staticQubit(0), builder.staticQubit(1)},
+                           builder.staticQubit(2), builder.staticQubit(3));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+  expectFullyLowered(moduleOp.get());
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectFullyDecomposed(funcOp);
+
+  const auto numQubits = countStaticQubits(funcOp);
+  ASSERT_EQ(numQubits, 4U);
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto decomposedDD = buildFunctionality(funcOp, *dd);
+  ASSERT_TRUE(succeeded(decomposedDD));
+
+  qc::QuantumComputation referenceQc(numQubits);
+  referenceQc.mcswap({0, 1}, 2, 3);
+  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  EXPECT_EQ(*decomposedDD, referenceDD);
+  dd->decRef(*decomposedDD);
+  dd->decRef(referenceDD);
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       LeavesSingleControlledSwapWhenMinQubitsIsFour) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        std::ignore =
+            builder.cswap(builder.staticQubit(0), builder.staticQubit(1),
+                          builder.staticQubit(2));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+  DecomposeMultiControlledOptions options;
+  options.minQubits = 4;
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+
+  size_t controlledSwap = 0;
+  moduleOp->walk([&](CtrlOp op) {
+    if (op.getNumControls() == 1 && op.getNumTargets() == 2) {
+      auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+      if (inner && isa<SWAPOp>(inner.getOperation())) {
+        ++controlledSwap;
+      }
+    }
+  });
+  EXPECT_EQ(controlledSwap, 1U);
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       DecomposesTwoControlledSwapWhenMinQubitsIsFour) {
+  // Two-control SWAP acts on 4 qubits, so min-qubits=4 still rewrites it.
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        std::ignore =
+            builder.mcswap({builder.staticQubit(0), builder.staticQubit(1)},
+                           builder.staticQubit(2), builder.staticQubit(3));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+  DecomposeMultiControlledOptions options;
+  options.minQubits = 4;
+  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+  expectFullyLowered(moduleOp.get());
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectFullyDecomposed(funcOp);
 }
 
 TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
@@ -676,6 +783,10 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
                      builder.staticQubit(5), [&](Value targetArg) -> Value {
                        return builder.y(builder.x(targetArg));
                      });
+        // Two-target non-SWAP body: passes min-qubits but is not lowered.
+        std::ignore =
+            builder.cdcx(builder.staticQubit(6), builder.staticQubit(7),
+                         builder.staticQubit(8));
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
@@ -684,7 +795,14 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
 
   size_t multiOpCtrl = 0;
   size_t mchCount = 0;
+  size_t controlledDcx = 0;
   moduleOp->walk([&](CtrlOp op) {
+    if (op.getNumTargets() == 2) {
+      auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+      if (inner && isa<DCXOp>(inner.getOperation())) {
+        ++controlledDcx;
+      }
+    }
     if (op.getNumControls() < 2) {
       return;
     }
@@ -698,6 +816,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   });
   EXPECT_EQ(multiOpCtrl, 1U);
   EXPECT_EQ(mchCount, 1U);
+  EXPECT_EQ(controlledDcx, 1U);
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
