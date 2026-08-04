@@ -915,3 +915,44 @@ TEST_F(MergeSingleQubitRotationGatesTest,
     }
   });
 }
+
+/**
+ * @brief Two phase-bearing dynamic gates exercise SSA phase accumulation.
+ *
+ * `mergeDynamicChain` seeds `phaseAccum` from the first P/U/U2, then adds each
+ * subsequent contribution via `phaseAccum ? (*phaseAccum + *phase) : phase`.
+ * P(a);P(b) hits that accumulation branch (a single dynamic P cannot).
+ */
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeDynamicPhaseGatesAccumulatesGlobalPhase) {
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.p(0.3, q[0]);
+  q[0] = builder.p(0.4, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+
+  SmallVector<POp> ps;
+  module->walk([&](POp op) { ps.push_back(op); });
+  ASSERT_EQ(ps.size(), 2U);
+  ps[0].getThetaMutable().assign(funcOp.getArgument(0));
+  ps[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<POp>(), 0);
+  EXPECT_GE(countOps<GPhaseOp>(), 1);
+
+  GPhaseOp gOp = nullptr;
+  module->walk([&](GPhaseOp op) {
+    gOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(gOp);
+  // Accumulated input phases depend on both dynamic P angles.
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+}
