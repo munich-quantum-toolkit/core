@@ -33,10 +33,19 @@ def MergeSingleQubitRotationGates
     The gates are then folded one by one via the Hamilton product into a single quaternion, which is decomposed back into ZYZ Euler angles and emitted as a single `UOp`, representing the same rotation as the chain of single gates.
     The global phase of each gate is tracked alongside and combined together.
 
+    When every angle in the chain is a compile-time constant, the same algorithm
+    runs on host scalars (`Val<double>` / STL math) and emits constant `U` /
+    `gphase` results directly. Otherwise it lowers through `arith` / `math`
+    SSA (`Val<Value>`).
+
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
-    Each merge emits a `GPhaseOp` carrying the accumulated input phase of the chain.
-    Because the synthesized `UOp` introduces an additional intrinsic phase of $(\phi + \lambda) / 2$, the `GPhaseOp` must compensate for it.
-    This applies even to chains composed entirely of $\mathrm{SU} (2)$ gates (`rx`, `ry`, `rz`, `r`) because the synthesis into a `UOp` still produces the intrinsic phase term.
+    Each merge computes a global-phase correction of
+    $\mathrm{inputPhase} - (\phi + \lambda) / 2$, which compensates for the
+    intrinsic phase of the synthesized `UOp`. This applies even to chains of
+    purely $\mathrm{SU} (2)$ gates (`rx`, `ry`, `rz`, `r`).
+    On the host (static) path, a near-zero correction may be omitted; on the
+    SSA (dynamic) path a `GPhaseOp` is always emitted and may later be removed
+    by global-phase normalization when it folds to near zero.
   }];
 }
 

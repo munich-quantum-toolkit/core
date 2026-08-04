@@ -66,7 +66,7 @@ releases may include breaking changes.
   ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
   rotation gates using quaternions ([#1407], [#1674], [#2002]) ([**@J4MMlE**],
-  [**@denialhaag**], [**@MatthiasReumann**])
+  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
   [**@burgholzer**])

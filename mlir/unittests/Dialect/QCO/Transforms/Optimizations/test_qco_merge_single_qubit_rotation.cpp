@@ -15,12 +15,14 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
@@ -88,6 +90,25 @@ protected:
       }
     }
     return std::nullopt;
+  }
+
+  /// True if `v`'s use-def cone reaches `target` (e.g. a function argument).
+  static bool valueDependsOn(Value v, Value target) {
+    DenseSet<Value> visited;
+    SmallVector<Value> worklist{v};
+    while (!worklist.empty()) {
+      Value cur = worklist.pop_back_val();
+      if (cur == target) {
+        return true;
+      }
+      if (!visited.insert(cur).second) {
+        continue;
+      }
+      if (Operation* def = cur.getDefiningOp()) {
+        worklist.append(def->operand_begin(), def->operand_end());
+      }
+    }
+    return false;
   }
 
   /**
@@ -815,15 +836,14 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
  * @brief Pure-Z merges must preserve RZ(a);RZ(b) ≡ U(0, a+b, 0) (up to
  * gphase).
  *
- * Consecutive RZ gates previously failed gphase verification when MLIR's
- * math.atan2 constant folder returned NaN for both-zero operands (unlike
- * IEEE libm). With only a NaN guard, slight beta FP drift can still select the
- * beta≈π gimbal formula and collapse the Z angle to 0.
+ * Fully static chains use the shared `Val<double>` merge path, so singular
+ * atan2 cases and tiny beta drift cannot poison gphase or split the Z angle
+ * across phi/lambda.
  */
 TEST_F(MergeSingleQubitRotationGatesTest,
        mergePureZRotationsDoesNotEmitNanGPhase) {
   // Angles like 0.3 are enough for cos^2+sin^2 drift to push |beta| just
-  // above eps while (x,y)≈0.
+  // above eps while (x,y)≈0 if Euler extraction ran only in SSA.
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {0.3}},
                              {.type = GateType::RZ, .angles = {0.3}}})
                   .succeeded());
@@ -838,4 +858,61 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   ASSERT_TRUE(phase.has_value());
   EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
   EXPECT_NEAR(*phase, utils::normalizeAngle(*phase), 1e-8);
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeDynamicAngleRotationsUsesSsaPath) {
+  // Pure-Z chain with unfoldable angle SSA forces Val<Value> merge (not the
+  // host Val<double> path exercised by constant-angle tests above).
+  // RZ(a);RZ(b) → U(0, wrap(a+b), 0) with SSA phi tied to the angle args.
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.rz(0.3, q[0]);
+  q[0] = builder.rz(0.4, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+
+  SmallVector<RZOp> rzs;
+  module->walk([&](RZOp op) { rzs.push_back(op); });
+  ASSERT_EQ(rzs.size(), 2u);
+  rzs[0].getThetaMutable().assign(funcOp.getArgument(0));
+  rzs[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_GE(countOps<GPhaseOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) {
+    uOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(uOp);
+
+  // Dynamic pure-Z merge: phi and gphase are unfoldable SSA that consume both
+  // angle args (not the host constant path).
+  EXPECT_FALSE(utils::valueToConstantDouble(uOp.getPhi()).has_value());
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
+
+  GPhaseOp gOp = nullptr;
+  module->walk([&](GPhaseOp op) {
+    gOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(gOp);
+  EXPECT_FALSE(utils::valueToConstantDouble(gOp.getParameter(0)).has_value());
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+
+  // Guard against atan2(0,0) constant-folder NaNs on the dynamic path.
+  module->walk([](arith::ConstantOp c) {
+    if (auto floatAttr = dyn_cast<FloatAttr>(c.getValue())) {
+      EXPECT_FALSE(std::isnan(floatAttr.getValueAsDouble()));
+    }
+  });
 }
