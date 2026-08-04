@@ -14,7 +14,7 @@ releases may include breaking changes.
 
 - ✨ Add a modern PennyLane device for gate-based QDMI providers with OpenQASM
   3-first conversion, an OpenQASM 2 fallback, and a DDSIM QAOA demonstration
-  ([**@burgholzer**])
+  ([#2005]) ([**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
   conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -716,6 +716,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999
 [#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
