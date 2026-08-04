@@ -59,8 +59,14 @@ than retaining its historical merge-heavy implementation.
       a provider-disabled compiler build, authoritative stub generation, strict
       warning-free documentation, changed-source clang-tidy, repository lint,
       and `git diff --check`.
-- [ ] Commit the validated implementation, complete an independent exact-head
-      review, and address every material finding.
+- [x] (2026-08-04) Committed the initial implementation and completed two
+      independent exact-head reviews. Both identified the same ordered-site
+      widening bug; the adapter now rejects one-way directional operations,
+      preserves two-way ordered calibration, and retains IQM's symmetric CZ
+      convention. All 223 compiler tests, ten focused adapter/CLI CTests,
+      changed-source clang-tidy, repository lint, and `git diff --check` pass.
+- [ ] Commit the reviewed ordered-site fix and complete a fresh independent
+      exact-head verification with no material findings.
 - [ ] Rewrite the existing PR branch with an exact force-with-lease, replace the
       obsolete PR description, verify the replacement head, and monitor CI.
 
@@ -106,6 +112,13 @@ than retaining its historical merge-heavy implementation.
   exposed that provider-backed test sources and runtime copying must be
   conditional. The compiler test target now builds without provider libraries,
   while normal CI retains full live-device coverage.
+- Observation: QDMI operation site tuples are ordered, while the compiler
+  deliberately models an undirected topology and homogeneous bidirectional gate
+  support. Canonicalizing a one-way two-qubit site list would silently widen the
+  device contract. The adapter must require both orientations for directional
+  and unknown operations while allowing proven operand-symmetric gates such as
+  CZ to report each edge once. Missing two-qubit site information is likewise
+  insufficient when a device reports an explicit topology.
 
 ### Decision Log
 
@@ -128,6 +141,11 @@ than retaining its historical merge-heavy implementation.
   represents one target-wide gate set; silently widening a restricted QDMI
   operation would allow synthesis to emit an unsupported gate. Date/Author:
   2026-08-04, GPT-5.6 via Codex.
+- Decision: accept one reported orientation only for a conservative set of
+  operand-swap-invariant gates and require both ordered tuples for every site
+  pair otherwise. Rationale: this preserves IQM's symmetric CZ data without
+  misrepresenting directional or unknown QDMI operations as bidirectional.
+  Date/Author: 2026-08-04, GPT-5.6 via Codex.
 - Decision: expose `CompilerTarget.from_device(device)` from `mqt.core.mlir`,
   not `Device.target()` from `mqt.core.fomac`. Rationale: CoreFoMaC and its
   binding remain independent of MLIR, target ownership is visible in the
@@ -181,11 +199,14 @@ real integration test found and fixed a pass-ordering bug in the merged target
 pipeline: generic canonicalization now runs before native synthesis, while
 conformance remains the final semantic check.
 
-The source-build C++ and CLI workflows and packaged Python workflow are proven.
-A distributable MLIR C++ SDK remains a separate packaging concern because the
-current repository does not export the compiler dialects, generated headers, or
-pipeline dependency closure. Independent exact-head review and publication are
-still pending.
+Independent review additionally found and corrected one ordered-QDMI-site
+widening bug at the adapter boundary. Directional and unknown operations now
+prove both orientations on every supported pair; operand-symmetric gates retain
+their compact one-tuple-per-edge representation. The source-build C++ and CLI
+workflows and packaged Python workflow are proven. A distributable MLIR C++ SDK
+remains a separate packaging concern because the current repository does not
+export the compiler dialects, generated headers, or pipeline dependency closure.
+Fresh exact-head verification and publication are still pending.
 
 ### Context and Orientation
 
@@ -345,7 +366,9 @@ set, and calibration coverage from #1992. The adapter tests must prove:
    destroyed.
 4. A circuit-model device without topology becomes all-to-all.
 5. Site-dependent operation support fails rather than being widened.
-6. Neutral-atom zone models fail with a precise circuit-model diagnostic.
+6. One-way directional operation support fails, while both ordered orientations
+   and their distinct calibration survive conversion.
+7. Neutral-atom zone models fail with a precise circuit-model diagnostic.
 
 The Python tests must prove direct construction, immutable metadata access,
 `from_device`, detached lifetime, `compile_for_target`, and optional-target
@@ -396,9 +419,8 @@ then use a newly verified exact lease. Never use an unqualified force push.
 
 The historical PR head `dd9619bd27a34ced8ed68a4ee4533cb85771f144` is evidence
 only. No historical commit or implementation file should be cherry-picked. The
-useful prerequisite behavior is already merged through PRs #1992, #1993, #1997,
-
-## 1998, and #1999
+useful prerequisite behavior is already merged through PRs `#1992`, `#1993`,
+`#1997`, `#1998`, and `#1999`.
 
 The unresolved historical review threads map either to those merged
 prerequisites or to this slice's adapter, bindings, CLI, and workflow

@@ -1,7 +1,7 @@
 {
   "schema-version": 1,
-  "name": "Heterogeneous SC Test Device",
-  "numQubits": 3,
+  "name": "One-way SC Test Device",
+  "numQubits": 2,
   "durationUnit": {
     "unit": "ns",
     "scaleFactor": 1.0
@@ -10,10 +10,7 @@
     "defaults": {},
     "overrides": []
   },
-  "couplings": [
-    [0, 1],
-    [1, 2]
-  ],
+  "couplings": [[0, 1]],
   "operations": [
     {
       "name": "r",
@@ -21,7 +18,7 @@
       "numParameters": 2
     },
     {
-      "name": "cz",
+      "name": "cx",
       "numQubits": 2,
       "numParameters": 0,
       "sites": [[0, 1]]

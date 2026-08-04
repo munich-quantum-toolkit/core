@@ -15,6 +15,7 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/StringSwitch.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -81,6 +82,15 @@ allToAllCouplingCount(const size_t numSites) {
   return first * second;
 }
 
+[[nodiscard]] static bool
+isSwapInvariantOperation(const llvm::StringRef operationName) {
+  const auto canonicalName = operationName.trim().lower();
+  return llvm::StringSwitch<bool>(canonicalName)
+      .Cases("cz", "swap", "iswap", true)
+      .Cases("rxx", "ryy", "rzz", true)
+      .Default(false);
+}
+
 static void validateHomogeneousSupport(
     const fomac::Operation& operation, const size_t arity,
     const std::optional<std::vector<fomac::Site>>& flattenedSites,
@@ -88,6 +98,12 @@ static void validateHomogeneousSupport(
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
   if (!flattenedSites) {
+    if (arity == 2 && couplings) {
+      rejectNonHomogeneousOperation(
+          deviceName, operation.getName(),
+          "the device reports an explicit topology but no ordered two-qubit "
+          "site support");
+    }
     return;
   }
   const auto operationName = operation.getName();
@@ -153,21 +169,31 @@ static void validateHomogeneousSupport(
           deviceName, operationName,
           "the operation is not available on every all-to-all site pair");
     }
-    return;
+  } else {
+    llvm::DenseSet<CompilerTarget::Coupling> expectedCouplings;
+    expectedCouplings.reserve(couplings->size());
+    for (const auto& [first, second] : *couplings) {
+      expectedCouplings.insert(canonicalCoupling(first, second));
+    }
+    if (supportedCouplings.size() != expectedCouplings.size() ||
+        !std::ranges::all_of(expectedCouplings, [&](const auto& coupling) {
+          return supportedCouplings.contains(coupling);
+        })) {
+      rejectNonHomogeneousOperation(
+          deviceName, operationName,
+          "the operation is not available on every topology edge");
+    }
   }
 
-  llvm::DenseSet<CompilerTarget::Coupling> expectedCouplings;
-  expectedCouplings.reserve(couplings->size());
-  for (const auto& [first, second] : *couplings) {
-    expectedCouplings.insert(canonicalCoupling(first, second));
-  }
-  if (supportedCouplings.size() != expectedCouplings.size() ||
-      !std::ranges::all_of(expectedCouplings, [&](const auto& coupling) {
-        return supportedCouplings.contains(coupling);
+  if (!isSwapInvariantOperation(operationName) &&
+      !std::ranges::all_of(supportedCouplings, [&](const auto& coupling) {
+        return reportedTuples.contains(coupling) &&
+               reportedTuples.contains(
+                   CompilerTarget::Coupling{coupling.second, coupling.first});
       })) {
     rejectNonHomogeneousOperation(
         deviceName, operationName,
-        "the operation is not available on every topology edge");
+        "both orientations must be available on every supported site pair");
   }
 }
 

@@ -90,7 +90,9 @@ if (!qco || !qco->compileForTarget(target)) {
 }
 ```
 
-The adapter accepts circuit-model devices. Neutral-atom zone models require a
+The adapter accepts circuit-model devices whose operations are available
+throughout the topology in both operand orientations. Operand-symmetric gates,
+such as CZ, may report each edge once. Neutral-atom zone models require a
 different compilation model and are rejected with a diagnostic.
 
 The bundled Garnet and Emerald snapshots contain available T1, T2, and fidelity

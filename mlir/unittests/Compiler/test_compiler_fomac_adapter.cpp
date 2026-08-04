@@ -14,6 +14,7 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 
@@ -106,6 +107,40 @@ TEST(CompilerFoMaCAdapterTest, RejectsNonhomogeneousOperationSupport) {
     EXPECT_NE(std::string(error.what()).find("every topology edge"),
               std::string::npos);
   }
+}
+
+TEST(CompilerFoMaCAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
+      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
+  const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
+  try {
+    const auto target = mlir::compilerTargetFromDevice(device);
+    FAIL() << "Expected a bidirectional-operation diagnostic, got "
+           << target.operations().size() << " target operations";
+  } catch (const std::invalid_argument& error) {
+    EXPECT_NE(std::string(error.what()).find("both orientations"),
+              std::string::npos);
+  }
+}
+
+TEST(CompilerFoMaCAdapterTest,
+     PreservesDirectionalCalibrationWhenBothOrientationsExist) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
+      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
+  const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
+  const auto target = mlir::compilerTargetFromDevice(device);
+
+  ASSERT_EQ(target.couplings().size(), 1);
+  const auto& cx = findOperation(target, "cx");
+  ASSERT_EQ(cx.siteTuples().size(), 2);
+  EXPECT_EQ(cx.siteTuples()[0].sites(),
+            (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_DOUBLE_EQ(*cx.siteTuples()[0].fidelity(), 0.91);
+  EXPECT_EQ(cx.siteTuples()[1].sites(),
+            (llvm::ArrayRef<CompilerTarget::SiteId>{1, 0}));
+  EXPECT_DOUBLE_EQ(*cx.siteTuples()[1].fidelity(), 0.92);
 }
 
 TEST(CompilerFoMaCAdapterTest, RejectsNeutralAtomZoneModels) {
