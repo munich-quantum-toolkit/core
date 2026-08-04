@@ -1,12 +1,113 @@
-# OpenQASM input
+# OpenQASM input and output
 
 The compiler reads a supported subset of OpenQASM 3 through a staged lexer,
 parser, and semantic analyzer, then emits the QC dialect directly. The
 [OpenQASM live specification](https://openqasm.com/index.html) defines the
-language; this page records the subset implemented by MQT Core. OpenQASM is an
-input language, not an intermediate dialect: a successful translation contains
-QC and standard MLIR operations only. Translation fails before returning a
-module when the QC target cannot represent an accepted source feature.
+language; this page records the subset implemented by MQT Core. The compiler can
+also emit OpenQASM 3.1 from QC after optimization or directly from a
+{code}`mlir::QCProgram`. OpenQASM remains a boundary format rather than an
+intermediate dialect: compilation uses QC, QCO, and standard MLIR operations
+internally.
+
+## OpenQASM emission
+
+The QC exporter is independent of the legacy QASM importer and circuit IR. It
+prints validated QC and SCF operations directly and buffers the complete source
+before writing it. A failed translation therefore never leaves partial OpenQASM
+in the destination stream.
+
+The public C++ translation functions support strings and arbitrary LLVM output
+streams:
+
+```cpp
+#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+
+auto source = mlir::qc::translateQCToOpenQASM3(moduleOp);
+if (mlir::failed(source)) {
+  // The diagnostic identifies the unsupported operation and its location.
+}
+```
+
+The compiler API wraps successful output in an {code}`mlir::OpenQASMProgram`:
+
+```cpp
+auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
+auto direct = qc->toOpenQASM3(); // Does not consume or optimize qc.
+direct->write("direct.qasm");
+
+auto optimized = mlir::runDefaultPipeline(
+    mlir::CompilerInput{std::move(*qc)}, mlir::ProgramFormat::OpenQASM3);
+```
+
+Python exposes the same two paths:
+
+```python
+from mqt.core.mlir import OutputFormat, QCProgram, compile_program
+
+qc = QCProgram.from_qasm_file("input.qasm")
+direct = qc.to_openqasm3()
+print(direct.source)
+direct.write("direct.qasm")
+
+optimized = compile_program("input.qasm", output=OutputFormat.OPENQASM3)
+optimized.write("optimized.qasm")
+```
+
+The command-line driver writes OpenQASM to standard output by default or to the
+file passed with {code}`-o`:
+
+```console
+mqt-cc input.qasm --emit=openqasm3
+mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
+```
+
+The compiler-pipeline path runs the selected target compilation, the QCO
+optimization pipeline, and QCO-to-QC conversion before emission. Calling
+{py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` or
+{code}`mlir::QCProgram::toOpenQASM3` emits the current QC program without that
+optimization round trip.
+
+### Emission and round-trip support
+
+| QC or MLIR concept                         | Emission support                                                                       | Round-trip notes                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Logical and physical qubits                | Scalar and static rank-one registers; physical qubits use {code}`$N`                   | Mixing allocation modes remains subject to the QC verifier                                                     |
+| Measurement, reset, barrier                | Supported                                                                              | Bit outputs retain their scalar or register shape                                                              |
+| Standard and extended QC gates             | Supported                                                                              | Extended gates receive focused private definitions under the {code}`_mqt_` prefix                              |
+| {code}`ctrl`, {code}`inv`, and {code}`pow` | Supported, including multi-operation regions through generated private gates           | Modifier regions must contain only unitary operations and printable scalar expressions                         |
+| Arithmetic, comparisons, casts, and math   | {code}`i1`, {code}`i64`, {code}`f64`, and internal {code}`index` values                | Explicit cast expressions are valid OpenQASM 3.1 output, but the current input grammar does not yet parse them |
+| {code}`scf.if` and {code}`arith.select`    | Supported with result variables declared before the branch                             | Selects are materialized as structured {code}`if`/{code}`else`                                                 |
+| {code}`scf.for`                            | Constant bounds and a positive constant step                                           | MLIR's exclusive upper bound is rendered as an inclusive OpenQASM range                                        |
+| {code}`scf.while`                          | Side-effect-free printable conditions, unchanged forwarding, and type-preserving state | Loop-carried scalar and bit state uses temporary next-state values                                             |
+| {code}`scf.index_switch`                   | Deterministic nested {code}`if`/{code}`else` blocks                                    | Case and default results are assigned to variables declared outside the chain                                  |
+| Multiple classical results                 | Supported                                                                              | Import metadata preserves valid output names and {code}`bit`, {code}`bool`, signed, and float kinds            |
+| Runtime safety machinery                   | Deliberately unsupported                                                               | Surviving assertions, checked-index scaffolding, or live poison values cause an explicit diagnostic            |
+| Dynamic indices and ranges                 | Unsupported                                                                            | Constant folding may remove the dynamic machinery before emission; no unsafe approximation is emitted          |
+
+The exporter emits {code}`OPENQASM 3.1;` and {code}`include "stdgates.inc";`. It
+uses standard gates where possible and defines only the extended gates used by
+the program. Generated qubit, temporary, and helper identifiers use a
+collision-safe {code}`_mqt_` prefix. Valid output names recorded by the importer
+are retained. Scalar declarations use the unsized OpenQASM {code}`bool`,
+{code}`int`, {code}`uint`, and {code}`float` types. Result metadata must agree
+with the MLIR result type. Without metadata, a user-visible signless {code}`i64`
+result is accepted only when an explicitly signed or unsigned operation
+determines its OpenQASM type; otherwise emission diagnoses the ambiguity.
+
+Emission accepts exactly one defined, argument-free function. It rejects calls,
+arbitrary CFGs, multi-block SCF regions, dynamic memory indices or loop ranges,
+general memrefs, unsupported integer widths, packed bit-vector operations,
+unknown operations, and non-unitary modifier contents. Diagnostics are attached
+to the relevant MLIR location. Dead side-effect-free arithmetic left behind by
+the frontend may be omitted because it cannot affect the emitted program.
+
+Practical programs with static qubit and bit indices round-trip through the
+strict OpenQASM frontend. The exporter does not recognize or reverse the
+frontend's runtime bounds-check and checked-arithmetic machinery. If this
+machinery survives optimization, emission fails instead of producing a
+potentially different program. Cast-containing output is standards-compliant,
+but is not part of this strict round-trip subset until the input grammar gains
+explicit type-cast syntax.
 
 ## Parser and semantic support
 

@@ -20,6 +20,7 @@
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
@@ -212,6 +213,32 @@ Program::Storage Program::releaseStorage() && {
 }
 
 //===----------------------------------------------------------------------===//
+// OpenQASMProgram
+//===----------------------------------------------------------------------===//
+
+const std::string& OpenQASMProgram::source() const noexcept { return source_; }
+
+const std::string& OpenQASMProgram::str() const noexcept { return source_; }
+
+bool OpenQASMProgram::write(const std::filesystem::path& path) const {
+  std::error_code error;
+  llvm::raw_fd_ostream stream(path.string(), error, llvm::sys::fs::OF_Text);
+  if (error) {
+    llvm::errs() << "failed to open OpenQASM output file '" << path.string()
+                 << "': " << error.message() << '\n';
+    return false;
+  }
+  stream << source_;
+  stream.flush();
+  if (stream.has_error()) {
+    llvm::errs() << "failed to write OpenQASM output file '" << path.string()
+                 << "'\n";
+    return false;
+  }
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
 // QCProgram
 //===----------------------------------------------------------------------===//
 
@@ -279,6 +306,14 @@ bool QCProgram::cleanup() {
 
 bool QCProgram::normalizeGlobalPhases() {
   return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+}
+
+std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
+  auto source = qc::translateQCToOpenQASM3(mod());
+  if (failed(source)) {
+    return std::nullopt;
+  }
+  return OpenQASMProgram(std::move(*source));
 }
 
 std::optional<QCOProgram> QCProgram::intoQCO() && {
@@ -607,7 +642,8 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
       (output == ProgramFormat::QCImport || output == ProgramFormat::QCO ||
        output == ProgramFormat::Jeff)) {
     llvm::errs()
-        << "a compiler target requires QCOOptimized, QC, or QIR output.\n";
+        << "a compiler target requires QCOOptimized, QC, OpenQASM3, or QIR "
+           "output.\n";
     return std::nullopt;
   }
   if (target != nullptr && qcoPipeline != "mqt-qco-default") {
@@ -675,6 +711,13 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
   }
   if (output == ProgramFormat::QC) {
     return CompilerProgram(std::move(*qc));
+  }
+  if (output == ProgramFormat::OpenQASM3) {
+    auto openQASM = qc->toOpenQASM3();
+    if (!openQASM) {
+      return std::nullopt;
+    }
+    return CompilerProgram(std::move(*openQASM));
   }
 
   const auto profile = output == ProgramFormat::QIRAdaptive

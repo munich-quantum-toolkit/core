@@ -13,6 +13,8 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -190,10 +192,47 @@ public:
     if (emissionBudget.isExhausted()) {
       return nullptr;
     }
+    annotateOutputs(*moduleOp);
     return moduleOp;
   }
 
 private:
+  void annotateOutputs(ModuleOp moduleOp) {
+    auto mainFunc = utils::getEntryPoint(moduleOp);
+    for (const auto [index, output] : llvm::enumerate(program.outputs)) {
+      StringRef name;
+      StringRef kind;
+      if (output.kind == frontend::OutputKind::BitRegister) {
+        const auto& declaration = program.registers.at(output.symbol);
+        name = declaration.name;
+        kind = declaration.isScalar ? "bit" : "bit_array";
+      } else {
+        const auto& declaration = program.scalars.at(output.symbol);
+        name = declaration.name;
+        switch (declaration.type) {
+        case frontend::ScalarType::Bool:
+          kind = "bool";
+          break;
+        case frontend::ScalarType::Int:
+          kind = "int";
+          break;
+        case frontend::ScalarType::Uint:
+          kind = "uint";
+          break;
+        case frontend::ScalarType::Float:
+        case frontend::ScalarType::Angle:
+          kind = "float";
+          break;
+        }
+      }
+      NamedAttrList attrs(mainFunc.getResultAttrDict(index));
+      attrs.set(OPENQASM_OUTPUT_NAME_ATTR, builder.getStringAttr(name));
+      attrs.set(OPENQASM_OUTPUT_KIND_ATTR, builder.getStringAttr(kind));
+      mainFunc.setResultAttrs(static_cast<unsigned>(index),
+                              attrs.getDictionary(builder.getContext()));
+    }
+  }
+
   // The engine cannot exist without the program and context that outlive it.
   const oq3::frontend::TypedProgram&
       program; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
