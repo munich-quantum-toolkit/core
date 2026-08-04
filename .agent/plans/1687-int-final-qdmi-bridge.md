@@ -25,10 +25,10 @@ circuit sites only. CoreFoMaC remains MLIR-free, `MQTCompilerTarget` remains
 FoMaC/QDMI/CoreIR-free, and no second target DTO or dynamic driver boundary is
 introduced.
 
-The observable proof combines focused adapter tests, Python target construction
-and compilation tests, and a minimal `mqt-cc` device workflow. The existing pull
-request is then rewritten from current `main` as this thin integration rather
-than retaining its historical merge-heavy implementation.
+The observable proof combines focused adapter tests and Python target
+construction and compilation tests. The existing pull request is then rewritten
+from current `main` as this thin integration rather than retaining its
+historical merge-heavy implementation.
 
 ### Progress
 
@@ -98,6 +98,13 @@ than retaining its historical merge-heavy implementation.
 - [x] (2026-08-04) Completed an independent exact-diff review with no actionable
       findings, then regenerated the release build from the current CMake
       sources and repeated the complete affected suites.
+- [x] (2026-08-04) Removed the four `mqt-cc` subprocess tests and their
+      fixtures, leaving the optional tool outside the compiler unit-test
+      dependency graph. Restored Release documentation builds, reused the
+      documentation environment, and generated `htmlzip` from the existing HTML
+      output instead of compiling and rendering the docs twice. Retained a fresh
+      Sphinx environment because the custom C++ API domain caches each
+      regenerated Doxygen inventory.
 - [ ] Publish the streamlined test revision and monitor its replacement exact
       head.
 
@@ -209,7 +216,9 @@ than retaining its historical merge-heavy implementation.
   Rationale: this respects the established test layout and proves only option
   parsing, registry selection, and one compilation workflow without promoting
   the optional LLVM tool into every default build. Date/Author: 2026-08-04,
-  GPT-5.6 via Codex.
+  GPT-5.6 via Codex. Superseded on 2026-08-04: the subprocess coverage and its
+  build dependency added more CMake complexity than useful independent
+  assurance, so the tests and fixtures were removed at maintainer request.
 - Decision: perform generic QCO cleanup before target-native synthesis, retain
   only CSE and dead-value cleanup afterward, and run conformance last.
   Rationale: no target-independent canonicalizer may reintroduce a gate outside
@@ -231,7 +240,8 @@ than retaining its historical merge-heavy implementation.
   positive contracts, existing negative adapter tests exercise one shared
   exception path, and the CLI does not gain redundant tests for every
   combination of equivalent option errors. Date/Author: 2026-08-04, GPT-5.6 via
-  Codex.
+  Codex. Superseded on 2026-08-04 by the later decision to remove all `mqt-cc`
+  subprocess checks and their unit-test build dependency.
 - Decision: retain the three provider build options for embedded and other
   non-test consumers, but require every bundled provider when
   `BUILD_MQT_CORE_TESTS` is enabled. Rationale: the full suite can register its
@@ -248,10 +258,10 @@ than retaining its historical merge-heavy implementation.
 
 The implementation is complete and locally validated. It adds one detached
 adapter rather than another target model, one Python target type, three CLI
-options, four irreducible subprocess checks, and no compatibility surface. The
-real integration test found and fixed a pass-ordering bug in the merged target
-pipeline: generic canonicalization now runs before native synthesis, while
-conformance remains the final semantic check.
+options, and no compatibility surface. The real integration test found and fixed
+a pass-ordering bug in the merged target pipeline: generic canonicalization now
+runs before native synthesis, while conformance remains the final semantic
+check.
 
 Independent review additionally found and corrected one ordered-QDMI-site
 widening bug at the adapter boundary. Directional and unknown operations now
@@ -304,12 +314,12 @@ The Garnet and Emerald configurations are installed from `json/sc/` and are
 registered as `mqt.sc.iqm.garnet` and `mqt.sc.iqm.emerald`. The neutral-atom
 default model is useful only to prove the adapter's explicit zone diagnostic.
 
-This task may add the adapter header, source, library, focused tests, minimal
-CLI tests under the compiler test root, concise compiler/QDMI workflow
-documentation, Python bindings and generated stub updates, the separate
-changelog entry, and this ExecPlan. It must not reimplement the target or
-pipeline, modify CoreFoMaC to depend on MLIR, add a legacy CoreIR dependency to
-the adapter or CLI, or revive historical targeting abstractions.
+This task may add the adapter header, source, library, focused tests, concise
+compiler/QDMI workflow documentation, Python bindings and generated stub
+updates, the separate changelog entry, and this ExecPlan. It must not
+reimplement the target or pipeline, modify CoreFoMaC to depend on MLIR, add a
+legacy CoreIR dependency to the adapter or CLI, or revive historical targeting
+abstractions.
 
 ### Plan of Work
 
@@ -343,8 +353,8 @@ opening devices, open only a selected device, snapshot it through the adapter,
 and pass it to `runDefaultPipeline`. Keep option validation compact and rely on
 the compiler API for target/output and target/custom-pipeline diagnostics. Link
 the tool to the adapter and copy the existing runtime beside it. Add a tiny
-input under `mlir/unittests/Compiler/Inputs` and only the irreducible list,
-unknown-ID, explicit-config, and Garnet compilation checks.
+source-build check by building `mqt-cc`; do not promote the optional tool into
+the compiler unit-test target or add subprocess tests.
 
 Finally document direct C++, Python, and CLI workflows without design history.
 Refer qubit-reuse users to `mqt-qubit-reuse`, link to existing QDMI registry and
@@ -364,10 +374,9 @@ both fail with precise diagnostics.
 
 The second milestone exposes the same owned value through Python and the
 command-line driver. Regenerate `python/mqt/core/mlir.pyi`, run
-`test/python/test_mlir.py`, and execute the four `mqt-cc` CTests. At the end,
-Python can construct or snapshot a target and compile for it, while a
-source-build `mqt-cc` can list devices, apply an explicit registry
-configuration, reject an unknown ID, and compile the Bell program for Garnet.
+`test/python/test_mlir.py`, and build `mqt-cc`. At the end, Python can construct
+or snapshot a target and compile for it, while the command-line integration
+remains available without coupling the optional tool to the unit-test build.
 
 The third milestone proves cohesion and publication readiness. Generate the MLIR
 reference documentation, run strict Sphinx documentation, changed-source
@@ -391,10 +400,10 @@ Build the adapter, compiler tests, MLIR Python extension, and CLI:
       MQTCompilerFoMaCAdapter mqt-core-mlir-unittests-compiler \
       mqt-core-mlir-bindings mqt-cc -j 8
 
-Run focused C++ and CLI CTest selections:
+Run the focused adapter CTest selection:
 
     .agent/run.sh ctest --test-dir build/release \
-      --output-on-failure -R 'CompilerFoMaCAdapter|mqt-cc'
+      --output-on-failure -R 'CompilerFoMaCAdapter'
 
 Run focused Python tests, regenerate the authoritative stub, and build strict
 documentation:
@@ -433,10 +442,6 @@ set, and calibration coverage from #1992. The adapter tests must prove:
 The Python tests must prove direct construction, immutable metadata access,
 `from_device`, detached lifetime, `compile_for_target`, and optional-target
 `compile_program`.
-
-The CLI tests must prove listing devices, unknown identifiers, explicit registry
-configuration, and one successful Garnet compilation. They need not duplicate
-the adapter, mapping, synthesis, conformance, or full compiler suites.
 
 The final revision must build all touched targets, pass the focused and relevant
 complete tests, regenerate stubs without an uncommitted delta, pass strict

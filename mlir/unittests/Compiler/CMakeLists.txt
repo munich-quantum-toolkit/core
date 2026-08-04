@@ -41,35 +41,3 @@ mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler)
 
 gtest_discover_tests(mqt-core-mlir-unittests-compiler PROPERTIES LABELS mqt-mlir-unittests
                                                                  DISCOVERY_TIMEOUT 60)
-
-# `mqt-cc` is normally an optional LLVM tool. Build it only as a dependency of the test target when
-# its irreducible subprocess tests are enabled.
-add_dependencies(mqt-core-mlir-unittests-compiler mqt-cc)
-
-set(mqt_cc_test_input ${CMAKE_CURRENT_SOURCE_DIR}/Inputs/bell.qasm)
-add_test(NAME mqt-cc-qdmi-list COMMAND $<TARGET_FILE:mqt-cc> --qdmi-list-devices)
-set_tests_properties(mqt-cc-qdmi-list PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION
-                                                 "mqt.sc.iqm.garnet")
-
-add_test(
-  NAME mqt-cc-qdmi-explicit-config
-  COMMAND
-    $<TARGET_FILE:mqt-cc>
-    "--qdmi-config=${CMAKE_CURRENT_SOURCE_DIR}/Inputs/mqt-cc-explicit.qdmi.json"
-    --qdmi-list-devices)
-set_tests_properties(
-  mqt-cc-qdmi-explicit-config
-  PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION "mqt.sc.iqm.emerald"
-             FAIL_REGULAR_EXPRESSION "mqt.sc.iqm.garnet")
-
-add_test(NAME mqt-cc-qdmi-unknown COMMAND $<TARGET_FILE:mqt-cc> --qdmi-device=unknown
-                                          ${mqt_cc_test_input})
-set_tests_properties(
-  mqt-cc-qdmi-unknown PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION
-                                 "mqt-cc failed: Unknown QDMI device ID 'unknown'")
-
-add_test(NAME mqt-cc-qdmi-garnet COMMAND $<TARGET_FILE:mqt-cc> --qdmi-device=mqt.sc.iqm.garnet
-                                         --emit=qco-optimized ${mqt_cc_test_input})
-set_tests_properties(
-  mqt-cc-qdmi-garnet PROPERTIES LABELS mqt-mlir-unittests PASS_REGULAR_EXPRESSION "qco.r"
-                                FAIL_REGULAR_EXPRESSION "qco.rx|qco.ry")
