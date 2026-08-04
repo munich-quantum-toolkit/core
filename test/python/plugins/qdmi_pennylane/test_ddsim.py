@@ -10,11 +10,7 @@
 
 from __future__ import annotations
 
-import ast
-import re
-import subprocess
 import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -27,9 +23,10 @@ try:
 except ImportError:
     pytest.skip("Install the PennyLane extra to run these tests.", allow_module_level=True)
 
+import networkx as nx
+
 from mqt.core.plugins.pennylane import DDSIMDevice
 
-ROOT = Path(__file__).parents[4]
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
 
 
@@ -114,39 +111,40 @@ def test_gate_semantics_against_pennylane_reference(operations: list[qp.operatio
 
 
 def test_qaoa_application() -> None:
-    """Run the checked-in finite-shot MaxCut application."""
-    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed interpreter and repository-owned script.
-        [
-            sys.executable,
-            str(ROOT / "docs/_scripts/pennylane_qaoa.py"),
-            "--shots",
-            "200",
-            "--steps",
-            "1",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    """Optimize one finite-shot MaxCut QAOA step through the real QDMI device."""
+    graph = nx.Graph(GRAPH_EDGES)
+    cost_hamiltonian, mixer_hamiltonian = qp.qaoa.maxcut(graph)
+    device = qp.device("mqt.ddsim.default", wires=4, shots=200)
 
-    initial_match = re.search(r"initial cost: ([-+0-9.]+)", completed.stdout)
-    gradient_match = re.search(r"initial gradient: (.+)", completed.stdout)
-    parameters_match = re.search(r"parameters: (.+)", completed.stdout)
-    best = re.search(r"best observed cut: ([01]{4}) \(([0-9]+) edges\)", completed.stdout)
-    jobs_match = re.search(r"QDMI jobs: ([0-9]+)", completed.stdout)
-    assert initial_match is not None
-    assert gradient_match is not None
-    assert parameters_match is not None
-    assert best is not None
-    assert jobs_match is not None
+    def ansatz(parameters: np.ndarray) -> None:
+        for wire in graph.nodes:
+            qp.Hadamard(wire)
+        qp.qaoa.cost_layer(parameters[0], cost_hamiltonian)
+        qp.qaoa.mixer_layer(parameters[1], mixer_hamiltonian)
 
-    initial_cost = float(initial_match.group(1))
-    gradient = ast.literal_eval(gradient_match.group(1))
-    parameters = ast.literal_eval(parameters_match.group(1))
-    jobs = int(jobs_match.group(1))
+    @qp.qnode(device, diff_method="parameter-shift")
+    def cost(parameters: np.ndarray):  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+        ansatz(parameters)
+        return qp.expval(cost_hamiltonian)
+
+    @qp.qnode(device)
+    def sample(parameters: np.ndarray):  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+        ansatz(parameters)
+        return qp.sample(wires=range(4))
+
+    parameters = qp.numpy.array([0.5, 0.5], requires_grad=True)
+    initial_cost = float(cost(parameters))
+    gradient = np.asarray(qp.grad(cost)(parameters), dtype=float)
+    optimized = qp.GradientDescentOptimizer(stepsize=0.15).step(cost, parameters)
+    samples = np.asarray(sample(optimized), dtype=np.int8)
+    bitstrings = {"".join(str(int(bit)) for bit in row) for row in samples}
+    cuts = [sum(bitstring[first] != bitstring[second] for first, second in GRAPH_EDGES) for bitstring in bitstrings]
 
     assert np.isfinite(initial_cost)
     assert np.all(np.isfinite(gradient))
-    assert not np.allclose(parameters, (0.5, 0.5))
-    assert 0 <= int(best.group(2)) <= len(GRAPH_EDGES)
-    assert jobs > 1
+    assert not np.allclose(optimized, parameters)
+    assert samples.shape == (200, 4)
+    assert bitstrings
+    assert all(len(bitstring) == 4 and set(bitstring) <= {"0", "1"} for bitstring in bitstrings)
+    assert all(0 <= cut <= len(GRAPH_EDGES) for cut in cuts)
+    assert device.submitted_jobs > 1

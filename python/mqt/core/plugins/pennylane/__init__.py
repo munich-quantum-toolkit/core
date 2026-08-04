@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""PennyLane devices backed by gate-based QDMI providers."""
+"""PennyLane interface for gate-based QDMI devices."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ..._compat.optional import OptionalDependencyTester
 
 HAS_PENNYLANE = OptionalDependencyTester(  # ruff:ignore[non-empty-init-module] Optional plugin
     "pennylane",
-    install_msg="Install with 'uv add mqt-core[pennylane]'",
+    install_msg="Install with 'uv pip install mqt-core[pennylane]'",
 )
 
 __all__ = ["HAS_PENNYLANE"]
