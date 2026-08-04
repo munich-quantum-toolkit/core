@@ -21,6 +21,8 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -40,6 +42,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -81,6 +84,80 @@ protected:
 };
 
 } // namespace
+
+static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, q] : llvm::enumerate(qubits)) {
+    b.measure(q, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
+
+// DCX and U are the only gates that `FoldPowIntoGate` leaves alone, so they are
+// the only way to get a power modifier past the QCO cleanup pipeline and into
+// the jeff conversion.
+
+static Value powDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto [q0, q1] = b.dcx(qubits[0], qubits[1]);
+    return SmallVector{q0, q1};
+  });
+  return measureToRegister(b, powOut);
+}
+
+static Value powInvDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange invArgs) {
+      auto [q0, q1] = b.dcx(invArgs[0], invArgs[1]);
+      return SmallVector{q0, q1};
+    });
+    return llvm::to_vector(inner);
+  });
+  return measureToRegister(b, powOut);
+}
+
+static Value ctrlPowDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  const auto& [controlsOut, targetsOut] =
+      b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+        auto inner =
+            b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
+              auto [q0, q1] = b.dcx(powArgs[0], powArgs[1]);
+              return SmallVector{q0, q1};
+            });
+        return llvm::to_vector(inner);
+      });
+  return measureToRegister(
+      b, {controlsOut[0], controlsOut[1], targetsOut[0], targetsOut[1]});
+}
+
+static Value ctrlPowInvDcx(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  const auto& [controlsOut, targetsOut] =
+      b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+        auto inner =
+            b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
+              auto invOut =
+                  b.inv({powArgs[0], powArgs[1]}, [&](ValueRange invArgs) {
+                    auto [q0, q1] = b.dcx(invArgs[0], invArgs[1]);
+                    return SmallVector{q0, q1};
+                  });
+              return llvm::to_vector(invOut);
+            });
+        return llvm::to_vector(inner);
+      });
+  return measureToRegister(
+      b, {controlsOut[0], controlsOut[1], targetsOut[0], targetsOut[1]});
+}
+
+static Value powU(qco::QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto powOut =
+      b.pow(3.0, q[0], [&](Value qubit) { return b.u(0.1, 0.2, 0.3, qubit); });
+  return b.measure(powOut).second;
+}
 
 static Value ifWithAngle(qco::QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
@@ -427,6 +504,30 @@ INSTANTIATE_TEST_SUITE_P(
                         "InverseMultipleControlledDCX",
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
+/// @}
+
+/// \name JeffRoundTrip/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOPowOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"PowEvenH", MQT_NAMED_BUILDER(qco::powEvenH),
+                              MQT_NAMED_BUILDER(qco::alloc1QubitRegister)},
+        JeffRoundTripTestCase{"PowOddH", MQT_NAMED_BUILDER(qco::powOddH),
+                              MQT_NAMED_BUILDER(qco::h)},
+        JeffRoundTripTestCase{"PowRxScaled",
+                              MQT_NAMED_BUILDER(qco::powRxScaled),
+                              MQT_NAMED_BUILDER(qco::rxScaled)},
+        JeffRoundTripTestCase{"PowDCX", MQT_NAMED_BUILDER(powDcx),
+                              MQT_NAMED_BUILDER(powDcx)},
+        JeffRoundTripTestCase{"PowInvDCX", MQT_NAMED_BUILDER(powInvDcx),
+                              MQT_NAMED_BUILDER(powInvDcx)},
+        JeffRoundTripTestCase{"CtrlPowDcx", MQT_NAMED_BUILDER(ctrlPowDcx),
+                              MQT_NAMED_BUILDER(ctrlPowDcx)},
+        JeffRoundTripTestCase{"CtrlPowInvDcx", MQT_NAMED_BUILDER(ctrlPowInvDcx),
+                              MQT_NAMED_BUILDER(ctrlPowInvDcx)},
+        JeffRoundTripTestCase{"PowU", MQT_NAMED_BUILDER(powU),
+                              MQT_NAMED_BUILDER(powU)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp
