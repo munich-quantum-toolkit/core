@@ -153,6 +153,10 @@ constants therefore normalize to `int`. Operations whose signedness affects
 their meaning, such as unsigned division, comparison, or conversion, are
 rejected instead of being approximated.
 
+Emitted scalar casts use standard OpenQASM conversion syntax. The MQT Core
+frontend does not yet parse that syntax, so cast-containing output is outside
+the current MQT strict round-trip subset.
+
 ### Export limitations
 
 Export accepts exactly one defined, argument-free function. It rejects calls,
@@ -164,10 +168,10 @@ export subset.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,
-or live poison values cause an explicit diagnostic. Ordinary programs with
-static qubit and bit indices can be exported and parsed again through the strict
-frontend; programs that rely on the input safety machinery must continue through
-another output path such as QIR.
+or live poison values cause an explicit diagnostic. Programs with static qubit
+and bit indices and without scalar casts can be exported and parsed again
+through the strict frontend. Programs that rely on the input safety machinery
+must continue through another output path such as QIR.
 
 :::{important}
 The compiler removes dead code. A circuit that only prepares a state has no

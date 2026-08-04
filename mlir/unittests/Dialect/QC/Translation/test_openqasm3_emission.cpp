@@ -111,6 +111,28 @@ real = 3.0;
   EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithCompatibilityHelpers) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+output bit r;
+qubit q;
+r(0.5, 0.25) q;
+r = measure q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("gate r("), std::string::npos);
+  EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, EmitsStatementOnlyStructuredControl) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";

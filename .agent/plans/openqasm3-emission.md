@@ -88,6 +88,10 @@ instead of reverse-engineering the importer machinery.
 - [x] (2026-08-04 22:53Z) Completed release, coverage, clang-tidy, Python,
       generated-stub, documentation, and repository-lint validation for the
       simplified subset.
+- [x] (2026-08-04 23:08Z) Addressed the fresh independent review by preventing
+      preserved outputs from colliding with compatibility helpers, documenting
+      the frontend's scalar-cast round-trip boundary, and correcting stale
+      acceptance text.
 - [ ] Run a fresh independent review, commit the follow-up with a signature,
       push PR #2003, and refresh its CI and review state.
 
@@ -226,13 +230,14 @@ with location-based diagnostics before buffered output is committed.
 Validation of the simplified subset completed on the follow-up diff:
 
 - the complete release build succeeded;
-- all 157 OpenQASM frontend tests, 277 QC translation tests, and 225 compiler
+- all 157 OpenQASM frontend tests, 278 QC translation tests, and 225 compiler
   tests passed;
 - all 44 Python MLIR tests passed;
 - generated Python stubs completed successfully without a diff;
 - Sphinx completed in nitpicky warnings-as-errors mode;
 - all changed translation and test units completed clang-tidy without findings;
 - focused C++ patch line coverage is 96.8% (60 of 62 instrumented added lines);
+- all five executable lines in the independent-review fix are covered;
 - the repository-wide lint session and `git diff --check` passed.
 
 The complete local coverage build remains blocked while linking an unrelated
@@ -345,11 +350,11 @@ and modifier nesting; helper definitions are compared against the QC unitary,
 including global phase.
 
 Programs with measurement, output values, arithmetic gate parameters, reset,
-barrier, nested conditionals, constant-range loops, while loops, switches, and
-carried scalar/bit state emit structured OpenQASM rather than unrolled or
-flattened control flow. Tests compare observable operations and result kinds
-rather than exact incidental temporary names, while a separate determinism test
-checks byte-identical repeated emission.
+barrier, result-free nested conditionals and switches, constant-range loops
+without iterated state, and zero-state while loops emit structured OpenQASM
+rather than unrolled or flattened control flow. Tests compare observable
+operations and result kinds rather than exact incidental temporary names, while
+a separate determinism test checks byte-identical repeated emission.
 
 A module with `cf.assert`, live poison, dynamic memref indexing, an unsupported
 type, arbitrary CFG, multiple functions, calls, or an unknown operation fails
