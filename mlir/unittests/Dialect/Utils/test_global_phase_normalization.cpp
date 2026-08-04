@@ -39,6 +39,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -49,6 +50,7 @@
 #include <memory>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace mlir;
@@ -895,11 +897,13 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
 TEST_F(GlobalPhaseNormalizationTest,
        ScalesLinearlyAcrossNestedDynamicIntegralPowers) {
   constexpr std::array<std::size_t, 4> depths{128, 256, 512, 1'024};
-  std::vector<std::chrono::nanoseconds> durations;
-  durations.reserve(depths.size());
+  // Depth grows 8× (128 → 1024): linear ≈ 8×, quadratic ≈ 64×. Allow 48× so
+  // noisy debug/CI hosts still pass while a quadratic regression fails.
+  constexpr std::int64_t maxSlowdownVsSmallest = 48;
+  constexpr int trialsPerDepth = 5;
 
-  for (const auto depth : depths) {
-    SCOPED_TRACE(depth);
+  const auto buildNestedPowerModule =
+      [&](const std::size_t depth) -> OwningOpRef<ModuleOp> {
     OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
     OpBuilder builder(context.get());
     builder.setInsertionPointToStart(moduleOp->getBody());
@@ -928,14 +932,31 @@ TEST_F(GlobalPhaseNormalizationTest,
     };
     const auto output = nestPower(entry->getArgument(0), depth);
     func::ReturnOp::create(builder, loc, output);
+    return moduleOp;
+  };
 
-    const auto start = std::chrono::steady_clock::now();
-    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-    durations.emplace_back(std::chrono::steady_clock::now() - start);
-    ASSERT_TRUE(verify(*moduleOp).succeeded());
+  std::vector<std::chrono::nanoseconds> durations;
+  durations.reserve(depths.size());
+
+  for (const auto depth : depths) {
+    SCOPED_TRACE(depth);
+    auto best = std::chrono::nanoseconds::max();
+    OwningOpRef<ModuleOp> lastModuleOp;
+    for (int trial = 0; trial < trialsPerDepth; ++trial) {
+      OwningOpRef moduleOp = buildNestedPowerModule(depth);
+      const auto start = std::chrono::steady_clock::now();
+      ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+      best = std::min(best, std::chrono::steady_clock::now() - start);
+      lastModuleOp = std::move(moduleOp);
+    }
+    durations.emplace_back(best);
+
+    ASSERT_TRUE(lastModuleOp);
+    ASSERT_TRUE(verify(*lastModuleOp).succeeded());
+    auto function = cast<func::FuncOp>(lastModuleOp->getBody()->front());
     EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
     std::size_t multiplications = 0;
-    moduleOp->walk([&](arith::MulFOp) { ++multiplications; });
+    lastModuleOp->walk([&](arith::MulFOp) { ++multiplications; });
     EXPECT_EQ(multiplications, depth);
   }
 
@@ -943,5 +964,6 @@ TEST_F(GlobalPhaseNormalizationTest,
   RecordProperty("nested_pow_256_ns", durations[1].count());
   RecordProperty("nested_pow_512_ns", durations[2].count());
   RecordProperty("nested_pow_1024_ns", durations[3].count());
-  EXPECT_LT(durations.back().count(), durations.front().count() * 24);
+  EXPECT_LT(durations.back().count(),
+            durations.front().count() * maxSlowdownVsSmallest);
 }
