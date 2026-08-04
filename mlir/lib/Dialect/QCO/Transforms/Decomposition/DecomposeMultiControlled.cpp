@@ -1406,7 +1406,7 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
 
   LogicalResult matchAndRewrite(RCCXOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumQubits() < minQubits_) {
+    if (RCCXOp::getNumQubits() < minQubits_) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
