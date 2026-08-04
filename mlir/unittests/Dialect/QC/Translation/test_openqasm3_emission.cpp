@@ -18,6 +18,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -669,6 +670,41 @@ TEST(OpenQASM3EmissionTest, DefinesECRDependencyWhenUsedAlone) {
   EXPECT_NE(emitted->find("gate _mqt_ecr"), std::string::npos);
 }
 
+TEST(OpenQASM3EmissionTest, EmitsInternalStorageAndSelectTypes) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() ->
+      (memref<2xi1> {qc.openqasm.output_kind = "bit_array"}) {
+    %bits = memref.alloc() : memref<2xi1>
+    %condition = arith.constant true
+    %floating = arith.constant 1.0 : f64
+    %selectedBit =
+        arith.select %condition, %condition, %condition : i1
+    %selectedFloat =
+        arith.select %condition, %floating, %floating : f64
+    return %bits : memref<2xi1>
+  }
+}
+)mlir";
+  DialectRegistry registry;
+  registry
+      .insert<arith::ArithDialect, func::FuncDialect, memref::MemRefDialect>();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto allocation = *function.getOps<memref::AllocOp>().begin();
+  allocation->setAttr("mqt.classical_register_name",
+                      StringAttr::get(&context, "scratch"));
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("output bit[2] scratch;"), std::string::npos);
+  EXPECT_NE(emitted->find("bool _mqt_v"), std::string::npos);
+  EXPECT_NE(emitted->find("float _mqt_v"), std::string::npos);
+}
+
 TEST(OpenQASM3EmissionTest, DiagnosesUnsupportedProgramShapesAndTypes) {
   struct Fixture {
     llvm::StringLiteral name;
@@ -680,6 +716,29 @@ TEST(OpenQASM3EmissionTest, DiagnosesUnsupportedProgramShapesAndTypes) {
               .source = "module { func.func private @main() }"},
       Fixture{.name = "entry-arguments", .source = R"mlir(module {
             func.func @main(%value: i64) {
+              return
+            }
+          })mlir"},
+      Fixture{.name = "function-call", .source = R"mlir(module {
+            func.func @main() {
+              func.call @main() : () -> ()
+              return
+            }
+          })mlir"},
+      Fixture{.name = "module-scope-data", .source = R"mlir(module {
+            memref.global "private" @bits : memref<1xi1>
+            func.func @main() {
+              return
+            }
+          })mlir"},
+      Fixture{.name = "multi-block-scf-region", .source = R"mlir(module {
+            func.func @main() {
+              scf.execute_region {
+              ^entry:
+                cf.br ^exit
+              ^exit:
+                scf.yield
+              }
               return
             }
           })mlir"},
@@ -721,6 +780,181 @@ TEST(OpenQASM3EmissionTest, DiagnosesUnsupportedProgramShapesAndTypes) {
                 (memref<2xi1> {qc.openqasm.output_kind = "bit"}) {
               %bits = memref.alloc() : memref<2xi1>
               return %bits : memref<2xi1>
+            }
+          })mlir"},
+      Fixture{.name = "invalid-bit-output-kind", .source = R"mlir(module {
+            func.func @main() ->
+                (memref<1xi1> {qc.openqasm.output_kind = "bool"}) {
+              %bits = memref.alloc() : memref<1xi1>
+              return %bits : memref<1xi1>
+            }
+          })mlir"},
+      Fixture{.name = "returned-memory-view", .source = R"mlir(module {
+            func.func @main() -> memref<?xi1> {
+              %bits = memref.alloc() : memref<2xi1>
+              %view = memref.cast %bits : memref<2xi1> to memref<?xi1>
+              return %view : memref<?xi1>
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-select-type", .source = R"mlir(module {
+            func.func @main() {
+              %condition = arith.constant true
+              %one = arith.constant 1 : i32
+              %value = arith.select %condition, %one, %one : i32
+              return
+            }
+          })mlir"},
+      Fixture{.name = "live-unsupported-expression-type",
+              .source = R"mlir(module {
+            func.func @main() ->
+                (i64 {qc.openqasm.output_kind = "int"}) {
+              %narrow = arith.constant 1 : i32
+              %sum = arith.addi %narrow, %narrow : i32
+              %value = arith.extsi %sum : i32 to i64
+              return %value : i64
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-if-result-type", .source = R"mlir(module {
+            func.func @main() ->
+                (i64 {qc.openqasm.output_kind = "int"}) {
+              %condition = arith.constant true
+              %one = arith.constant 1 : i32
+              %selected = scf.if %condition -> i32 {
+                scf.yield %one : i32
+              } else {
+                scf.yield %one : i32
+              }
+              %value = arith.extsi %selected : i32 to i64
+              return %value : i64
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-if-then-operation", .source = R"mlir(module {
+            func.func @main() {
+              %source = memref.alloc() : memref<1xi1>
+              %target = memref.alloc() : memref<1xi1>
+              %condition = arith.constant true
+              scf.if %condition {
+                memref.copy %source, %target
+                    : memref<1xi1> to memref<1xi1>
+              }
+              return
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-if-else-operation", .source = R"mlir(module {
+            func.func @main() {
+              %source = memref.alloc() : memref<1xi1>
+              %target = memref.alloc() : memref<1xi1>
+              %condition = arith.constant true
+              scf.if %condition {
+              } else {
+                memref.copy %source, %target
+                    : memref<1xi1> to memref<1xi1>
+              }
+              return
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-for-body-operation",
+              .source = R"mlir(module {
+            func.func @main() {
+              %source = memref.alloc() : memref<1xi1>
+              %target = memref.alloc() : memref<1xi1>
+              %zero = arith.constant 0 : index
+              %one = arith.constant 1 : index
+              scf.for %index = %zero to %one step %one {
+                memref.copy %source, %target
+                    : memref<1xi1> to memref<1xi1>
+              }
+              return
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-while-body-operation",
+              .source = R"mlir(module {
+            func.func @main() {
+              %source = memref.alloc() : memref<1xi1>
+              %target = memref.alloc() : memref<1xi1>
+              %initial = arith.constant 0 : i64
+              %result = scf.while (%state = %initial) : (i64) -> i64 {
+                %condition = arith.constant true
+                scf.condition(%condition) %state : i64
+              } do {
+              ^bb0(%state: i64):
+                memref.copy %source, %target
+                    : memref<1xi1> to memref<1xi1>
+                scf.yield %state : i64
+              }
+              return
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-switch-case-operation",
+              .source = R"mlir(module {
+            func.func @main() {
+              %source = memref.alloc() : memref<1xi1>
+              %target = memref.alloc() : memref<1xi1>
+              %index = arith.constant 0 : index
+              scf.index_switch %index
+              case 0 {
+                memref.copy %source, %target
+                    : memref<1xi1> to memref<1xi1>
+                scf.yield
+              }
+              default {
+                scf.yield
+              }
+              return
+            }
+          })mlir"},
+      Fixture{.name = "unsupported-switch-default-operation",
+              .source = R"mlir(module {
+            func.func @main() {
+              %source = memref.alloc() : memref<1xi1>
+              %target = memref.alloc() : memref<1xi1>
+              %index = arith.constant 0 : index
+              scf.index_switch %index
+              case 0 {
+                scf.yield
+              }
+              default {
+                memref.copy %source, %target
+                    : memref<1xi1> to memref<1xi1>
+                scf.yield
+              }
+              return
+            }
+          })mlir"},
+      Fixture{.name = "out-of-bounds-qubit-index", .source = R"mlir(module {
+            func.func @main() {
+              %qubits = memref.alloc() : memref<1x!qc.qubit>
+              %two = arith.constant 2 : index
+              %qubit = memref.load %qubits[%two] : memref<1x!qc.qubit>
+              qc.x %qubit : !qc.qubit
+              return
+            }
+          })mlir"},
+      Fixture{.name = "out-of-bounds-reset", .source = R"mlir(module {
+            func.func @main() {
+              %qubits = memref.alloc() : memref<1x!qc.qubit>
+              %two = arith.constant 2 : index
+              %qubit = memref.load %qubits[%two] : memref<1x!qc.qubit>
+              qc.reset %qubit : !qc.qubit
+              return
+            }
+          })mlir"},
+      Fixture{.name = "out-of-bounds-barrier", .source = R"mlir(module {
+            func.func @main() {
+              %qubits = memref.alloc() : memref<1x!qc.qubit>
+              %two = arith.constant 2 : index
+              %qubit = memref.load %qubits[%two] : memref<1x!qc.qubit>
+              qc.barrier %qubit : !qc.qubit
+              return
+            }
+          })mlir"},
+      Fixture{.name = "out-of-bounds-measurement", .source = R"mlir(module {
+            func.func @main() {
+              %qubits = memref.alloc() : memref<1x!qc.qubit>
+              %two = arith.constant 2 : index
+              %qubit = memref.load %qubits[%two] : memref<1x!qc.qubit>
+              %result = qc.measure %qubit : !qc.qubit -> i1
+              return
             }
           })mlir"},
       Fixture{.name = "packed-integer-bitwise-operation",
@@ -791,8 +1025,9 @@ TEST(OpenQASM3EmissionTest, DiagnosesUnsupportedProgramShapesAndTypes) {
   };
 
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
-                  qc::QCDialect, scf::SCFDialect>();
+  registry
+      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              memref::MemRefDialect, qc::QCDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   for (const auto& fixture : fixtures) {
     SCOPED_TRACE(fixture.name.str());

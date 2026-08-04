@@ -62,6 +62,10 @@ instead of reverse-engineering the importer machinery.
 - [x] (2026-08-04 18:20Z) Revalidated all changed translation units with
       clang-tidy, regenerated Python stubs without a diff, and completed the
       repository lint and warnings-as-errors documentation builds.
+- [x] (2026-08-04 19:35Z) Added targeted emitter boundary tests after the
+      separate Codecov C++ patch check reported 88.1%, raising focused
+      translator line coverage to 92.1% and covering structured-control
+      rejection propagation without broadening the supported subset.
 
 ## Surprises & Discoveries
 
@@ -167,7 +171,7 @@ committed.
 Validation completed after rebasing onto `origin/main` at `2e0778f9d`:
 
 - the complete release build succeeded;
-- all 155 OpenQASM frontend tests, 284 QC translation tests, and 219 compiler
+- all 155 OpenQASM frontend tests, 285 QC translation tests, and 219 compiler
   tests passed in both release and coverage builds;
 - all 40 Python MLIR tests passed, including 14 full-matrix helper-gate
   comparisons and compiler round trips;
@@ -176,7 +180,7 @@ Validation completed after rebasing onto `origin/main` at `2e0778f9d`:
 - Sphinx completed in nitpicky warnings-as-errors mode after generating the MLIR
   reference pages;
 - all changed translation units completed clang-tidy without findings;
-- focused translator line coverage is 89.1% (983 of 1103 lines), up from 75%;
+- focused translator line coverage is 92.1% (1016 of 1103 lines), up from 75%;
 - the repository-wide lint session and `git diff --check` passed;
 - an independent `$mqt-pr-review` pass found no remaining correctness, API,
   documentation, C++20, MLIR-style, or scope findings after its three
