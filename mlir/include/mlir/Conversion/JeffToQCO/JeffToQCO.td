@@ -19,7 +19,6 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
 
     Known limitations:
 
-    - Gates with a non-trivial power are currently not supported
     - Only specific `CustomOp`s are currently supported
     - Only specific `PPROp`s are currently supported
     - Support for multiple functions is currently limited
