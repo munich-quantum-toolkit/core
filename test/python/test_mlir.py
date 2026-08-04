@@ -15,8 +15,10 @@ from pathlib import Path
 import pytest
 from qiskit import QuantumCircuit
 
+from mqt.core.fomac import open_device
 from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import (
+    CompilerTarget,
     JeffProgram,
     OutputFormat,
     QCOProgram,
@@ -285,6 +287,93 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert isinstance(raw, QCOProgram)
     assert isinstance(optimized, QCOProgram)
     assert raw.ir != optimized.ir
+
+
+def _iqm_like_target() -> CompilerTarget:
+    """Construct a two-site target with the IQM gate set.
+
+    Returns:
+        A target with sparse site IDs, one coupling, and the IQM native gates.
+    """
+    return CompilerTarget(
+        "IQM-like target",
+        [
+            CompilerTarget.Site(10, name="QB1"),
+            CompilerTarget.Site(20, name="QB2"),
+        ],
+        couplings=[(10, 20)],
+        operations=[
+            CompilerTarget.Operation("r", 1, 2),
+            CompilerTarget.Operation("cz", 2, 0),
+            CompilerTarget.Operation("measure", 1, 0),
+        ],
+    )
+
+
+def _assert_iqm_native(program: QCOProgram) -> None:
+    """Check target assignment and the IQM native gate set."""
+    assert "qco.static 10" in program.ir
+    assert "qco.static 20" in program.ir
+    assert "qco.r(" in program.ir
+    assert "qco.measure" in program.ir
+    assert "qco.rx" not in program.ir
+    assert "qco.ry" not in program.ir
+
+
+def test_compile_program_for_target() -> None:
+    """Compile through the canonical target pipeline."""
+    result = compile_program(
+        QASM_STRING,
+        output=OutputFormat.QCO_OPTIMIZED,
+        target=_iqm_like_target(),
+    )
+
+    assert isinstance(result, QCOProgram)
+    _assert_iqm_native(result)
+
+
+def test_qco_program_compiles_for_target() -> None:
+    """Expose target compilation on typed QCO programs."""
+    qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+
+    qco.compile_for_target(_iqm_like_target())
+
+    _assert_iqm_native(qco)
+
+
+def test_compiler_target_snapshots_qdmi_device() -> None:
+    """Retain IQM topology and calibration independently of the live device."""
+    target = CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
+
+    assert target.name == "IQM Garnet"
+    assert target.num_qubits == 20
+    assert len(target.couplings) == 30
+    assert target.sites[0].name == "QB1"
+    assert target.sites[0].t1 == 26626
+    assert target.sites[0].t2 == 8376
+    assert target.duration_unit is not None
+    assert target.duration_unit.unit == "us"
+    assert target.duration_unit.scale_factor == pytest.approx(0.001)
+    assert target.supports_operation("r", 1, 2)
+    assert target.supports_operation("cz", 2, 0)
+    assert target.supports_operation("measure", 1, 0)
+    assert not target.supports_operation("rx", 1, 1)
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.R
+    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.CZ
+    assert [operation.name for operation in target.operations] == ["r", "cz", "measure"]
+    assert [len(operation.site_tuples) for operation in target.operations] == [20, 30, 20]
+    assert all(
+        site_tuple.fidelity is not None for operation in target.operations for site_tuple in operation.site_tuples
+    )
+    assert all(site_tuple.duration is None for operation in target.operations for site_tuple in operation.site_tuples)
+
+
+def test_compiler_target_rejects_qdmi_zone_model() -> None:
+    """Reject neutral-atom zones at the circuit-target boundary."""
+    with pytest.raises(ValueError, match="only circuit-model devices"):
+        CompilerTarget.from_device(open_device("mqt.na.default"))
 
 
 def test_qco_program_runs_textual_pipeline() -> None:

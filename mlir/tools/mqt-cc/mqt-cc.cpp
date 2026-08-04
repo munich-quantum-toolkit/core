@@ -8,6 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "fomac/FoMaC.hpp"
+#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -19,6 +22,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
+#include "qdmi/driver/Driver.hpp"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
@@ -53,6 +57,7 @@
 #include <mlir/Target/LLVMIR/Export.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -83,6 +88,21 @@ static llvm::cl::opt<std::string> outputFormat(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
         "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
+
+static llvm::cl::opt<bool>
+    qdmiListDevices("qdmi-list-devices",
+                    llvm::cl::desc("List configured QDMI device IDs and exit"),
+                    llvm::cl::init(false));
+
+static llvm::cl::opt<std::string> qdmiDevice(
+    "qdmi-device",
+    llvm::cl::desc("Compile for the QDMI device with this stable ID"),
+    llvm::cl::value_desc("id"), llvm::cl::init(""));
+
+static llvm::cl::opt<std::string> qdmiConfig(
+    "qdmi-config",
+    llvm::cl::desc("Use an explicit QDMI registry configuration file"),
+    llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
@@ -191,6 +211,27 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
         "this many qubits (default 3; must be at least 3). Higher values leave "
         "narrower gates undecomposed."),
     llvm::cl::init(3));
+
+/**
+ * @brief Configure the QDMI registry before initializing its singleton.
+ */
+static LogicalResult configureQDMIRegistry(const StringRef path) {
+#ifdef _WIN32
+  const auto status =
+      _putenv_s("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str());
+#else
+  // NOLINTBEGIN(misc-include-cleaner)
+  const auto status =
+      setenv("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str(), 1);
+  // NOLINTEND(misc-include-cleaner)
+#endif
+  if (status == 0) {
+    return success();
+  }
+  llvm::errs() << "Failed to configure the QDMI registry from '" << path
+               << "'.\n";
+  return failure();
+}
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -335,6 +376,26 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  if (!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) {
+    return 1;
+  }
+  if (qdmiListDevices) {
+    if (!qdmiDevice.empty()) {
+      llvm::errs()
+          << "--qdmi-list-devices cannot be combined with --qdmi-device.\n";
+      return 1;
+    }
+    for (const auto& id : qdmi::Driver::get().registeredDeviceIds()) {
+      llvm::outs() << id << "\n";
+    }
+    return 0;
+  }
+  if (!qdmiConfig.empty() && qdmiDevice.empty()) {
+    llvm::errs()
+        << "--qdmi-config requires --qdmi-device or --qdmi-list-devices.\n";
+    return 1;
+  }
+
   const auto parsedInputFormat = parseInputFormat(inputFormat, inputFilename);
   if (!parsedInputFormat) {
     llvm::errs() << "Could not determine the input format for '"
@@ -345,6 +406,30 @@ static int runCompiler(int argc, char** argv) {
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
+  }
+
+  std::optional<CompilerTarget> compilerTarget;
+  if (!qdmiDevice.empty()) {
+    if (*parsedOutputFormat == OutputFormat::QCImport ||
+        *parsedOutputFormat == OutputFormat::QCO ||
+        *parsedOutputFormat == OutputFormat::Jeff) {
+      llvm::errs()
+          << "--qdmi-device requires qco-optimized, qc/mlir, qir-base, or "
+             "qir-adaptive output.\n";
+      return 1;
+    }
+    if (passPipeline.hasAnyOccurrences()) {
+      llvm::errs() << "--qdmi-device cannot be combined with --passes.\n";
+      return 1;
+    }
+    if (enableDecomposeMultiControlled) {
+      llvm::errs() << "--qdmi-device cannot be combined with "
+                      "--decompose-multi-controlled; target compilation "
+                      "already performs the required decomposition.\n";
+      return 1;
+    }
+    const auto device = fomac::Session::openDevice(qdmiDevice);
+    compilerTarget.emplace(compilerTargetFromDevice(device));
   }
 
   // Set up MLIR context with all required dialects
@@ -422,6 +507,10 @@ static int runCompiler(int argc, char** argv) {
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO) {
     if (failed(runPasses([&](OpPassManager& pm) {
+          if (compilerTarget) {
+            populateTargetCompilationPipeline(pm, *compilerTarget);
+            return success();
+          }
           populateQCOCleanupPipeline(pm);
           if (passPipeline.hasAnyOccurrences()) {
             if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {

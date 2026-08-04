@@ -1,0 +1,11 @@
+{
+  "schema-version": 1,
+  "qdmi": {
+    "devices": [
+      {
+        "id": "mqt.sc.iqm.garnet",
+        "enabled": false
+      }
+    ]
+  }
+}
