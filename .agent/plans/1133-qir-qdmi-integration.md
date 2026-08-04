@@ -50,7 +50,8 @@ histogram over 1,024 completed shots.
       fixes.
 - [x] (2026-08-04) Independently verified the amended implementation with no
       remaining code, documentation, or test findings.
-- [ ] Publish the reviewed change only after explicit authorization.
+- [x] (2026-08-04) Published pull request #2007 after explicit authorization and
+      added its required changelog entry.
 
 ## Surprises & Discoveries
 
@@ -101,8 +102,9 @@ one narrow integration defect that the existing component-level tests did not
 expose. Topology-free targets now retain physical placement while avoiding
 randomized layout refinement and routing. The target-aware QIR workflow executes
 successfully through DDSIM, and all focused and complete relevant test suites,
-strict documentation, and repository lint pass. Independent review and
-publication remain.
+strict documentation, and repository lint pass. Independent review found no
+remaining actionable issue, and the change was published as pull request #2007
+with `Closes #1133`.
 
 ## Context and Orientation
 

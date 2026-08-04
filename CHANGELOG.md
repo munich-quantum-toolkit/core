@@ -113,6 +113,11 @@ releases may include breaking changes.
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
 
+### Fixed
+
+- 🐛 Keep all-to-all compiler-target placement compact and executable through
+  QIR-backed QDMI devices ([#2007]) ([**@burgholzer**])
+
 ## [3.8.0] - 2026-07-30
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
@@ -716,6 +721,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
 [#2000]: https://github.com/munich-quantum-toolkit/core/pull/2000
