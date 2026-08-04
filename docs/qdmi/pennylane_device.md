@@ -2,12 +2,12 @@
 
 PennyLane is especially pleasant when an application matters more than the
 details of a provider SDK: write a quantum function, choose a device, and let
-the framework differentiate the result. QDMI solves the complementary problem
-on the hardware side. It gives devices stable identities and one common
-interface for capabilities, program submission, and results.
+the framework differentiate the result. QDMI solves the complementary problem on
+the hardware side. It gives devices stable identities and one common interface
+for capabilities, program submission, and results.
 
-MQT Core connects those two layers. With the optional PennyLane integration,
-the built-in decision-diagram simulator is a regular PennyLane device:
+MQT Core connects those two layers. With the optional PennyLane integration, the
+built-in decision-diagram simulator is a regular PennyLane device:
 
 ```bash
 python -m pip install "mqt-core[pennylane]"
@@ -58,8 +58,8 @@ modifier. Semantic aliases bridge common provider spellings such as `cx` and
 `cnot`, `p` and `phaseshift`, `sdg` and `si`, or `rxx` and `xx`.
 
 When QASM3 is advertised, a conversion failure remains a QASM3 error. The
-integration never hides an unsupported program by silently retrying QASM2.
-For a QASM2-only device, Core calls PennyLane's serializer as follows:
+integration never hides an unsupported program by silently retrying QASM2. For a
+QASM2-only device, Core calls PennyLane's serializer as follows:
 
 ```python
 qp.to_openqasm(
@@ -79,8 +79,8 @@ The checked-in
 [`pennylane_qaoa.py`](https://github.com/munich-quantum-toolkit/core/blob/main/docs/_scripts/pennylane_qaoa.py)
 example solves MaxCut for a fixed four-node graph. It prepares one QAOA layer
 with two trainable parameters, evaluates `qp.qaoa.maxcut`, differentiates with
-the parameter-shift rule, performs optimizer updates, samples the final
-circuit, and extracts the best observed cut.
+the parameter-shift rule, performs optimizer updates, samples the final circuit,
+and extracts the best observed cut.
 
 Run the complete local application from the repository root:
 
@@ -153,26 +153,24 @@ device = QDMIDevice(
 
 Arbitrary PennyLane wire labels map deterministically to contiguous QASM
 indices. The converter validates one- and two-qubit loci advertised by QDMI but
-does not route a circuit. A topology-incompatible program therefore fails
-before submission.
+does not route a circuit. A topology-incompatible program therefore fails before
+submission.
 
-Shot vectors, batches, and parameter-shift tapes are executed in order.
-Analytic execution is rejected because hardware-style QDMI jobs require finite
-shots.
+Shot vectors, batches, and parameter-shift tapes are executed in order. Analytic
+execution is rejected because hardware-style QDMI jobs require finite shots.
 
 ## Supported gate-level scope
 
 The QASM3 path covers the gate-based operations needed by the local simulator,
-remote circuit simulators, QAOA, and ordinary variational applications:
-identity and Pauli gates; H, S, T, SX and their supported adjoints; RX, RY, RZ,
-and phase shift; controlled Pauli and phase gates; Toffoli, SWAP, and CSWAP;
-ISWAP, PSWAP, ECR; and Ising XX, XY, YY, and ZZ rotations. PennyLane
-decomposes higher-level operations when their decomposition reaches an
-advertised set.
+remote circuit simulators, QAOA, and ordinary variational applications: identity
+and Pauli gates; H, S, T, SX and their supported adjoints; RX, RY, RZ, and phase
+shift; controlled Pauli and phase gates; Toffoli, SWAP, and CSWAP; ISWAP, PSWAP,
+ECR; and Ising XX, XY, YY, and ZZ rotations. PennyLane decomposes higher-level
+operations when their decomposition reaches an advertised set.
 
 Version 1 intentionally does not provide pulse programming, provider-specific
 non-gate properties, routing, or parallel job submission. The
 {py:class}`~mqt.core.plugins.pennylane.converter.ConvertedProgram` boundary
-keeps payload, selected format, wire mapping, and measurement order together,
-so a compiler-backed or another exchange-format converter can replace the
-current text conversion later without changing user circuits.
+keeps payload, selected format, wire mapping, and measurement order together, so
+a compiler-backed or another exchange-format converter can replace the current
+text conversion later without changing user circuits.

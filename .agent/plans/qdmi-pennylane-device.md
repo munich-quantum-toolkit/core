@@ -23,17 +23,16 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
 
 ## Progress
 
-- [x] (2026-08-04 09:00Z) Refreshed `origin/main`, created an isolated
-  worktree, read repository policy, and surveyed the QDMI Python API and
-  packaging.
+- [x] (2026-08-04 09:00Z) Refreshed `origin/main`, created an isolated worktree,
+      read repository policy, and surveyed the QDMI Python API and packaging.
 - [x] (2026-08-04 11:30Z) Implemented the optional PennyLane package,
-  QASM3-first negotiation, QASM2 fallback, modern preprocessing and execution,
-  focused exceptions, and the stable DDSIM entry point.
+      QASM3-first negotiation, QASM2 fallback, modern preprocessing and
+      execution, focused exceptions, and the stable DDSIM entry point.
 - [x] (2026-08-04 12:45Z) Added converter, preprocessing, result, gradient,
   arbitrary-wire, batch, shot-vector, and DDSIM end-to-end tests.
 - [x] (2026-08-04 13:30Z) Added the marked optional dependency, ordinary test
-  and documentation group coverage, lockfile, changelog entry, checked-in QAOA
-  application, and article-style documentation.
+      and documentation group coverage, lockfile, changelog entry, checked-in
+      QAOA application, and article-style documentation.
 - [x] (2026-08-04 15:45Z) Passed the Python 3.10 and 3.14 full test sessions,
   the focused Python 3.11-3.13 sessions, the warning-clean documentation nox
   session, and the complete lint nox session; audited the final diff.
@@ -46,10 +45,10 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   provides `registered_device_ids`, `open_device`,
   `Device.supported_program_formats`, `Device.operations`,
   `Device.coupling_map`, `Device.submit_job`, and `Job.get_shots`.
-- Observation: MQT Core's existing OpenQASM 3 exporter includes
-  `stdgates.inc`, while remote Braket programs need explicit provider gate
-  spellings and no include. The PennyLane integration therefore needs a small
-  capability-driven emitter behind its own converted-program boundary.
+- Observation: MQT Core's existing OpenQASM 3 exporter includes `stdgates.inc`,
+  while remote Braket programs need explicit provider gate spellings and no
+  include. The PennyLane integration therefore needs a small capability-driven
+  emitter behind its own converted-program boundary.
 - Observation: PennyLane 0.45.1 declares Python 3.14 support, but Autograd 1.8
   contains a `return` in a `finally` block. Core's warnings-as-errors test
   policy promotes Python 3.14's compile-time `SyntaxWarning` to an import
@@ -60,9 +59,9 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   with the highest-index site on the left. Evidence: applying X to site zero
   returned the raw QDMI string `01`; the PennyLane device reverses that
   representation before selecting columns in declared wire order.
-- Observation: generic exception names such as `TranslationError` conflict
-  with the existing Qiskit plugin in Sphinx's global Python domain. Evidence:
-  the warning-as-error docs build reported ambiguous cross-references. Public
+- Observation: generic exception names such as `TranslationError` conflict with
+  the existing Qiskit plugin in Sphinx's global Python domain. Evidence: the
+  warning-as-error docs build reported ambiguous cross-references. Public
   `PennyLane...Error` names preserve focused errors and produce clean API docs
   without changing the Qiskit integration.
 
@@ -72,53 +71,53 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   spelled `import pennylane as qp`. Rationale: this is PennyLane's current
   project convention and avoids adding the retired `qml` alias. Date/Author:
   2026-08-04 / GPT-5.6 via Codex.
-- Decision: Prefer OpenQASM 3 by advertised format, and never retry the
-  OpenQASM 2 path after a QASM3 translation failure. Rationale: advertised
-  QASM3 support is a provider contract; hiding a failed capability-driven
-  conversion would make unsupported programs nondeterministic. Date/Author:
-  2026-08-04 / GPT-5.6 via Codex.
+- Decision: Prefer OpenQASM 3 by advertised format, and never retry the OpenQASM
+  2 path after a QASM3 translation failure. Rationale: advertised QASM3 support
+  is a provider contract; hiding a failed capability-driven conversion would
+  make unsupported programs nondeterministic. Date/Author: 2026-08-04 / GPT-5.6
+  via Codex.
 - Decision: Return raw computational-basis samples from `execute` and let
   PennyLane's preprocessing transforms reconstruct requested measurements.
-  Rationale: the framework then owns observable diagonalization,
-  non-commuting measurement splitting, Hamiltonian aggregation, shot-vector
-  binning, and result typing. Date/Author: 2026-08-04 / GPT-5.6 via Codex.
-- Decision: Keep QDMI submission sequential in version 1. Rationale: the
-  current FoMaC interface has no batch-submission contract, while sequential
-  execution remains correct for batches and parameter-shift expansion.
-  Date/Author: 2026-08-04 / GPT-5.6 via Codex.
-- Decision: Keep PennyLane enabled on Python 3.11 through 3.14 and suppress
-  only Autograd 1.8's exact Python 3.14 compile-time warning in test
-  configuration. Rationale: PennyLane formally supports 3.14, normal imports
-  work, and vendoring or patching Autograd would add unnecessary maintenance.
-  Date/Author: 2026-08-04 / GPT-5.6 via Codex.
-- Decision: Build documentation exclusively with the repository's
-  `nox -s docs` session. Rationale: the nox session owns the complete native,
-  AutoAPI, notebook, and strict-warning environment. Date/Author: 2026-08-04 /
-  GPT-5.6 via Codex.
+  Rationale: the framework then owns observable diagonalization, non-commuting
+  measurement splitting, Hamiltonian aggregation, shot-vector binning, and
+  result typing. Date/Author: 2026-08-04 / GPT-5.6 via Codex.
+- Decision: Keep QDMI submission sequential in version 1. Rationale: the current
+  FoMaC interface has no batch-submission contract, while sequential execution
+  remains correct for batches and parameter-shift expansion. Date/Author:
+  2026-08-04 / GPT-5.6 via Codex.
+- Decision: Keep PennyLane enabled on Python 3.11 through 3.14 and suppress only
+  Autograd 1.8's exact Python 3.14 compile-time warning in test configuration.
+  Rationale: PennyLane formally supports 3.14, normal imports work, and
+  vendoring or patching Autograd would add unnecessary maintenance. Date/Author:
+  2026-08-04 / GPT-5.6 via Codex.
+- Decision: Build documentation exclusively with the repository's `nox -s docs`
+  session. Rationale: the nox session owns the complete native, AutoAPI,
+  notebook, and strict-warning environment. Date/Author: 2026-08-04 / GPT-5.6
+  via Codex.
 
 ## Outcomes & Retrospective
 
 The Core half is implemented. `qp.device("mqt.ddsim.default", ...)` executes
 finite-shot tapes through QDMI, prefers capability-driven OpenQASM 3, uses
-PennyLane's exact QASM2 serializer only for QASM2-only devices, reconstructs
-the documented measurement types through PennyLane preprocessing, and runs the
+PennyLane's exact QASM2 serializer only for QASM2-only devices, reconstructs the
+documented measurement types through PennyLane preprocessing, and runs the
 checked-in one-layer MaxCut QAOA application.
 
 Validation evidence:
 
 - `nox -s tests-3.14`: 558 passed, 3 skipped.
-- `nox -s tests-3.10`: 526 passed, 6 skipped; only the three
-  PennyLane-dependent modules are newly skipped.
-- `nox -s tests-3.11 tests-3.12 tests-3.13 --
-  test/python/plugins/qdmi_pennylane`: 33 passed in every session.
+- `nox -s tests-3.10`: 526 passed, 6 skipped; only the three PennyLane-dependent
+  modules are newly skipped.
+- `nox -s tests-3.11 tests-3.12 tests-3.13 -- test/python/plugins/qdmi_pennylane`:
+  33 passed in every session.
 - `nox -s docs`: strict HTML build succeeded with no warnings.
 - `nox -s lint`: every repository hook, including lock validation, Ruff, ty,
   Markdown, and repository policy, passed.
 
 The deliberately deferred gaps are routing, parallel submission, analytic
 execution, pulse programming, and non-gate provider properties. The separate
-Amazon Braket provider change consumes only the public stable-ID device API
-and remains ordered after the Core release.
+Amazon Braket provider change consumes only the public stable-ID device API and
+remains ordered after the Core release.
 
 ## Context and Orientation
 
@@ -136,18 +135,18 @@ new sibling package is `python/mqt/core/plugins/pennylane/`. Its public
 compiler or JEFF converter can replace the text emitters without changing the
 device API.
 
-PennyLane preprocessing converts a user circuit, called a quantum tape, into
-one or more executable tapes and a postprocessing function. The device uses
+PennyLane preprocessing converts a user circuit, called a quantum tape, into one
+or more executable tapes and a postprocessing function. The device uses
 framework transforms to validate wires and shots, defer measurements, split
 non-commuting observables, diagonalize them, decompose unsupported operations,
-expand broadcasts, and replace measurements with raw sampling. Execution
-submits each resulting tape in order and returns the raw sample arrays expected
-by the transform postprocessor.
+expand broadcasts, and replace measurements with raw sampling. Execution submits
+each resulting tape in order and returns the raw sample arrays expected by the
+transform postprocessor.
 
 The built-in DDSIM QDMI registration uses `mqt.ddsim.default`. The package
 exposes that stable ID through a PennyLane device entry point with the same
-name. Provider repositories can register thin subclasses under their own
-stable QDMI IDs and translate provider credentials into the generic
+name. Provider repositories can register thin subclasses under their own stable
+QDMI IDs and translate provider credentials into the generic
 `session_parameters` and `job_parameters` mappings.
 
 ## Milestones
@@ -157,10 +156,10 @@ stable QDMI IDs and translate provider credentials into the generic
 Add typed exceptions, `ConvertedProgram`, an operation table, alias resolution,
 format negotiation, and a modern `CompilePipeline`. Exact tests must show that
 QASM3 is chosen over QASM2, uses device-advertised spellings, emits one qubit
-and classical register followed by a whole-register measurement, and includes
-no standard-library include, definitions, pragmas, or modifiers. QASM2-only
-tests must exercise `qp.to_openqasm` with rotations disabled and fail clearly
-when serialization is impossible.
+and classical register followed by a whole-register measurement, and includes no
+standard-library include, definitions, pragmas, or modifiers. QASM2-only tests
+must exercise `qp.to_openqasm` with rotations disabled and fail clearly when
+serialization is impossible.
 
 ### Milestone 2: Execute through QDMI
 
@@ -176,26 +175,26 @@ Hamiltonians, and parameter-shift gradients.
 Register `mqt.ddsim.default`, add a Python-version-marked optional dependency,
 include it in the existing test and documentation groups for Python 3.11 and
 newer, and keep Python 3.10 importable without PennyLane. Add a four-node,
-one-layer MaxCut QAOA example and an article-style QDMI documentation page.
-Run the full example locally and ensure the ordinary existing Python and wheel
-CI matrices exercise the optional integration without adding a workflow.
+one-layer MaxCut QAOA example and an article-style QDMI documentation page. Run
+the full example locally and ensure the ordinary existing Python and wheel CI
+matrices exercise the optional integration without adding a workflow.
 
 ### Milestone 4: Validate and hand off the provider boundary
 
 Run focused tests, a complete Python test session on a supported version,
 documentation, lint, lockfile consistency, and packaging checks. Audit all new
-PennyLane source and documentation for the `qp` alias and review the final
-diff. The separate Amazon Braket provider worktree then consumes only this
-public API; it is not part of the Core change.
+PennyLane source and documentation for the `qp` alias and review the final diff.
+The separate Amazon Braket provider worktree then consumes only this public API;
+it is not part of the Core change.
 
 ## Plan of Work
 
 Create `exceptions.py`, `converter.py`, `device.py`, and `__init__.py` below
 `python/mqt/core/plugins/pennylane`. The converter will use a typed table whose
-rows associate PennyLane operation types with semantic alias groups, arity,
-and parameter counts. It will resolve one advertised QDMI spelling for every
-operation, validate the operation's wire tuple against advertised sites or
-site pairs and the device topology, format finite numeric parameters
+rows associate PennyLane operation types with semantic alias groups, arity, and
+parameter counts. It will resolve one advertised QDMI spelling for every
+operation, validate the operation's wire tuple against advertised sites or site
+pairs and the device topology, format finite numeric parameters
 deterministically, and emit the minimal OpenQASM 3 program. It will invoke
 `qp.to_openqasm` only when QASM3 is not advertised and QASM2 is.
 
@@ -256,31 +255,30 @@ rotation applied once.
 Preprocessing and mock execution tests must cover raw samples, counts,
 probabilities, expectation values, variances, Hamiltonians, shot vectors,
 arbitrary wire labels, batches, topology errors, unsupported formats,
-unsupported operations, analytic shots, and parameter-shift expansion.
-DDSIM tests must create `qp.device("mqt.ddsim.default", ...)`, produce a Bell
+unsupported operations, analytic shots, and parameter-shift expansion. DDSIM
+tests must create `qp.device("mqt.ddsim.default", ...)`, produce a Bell
 distribution within finite-shot tolerance, compute a finite parameter-shift
 gradient, and run the checked-in QAOA application.
 
 Python 3.10 must resolve and import the base package without PennyLane.
 Supported Python 3.11 through 3.14 environments must install the test group and
-run the new tests through the ordinary matrix. Documentation and lint must
-pass. A repository search over all added source, test, and documentation files
-must find `import pennylane as qp` and no `import pennylane as qml`.
+run the new tests through the ordinary matrix. Documentation and lint must pass.
+A repository search over all added source, test, and documentation files must
+find `import pennylane as qp` and no `import pennylane as qml`.
 
 ## Idempotence and Recovery
 
 All source edits, lock generation, builds, and tests are repeatable. Tests use
 mock devices or the local DDSIM device and require no credentials. If a partial
-environment installation fails, rerun the same `.agent/run.sh uv sync`
-commands; do not use shared caches outside this worktree. If generated
-metadata changes unexpectedly, inspect `pyproject.toml` and regenerate
-`uv.lock` rather than editing resolved records by hand. Do not alter another
-task's worktree.
+environment installation fails, rerun the same `.agent/run.sh uv sync` commands;
+do not use shared caches outside this worktree. If generated metadata changes
+unexpectedly, inspect `pyproject.toml` and regenerate `uv.lock` rather than
+editing resolved records by hand. Do not alter another task's worktree.
 
 ## Artifacts and Notes
 
-Validation evidence will be recorded here as short command summaries after
-each milestone. No external GitHub action is authorized by this plan.
+Validation evidence will be recorded here as short command summaries after each
+milestone. No external GitHub action is authorized by this plan.
 
 ## Interfaces and Dependencies
 
@@ -289,16 +287,14 @@ each milestone. No external GitHub action is authorized by this plan.
 FoMaC session and job keyword names from `python/mqt/core/fomac.pyi`.
 
 `mqt.core.plugins.pennylane.ConvertedProgram` contains `payload: str`,
-`program_format: fomac.ProgramFormat`, `wire_map`, and
-`measurement_order`. `convert_program` accepts a preprocessed PennyLane
-`QuantumScript`, an opened QDMI device, and declared device wires, and returns
-that value or raises a focused translation, validation, configuration, or
-execution exception.
+`program_format: fomac.ProgramFormat`, `wire_map`, and `measurement_order`.
+`convert_program` accepts a preprocessed PennyLane `QuantumScript`, an opened
+QDMI device, and declared device wires, and returns that value or raises a
+focused translation, validation, configuration, or execution exception.
 
-The optional dependency is
-`pennylane>=0.45.1,<0.46; python_version >= "3.11"`. The implementation uses
-PennyLane's public device, transform, tape, wire, measurement, and
-serialization APIs, NumPy for sample arrays, and the existing
+The optional dependency is `pennylane>=0.45.1,<0.46; python_version >= "3.11"`.
+The implementation uses PennyLane's public device, transform, tape, wire,
+measurement, and serialization APIs, NumPy for sample arrays, and the existing
 `mqt.core.fomac` binding. It does not depend on a provider SDK, compiler
 pipeline, JEFF conversion, pulse programming, neutral-atom properties, or
 parallel job submission.
