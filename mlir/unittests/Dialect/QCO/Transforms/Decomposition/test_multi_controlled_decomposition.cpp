@@ -783,6 +783,10 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
                      builder.staticQubit(5), [&](Value targetArg) -> Value {
                        return builder.y(builder.x(targetArg));
                      });
+        // Two-target non-SWAP body: passes min-qubits but is not lowered.
+        std::ignore =
+            builder.cdcx(builder.staticQubit(6), builder.staticQubit(7),
+                         builder.staticQubit(8));
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
@@ -791,7 +795,14 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
 
   size_t multiOpCtrl = 0;
   size_t mchCount = 0;
+  size_t controlledDcx = 0;
   moduleOp->walk([&](CtrlOp op) {
+    if (op.getNumTargets() == 2) {
+      auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+      if (inner && isa<DCXOp>(inner.getOperation())) {
+        ++controlledDcx;
+      }
+    }
     if (op.getNumControls() < 2) {
       return;
     }
@@ -805,6 +816,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   });
   EXPECT_EQ(multiOpCtrl, 1U);
   EXPECT_EQ(mchCount, 1U);
+  EXPECT_EQ(controlledDcx, 1U);
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
