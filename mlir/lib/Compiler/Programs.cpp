@@ -11,6 +11,7 @@
 #include "mlir/Compiler/Programs.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -58,6 +59,7 @@
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/ModuleTranslation.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -65,9 +67,11 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -358,21 +362,6 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
       "failed to fuse single-qubit unitary runs"));
 }
 
-bool QCOProgram::fuseTwoQubitUnitaryRuns(const std::string_view nativeGates) {
-  if (StringRef(nativeGates).trim().empty()) {
-    mod().emitError("the native gate menu must not be empty");
-    return false;
-  }
-  qco::FuseTwoQubitUnitaryRunsOptions options;
-  options.nativeGates = nativeGates;
-  return succeeded(runPasses(
-      mod(),
-      [&options](OpPassManager& pm) {
-        pm.addPass(qco::createFuseTwoQubitUnitaryRuns(options));
-      },
-      "failed to fuse two-qubit unitary runs"));
-}
-
 bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
@@ -417,8 +406,34 @@ bool QCOProgram::placeAndRoute(
     const std::size_t nlookahead, const float alpha, const float lambda,
     const std::size_t niterations, const std::size_t ntrials,
     const std::size_t seed) {
-  DenseSet<std::pair<std::size_t, std::size_t>> couplingSet;
-  couplingSet.insert(coupling.begin(), coupling.end());
+  std::vector<CompilerTarget::SiteId> siteIds;
+  siteIds.reserve(coupling.size() * 2);
+  std::vector<CompilerTarget::Coupling> couplings;
+  couplings.reserve(coupling.size());
+  for (const auto [source, target] : coupling) {
+    if (source > static_cast<std::size_t>(
+                     std::numeric_limits<CompilerTarget::SiteId>::max()) ||
+        target > static_cast<std::size_t>(
+                     std::numeric_limits<CompilerTarget::SiteId>::max())) {
+      throw std::invalid_argument(
+          "Coupling site ID exceeds the nonnegative i64 domain");
+    }
+    const auto sourceId = static_cast<CompilerTarget::SiteId>(source);
+    const auto targetId = static_cast<CompilerTarget::SiteId>(target);
+    siteIds.emplace_back(sourceId);
+    siteIds.emplace_back(targetId);
+    couplings.emplace_back(sourceId, targetId);
+  }
+  std::ranges::sort(siteIds);
+  const auto [duplicates, end] = std::ranges::unique(siteIds);
+  siteIds.erase(duplicates, end);
+  std::vector<CompilerTarget::Site> sites;
+  sites.reserve(siteIds.size());
+  for (const auto site : siteIds) {
+    sites.emplace_back(site);
+  }
+  const CompilerTarget target(std::move(sites), std::move(couplings));
+
   qco::MappingPassOptions options;
   options.nlookahead = nlookahead;
   options.alpha = alpha;
@@ -428,8 +443,8 @@ bool QCOProgram::placeAndRoute(
   options.seed = seed;
   return succeeded(runPasses(
       mod(),
-      [&couplingSet, &options](OpPassManager& pm) {
-        pm.addPass(qco::createMappingPass(couplingSet, options));
+      [&target, &options](OpPassManager& pm) {
+        pm.addPass(qco::createMappingPass(target, options));
       },
       "failed to place and route the QCO program"));
 }

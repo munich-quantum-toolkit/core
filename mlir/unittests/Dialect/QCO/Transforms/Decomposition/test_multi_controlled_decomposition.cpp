@@ -48,48 +48,62 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-/// DD for k=2…20: full matrix DD through k=8 (MCX/MCZ) or k=6 (MCP);
-/// basis-state DD for larger MCX/MCZ widths; coherent-state DD at selected
-/// policy boundaries and representative larger MCP widths.
-static constexpr std::array<size_t, 19> K_DD_CONTROL_COUNTS = {
-    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+/// DD for k=2…20 plus the first HP24 width (k=33): full matrix DD through k=8
+/// (MCX/MCZ) or k=6 (MCP); basis-state DD for larger MCX/MCZ widths;
+/// coherent-state DD at selected policy boundaries and representative larger
+/// MCP widths.
+static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
+    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 33};
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
 static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
 static constexpr std::array<size_t, 5> K_COHERENT_HP24_CONTROL_COUNTS = {
     10, 11, 21, 22, 23};
 static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
-/// Additional fully-lowered/CX smoke checks; k=21…23 also receive coherent DD
-/// coverage above, while k=24 remains smoke-only.
-static constexpr std::array<size_t, 4> K_SMOKE_CONTROL_COUNTS = {21, 22, 23,
-                                                                 24};
+/// Additional fully-lowered/CX smoke checks for k > 20 through the SP22 MCX
+/// limit (k=32) and the first HP24 width (k=33). Selected widths also receive
+/// coherent DD coverage above.
+static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
+    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33};
 
 /// Expected elementary Ctrl@X counts after default `min-controls=2` lowering.
 /// Indexed by control count `k`; unused slots are zero.
-static constexpr std::array<size_t, 25> K_EXPECTED_MCX_CX = {
+/// For `5 ≤ k ≤ 32`, MCX uses SP22 MCP(π); each CRX expands to 2 Ctrl@X while
+/// CP stays as Ctrl@P, so elementary CX is `4k² − 8k + 4`. k=33 is the first
+/// HP24 width (pinned measured CX).
+static constexpr std::array<size_t, 34> K_EXPECTED_MCX_CX = {
     0,    0,
     6,    // 2
     14,   // 3
     20,   // 4
-    72,   // 5
-    136,  // 6
-    186,  // 7
-    264,  // 8
-    344,  // 9
-    464,  // 10
-    576,  // 11
-    728,  // 12
-    864,  // 13
-    1048, // 14
-    1200, // 15
-    1416, // 16
-    1624, // 17
-    1872, // 18
-    2048, // 19
-    2328, // 20
-    2466, // 21
-    2670, // 22
-    2672, // 23
-    2942, // 24
+    64,   // 5  SP22
+    100,  // 6
+    144,  // 7
+    196,  // 8
+    256,  // 9
+    324,  // 10
+    400,  // 11
+    484,  // 12
+    576,  // 13
+    676,  // 14
+    784,  // 15
+    900,  // 16
+    1024, // 17
+    1156, // 18
+    1296, // 19
+    1444, // 20
+    1600, // 21
+    1764, // 22
+    1936, // 23
+    2116, // 24
+    2304, // 25
+    2500, // 26
+    2704, // 27
+    2916, // 28
+    3136, // 29
+    3364, // 30
+    3600, // 31
+    3844, // 32  SP22 max
+    3872, // 33  HP24
 };
 
 /// Effective CX for MCP: elementary Ctrl@X plus ~2 CX per leftover

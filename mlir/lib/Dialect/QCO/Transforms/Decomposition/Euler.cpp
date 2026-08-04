@@ -175,22 +175,23 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
           .phase = phase - (0.5 * (phi + lambda))};
 }
 
-EulerAngles anglesFromUnitary(const Matrix2x2& matrix, const EulerBasis basis) {
+EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
+                              const SingleQubitBasis basis) {
   switch (basis) {
-  case EulerBasis::ZYZ:
-  case EulerBasis::ZSXX:
+  case SingleQubitBasis::ZYZ:
+  case SingleQubitBasis::ZSXX:
     return paramsZYZ(matrix);
-  case EulerBasis::ZXZ:
+  case SingleQubitBasis::ZXZ:
     return paramsZXZ(matrix);
-  case EulerBasis::XZX:
+  case SingleQubitBasis::XZX:
     return paramsXZX(matrix);
-  case EulerBasis::XYX:
-  case EulerBasis::R:
+  case SingleQubitBasis::XYX:
+  case SingleQubitBasis::R:
     return paramsXYX(matrix);
-  case EulerBasis::U:
+  case SingleQubitBasis::U:
     return paramsU(matrix);
   default:
-    llvm_unreachable("invalid Euler basis");
+    llvm_unreachable("invalid single-qubit synthesis basis");
   }
 }
 
@@ -254,7 +255,8 @@ struct Unitary1QEulerPlan {
    * @param angles The angles to use for the decomposition.
    * @param basis The basis to use for the decomposition.
    */
-  void appendDecomposition(const EulerAngles& angles, const EulerBasis basis) {
+  void appendDecomposition(const EulerAngles& angles,
+                           const SingleQubitBasis basis) {
     if (isNearZeroRotationAngle(angles.theta) &&
         isNearZeroRotationAngle(angles.phi) &&
         isNearZeroRotationAngle(angles.lambda)) {
@@ -264,20 +266,20 @@ struct Unitary1QEulerPlan {
 
     if (isNearZeroRotationAngle(angles.theta)) {
       switch (basis) {
-      case EulerBasis::ZYZ:
-      case EulerBasis::ZXZ:
-      case EulerBasis::ZSXX:
+      case SingleQubitBasis::ZYZ:
+      case SingleQubitBasis::ZXZ:
+      case SingleQubitBasis::ZSXX:
         appendRotation(SynthesisStep::Kind::RZ, angles.phi + angles.lambda);
         break;
 
-      case EulerBasis::XZX:
-      case EulerBasis::XYX:
+      case SingleQubitBasis::XZX:
+      case SingleQubitBasis::XYX:
         appendRotation(SynthesisStep::Kind::RX, angles.phi + angles.lambda);
         break;
-      case EulerBasis::R:
+      case SingleQubitBasis::R:
         appendRStep(angles.phi + angles.lambda, 0.0);
         break;
-      case EulerBasis::U:
+      case SingleQubitBasis::U:
         steps.emplace_back(SynthesisStep::Kind::U, 0.0, angles.phi,
                            angles.lambda);
         break;
@@ -287,43 +289,43 @@ struct Unitary1QEulerPlan {
     }
 
     switch (basis) {
-    case EulerBasis::ZYZ:
+    case SingleQubitBasis::ZYZ:
       appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
       appendRotation(SynthesisStep::Kind::RZ, angles.phi);
       phase = angles.phase;
       break;
-    case EulerBasis::ZXZ:
+    case SingleQubitBasis::ZXZ:
       appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RX, angles.theta);
       appendRotation(SynthesisStep::Kind::RZ, angles.phi);
       phase = angles.phase;
       break;
-    case EulerBasis::XZX:
+    case SingleQubitBasis::XZX:
       appendRotation(SynthesisStep::Kind::RX, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RZ, angles.theta);
       appendRotation(SynthesisStep::Kind::RX, angles.phi);
       phase = angles.phase;
       break;
-    case EulerBasis::XYX:
+    case SingleQubitBasis::XYX:
       appendRotation(SynthesisStep::Kind::RX, angles.lambda);
       steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
       appendRotation(SynthesisStep::Kind::RX, angles.phi);
       phase = angles.phase;
       break;
-    case EulerBasis::R:
+    case SingleQubitBasis::R:
       appendRStep(angles.lambda, 0.0);
       steps.emplace_back(SynthesisStep::Kind::R, angles.theta,
                          std::numbers::pi / 2.0);
       appendRStep(angles.phi, 0.0);
       phase = angles.phase;
       break;
-    case EulerBasis::U:
+    case SingleQubitBasis::U:
       steps.emplace_back(SynthesisStep::Kind::U, angles.theta, angles.phi,
                          angles.lambda);
       phase = angles.phase;
       break;
-    case EulerBasis::ZSXX: {
+    case SingleQubitBasis::ZSXX: {
       constexpr double pi = std::numbers::pi;
       constexpr double halfPi = std::numbers::pi / 2.0;
       constexpr double quarterPi = std::numbers::pi / 4.0;
@@ -363,7 +365,8 @@ struct Unitary1QEulerPlan {
  * @return Planned gate sequence and optional global phase.
  */
 [[nodiscard]] static Unitary1QEulerPlan
-planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
+planUnitary1QEuler(const Matrix2x2& targetMatrix,
+                   const SingleQubitBasis basis) {
   Unitary1QEulerPlan plan;
   if (targetMatrix.isApprox(Matrix2x2::identity())) {
     return plan;
@@ -416,22 +419,23 @@ emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
   return {.qubit = qubit, .globalPhase = plan.phase};
 }
 
-std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
-  return StringSwitch<std::optional<EulerBasis>>(basis.lower())
-      .Case("zyz", EulerBasis::ZYZ)
-      .Case("zxz", EulerBasis::ZXZ)
-      .Case("xzx", EulerBasis::XZX)
-      .Case("xyx", EulerBasis::XYX)
-      .Case("u", EulerBasis::U)
-      .Case("zsxx", EulerBasis::ZSXX)
-      .Case("r", EulerBasis::R)
+std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
+  return StringSwitch<std::optional<SingleQubitBasis>>(basis.lower())
+      .Case("zyz", SingleQubitBasis::ZYZ)
+      .Case("zxz", SingleQubitBasis::ZXZ)
+      .Case("xzx", SingleQubitBasis::XZX)
+      .Case("xyx", SingleQubitBasis::XYX)
+      .Case("u", SingleQubitBasis::U)
+      .Case("zsxx", SingleQubitBasis::ZSXX)
+      .Case("r", SingleQubitBasis::R)
       .Default(std::nullopt);
 }
 
 std::optional<SynthesizedUnitary1Q>
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Matrix2x2& composed, const std::size_t runSize,
-                         const bool hasNonBasisGate, const EulerBasis basis) {
+                         const bool hasNonBasisGate,
+                         const SingleQubitBasis basis) {
   const Unitary1QEulerPlan plan = planUnitary1QEuler(composed, basis);
   if (!hasNonBasisGate && runSize <= plan.gateCount()) {
     return std::nullopt;

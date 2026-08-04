@@ -12,8 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
+  stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
-  semantics and synthesis integration ([#1986]) ([**@burgholzer**])
+  semantics and synthesis integration ([#1986], [#1995]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
 - ✨ Make superconducting QDMI devices runtime configurable with session-owned
@@ -33,15 +35,16 @@ releases may include breaking changes.
   `if`/`index_switch`/`scf.for`/`func.call`, richer classical SSA, dense `k>3`
   wire embedding, multi-shot `sample` / `sampleWithClassics`, `memref` classical
   registers, and Python wrappers ([#1915], [#1973]) ([**@simon1hofmann**])
-- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1865], [#1961])
-  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add target-independent two-qubit gate fusion, target-native post-routing
+  synthesis, and operation-capability and static-site conformance ([#1865],
+  [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
-  threshold ([#1810]) ([**@simon1hofmann**])
+  threshold ([#1810], [#1996]) ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
-  and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
+  and structured control flow ([#1910], [#1994]) ([**@burgholzer**],
+  [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -67,10 +70,12 @@ releases may include breaking changes.
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
   [**@burgholzer**])
-- ✨ Add a `place-and-route` pass for mapping circuits to architectures with
-  restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
-  [#1911], [#1951]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
+  circuits to compiler-target topologies while preserving target site IDs and
+  materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
+  [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
+  [#1870], [#1904], [#1911], [#1951], [#1997]) ([**@MatthiasReumann**],
+  [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
   ([**@DRovara**], [**@burgholzer**])
@@ -708,6 +713,12 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
+[#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
+[#1996]: https://github.com/munich-quantum-toolkit/core/pull/1996
+[#1995]: https://github.com/munich-quantum-toolkit/core/pull/1995
+[#1994]: https://github.com/munich-quantum-toolkit/core/pull/1994
+[#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983

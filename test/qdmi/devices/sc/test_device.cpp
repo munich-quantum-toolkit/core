@@ -105,7 +105,10 @@ constexpr auto CUSTOM_SC = R"({
   "durationUnit": {"unit": "ns", "scaleFactor": 0.5},
   "qubitProperties": {
     "defaults": {"t1": 100, "t2": 200},
-    "overrides": [{"qubit": 1, "t1": 90}]
+    "overrides": [
+      {"qubit": 0, "name": "QB1"},
+      {"qubit": 1, "name": "QB2", "t1": 90}
+    ]
   },
   "couplings": [[0, 1], [1, 0]],
   "operations": [{
@@ -169,6 +172,24 @@ queryOperations(MQT_SC_QDMI_Device_Session session) {
     throw std::runtime_error("Failed to retrieve operations");
   }
   return operations;
+}
+
+[[nodiscard]] std::string querySiteName(MQT_SC_QDMI_Device_Session session,
+                                        MQT_SC_QDMI_Site site) {
+  size_t size = 0;
+  if (MQT_SC_QDMI_device_session_query_site_property(
+          session, site, QDMI_SITE_PROPERTY_NAME, 0, nullptr, &size) !=
+      QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query site name size");
+  }
+  std::string name(size, '\0');
+  if (MQT_SC_QDMI_device_session_query_site_property(
+          session, site, QDMI_SITE_PROPERTY_NAME, size, name.data(), nullptr) !=
+      QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query site name");
+  }
+  name.resize(size - 1);
+  return name;
 }
 } // namespace
 
@@ -258,6 +279,8 @@ TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
   EXPECT_EQ(bundledQubits, 100);
 
   const auto sites = querySites(custom);
+  EXPECT_EQ(querySiteName(custom, sites[0]), "QB1");
+  EXPECT_EQ(querySiteName(custom, sites[1]), "QB2");
   uint64_t t1 = 0;
   ASSERT_EQ(
       MQT_SC_QDMI_device_session_query_site_property(
@@ -302,6 +325,10 @@ TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
   EXPECT_DOUBLE_EQ(fidelity, 0.9);
 
   auto* const bundledSite = querySites(bundled).front();
+  EXPECT_EQ(
+      MQT_SC_QDMI_device_session_query_site_property(
+          bundled, bundledSite, QDMI_SITE_PROPERTY_NAME, 0, nullptr, nullptr),
+      QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(
       MQT_SC_QDMI_device_session_query_site_property(
           custom, bundledSite, QDMI_SITE_PROPERTY_INDEX, 0, nullptr, nullptr),

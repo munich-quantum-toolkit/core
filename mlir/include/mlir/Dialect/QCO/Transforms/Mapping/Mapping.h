@@ -12,20 +12,22 @@
 
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/Support/LogicalResult.h>
-#include <mlir/IR/Region.h>
 #include <mlir/Pass/Pass.h>
 
 #include <memory>
 
-namespace mlir::qco {
+namespace mlir {
+
+class CompilerTarget;
+
+namespace qco {
 
 /**
- * @brief Create a mapping pass instance with the given target architecture.
+ * @brief Create a mapping pass instance for a compiler target.
  * @returns a pass object.
  */
-std::unique_ptr<Pass>
-createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>&,
-                  MappingPassOptions);
+std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
+                                        MappingPassOptions options);
 
-} // namespace mlir::qco
+} // namespace qco
+} // namespace mlir

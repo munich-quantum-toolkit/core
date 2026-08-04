@@ -1047,6 +1047,8 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
 
 // SP22 LDD for general-angle MCP at and above this width.
 static constexpr size_t K_MCP_SP22_MIN_CONTROLS = 5;
+// No-ancilla MCX/MCZ uses SP22 MCP(π) through this control count.
+static constexpr size_t K_MCX_SP22_MAX_CONTROLS = 32;
 
 static CircuitPlan planMcp(double theta, size_t numControls);
 
@@ -1104,18 +1106,6 @@ static CircuitPlan planMcpValeRelativeResidual(double theta,
   CircuitPlan plan;
   appendValeFig7Shell(plan, theta, numControls);
   appendMcpBarencoRelative(plan, theta / 2.0, numControls - 1, numControls - 1);
-  return plan;
-}
-
-/// Recursive Vale shells; Barenco-relative residual at width ≤ 4.
-/// Used for MCX/MCZ k=5 (shell at 5, then relative residual at 4).
-static CircuitPlan planMcpValeHybridResidual(double theta, size_t numControls) {
-  if (numControls <= K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS) {
-    return planMcpValeRelativeResidual(theta, numControls);
-  }
-  CircuitPlan plan;
-  appendValeFig7Shell(plan, theta, numControls);
-  appendPlanOps(plan, planMcpValeHybridResidual(theta / 2.0, numControls - 1));
   return plan;
 }
 
@@ -1232,13 +1222,14 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
   return plan;
 }
 
-// MCZ core: k=4 relative-phase C^4(Z); k=5 Vale hybrid; else HP24.
+// MCZ core: k=4 relative-phase C^4(Z); SP22 MCP(π) for 5..32; else HP24.
 static CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires) {
   if (numControls == 4) {
     return planMczRelativePhaseK4();
   }
-  if (numControls == 5) {
-    return planMcpValeHybridResidual(K_PI, numControls);
+  if (numControls >= K_MCP_SP22_MIN_CONTROLS &&
+      numControls <= K_MCX_SP22_MAX_CONTROLS) {
+    return planMcpSp22(K_PI, numControls);
   }
   return planHp24Core(numWires, selectHp24Policy(numControls));
 }
