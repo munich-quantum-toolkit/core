@@ -19,6 +19,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -108,6 +109,18 @@ protected:
       }
     }
     return false;
+  }
+
+  /// Replace the first `values.size()` function arguments with f64 constants so
+  /// dynamic SSA can be constant-folded for numeric checks.
+  static void bindLeadingArgs(func::FuncOp funcOp, ArrayRef<double> values) {
+    OpBuilder b(funcOp.getContext());
+    b.setInsertionPointToStart(&funcOp.getBody().front());
+    for (auto [idx, value] : llvm::enumerate(values)) {
+      Value c = arith::ConstantOp::create(b, funcOp.getLoc(),
+                                          b.getF64FloatAttr(value));
+      funcOp.getArgument(idx).replaceAllUsesWith(c);
+    }
   }
 
   /**
@@ -864,9 +877,11 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   // Pure-Z chain with unfoldable angle SSA forces Val<Value> merge (not the
   // host Val<double> path exercised by constant-angle tests above).
   // RZ(a);RZ(b) → U(0, wrap(a+b), 0) with SSA phi tied to the angle args.
+  constexpr double angleA = 0.3;
+  constexpr double angleB = 0.4;
   auto q = builder.allocQubitRegister(1);
-  q[0] = builder.rz(0.3, q[0]);
-  q[0] = builder.rz(0.4, q[0]);
+  q[0] = builder.rz(angleA, q[0]);
+  q[0] = builder.rz(angleB, q[0]);
   module = builder.finalize();
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
@@ -892,18 +907,17 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   });
   ASSERT_TRUE(uOp);
 
-  // Dynamic pure-Z merge: phi and gphase are unfoldable SSA that consume both
-  // angle args (not the host constant path).
-  EXPECT_FALSE(utils::valueToConstantDouble(uOp.getPhi()).has_value());
-  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
-  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
-
   GPhaseOp gOp = nullptr;
   module->walk([&](GPhaseOp op) {
     gOp = op;
     return WalkResult::interrupt();
   });
   ASSERT_TRUE(gOp);
+
+  // Still SSA in the angles / gphase before binding concrete values.
+  EXPECT_FALSE(utils::valueToConstantDouble(uOp.getPhi()).has_value());
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
   EXPECT_FALSE(utils::valueToConstantDouble(gOp.getParameter(0)).has_value());
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
@@ -914,6 +928,27 @@ TEST_F(MergeSingleQubitRotationGatesTest,
       EXPECT_FALSE(std::isnan(floatAttr.getValueAsDouble()));
     }
   });
+
+  // Bind controlled values and check the folded RZ(a);RZ(b) formulas:
+  //   U(0, wrap(a+b), 0), gphase = normalize(-(phi+lambda)/2).
+  bindLeadingArgs(funcOp, {angleA, angleB});
+  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
+  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
+  const auto phase = utils::valueToConstantDouble(gOp.getParameter(0));
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_NEAR(*theta, 0.0, 1e-6);
+  EXPECT_NEAR(*phi, utils::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*lambda, 0.0, 1e-6);
+  EXPECT_NEAR(*phase, utils::normalizeAngle(-(*phi + *lambda) / 2.0), 1e-6);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
+  EXPECT_FALSE(std::isnan(*theta));
+  EXPECT_FALSE(std::isnan(*phi));
+  EXPECT_FALSE(std::isnan(*lambda));
+  EXPECT_FALSE(std::isnan(*phase));
 }
 
 /**
@@ -924,9 +959,11 @@ TEST_F(MergeSingleQubitRotationGatesTest,
  */
 TEST_F(MergeSingleQubitRotationGatesTest,
        mergeDynamicPhaseGatesAccumulatesGlobalPhase) {
+  constexpr double angleA = 0.3;
+  constexpr double angleB = 0.4;
   auto q = builder.allocQubitRegister(1);
-  q[0] = builder.p(0.3, q[0]);
-  q[0] = builder.p(0.4, q[0]);
+  q[0] = builder.p(angleA, q[0]);
+  q[0] = builder.p(angleB, q[0]);
   module = builder.finalize();
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
@@ -945,6 +982,13 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   EXPECT_EQ(countOps<POp>(), 0);
   EXPECT_GE(countOps<GPhaseOp>(), 1);
 
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) {
+    uOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(uOp);
+
   GPhaseOp gOp = nullptr;
   module->walk([&](GPhaseOp op) {
     gOp = op;
@@ -954,4 +998,21 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   // Accumulated input phases depend on both dynamic P angles.
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+
+  // P(a);P(b) → U(0, wrap(a+b), 0) with inputPhase (a+b)/2 cancelling the U
+  // intrinsic phase, so gphase folds to ~0 under controlled values.
+  bindLeadingArgs(funcOp, {angleA, angleB});
+  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
+  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
+  const auto phase = utils::valueToConstantDouble(gOp.getParameter(0));
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_NEAR(*theta, 0.0, 1e-6);
+  EXPECT_NEAR(*phi, utils::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*lambda, 0.0, 1e-6);
+  EXPECT_NEAR(*phase, 0.0, 1e-6);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
 }

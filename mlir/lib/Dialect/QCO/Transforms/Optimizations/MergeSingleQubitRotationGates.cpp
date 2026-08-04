@@ -507,9 +507,10 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
  * https://docs.sympy.org/latest/modules/algebras.html#sympy.algebras.Quaternion.to_euler
  *
  * Pure-Z / XY-aligned quaternions (|x|,|y| < eps) take the beta≈0 gimbal form
- * so tiny beta drift cannot split the Z angle across phi/lambda. The `Value`
- * backend also sanitizes the atan2 y-operand when (x,y)≈0 so MLIR's constant
- * folder never sees atan2(0,0) → NaN on a dead select input.
+ * so tiny beta drift cannot split the Z angle across phi/lambda. The host path
+ * short-circuits to `{0, 2*atan2(z,w), 0}`; the `Value` path selects `beta=0`
+ * under the same predicate and sanitizes the atan2 y-operand when (x,y)≈0 so
+ * MLIR's constant folder never sees atan2(0,0) → NaN on a dead select input.
  *
  * @note Floating-point errors may accumulate when merging many gates.
  * @return {theta, phi, lambda} = {beta, alpha, gamma} suitable for UOp
@@ -531,10 +532,13 @@ static std::array<Val<T>, 3> anglesFromQuaternion(const Quat<T>& q,
   }
 
   // beta = acos(clamp(2 * (w^2 + z^2) - 1, -1, 1))
+  // Force beta=0 when (x,y)≈0 so XY-aligned / pure-Z merges do not emit a
+  // drifted acos theta on the SSA path (host path already returned above).
   const auto cosBeta = ((c.two * ((q.w * q.w) + (q.z * q.z))) - c.one)
                            .maximum(c.negOne)
                            .minimum(c.one);
-  const auto beta = cosBeta.acos();
+  const auto betaRaw = cosBeta.acos();
+  const auto beta = Val<T>::select(xyNearZero, c.zero, betaRaw);
 
   // safe1 = |beta| >= eps; safe2 = |beta - π| >= eps
   const auto safe1 = beta.abs().oge(c.eps);
