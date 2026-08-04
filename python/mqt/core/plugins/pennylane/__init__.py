@@ -17,7 +17,7 @@ from ..._compat.optional import OptionalDependencyTester
 
 HAS_PENNYLANE = OptionalDependencyTester(  # ruff:ignore[non-empty-init-module] Optional plugin
     "pennylane",
-    install_msg="Install with 'pip install mqt-core[pennylane]'",
+    install_msg="Install with 'uv add mqt-core[pennylane]'",
 )
 
 __all__ = ["HAS_PENNYLANE"]

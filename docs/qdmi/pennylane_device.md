@@ -10,7 +10,7 @@ MQT Core connects those two layers. With the optional PennyLane integration, the
 built-in decision-diagram simulator is a regular PennyLane device:
 
 ```bash
-python -m pip install "mqt-core[pennylane]"
+uv add "mqt-core[pennylane]"
 ```
 
 ```python
@@ -59,7 +59,7 @@ modifier. Semantic aliases bridge common provider spellings such as `cx` and
 
 When QASM3 is advertised, a conversion failure remains a QASM3 error. The
 integration never hides an unsupported program by silently retrying QASM2. For a
-QASM2-only device, Core calls PennyLane's serializer as follows:
+QASM2-only device, MQT Core calls PennyLane's serializer as follows:
 
 ```python
 qp.to_openqasm(
@@ -104,9 +104,9 @@ elapsed: ... s
 
 Parameter-shift is worth making visible here. A two-parameter gradient is not
 one remote execution: PennyLane expands it into shifted tapes, and each tape is
-submitted as a separate QDMI job. Version 1 executes those jobs sequentially.
-Parallel QDMI submission can improve remote latency later without changing the
-device or converted-program APIs.
+submitted as a separate QDMI job. The current implementation executes those jobs
+sequentially. Parallel QDMI submission could improve remote latency without
+changing the device or converted-program APIs.
 
 The circuit factory accepts any
 {py:class}`~mqt.core.plugins.pennylane.device.QDMIDevice`, so a provider demo
@@ -168,7 +168,7 @@ shift; controlled Pauli and phase gates; Toffoli, SWAP, and CSWAP; ISWAP, PSWAP,
 ECR; and Ising XX, XY, YY, and ZZ rotations. PennyLane decomposes higher-level
 operations when their decomposition reaches an advertised set.
 
-Version 1 intentionally does not provide pulse programming, provider-specific
+The current implementation does not provide pulse programming, provider-specific
 non-gate properties, routing, or parallel job submission. The
 {py:class}`~mqt.core.plugins.pennylane.converter.ConvertedProgram` boundary
 keeps payload, selected format, wire mapping, and measurement order together, so

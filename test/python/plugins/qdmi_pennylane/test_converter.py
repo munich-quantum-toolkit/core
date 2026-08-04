@@ -33,10 +33,10 @@ from mqt.core.plugins.pennylane import (
     convert_program,
 )
 
-from .helpers import FakeDevice, operation
+from .helpers import StubDevice, operation
 
 
-def _device(value: FakeDevice) -> fomac.Device:
+def _device(value: StubDevice) -> fomac.Device:
     """Present a test double at the public converter boundary.
 
     Returns:
@@ -47,7 +47,7 @@ def _device(value: FakeDevice) -> fomac.Device:
 
 def test_qasm3_prefers_and_resolves_braket_spellings() -> None:
     """Prefer QASM3 and emit only spellings advertised by a Braket-style device."""
-    device = FakeDevice(
+    device = StubDevice(
         [
             operation("h", 1),
             operation("cnot", 2),
@@ -88,8 +88,8 @@ def test_qasm3_prefers_and_resolves_braket_spellings() -> None:
 
 
 def test_qasm3_resolves_ddsim_aliases_and_inverse_gates() -> None:
-    """Resolve Core-style aliases for controls, phases, rotations, and inverses."""
-    device = FakeDevice(
+    """Resolve MQT Core-style aliases for controls, phases, rotations, and inverses."""
+    device = StubDevice(
         [
             operation("cx", 2),
             operation("p", 1, 1),
@@ -134,7 +134,7 @@ def test_qasm3_resolves_ddsim_aliases_and_inverse_gates() -> None:
 
 def test_qasm3_failure_does_not_fall_back_to_qasm2(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep a QASM3 capability error visible when both formats are advertised."""
-    device = FakeDevice(
+    device = StubDevice(
         [operation("h", 1)],
         [fomac.ProgramFormat.QASM3, fomac.ProgramFormat.QASM2],
     )
@@ -154,7 +154,7 @@ def test_qasm3_failure_does_not_fall_back_to_qasm2(monkeypatch: pytest.MonkeyPat
 
 def test_qasm2_fallback_uses_pennylane_serializer_without_rotations() -> None:
     """Use PennyLane's QASM2 serializer only when QASM3 is unavailable."""
-    device = FakeDevice(
+    device = StubDevice(
         [operation("h", 1), operation("cx", 2), operation("rx", 1, 1)],
         [fomac.ProgramFormat.QASM2],
     )
@@ -182,7 +182,7 @@ def test_qasm2_fallback_uses_pennylane_serializer_without_rotations() -> None:
 
 def test_qasm2_rejects_non_intersection_operation() -> None:
     """Reject an operation the serializer knows when the QDMI device does not."""
-    device = FakeDevice([operation("h", 1)], [fomac.ProgramFormat.QASM2])
+    device = StubDevice([operation("h", 1)], [fomac.ProgramFormat.QASM2])
     tape = qp.tape.QuantumScript([qp.CNOT(wires=[0, 1])], [qp.sample(wires=[0, 1])], shots=2)
 
     with pytest.raises(PennyLaneUnsupportedOperationError, match="CNOT"):
@@ -191,7 +191,7 @@ def test_qasm2_rejects_non_intersection_operation() -> None:
 
 def test_qasm2_wraps_serializer_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     """Expose serializer failures as focused translation errors."""
-    device = FakeDevice([operation("h", 1)], [fomac.ProgramFormat.QASM2])
+    device = StubDevice([operation("h", 1)], [fomac.ProgramFormat.QASM2])
     tape = qp.tape.QuantumScript([qp.Hadamard(0)], [qp.sample(wires=0)], shots=2)
 
     def fail(*_args: object, **_kwargs: object) -> str:
@@ -205,7 +205,7 @@ def test_qasm2_wraps_serializer_errors(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_rejects_device_without_qasm() -> None:
     """Fail before submission when neither supported format is advertised."""
-    device = FakeDevice([], [fomac.ProgramFormat.QIR_BASE_STRING])
+    device = StubDevice([], [fomac.ProgramFormat.QIR_BASE_STRING])
     tape = qp.tape.QuantumScript([], [qp.sample(wires=0)], shots=2)
 
     with pytest.raises(PennyLaneUnsupportedFormatError, match="OpenQASM 3 or OpenQASM 2"):
@@ -215,7 +215,7 @@ def test_rejects_device_without_qasm() -> None:
 @pytest.mark.parametrize("parameter", [np.nan, np.inf, -np.inf])
 def test_rejects_non_finite_parameters(parameter: float) -> None:
     """Reject non-finite bound parameters before submission."""
-    device = FakeDevice([operation("rx", 1, 1)], [fomac.ProgramFormat.QASM3])
+    device = StubDevice([operation("rx", 1, 1)], [fomac.ProgramFormat.QASM3])
     tape = qp.tape.QuantumScript([qp.RX(parameter, 0)], [qp.sample(wires=0)], shots=2)
 
     with pytest.raises(PennyLaneValidationError, match="non-finite"):
@@ -224,7 +224,7 @@ def test_rejects_non_finite_parameters(parameter: float) -> None:
 
 def test_validates_operation_topology() -> None:
     """Honor operation-specific QDMI site pairs."""
-    device = FakeDevice(
+    device = StubDevice(
         [operation("cx", 2, site_pairs=[(0, 1)])],
         [fomac.ProgramFormat.QASM3],
         qubits=3,

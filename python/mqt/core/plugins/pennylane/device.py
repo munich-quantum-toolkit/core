@@ -368,7 +368,7 @@ class QDMIDevice(Device):
 
 
 class DDSIMDevice(QDMIDevice):
-    """PennyLane entry point for Core's local DDSIM QDMI device."""
+    """PennyLane entry point for MQT Core's local DDSIM QDMI device."""
 
     def __init__(
         self,

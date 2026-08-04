@@ -36,6 +36,10 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
 - [x] (2026-08-04 15:45Z) Passed the Python 3.10 and 3.14 full test sessions,
   the focused Python 3.11-3.13 sessions, the warning-clean documentation nox
   session, and the complete lint nox session; audited the final diff.
+- [x] (2026-08-04 16:30Z) Integrated the latest `origin/main`, broadened the
+  exact Autograd warning filter to work for compile-time warnings in CI,
+  simplified public prose and the changelog, and reduced the shared test
+  support from 300 to 177 lines without reducing its 33-test coverage.
 
 ## Surprises & Discoveries
 
@@ -50,10 +54,10 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   include. The PennyLane integration therefore needs a small capability-driven
   emitter behind its own converted-program boundary.
 - Observation: PennyLane 0.45.1 declares Python 3.14 support, but Autograd 1.8
-  contains a `return` in a `finally` block. Core's warnings-as-errors test
+  contains a `return` in a `finally` block. MQT Core's warnings-as-errors test
   policy promotes Python 3.14's compile-time `SyntaxWarning` to an import
   failure. Evidence: the first Python 3.14 nox run failed while importing
-  `autograd.wrap_util`; an exact module-scoped warning filter restored normal
+  `autograd.wrap_util`; an exact message/category warning filter restored normal
   upstream import behavior and the full session passed.
 - Observation: DDSIM returns QDMI shots in conventional basis-state spelling,
   with the highest-index site on the left. Evidence: applying X to site zero
@@ -81,10 +85,10 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   Rationale: the framework then owns observable diagonalization, non-commuting
   measurement splitting, Hamiltonian aggregation, shot-vector binning, and
   result typing. Date/Author: 2026-08-04 / GPT-5.6 via Codex.
-- Decision: Keep QDMI submission sequential in version 1. Rationale: the current
-  FoMaC interface has no batch-submission contract, while sequential execution
-  remains correct for batches and parameter-shift expansion. Date/Author:
-  2026-08-04 / GPT-5.6 via Codex.
+- Decision: Keep QDMI submission sequential. Rationale: the current FoMaC
+  interface has no batch-submission contract, while sequential execution remains
+  correct for batches and parameter-shift expansion. Date/Author: 2026-08-04 /
+  GPT-5.6 via Codex.
 - Decision: Keep PennyLane enabled on Python 3.11 through 3.14 and suppress only
   Autograd 1.8's exact Python 3.14 compile-time warning in test configuration.
   Rationale: PennyLane formally supports 3.14, normal imports work, and
@@ -97,11 +101,11 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
 
 ## Outcomes & Retrospective
 
-The Core half is implemented. `qp.device("mqt.ddsim.default", ...)` executes
-finite-shot tapes through QDMI, prefers capability-driven OpenQASM 3, uses
-PennyLane's exact QASM2 serializer only for QASM2-only devices, reconstructs the
-documented measurement types through PennyLane preprocessing, and runs the
-checked-in one-layer MaxCut QAOA application.
+The MQT Core implementation is complete. `qp.device("mqt.ddsim.default", ...)`
+executes finite-shot tapes through QDMI, prefers capability-driven OpenQASM 3,
+uses PennyLane's exact QASM2 serializer only for QASM2-only devices,
+reconstructs the documented measurement types through PennyLane preprocessing,
+and runs the checked-in one-layer MaxCut QAOA application.
 
 Validation evidence:
 
@@ -117,12 +121,12 @@ Validation evidence:
 The deliberately deferred gaps are routing, parallel submission, analytic
 execution, pulse programming, and non-gate provider properties. The separate
 Amazon Braket provider change consumes only the public stable-ID device API and
-remains ordered after the Core release.
+remains ordered after the MQT Core release.
 
 ## Context and Orientation
 
 `python/mqt/core/fomac.pyi` describes the Python-facing QDMI API. A stable
-device ID is a provider-neutral string registered by Core or an installed
+device ID is a provider-neutral string registered by MQT Core or an installed
 provider package. `fomac.open_device` opens a fresh device session, and the
 returned object advertises program formats, named operations, operation loci,
 topology, and a `submit_job` method. A submitted job provides raw shot strings.
@@ -185,7 +189,7 @@ Run focused tests, a complete Python test session on a supported version,
 documentation, lint, lockfile consistency, and packaging checks. Audit all new
 PennyLane source and documentation for the `qp` alias and review the final diff.
 The separate Amazon Braket provider worktree then consumes only this public API;
-it is not part of the Core change.
+it is not part of the MQT Core change.
 
 ## Plan of Work
 
@@ -299,5 +303,5 @@ measurement, and serialization APIs, NumPy for sample arrays, and the existing
 pipeline, JEFF conversion, pulse programming, neutral-atom properties, or
 parallel job submission.
 
-Revision note: created on 2026-08-04 to capture the user-approved Core half of
-the QDMI–PennyLane version 1 implementation before production edits.
+Revision note: created on 2026-08-04 to capture the user-approved MQT Core half
+of the QDMI–PennyLane implementation before production edits.
