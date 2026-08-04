@@ -33,7 +33,7 @@ releases may include breaking changes.
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
-  [#1979]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [#1979], [#2007]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
@@ -716,6 +716,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
 [#2000]: https://github.com/munich-quantum-toolkit/core/pull/2000
