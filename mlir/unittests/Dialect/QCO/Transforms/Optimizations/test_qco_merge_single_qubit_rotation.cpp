@@ -835,8 +835,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
                     /*expectedLambda=*/0., /*tolerance=*/1e-6);
 
   auto phase = getGPhaseParam();
-  if (phase.has_value()) {
-    EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
-    EXPECT_NEAR(*phase, utils::normalizeAngle(*phase), 1e-8);
-  }
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
+  EXPECT_NEAR(*phase, utils::normalizeAngle(*phase), 1e-8);
 }
