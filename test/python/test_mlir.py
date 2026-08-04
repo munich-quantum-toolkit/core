@@ -375,7 +375,7 @@ def test_qco_program_decomposes_multi_controlled() -> None:
     assert "qco.ctrl" in before
 
     retained = qco.copy()
-    retained.decompose_multi_controlled(min_controls=3)
+    retained.decompose_multi_controlled(min_qubits=4)
     assert "controls_out:2" in retained.ir
 
     qco.decompose_multi_controlled()
@@ -383,7 +383,7 @@ def test_qco_program_decomposes_multi_controlled() -> None:
     assert "controls_out:2" not in qco.ir
 
     with pytest.raises(RuntimeError, match="MLIR operation failed"):
-        qco.decompose_multi_controlled(min_controls=1)
+        qco.decompose_multi_controlled(min_qubits=2)
 
 
 def test_compile_program_fails_for_missing_file() -> None:

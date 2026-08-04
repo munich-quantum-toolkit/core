@@ -13,11 +13,9 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string_view.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>      // NOLINT(misc-include-cleaner)
 
 #include <cctype>
 #include <cstddef>
@@ -29,7 +27,6 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include <vector>
 
 namespace mqt {
 
@@ -233,8 +230,8 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                const bool inplace, const std::string& qcoPipeline,
                const bool enableTiming, const bool enableStatistics) {
   return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
-                                             output, qcoPipeline, enableTiming,
-                                             enableStatistics));
+                                             output, nullptr, qcoPipeline,
+                                             enableTiming, enableStatistics));
 }
 
 } // namespace
@@ -411,24 +408,10 @@ operations.)pb");
       .def("decompose_multi_controlled",
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
-           nb::kw_only(), "min_controls"_a = 2,
-           "Decompose controlled X/Z gates, qco.rccx, and constant-angle phase "
-           "gates with at least min_controls controls (min_controls must be at "
-           "least 2).")
-      .def(
-          "place_and_route",
-          [](mlir::QCOProgram& value,
-             const std::vector<std::pair<std::size_t, std::size_t>>& coupling,
-             const std::size_t nlookahead, const float alpha,
-             const float lambda, const std::size_t niterations,
-             const std::size_t ntrials, const std::size_t seed) {
-            requireSuccess(value.placeAndRoute(std::span(coupling), nlookahead,
-                                               alpha, lambda, niterations,
-                                               ntrials, seed));
-          },
-          "coupling"_a, nb::kw_only(), "nlookahead"_a = 1, "alpha"_a = 1.F,
-          "lambda_"_a = 0.5F, "niterations"_a = 1, "ntrials"_a = 4,
-          "seed"_a = 42, "Place and route the program for a coupling graph.")
+           nb::kw_only(), "min_qubits"_a = 3,
+           "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
+           "phase gates that act on at least min_qubits qubits (min_qubits "
+           "must be at least 3; default 3 means wider than two-qubit).")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

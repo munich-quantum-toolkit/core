@@ -304,33 +304,44 @@ def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Decompose controlled X/Z/phase gates and qco.rccx with at "
-                "least min-controls controls";
+  let summary = "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that "
+                "act on at least min-qubits qubits";
   let description = [{
-    Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
-    a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
-    `min-controls` controls.
+    Decomposes multi-qubit controlled operations that act on at least
+    `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
+    Supported shapes: `qco.ctrl` with a `qco.x`, `qco.z`, `qco.swap`, or
+    constant-angle `qco.p` body, and `qco.rccx`.
 
-    - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
-      when `min-controls` is at most 2.
-    - Four controls (X/Z): specialized ancilla-free relative-phase `C^4(Z)`.
-    - Five through 32 controls (X/Z): da Silva-Park SP22 MCP(π) core
-      (`H · MCP(π) · H` for X).
-    - 33 or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
-      synthesis with a compile-time CX policy table.
-    - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
-      residual at four) for three and four controls; da Silva-Park SP22
-      linear-depth decomposition at five and above. A compile-time angle of
-      `±π` is routed through the Z path for every control count.
+    | Family | Width (qubits) | Decomposition |
+    | ------ | -------------- | ------------- |
+    | X/Z | 3 | Elementary CCX/CCZ; `rccx` when `min-qubits` is at most 3 |
+    | X/Z | 4 | Elementary CCCX/CCCZ |
+    | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
+    | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with a compile-time CX policy table |
+    | Phase | 3 | Optimized `C^2(P)` |
+    | Phase | 4–5 | Vale (Barenco-relative residual) |
+    | Phase | ≥6 | da Silva-Park SP22 linear-depth |
+    | Phase | any (`±π`) | Routed through the Z path |
+    | SWAP | ≥ `min-qubits` | `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)` |
 
-    Intermediate two- and three-control building blocks may be left as
-    `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
-    lowers further when the threshold allows.
+    Width is the total number of qubits the gate acts on (controls plus
+    targets).
+
+    For controlled SWAP, `C ∪ {b}` is the original control set together with
+    SWAP target `b`, and the MCX target is the other SWAP qubit `a`. The
+    emitted MCX is then lowered by the X path under the same `min-qubits`
+    threshold.
+
+    Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
+    `min-qubits` keeps them; the greedy rewriter lowers further when the
+    threshold allows.
   }];
   let options = [Option<
-      "minControls", "min-controls", "uint64_t", "2",
-      "Decompose controlled X/Z/phase gates and qco.rccx with at least this "
-      "many controls (must be at least 2).">];
+      "minQubits", "min-qubits", "uint64_t", "3",
+      "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
+      "least this many qubits (must be at least 3; default 3 means wider than "
+      "two-qubit).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

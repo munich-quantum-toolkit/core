@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add immutable MLIR compiler targets and a canonical target compilation
+  pipeline for decomposition, optimization, mapping, native synthesis, and
+  conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
@@ -36,8 +39,9 @@ releases may include breaking changes.
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
-  RCCX, and constant-angle phase gates with a configurable `min-controls`
-  threshold ([#1810], [#1996]) ([**@simon1hofmann**])
+  SWAP, RCCX, and constant-angle phase gates with a configurable `min-qubits`
+  threshold (default 3: wider than two-qubit) ([#1810], [#1996], [#2001])
+  ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   and structured control flow ([#1910], [#1994]) ([**@burgholzer**],
@@ -710,11 +714,14 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
+[#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999
 [#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
 [#1996]: https://github.com/munich-quantum-toolkit/core/pull/1996
 [#1995]: https://github.com/munich-quantum-toolkit/core/pull/1995
 [#1994]: https://github.com/munich-quantum-toolkit/core/pull/1994
+[#1993]: https://github.com/munich-quantum-toolkit/core/pull/1993
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984

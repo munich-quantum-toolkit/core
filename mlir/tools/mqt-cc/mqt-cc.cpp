@@ -179,18 +179,18 @@ parseOutputFormat(const StringRef format) {
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
     llvm::cl::desc(
-        "Decompose controlled X/Z/phase gates and qco.rccx with at least "
-        "--decompose-multi-controlled-min-controls controls (default 2)."),
+        "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
+        "least --decompose-multi-controlled-min-qubits qubits (default 3)."),
     llvm::cl::init(false));
 
-static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
-    "decompose-multi-controlled-min-controls",
+static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
+    "decompose-multi-controlled-min-qubits",
     llvm::cl::desc(
-        "Minimum control count for --decompose-multi-controlled: decompose "
-        "controlled X/Z/phase gates and qco.rccx with at least this many "
-        "controls (default 2; must be at least 2). Higher values leave smaller "
-        "controlled gates undecomposed."),
-    llvm::cl::init(2));
+        "Minimum qubit count for --decompose-multi-controlled: decompose "
+        "controlled X/Z/phase/SWAP gates and qco.rccx that act on at least "
+        "this many qubits (default 3; must be at least 3). Higher values leave "
+        "narrower gates undecomposed."),
+    llvm::cl::init(3));
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -391,9 +391,9 @@ static int runCompiler(int argc, char** argv) {
   }
   if (enableDecomposeMultiControlled &&
       !isDecomposeMultiControlledConfigValid(
-          decomposeMultiControlledMinControls.getValue())) {
+          decomposeMultiControlledMinQubits.getValue())) {
     llvm::errs()
-        << "decompose-multi-controlled-min-controls must be at least 2 when "
+        << "decompose-multi-controlled-min-qubits must be at least 3 when "
            "--decompose-multi-controlled is enabled.\n";
     return 1;
   }
@@ -433,7 +433,7 @@ static int runCompiler(int argc, char** argv) {
           } else {
             if (enableDecomposeMultiControlled) {
               populateDecomposeMultiControlledPipeline(
-                  pm, decomposeMultiControlledMinControls.getValue());
+                  pm, decomposeMultiControlledMinQubits.getValue());
             }
             populateDefaultQCOOptimizationPipeline(pm);
           }
