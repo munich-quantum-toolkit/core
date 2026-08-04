@@ -8,17 +8,24 @@
  * Licensed under the MIT License
  */
 
+#include "fomac/FoMaC.hpp" // NOLINT(misc-include-cleaner)
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/Target.h"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string_view.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>      // NOLINT(misc-include-cleaner)
 
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -27,6 +34,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace mqt {
 
@@ -227,10 +235,11 @@ programFromPath(const std::filesystem::path& path) {
  */
 [[nodiscard]] mlir::CompilerProgram
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
-               const bool inplace, const std::string& qcoPipeline,
-               const bool enableTiming, const bool enableStatistics) {
+               const bool inplace, const mlir::CompilerTarget* const target,
+               const std::string& qcoPipeline, const bool enableTiming,
+               const bool enableStatistics) {
   return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
-                                             output, nullptr, qcoPipeline,
+                                             output, target, qcoPipeline,
                                              enableTiming, enableStatistics));
 }
 
@@ -241,6 +250,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.ir");
+  nb::module_::import_("mqt.core.fomac");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
       .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")
@@ -261,6 +271,240 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
              "QIR for the Base Profile.")
       .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
              "QIR for the Adaptive Profile.");
+
+  auto compilerTarget = nb::class_<mlir::CompilerTarget>(
+      m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
+
+An absent topology means all-to-all connectivity. An absent operation set
+means every operation is native.)pb");
+
+  auto durationUnit = nb::class_<mlir::CompilerTarget::DurationUnit>(
+      compilerTarget, "DurationUnit", "Unit for raw target timing metadata.");
+  durationUnit.def(nb::init<std::string, double>(), "unit"_a, "scale_factor"_a)
+      .def_prop_ro(
+          "unit",
+          [](const mlir::CompilerTarget::DurationUnit& value) {
+            return value.unit().str();
+          },
+          "The reported duration unit.")
+      .def_prop_ro("scale_factor",
+                   &mlir::CompilerTarget::DurationUnit::scaleFactor,
+                   "The multiplier applied to raw timing values.");
+
+  auto targetSite = nb::class_<mlir::CompilerTarget::Site>(
+      compilerTarget, "Site", "A hardware site and its optional metadata.");
+  targetSite
+      .def(nb::init<mlir::CompilerTarget::SiteId, std::optional<std::string>,
+                    std::optional<uint64_t>, std::optional<uint64_t>>(),
+           "site_id"_a, "name"_a = nb::none(), "t1"_a = nb::none(),
+           "t2"_a = nb::none())
+      .def_prop_ro("id", &mlir::CompilerTarget::Site::id,
+                   "The target-defined nonnegative site identifier.")
+      .def_prop_ro(
+          "name",
+          [](const mlir::CompilerTarget::Site& site) {
+            const auto name = site.name();
+            return name ? std::optional<std::string>(name->str())
+                        : std::nullopt;
+          },
+          "The reported site name, if available.")
+      .def_prop_ro("t1", &mlir::CompilerTarget::Site::t1,
+                   "The raw T1 coherence time, if available.")
+      .def_prop_ro("t2", &mlir::CompilerTarget::Site::t2,
+                   "The raw T2 coherence time, if available.");
+
+  auto siteTuple = nb::class_<mlir::CompilerTarget::SiteTuple>(
+      compilerTarget, "SiteTuple",
+      "Calibration data for an ordered tuple of target sites.");
+  siteTuple
+      .def(nb::init<std::vector<mlir::CompilerTarget::SiteId>,
+                    std::optional<uint64_t>, std::optional<double>>(),
+           "sites"_a, "duration"_a = nb::none(), "fidelity"_a = nb::none())
+      .def_prop_ro(
+          "sites",
+          [](const mlir::CompilerTarget::SiteTuple& tuple) {
+            return std::vector<mlir::CompilerTarget::SiteId>(
+                tuple.sites().begin(), tuple.sites().end());
+          },
+          "The ordered target site identifiers.")
+      .def_prop_ro("duration", &mlir::CompilerTarget::SiteTuple::duration,
+                   "The raw operation duration, if available.")
+      .def_prop_ro("fidelity", &mlir::CompilerTarget::SiteTuple::fidelity,
+                   "The operation fidelity, if available.");
+
+  auto targetOperation = nb::class_<mlir::CompilerTarget::Operation>(
+      compilerTarget, "Operation",
+      "A homogeneous target-wide operation capability and its calibration.");
+  targetOperation
+      .def(nb::new_(
+               [](std::string name, const size_t numQubits,
+                  const size_t numParameters,
+                  std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
+                      siteTuples,
+                  const std::optional<uint64_t> duration,
+                  const std::optional<double> fidelity) {
+                 return mlir::CompilerTarget::Operation(
+                     std::move(name), numQubits, numParameters,
+                     std::move(siteTuples)
+                         .value_or(
+                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
+                     duration, fidelity);
+               }),
+           "name"_a, "num_qubits"_a, "num_parameters"_a,
+           "site_tuples"_a = nb::none(), "duration"_a = nb::none(),
+           "fidelity"_a = nb::none())
+      .def_prop_ro(
+          "name",
+          [](const mlir::CompilerTarget::Operation& operation) {
+            return operation.name().str();
+          },
+          "The exact reported operation name.")
+      .def_prop_ro(
+          "canonical_name",
+          [](const mlir::CompilerTarget::Operation& operation) {
+            return operation.canonicalName().str();
+          },
+          "The normalized compiler operation name.")
+      .def_prop_ro("num_qubits", &mlir::CompilerTarget::Operation::numQubits,
+                   "The fixed operation arity.")
+      .def_prop_ro("num_parameters",
+                   &mlir::CompilerTarget::Operation::numParameters,
+                   "The number of real-valued parameters.")
+      .def_prop_ro(
+          "site_tuples",
+          [](const mlir::CompilerTarget::Operation& operation) {
+            return std::vector<mlir::CompilerTarget::SiteTuple>(
+                operation.siteTuples().begin(), operation.siteTuples().end());
+          },
+          "Ordered site-specific calibration data.")
+      .def_prop_ro("duration", &mlir::CompilerTarget::Operation::duration,
+                   "The raw default duration, if available.")
+      .def_prop_ro("fidelity", &mlir::CompilerTarget::Operation::fidelity,
+                   "The default fidelity, if available.");
+
+  nb::enum_<mlir::CompilerTarget::GateKind>(
+      compilerTarget, "GateKind", "Recognized native gate capability.")
+      .value("U", mlir::CompilerTarget::GateKind::U)
+      .value("X", mlir::CompilerTarget::GateKind::X)
+      .value("SX", mlir::CompilerTarget::GateKind::SX)
+      .value("RZ", mlir::CompilerTarget::GateKind::RZ)
+      .value("RX", mlir::CompilerTarget::GateKind::RX)
+      .value("RY", mlir::CompilerTarget::GateKind::RY)
+      .value("R", mlir::CompilerTarget::GateKind::R)
+      .value("RXX", mlir::CompilerTarget::GateKind::RXX)
+      .value("RYY", mlir::CompilerTarget::GateKind::RYY)
+      .value("RZX", mlir::CompilerTarget::GateKind::RZX)
+      .value("RZZ", mlir::CompilerTarget::GateKind::RZZ)
+      .value("ISWAP", mlir::CompilerTarget::GateKind::ISWAP)
+      .value("CZ", mlir::CompilerTarget::GateKind::CZ)
+      .value("CX", mlir::CompilerTarget::GateKind::CX)
+      .value("ECR", mlir::CompilerTarget::GateKind::ECR);
+
+  nb::enum_<mlir::CompilerTarget::SingleQubitBasis>(
+      compilerTarget, "SingleQubitBasis",
+      "Recognized target-wide single-qubit synthesis basis.")
+      .value("U", mlir::CompilerTarget::SingleQubitBasis::U)
+      .value("ZSXX", mlir::CompilerTarget::SingleQubitBasis::ZSXX)
+      .value("R", mlir::CompilerTarget::SingleQubitBasis::R)
+      .value("XZX", mlir::CompilerTarget::SingleQubitBasis::XZX)
+      .value("XYX", mlir::CompilerTarget::SingleQubitBasis::XYX)
+      .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
+      .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
+
+  auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
+      compilerTarget, "SynthesisBasis",
+      "One synthesis basis usable across the complete target.");
+  synthesisBasis
+      .def_ro("single_qubit",
+              &mlir::CompilerTarget::SynthesisBasis::singleQubit,
+              "The single-qubit synthesis basis.")
+      .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
+              "The two-qubit entangler.");
+
+  compilerTarget
+      .def(nb::init<size_t,
+                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
+                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
+                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+           "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
+           "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+      .def(nb::init<std::string, size_t,
+                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
+                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
+                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+           "name"_a, "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
+           "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+      .def(nb::init<std::vector<mlir::CompilerTarget::Site>,
+                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
+                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
+                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+           "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
+           "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+      .def(nb::init<std::string, std::vector<mlir::CompilerTarget::Site>,
+                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
+                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
+                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+           "name"_a, "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
+           "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+      .def_static("from_device", &mlir::compilerTargetFromDevice, "device"_a,
+                  "Snapshot a circuit-model QDMI device.")
+      .def_prop_ro(
+          "name",
+          [](const mlir::CompilerTarget& target) {
+            const auto name = target.name();
+            return name ? std::optional<std::string>(name->str())
+                        : std::nullopt;
+          },
+          "The target name, if available.")
+      .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
+                   "The target timing unit, if available.")
+      .def_prop_ro("num_qubits", &mlir::CompilerTarget::numQubits,
+                   "The number of target sites.")
+      .def_prop_ro(
+          "sites",
+          [](const mlir::CompilerTarget& target) {
+            return std::vector<mlir::CompilerTarget::Site>(
+                target.sites().begin(), target.sites().end());
+          },
+          "Detailed sites in compiler-vertex order.")
+      .def_prop_ro("has_explicit_topology",
+                   &mlir::CompilerTarget::hasExplicitTopology,
+                   "Whether the target defines a coupling topology.")
+      .def_prop_ro(
+          "couplings",
+          [](const mlir::CompilerTarget& target) {
+            return std::vector<mlir::CompilerTarget::Coupling>(
+                target.couplings().begin(), target.couplings().end());
+          },
+          "Canonical undirected couplings in target site IDs.")
+      .def_prop_ro("has_explicit_operations",
+                   &mlir::CompilerTarget::hasExplicitOperations,
+                   "Whether the target defines an operation set.")
+      .def_prop_ro(
+          "operations",
+          [](const mlir::CompilerTarget& target) {
+            return std::vector<mlir::CompilerTarget::Operation>(
+                target.operations().begin(), target.operations().end());
+          },
+          "Operation capabilities in reported order.")
+      .def_prop_ro(
+          "supported_gates",
+          [](const mlir::CompilerTarget& target) {
+            return std::vector<mlir::CompilerTarget::GateKind>(
+                target.supportedGates().begin(), target.supportedGates().end());
+          },
+          "Recognized native gates supported by the target.")
+      .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
+                   "A complete target-wide synthesis basis, if available.")
+      .def(
+          "supports_operation",
+          [](const mlir::CompilerTarget& target, const std::string_view name,
+             const size_t numQubits,
+             const std::optional<size_t> numParameters) {
+            return target.supportsOperation(name, numQubits, numParameters);
+          },
+          "name"_a, "num_qubits"_a, "num_parameters"_a = nb::none(),
+          "Whether the target supports an operation capability.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
@@ -412,6 +656,11 @@ operations.)pb");
            "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
            "phase gates that act on at least min_qubits qubits (min_qubits "
            "must be at least 3; default 3 means wider than two-qubit).")
+      .def("compile_for_target",
+           &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
+           "target"_a, nb::kw_only(), "enable_timing"_a = false,
+           "enable_statistics"_a = false,
+           "Compile this QCO program for the target in place.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
@@ -506,8 +755,8 @@ LLVM bitcode.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
-        "qco_pipeline"_a = "mqt-qco-default", "enable_timing"_a = false,
-        "enable_statistics"_a = false,
+        "target"_a = nb::none(), "qco_pipeline"_a = "mqt-qco-default",
+        "enable_timing"_a = false, "enable_statistics"_a = false,
         R"pb(
 Run the coordinated default MQT compiler pipeline.
 
@@ -521,7 +770,10 @@ Args:
     program: Source text, a file path, a circuit, or a typed compiler program.
     output: The requested output stage of the compiler pipeline.
     inplace: Whether a typed input program may be consumed.
-    qco_pipeline: The QCO optimization pipeline to run.
+    target: An optional compiler target for decomposition, mapping, and native
+        synthesis. A target requires optimized QCO, QC, or QIR output.
+    qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
+        cannot be combined with a target.
     enable_timing: Whether to collect pass timing information.
     enable_statistics: Whether to collect pass statistics.
 

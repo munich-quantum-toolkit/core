@@ -14,6 +14,8 @@ releases may include breaking changes.
 
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
+- ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
+  `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
   conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -824,6 +826,7 @@ for previous changelogs._
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
+[#1687]: https://github.com/munich-quantum-toolkit/core/pull/1687
 [#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
 [#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
 [#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
