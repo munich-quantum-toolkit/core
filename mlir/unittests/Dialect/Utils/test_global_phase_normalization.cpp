@@ -43,6 +43,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -124,6 +125,91 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
       phases.front().getTheta().getDefiningOp<arith::ConstantOp>().getValue());
   ASSERT_TRUE(value);
   EXPECT_DOUBLE_EQ(value.getValueAsDouble(), 0.75);
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       FoldsMulDerivedPhasesWithinPracticalAngleLimit) {
+  // Many arith.mulf-derived gphase angles used to be treated as dynamic and
+  // merged into an addf chain whose later constant-fold exceeded the 1e4 rad
+  // GPhase verifier contract (seen on QASMBench vqe_uccsd_n28 / QV_n100).
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  auto function = func::FuncOp::create(builder, loc, "test",
+                                       builder.getFunctionType({}, {}));
+  auto* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  constexpr int phaseCount = 4000;
+  constexpr double half = 1.5;
+  constexpr double two = 2.0;
+  const double expected =
+      utils::normalizeAngle(static_cast<double>(phaseCount) * half * two);
+  for (int i = 0; i < phaseCount; ++i) {
+    auto lhs = utils::constantFromScalar(builder, loc, half);
+    auto rhs = utils::constantFromScalar(builder, loc, two);
+    auto angle = arith::MulFOp::create(builder, loc, lhs, rhs);
+    qco::GPhaseOp::create(builder, loc, angle.getResult());
+  }
+  func::ReturnOp::create(builder, loc);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  auto constantOp =
+      phases.front().getTheta().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(constantOp);
+  const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
+  ASSERT_TRUE(value);
+  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       FoldsSitofpMulDerivedPhasesWithinPracticalAngleLimit) {
+  // QV_n100 lowers many phases as mulf(sitofp(i64), f64), which must fold the
+  // same way as pure float mulf trees.
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  auto function = func::FuncOp::create(builder, loc, "test",
+                                       builder.getFunctionType({}, {}));
+  auto* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  constexpr int phaseCount = 4000;
+  constexpr int64_t intFactor = 3;
+  constexpr double floatFactor = 2.0;
+  const double expected =
+      utils::normalizeAngle(static_cast<double>(phaseCount) *
+                            static_cast<double>(intFactor) * floatFactor);
+  for (int i = 0; i < phaseCount; ++i) {
+    auto intConst = arith::ConstantOp::create(
+        builder, loc, builder.getIntegerAttr(builder.getI64Type(), intFactor));
+    auto lhs = arith::SIToFPOp::create(builder, loc, builder.getF64Type(),
+                                       intConst.getResult());
+    auto rhs = utils::constantFromScalar(builder, loc, floatFactor);
+    auto angle = arith::MulFOp::create(builder, loc, lhs.getResult(), rhs);
+    qco::GPhaseOp::create(builder, loc, angle.getResult());
+  }
+  func::ReturnOp::create(builder, loc);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  auto constantOp =
+      phases.front().getTheta().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(constantOp);
+  const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
+  ASSERT_TRUE(value);
+  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
 }
 
 TEST_F(GlobalPhaseNormalizationTest,

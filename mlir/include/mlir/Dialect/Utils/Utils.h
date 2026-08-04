@@ -10,7 +10,9 @@
 
 #pragma once
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -21,14 +23,20 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/Matchers.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 namespace mlir::utils {
@@ -122,6 +130,20 @@ inline void validateMemRefIndex(Value memref,
   }
 }
 
+[[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {
+  if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
+    return floatAttr.getValueAsDouble();
+  }
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
+    const bool isSigned = !intAttr.getType().isUnsignedInteger();
+    APFloat apf(APFloat::IEEEdouble(), APInt::getZero(64));
+    apf.convertFromAPInt(intAttr.getValue(), isSigned,
+                         APFloat::rmNearestTiesToEven);
+    return apf.convertToDouble();
+  }
+  return std::nullopt;
+}
+
 /**
  * @brief Try to convert a mlir::Value to a standard C++ double
  *
@@ -135,15 +157,71 @@ inline void validateMemRefIndex(Value memref,
   if (!constantOp) {
     return std::nullopt;
   }
-  if (auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue())) {
-    return floatAttr.getValueAsDouble();
+  return attributeToDouble(constantOp.getValue());
+}
+
+/// Recursively constant-fold a pure SSA expression DAG to an attribute.
+///
+/// @p cache memoizes both successful and failed evaluations so shared SSA
+/// operands are resolved once (linear in the expression DAG).
+[[nodiscard]] inline std::optional<Attribute>
+valueToConstantAttr(Value value,
+                    llvm::DenseMap<Value, std::optional<Attribute>>& cache) {
+  if (const auto it = cache.find(value); it != cache.end()) {
+    return it->second;
   }
-  if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
-    if (intAttr.getType().isUnsignedInteger()) {
-      return static_cast<double>(intAttr.getValue().getZExtValue());
+
+  Attribute attr;
+  if (matchPattern(value, m_Constant(&attr))) {
+    return cache[value] = attr;
+  }
+
+  Operation* op = value.getDefiningOp();
+  if (op == nullptr || op->getNumRegions() != 0 || !isPure(op)) {
+    return cache[value] = std::nullopt;
+  }
+
+  SmallVector<Attribute> operands;
+  operands.reserve(op->getNumOperands());
+  for (const Value operand : op->getOperands()) {
+    const auto folded = valueToConstantAttr(operand, cache);
+    if (!folded) {
+      return cache[value] = std::nullopt;
     }
-    // interpret both signed+signless as signed integers
-    return static_cast<double>(intAttr.getValue().getSExtValue());
+    operands.push_back(*folded);
+  }
+
+  SmallVector<OpFoldResult, 1> results;
+  if (failed(op->fold(operands, results)) || results.size() != 1) {
+    return cache[value] = std::nullopt;
+  }
+  std::optional<Attribute> folded;
+  if (const auto resultAttr =
+          llvm::dyn_cast_if_present<Attribute>(results.front())) {
+    folded = resultAttr;
+  } else if (const auto resultValue =
+                 llvm::dyn_cast_if_present<Value>(results.front())) {
+    // Identity-style folds may return an existing SSA value (e.g. `addf x,
+    // -0`).
+    folded = valueToConstantAttr(resultValue, cache);
+  }
+  return cache[value] = folded;
+}
+
+/// Recursively constant-fold a pure SSA expression DAG to an attribute.
+[[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
+  llvm::DenseMap<Value, std::optional<Attribute>> cache;
+  return valueToConstantAttr(value, cache);
+}
+
+/// Recursively constant-fold a pure SSA expression tree to a double.
+///
+/// Used by global-phase normalization so merged phases stay inside the
+/// practical `gphase` angle contract instead of emitting long add-chains that
+/// later constant-fold past `MAX_GLOBAL_PHASE_ANGLE`.
+[[nodiscard]] inline std::optional<double> valueToConstantDouble(Value value) {
+  if (const auto attr = valueToConstantAttr(value)) {
+    return attributeToDouble(*attr);
   }
   return std::nullopt;
 }
