@@ -50,7 +50,6 @@ void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
-    qco::registerFuseTwoQubitUnitaryRuns();
     qco::registerHadamardLifting();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();

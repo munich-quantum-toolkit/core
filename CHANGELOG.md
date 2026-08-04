@@ -32,9 +32,9 @@ releases may include breaking changes.
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
-- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1865], [#1961])
-  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add target-independent two-qubit gate fusion, target-native post-routing
+  synthesis, and operation-capability and static-site conformance ([#1865],
+  [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
   RCCX, and constant-angle phase gates with a configurable `min-controls`
   threshold ([#1810], [#1996]) ([**@simon1hofmann**])
@@ -68,7 +68,7 @@ releases may include breaking changes.
   [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
   [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
-  circuits to compiler-target topologies while preserving provider site IDs and
+  circuits to compiler-target topologies while preserving target site IDs and
   materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
   [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
   [#1870], [#1904], [#1911], [#1951], [#1997]) ([**@MatthiasReumann**],
@@ -710,6 +710,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
 [#1996]: https://github.com/munich-quantum-toolkit/core/pull/1996
 [#1995]: https://github.com/munich-quantum-toolkit/core/pull/1995

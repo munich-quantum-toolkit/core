@@ -14,15 +14,16 @@ compiler can rely on without linking a live QDMI device, the FoMaC wrapper, or
 the legacy Core IR. After this change, C++ compiler code can construct a
 `mlir::CompilerTarget` either from a qubit count or from detailed site,
 topology, and operation data. It can cheaply copy that target, translate between
-provider site identifiers and dense compiler vertices, ask whether an MLIR QCO
-operation is native at an ordered hardware locus, and inspect one typed native
-synthesis basis that is usable across the complete target.
+target site identifiers and dense compiler vertices, ask whether an MLIR QCO
+operation is native, and inspect one typed synthesis basis. Operation
+capabilities are homogeneous across the target; ordered site tuples retain only
+site-specific calibration data.
 
 The focused compiler unit test demonstrates the result. It constructs targets
-with sparse signed site identifiers, provider gate aliases, calibrated operation
-loci, and one-way topology input; verifies canonicalized topology and
-capabilities; creates real QCO operations; and observes correct support answers.
-Invalid metadata is rejected once at construction.
+with sparse signed site identifiers, device gate aliases, calibrated operation
+site tuples, and one-way topology input; verifies canonicalized topology and
+homogeneous capabilities; creates real QCO operations; and observes correct
+support answers. Invalid metadata is rejected once at construction.
 
 ## Progress
 
@@ -41,17 +42,17 @@ Invalid metadata is rejected once at construction.
       `Target.h` to its build-tree public header file set, and excluded that
       header from `MQTCompilerPipeline`.
 - [x] (2026-08-03 11:52Z) Added eight focused tests covering all four
-  constructor forms, validation, cheap copies, topology, every required
-  symmetric and directional entangler, synthesis-basis resolution, and real
-  QCO operations.
+      constructor forms, validation, cheap copies, topology, every required
+      recognized entangler, synthesis-basis resolution, and real QCO operations.
 - [x] (2026-08-03 11:56Z) Built the target and interface-header verification
   target, passed 8 focused and all 218 compiler tests, ran changed-file
   clang-tidy without local diagnostics, passed the full repository lint, and
   passed `git diff --check`.
 - [x] (2026-08-03 11:56Z) Completed an independent pre-commit review and
-  resolved all four blocking findings: intrinsic locus validation, complete
-  entangler-table coverage, C++/policy diagnostics, and the stale plan. The
-  final tree is prepared for one signed atomic commit without a push.
+      resolved all four blocking findings: intrinsic site tuple validation,
+      complete entangler-table coverage, C++/policy diagnostics, and the stale
+      plan. The final tree is prepared for one signed atomic commit without a
+      push.
 - [x] (2026-08-03 12:35Z) Diagnosed the exact-head CI failures after
       publication. Moved five file-local helpers out of the anonymous namespace
       so LLVM 22's preferred static-linkage check passes. Rebuilt the target,
@@ -66,6 +67,12 @@ Invalid metadata is rejected once at construction.
       retaining the repository's modernize-use-auto contract. Rebuilt the target
       and interface header and passed the 8 focused and all 218 compiler tests
       plus the exact relevant LLVM checks.
+- [x] (2026-08-03) Simplified operation support to one homogeneous target-wide
+      capability per name, arity, and parameter count. Standardized on
+      `SiteTuple`, retained tuples only as calibration metadata, removed
+      directional probing, and reduced the public queries to
+      `supportsOperation(name, arity, parameters)`, `supports(Operation*)`, and
+      `supports(GateKind)`.
 
 ## Milestones
 
@@ -73,21 +80,21 @@ Invalid metadata is rejected once at construction.
 
 The goal was a compiler-owned model that can be constructed without QDMI, FoMaC,
 CoreIR, or a live device. The work added value types for timing units, sites,
-operation loci, and operation capabilities plus a shared immutable target
-storage object. The result preserves provider metadata while validating the
-cross-object contract once, including timing units, ordered loci, and explicit
-operation absence versus emptiness. The focused construction and rejection tests
-prove the observable contract.
+operation site tuples, and operation capabilities plus a shared immutable target
+storage object. The result preserves device metadata while validating the
+cross-object contract once, including timing units, calibration site tuples, and
+explicit operation absence versus emptiness. The focused construction and
+rejection tests prove the observable contract.
 
 ### Milestone 2: Centralize topology and synthesis facts
 
 The goal was to prevent later mapping and synthesis stages from rebuilding
-provider-specific representations. The work canonicalized explicit undirected
+device-specific representations. The work canonicalized explicit undirected
 couplings, cached dense adjacency and all-pairs distances, indexed operation
 capabilities, and derived a typed target-wide synthesis basis. The result gives
 MAP-01 a reusable distance query and gives SYN-01 a stable gate enum without a
-dependency on transformation code. Sparse-site, distance, ordered-locus, and
-complete entangler-orientation tests prove these paths.
+dependency on transformation code. Sparse-site, distance, calibration, and
+complete entangler tests prove these paths.
 
 ### Milestone 3: Isolate and verify the foundation
 
@@ -110,8 +117,8 @@ an explicit series-level item described below.
 - Observation: QCO already exposes `UnitaryOpInterface::getBaseSymbol()`,
   `getNumQubits()`, and `getNumParams()`. Evidence:
   `mlir/include/mlir/Dialect/QCO/IR/QCOInterfaces.td` defines all three
-  operations. `CompilerTarget::supports(Operation*, locus)` can use that
-  interface rather than enumerate every primitive operation.
+  operations. `CompilerTarget::supports(Operation*)` can use that interface
+  rather than enumerate every primitive operation.
 - Observation: The synthesis implementation currently owns a separate
   `NativeGateKind` plus Euler and Weyl machinery. Pulling that header into the
   target would make the foundation depend on synthesis details. The target can
@@ -128,11 +135,10 @@ an explicit series-level item described below.
   The `Target.h` file set therefore establishes build-tree ownership and
   interface-header verification, not an installed consumer SDK.
 - Observation: Independent review caught inconsistent validation in the
-  standalone `Operation::supports` query and the all-native fast path, missing
-  table-driven coverage for six entanglers, changed-file clang-tidy findings,
-  and stale plan sections. The final implementation validates those query
-  boundaries, covers all eight required entanglers, and passes the repeated
-  static checks.
+  all-native fast path, missing table-driven coverage for six entanglers,
+  changed-file clang-tidy findings, and stale plan sections. The final
+  implementation validates those query boundaries, covers all eight required
+  entanglers, and passes the repeated static checks.
 - Observation: CI's LLVM 22 lint enables
   `llvm-prefer-static-over-anonymous-namespace`, which the local repository lint
   does not surface. Five file-local helpers therefore needed explicit `static`
@@ -185,35 +191,33 @@ an explicit series-level item described below.
   passes simple. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Treat an absent operation collection as every operation being
   native; distinguish it from a present empty collection, which supports no
-  hardware operation. Preserve provider names while caching a lower-case
-  canonical name and the aliases `prx` to `r`, `u3` to `u`, and `cnot` to `cx`.
-  Rationale: This retains provider metadata and adopts the useful, narrowly
-  scoped alias insight from Simon Hofmann's #1969 work without importing its
-  targeting, CLI, Python, or synthesis APIs. The final commit will preserve
-  Simon Hofmann's authorship because this semantic source is materially reused.
-  Date/Author: 2026-08-03, GPT-5.6 via Codex.
+  hardware operation. Preserve reported operation names while caching a
+  lower-case canonical name and the aliases `prx` to `r`, `u3` to `u`, and
+  `cnot` to `cx`. Rationale: This retains operation metadata and adopts the
+  useful, narrowly scoped alias insight from Simon Hofmann's #1969 work without
+  importing its targeting, CLI, Python, or synthesis APIs. The final commit will
+  preserve Simon Hofmann's authorship because this semantic source is materially
+  reused. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Require every operation capability to have a positive fixed arity.
   Rationale: Final conformance cannot soundly validate an operation whose arity
-  is unknown; the later device adapter must reject a provider operation that
-  omits it rather than transferring ambiguity into the compiler model.
-  Date/Author: 2026-08-03, GPT-5.6 via Codex.
+  is unknown; the later device adapter must reject a device operation that omits
+  it rather than transferring ambiguity into the compiler model. Date/Author:
+  2026-08-03, GPT-5.6 via Codex.
 - Decision: Store an optional target-wide duration unit and positive finite
   scale factor, and require it whenever a site T1/T2, operation duration, or
-  locus duration is present. T1/T2 must be positive; operation and locus
-  durations may be zero for virtual gates. Rationale: Raw `uint64_t` timing
-  metadata is not self-describing without the QDMI unit/scale contract, while
-  the existing SC device schema intentionally permits nonnegative operation
-  durations. Date/Author: 2026-08-03, GPT-5.6 via Codex.
-- Decision: A gate is globally usable when its matching canonical capability
-  covers every site for a one-qubit gate or every routing edge for a two-qubit
-  gate. Operand-symmetric entanglers (`cz`, `rxx`, `ryy`, `rzz`, and `iswap`)
-  may cover an undirected edge in either orientation. Directional entanglers
-  (`cx`, `ecr`, and `rzx`) must cover both ordered orientations. An all-to-all
-  target applies the same rule to every distinct pair. `supports(gate, locus)`
-  remains strictly ordered. Rationale: A single synthesis basis advertised for
-  the whole target must not be inferred from a provider operation that is
-  unavailable on some sites or from an unimplemented operand-reversal
-  assumption. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+  site-tuple duration is present. T1/T2 must be positive; operation and site
+  tuple durations may be zero for virtual gates. Rationale: Raw `uint64_t`
+  timing metadata is not self-describing without the QDMI unit/scale contract,
+  while the existing SC device schema intentionally permits nonnegative
+  operation durations. Date/Author: 2026-08-03, GPT-5.6 via Codex.
+- Decision: Treat each operation capability as homogeneous across the target.
+  Site tuples retain ordered duration and fidelity overrides but do not alter
+  support. A recognized gate is available when its canonical name, arity, and
+  parameter count match one capability; two-qubit gates consequently work in
+  either operand orientation. Rationale: Current compilation targets expose one
+  gate set, while site variation is calibration metadata. This removes
+  directional probing and per-site capability reconstruction from every compiler
+  pass. Date/Author: 2026-08-03, GPT-5.6 via Codex.
 - Decision: Accept a target whose capabilities do not form a complete synthesis
   basis and expose `std::nullopt` from `synthesisBasis()`. Rationale: Such a
   target remains useful for support checking and future diagnostics; SYN-01 can
@@ -277,18 +281,17 @@ Its operation declarations are generated from
 `mlir/include/mlir/Dialect/QCO/IR/QCOOps.td`, and
 `mlir/include/mlir/Dialect/QCO/IR/QCOInterfaces.td` defines
 `UnitaryOpInterface`. A dense compiler vertex is a zero-based position used by
-routing algorithms. A hardware site identifier is the provider-visible signed
+routing algorithms. A hardware site identifier is the device-visible signed
 integer that later appears in `qco.static`; the two are not interchangeable when
-providers use sparse identifiers.
+devices use sparse identifiers.
 
 A capability states that an operation with a canonical name, arity, and
-parameter count is allowed at an ordered locus. A locus is an ordered list of
-hardware site identifiers. An absent locus collection means the capability is
-global for every valid tuple of its arity; a present empty collection means it
-supports no tuple. A synthesis basis is one recognized single-qubit Euler basis
-plus one recognized two-qubit entangling gate that is usable over the entire
-target. CT-01 only describes that basis; the existing native-synthesis
-implementation remains under `mlir/lib/Dialect/QCO/Transforms/Decomposition/`.
+parameter count is available throughout the target. A site tuple is an ordered
+list of hardware site identifiers with optional duration and fidelity overrides;
+it does not restrict support. A synthesis basis is one recognized single-qubit
+Euler basis plus one recognized two-qubit entangling gate. CT-01 only describes
+that basis; the existing native-synthesis implementation remains under
+`mlir/lib/Dialect/QCO/Transforms/Decomposition/`.
 
 The focused compiler unit test executable is configured by
 `mlir/unittests/Compiler/CMakeLists.txt` and produced at
@@ -301,7 +304,7 @@ verification target.
 ## Plan of Work
 
 Add `mlir/include/mlir/Compiler/Target.h`. Define
-`CompilerTarget::DurationUnit`, `Site`, `OperationLocus`, and `Operation` as
+`CompilerTarget::DurationUnit`, `Site`, `SiteTuple`, and `Operation` as
 immutable public value types with constructors that validate their local scalar
 data. Operation arity is mandatory. Define `GateKind`, `SingleQubitBasis`, and
 `SynthesisBasis` as typed compiler capabilities. Define named and unnamed
@@ -313,8 +316,8 @@ Add `mlir/lib/Compiler/Target.cpp`. Build a private shared `Storage` object,
 validate cross-references and the timing-unit invariant, cache site identifiers
 and the site-to-vertex map, canonicalize and validate explicit topology, build
 its dense adjacency and all-pairs distance matrix, check connectivity once,
-group operations by canonical name, determine globally supported typed gates,
-and resolve the preferred synthesis basis. Implement queries for metadata, dense
+group operations by canonical name, determine the supported typed gates, and
+resolve the preferred synthesis basis. Implement queries for metadata, dense
 mapping, adjacency and distance, canonical operation support, typed gate
 support, and QCO `Operation*` support. Structural QCO barrier and global-phase
 operations require no hardware capability; controlled single-X and single-Z
@@ -334,9 +337,9 @@ closure is exported by the PIPE/INT series.
 Add `mlir/unittests/Compiler/test_compiler_target.cpp` and include it in the
 existing compiler test executable. Cover both constructor families, optional
 metadata, cheap shared copies, sparse site mappings, topology normalization,
-every validation boundary, absent versus empty operation semantics, provider
-aliases, ordered loci, global gate coverage, basis preference, and real QCO
-operation support. Link the test executable to `MQTCompilerTarget`.
+every validation boundary, absent versus empty operation semantics, gate
+aliases, ordered site tuples, typed gate coverage, basis preference, and real
+QCO operation support. Link the test executable to `MQTCompilerTarget`.
 
 Do not edit `cmake/ExternalDependencies.cmake` unless the scoped QDMI `SYSTEM`
 setting appears through an in-scope integration update. It is absent at the
@@ -389,34 +392,32 @@ mutation is authorized.
 
 Construction from a count produces sites `0..N-1`; construction from detailed
 sites preserves order, optional target and site names, T1/T2, operation
-duration/fidelity, and ordered loci. A copied target returns views backed by the
-same immutable storage.
+duration/fidelity, and ordered site tuples. A copied target returns views backed
+by the same immutable storage.
 
 Negative or duplicate site identifiers, an empty target, count overflow, zero
 operation arity, zero coherence times, invalid fidelity values, timing data
-without a valid duration unit/scale, malformed/duplicate loci, unknown site
-references, self-couplings, and disconnected explicit topologies throw
-`std::invalid_argument`. Zero operation and locus durations remain valid.
+without a valid duration unit/scale, malformed/duplicate site tuples, unknown
+site references, self-couplings, and disconnected explicit topologies throw
+`std::invalid_argument`. Zero operation and site-tuple durations remain valid.
 Reversed and duplicate topology input is normalized to one sorted undirected
 edge.
 
 An absent topology reports all distinct site pairs as adjacent and distance one.
 An explicit topology reports only its validated edges and returns cached
 shortest-path distances. Dense vertex/site translations are stable for sparse,
-unsorted provider identifiers.
+unsorted target identifiers.
 
 An absent operation collection supports every well-formed hardware operation. A
 present empty collection supports none except structural barrier and
-global-phase operations. Provider spelling is retained while canonical lookup
-recognizes case, whitespace, `prx`, `u3`, and `cnot`. Ordered loci remain
-directional.
+global-phase operations. Reported operation spelling is retained while canonical
+lookup recognizes case, whitespace, `prx`, `u3`, and `cnot`. Site tuples
+preserve ordered calibration data without restricting operation support.
 
-The typed global gate view excludes a capability that is missing on one site or
-one routing edge. Symmetric entanglers may use either locus orientation;
-directional entanglers require both. `synthesisBasis()` exists only when one
-complete supported single-qubit basis and one globally supported entangler
-exist, with documented deterministic preference; an incomplete basis does not
-invalidate the target. `supports(Operation*, locus)` agrees with typed
+The typed gate view follows the homogeneous operation set. `synthesisBasis()`
+exists only when one complete supported single-qubit basis and one supported
+entangler exist, with documented deterministic preference; an incomplete basis
+does not invalidate the target. `supports(Operation*)` agrees with typed
 capability queries for actual QCO primitives and controlled X/Z operations.
 
 `MQTCompilerTarget` builds as its own MLIR library. Its direct link interface
@@ -483,7 +484,7 @@ At completion, `mlir/Compiler/Target.h` defines:
       using Coupling = std::pair<SiteId, SiteId>;
       class DurationUnit;
       class Site;
-      class OperationLocus;
+      class SiteTuple;
       class Operation;
       enum class GateKind : uint8_t;
       enum class SingleQubitBasis : uint8_t;
@@ -509,11 +510,11 @@ At completion, `mlir/Compiler/Target.h` defines:
       const std::optional<DurationUnit>& durationUnit() const;
       bool hasExplicitOperations() const;
       ArrayRef<Operation> operations() const;
-      bool supportsOperation(StringRef name, ArrayRef<SiteId> locus,
+      bool supportsOperation(StringRef name, size_t numQubits,
                              std::optional<size_t> numParameters) const;
-      bool supports(Operation* operation, ArrayRef<SiteId> locus) const;
-      bool supports(GateKind gate, ArrayRef<SiteId> locus) const;
-      ArrayRef<GateKind> globallySupportedGates() const;
+      bool supports(Operation* operation) const;
+      bool supports(GateKind gate) const;
+      ArrayRef<GateKind> supportedGates() const;
       std::optional<SynthesisBasis> synthesisBasis() const;
     };
     }
@@ -528,10 +529,10 @@ Revision note (2026-08-03): Created the initial self-contained plan after exact
 checkout verification and source/provenance research. The implementation and
 validation sections will be updated as evidence replaces planned behavior.
 
-Revision note (2026-08-03): Refined global entangler coverage before
-implementation: symmetric operations may cover an undirected edge in one
-orientation, while directional operations require both ordered orientations.
-Also recorded that incomplete synthesis capability is a valid target state.
+Revision note (2026-08-03): Replaced the initial per-site entangler-coverage
+model with homogeneous operation capabilities. Site tuples now retain
+calibration only, and incomplete synthesis capability remains a valid target
+state.
 
 Revision note (2026-08-03): Refined the foundation while the first
 implementation draft was still uncompiled: operation arity is mandatory, timing

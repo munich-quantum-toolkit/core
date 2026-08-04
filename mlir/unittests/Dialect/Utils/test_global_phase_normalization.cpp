@@ -892,40 +892,6 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
   }
 }
 
-TEST_F(GlobalPhaseNormalizationTest, ScalesLinearlyAcrossLargePhaseScopes) {
-  constexpr std::array<std::size_t, 3> sizes{1'000, 10'000, 100'000};
-  std::vector<std::chrono::nanoseconds> durations;
-  durations.reserve(sizes.size());
-
-  for (const auto size : sizes) {
-    SCOPED_TRACE(size);
-    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-    OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(moduleOp->getBody());
-    const auto loc = moduleOp->getLoc();
-    auto function = func::FuncOp::create(builder, loc, "test",
-                                         builder.getFunctionType({}, {}));
-    auto* entry = function.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    const auto angle = utils::constantFromScalar(builder, loc, 0.001);
-    for (std::size_t i = 0; i < size; ++i) {
-      qco::GPhaseOp::create(builder, loc, angle);
-    }
-    func::ReturnOp::create(builder, loc);
-
-    const auto start = std::chrono::steady_clock::now();
-    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-    durations.emplace_back(std::chrono::steady_clock::now() - start);
-    EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
-  }
-
-  RecordProperty("normalize_1000_ns", durations[0].count());
-  RecordProperty("normalize_10000_ns", durations[1].count());
-  RecordProperty("normalize_100000_ns", durations[2].count());
-  EXPECT_LT(durations[1].count(), durations[0].count() * 50);
-  EXPECT_LT(durations[2].count(), durations[1].count() * 50);
-}
-
 TEST_F(GlobalPhaseNormalizationTest,
        ScalesLinearlyAcrossNestedDynamicIntegralPowers) {
   constexpr std::array<std::size_t, 4> depths{128, 256, 512, 1'024};

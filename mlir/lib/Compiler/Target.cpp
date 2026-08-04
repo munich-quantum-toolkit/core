@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -44,107 +43,61 @@ using GateKind = CompilerTarget::GateKind;
 using SiteId = CompilerTarget::SiteId;
 
 struct GateSpecification {
-  GateKind kind;
+  GateKind kind{};
   llvm::StringLiteral name;
-  size_t numQubits;
-  size_t numParameters;
-  bool symmetric;
+  size_t numQubits{};
+  size_t numParameters{};
 };
 
 constexpr std::array GATE_SPECIFICATIONS{
-    GateSpecification{.kind = GateKind::U,
-                      .name = "u",
-                      .numQubits = 1,
-                      .numParameters = 3,
-                      .symmetric = false},
-    GateSpecification{.kind = GateKind::X,
-                      .name = "x",
-                      .numQubits = 1,
-                      .numParameters = 0,
-                      .symmetric = false},
-    GateSpecification{.kind = GateKind::SX,
-                      .name = "sx",
-                      .numQubits = 1,
-                      .numParameters = 0,
-                      .symmetric = false},
-    GateSpecification{.kind = GateKind::RZ,
-                      .name = "rz",
-                      .numQubits = 1,
-                      .numParameters = 1,
-                      .symmetric = false},
-    GateSpecification{.kind = GateKind::RX,
-                      .name = "rx",
-                      .numQubits = 1,
-                      .numParameters = 1,
-                      .symmetric = false},
-    GateSpecification{.kind = GateKind::RY,
-                      .name = "ry",
-                      .numQubits = 1,
-                      .numParameters = 1,
-                      .symmetric = false},
-    GateSpecification{.kind = GateKind::R,
-                      .name = "r",
-                      .numQubits = 1,
-                      .numParameters = 2,
-                      .symmetric = false},
+    GateSpecification{
+        .kind = GateKind::U, .name = "u", .numQubits = 1, .numParameters = 3},
+    GateSpecification{
+        .kind = GateKind::X, .name = "x", .numQubits = 1, .numParameters = 0},
+    GateSpecification{
+        .kind = GateKind::SX, .name = "sx", .numQubits = 1, .numParameters = 0},
+    GateSpecification{
+        .kind = GateKind::RZ, .name = "rz", .numQubits = 1, .numParameters = 1},
+    GateSpecification{
+        .kind = GateKind::RX, .name = "rx", .numQubits = 1, .numParameters = 1},
+    GateSpecification{
+        .kind = GateKind::RY, .name = "ry", .numQubits = 1, .numParameters = 1},
+    GateSpecification{
+        .kind = GateKind::R, .name = "r", .numQubits = 1, .numParameters = 2},
     GateSpecification{.kind = GateKind::RXX,
                       .name = "rxx",
                       .numQubits = 2,
-                      .numParameters = 1,
-                      .symmetric = true},
+                      .numParameters = 1},
     GateSpecification{.kind = GateKind::RYY,
                       .name = "ryy",
                       .numQubits = 2,
-                      .numParameters = 1,
-                      .symmetric = true},
+                      .numParameters = 1},
     GateSpecification{.kind = GateKind::RZX,
                       .name = "rzx",
                       .numQubits = 2,
-                      .numParameters = 1,
-                      .symmetric = false},
+                      .numParameters = 1},
     GateSpecification{.kind = GateKind::RZZ,
                       .name = "rzz",
                       .numQubits = 2,
-                      .numParameters = 1,
-                      .symmetric = true},
+                      .numParameters = 1},
     GateSpecification{.kind = GateKind::ISWAP,
                       .name = "iswap",
                       .numQubits = 2,
-                      .numParameters = 0,
-                      .symmetric = true},
-    GateSpecification{.kind = GateKind::CZ,
-                      .name = "cz",
-                      .numQubits = 2,
-                      .numParameters = 0,
-                      .symmetric = true},
-    GateSpecification{.kind = GateKind::CX,
-                      .name = "cx",
-                      .numQubits = 2,
-                      .numParameters = 0,
-                      .symmetric = false},
+                      .numParameters = 0},
+    GateSpecification{
+        .kind = GateKind::CZ, .name = "cz", .numQubits = 2, .numParameters = 0},
+    GateSpecification{
+        .kind = GateKind::CX, .name = "cx", .numQubits = 2, .numParameters = 0},
     GateSpecification{.kind = GateKind::ECR,
                       .name = "ecr",
                       .numQubits = 2,
-                      .numParameters = 0,
-                      .symmetric = false},
+                      .numParameters = 0},
 };
 
 } // namespace
 
-[[nodiscard]] static const GateSpecification&
-gateSpecification(const GateKind gate) {
-  // NOLINTNEXTLINE(readability-qualified-auto)
-  const auto found =
-      std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
-  if (found == GATE_SPECIFICATIONS.end()) {
-    throw std::invalid_argument("Unknown compiler target gate kind");
-  }
-  return *found;
-}
-
-[[nodiscard]] static std::string
-canonicalOperationName(const StringRef providerName) {
-  auto canonical = providerName.trim().lower();
+[[nodiscard]] static std::string canonicalOperationName(const StringRef name) {
+  auto canonical = name.trim().lower();
   if (canonical == "prx") {
     canonical = "r";
   } else if (canonical == "u3") {
@@ -243,48 +196,45 @@ std::optional<uint64_t> CompilerTarget::Site::t2() const noexcept {
   return t2_;
 }
 
-CompilerTarget::OperationLocus::OperationLocus(
-    std::vector<SiteId> sites, const std::optional<uint64_t> duration,
-    const std::optional<double> fidelity)
+CompilerTarget::SiteTuple::SiteTuple(std::vector<SiteId> sites,
+                                     const std::optional<uint64_t> duration,
+                                     const std::optional<double> fidelity)
     : sites_(std::move(sites)), duration_(duration), fidelity_(fidelity) {
-  DenseSet<SiteId> uniqueSites;
-  uniqueSites.reserve(sites_.size());
+  std::set<SiteId> uniqueSites;
   for (const auto site : sites_) {
     if (site < 0) {
       throw std::invalid_argument(
-          "Compiler target operation locus contains a negative site ID");
+          "Compiler target site tuple contains a negative site ID");
     }
     if (!uniqueSites.insert(site).second) {
       throw std::invalid_argument(
-          "Compiler target operation locus contains a duplicate site");
+          "Compiler target site tuple contains a duplicate site");
     }
   }
-  validateFidelity(fidelity_, "Compiler target operation locus fidelity");
+  validateFidelity(fidelity_, "Compiler target site-tuple fidelity");
 }
 
-ArrayRef<SiteId> CompilerTarget::OperationLocus::sites() const noexcept {
+ArrayRef<SiteId> CompilerTarget::SiteTuple::sites() const noexcept {
   return sites_;
 }
 
-std::optional<uint64_t>
-CompilerTarget::OperationLocus::duration() const noexcept {
+std::optional<uint64_t> CompilerTarget::SiteTuple::duration() const noexcept {
   return duration_;
 }
 
-std::optional<double>
-CompilerTarget::OperationLocus::fidelity() const noexcept {
+std::optional<double> CompilerTarget::SiteTuple::fidelity() const noexcept {
   return fidelity_;
 }
 
-CompilerTarget::Operation::Operation(
-    std::string providerName, const size_t numQubits,
-    const size_t numParameters, std::optional<std::vector<OperationLocus>> loci,
-    const std::optional<uint64_t> duration,
-    const std::optional<double> fidelity)
-    : providerName_(std::move(providerName)),
-      canonicalName_(canonicalOperationName(providerName_)),
+CompilerTarget::Operation::Operation(std::string name, const size_t numQubits,
+                                     const size_t numParameters,
+                                     std::vector<SiteTuple> siteTuples,
+                                     const std::optional<uint64_t> duration,
+                                     const std::optional<double> fidelity)
+    : name_(std::move(name)), canonicalName_(canonicalOperationName(name_)),
       numQubits_(numQubits), numParameters_(numParameters),
-      loci_(std::move(loci)), duration_(duration), fidelity_(fidelity) {
+      siteTuples_(std::move(siteTuples)), duration_(duration),
+      fidelity_(fidelity) {
   if (canonicalName_.empty()) {
     throw std::invalid_argument(
         "Compiler target operation name must not be empty");
@@ -295,26 +245,22 @@ CompilerTarget::Operation::Operation(
   }
   validateFidelity(fidelity_, "Compiler target operation fidelity");
 
-  if (!loci_) {
-    return;
-  }
-  std::set<std::vector<SiteId>> uniqueLoci;
-  for (const auto& locus : *loci_) {
-    if (locus.sites().size() != numQubits_) {
+  std::set<std::vector<SiteId>> uniqueSiteCombinations;
+  for (const auto& siteTuple : siteTuples_) {
+    if (siteTuple.sites().size() != numQubits_) {
       throw std::invalid_argument(
-          "Compiler target operation locus does not match its declared arity");
+          "Compiler target operation site tuple does not match its arity");
     }
-    if (!uniqueLoci.emplace(locus.sites().begin(), locus.sites().end())
+    if (!uniqueSiteCombinations
+             .emplace(siteTuple.sites().begin(), siteTuple.sites().end())
              .second) {
       throw std::invalid_argument(
-          "Compiler target operation contains a duplicate locus");
+          "Compiler target operation contains a duplicate site tuple");
     }
   }
 }
 
-StringRef CompilerTarget::Operation::providerName() const noexcept {
-  return providerName_;
-}
+StringRef CompilerTarget::Operation::name() const noexcept { return name_; }
 
 StringRef CompilerTarget::Operation::canonicalName() const noexcept {
   return canonicalName_;
@@ -328,16 +274,9 @@ size_t CompilerTarget::Operation::numParameters() const noexcept {
   return numParameters_;
 }
 
-bool CompilerTarget::Operation::hasGlobalLoci() const noexcept {
-  return !loci_;
-}
-
-ArrayRef<CompilerTarget::OperationLocus>
-CompilerTarget::Operation::loci() const noexcept {
-  if (!loci_) {
-    return {};
-  }
-  return *loci_;
+ArrayRef<CompilerTarget::SiteTuple>
+CompilerTarget::Operation::siteTuples() const noexcept {
+  return siteTuples_;
 }
 
 std::optional<uint64_t> CompilerTarget::Operation::duration() const noexcept {
@@ -348,34 +287,15 @@ std::optional<double> CompilerTarget::Operation::fidelity() const noexcept {
   return fidelity_;
 }
 
-bool CompilerTarget::Operation::supports(const ArrayRef<SiteId> locus) const {
-  if (locus.size() != numQubits_) {
-    return false;
-  }
-  llvm::SmallDenseSet<SiteId, 4> uniqueSites;
-  uniqueSites.reserve(locus.size());
-  if (!llvm::all_of(locus, [&](const auto site) {
-        return site >= 0 && uniqueSites.insert(site).second;
-      })) {
-    return false;
-  }
-  return !loci_ || llvm::any_of(*loci_, [&](const auto& candidate) {
-    return std::ranges::equal(candidate.sites(), locus);
-  });
-}
-
 struct CompilerTarget::Storage {
   Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
           std::optional<std::vector<Coupling>> targetCouplings,
           std::optional<std::vector<Operation>> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
-  [[nodiscard]] bool validLocus(ArrayRef<SiteId> locus) const;
   [[nodiscard]] bool
-  supportsOperation(StringRef name, ArrayRef<SiteId> locus,
+  supportsOperation(StringRef name, size_t numQubits,
                     std::optional<size_t> numParameters) const;
-  [[nodiscard]] bool gateIsGloballySupported(GateKind gate) const;
-  [[nodiscard]] bool hasGlobalGate(GateKind gate) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis() const;
 
   std::optional<std::string> name;
@@ -389,7 +309,7 @@ struct CompilerTarget::Storage {
   size_t maximumDegree = 0;
   std::optional<std::vector<Operation>> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
-  SmallVector<GateKind> globalGates;
+  SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
 };
 
@@ -484,12 +404,16 @@ CompilerTarget::Storage::Storage(
 
   if (operations) {
     for (const auto [index, operation] : llvm::enumerate(*operations)) {
-      for (const auto& locus : operation.loci()) {
-        if (llvm::any_of(locus.sites(), [&](const auto site) {
+      if (operation.numQubits() > sites.size()) {
+        throw std::invalid_argument(
+            "Compiler target operation arity exceeds its site count");
+      }
+      for (const auto& siteTuple : operation.siteTuples()) {
+        if (llvm::any_of(siteTuple.sites(), [&](const auto site) {
               return !siteToVertex.contains(site);
             })) {
-          throw std::invalid_argument(
-              "Compiler target operation locus references an unknown site");
+          throw std::invalid_argument("Compiler target operation site tuple "
+                                      "references an unknown site");
         }
       }
       capabilities[operation.canonicalName()].emplace_back(index);
@@ -502,8 +426,8 @@ CompilerTarget::Storage::Storage(
   const auto hasOperationTiming =
       operations && llvm::any_of(*operations, [](const auto& operation) {
         return operation.duration().has_value() ||
-               llvm::any_of(operation.loci(), [](const auto& locus) {
-                 return locus.duration().has_value();
+               llvm::any_of(operation.siteTuples(), [](const auto& siteTuple) {
+                 return siteTuple.duration().has_value();
                });
       });
   if ((hasSiteTiming || hasOperationTiming) && !durationUnit) {
@@ -512,29 +436,19 @@ CompilerTarget::Storage::Storage(
   }
 
   for (const auto& specification : GATE_SPECIFICATIONS) {
-    if (gateIsGloballySupported(specification.kind)) {
-      globalGates.emplace_back(specification.kind);
+    if (supportsOperation(specification.name, specification.numQubits,
+                          specification.numParameters)) {
+      supportedGates.emplace_back(specification.kind);
     }
   }
   basis = resolveSynthesisBasis();
 }
 
-bool CompilerTarget::Storage::validLocus(const ArrayRef<SiteId> locus) const {
-  llvm::SmallDenseSet<SiteId, 4> uniqueSites;
-  uniqueSites.reserve(locus.size());
-  return llvm::all_of(locus, [&](const auto site) {
-    return siteToVertex.contains(site) && uniqueSites.insert(site).second;
-  });
-}
-
 bool CompilerTarget::Storage::supportsOperation(
-    const StringRef operationName, const ArrayRef<SiteId> locus,
+    const StringRef operationName, const size_t numQubits,
     const std::optional<size_t> numParameters) const {
-  if (!validLocus(locus)) {
-    return false;
-  }
   const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || locus.empty()) {
+  if (canonical.empty() || numQubits == 0 || numQubits > sites.size()) {
     return false;
   }
   if (!operations) {
@@ -546,70 +460,29 @@ bool CompilerTarget::Storage::supportsOperation(
   }
   return llvm::any_of(found->second, [&](const auto index) {
     const auto& operation = (*operations)[index];
-    return (!numParameters || operation.numParameters() == *numParameters) &&
-           operation.supports(locus);
+    return operation.numQubits() == numQubits &&
+           (!numParameters || operation.numParameters() == *numParameters);
   });
-}
-
-bool CompilerTarget::Storage::gateIsGloballySupported(
-    const GateKind gate) const {
-  const auto& specification = gateSpecification(gate);
-  if (specification.numQubits == 1) {
-    return llvm::all_of(siteIds, [&](const auto site) {
-      const std::array locus{site};
-      return supportsOperation(specification.name, locus,
-                               specification.numParameters);
-    });
-  }
-  if (sites.size() < 2) {
-    return false;
-  }
-
-  const auto supportedOnEdge = [&](const SiteId first, const SiteId second) {
-    const std::array forward{first, second};
-    const std::array reverse{second, first};
-    const auto supportsForward = supportsOperation(specification.name, forward,
-                                                   specification.numParameters);
-    const auto supportsReverse = supportsOperation(specification.name, reverse,
-                                                   specification.numParameters);
-    return specification.symmetric ? supportsForward || supportsReverse
-                                   : supportsForward && supportsReverse;
-  };
-
-  if (couplings) {
-    return llvm::all_of(*couplings, [&](const auto& coupling) {
-      return supportedOnEdge(coupling.first, coupling.second);
-    });
-  }
-  for (size_t first = 0; first < siteIds.size(); ++first) {
-    for (size_t second = first + 1; second < siteIds.size(); ++second) {
-      if (!supportedOnEdge(siteIds[first], siteIds[second])) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-bool CompilerTarget::Storage::hasGlobalGate(const GateKind gate) const {
-  return llvm::is_contained(globalGates, gate);
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
 CompilerTarget::Storage::resolveSynthesisBasis() const {
+  const auto supports = [&](const GateKind gate) {
+    return llvm::is_contained(supportedGates, gate);
+  };
   std::optional<SingleQubitBasis> singleQubit;
-  if (hasGlobalGate(GateKind::U)) {
+  if (supports(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
-  } else if (hasGlobalGate(GateKind::X) && hasGlobalGate(GateKind::SX) &&
-             hasGlobalGate(GateKind::RZ)) {
+  } else if (supports(GateKind::X) && supports(GateKind::SX) &&
+             supports(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZSXX;
-  } else if (hasGlobalGate(GateKind::R)) {
+  } else if (supports(GateKind::R)) {
     singleQubit = SingleQubitBasis::R;
-  } else if (hasGlobalGate(GateKind::RX) && hasGlobalGate(GateKind::RZ)) {
+  } else if (supports(GateKind::RX) && supports(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::XZX;
-  } else if (hasGlobalGate(GateKind::RX) && hasGlobalGate(GateKind::RY)) {
+  } else if (supports(GateKind::RX) && supports(GateKind::RY)) {
     singleQubit = SingleQubitBasis::XYX;
-  } else if (hasGlobalGate(GateKind::RY) && hasGlobalGate(GateKind::RZ)) {
+  } else if (supports(GateKind::RY) && supports(GateKind::RZ)) {
     singleQubit = SingleQubitBasis::ZYZ;
   }
 
@@ -620,7 +493,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   // NOLINTNEXTLINE(readability-qualified-auto)
   const auto entangler =
       std::ranges::find_if(entanglerPreference, [&](const auto candidate) {
-        return hasGlobalGate(candidate);
+        return supports(candidate);
       });
   if (!singleQubit || entangler == entanglerPreference.end()) {
     return std::nullopt;
@@ -792,21 +665,17 @@ CompilerTarget::operations() const noexcept {
 }
 
 bool CompilerTarget::supportsOperation(
-    const StringRef operationName, const ArrayRef<SiteId> locus,
+    const StringRef operationName, const size_t numQubits,
     const std::optional<size_t> numParameters) const {
-  return storage_->supportsOperation(operationName, locus, numParameters);
+  return storage_->supportsOperation(operationName, numQubits, numParameters);
 }
 
-bool CompilerTarget::supports(::mlir::Operation* operation,
-                              const ArrayRef<SiteId> locus) const {
-  if (operation == nullptr || !storage_->validLocus(locus)) {
+bool CompilerTarget::supports(::mlir::Operation* operation) const {
+  if (operation == nullptr) {
     return false;
   }
 
   if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation)) {
-    if (unitary.getNumQubits() != locus.size()) {
-      return false;
-    }
     if (isa<qco::BarrierOp, qco::GPhaseOp>(operation)) {
       return true;
     }
@@ -816,35 +685,31 @@ bool CompilerTarget::supports(::mlir::Operation* operation,
         controlled.getNumBodyUnitaries() == 1) {
       auto* const body = controlled.getBodyUnitary(0).getOperation();
       if (isa<qco::XOp>(body)) {
-        return storage_->supportsOperation("cx", locus, 0);
+        return storage_->supportsOperation("cx", 2, 0);
       }
       if (isa<qco::ZOp>(body)) {
-        return storage_->supportsOperation("cz", locus, 0);
+        return storage_->supportsOperation("cz", 2, 0);
       }
     }
-    return storage_->supportsOperation(unitary.getBaseSymbol(), locus,
+    return storage_->supportsOperation(unitary.getBaseSymbol(),
+                                       unitary.getNumQubits(),
                                        unitary.getNumParams());
   }
   if (isa<qco::MeasureOp>(operation)) {
-    return locus.size() == 1 &&
-           storage_->supportsOperation("measure", locus, 0);
+    return storage_->supportsOperation("measure", 1, 0);
   }
   if (isa<qco::ResetOp>(operation)) {
-    return locus.size() == 1 && storage_->supportsOperation("reset", locus, 0);
+    return storage_->supportsOperation("reset", 1, 0);
   }
   return false;
 }
 
-bool CompilerTarget::supports(const GateKind gate,
-                              const ArrayRef<SiteId> locus) const {
-  const auto& specification = gateSpecification(gate);
-  return locus.size() == specification.numQubits &&
-         storage_->supportsOperation(specification.name, locus,
-                                     specification.numParameters);
+bool CompilerTarget::supports(const GateKind gate) const {
+  return llvm::is_contained(storage_->supportedGates, gate);
 }
 
-ArrayRef<GateKind> CompilerTarget::globallySupportedGates() const noexcept {
-  return storage_->globalGates;
+ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
+  return storage_->supportedGates;
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
