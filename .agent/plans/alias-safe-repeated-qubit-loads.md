@@ -133,6 +133,16 @@ width-dependent `scf.index_switch`.
       QTensor iterator and IR-equivalence grouping to model `scf.condition` and
       both `scf.while` regions; all 165 QC-to-QCO and three QTensor iterator
       tests pass.
+- [x] (2026-08-05) Repair the replacement CI debug-build failure by preserving
+      the established partially extracted `nestedForLoopWhileOp` fixture for
+      QCO-to-QC tests and adding the complete-QTensor fixture separately. The
+      focused nested-loop checks and the complete 137-test QCO-to-QC and
+      165-test QC-to-QCO suites pass.
+- [x] (2026-08-05) Rebase the 14 signed commits again after `origin/main`
+      advanced during replacement CI to
+      `077b73f802c408b036453fce9d597e52db70e8c7`. Preserve the newly merged
+      PennyLane/QDMI implementation and place #1987 above #2005 in the
+      merge-time-ordered changelog.
 
 ## Surprises & Discoveries
 
@@ -225,6 +235,10 @@ width-dependent `scf.index_switch`.
   equivalence group. Modeling those standard SCF edges removes the test
   exception and lets the existing permutation-aware oracle compare the complete
   structured state.
+- Observation: QCO-to-QC intentionally exercises the older partially extracted
+  QTensor fixture, whereas Q-01 needs a complete-QTensor QC-to-QCO reference.
+  These are distinct conversion inputs rather than interchangeable names, so
+  both test builders must remain available.
 
 ## Decision Log
 
@@ -350,10 +364,9 @@ dynamic SCF, and Base QIR for straight-line input.
 
 No dialect operation, type, pass, command-line option, or external dependency
 was added. Direct QC-to-QIR conversion remains unchanged. The current base is
-`ecd32f734212b6f622927626a215f2ea31335759`. The rebased series retained 12
+`077b73f802c408b036453fce9d597e52db70e8c7`. The rebased series retained 12
 signed feature/remediation commits; Q-01 adds one separately reviewable test
-oracle remediation commit. The remote PR still points to the older `004511d`
-revision, so its existing green checks do not validate these local commits.
+oracle remediation commit and its CI correction adds one signed follow-up.
 
 ## Context and Orientation
 
@@ -534,6 +547,9 @@ The final validated base also includes:
     ecd32f734212b6f622927626a215f2ea31335759
     Refreshed main used for the linear PR #1987 rebase
 
+    077b73f802c408b036453fce9d597e52db70e8c7
+    ✨ Add PennyLane support for QDMI devices (#2005)
+
 Issue #1893 is an enhancement/MLIR issue and is not labeled `good first issue`.
 The user authorized updating PR #1987 with an explicit force-with-lease after
 final exact-head validation.
@@ -588,3 +604,7 @@ Revision note (2026-08-05, Codex): Reopened the plan for the signed linear
 rebase onto `ecd32f734`, recorded the semantic conflict resolutions and focused
 validation, and closed independent-review finding Q-01 with a complete-QTensor
 `scf.while` reference oracle.
+
+Revision note (2026-08-05, Codex): Rebased again onto `077b73f80` after main
+advanced during replacement CI, preserved the PennyLane/QDMI additions, and
+recorded the QCO-to-QC fixture compatibility correction.

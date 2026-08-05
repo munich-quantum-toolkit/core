@@ -4604,6 +4604,35 @@ Value nestedForLoopIfOp(QCOProgramBuilder& b) {
   return measureToRegister(b, scfFor[1]);
 }
 
+Value nestedForLoopWhileOp(QCOProgramBuilder& b) {
+  auto reg = b.qtensorAlloc(2);
+  auto loopResult =
+      b.scfFor(0, 2, 1, {reg}, [&](Value iv, ValueRange iterArgs) {
+        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+        auto q1 = b.h(q0);
+        auto insert = b.qtensorInsert(q1, t0, iv);
+        return SmallVector{insert};
+      });
+  auto scfFor =
+      b.scfFor(0, 2, 1, loopResult, [&](Value iv, ValueRange iterArgs) {
+        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+        auto whileResult = b.scfWhile(
+            q0,
+            [&](ValueRange innerIterArgs) {
+              auto [q1, measureResult] = b.measure(innerIterArgs[0]);
+              b.scfCondition(measureResult, q1);
+              return SmallVector{q1};
+            },
+            [&](ValueRange innerIterArgs) {
+              auto q2 = b.h(innerIterArgs[0]);
+              return SmallVector{q2};
+            });
+        auto insert = b.qtensorInsert(whileResult[0], t0, iv);
+        return SmallVector{insert};
+      });
+  return measureAndReturnQTensor(b, scfFor[0], 2);
+}
+
 Value nestedForLoopWhileOpCompleteTensorState(QCOProgramBuilder& b) {
   constexpr int64_t size = 2;
   auto tensor = b.qtensorAlloc(size);
