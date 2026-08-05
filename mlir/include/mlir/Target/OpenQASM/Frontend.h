@@ -309,12 +309,23 @@ struct WhileStatement {
   std::vector<StatementId> body;
 };
 
+struct SwitchCase {
+  std::vector<int64_t> labels;
+  std::vector<StatementId> body;
+};
+
+struct SwitchStatement {
+  ExpressionId control = 0;
+  std::vector<SwitchCase> cases;
+  std::vector<StatementId> defaultStatements;
+};
+
 using StatementData =
     std::variant<DeclarationStatement, ScalarDeclarationStatement,
                  ScalarAssignmentStatement, BitAssignmentStatement,
                  BitVectorAssignmentStatement, GateApplication,
                  MeasurementStatement, ResetStatement, BarrierStatement,
-                 IfStatement, ForStatement, WhileStatement>;
+                 IfStatement, ForStatement, WhileStatement, SwitchStatement>;
 
 struct Statement {
   StatementData data;

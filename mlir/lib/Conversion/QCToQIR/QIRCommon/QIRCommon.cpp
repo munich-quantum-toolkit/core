@@ -538,7 +538,7 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
 
-      for (auto operand : returnOp.getOperands()) {
+      for (const auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
           if (const auto it =
                   state.cregMeasurements.find(measureOp.getOperation());

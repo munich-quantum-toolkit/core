@@ -42,13 +42,16 @@ class OutputFormat(enum.Enum):
     QC = 3
     """QC after the optimized QCO round trip."""
 
-    JEFF = 4
+    OPENQASM3 = 4
+    """OpenQASM 3 after the optimized QCO round trip."""
+
+    JEFF = 5
     """Serializable ``jeff`` MLIR."""
 
-    QIR_BASE = 5
+    QIR_BASE = 6
     """QIR for the Base Profile."""
 
-    QIR_ADAPTIVE = 6
+    QIR_ADAPTIVE = 7
     """QIR for the Adaptive Profile."""
 
 class CompilerTarget:
@@ -352,6 +355,9 @@ class QCProgram(Program):
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
+    def to_openqasm3(self) -> OpenQASMProgram:
+        """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
+
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.
 
@@ -462,6 +468,16 @@ class JeffProgram(Program):
         Set ``copy=True`` to preserve it.
         """
 
+class OpenQASMProgram:
+    """An immutable compiler program containing OpenQASM 3 source."""
+
+    @property
+    def source(self) -> str:
+        """The emitted OpenQASM 3 source."""
+
+    def write(self, path: str | os.PathLike) -> None:
+        """Write the emitted source to a file."""
+
 class QIRProgram(Program):
     """A compiler program lowered to QIR.
 
@@ -497,7 +513,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
     inplace: bool = False,
@@ -514,7 +531,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
     inplace: bool = False,
@@ -531,7 +549,25 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    output: Literal[OutputFormat.OPENQASM3],
+    inplace: bool = False,
+    qco_pipeline: str = "mqt-qco-default",
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
+) -> OpenQASMProgram: ...
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | mqt.core.ir.QuantumComputation
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.JEFF],
     inplace: bool = False,
@@ -548,7 +584,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
@@ -565,7 +602,8 @@ def compile_program(
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
-    | JeffProgram,
+    | JeffProgram
+    | OpenQASMProgram,
     *,
     output: OutputFormat,
     inplace: bool = False,
@@ -573,7 +611,7 @@ def compile_program(
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
-) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
+) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
     Input source strings, files, MQT {py:class}`~mqt.core.ir.QuantumComputation`
