@@ -17,6 +17,8 @@
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
@@ -40,7 +42,6 @@
 #include <set>
 #include <stdexcept>
 #include <string>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -2243,6 +2244,55 @@ private:
       auto selection = resolveQubitOperand(operand);
       qubits.insert(qubits.end(), selection.begin(), selection.end());
     }
+
+    if (barrier.operands.size() > 1) {
+      llvm::DenseSet<std::pair<RegisterId, uint64_t>> staticRegisterQubits;
+      llvm::DenseSet<std::pair<RegisterId, ExpressionId>> dynamicRegisterQubits;
+      llvm::DenseSet<uint32_t> gateArguments;
+      llvm::DenseSet<uint64_t> hardwareQubitOperands;
+      llvm::DenseMap<RegisterId, size_t> staticRegisterQubitCounts;
+
+      for (const auto& qubit : qubits) {
+        bool inserted = false;
+        switch (qubit.kind) {
+        case QubitReferenceKind::Register:
+          if (qubit.dynamicIndex) {
+            inserted = dynamicRegisterQubits
+                           .insert({qubit.symbol, *qubit.dynamicIndex})
+                           .second;
+          } else {
+            inserted =
+                staticRegisterQubits.insert({qubit.symbol, qubit.index}).second;
+            if (inserted) {
+              ++staticRegisterQubitCounts[qubit.symbol];
+            }
+          }
+          break;
+        case QubitReferenceKind::GateArgument:
+          inserted = gateArguments.insert(qubit.symbol).second;
+          break;
+        case QubitReferenceKind::Hardware:
+          inserted = hardwareQubitOperands.insert(qubit.index).second;
+          break;
+        }
+        if (!inserted) {
+          fail(location,
+               "barrier operands must not reference the same qubit more than "
+               "once");
+        }
+      }
+
+      for (const auto& dynamicRegisterQubit : dynamicRegisterQubits) {
+        const auto reg = dynamicRegisterQubit.first;
+        if (staticRegisterQubitCounts.lookup(reg) ==
+            program.registers.at(reg).width) {
+          fail(location,
+               "barrier operands must not reference the same qubit more than "
+               "once");
+        }
+      }
+    }
+
     return addStatement(location,
                         BarrierStatement{.qubits = std::move(qubits)});
   }

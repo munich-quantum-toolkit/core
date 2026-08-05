@@ -9,11 +9,14 @@
  */
 
 #include "TestCaseUtils.h"
+#include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -32,6 +35,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
@@ -75,7 +79,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, func::FuncDialect, math::MathDialect,
-                    memref::MemRefDialect, qc::QCDialect, scf::SCFDialect>();
+                    memref::MemRefDialect, qc::QCDialect, qco::QCODialect,
+                    qtensor::QTensorDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -879,6 +884,12 @@ static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   return {c, out};
 }
 
+static LogicalResult convertQCToQCO(ModuleOp moduleOp) {
+  PassManager manager(moduleOp.getContext());
+  manager.addPass(createQCToQCO());
+  return manager.run(moduleOp);
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -902,6 +913,15 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
+
+  ASSERT_TRUE(succeeded(convertQCToQCO(translated.get())));
+  ASSERT_TRUE(succeeded(convertQCToQCO(reference.get())));
+  ASSERT_TRUE(runQCOCleanupPipeline(translated.get()).succeeded());
+  ASSERT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
+  printer.record(translated.get(), "Lowered Translated QCO IR" + name);
+  printer.record(reference.get(), "Lowered Reference QCO IR" + name);
+  ASSERT_TRUE(verify(*translated).succeeded());
+  ASSERT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
