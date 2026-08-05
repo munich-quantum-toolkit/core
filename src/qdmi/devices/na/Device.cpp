@@ -684,9 +684,10 @@ int MQT_NA_QDMI_device_session_create_device_job(
   return session->createDeviceJob(job);
 }
 
-int MQT_NA_QDMI_device_session_open_device_job(MQT_NA_QDMI_Device_Session,
-                                               const char*,
-                                               MQT_NA_QDMI_Device_Job*) {
+int MQT_NA_QDMI_device_session_open_device_job(
+    [[maybe_unused]] MQT_NA_QDMI_Device_Session session,
+    [[maybe_unused]] const char* jobId,
+    [[maybe_unused]] MQT_NA_QDMI_Device_Job* job) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

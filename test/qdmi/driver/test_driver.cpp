@@ -31,6 +31,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -479,7 +480,7 @@ TEST_P(DriverTest, JobOpen) {
 
 TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
   const auto ownedDevice = openOwnedSessionTestDevice("test.open-job-client");
-  const QDMI_Device device = ownedDevice;
+  QDMI_Device device = ownedDevice;
   QDMI_Job job = nullptr;
   ASSERT_EQ(QDMI_device_open_job(device, "session-job", &job), QDMI_SUCCESS);
   ASSERT_NE(job, nullptr);
