@@ -1627,5 +1627,5 @@ INSTANTIATE_TEST_SUITE_P(ThreeByThreeSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(3)));
 INSTANTIATE_TEST_SUITE_P(FourByFourSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(4)));
-INSTANTIATE_TEST_SUITE_P(ThenByThenSquareGrid, MappingPassTest,
+INSTANTIATE_TEST_SUITE_P(TenByTenSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(10)));
