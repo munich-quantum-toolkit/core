@@ -135,6 +135,17 @@ struct SyntaxWhile {
   std::vector<SyntaxStatementId> body;
 };
 
+struct SyntaxSwitchCase {
+  std::vector<SyntaxExpressionId> labels;
+  std::vector<SyntaxStatementId> body;
+};
+
+struct SyntaxSwitch {
+  SyntaxExpressionId control = 0;
+  std::vector<SyntaxSwitchCase> cases;
+  std::vector<SyntaxStatementId> defaultStatements;
+};
+
 enum class StandardLibraryKind : uint8_t {
   StdGates,
   QELib1,
@@ -148,7 +159,8 @@ using SyntaxStatementData =
     std::variant<SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
                  SyntaxAssignment, SyntaxQubitDeclaration, SyntaxBitDeclaration,
                  SyntaxMeasurement, SyntaxReset, SyntaxBarrier, SyntaxGateCall,
-                 SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile>;
+                 SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
+                 SyntaxSwitch>;
 
 struct SyntaxStatement {
   SMLoc location;
@@ -222,6 +234,14 @@ public:
   [[nodiscard]] LogicalResult
   whileStmt(SMLoc location, const Expr& condition,
             function_ref<LogicalResult()> continuation);
+  [[nodiscard]] LogicalResult
+  switchStmt(SMLoc location, const Expr& control,
+             function_ref<LogicalResult()> continuation);
+  [[nodiscard]] LogicalResult
+  switchCase(SMLoc location, ArrayRef<const Expr*> labels,
+             function_ref<LogicalResult()> continuation);
+  [[nodiscard]] LogicalResult
+  switchDefault(SMLoc location, function_ref<LogicalResult()> continuation);
 
   [[nodiscard]] SyntaxProgram takeProgram() { return std::move(program); }
   [[nodiscard]] const std::vector<SyntaxDiagnostic>& getDiagnostics() const {
@@ -252,6 +272,7 @@ private:
   SyntaxProgram program;
   std::vector<SyntaxDiagnostic> diagnostics;
   SmallVector<std::vector<SyntaxStatementId>*> bodyStack{&program.body};
+  SmallVector<SyntaxSwitch*> switchStack;
   bool sawConstruct = false;
 };
 

@@ -25,7 +25,8 @@ add_mlir_dialect_library(
   PRIVATE
   MLIRIR
   MLIRInferTypeOpInterface
-  MLIRSideEffectInterfaces)
+  MLIRSideEffectInterfaces
+  MLIRTransformUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCDialect)
 

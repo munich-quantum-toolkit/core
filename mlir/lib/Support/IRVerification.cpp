@@ -124,6 +124,21 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
       const auto& arg =
           forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
       initEquivGroup(cast<TypedValue<RankedTensorType>>(arg), id, group);
+    } else if (auto whileOp = dyn_cast<scf::WhileOp>(it.operation())) {
+      const auto previous = std::prev(it);
+      const auto init = llvm::find(whileOp.getInits(), previous.tensor());
+      assert(init != whileOp.getInits().end());
+      const auto initNumber = static_cast<unsigned>(
+          std::distance(whileOp.getInits().begin(), init));
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(
+                         whileOp.getBeforeBody()->getArgument(initNumber)),
+                     id, group);
+
+      const auto result = cast<OpResult>(it.tensor());
+      initEquivGroup(
+          cast<TypedValue<RankedTensorType>>(
+              whileOp.getAfterBody()->getArgument(result.getResultNumber())),
+          id, group);
     }
   }
 }

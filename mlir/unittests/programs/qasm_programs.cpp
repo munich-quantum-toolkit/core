@@ -1378,6 +1378,20 @@ x q[index];
 output bit[2] result;
 result = measure q;
 )qasm";
+static const std::string directDynamicQuantumAccess = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+int first = 0;
+int second = 1;
+bit choose = measure q[3];
+if (choose) { first = 1; second = 2; }
+negctrl @ x q[first], q[second];
+bit measured = measure q[first];
+reset q[second];
+barrier q[first], q[second];
+output bit result;
+result = measure q[first];
+)qasm";
 static const std::string inductionVariableIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[3] q;
@@ -1435,6 +1449,8 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       OpenQASMProgram{.name = "mixed-controls", .source = mixedControlledX},
       OpenQASMProgram{.name = "runtime-dynamic-index",
                       .source = runtimeDynamicIndex},
+      OpenQASMProgram{.name = "direct-dynamic-quantum-access",
+                      .source = directDynamicQuantumAccess},
       OpenQASMProgram{.name = "induction-variable-index",
                       .source = inductionVariableIndex},
       OpenQASMProgram{.name = "checked-integer-state",
@@ -1477,6 +1493,8 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
   static const std::array programs{
       OpenQASMProgram{.name = "runtime-dynamic-index",
                       .source = runtimeDynamicIndex},
+      OpenQASMProgram{.name = "direct-dynamic-quantum-access",
+                      .source = directDynamicQuantumAccess},
       OpenQASMProgram{.name = "induction-variable-index",
                       .source = inductionVariableIndex},
       OpenQASMProgram{.name = "checked-integer-state",

@@ -22,6 +22,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Pass/PassRegistry.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
@@ -79,14 +80,14 @@ void populateQubitReusePipeline(OpPassManager& pm) {
   pm.addPass(qco::createReuseQubits());
 }
 
-bool isDecomposeMultiControlledConfigValid(const uint64_t minControls) {
-  return minControls >= 2;
+bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {
+  return minQubits >= 3;
 }
 
 void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
-                                              const uint64_t minControls) {
+                                              const uint64_t minQubits) {
   qco::DecomposeMultiControlledOptions options;
-  options.minControls = minControls;
+  options.minQubits = minQubits;
   pm.addPass(qco::createDecomposeMultiControlled(options));
 }
 
@@ -118,7 +119,8 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());

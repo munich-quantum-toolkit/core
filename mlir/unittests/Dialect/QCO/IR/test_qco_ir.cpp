@@ -643,15 +643,15 @@ TEST_F(QCOTest, IndexSwitchParser) {
             %out_tensor, %result = qtensor.extract %1[%c0] : tensor<3x!qco.qubit>
             %qubit_out, %result_0 = qco.measure %result : !qco.qubit
             memref.store %result_0, %c[%c0] : memref<3xi1>
-            %out_tensor_1, %result_2 = qtensor.extract %out_tensor[%c1] : tensor<3x!qco.qubit>
+            %2 = qtensor.insert %qubit_out into %out_tensor[%c0] : tensor<3x!qco.qubit>
+            %out_tensor_1, %result_2 = qtensor.extract %2[%c1] : tensor<3x!qco.qubit>
             %qubit_out_3, %result_4 = qco.measure %result_2 : !qco.qubit
             memref.store %result_4, %c[%c1] : memref<3xi1>
-            %out_tensor_5, %result_6 = qtensor.extract %out_tensor_1[%c2] : tensor<3x!qco.qubit>
-            %2 = qtensor.insert %qubit_out into %out_tensor_5[%c0] : tensor<3x!qco.qubit>
-            %3 = qtensor.insert %qubit_out_3 into %2[%c1] : tensor<3x!qco.qubit>
+            %3 = qtensor.insert %qubit_out_3 into %out_tensor_1[%c1] : tensor<3x!qco.qubit>
+            %out_tensor_5, %result_6 = qtensor.extract %3[%c2] : tensor<3x!qco.qubit>
             %qubit_out_7, %result_8 = qco.measure %result_6 : !qco.qubit
             memref.store %result_8, %c[%c2] : memref<3xi1>
-            %4 = qtensor.insert %qubit_out_7 into %3[%c2] : tensor<3x!qco.qubit>
+            %4 = qtensor.insert %qubit_out_7 into %out_tensor_5[%c2] : tensor<3x!qco.qubit>
             qtensor.dealloc %4 : tensor<3x!qco.qubit>
             return %c : memref<3xi1>
         }

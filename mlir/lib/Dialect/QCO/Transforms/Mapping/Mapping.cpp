@@ -54,7 +54,6 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <random>
 #include <ranges>
@@ -151,7 +150,6 @@ private:
   /// Statistics collected while routing.
   struct Statistics {
     size_t nswaps{0};
-    DenseSet<size_t> touchedPrograms;
   };
 
   /// Parameters influencing the behavior of the A* search algorithm.
@@ -366,26 +364,7 @@ protected:
       return;
     }
 
-    SmallVector<size_t> materializedPrograms(wires.size());
-    std::iota(materializedPrograms.begin(), materializedPrograms.end(), 0);
-    if (comp->hasTwoQubitOperations) {
-      RoutingBundle preview{.wires = wires, .infos = infos, .layout = *layout};
-      Statistics previewStats;
-      if (failed(route<WireDirection::Forward>(preview, previewStats))) {
-        func.emitError() << "failed to plan target routing";
-        signalPassFailure();
-        return;
-      }
-      for (const auto prog : previewStats.touchedPrograms) {
-        if (prog >= wires.size()) {
-          materializedPrograms.emplace_back(prog);
-        }
-      }
-      std::ranges::sort(materializedPrograms);
-    }
-
-    std::tie(wires, infos) = std::move(
-        place(body, *layout, *target, materializedPrograms, *comp, rewriter));
+    std::tie(wires, infos) = std::move(place(body, *layout, *comp, rewriter));
 
     Statistics stats;
     RoutingBundle bundle{.wires = std::move(wires),
@@ -600,6 +579,7 @@ private:
              "function body";
       return WalkResult::interrupt();
     });
+
     if (discovery.wasInterrupted()) {
       return failure();
     }
@@ -647,19 +627,18 @@ private:
   ///
   /// Analogously to the discoverComputation function, the i-th extract
   /// operation defines the i-th program qubit.
-  static std::pair<Wires, WireInfos>
-  place(Region& body, const Layout& layout,
-        const CompilerTarget& compilerTarget,
-        const ArrayRef<size_t> materializedPrograms, Computation& computation,
-        IRRewriter& rewriter) {
-    SmallVector<Value> staticQubits(layout.nqubits());
+  std::pair<Wires, WireInfos> place(Region& body, const Layout& layout,
+                                    Computation& computation,
+                                    IRRewriter& rewriter) {
+    SmallVector<Value> staticQubits;
+    staticQubits.reserve(target->numQubits());
 
+    // Create and save static qubit operations.
     rewriter.setInsertionPointToStart(&body.front());
-    for (const auto prog : materializedPrograms) {
-      const auto hw = layout.getHardwareIndex(prog);
-      const auto site = compilerTarget.siteForVertex(hw);
+    for (size_t hw = 0; hw < layout.nqubits(); ++hw) {
+      const auto site = target->siteForVertex(hw);
       auto op = StaticOp::create(rewriter, body.getLoc(), site);
-      staticQubits[prog] = op.getQubit();
+      staticQubits.emplace_back(op.getQubit());
       rewriter.setInsertionPointAfter(op);
     }
 
@@ -668,8 +647,8 @@ private:
 
     for (auto alloc : computation.scalarAllocations) {
       const auto prog = wires.size();
-      const auto qubit = staticQubits[prog];
-      assert(qubit && "expected program qubit to be materialized");
+      const auto hw = layout.getHardwareIndex(prog);
+      const auto qubit = staticQubits[hw];
 
       rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
       rewriter.eraseOp(alloc);
@@ -683,8 +662,8 @@ private:
         TypeSwitch<Operation*>(operation)
             .Case<ExtractOp>([&](auto op) {
               const auto prog = wires.size();
-              const auto qubit = staticQubits[prog];
-              assert(qubit && "expected program qubit to be materialized");
+              const auto hw = layout.getHardwareIndex(prog);
+              const auto qubit = staticQubits[hw];
 
               rewriter.replaceAllUsesWith(op.getResult(), qubit);
               rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
@@ -705,19 +684,23 @@ private:
       rewriter.eraseOp(tensor.allocation);
     }
 
-    const auto numProgramQubits = wires.size();
+    // Create sinks for remaining, unused, static qubits.
+
     rewriter.setInsertionPoint(body.back().getTerminator());
-    for (const auto prog : materializedPrograms) {
-      if (prog < numProgramQubits) {
-        continue;
-      }
-      const auto qubit = staticQubits[prog];
+    for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
+      const auto hw = layout.getHardwareIndex(prog);
+      const auto site = target->siteForVertex(hw);
+      const auto qubit = staticQubits[site];
 
       wires.emplace_back(qubit);
-      infos.insertOrUpdate(wires.size() - 1, prog);
+      infos.insertOrUpdate(prog, prog);
 
       SinkOp::create(rewriter, body.getLoc(), qubit);
     }
+
+    // Finally, update the SCF operations such that they take all static qubits
+    // as input. To handle recursively nested SCF operations, use a stack of
+    // (region, mapping) pairs.
 
     SmallVector<std::pair<Region&, DenseSet<Value>>> stack;
     stack.emplace_back(body, DenseSet<Value>{});
@@ -736,7 +719,7 @@ private:
               }
             })
             .Case<scf::ForOp>([&](scf::ForOp forOp) {
-              assert(qubits.size() == materializedPrograms.size());
+              assert(qubits.size() == layout.nqubits());
 
               llvm::for_each(getQubitValues(forOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
@@ -757,7 +740,7 @@ private:
                   DenseSet<Value>(regionQubits.begin(), regionQubits.end()));
             })
             .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-              assert(qubits.size() == materializedPrograms.size());
+              assert(qubits.size() == layout.nqubits());
 
               llvm::for_each(getQubitValues(whileOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
@@ -783,7 +766,7 @@ private:
                   DenseSet<Value>(afterArgs.begin(), afterArgs.end()));
             })
             .Case<IfOp>([&](IfOp ifOp) {
-              assert(qubits.size() == materializedPrograms.size());
+              assert(qubits.size() == layout.nqubits());
 
               llvm::for_each(ifOp.getQubits(),
                              [&](Value v) { qubits.erase(v); });
@@ -806,7 +789,7 @@ private:
                   DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
             })
             .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-              assert(qubits.size() == materializedPrograms.size());
+              assert(qubits.size() == layout.nqubits());
 
               llvm::for_each(switchOp.getTargets(),
                              [&](Value value) { qubits.erase(value); });
@@ -847,6 +830,11 @@ private:
   /// finally find the trial with the fewest SWAPs on the final backwards pass
   /// and return the respective layout.
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
+    if (!target->hasExplicitTopology()) {
+      return Layout::fromMapping(
+          llvm::to_vector(llvm::seq(target->numQubits())));
+    }
+
     std::mt19937_64 rng{seed};
 
     struct Trial {
@@ -1197,8 +1185,6 @@ private:
     auto& [wires, infos, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
       const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
-      stats.touchedPrograms.insert(prog0);
-      stats.touchedPrograms.insert(prog1);
 
       if constexpr (Mode == RoutingMode::Hot) {
         assert(infos.containsProgram(prog0) && infos.containsProgram(prog1) &&

@@ -91,6 +91,24 @@ cx q, q;
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; qubit q; barrier q, q;",
+      "OPENQASM 3.1; qubit[2] q; barrier q[0], q[0];",
+      "OPENQASM 3.1; qubit[2] q; int i = 0; barrier q, q[i];",
+      "OPENQASM 3.1; barrier $0, $0;",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("same qubit"),
+              std::string::npos);
+  }
+}
+
 TEST(OpenQASMFrontendTest, CompatibilityGatePolicyIsExplicit) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -1266,6 +1284,48 @@ gate sx a { U(pi/2, -pi/2, pi/2) a; }
   ASSERT_FALSE(analyzed.diagnostics.empty());
   EXPECT_NE(analyzed.diagnostics.front().message.find("already declared"),
             std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, PrefersMatchingCompatibilityGateCatalogEntries) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate r(theta, phi) q {
+  x q;
+}
+qubit q;
+r(0.5, 0.25) q;
+)qasm";
+
+  auto compatible = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(compatible) << compatible.diagnostics.front().message;
+  EXPECT_TRUE(llvm::none_of(compatible.program->gates,
+                            [](const auto& gate) { return gate.name == "r"; }));
+
+  auto strict = oq3::frontend::analyzeOpenQASM(
+      source, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  ASSERT_TRUE(strict) << strict.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(strict.program->gates,
+                           [](const auto& gate) { return gate.name == "r"; }));
+}
+
+TEST(OpenQASMFrontendTest, RejectsCompatibilityGateSignatureMismatch) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"qasm(OPENQASM 3.1;
+gate r(theta) q {}
+)qasm",
+      R"qasm(OPENQASM 3.1;
+gate r(theta, phi) q0, q1 {}
+)qasm",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(
+                  "does not match its compatibility signature"),
+              std::string::npos);
+  }
 }
 
 TEST(OpenQASMFrontendTest, AcceptsOpenQASM2PartialClassicalRegisterIf) {

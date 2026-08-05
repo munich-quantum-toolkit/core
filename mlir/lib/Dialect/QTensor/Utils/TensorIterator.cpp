@@ -28,7 +28,8 @@
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
   // The following operations don't have an OpResult.
-  if (op_ != nullptr && isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
+  if (op_ != nullptr &&
+      isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
     return nullptr;
   }
 
@@ -97,7 +98,7 @@ void TensorIterator::forward() {
   op_ = *(tensor_.user_begin());
 
   // The following operations define the end of the tensor's life-chain.
-  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
     isFinal_ = true;
     return;
   }
@@ -144,7 +145,7 @@ void TensorIterator::backward() {
   }
 
   // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
-  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     isFinal_ = false;
     return;
