@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -21,13 +20,21 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 namespace mlir::qc::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  if (utils::containsOperationOfType<AllocOp, DeallocOp, MeasureOp, ResetOp,
-                                     memref::LoadOp, memref::StoreOp>(body)) {
+  const auto hasNonUnitaryOperation =
+      body.walk([](Operation* operation) {
+            return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
+                       memref::StoreOp>(operation)
+                       ? WalkResult::interrupt()
+                       : WalkResult::advance();
+          })
+          .wasInterrupted();
+  if (hasNonUnitaryOperation) {
     return modifierOp->emitOpError(
         "body must not contain non-unitary quantum operations or modify a "
         "quantum register");

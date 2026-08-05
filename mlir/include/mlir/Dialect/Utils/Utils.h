@@ -29,7 +29,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
 #include <cmath>
@@ -391,20 +390,6 @@ template <typename UnitaryInterface>
     return {};
   }
   return unitary;
-}
-
-/**
- * @brief Returns whether @p block or any nested region contains one of the
- * requested operation types.
- */
-template <typename... OpTypes>
-[[nodiscard]] bool containsOperationOfType(Block& block) {
-  return block
-      .walk([](Operation* operation) {
-        return isa<OpTypes...>(operation) ? WalkResult::interrupt()
-                                          : WalkResult::advance();
-      })
-      .wasInterrupted();
 }
 
 /**

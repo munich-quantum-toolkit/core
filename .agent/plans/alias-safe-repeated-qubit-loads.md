@@ -145,7 +145,13 @@ width-dependent `scf.index_switch`.
       merge-time-ordered changelog.
 - [x] (2026-08-05) Address final maintainer feedback by folding #1987 into the
       staged OpenQASM changelog entry and removing overly specific agent
-      guidance.
+      guidance. Localize the one-use modifier-body operation query instead of
+      adding it to the shared dialect utilities.
+- [x] (2026-08-05) Rebase the 16 signed commits onto `origin/main` at
+      `2b977fbf2a3e4d5d935f0b001e8415683a4b5ac5`. Preserve upstream's native
+      switch and multi-label emission-budget tests alongside the branch's
+      width-independent register-access expectations. Validate 1,153 focused
+      MLIR tests and 44 Python MLIR tests.
 
 ## Surprises & Discoveries
 
@@ -612,5 +618,10 @@ Revision note (2026-08-05, Codex): Rebased again onto `077b73f80` after main
 advanced during replacement CI, preserved the PennyLane/QDMI additions, and
 recorded the QCO-to-QC fixture compatibility correction.
 
-Revision note (2026-08-05, Codex): Recorded the final changelog and agent-guide
-review corrections.
+Revision note (2026-08-05, Codex): Recorded the final changelog, agent-guide,
+and shared-utility review corrections.
+
+Revision note (2026-08-05, Codex): Rebased the final 16-commit series onto
+`2b977fbf2`, preserving the newly merged OpenQASM emission coverage while
+retaining direct dynamic qubit access, and recorded focused post-rebase
+validation.
