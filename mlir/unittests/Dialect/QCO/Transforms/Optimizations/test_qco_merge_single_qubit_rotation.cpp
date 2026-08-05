@@ -15,12 +15,15 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
@@ -88,6 +91,37 @@ protected:
       }
     }
     return std::nullopt;
+  }
+
+  /// True if `v`'s use-def cone reaches `target` (e.g. a function argument).
+  static bool valueDependsOn(Value v, Value target) {
+    DenseSet<Value> visited;
+    SmallVector<Value> worklist{v};
+    while (!worklist.empty()) {
+      Value cur = worklist.pop_back_val();
+      if (cur == target) {
+        return true;
+      }
+      if (!visited.insert(cur).second) {
+        continue;
+      }
+      if (Operation* def = cur.getDefiningOp()) {
+        worklist.append(def->operand_begin(), def->operand_end());
+      }
+    }
+    return false;
+  }
+
+  /// Replace the first `values.size()` function arguments with f64 constants so
+  /// dynamic SSA can be constant-folded for numeric checks.
+  static void bindLeadingArgs(func::FuncOp funcOp, ArrayRef<double> values) {
+    OpBuilder b(funcOp.getContext());
+    b.setInsertionPointToStart(&funcOp.getBody().front());
+    for (auto [idx, value] : llvm::enumerate(values)) {
+      Value c = arith::ConstantOp::create(b, funcOp.getLoc(),
+                                          b.getF64FloatAttr(value));
+      funcOp.getArgument(idx).replaceAllUsesWith(c);
+    }
   }
 
   /**
@@ -809,4 +843,177 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
   EXPECT_FALSE(std::isnan(lambda));
 
   EXPECT_FALSE(getGPhaseParam().has_value());
+}
+
+/**
+ * @brief Pure-Z merges must preserve RZ(a);RZ(b) ≡ U(0, a+b, 0) (up to
+ * gphase).
+ *
+ * Fully static chains use the shared `Val<double>` merge path, so singular
+ * atan2 cases and tiny beta drift cannot poison gphase or split the Z angle
+ * across phi/lambda.
+ */
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergePureZRotationsDoesNotEmitNanGPhase) {
+  // Angles like 0.3 are enough for cos^2+sin^2 drift to push |beta| just
+  // above eps while (x,y)≈0 if Euler extraction ran only in SSA.
+  ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {0.3}},
+                             {.type = GateType::RZ, .angles = {0.3}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+
+  // RZ(0.3);RZ(0.3) → RZ(0.6) → U(0, 0.6, 0); allow tiny beta from float noise.
+  expectUGateParams(/*expectedTheta=*/0., /*expectedPhi=*/0.6,
+                    /*expectedLambda=*/0., /*tolerance=*/1e-6);
+
+  auto phase = getGPhaseParam();
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
+  EXPECT_NEAR(*phase, utils::normalizeAngle(*phase), 1e-8);
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeDynamicAngleRotationsUsesSsaPath) {
+  // Pure-Z chain with unfoldable angle SSA forces Val<Value> merge (not the
+  // host Val<double> path exercised by constant-angle tests above).
+  // RZ(a);RZ(b) → U(0, wrap(a+b), 0) with SSA phi tied to the angle args.
+  constexpr double angleA = 0.3;
+  constexpr double angleB = 0.4;
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.rz(angleA, q[0]);
+  q[0] = builder.rz(angleB, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+
+  SmallVector<RZOp> rzs;
+  module->walk([&](RZOp op) { rzs.push_back(op); });
+  ASSERT_EQ(rzs.size(), 2U);
+  rzs[0].getThetaMutable().assign(funcOp.getArgument(0));
+  rzs[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_GE(countOps<GPhaseOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) {
+    uOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(uOp);
+
+  GPhaseOp gOp = nullptr;
+  module->walk([&](GPhaseOp op) {
+    gOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(gOp);
+
+  // Still SSA in the angles / gphase before binding concrete values.
+  EXPECT_FALSE(utils::valueToConstantDouble(uOp.getPhi()).has_value());
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
+  EXPECT_FALSE(utils::valueToConstantDouble(gOp.getParameter(0)).has_value());
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+
+  // Guard against atan2(0,0) constant-folder NaNs on the dynamic path.
+  module->walk([](arith::ConstantOp c) {
+    if (auto floatAttr = dyn_cast<FloatAttr>(c.getValue())) {
+      EXPECT_FALSE(std::isnan(floatAttr.getValueAsDouble()));
+    }
+  });
+
+  // Bind controlled values and check the folded RZ(a);RZ(b) formulas:
+  //   U(0, wrap(a+b), 0), gphase = normalize(-(phi+lambda)/2).
+  bindLeadingArgs(funcOp, {angleA, angleB});
+  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
+  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
+  const auto phase = utils::valueToConstantDouble(gOp.getParameter(0));
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_NEAR(*theta, 0.0, 1e-6);
+  EXPECT_NEAR(*phi, utils::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*lambda, 0.0, 1e-6);
+  EXPECT_NEAR(*phase, utils::normalizeAngle(-(*phi + *lambda) / 2.0), 1e-6);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
+  EXPECT_FALSE(std::isnan(*theta));
+  EXPECT_FALSE(std::isnan(*phi));
+  EXPECT_FALSE(std::isnan(*lambda));
+  EXPECT_FALSE(std::isnan(*phase));
+}
+
+/**
+ * @brief Two phase-bearing dynamic gates exercise SSA phase accumulation.
+ *
+ * `mergeDynamicChain` sums each gate's global-phase contribution. P(a);P(b)
+ * accumulates both unfoldable angles into the emitted `gphase` SSA.
+ */
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeDynamicPhaseGatesAccumulatesGlobalPhase) {
+  constexpr double angleA = 0.3;
+  constexpr double angleB = 0.4;
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.p(angleA, q[0]);
+  q[0] = builder.p(angleB, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+
+  SmallVector<POp> ps;
+  module->walk([&](POp op) { ps.push_back(op); });
+  ASSERT_EQ(ps.size(), 2U);
+  ps[0].getThetaMutable().assign(funcOp.getArgument(0));
+  ps[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<POp>(), 0);
+  EXPECT_GE(countOps<GPhaseOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) {
+    uOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(uOp);
+
+  GPhaseOp gOp = nullptr;
+  module->walk([&](GPhaseOp op) {
+    gOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(gOp);
+  // Accumulated input phases depend on both dynamic P angles.
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+
+  // P(a);P(b) → U(0, wrap(a+b), 0) with inputPhase (a+b)/2 cancelling the U
+  // intrinsic phase, so gphase folds to ~0 under controlled values.
+  bindLeadingArgs(funcOp, {angleA, angleB});
+  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
+  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
+  const auto phase = utils::valueToConstantDouble(gOp.getParameter(0));
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_NEAR(*theta, 0.0, 1e-6);
+  EXPECT_NEAR(*phi, utils::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*lambda, 0.0, 1e-6);
+  EXPECT_NEAR(*phase, 0.0, 1e-6);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
 }
