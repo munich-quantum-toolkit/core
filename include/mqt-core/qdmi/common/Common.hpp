@@ -390,6 +390,8 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "SUPPORTED PROGRAM FORMATS";
   case QDMI_DEVICE_PROPERTY_CHILDDEVICES:
     return "CHILD DEVICES";
+  case QDMI_DEVICE_PROPERTY_QUEUEDEPTH:
+    return "QUEUE DEPTH";
   case QDMI_DEVICE_PROPERTY_MAX:
     return "MAX";
   case QDMI_DEVICE_PROPERTY_CUSTOM1:

@@ -470,6 +470,9 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
   [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
 
+  /// @see QDMI_DEVICE_PROPERTY_QUEUEDEPTH
+  [[nodiscard]] std::optional<size_t> getQueueDepth() const;
+
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
   [[nodiscard]] std::optional<std::string> getLengthUnit() const;
 

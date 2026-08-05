@@ -348,6 +348,7 @@ TEST(FoMaCTest, DevicePropertyToString) {
                "SUPPORTED PROGRAM FORMATS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CHILDDEVICES),
                "CHILD DEVICES");
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_QUEUEDEPTH), "QUEUE DEPTH");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_MAX), "MAX");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM1), "CUSTOM1");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM2), "CUSTOM2");
@@ -421,6 +422,10 @@ TEST_P(DeviceTest, CouplingMap) {
 
 TEST_P(DeviceTest, NeedsCalibration) {
   EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
+}
+
+TEST_F(DDSimulatorDeviceTest, QueueDepthIsUnavailable) {
+  EXPECT_EQ(device.getQueueDepth(), std::nullopt);
 }
 
 TEST_P(DeviceTest, LengthUnit) {

@@ -389,6 +389,9 @@ when the custom slot is unsupported.)pb");
   device.def("needs_calibration", &fomac::Device::getNeedsCalibration,
              "Returns whether the device needs calibration.");
 
+  device.def("queue_depth", &fomac::Device::getQueueDepth,
+             "Returns the current queue depth, or None if unavailable.");
+
   device.def("length_unit", &fomac::Device::getLengthUnit,
              "Returns the unit of length used by the device.");
 
