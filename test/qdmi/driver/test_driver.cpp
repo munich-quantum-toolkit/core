@@ -493,6 +493,11 @@ TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
                                     nullptr),
             QDMI_SUCCESS);
   EXPECT_EQ(id, "session-job");
+  const size_t numShots = 1;
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                   sizeof(numShots), &numShots),
+            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_BADSTATE);
   QDMI_job_free(job);
 
   EXPECT_EQ(QDMI_device_open_job(nullptr, "session-job", &job),

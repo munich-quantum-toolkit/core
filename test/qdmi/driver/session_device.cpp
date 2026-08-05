@@ -29,6 +29,7 @@ struct QDMI_Device_Session_impl_d {
 struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
   std::string id = "session-job";
+  bool opened = false;
 };
 
 namespace {
@@ -222,14 +223,18 @@ extern "C" int TEST_SESSION_QDMI_device_session_open_device_job(
   }
   // The QDMI C API transfers this allocation through an opaque raw handle.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *job = new (std::nothrow) QDMI_Device_Job_impl_d{.session = session};
+  *job = new (std::nothrow)
+      QDMI_Device_Job_impl_d{.session = session, .opened = true};
   return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     QDMI_Device_Job job, QDMI_Device_Job_Parameter /*parameter*/,
     size_t /*size*/, const void* /*value*/) {
-  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_SUCCESS;
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->opened ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(
@@ -246,7 +251,7 @@ extern "C" int TEST_SESSION_QDMI_device_job_submit(QDMI_Device_Job job) {
   if (job == nullptr || job->session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return QDMI_SUCCESS;
+  return job->opened ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_cancel(QDMI_Device_Job /*job*/) {
