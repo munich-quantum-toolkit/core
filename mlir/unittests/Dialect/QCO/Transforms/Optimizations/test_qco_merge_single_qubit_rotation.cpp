@@ -15,6 +15,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
