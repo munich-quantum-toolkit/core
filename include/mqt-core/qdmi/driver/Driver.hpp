@@ -123,6 +123,9 @@ struct DeviceLibrary {
   /// Function pointer to @ref QDMI_device_session_create_device_job.
   decltype(QDMI_device_session_create_device_job)*
       device_session_create_device_job{};
+  /// Optional function pointer to @ref QDMI_device_session_open_device_job.
+  decltype(QDMI_device_session_open_device_job)*
+      device_session_open_device_job{};
   /// Function pointer to @ref QDMI_device_job_free.
   decltype(QDMI_device_job_free)* device_job_free{};
   /// Function pointer to @ref QDMI_device_job_set_parameter.
@@ -268,6 +271,12 @@ public:
    * @see QDMI_device_create_job
    */
   auto createJob(QDMI_Job* job) -> int;
+
+  /**
+   * @brief Opens an existing job for the device.
+   * @see QDMI_device_open_job
+   */
+  auto openJob(const char* jobId, QDMI_Job* job) -> int;
 
   /**
    * @brief Frees the job associated with the device.

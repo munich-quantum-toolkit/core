@@ -455,6 +455,54 @@ TEST_P(DriverTest, JobCreate) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
+TEST_P(DriverTest, JobOpen) {
+  QDMI_Job job = nullptr;
+  const auto result = QDMI_device_open_job(device, "session-job", &job);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return;
+  }
+  ASSERT_EQ(result, QDMI_SUCCESS);
+  ASSERT_NE(job, nullptr);
+  QDMI_job_free(job);
+  EXPECT_EQ(QDMI_device_open_job(device, "", &job), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "unknown", &job), QDMI_ERROR_NOTFOUND);
+}
+
+TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
+  const auto device =
+      openTestDevice(MQT_CORE_QDMI_SESSION_DEVICE, "TEST_SESSION");
+  QDMI_Job job = nullptr;
+  ASSERT_EQ(QDMI_device_open_job(device, "session-job", &job), QDMI_SUCCESS);
+  ASSERT_NE(job, nullptr);
+
+  size_t size = 0;
+  ASSERT_EQ(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, 0, nullptr, &size),
+      QDMI_SUCCESS);
+  std::string id(size - 1, '\0');
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, size, id.data(),
+                                    nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(id, "session-job");
+  QDMI_job_free(job);
+
+  EXPECT_EQ(QDMI_device_open_job(nullptr, "session-job", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, nullptr, &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "", &job), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "session-job", nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "unknown", &job), QDMI_ERROR_NOTFOUND);
+}
+
+TEST(FoMaCJobTest, OpensExistingJobs) {
+  const auto device = fomac::Session::createSessionlessDevice(
+      openTestDevice(MQT_CORE_QDMI_SESSION_DEVICE, "TEST_SESSION"));
+  const auto job = device.openJob("session-job");
+  EXPECT_EQ(job.getId(), "session-job");
+}
+
 TEST_P(DriverTest, JobSetParameter) {
   EXPECT_EQ(QDMI_job_set_parameter(nullptr, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);

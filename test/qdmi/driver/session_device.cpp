@@ -15,6 +15,7 @@
 #include <cstring>
 #include <new>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 struct QDMI_Child_Device_impl_d {};
@@ -27,6 +28,7 @@ struct QDMI_Device_Session_impl_d {
 
 struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
+  std::string id = "session-job";
 };
 
 namespace {
@@ -209,6 +211,21 @@ TEST_SESSION_QDMI_device_session_create_device_job(QDMI_Device_Session session,
   return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
 
+extern "C" int TEST_SESSION_QDMI_device_session_open_device_job(
+    QDMI_Device_Session session, const char* jobId, QDMI_Device_Job* job) {
+  if (session == nullptr || !session->initialized || jobId == nullptr ||
+      jobId[0] == '\0' || job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (std::string_view{jobId} != "session-job") {
+    return QDMI_ERROR_NOTFOUND;
+  }
+  // The QDMI C API transfers this allocation through an opaque raw handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  *job = new (std::nothrow) QDMI_Device_Job_impl_d{session};
+  return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
+}
+
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     QDMI_Device_Job job, QDMI_Device_Job_Parameter /*parameter*/,
     size_t /*size*/, const void* /*value*/) {
@@ -222,7 +239,7 @@ extern "C" int TEST_SESSION_QDMI_device_job_query_property(
       prop != QDMI_DEVICE_JOB_PROPERTY_ID) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return queryString("session-job", size, value, sizeRet);
+  return queryString(job->id, size, value, sizeRet);
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_submit(QDMI_Device_Job job) {
