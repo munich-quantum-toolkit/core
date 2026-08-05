@@ -12,8 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add storage-only qubit-register allocation and alias-safe point-of-use
-  access in QC-to-QCO and typed OpenQASM lowering ([#1987]) ([**@burgholzer**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
@@ -52,8 +50,8 @@ releases may include breaking changes.
   ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
-  and structured control flow ([#1910], [#1994]) ([**@burgholzer**],
-  [**@denialhaag**])
+  structured control flow, and alias-safe qubit-register access ([#1910],
+  [#1987], [#1994]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter

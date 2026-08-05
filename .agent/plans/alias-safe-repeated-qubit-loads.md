@@ -143,6 +143,9 @@ width-dependent `scf.index_switch`.
       `077b73f802c408b036453fce9d597e52db70e8c7`. Preserve the newly merged
       PennyLane/QDMI implementation and place #1987 above #2005 in the
       merge-time-ordered changelog.
+- [x] (2026-08-05) Address final maintainer feedback by folding #1987 into the
+      staged OpenQASM changelog entry and removing overly specific agent
+      guidance.
 
 ## Surprises & Discoveries
 
@@ -608,3 +611,6 @@ validation, and closed independent-review finding Q-01 with a complete-QTensor
 Revision note (2026-08-05, Codex): Rebased again onto `077b73f80` after main
 advanced during replacement CI, preserved the PennyLane/QDMI additions, and
 recorded the QCO-to-QC fixture compatibility correction.
+
+Revision note (2026-08-05, Codex): Recorded the final changelog and agent-guide
+review corrections.
