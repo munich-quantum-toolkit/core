@@ -586,6 +586,12 @@ c[0] = measure q[0];
     assert job3.num_shots == 1000
 
 
+def test_device_open_job_reports_unsupported_provider(ddsim_device: Device) -> None:
+    """Expose job reopening through Python without requiring DDSIM support."""
+    with pytest.raises(RuntimeError, match=r"Opening job: Not supported\."):
+        ddsim_device.open_job("unknown")
+
+
 @pytest.fixture
 def submitted_job(ddsim_device: Device) -> Job:
     """Fixture that provides a submitted job for testing.

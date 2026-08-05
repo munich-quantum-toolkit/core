@@ -31,6 +31,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -265,6 +266,15 @@ public:
   return driver.open(id);
 }
 
+[[nodiscard]] auto openOwnedSessionTestDevice(const std::string_view id)
+    -> fomac::Device {
+  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
+      {.id = std::string{id},
+       .library = MQT_CORE_QDMI_SESSION_DEVICE,
+       .prefix = "TEST_SESSION"}));
+  return fomac::Session::openDevice(id);
+}
+
 class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
@@ -453,6 +463,58 @@ TEST_P(DriverTest, JobCreate) {
   QDMI_job_free(job);
   EXPECT_EQ(QDMI_device_create_job(device, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverTest, JobOpen) {
+  QDMI_Job job = nullptr;
+  const auto result = QDMI_device_open_job(device, "session-job", &job);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return;
+  }
+  ASSERT_EQ(result, QDMI_SUCCESS);
+  ASSERT_NE(job, nullptr);
+  QDMI_job_free(job);
+  EXPECT_EQ(QDMI_device_open_job(device, "", &job), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "unknown", &job), QDMI_ERROR_NOTFOUND);
+}
+
+TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
+  const auto ownedDevice = openOwnedSessionTestDevice("test.open-job-client");
+  QDMI_Device device = ownedDevice;
+  QDMI_Job job = nullptr;
+  ASSERT_EQ(QDMI_device_open_job(device, "session-job", &job), QDMI_SUCCESS);
+  ASSERT_NE(job, nullptr);
+
+  size_t size = 0;
+  ASSERT_EQ(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, 0, nullptr, &size),
+      QDMI_SUCCESS);
+  std::string id(size - 1, '\0');
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, size, id.data(),
+                                    nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(id, "session-job");
+  const size_t numShots = 1;
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                   sizeof(numShots), &numShots),
+            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_BADSTATE);
+  QDMI_job_free(job);
+
+  EXPECT_EQ(QDMI_device_open_job(nullptr, "session-job", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, nullptr, &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "", &job), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "session-job", nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_open_job(device, "unknown", &job), QDMI_ERROR_NOTFOUND);
+}
+
+TEST(FoMaCJobTest, OpensExistingJobs) {
+  const auto device = openOwnedSessionTestDevice("test.open-job-fomac");
+  const auto job = device.openJob("session-job");
+  EXPECT_EQ(job.getId(), "session-job");
 }
 
 TEST_P(DriverTest, JobSetParameter) {

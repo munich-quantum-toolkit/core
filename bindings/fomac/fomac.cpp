@@ -470,6 +470,14 @@ when the custom slot is unsupported.)pb");
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits an exact byte payload to the device.");
 
+  device.def(
+      "open_job",
+      [](const fomac::Device& self, const std::string& jobId) {
+        return self.openJob(jobId);
+      },
+      "job_id"_a, nb::rv_policy::reference_internal,
+      "Opens an existing job by its device-provided ID.");
+
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
