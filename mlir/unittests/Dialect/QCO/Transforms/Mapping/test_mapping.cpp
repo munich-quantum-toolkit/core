@@ -41,6 +41,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <cassert>
@@ -305,8 +306,13 @@ protected:
                                const MappingPassOptions& options) {
     PassManager pm(m->getContext());
     pm.addPass(createMappingPass(target, options));
-    pm.addPass(createCanonicalizerPass());
-    return pm.run(m);
+    if (failed(pm.run(m))) {
+      return failure();
+    }
+
+    RewritePatternSet patterns(m.getContext());
+    SinkOp::getCanonicalizationPatterns(patterns, m.getContext());
+    return applyPatternsGreedily(m, std::move(patterns));
   }
 
   std::unique_ptr<MLIRContext> context;
