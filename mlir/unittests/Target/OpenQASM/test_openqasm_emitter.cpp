@@ -757,6 +757,35 @@ TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
             std::string::npos);
 }
 
+TEST(OpenQASMTargetTest, AccountsForEachLabelInSwitchCaseBudgets) {
+  std::string source = "OPENQASM 3.1;\n"
+                       "include \"stdgates.inc\";\n"
+                       "gate g0 q { x q; }\n";
+  for (size_t level = 1; level <= 23; ++level) {
+    source += "gate g" + std::to_string(level) + " q { g" +
+              std::to_string(level - 1) + " q; g" + std::to_string(level - 1) +
+              " q; }\n";
+  }
+  source += "qubit q;\n"
+            "int selector = 0;\n"
+            "switch (selector) {\n"
+            "  case 0, 1 { g23 q; }\n"
+            "  default { }\n"
+            "}\n";
+
+  MLIRContext context;
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
+    diagnostic = value.str();
+    return success();
+  });
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  EXPECT_FALSE(moduleOp);
+  EXPECT_NE(diagnostic.find("projected emitted operation count"),
+            std::string::npos)
+      << diagnostic;
+}
+
 TEST(OpenQASMTargetTest, ComposesDispatchAndCustomGateExpansionBudgets) {
   std::string source = "OPENQASM 3.1;\n"
                        "include \"stdgates.inc\";\n"
@@ -1416,6 +1445,42 @@ x q[i];
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
   EXPECT_EQ(switches, 1);
   EXPECT_EQ(conditionals, 0);
+}
+
+TEST(OpenQASMTargetTest, LowersNativeSwitchWithCasesAndCarriedState) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int selector = 2;
+int result = 0;
+switch (selector) {
+  case 1, 3 {
+    result = 10;
+    x q;
+  }
+  case 2 {
+    result = 20;
+    h q;
+  }
+  default {
+    result = 30;
+  }
+}
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t switches = 0;
+  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
+    ++switches;
+    EXPECT_EQ(switchOp.getCases(), ArrayRef<int64_t>({1, 3, 2}));
+    ASSERT_EQ(switchOp.getNumResults(), 1);
+    EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(64));
+  });
+  EXPECT_EQ(switches, 1);
 }
 
 TEST(OpenQASMTargetTest,

@@ -64,6 +64,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iosfwd>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -528,7 +529,7 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
 }
 
 TEST(OpenQASMCompilerOutputTest,
-     PreservesMixedScalarAndRegisterResultsThroughQCO) {
+     CanonicalizesMixedScalarAndRegisterResultsThroughQCO) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 output int count;
@@ -547,6 +548,14 @@ ratio = 2.0;
   ASSERT_TRUE(throughOptimizedQCO(program, restoredQC, resultTypes));
   EXPECT_EQ(resultTypes,
             (std::vector<std::string>{"i64", "memref<2xi1>", "f64"}));
+  ASSERT_TRUE(restoredQC);
+  auto emitted = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(emitted);
+  EXPECT_NE(emitted->source().find("output int _mqt_out0;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("output bit[2] bits;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("output float _mqt_out1;"),
+            std::string::npos);
+  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
 }
 
 TEST(OpenQASMCompilerOutputTest, GlobalPhasesTraverseQCQCOJeffAndQIRScopes) {
@@ -771,6 +780,77 @@ h q;
   ASSERT_TRUE(qcoFromQC);
   EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
   EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
+}
+
+/**
+ * @brief Test: typed programs emit OpenQASM directly and through the pipeline.
+ */
+TEST_F(CompilerPipelineTest, TypedProgramsEmitOpenQASM) {
+  const std::string qasm = R"(OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+ctrl @ x q[0], q[1];
+bit[2] c = measure q;
+)";
+  auto directQC = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(directQC);
+  const auto importedIR = directQC->str();
+  auto direct = directQC->toOpenQASM3();
+  ASSERT_TRUE(direct);
+  EXPECT_TRUE(directQC->isValid());
+  EXPECT_EQ(directQC->str(), importedIR);
+  EXPECT_TRUE(direct->source().starts_with("OPENQASM 3.1;\n"));
+  EXPECT_EQ(direct->str(), direct->source());
+  EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
+  EXPECT_FALSE(direct->write(std::filesystem::path(testing::TempDir()) /
+                             "missing" / "typed_program_output.qasm"));
+
+  const auto path =
+      std::filesystem::path(testing::TempDir()) / "typed_program_output.qasm";
+  ASSERT_TRUE(direct->write(path));
+  std::ifstream input(path);
+  const std::string written((std::istreambuf_iterator<char>(input)),
+                            std::istreambuf_iterator<char>());
+  EXPECT_EQ(written, direct->source());
+  EXPECT_TRUE(QCProgram::fromQASMFile(path));
+
+  auto imported =
+      runDefaultPipeline(CompilerInput(*direct), ProgramFormat::QCImport);
+  ASSERT_TRUE(imported);
+  EXPECT_TRUE(std::holds_alternative<QCProgram>(*imported));
+
+  auto compiled =
+      runDefaultPipeline(CompilerInput(OpenQASMProgram(direct->source())),
+                         ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<QIRProgram>(*compiled));
+
+  auto pipelineQC = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(pipelineQC);
+  auto result = runDefaultPipeline(CompilerInput(std::move(*pipelineQC)),
+                                   ProgramFormat::OpenQASM3);
+  ASSERT_TRUE(result);
+  ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*result));
+  const auto& optimized = std::get<OpenQASMProgram>(*result);
+  EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3.1;\n"));
+  auto reparsed = QCProgram::fromQASMString(optimized.source());
+  ASSERT_TRUE(reparsed);
+  auto adaptiveQIR = std::move(*reparsed).intoQIR(QIRProfile::Adaptive);
+  EXPECT_TRUE(adaptiveQIR);
+}
+
+TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%value: i64) {
+      %qubit = qc.alloc : !qc.qubit
+      qc.dealloc %qubit : !qc.qubit
+      return
+    }
+  })mlir";
+  auto program = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  EXPECT_FALSE(program->toOpenQASM3());
 }
 
 /**

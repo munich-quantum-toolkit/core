@@ -66,14 +66,15 @@ operations.
 
 Select an output format to stop the pipeline at a particular representation:
 
-| Purpose                                  | Output format                                          | Result type   |
-| ---------------------------------------- | ------------------------------------------------------ | ------------- |
-| Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`   |
-| Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`  |
-| Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`  |
-| Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`   |
-| Serialize a compiler program             | `OutputFormat.JEFF`                                    | `JeffProgram` |
-| Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`  |
+| Purpose                                  | Output format                                          | Result type       |
+| ---------------------------------------- | ------------------------------------------------------ | ----------------- |
+| Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
+| Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`      |
+| Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
+| Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`       |
+| Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Serialize a compiler program             | `OutputFormat.JEFF`                                    | `JeffProgram`     |
+| Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 
 For example, select optimized QCO to inspect the representation after the
 default QCO pass pipeline:
@@ -83,12 +84,54 @@ optimized = compile_program(bell_qasm, output=OutputFormat.QCO_OPTIMIZED)
 print(optimized.ir)
 ```
 
+## Emit OpenQASM
+
+Request {py:attr}`~mqt.core.mlir.OutputFormat.OPENQASM3` to emit the program
+after the normal QCO optimization and conversion back to QC:
+
+```{code-cell} ipython3
+openqasm = compile_program(bell_qasm, output=OutputFormat.OPENQASM3)
+print(openqasm.source)
+```
+
+The returned {py:class}`~mqt.core.mlir.OpenQASMProgram` owns its source and can
+write it directly:
+
+```{code-cell} ipython3
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+with TemporaryDirectory() as directory:
+    path = Path(directory) / "bell.qasm"
+    openqasm.write(path)
+    reparsed = QCProgram.from_qasm_file(path)
+
+assert reparsed.is_valid
+```
+
+Use {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` to clean up and export the
+current QC program without QCO optimization. The resulting
+{py:class}`~mqt.core.mlir.OpenQASMProgram` can be passed directly to
+{py:func}`~mqt.core.mlir.compile_program`:
+
+```{code-cell} ipython3
+recompiled = compile_program(openqasm, output=OutputFormat.QC_IMPORT)
+assert isinstance(recompiled, QCProgram)
+```
+
+The exporter targets practical structured programs with static qubit and bit
+indices. Dynamic indexing, dynamic ranges, surviving runtime assertions,
+checked-index machinery, and live poison values fail with an MLIR diagnostic.
+See {doc}`OpenQASM` for the complete support table.
+
 ## Run passes explicitly
 
 {code}`QCProgram`, {code}`QCOProgram`, {code}`JeffProgram`, and
-{code}`QIRProgram` own their MLIR modules. A conversion consumes its source
-program by default, avoiding an implicit copy of a potentially large module.
-Pass {code}`copy=True` when the source must remain available.
+{code}`QIRProgram` own their MLIR modules. Conversions between these MLIR-backed
+program objects consume their source by default, avoiding an implicit copy of a
+potentially large module. Pass {code}`copy=True` when the source must remain
+available. {code}`OpenQASMProgram` instead owns immutable source text and
+remains reusable when passed to {code}`compile_program`.
 
 The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:

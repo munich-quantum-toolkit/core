@@ -19,6 +19,7 @@
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
@@ -87,7 +88,7 @@ static llvm::cl::opt<std::string> outputFormat(
     "emit",
     llvm::cl::desc(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
-        "qir-adaptive, or jeff"),
+        "qir-adaptive, openqasm3, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
 
 static llvm::cl::opt<bool>
@@ -113,6 +114,7 @@ enum class OutputFormat : std::uint8_t {
   QC,
   QCO,
   QCOOptimized,
+  OpenQASM3,
   QIRBase,
   QIRAdaptive,
   Jeff
@@ -184,6 +186,9 @@ parseOutputFormat(const StringRef format) {
   }
   if (format == "qco-optimized") {
     return OutputFormat::QCOOptimized;
+  }
+  if (format == "openqasm3") {
+    return OutputFormat::OpenQASM3;
   }
   if (format == "qir-base") {
     return OutputFormat::QIRBase;
@@ -551,6 +556,7 @@ static int runCompiler(int argc, char** argv) {
   }
 
   if ((*parsedOutputFormat == OutputFormat::QC ||
+       *parsedOutputFormat == OutputFormat::OpenQASM3 ||
        *parsedOutputFormat == OutputFormat::QIRBase ||
        *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
       failed(runPasses([](OpPassManager& pm) {
@@ -584,6 +590,18 @@ static int runCompiler(int argc, char** argv) {
     if (writeJeffOutput(*program.mod, outputFilename).failed()) {
       return 1;
     }
+  } else if (*parsedOutputFormat == OutputFormat::OpenQASM3) {
+    std::string errorMessage;
+    auto output = openOutputFile(outputFilename, &errorMessage);
+    if (!output) {
+      llvm::errs() << "Failed to open output file '" << outputFilename
+                   << "': " << errorMessage << "\n";
+      return 1;
+    }
+    if (failed(qc::translateQCToOpenQASM3(*program.mod, output->os()))) {
+      return 1;
+    }
+    output->keep();
   } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
              *parsedOutputFormat == OutputFormat::QIRAdaptive) {
     llvm::LLVMContext llvmContext;

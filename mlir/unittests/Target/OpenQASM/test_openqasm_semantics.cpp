@@ -1268,6 +1268,48 @@ gate sx a { U(pi/2, -pi/2, pi/2) a; }
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest, PrefersMatchingCompatibilityGateCatalogEntries) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate r(theta, phi) q {
+  x q;
+}
+qubit q;
+r(0.5, 0.25) q;
+)qasm";
+
+  auto compatible = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(compatible) << compatible.diagnostics.front().message;
+  EXPECT_TRUE(llvm::none_of(compatible.program->gates,
+                            [](const auto& gate) { return gate.name == "r"; }));
+
+  auto strict = oq3::frontend::analyzeOpenQASM(
+      source, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  ASSERT_TRUE(strict) << strict.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(strict.program->gates,
+                           [](const auto& gate) { return gate.name == "r"; }));
+}
+
+TEST(OpenQASMFrontendTest, RejectsCompatibilityGateSignatureMismatch) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"qasm(OPENQASM 3.1;
+gate r(theta) q {}
+)qasm",
+      R"qasm(OPENQASM 3.1;
+gate r(theta, phi) q0, q1 {}
+)qasm",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(
+                  "does not match its compatibility signature"),
+              std::string::npos);
+  }
+}
+
 TEST(OpenQASMFrontendTest, AcceptsOpenQASM2PartialClassicalRegisterIf) {
   // Classic OpenQASM 2.0: if (c == k) after measuring only some bits of c.
   constexpr llvm::StringLiteral source = R"qasm(
