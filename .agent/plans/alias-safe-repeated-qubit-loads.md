@@ -113,6 +113,26 @@ width-dependent `scf.index_switch`.
       revision `252010af9d58bea0371aede7a86880b9d74eba49`; no actionable
       correctness, conversion-legality, C++20/LLVM 22 idiom, performance, or
       test-coverage findings remain.
+- [x] (2026-08-05) Rebase the 12 signed feature and remediation commits linearly
+      from boundary `1f9fd7ebfa085bd57e7224caac8ab3a73df36981` onto refreshed
+      `origin/main` `ecd32f734212b6f622927626a215f2ea31335759`; discard the
+      three obsolete merge-main commits and preserve the concurrent
+      compiler-target, QDMI, OpenQASM, Jeff, mapping, and Python changes.
+- [x] (2026-08-05) Resolve the rebase semantically by retaining upstream
+      `compileForTarget`, moving the existing QCO cleanup pipeline to the start
+      of target compilation while retaining post-mapping cleanup, preserving
+      both sets of `Utils.h` dependencies, and merging every changelog entry.
+- [x] (2026-08-05) Validate the rebased series with `git range-diff`, signed
+      commit verification, 1,390 focused MLIR tests, four target compiler
+      checks, 29 Python MLIR tests, direct-load QC/QCO/QIR `mqt-cc` smokes,
+      changed-file hooks, LLVM 22.1.8 changed-line clang-tidy, and
+      `git diff --check`.
+- [x] (2026-08-05) Address independent-review finding Q-01 by replacing the
+      skipped nested `scf.for`/`scf.while` reference comparison with an
+      independently built complete-QTensor reference. Extend the existing
+      QTensor iterator and IR-equivalence grouping to model `scf.condition` and
+      both `scf.while` regions; all 165 QC-to-QCO and three QTensor iterator
+      tests pass.
 
 ## Surprises & Discoveries
 
@@ -198,6 +218,13 @@ width-dependent `scf.index_switch`.
   input and does not lower SCF. Dynamic loop programs therefore target the
   Adaptive profile; the Base-profile dynamic-loop failure is not caused by this
   change, and the QC-to-QIR implementations remain untouched.
+- Observation: The nested `scf.for`/`scf.while` conversion test originally
+  skipped reference equivalence because the QTensor iterator did not recognize
+  `scf.condition` as a linear-chain terminator and IR equivalence did not assign
+  the loop's before- and after-region tensor values to the allocation's
+  equivalence group. Modeling those standard SCF edges removes the test
+  exception and lets the existing permutation-aware oracle compare the complete
+  structured state.
 
 ## Decision Log
 
@@ -264,6 +291,17 @@ width-dependent `scf.index_switch`.
   binary, changed-line clang-tidy, and compiler smokes. Rationale: The user
   explicitly requested shorter iterations once the broad validation was working.
   Date/Author: 2026-08-02, Codex.
+- Decision: Keep both pre- and post-mapping QCO cleanup in target compilation.
+  Rationale: The existing cleanup canonicalizes operation-local QTensor access
+  into the mapper's supported form without adding a bespoke transformation,
+  while the later cleanup preserves established post-mapping normalization.
+  Date/Author: 2026-08-05, Codex.
+- Decision: Close Q-01 through the existing permutation-aware equivalence
+  infrastructure rather than adding a one-off comparison path. Rationale:
+  `scf.condition` and the two `scf.while` regions are standard parts of the
+  QTensor def-use graph, and supporting them centrally strengthens every
+  equivalence user while keeping the production conversion unchanged.
+  Date/Author: 2026-08-05, Codex.
 
 ## Outcomes & Retrospective
 
@@ -312,10 +350,10 @@ dynamic SCF, and Base QIR for straight-line input.
 
 No dialect operation, type, pass, command-line option, or external dependency
 was added. Direct QC-to-QIR conversion remains unchanged. The current base is
-`1f9fd7ebfa085bd57e7224caac8ab3a73df36981`. A final independent review of exact
-source revision `252010af9d58bea0371aede7a86880b9d74eba49` reported no remaining
-findings. The remote PR still points to the older `004511d` revision, so its
-existing green checks do not validate these local commits.
+`ecd32f734212b6f622927626a215f2ea31335759`. The rebased series retained 12
+signed feature/remediation commits; Q-01 adds one separately reviewable test
+oracle remediation commit. The remote PR still points to the older `004511d`
+revision, so its existing green checks do not validate these local commits.
 
 ## Context and Orientation
 
@@ -493,8 +531,12 @@ The final validated base also includes:
     1f9fd7ebfa085bd57e7224caac8ab3a73df36981
     ✨ Normalize compiler-wide global phases (#1986)
 
+    ecd32f734212b6f622927626a215f2ea31335759
+    Refreshed main used for the linear PR #1987 rebase
+
 Issue #1893 is an enhancement/MLIR issue and is not labeled `good first issue`.
-No external GitHub mutation is authorized by this plan.
+The user authorized updating PR #1987 with an explicit force-with-lease after
+final exact-head validation.
 
 ## Interfaces and Dependencies
 
@@ -541,3 +583,8 @@ fixing implicit modifier captures and the complete quantum-value preflight
 contract, recording the shortened final validation requested by the user, and
 receiving a clean independent review of exact source revision
 `252010af9d58bea0371aede7a86880b9d74eba49`.
+
+Revision note (2026-08-05, Codex): Reopened the plan for the signed linear
+rebase onto `ecd32f734`, recorded the semantic conflict resolutions and focused
+validation, and closed independent-review finding Q-01 with a complete-QTensor
+`scf.while` reference oracle.

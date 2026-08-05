@@ -1976,7 +1976,8 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::nestedForLoopIfOp), true},
         QCToQCOTestCase{
             "NestedForLoopWhileOp", MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
-            MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp), true, true},
+            MQT_NAMED_BUILDER(qco::nestedForLoopWhileOpCompleteTensorState),
+            true},
         QCToQCOTestCase{
             "NestedForLoopSwitchOp",
             MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),

@@ -1472,7 +1472,7 @@ Value nestedForLoopIfOp(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a nested while
 /// operation.
-Value nestedForLoopWhileOp(QCOProgramBuilder& b);
+Value nestedForLoopWhileOpCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a nested index
 /// switch operation.

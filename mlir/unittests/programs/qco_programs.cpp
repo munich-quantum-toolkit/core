@@ -4604,33 +4604,31 @@ Value nestedForLoopIfOp(QCOProgramBuilder& b) {
   return measureToRegister(b, scfFor[1]);
 }
 
-Value nestedForLoopWhileOp(QCOProgramBuilder& b) {
-  auto reg = b.qtensorAlloc(2);
-  auto loopResult =
-      b.scfFor(0, 2, 1, {reg}, [&](Value iv, ValueRange iterArgs) {
-        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-        auto q1 = b.h(q0);
-        auto insert = b.qtensorInsert(q1, t0, iv);
-        return SmallVector{insert};
-      });
-  auto scfFor =
-      b.scfFor(0, 2, 1, loopResult, [&](Value iv, ValueRange iterArgs) {
-        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-        auto whileResult = b.scfWhile(
-            q0,
-            [&](ValueRange innerIterArgs) {
-              auto [q1, measureResult] = b.measure(innerIterArgs[0]);
-              b.scfCondition(measureResult, q1);
-              return SmallVector{q1};
-            },
-            [&](ValueRange innerIterArgs) {
-              auto q2 = b.h(innerIterArgs[0]);
-              return SmallVector{q2};
-            });
-        auto insert = b.qtensorInsert(whileResult[0], t0, iv);
-        return SmallVector{insert};
-      });
-  return measureAndReturnQTensor(b, scfFor[0], 2);
+Value nestedForLoopWhileOpCompleteTensorState(QCOProgramBuilder& b) {
+  constexpr int64_t size = 2;
+  auto tensor = b.qtensorAlloc(size);
+  tensor = b.scfFor(0, size, 1, tensor, [&](Value iv, ValueRange iterArgs) {
+    return SmallVector{transformQTensorElement(
+        b, iterArgs[0], iv, [&](Value qubit) { return b.h(qubit); })};
+  })[0];
+  tensor = b.scfFor(0, size, 1, tensor, [&](Value iv, ValueRange iterArgs) {
+    auto whileResult = b.scfWhile(
+        iterArgs[0],
+        [&](ValueRange innerIterArgs) {
+          auto [outTensor, qubit] = b.qtensorExtract(innerIterArgs[0], iv);
+          auto [outQubit, measureResult] = b.measure(qubit);
+          auto measuredTensor = b.qtensorInsert(outQubit, outTensor, iv);
+          b.scfCondition(measureResult, measuredTensor);
+          return SmallVector{measuredTensor};
+        },
+        [&](ValueRange innerIterArgs) {
+          return SmallVector{
+              transformQTensorElement(b, innerIterArgs[0], iv,
+                                      [&](Value qubit) { return b.h(qubit); })};
+        });
+    return SmallVector{whileResult[0]};
+  })[0];
+  return measureAndReturnQTensor(b, tensor, size);
 }
 
 Value nestedForLoopSwitchOp(QCOProgramBuilder& b) {

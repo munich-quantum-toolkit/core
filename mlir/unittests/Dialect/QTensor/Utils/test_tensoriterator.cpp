@@ -357,6 +357,12 @@ TEST_F(TensorIteratorTest, TraversesWhileCarriedTensors) {
   qtensor::DeallocOp::create(builder, builder.getLoc(), tensor1Result);
   ASSERT_TRUE(succeeded(verify(loop)));
 
+  TensorIterator beforeRegionIterator(
+      cast<TypedValue<RankedTensorType>>(before->getArgument(1)));
+  ++beforeRegionIterator;
+  ASSERT_TRUE(isa<scf::ConditionOp>(beforeRegionIterator.operation()));
+  ASSERT_EQ(beforeRegionIterator.tensor(), nullptr);
+
   TensorIterator iterator(cast<TypedValue<RankedTensorType>>(tensor0));
   ASSERT_EQ(iterator.operation(), tensor0.getDefiningOp());
   ASSERT_EQ(iterator.tensor(), tensor0);

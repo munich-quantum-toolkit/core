@@ -139,6 +139,9 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
   and descriptions aligned with the implementation's actual scope, defaults,
   supported operation shapes, compile-time or runtime limitations, failure
   modes, and deliberately out-of-scope behavior.
+- Treat `scf.condition` as the linear terminator of an `scf.while` before
+  region. QTensor traversal and equivalence utilities must account for both the
+  before- and after-region block arguments when following loop-carried tensors.
 
 ## Generated Files and Validation
 
