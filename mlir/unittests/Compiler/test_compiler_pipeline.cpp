@@ -1078,6 +1078,46 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
 }
 
 /**
+ * @brief Test: all-to-all target compilation uses compact placement.
+ */
+TEST_F(CompilerPipelineTest, QCOProgramUsesCompactAllToAllPlacement) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+
+  const CompilerTarget target{std::vector<CompilerTarget::Site>{
+      CompilerTarget::Site{2472}, CompilerTarget::Site{18449}}};
+  ASSERT_TRUE(qco->compileForTarget(target));
+
+  auto compiled = parseRecordedModule(qco->str());
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(verify(*compiled).succeeded());
+
+  llvm::SmallVector<int64_t> staticSites;
+  size_t numDynamic = 0;
+  size_t numSwaps = 0;
+  compiled->walk([&](Operation* operation) {
+    if (auto staticOp = dyn_cast<qco::StaticOp>(operation)) {
+      staticSites.emplace_back(staticOp.getIndex());
+    }
+    numDynamic += isa<qco::AllocOp, qtensor::AllocOp>(operation);
+    numSwaps += isa<qco::SWAPOp>(operation);
+  });
+  EXPECT_EQ(staticSites, (llvm::SmallVector<int64_t>{2472, 18449}));
+  EXPECT_EQ(numDynamic, 0);
+  EXPECT_EQ(numSwaps, 0);
+}
+
+/**
  * @brief Test: the default pipeline accepts an optional compiler target.
  */
 TEST_F(CompilerPipelineTest, DefaultPipelineCompilesForTarget) {

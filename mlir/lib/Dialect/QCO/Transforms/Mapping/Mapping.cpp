@@ -847,6 +847,11 @@ private:
   /// finally find the trial with the fewest SWAPs on the final backwards pass
   /// and return the respective layout.
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
+    if (!target->hasExplicitTopology()) {
+      return Layout::fromMapping(
+          llvm::to_vector(llvm::seq(target->numQubits())));
+    }
+
     std::mt19937_64 rng{seed};
 
     struct Trial {
