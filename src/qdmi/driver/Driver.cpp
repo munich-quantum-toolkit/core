@@ -407,7 +407,7 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
 
 auto QDMI_Device_impl_d::openJob(const char* const jobId, QDMI_Job* job)
     -> int {
-  if (jobId == nullptr || jobId[0] == '\0' || job == nullptr) {
+  if (jobId == nullptr || *jobId == '\0' || job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (library_->device_session_open_device_job == nullptr) {

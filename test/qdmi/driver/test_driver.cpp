@@ -469,7 +469,7 @@ TEST_P(DriverTest, JobOpen) {
 }
 
 TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
-  const auto device =
+  auto* const device =
       openTestDevice(MQT_CORE_QDMI_SESSION_DEVICE, "TEST_SESSION");
   QDMI_Job job = nullptr;
   ASSERT_EQ(QDMI_device_open_job(device, "session-job", &job), QDMI_SUCCESS);
