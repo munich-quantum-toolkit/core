@@ -751,11 +751,10 @@ TEST_P(MappingPassTest, MapFlatGHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = runPass(m.get(), target, MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
@@ -795,11 +794,9 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = pm.run(m.get());
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(pm.run(m.get()).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapGroverLike) {
@@ -808,9 +805,6 @@ TEST_P(MappingPassTest, MapGroverLike) {
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
-
-  PassManager pm(context.get());
-  pm.addPass(createMappingPass(target, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -861,11 +855,10 @@ TEST_P(MappingPassTest, MapGroverLike) {
   builder.qtensorDealloc(flagTensor);
 
   auto m = builder.finalize(bits);
-  auto res = pm.run(m.get());
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapParallelLoops) {
@@ -874,9 +867,6 @@ TEST_P(MappingPassTest, MapParallelLoops) {
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
-
-  PassManager pm(context.get());
-  pm.addPass(createMappingPass(target, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -940,11 +930,10 @@ TEST_P(MappingPassTest, MapParallelLoops) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = pm.run(m.get());
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
@@ -1354,11 +1343,10 @@ TEST_P(MappingPassTest, MapSABRECircuit) {
   builder.qtensorDealloc(tensorDown);
 
   auto m = builder.finalize(bits);
-  auto res = runPass(m.get(), target, MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapBranchingGHZ) {
@@ -1407,11 +1395,10 @@ TEST_P(MappingPassTest, MapBranchingGHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = runPass(m.get(), target, MappingPassOptions{.ntrials = 1});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapDoUntil) {
@@ -1469,11 +1456,10 @@ TEST_P(MappingPassTest, MapDoUntil) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), target, MappingPassOptions{.ntrials = 1});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapNestedForSwitch) {
@@ -1563,11 +1549,10 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), target, MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
