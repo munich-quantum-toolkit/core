@@ -1607,7 +1607,7 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
 
-  for (int64_t i = 0; i < size; ++i) {
+  for (size_t i = 0; i < size; ++i) {
     qubits[i] = builder.allocQubit();
   }
   cxcz(builder, qubits);
