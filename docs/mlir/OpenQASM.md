@@ -120,16 +120,18 @@ bypasses that QCO optimization round trip.
 | Qubits and classical bits | Logical and physical qubits, scalar allocations, and static rank-one qubit or `i1` memrefs. Memory indices must resolve statically.                                                                                          |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body becomes a private generated gate.                                                                                                                           |
-| Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, casts, and supported math functions.                                                                                 |
+| Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                |
 | Structured control        | Result-free `scf.if` and `scf.index_switch`, constant-range `scf.for` without iterated state, and zero-state expression-based `scf.while`. Index switches use native `switch`, `case`, and `default` statements.             |
 | Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                    |
 
 The exporter writes an OpenQASM 3.1 version declaration and includes
 `stdgates.inc`. Gates in MQT Core's compatibility catalog, such as `r`, `rzz`,
 and `ecr`, receive definitions under their catalog names. Strict consumers use
-those definitions. MQT Core's default compatibility mode recognizes a matching
-definition and imports the call directly as the corresponding native QC
-operation. A mismatched definition is rejected.
+those definitions. MQT Core's default compatibility mode recognizes a definition
+with the catalog name and signature and imports calls directly as the
+corresponding native QC operation; the definition body is deliberately ignored.
+A same-name definition with a mismatched signature is rejected. Strict mode
+always analyzes the custom definition normally.
 
 The `_mqt_` prefix is reserved for generated composite-modifier gates,
 temporaries, and collision-safe identifiers. Existing classical-register
@@ -151,7 +153,8 @@ is not emitted. Import and export do not preserve `uint`, angle spelling,
 scalar-versus-one-element bit spelling, or scalar output names. Unsigned
 constants therefore normalize to `int`. Operations whose signedness affects
 their meaning, such as unsigned division, comparison, or conversion, are
-rejected instead of being approximated.
+rejected instead of being approximated. Integer sign extension and truncation
+are also rejected because OpenQASM scalar casts have different value semantics.
 
 Emitted scalar casts use standard OpenQASM conversion syntax. The MQT Core
 frontend does not yet parse that syntax, so cast-containing output is outside

@@ -537,12 +537,8 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
     funcOp.walk([&](func::ReturnOp returnOp) {
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
-      SmallVector<DictionaryAttr> originalResultAttrs;
-      SmallVector<DictionaryAttr> keptResultAttrs;
-      funcOp.getAllResultAttrs(originalResultAttrs);
 
-      for (const auto [index, operand] :
-           llvm::enumerate(returnOp.getOperands())) {
+      for (const auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
           if (const auto it =
                   state.cregMeasurements.find(measureOp.getOperation());
@@ -559,7 +555,6 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
         } else {
           keptOperands.push_back(operand);
           keptReturnTypes.push_back(operand.getType());
-          keptResultAttrs.push_back(originalResultAttrs[index]);
         }
       }
 
@@ -569,20 +564,13 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
             arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
         keptOperands.push_back(zero);
         keptReturnTypes.push_back(zero.getType());
-        keptResultAttrs.push_back(DictionaryAttr::get(funcOp.getContext()));
       }
 
       returnOp.getOperandsMutable().assign(keptOperands);
 
-      funcOp.removeResAttrsAttr();
       funcOp.setFunctionType(FunctionType::get(
           funcOp.getContext(), funcOp.getFunctionType().getInputs(),
           keptReturnTypes));
-      if (llvm::any_of(keptResultAttrs, [](const DictionaryAttr attrs) {
-            return attrs && !attrs.empty();
-          })) {
-        funcOp.setAllResultAttrs(keptResultAttrs);
-      }
     });
   });
   return failure(hasInvalidMemory);

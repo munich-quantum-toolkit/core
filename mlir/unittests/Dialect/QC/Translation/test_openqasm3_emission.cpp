@@ -312,8 +312,8 @@ TEST(OpenQASM3EmissionTest, ForwardsCompositeModifierParameters) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 gate pair(p0) q {
-  rx(p0) q;
-  rz(p0) q;
+  inv @ rx(p0) q;
+  z q;
 }
 qubit q;
 float theta = 0.25;
@@ -336,7 +336,7 @@ inv @ pair(theta) q;
 TEST(OpenQASM3EmissionTest, EmitsSignedBooleanAndFloatingExpressions) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> (i64, i1, f64, i1)
+  func.func @main() -> (i64, i1, f64, f64, i1)
       attributes {passthrough = ["entry_point"]} {
     %one = arith.constant 1 : i64
     %two = arith.constant 2 : i64
@@ -346,9 +346,12 @@ module {
     %angle = arith.constant 0.25 : f64
     %negated = arith.negf %angle : f64
     %sine = math.sin %negated : f64
+    %remainder = arith.remf %angle, %sine : f64
     %converted = arith.fptosi %sine : f64 to i64
-    %truncated = arith.trunci %converted : i64 to i1
-    return %signed, %comparison, %sine, %truncated : i64, i1, f64, i1
+    %zero = arith.constant 0 : i64
+    %nonzero = arith.cmpi ne, %converted, %zero : i64
+    return %signed, %comparison, %sine, %remainder, %nonzero
+        : i64, i1, f64, f64, i1
   }
 }
 )mlir";
@@ -363,8 +366,34 @@ module {
   EXPECT_NE(emitted->find("((1 + 2) / 2)"), std::string::npos);
   EXPECT_NE(emitted->find("((1 + 2) >= 2)"), std::string::npos);
   EXPECT_NE(emitted->find("sin((-0.25))"), std::string::npos);
+  EXPECT_NE(emitted->find("mod(0.25, sin((-0.25)))"), std::string::npos);
   EXPECT_NE(emitted->find("int(sin((-0.25)))"), std::string::npos);
-  EXPECT_NE(emitted->find("bool(int(sin((-0.25))))"), std::string::npos);
+  EXPECT_NE(emitted->find("(int(sin((-0.25))) != 0)"), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, EmitsFloatingRemainderAsStrictOpenQASMMod) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> f64 {
+    %lhs = arith.constant 5.5 : f64
+    %rhs = arith.constant 2.0 : f64
+    %remainder = arith.remf %lhs, %rhs : f64
+    return %remainder : f64
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("mod(5.5, 2.0)"), std::string::npos);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, EmitsSignedAndFloatingComparisonFamilies) {
@@ -617,6 +646,20 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           %one = arith.constant 1 : i32
           %sum = arith.addi %one, %one : i32
           return
+        }
+      })mlir"},
+      Fixture{.name = "sign-extension", .source = R"mlir(module {
+        func.func @main() -> i64 {
+          %value = arith.constant true
+          %extended = arith.extsi %value : i1 to i64
+          return %extended : i64
+        }
+      })mlir"},
+      Fixture{.name = "integer-truncation", .source = R"mlir(module {
+        func.func @main() -> i1 {
+          %value = arith.constant 2 : i64
+          %truncated = arith.trunci %value : i64 to i1
+          return %truncated : i1
         }
       })mlir"},
       Fixture{.name = "packed-bitwise", .source = R"mlir(module {

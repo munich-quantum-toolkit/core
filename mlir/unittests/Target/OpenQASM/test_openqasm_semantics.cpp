@@ -1273,9 +1273,7 @@ TEST(OpenQASMFrontendTest, PrefersMatchingCompatibilityGateCatalogEntries) {
 OPENQASM 3.1;
 include "stdgates.inc";
 gate r(theta, phi) q {
-  rz(-phi) q;
-  rx(theta) q;
-  rz(phi) q;
+  x q;
 }
 qubit q;
 r(0.5, 0.25) q;

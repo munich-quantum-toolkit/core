@@ -466,7 +466,8 @@ private:
     const auto name = operation.getName().getStringRef();
     return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp>(&operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
-           isScalarCast(name) || !mathFunction(name).empty();
+           name == "arith.remf" || isScalarCast(name) ||
+           !mathFunction(name).empty();
   }
 
   [[nodiscard]] LogicalResult
@@ -559,6 +560,14 @@ private:
       return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
     }
     const auto name = operation->getName().getStringRef();
+    if (name == "arith.remf") {
+      auto lhs = emitExpression(operation->getOperand(0));
+      auto rhs = emitExpression(operation->getOperand(1));
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      return (Twine("mod(") + *lhs + ", " + *rhs + ")").str();
+    }
     if (const auto binary = binaryOperator(name); !binary.empty()) {
       if (operation->getNumOperands() != 2) {
         return failExpression(value, "malformed binary expression");
@@ -663,7 +672,7 @@ private:
         .Cases("arith.subi", "arith.subf", "-")
         .Cases("arith.muli", "arith.mulf", "*")
         .Cases("arith.divsi", "arith.divf", "/")
-        .Cases("arith.remsi", "arith.remf", "%")
+        .Case("arith.remsi", "%")
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")
         .Case("arith.xori", "!=")
@@ -716,7 +725,6 @@ private:
 
   [[nodiscard]] static bool isScalarCast(const StringRef name) {
     return llvm::StringSwitch<bool>(name)
-        .Cases("arith.extsi", "arith.trunci", true)
         .Case("arith.index_cast", true)
         .Case("arith.sitofp", true)
         .Case("arith.fptosi", true)
@@ -1067,30 +1075,17 @@ private:
     auto& body = modifier.getRegion().front();
     const auto helperName = uniqueName("gate", nextHelper);
 
-    SmallVector<Value> dependencies;
-    for (const auto* operation : unitaries) {
-      auto unitary = cast<UnitaryOpInterface>(operation);
-      llvm::append_range(dependencies, unitary.getParameters());
-    }
     SmallVector<Value> captures;
-    DenseSet<Value> visited;
-    for (size_t index = 0; index < dependencies.size(); ++index) {
-      auto dependency = dependencies[index];
-      if (!visited.insert(dependency).second) {
-        continue;
-      }
-      if (dependency.getParentRegion() != &modifier.getRegion()) {
-        captures.push_back(dependency);
-        continue;
-      }
-      if (auto* definingOperation = dependency.getDefiningOp()) {
-        for (const auto operand : definingOperation->getOperands()) {
-          if (!isa<QubitType>(operand.getType())) {
-            dependencies.push_back(operand);
-          }
+    DenseSet<Value> captured;
+    modifier.getRegion().walk([&](Operation* operation) {
+      for (auto operand : operation->getOperands()) {
+        if (!isa<QubitType>(operand.getType()) &&
+            !modifier.getRegion().isAncestor(operand.getParentRegion()) &&
+            captured.insert(operand).second) {
+          captures.push_back(operand);
         }
       }
-    }
+    });
 
     GateCall helperCall;
     helperCall.symbol = helperName;
