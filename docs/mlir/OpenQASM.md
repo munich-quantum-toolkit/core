@@ -119,7 +119,7 @@ bypasses that QCO optimization round trip.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Qubits and classical bits | Logical and physical qubits, scalar allocations, and static rank-one qubit or `i1` memrefs. Memory indices must resolve statically.                                                                                          |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
-| Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body becomes a private generated gate.                                                                                                                           |
+| Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
 | Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                |
 | Structured control        | Result-free `scf.if` and `scf.index_switch`, constant-range `scf.for` without iterated state, and zero-state expression-based `scf.while`. Index switches use native `switch`, `case`, and `default` statements.             |
 | Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                    |
@@ -167,7 +167,8 @@ arbitrary CFGs, multi-block SCF regions, dynamic indices or ranges, general
 memrefs, unsupported integer widths, packed bit-vector operations, unknown
 operations, and non-unitary content inside modifier regions. SCF results,
 loop-carried values, nonempty `scf.yield`, and `arith.select` are outside the
-export subset.
+export subset. Multi-operation modifier bodies must have a target qubit and
+cannot capture additional qubits from an enclosing scope.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,

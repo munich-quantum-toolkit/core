@@ -230,7 +230,7 @@ with location-based diagnostics before buffered output is committed.
 Validation of the simplified subset completed on the follow-up diff:
 
 - the complete release build succeeded;
-- all 157 OpenQASM frontend tests, 279 QC translation tests, and 225 compiler
+- all 157 OpenQASM frontend tests, 283 QC translation tests, and 225 compiler
   tests passed;
 - all 44 Python MLIR tests passed;
 - generated Python stubs completed successfully without a diff;

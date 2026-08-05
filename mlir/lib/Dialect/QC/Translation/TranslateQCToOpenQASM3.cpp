@@ -1073,19 +1073,32 @@ private:
   createCompositeHelper(ModifierOp modifier,
                         const ArrayRef<Operation*> unitaries) {
     auto& body = modifier.getRegion().front();
+    if (body.getNumArguments() == 0) {
+      fail(modifier, "multi-operation modifiers require a target qubit");
+      return failure();
+    }
     const auto helperName = uniqueName("gate", nextHelper);
 
     SmallVector<Value> captures;
     DenseSet<Value> captured;
+    Value capturedQubit;
     modifier.getRegion().walk([&](Operation* operation) {
       for (auto operand : operation->getOperands()) {
-        if (!isa<QubitType>(operand.getType()) &&
-            !modifier.getRegion().isAncestor(operand.getParentRegion()) &&
-            captured.insert(operand).second) {
+        if (modifier.getRegion().isAncestor(operand.getParentRegion())) {
+          continue;
+        }
+        if (isa<QubitType>(operand.getType())) {
+          capturedQubit = operand;
+        } else if (captured.insert(operand).second) {
           captures.push_back(operand);
         }
       }
     });
+    if (capturedQubit) {
+      fail(modifier,
+           "multi-operation modifier bodies cannot capture extra qubits");
+      return failure();
+    }
 
     GateCall helperCall;
     helperCall.symbol = helperName;

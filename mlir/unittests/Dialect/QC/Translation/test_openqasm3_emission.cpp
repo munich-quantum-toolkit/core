@@ -587,6 +587,26 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   auto emptyModule = emptyBuilder.finalize();
   ASSERT_TRUE(emptyModule);
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*emptyModule)));
+
+  qc::QCProgramBuilder capturedQubitBuilder(&context);
+  capturedQubitBuilder.initialize();
+  const auto target = capturedQubitBuilder.allocQubit();
+  const auto captured = capturedQubitBuilder.allocQubit();
+  capturedQubitBuilder.inv(target, [&](const Value argument) {
+    capturedQubitBuilder.x(argument).x(captured);
+  });
+  auto capturedQubitModule = capturedQubitBuilder.finalize();
+  ASSERT_TRUE(capturedQubitModule);
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*capturedQubitModule)));
+
+  qc::QCProgramBuilder zeroTargetBuilder(&context);
+  zeroTargetBuilder.initialize();
+  zeroTargetBuilder.inv(ValueRange{}, [&](ValueRange) {
+    zeroTargetBuilder.gphase(0.25).gphase(0.5);
+  });
+  auto zeroTargetModule = zeroTargetBuilder.finalize();
+  ASSERT_TRUE(zeroTargetModule);
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*zeroTargetModule)));
 }
 
 TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
