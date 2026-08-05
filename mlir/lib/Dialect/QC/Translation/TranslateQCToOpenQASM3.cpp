@@ -124,14 +124,6 @@ getConstantInteger(const Value value) {
   return getConstantIntValue(value);
 }
 
-[[nodiscard]] static std::string join(const ArrayRef<std::string> values,
-                                      const StringRef separator) {
-  std::string result;
-  llvm::raw_string_ostream stream(result);
-  llvm::interleave(values, stream, separator);
-  return result;
-}
-
 namespace {
 
 class OpenQASMEmitter {
@@ -260,10 +252,6 @@ private:
     if (!returnOp) {
       return fail(function, "entry block must end in func.return");
     }
-    if (returnOp.getNumOperands() != function.getNumResults()) {
-      return fail(returnOp, "function result and return operand counts differ");
-    }
-
     for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
       if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
         continue;
@@ -392,9 +380,6 @@ private:
       if (isa<scf::YieldOp>(&operation)) {
         return success();
       }
-      if (isa<scf::ConditionOp, qc::YieldOp>(&operation)) {
-        return fail(&operation, "unexpected region terminator");
-      }
       if (failed(emitOperation(operation))) {
         return failure();
       }
@@ -463,7 +448,7 @@ private:
           }
           qubits.push_back(std::move(*qubit));
         }
-        *output << "barrier " << join(qubits, ", ") << ";\n";
+        *output << "barrier " << llvm::join(qubits, ", ") << ";\n";
         return success();
       }
       auto call = emitGateCall(unitary);
@@ -486,9 +471,6 @@ private:
 
   [[nodiscard]] LogicalResult
   validateInlineExpressionOperation(Operation& operation) {
-    if (operation.getNumResults() == 0) {
-      return fail(&operation, "malformed scalar expression operation");
-    }
     for (const auto result : operation.getResults()) {
       const auto type = result.getType();
       if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
@@ -624,7 +606,8 @@ private:
         }
         arguments.push_back(std::move(*argument));
       }
-      return (Twine(functionName) + "(" + join(arguments, ", ") + ")").str();
+      return (Twine(functionName) + "(" + llvm::join(arguments, ", ") + ")")
+          .str();
     }
     return failExpression(value,
                           "unsupported expression operation '" + name + "'");
@@ -863,11 +846,8 @@ private:
   [[nodiscard]] LogicalResult emitWhile(scf::WhileOp whileOp) {
     auto& before = whileOp.getBefore().front();
     auto& after = whileOp.getAfter().front();
-    auto conditionOp = dyn_cast<scf::ConditionOp>(before.getTerminator());
-    auto yieldOp = dyn_cast<scf::YieldOp>(after.getTerminator());
-    if (!conditionOp || !yieldOp) {
-      return fail(whileOp, "malformed scf.while regions");
-    }
+    auto conditionOp = cast<scf::ConditionOp>(before.getTerminator());
+    auto yieldOp = cast<scf::YieldOp>(after.getTerminator());
     if (!whileOp.getInits().empty() || whileOp.getNumResults() != 0 ||
         before.getNumArguments() != 0 || after.getNumArguments() != 0 ||
         !conditionOp.getArgs().empty() || yieldOp.getNumOperands() != 0) {
@@ -948,9 +928,6 @@ private:
       }
       if (isa<MemRefType>(value.getType())) {
         continue;
-      }
-      if (scalarIndex >= scalarOutputs.size()) {
-        return fail(returnOp, "missing scalar output declaration");
       }
       auto expression = emitExpression(value);
       if (failed(expression)) {
@@ -1152,9 +1129,9 @@ private:
     raw_indented_ostream definitionOutput(definitionStream);
     definitionOutput << "gate " << helperName;
     if (!parameterNames.empty()) {
-      definitionOutput << '(' << join(parameterNames, ", ") << ')';
+      definitionOutput << '(' << llvm::join(parameterNames, ", ") << ')';
     }
-    definitionOutput << ' ' << join(qubitNames, ", ") << " {\n";
+    definitionOutput << ' ' << llvm::join(qubitNames, ", ") << " {\n";
     definitionOutput.indent();
     auto* savedOutput = output;
     output = &definitionOutput;
@@ -1195,10 +1172,10 @@ private:
                                 raw_indented_ostream& stream) {
     stream << call.modifiers << call.symbol;
     if (!call.parameters.empty()) {
-      stream << '(' << join(call.parameters, ", ") << ')';
+      stream << '(' << llvm::join(call.parameters, ", ") << ')';
     }
     if (!call.qubits.empty()) {
-      stream << ' ' << join(call.qubits, ", ");
+      stream << ' ' << llvm::join(call.qubits, ", ");
     }
     stream << ";\n";
   }

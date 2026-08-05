@@ -66,6 +66,11 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   ASSERT_TRUE(succeeded(source));
   ASSERT_TRUE(succeeded(repeatedSource));
   EXPECT_EQ(*source, *repeatedSource);
+  std::string streamedSource;
+  llvm::raw_string_ostream stream(streamedSource);
+  EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+  stream.flush();
+  EXPECT_EQ(streamedSource, *source);
   EXPECT_TRUE(source->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(source->find("include \"stdgates.inc\";"), std::string::npos);
   EXPECT_NE(source->find("ctrl @ x"), std::string::npos);
@@ -263,6 +268,7 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
       .rccx(q0, q1, q2);
   builder.ctrl(q0, q1,
                [&](const Value target) { builder.h(target).x(target); });
+  builder.pow(0.5, q2, [&](const Value target) { builder.z(target); });
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
 
@@ -283,6 +289,7 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
     EXPECT_EQ(emitted->find(prefixedDeclaration), std::string::npos) << helper;
   }
   EXPECT_NE(emitted->find("gate _mqt_gate"), std::string::npos);
+  EXPECT_NE(emitted->find("pow(0.5) @ z"), std::string::npos);
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
       << *emitted;
@@ -358,6 +365,88 @@ module {
   EXPECT_NE(emitted->find("sin((-0.25))"), std::string::npos);
   EXPECT_NE(emitted->find("int(sin((-0.25)))"), std::string::npos);
   EXPECT_NE(emitted->find("bool(int(sin((-0.25))))"), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, EmitsSignedAndFloatingComparisonFamilies) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> (i1, i1, i1, i1, i1, i1,
+                        i1, i1, i1, i1, i1, i1, f64) {
+    %one = arith.constant 1 : i64
+    %two = arith.constant 2 : i64
+    %one_float = arith.sitofp %one : i64 to f64
+    %two_float = arith.constant 2.0 : f64
+    %ieq = arith.cmpi eq, %one, %two : i64
+    %ine = arith.cmpi ne, %one, %two : i64
+    %ilt = arith.cmpi slt, %one, %two : i64
+    %ile = arith.cmpi sle, %one, %two : i64
+    %igt = arith.cmpi sgt, %one, %two : i64
+    %ige = arith.cmpi sge, %one, %two : i64
+    %feq = arith.cmpf oeq, %one_float, %two_float : f64
+    %fne = arith.cmpf one, %one_float, %two_float : f64
+    %flt = arith.cmpf olt, %one_float, %two_float : f64
+    %fle = arith.cmpf ole, %one_float, %two_float : f64
+    %fgt = arith.cmpf ogt, %one_float, %two_float : f64
+    %fge = arith.cmpf oge, %one_float, %two_float : f64
+    return %ieq, %ine, %ilt, %ile, %igt, %ige,
+           %feq, %fne, %flt, %fle, %fgt, %fge, %one_float
+        : i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, f64
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  for (const auto* const comparison :
+       {"(1 == 2)", "(1 != 2)", "(1 < 2)", "(1 <= 2)", "(1 > 2)", "(1 >= 2)",
+        "(float(1) == 2.0)", "(float(1) != 2.0)", "(float(1) < 2.0)",
+        "(float(1) <= 2.0)", "(float(1) > 2.0)", "(float(1) >= 2.0)"}) {
+    EXPECT_NE(emitted->find(comparison), std::string::npos) << comparison;
+  }
+}
+
+TEST(OpenQASM3EmissionTest, EmitsCanonicalConstantRangeBoundaries) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() {
+    %qubit = qc.alloc : !qc.qubit
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %two = arith.constant 2 : index
+    %five = arith.constant 5 : index
+    scf.for %i = %zero to %five step %two {
+      qc.x %qubit : !qc.qubit
+    }
+    scf.for %i = %one to %zero step %one {
+      qc.y %qubit : !qc.qubit
+    }
+    scf.index_switch %zero
+    default {
+      qc.z %qubit : !qc.qubit
+      scf.yield
+    }
+    qc.dealloc %qubit : !qc.qubit
+    return
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("in [0:2:4]"), std::string::npos);
+  EXPECT_EQ(emitted->find("y _mqt_q0;"), std::string::npos);
+  EXPECT_EQ(emitted->find("switch ("), std::string::npos);
+  EXPECT_NE(emitted->find("z _mqt_q0;"), std::string::npos);
 }
 
 TEST(OpenQASM3EmissionTest, EmitsPhysicalQubitOperations) {
@@ -447,12 +536,150 @@ TEST(OpenQASM3EmissionTest, LeavesDestinationEmptyOnFailure) {
   EXPECT_TRUE(output.empty());
 }
 
+TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  qc::QCProgramBuilder nonUnitaryBuilder(&context);
+  nonUnitaryBuilder.initialize();
+  const auto nonUnitaryQubit = nonUnitaryBuilder.allocQubit();
+  nonUnitaryBuilder.inv(nonUnitaryQubit, [&](const Value target) {
+    nonUnitaryBuilder.reset(target);
+  });
+  auto nonUnitaryModule = nonUnitaryBuilder.finalize();
+  ASSERT_TRUE(nonUnitaryModule);
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*nonUnitaryModule)));
+
+  qc::QCProgramBuilder emptyBuilder(&context);
+  emptyBuilder.initialize();
+  const auto emptyQubit = emptyBuilder.allocQubit();
+  emptyBuilder.inv(emptyQubit, [](Value) {});
+  auto emptyModule = emptyBuilder.finalize();
+  ASSERT_TRUE(emptyModule);
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*emptyModule)));
+}
+
 TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
   struct Fixture {
     llvm::StringLiteral name;
     llvm::StringLiteral source;
   };
   constexpr std::array fixtures{
+      Fixture{.name = "missing-function", .source = R"mlir(module {
+      })mlir"},
+      Fixture{.name = "external-function", .source = R"mlir(module {
+        func.func private @main()
+      })mlir"},
+      Fixture{.name = "function-call", .source = R"mlir(module {
+        func.func @main() {
+          func.call @main() : () -> ()
+          return
+        }
+      })mlir"},
+      Fixture{.name = "nested-multiblock-region", .source = R"mlir(module {
+        func.func @main() {
+          scf.execute_region {
+            cf.br ^next
+          ^next:
+            scf.yield
+          }
+          return
+        }
+      })mlir"},
+      Fixture{.name = "extra-module-scope-operation", .source = R"mlir(module {
+        module @extra {}
+        func.func @main() {
+          return
+        }
+      })mlir"},
+      Fixture{.name = "unsupported-memory-element", .source = R"mlir(module {
+        func.func @main() {
+          %memory = memref.alloc() : memref<1xi64>
+          return
+        }
+      })mlir"},
+      Fixture{.name = "returned-memory-view", .source = R"mlir(module {
+        func.func @main() -> memref<?xi1> {
+          %memory = memref.alloc() : memref<1xi1>
+          %view = memref.cast %memory : memref<1xi1> to memref<?xi1>
+          return %view : memref<?xi1>
+        }
+      })mlir"},
+      Fixture{.name = "returned-qubit-memory", .source = R"mlir(module {
+        func.func @main() -> memref<1x!qc.qubit> {
+          %memory = memref.alloc() : memref<1x!qc.qubit>
+          return %memory : memref<1x!qc.qubit>
+        }
+      })mlir"},
+      Fixture{.name = "unsupported-expression-width", .source = R"mlir(module {
+        func.func @main() {
+          %one = arith.constant 1 : i32
+          %sum = arith.addi %one, %one : i32
+          return
+        }
+      })mlir"},
+      Fixture{.name = "packed-bitwise", .source = R"mlir(module {
+        func.func @main() -> i64 {
+          %one = arith.constant 1 : i64
+          %value = arith.andi %one, %one : i64
+          return %value : i64
+        }
+      })mlir"},
+      Fixture{.name = "unordered-float-comparison", .source = R"mlir(module {
+        func.func @main() -> i1 {
+          %one = arith.constant 1.0 : f64
+          %value = arith.cmpf uno, %one, %one : f64
+          return %value : i1
+        }
+      })mlir"},
+      Fixture{.name = "non-finite-float", .source = R"mlir(module {
+        func.func @main() -> f64 {
+          %value = arith.constant 0x7FF0000000000000 : f64
+          return %value : f64
+        }
+      })mlir"},
+      Fixture{.name = "while-condition-side-effect", .source = R"mlir(module {
+        func.func @main() {
+          %memory = memref.alloc() : memref<1xi1>
+          %zero = arith.constant 0 : index
+          %condition = arith.constant true
+          scf.while : () -> () {
+            memref.store %condition, %memory[%zero] : memref<1xi1>
+            scf.condition(%condition)
+          } do {
+            scf.yield
+          }
+          return
+        }
+      })mlir"},
+      Fixture{.name = "out-of-bounds-qubit", .source = R"mlir(module {
+        func.func @main() {
+          %memory = memref.alloc() : memref<1x!qc.qubit>
+          %one = arith.constant 1 : index
+          %qubit = memref.load %memory[%one] : memref<1x!qc.qubit>
+          qc.x %qubit : !qc.qubit
+          return
+        }
+      })mlir"},
+      Fixture{.name = "out-of-bounds-measurement", .source = R"mlir(module {
+        func.func @main() -> i1 {
+          %memory = memref.alloc() : memref<1x!qc.qubit>
+          %one = arith.constant 1 : index
+          %qubit = memref.load %memory[%one] : memref<1x!qc.qubit>
+          %result = qc.measure %qubit : !qc.qubit -> i1
+          return %result : i1
+        }
+      })mlir"},
+      Fixture{.name = "out-of-bounds-store", .source = R"mlir(module {
+        func.func @main() {
+          %memory = memref.alloc() : memref<1xi1>
+          %one = arith.constant 1 : index
+          %value = arith.constant false
+          memref.store %value, %memory[%one] : memref<1xi1>
+          return
+        }
+      })mlir"},
       Fixture{.name = "select", .source = R"mlir(module {
         func.func @main() -> i64 {
           %condition = arith.constant true
