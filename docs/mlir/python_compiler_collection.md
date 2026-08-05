@@ -21,6 +21,9 @@ Install {doc}`MQT Core <../installation>` and import the compiler interface:
 from mqt.core.mlir import OutputFormat, QCProgram, QIRProfile, compile_program
 ```
 
+To compile for a configured QDMI device, see
+{doc}`target compilation <target_compilation>`.
+
 ## Compile an OpenQASM program
 
 The following OpenQASM program prepares a Bell state and records the outcome of
