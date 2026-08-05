@@ -8,6 +8,8 @@
 
 """Tests for modern PennyLane execution through QDMI."""
 
+# ruff: file-ignore[missing-return-type-private-function]
+
 from __future__ import annotations
 
 import sys
@@ -74,7 +76,7 @@ def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPa
     device = QDMIDevice("fake.qdmi", wires=2, shots=8)
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         return qp.sample(wires=[0, 1])
 
     samples = circuit()
@@ -91,7 +93,7 @@ def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) ->
     device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         return qp.probs(wires=[0, 1])
 
     results = circuit()
@@ -127,7 +129,7 @@ def test_parameter_shift_gradient_uses_multiple_qdmi_jobs(monkeypatch: pytest.Mo
     device = QDMIDevice("fake.qdmi", wires=["theta"], shots=4000)
 
     @qp.qnode(device, diff_method="parameter-shift")
-    def circuit(angle: float):  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit(angle: float):
         qp.RY(angle, wires="theta")
         return qp.expval(qp.PauliZ("theta"))
 
@@ -149,7 +151,7 @@ def test_hamiltonian_and_non_commuting_measurements_split(monkeypatch: pytest.Mo
     hamiltonian = 0.5 * qp.PauliZ(0) + 0.5 * qp.PauliZ(1)
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         return qp.expval(hamiltonian), qp.expval(qp.PauliX(0))
 
     energy, x_expectation = circuit()
@@ -166,7 +168,7 @@ def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> 
     device = QDMIDevice("fake.qdmi", wires=2, shots=10)
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         return qp.expval(qp.PauliX(0))
 
     assert np.isfinite(circuit())
@@ -181,7 +183,7 @@ def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.Monkey
     device = QDMIDevice("fake.qdmi", wires=2, shots=None)
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         return qp.expval(qp.PauliZ(0))
 
     with pytest.raises(PennyLaneValidationError, match="finite number of shots"):
@@ -221,7 +223,7 @@ def test_forwards_job_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         return qp.sample(wires=[0, 1])
 
     circuit()

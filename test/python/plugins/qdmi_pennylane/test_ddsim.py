@@ -8,6 +8,8 @@
 
 """End-to-end PennyLane tests with the DDSIM QDMI device."""
 
+# ruff: file-ignore[missing-return-type-private-function]
+
 from __future__ import annotations
 
 import sys
@@ -35,7 +37,7 @@ def test_stable_entry_point_and_wire_order() -> None:
     device = qp.device("mqt.ddsim.default", wires=["first", "second"], shots=20)
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         qp.PauliX("first")
         return qp.counts(wires=["first", "second"])
 
@@ -46,10 +48,10 @@ def test_stable_entry_point_and_wire_order() -> None:
 
 def test_bell_results_and_shot_vector() -> None:
     """Execute probabilities, samples, and shot-vector partitions end to end."""
-    device = qp.device("mqt.ddsim.default", wires=2, shots=[(100, 2), 200])
+    device = qp.device("mqt.ddsim.default", wires=2, shots=[(1000, 2), 2000])
 
     @qp.qnode(device)
-    def circuit():  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit():
         qp.Hadamard(0)
         qp.CNOT(wires=[0, 1])
         return qp.probs(wires=[0, 1])
@@ -58,8 +60,8 @@ def test_bell_results_and_shot_vector() -> None:
 
     assert len(results) == 3
     for probabilities in results:
-        assert probabilities[0] == pytest.approx(0.5, abs=0.15)
-        assert probabilities[3] == pytest.approx(0.5, abs=0.15)
+        assert probabilities[0] == pytest.approx(0.5, abs=0.1)
+        assert probabilities[3] == pytest.approx(0.5, abs=0.1)
         assert probabilities[1] + probabilities[2] == pytest.approx(0.0)
 
 
@@ -68,7 +70,7 @@ def test_parameter_shift_gradient() -> None:
     device = qp.device("mqt.ddsim.default", wires=1, shots=10_000)
 
     @qp.qnode(device, diff_method="parameter-shift")
-    def circuit(angle: float):  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def circuit(angle: float):
         qp.RY(angle, 0)
         return qp.expval(qp.PauliZ(0))
 
@@ -123,12 +125,12 @@ def test_qaoa_application() -> None:
         qp.qaoa.mixer_layer(parameters[1], mixer_hamiltonian)
 
     @qp.qnode(device, diff_method="parameter-shift")
-    def cost(parameters: np.ndarray):  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def cost(parameters: np.ndarray):
         ansatz(parameters)
         return qp.expval(cost_hamiltonian)
 
     @qp.qnode(device)
-    def sample(parameters: np.ndarray):  # ruff: ignore[missing-return-type-private-function]  # PennyLane replaces measurement return types at runtime.
+    def sample(parameters: np.ndarray):
         ansatz(parameters)
         return qp.sample(wires=range(4))
 

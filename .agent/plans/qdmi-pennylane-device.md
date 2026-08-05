@@ -50,6 +50,22 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
 - [x] (2026-08-04 23:15Z) Moved the NetworkX import behind the Python 3.10
       PennyLane guard identified during independent verification; the focused
       Python 3.10 and 3.14 nox sessions passed.
+- [x] (2026-08-04 23:58Z) Integrated `origin/main` at `ecd32f734` with a signed
+      merge commit; the merged changelog retains the #2005 and #2007 entries and
+      links.
+- [x] (2026-08-05 00:02Z) Addressed all eight review threads by reorganizing the
+      notebook as a quickstart, compact conversion contract, and end-to-end QAOA
+      application; removed explanatory implementation history; replaced repeated
+      QNode return-type suppressions with file-wide Ruff directives.
+- [x] (2026-08-05 00:03Z) Stabilized the Bell-state shot-vector test with
+      partitions of 1000, 1000, and 2000 shots at absolute tolerance 0.1, and
+      added the statistical-robustness rule to `AGENTS.md`.
+- [x] (2026-08-05 00:08Z) Passed the minimums reproduction and focused Python
+      3.10-3.14 sessions, forced and cached documentation builds,
+      rendered-output inspection, complete lint, diff checks, and repository
+      searches.
+- [ ] Complete independent verification, publish the signed revision, monitor
+      replacement CI, and reply to and resolve the eight addressed threads.
 
 ## Surprises & Discoveries
 
@@ -83,6 +99,11 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   Python 3.10 module skip prevented collection when the PennyLane extra was
   intentionally absent; moving the import after the guard restored the expected
   skip behavior.
+- Observation: the Python 3.12 minimums job sampled a Bell-state probability of
+  exactly `0.65`, which lay on the floating-point boundary of the previous
+  `0.5 ± 0.15` assertion. Evidence: CI run `30959612789`, job `92160445071`,
+  passed 564 tests and failed only `test_bell_results_and_shot_vector` at that
+  boundary.
 
 ## Decision Log
 
@@ -118,6 +139,15 @@ finite-shot, one-layer MaxCut QAOA application on the local DDSIM QDMI device.
   source now defines the narrative, executable analysis, and visual results,
   while the smoke test remains compact and independent of rendered prose.
   Date/Author: 2026-08-05 / GPT-5.6 via Codex.
+- Decision: Organize the device guide as a minimal Bell-state quickstart,
+  followed by the conversion contract and a complete finite-shot MaxCut QAOA
+  application. Rationale: device users first see the smallest executable
+  interface and then the scientific application without internal development
+  history. Date/Author: 2026-08-05 / GPT-5.6 via Codex.
+- Decision: Use 1000, 1000, and 2000 shots with an absolute probability
+  tolerance of 0.1 for the Bell shot-vector test. Rationale: this still tests
+  the expected 50/50 distribution while making a stochastic CI failure
+  negligible. Date/Author: 2026-08-05 / GPT-5.6 via Codex.
 
 ## Outcomes & Retrospective
 
@@ -146,6 +176,22 @@ Validation evidence:
 - `nox -s tests-3.14 -- test/python/plugins/qdmi_pennylane`: 33 passed.
 - `nox -s tests-3.10 tests-3.14 -- test/python/plugins/qdmi_pennylane`: Python
   3.10 reported 1 passed and 3 skipped; Python 3.14 reported 33 passed.
+- `nox -s minimums-3.12 -- test/python/plugins/qdmi_pennylane/test_ddsim.py`: 10
+  passed, reproducing the previously failing CI dependency boundary.
+- `nox -s tests-3.10 tests-3.11 tests-3.12 tests-3.13 tests-3.14 -- test/python/plugins/qdmi_pennylane`:
+  Python 3.10 reported 1 passed and 3 skipped; every supported Python version
+  reported 33 passed.
+- `nox -s docs -- -D nb_execution_mode=force`: strict HTML build succeeded and
+  executed the PennyLane notebook in 2.77 seconds; the normal cached
+  documentation session also succeeded.
+- Rendered-output inspection: both notebook SVGs have readable and unclipped
+  labels, a theme-neutral figure background, an explicitly noisy objective
+  title, and distinct cut-edge styling.
+- `nox -s lint`: all repository hooks passed after applying their canonical
+  Markdown and Ruff formatting.
+- `git diff --check` and the repository searches passed; there are no standalone
+  QAOA-script references, `qml` aliases, QDMI-provider terms, repeated inline
+  QNode suppressions, or review-identified iteration phrases.
 
 The deliberately deferred gaps are routing, parallel submission, analytic
 execution, pulse programming, and non-gate device properties. The separate
@@ -312,8 +358,23 @@ editing resolved records by hand. Do not alter another task's worktree.
 
 ## Artifacts and Notes
 
-Validation evidence will be recorded here as short command summaries after each
-milestone. No external GitHub action is authorized by this plan.
+Review-thread mapping for the 2026-08-04 requested-changes review:
+
+- Removed the installation-workflow comparison and related iteration language.
+- Stated unsupported execution modes as out of scope for now.
+- Removed prose about plotting configuration and hid only rendering setup.
+- Presented the Bell-state example as the quickstart.
+- Replaced the serializer call and rotation details with one QASM2 fallback
+  sentence.
+- Presented finite-shot MaxCut QAOA as the end-to-end use case.
+- Retained the graph definition without explaining the fixed node positions.
+- Replaced repeated inline QNode return-type suppressions with file-wide
+  `ANN202` directives in both test modules.
+
+The user authorized a non-force push of the signed remediation revision and
+individual disclosed replies and resolutions for these eight threads. This
+authorization does not include changing the review state, merging the pull
+request, or unrelated metadata mutations.
 
 ## Interfaces and Dependencies
 
@@ -340,3 +401,7 @@ of the QDMI–PennyLane implementation before production edits.
 Revision note: updated on 2026-08-05 to consolidate the QAOA demonstration into
 an executable scientific notebook, standardize QDMI device terminology, and
 record the independent Python 3.10 compatibility verification.
+
+Revision note: updated on 2026-08-05 to integrate `origin/main`, map and address
+the requested-changes review, and record the statistically robust Bell-state
+test parameters and validation plan.

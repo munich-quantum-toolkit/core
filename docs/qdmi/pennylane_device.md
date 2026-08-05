@@ -17,9 +17,9 @@ reconstructed from finite-shot QDMI results.
 Any registered gate-based QDMI device can use this integration if it advertises
 OpenQASM 3 or OpenQASM 2, accepts finite-shot jobs, and returns
 computational-basis samples. Specialized neutral-atom interfaces, pulse-level
-control, and analytic execution are outside this contract. The examples below
-use the local [DD-based simulator device](ddsim_device.md) included with MQT
-Core, so they are reproducible without credentials or remote resources.
+control, and analytic execution are out of scope for now. The examples below use
+the local [DD-based simulator device](ddsim_device.md) included with MQT Core
+and require no credentials or remote resources.
 
 Install MQT Core with the optional PennyLane dependency into the active
 environment:
@@ -28,48 +28,14 @@ environment:
 uv pip install "mqt-core[pennylane]"
 ```
 
-`uv pip install` installs packages into an environment. In contrast, `uv add`
-modifies the dependency metadata of a uv-managed project; consult the
-[`uv` command reference](https://docs.astral.sh/uv/reference/cli/) for the two
-workflows.
+## Quickstart
 
-## Finite-shot execution
-
-The following imports and plotting configuration are shared by the executable
-examples. Figures use SVG output and an explicit light background so that axes,
-labels, and graph annotations remain legible with either documentation theme.
+A Bell-state circuit illustrates device discovery by stable ID, circuit
+conversion, execution, and finite-shot result reconstruction.
 
 ```{code-cell} ipython3
-from collections import Counter
-import time
-
-import matplotlib.pyplot as plt
-import networkx as nx
-import numpy as np
 import pennylane as qp
 
-from mqt.core.plugins.pennylane import QDMIDevice
-
-%config InlineBackend.figure_formats = ['svg']
-
-plt.rcParams.update(
-    {
-        "axes.facecolor": "#f8f9fb",
-        "figure.facecolor": "#f8f9fb",
-        "savefig.facecolor": "#f8f9fb",
-        "text.color": "#202124",
-        "axes.labelcolor": "#202124",
-        "axes.edgecolor": "#5f6368",
-        "xtick.color": "#3c4043",
-        "ytick.color": "#3c4043",
-    }
-)
-```
-
-A Bell-state circuit verifies stable-ID discovery, circuit conversion, and
-sample reconstruction through the DDSIM QDMI device.
-
-```{code-cell} ipython3
 bell_device = qp.device("mqt.ddsim.default", wires=2, shots=1000)
 
 
@@ -87,15 +53,12 @@ bell_counts
 Only the computational-basis states $00$ and $11$ have nonzero probability, up
 to finite-shot fluctuations in their relative frequencies.
 
-## Program conversion and result reconstruction
+## Program conversion
 
 PennyLane first preprocesses every quantum tape. The preprocessing pipeline
-validates wires and shots, defers measurements, splits non-commuting
-measurements, diagonalizes observables, decomposes higher-level operations,
-expands broadcasted parameters, and replaces requested measurements with
-computational-basis sampling. PennyLane subsequently reconstructs samples,
-counts, probabilities, expectation values, variances, Hamiltonian results, and
-shot-vector partitions from those raw samples.
+validates the execution request, decomposes higher-level operations, maps
+measurements to computational-basis sampling, and reconstructs the requested
+finite-shot results from the samples returned through QDMI.
 
 MQT Core selects the program format in the following order:
 
@@ -103,34 +66,43 @@ MQT Core selects the program format in the following order:
 2. OpenQASM 2 only if OpenQASM 3 is unavailable.
 3. A format error before job creation if neither format is available.
 
-The OpenQASM 3 converter is capability driven. It emits one contiguous qubit
-array, one classical bit array, finite bound numeric parameters, operation names
-advertised by the QDMI device, and a final whole-register measurement. It emits
-no include, custom gate definition, pragma, or gate modifier. Semantic alias
-groups account for equivalent gate names such as `cx` and `cnot`, `p` and
-`phaseshift`, `sdg` and `si`, or `rxx` and `xx`.
+The OpenQASM 3 converter selects operation spellings advertised by the QDMI
+device and validates the program against its topology. If conversion fails, MQT
+Core reports the OpenQASM 3 error rather than retrying with OpenQASM 2. A device
+that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm` serializer
+after device preprocessing.
 
-If OpenQASM 3 is advertised, a conversion failure remains an OpenQASM 3 error;
-the integration does not retry with OpenQASM 2. For a device that advertises
-only OpenQASM 2, MQT Core invokes PennyLane's serializer with
+## End-to-end use case: finite-shot MaxCut QAOA
 
-```python
-qp.to_openqasm(
-    tape,
-    wires=device_wires,
-    rotations=False,
-    measure_all=True,
-)
+Consider MaxCut on the fixed graph with $E=\{(0,1),(0,2),(1,2),(2,3)\}$.
+
+```{code-cell} ipython3
+from collections import Counter
+import time
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
 ```
 
-Observable rotations have already been inserted during preprocessing, so
-disabling serializer rotations prevents duplicate basis changes.
+```{code-cell} ipython3
+:tags: [remove-input]
 
-## Finite-shot MaxCut QAOA
+%config InlineBackend.figure_formats = ['svg']
 
-Consider MaxCut on the fixed graph $G=(V,E)$ with $V=\{0,1,2,3\}$ and
-$E=\{(0,1),(0,2),(1,2),(2,3)\}$. The node positions are fixed to make the
-visualization deterministic.
+plt.rcParams.update(
+    {
+        "axes.facecolor": "#f8f9fb",
+        "figure.facecolor": "#f8f9fb",
+        "savefig.facecolor": "#f8f9fb",
+        "text.color": "#202124",
+        "axes.labelcolor": "#202124",
+        "axes.edgecolor": "#5f6368",
+        "xtick.color": "#3c4043",
+        "ytick.color": "#3c4043",
+    }
+)
+```
 
 ```{code-cell} ipython3
 graph = nx.Graph([(0, 1), (0, 2), (1, 2), (2, 3)])
@@ -173,7 +145,6 @@ def ansatz(parameters):
 
 
 qaoa_device = qp.device("mqt.ddsim.default", wires=4, shots=1000)
-assert isinstance(qaoa_device, QDMIDevice)
 
 
 @qp.qnode(qaoa_device, diff_method="parameter-shift")
@@ -217,9 +188,8 @@ print(f"Elapsed time: {elapsed:.3f} s")
 ```
 
 Parameter-shift expands one gradient evaluation into several shifted tapes. Each
-executable tape is submitted as a distinct QDMI job. The current implementation
-submits these jobs sequentially; parallel QDMI submission is not part of the
-present device interface.
+executable tape is submitted as a distinct QDMI job. Jobs are submitted
+sequentially; parallel QDMI submission is not supported.
 
 The sampled bit strings determine candidate bipartitions. The cut value is the
 number of graph edges whose endpoints have different bit values.
@@ -313,7 +283,7 @@ figure.tight_layout()
 ## Direct generic construction
 
 Stable entry points such as `mqt.ddsim.default` provide the simplest
-construction. A device integration package can register a small
+construction. A device integration package can register a
 {py:class}`~mqt.core.plugins.pennylane.device.QDMIDevice` subclass under the
 stable ID of another QDMI device. Applications may also construct the generic
 class directly:
@@ -353,8 +323,4 @@ rotations. PennyLane decomposes higher-level operations when their
 decompositions reach operations advertised by the QDMI device.
 
 The interface does not implement pulse programming, device-specific non-gate
-properties, routing, analytic execution, or parallel job submission. The
-{py:class}`~mqt.core.plugins.pennylane.converter.ConvertedProgram` record keeps
-the payload, selected format, wire mapping, and measurement order together. This
-boundary permits a compiler-backed or alternative exchange-format converter to
-replace the current text conversion without changing the PennyLane device API.
+properties, routing, analytic execution, or parallel job submission.
