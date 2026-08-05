@@ -138,7 +138,8 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
         inplace: bool = False,
@@ -155,7 +156,8 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
         inplace: bool = False,
@@ -172,7 +174,25 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
+        *,
+        output: Literal[OutputFormat.OPENQASM3],
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> OpenQASMProgram: ...
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.JEFF],
         inplace: bool = False,
@@ -189,7 +209,8 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
         inplace: bool = False,
@@ -206,7 +227,8 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: OutputFormat,
         inplace: bool = False,
@@ -214,5 +236,5 @@ mqt.core.mlir.compile_program:
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
-    ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
+    ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
         \doc

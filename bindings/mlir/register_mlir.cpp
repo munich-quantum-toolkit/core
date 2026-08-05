@@ -211,6 +211,9 @@ programFromPath(const std::filesystem::path& path) {
     return inplace ? mlir::CompilerInput(std::move(value))
                    : mlir::CompilerInput(value.copy());
   }
+  if (nb::isinstance<mlir::OpenQASMProgram>(program)) {
+    return {nb::cast<const mlir::OpenQASMProgram&>(program)};
+  }
 
   const auto programType =
       nb::cast<std::string>(program.type().attr("__name__"));
@@ -266,6 +269,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
              "QCO after the configured optimization pipeline.")
       .value("QC", mlir::ProgramFormat::QC,
              "QC after the optimized QCO round trip.")
+      .value("OPENQASM3", mlir::ProgramFormat::OpenQASM3,
+             "OpenQASM 3 after the optimized QCO round trip.")
       .value("JEFF", mlir::ProgramFormat::Jeff, "Serializable ``jeff`` MLIR.")
       .value("QIR_BASE", mlir::ProgramFormat::QIRBase,
              "QIR for the Base Profile.")
@@ -576,6 +581,10 @@ before conversion to QCO.)pb");
       .def("normalize_global_phases",
            &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
            "Normalize scoped global phases in place.")
+      .def("to_openqasm3",
+           &OptionalMemberAdapter<&mlir::QCProgram::toOpenQASM3>::call,
+           "Clean up and emit this QC program as OpenQASM 3 without QCO "
+           "optimization.")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
@@ -724,6 +733,16 @@ further compilation.)pb");
           R"pb(Deserialize this program to QCO.
 
 Set ``copy=True`` to preserve it.)pb");
+
+  nb::class_<mlir::OpenQASMProgram>(
+      m, "OpenQASMProgram",
+      "An immutable compiler program containing OpenQASM 3 source.")
+      .def_prop_ro("source", &mlir::OpenQASMProgram::source,
+                   "The emitted OpenQASM 3 source.")
+      .def("write", &BooleanMemberAdapter<&mlir::OpenQASMProgram::write>::call,
+           "path"_a, "Write the emitted source to a file.")
+      .def("__str__", &mlir::OpenQASMProgram::str,
+           "Return the emitted OpenQASM 3 source.");
 
   auto qirProgram = nb::class_<mlir::QIRProgram, mlir::Program>(
       m, "QIRProgram", R"pb(A compiler program lowered to QIR.

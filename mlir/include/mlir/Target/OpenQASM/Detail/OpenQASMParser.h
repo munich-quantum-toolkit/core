@@ -206,8 +206,8 @@ concept QASMSink =
     requires(S s, SMLoc loc, StringRef str, const Expr& expr,
              const Operand& operand, const BitReference& reference,
              const GateCall& call, ArrayRef<Operand> operands,
-             ArrayRef<StringRef> names, function_ref<LogicalResult()> cont,
-             Version version, bool flag) {
+             ArrayRef<StringRef> names, ArrayRef<const Expr*> expressions,
+             function_ref<LogicalResult()> cont, Version version, bool flag) {
       s.error(loc, str);
       s.version(loc, version);
       s.include(loc, str);
@@ -223,6 +223,9 @@ concept QASMSink =
       s.ifStmt(loc, expr, cont, cont);
       s.forStmt(loc, str, flag, expr, expr, expr, cont);
       s.whileStmt(loc, expr, cont);
+      s.switchStmt(loc, expr, cont);
+      s.switchCase(loc, expressions, cont);
+      s.switchDefault(loc, cont);
     };
 
 //===----------------------------------------------------------------------===//
@@ -363,6 +366,8 @@ private:
       return parseFor();
     case TokenKind::While:
       return parseWhile();
+    case TokenKind::Switch:
+      return parseSwitch();
     case TokenKind::Inv:
     case TokenKind::Pow:
     case TokenKind::Ctrl:
@@ -1158,6 +1163,73 @@ private:
     }
     advance(); // else
     return parseBlock();
+  }
+
+  [[nodiscard]] LogicalResult parseSwitch() {
+    const auto loc = current().loc;
+    advance(); // switch
+    if (failed(expect(TokenKind::LParen))) {
+      return failure();
+    }
+    auto control = parseExpression();
+    if (failed(control) || failed(expect(TokenKind::RParen))) {
+      return failure();
+    }
+    return sink.switchStmt(loc, **control,
+                           [this] { return parseSwitchBody(); });
+  }
+
+  [[nodiscard]] LogicalResult parseSwitchBody() {
+    if (failed(expect(TokenKind::LBrace))) {
+      return failure();
+    }
+    bool sawCase = false;
+    bool sawDefault = false;
+    while (!atEnd() && current().kind != TokenKind::RBrace) {
+      const auto loc = current().loc;
+      if (current().kind == TokenKind::Case) {
+        if (sawDefault) {
+          return sink.error(loc, "case statements must precede default");
+        }
+        sawCase = true;
+        advance(); // case
+        SmallVector<const Expr*> labels;
+        while (true) {
+          auto label = parseExpression();
+          if (failed(label)) {
+            return failure();
+          }
+          labels.push_back(*label);
+          if (current().kind != TokenKind::Comma) {
+            break;
+          }
+          advance();
+        }
+        if (failed(sink.switchCase(loc, labels,
+                                   [this] { return parseBlock(); }))) {
+          return failure();
+        }
+        continue;
+      }
+      if (current().kind == TokenKind::Default) {
+        if (sawDefault) {
+          return sink.error(loc, "switch statement has multiple default cases");
+        }
+        sawDefault = true;
+        advance(); // default
+        if (failed(sink.switchDefault(loc, [this] { return parseBlock(); }))) {
+          return failure();
+        }
+        continue;
+      }
+      return sink.error(current().loc,
+                        "expected 'case' or 'default' in switch statement");
+    }
+    if (!sawCase) {
+      return sink.error(current().loc,
+                        "switch statement requires at least one case");
+    }
+    return expect(TokenKind::RBrace);
   }
 
   [[nodiscard]] LogicalResult parseFor() {

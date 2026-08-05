@@ -35,6 +35,7 @@ namespace mlir {
 class QCProgram;
 class QCOProgram;
 class JeffProgram;
+class OpenQASMProgram;
 class QIRProgram;
 class CompilerTarget;
 
@@ -60,6 +61,8 @@ enum class ProgramFormat : uint8_t {
   QCOOptimized,
   /// QC after the optimized QCO round trip.
   QC,
+  /// Portable OpenQASM after the optimized QCO round trip.
+  OpenQASM3,
   /// Serializable `jeff` MLIR.
   Jeff,
   /// QIR for the Base Profile.
@@ -111,6 +114,26 @@ private:
 };
 
 /**
+ * @brief An owned OpenQASM source program.
+ */
+class OpenQASMProgram final {
+public:
+  explicit OpenQASMProgram(std::string source) : source_(std::move(source)) {}
+
+  /// Return the OpenQASM source.
+  [[nodiscard]] const std::string& source() const noexcept;
+
+  /// Return the OpenQASM source.
+  [[nodiscard]] const std::string& str() const noexcept;
+
+  /// Write the OpenQASM source to a file.
+  [[nodiscard]] bool write(const std::filesystem::path& path) const;
+
+private:
+  std::string source_;
+};
+
+/**
  * @brief A QC program with reference semantics.
  */
 class QCProgram final : public Program {
@@ -145,6 +168,9 @@ public:
 
   /// Normalize scoped global phases in place.
   [[nodiscard]] bool normalizeGlobalPhases();
+
+  /// Translate this program to portable OpenQASM without consuming it.
+  [[nodiscard]] std::optional<OpenQASMProgram> toOpenQASM3() const;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
@@ -278,11 +304,12 @@ private:
 };
 
 /// Valid input variants for the default compiler pipeline.
-using CompilerInput = std::variant<QCProgram, QCOProgram, JeffProgram>;
+using CompilerInput =
+    std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram>;
 
 /// The program variants returned by the default compiler pipeline.
-using CompilerProgram =
-    std::variant<QCProgram, QCOProgram, JeffProgram, QIRProgram>;
+using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
+                                     OpenQASMProgram, QIRProgram>;
 
 /**
  * @brief Run the coordinated default compiler pipeline.

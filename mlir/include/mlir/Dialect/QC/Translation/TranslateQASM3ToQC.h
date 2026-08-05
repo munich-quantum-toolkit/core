@@ -28,7 +28,7 @@ namespace qc {
  * Frontend and lowering failures are reported through the diagnostic engine of
  * @p context and result in a null return value.
  *
- * @param sourceMgr Source manager containing the OpenQASM3 program.
+ * @param sourceMgr Source manager containing the OpenQASM program.
  * @param context MLIRContext to create the module in.
  */
 [[nodiscard]] OwningOpRef<ModuleOp>
@@ -40,7 +40,7 @@ translateQASM3ToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context);
  * Frontend and lowering failures are reported through the diagnostic engine of
  * @p context and result in a null return value.
  *
- * @param source String containing the OpenQASM3 program.
+ * @param source String containing the OpenQASM program.
  * @param context MLIRContext to create the module in.
  */
 [[nodiscard]] OwningOpRef<ModuleOp> translateQASM3ToQC(StringRef source,

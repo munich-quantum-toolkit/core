@@ -13,14 +13,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import numpy as np
 import pytest
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, qasm3
+from qiskit.circuit import Gate, library
+from qiskit.quantum_info import Operator
 
 from mqt.core.fomac import open_device
 from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import (
     CompilerTarget,
     JeffProgram,
+    OpenQASMProgram,
     OutputFormat,
     QCOProgram,
     QCProgram,
@@ -75,7 +79,7 @@ def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
         assert "qc.measure" not in ir
         return
 
-    assert "func.func @main() -> memref<2xi1>" in ir
+    assert "func.func @main() -> memref<2xi1>" in ir or "func.func @main() -> (memref<2xi1>" in ir
     assert ir.count("qc.measure") == 2
 
 
@@ -238,6 +242,64 @@ def test_program_conversions_are_composable() -> None:
     assert not qco.is_valid
     result.cleanup()
     _assert_bell_program(result, measured=True)
+
+
+def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
+    """Emit OpenQASM directly from QC and through the optimized pipeline."""
+    source = QCProgram.from_qasm_str(QASM_STRING)
+    direct = source.to_openqasm3()
+
+    assert isinstance(direct, OpenQASMProgram)
+    assert source.is_valid
+    assert direct.source.startswith("OPENQASM 3.1;")
+    assert str(direct) == direct.source
+
+    path = tmp_path / "program.qasm"
+    direct.write(path)
+    assert path.read_text(encoding="utf-8") == direct.source
+    _assert_bell_program(QCProgram.from_qasm_file(path), measured=True)
+
+    optimized = compile_program(QASM_STRING, output=OutputFormat.OPENQASM3)
+    assert isinstance(optimized, OpenQASMProgram)
+    assert "output bit[2] c;" in optimized.source
+    _assert_bell_program(QCProgram.from_qasm_str(optimized.source), measured=True)
+
+    imported = compile_program(direct, output=OutputFormat.QC_IMPORT)
+    assert isinstance(imported, QCProgram)
+    _assert_bell_program(imported, measured=True)
+
+    compiled = compile_program(direct, output=OutputFormat.QIR_ADAPTIVE)
+    assert isinstance(compiled, QIRProgram)
+
+
+@pytest.mark.parametrize(
+    "gate",
+    [
+        library.SXdgGate(),
+        library.RGate(0.1, 0.2),
+        library.U2Gate(0.2, 0.3),
+        library.UGate(0.1, 0.2, 0.3),
+        library.iSwapGate(),
+        library.DCXGate(),
+        library.ECRGate(),
+        library.RXXGate(0.1),
+        library.RYYGate(0.2),
+        library.RZXGate(0.3),
+        library.RZZGate(0.4),
+        library.XXPlusYYGate(0.5, 0.6),
+        library.XXMinusYYGate(0.7, 0.8),
+        library.RCCXGate(),
+    ],
+)
+def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
+    """Preserve complete helper-gate matrices, including global phase."""
+    circuit = QuantumCircuit(gate.num_qubits)
+    circuit.append(gate, range(gate.num_qubits))
+
+    source = QCProgram.from_qiskit(circuit).to_openqasm3().source
+    round_tripped = qasm3.loads(source)
+
+    assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
 
 
 def test_compile_program_convert_to_qir() -> None:
