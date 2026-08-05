@@ -222,8 +222,8 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
   std::vector<CompilerTarget::Coupling> couplings;
   couplings.reserve(n * n);
 
-  for (auto r = 0; r < n; ++r) {
-    for (auto c = 0; c < n; ++c) {
+  for (size_t r = 0; r < n; ++r) {
+    for (size_t c = 0; c < n; ++c) {
       const auto i = (r * n) + c;
       if (c + 1 < n) {
         couplings.emplace_back(i, i + 1);
