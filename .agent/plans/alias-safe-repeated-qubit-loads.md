@@ -152,6 +152,13 @@ width-dependent `scf.index_switch`.
       switch and multi-label emission-budget tests alongside the branch's
       width-independent register-access expectations. Validate 1,153 focused
       MLIR tests and 44 Python MLIR tests.
+- [x] (2026-08-05) Diagnose the replacement CI failures on every C++ platform as
+      one shared QCO cleanup convergence issue. Configure the production cleanup
+      canonicalizer to reach its fixed point, make the mapping regression
+      exercise that pipeline directly, and require an allocation to have no use
+      besides its deallocation before removing the pair. The complete QTensor IR
+      (29 tests), mapping (78 tests), and compiler (229 tests) suites pass
+      locally.
 
 ## Surprises & Discoveries
 
@@ -183,6 +190,12 @@ width-dependent `scf.index_switch`.
   now composes the existing QCO cleanup pipeline before mapping, which restores
   that supported shape for statically addressable programs without weakening the
   operation-local conversion invariant.
+- Observation: MLIR 22's canonicalizer defaults to ten outer greedy iterations.
+  Commuting an insertion through an arbitrarily long unrolled register-access
+  chain may require more iterations, leaving 16- and 100-qubit mapping inputs
+  only partially normalized. Requesting convergence also exposed that the
+  existing allocation/deallocation fold did not check for other allocation uses
+  before erasing the allocation.
 - Observation: Several direct-QCO test fixtures encoded the old partially
   extracted structured state. Rewriting those fixtures to allocate complete
   QTensors directly exposed and verified the new region-boundary invariant while
@@ -319,6 +332,13 @@ width-dependent `scf.index_switch`.
   into the mapper's supported form without adding a bespoke transformation,
   while the later cleanup preserves established post-mapping normalization.
   Date/Author: 2026-08-05, Codex.
+- Decision: Let the QCO cleanup canonicalizer run to convergence and preserve
+  the standard MLIR greedy driver rather than adding a tensor-size-dependent
+  pass loop or a larger arbitrary cap. Rationale: complete QTensor normalization
+  is a mapping precondition and OpenQASM registers have no fixed width limit;
+  QTensor rewrite patterns are local and monotonic. Guard the pre-existing
+  allocation/deallocation rewrite with `hasOneUse()` so the stronger cleanup
+  cannot erase a still-used allocation. Date/Author: 2026-08-05, Codex.
 - Decision: Close Q-01 through the existing permutation-aware equivalence
   infrastructure rather than adding a one-off comparison path. Rationale:
   `scf.condition` and the two `scf.while` regions are standard parts of the
@@ -625,3 +645,7 @@ Revision note (2026-08-05, Codex): Rebased the final 16-commit series onto
 `2b977fbf2`, preserving the newly merged OpenQASM emission coverage while
 retaining direct dynamic qubit access, and recorded focused post-rebase
 validation.
+
+Revision note (2026-08-05, Codex): Recorded the cross-platform CI convergence
+failure, the MLIR greedy-driver configuration and allocation/deallocation
+linearity guard that correct it, and the production-pipeline mapping regression.

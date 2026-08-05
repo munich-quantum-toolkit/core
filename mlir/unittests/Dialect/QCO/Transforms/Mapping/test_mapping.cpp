@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/Passes.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -773,8 +774,7 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
 
   PassManager pm(context.get());
   pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll());
-  pm.addPass(createCSEPass());
-  pm.addPass(createCanonicalizerPass());
+  populateQCOCleanupPipeline(pm);
   pm.addPass(createMappingPass(target, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());

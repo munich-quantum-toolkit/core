@@ -22,6 +22,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Pass/PassRegistry.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
@@ -118,7 +119,8 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
