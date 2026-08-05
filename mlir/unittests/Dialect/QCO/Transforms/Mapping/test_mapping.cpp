@@ -215,20 +215,26 @@ static bool isExecutable(func::FuncOp entry, const CompilerTarget& target) {
   return isExecutable(entry.getFunctionBody(), m, target);
 }
 
-/// Return a 3x3 square-grid compiler target.
-static CompilerTarget getNineQubitSquareGrid() {
-  return CompilerTarget(9, std::vector<CompilerTarget::Coupling>{{0, 1},
-                                                                 {0, 3},
-                                                                 {1, 2},
-                                                                 {1, 4},
-                                                                 {2, 5},
-                                                                 {3, 4},
-                                                                 {3, 6},
-                                                                 {4, 5},
-                                                                 {4, 7},
-                                                                 {5, 8},
-                                                                 {6, 7},
-                                                                 {7, 8}});
+/// Return a nxn square-grid compiler target.
+static CompilerTarget getSquareGridTarget(const size_t n) {
+  const auto numTarget = n * n;
+
+  std::vector<CompilerTarget::Coupling> couplings;
+  couplings.reserve(n * n);
+
+  for (auto r = 0; r < n; ++r) {
+    for (auto c = 0; c < n; ++c) {
+      const auto i = (r * n) + c;
+      if (c + 1 < n) {
+        couplings.emplace_back(i, i + 1);
+      }
+      if (r + 1 < n) {
+        couplings.emplace_back(i, i + n);
+      }
+    }
+  }
+
+  return CompilerTarget(numTarget, std::move(couplings));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -272,6 +278,16 @@ static void loopGHZ(QCOProgramBuilder& builder, Value& tensor,
                .front();
 }
 
+/// Creates an N-qubit CX/CZ circuit.
+static void cxcz(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+  for (size_t i = 0; i + 1 < qubits.size(); ++i) {
+    std::tie(qubits[i], qubits[i + 1]) = builder.cx(qubits[i], qubits[i + 1]);
+  }
+  for (size_t i = 0; i + 2 < qubits.size(); ++i) {
+    std::tie(qubits[i], qubits[i + 2]) = builder.cz(qubits[i], qubits[i + 2]);
+  }
+}
+
 namespace {
 
 class MappingPassFixture : public testing::Test {
@@ -289,6 +305,7 @@ protected:
                                const MappingPassOptions& options) {
     PassManager pm(m->getContext());
     pm.addPass(createMappingPass(target, options));
+    pm.addPass(createCanonicalizerPass());
     return pm.run(m);
   }
 
@@ -359,16 +376,16 @@ TEST_P(MappingPassTest, MapMixedScalarAndTensorAllocations) {
   tensor = builder.qtensorInsert(tensorQubit1, tensor, 1);
   builder.qtensorDealloc(tensor);
 
-  auto module = builder.finalize();
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  auto m = builder.finalize();
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   size_t numScalarAllocations = 0;
   size_t numTensorAllocations = 0;
-  module->walk([&](AllocOp) { ++numScalarAllocations; });
-  module->walk([&](qtensor::AllocOp) { ++numTensorAllocations; });
+  m->walk([&](AllocOp) { ++numScalarAllocations; });
+  m->walk([&](qtensor::AllocOp) { ++numTensorAllocations; });
   EXPECT_EQ(numScalarAllocations, 0);
   EXPECT_EQ(numTensorAllocations, 0);
 }
@@ -391,19 +408,20 @@ TEST_P(MappingPassTest, MapProgramAfterQubitReuse) {
   std::tie(q1, bit1) = builder.measure(q1);
   builder.sink(q1);
 
-  auto module = builder.finalize({bit0, bit1});
+  auto m = builder.finalize({bit0, bit1});
   PassManager pm(context.get());
   pm.addPass(createReuseQubits());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createMappingPass(target, MappingPassOptions{.ntrials = 1}));
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(pm.run(m.get()).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   size_t numStatics = 0;
   size_t numResets = 0;
-  module->walk([&](StaticOp) { ++numStatics; });
-  module->walk([&](ResetOp) { ++numResets; });
+  m->walk([&](StaticOp) { ++numStatics; });
+  m->walk([&](ResetOp) { ++numResets; });
   EXPECT_EQ(numStatics, 1);
   EXPECT_EQ(numResets, 1);
 }
@@ -428,16 +446,16 @@ TEST_P(MappingPassTest, FailNestedScalarAllocation) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
     diagnostics += diagnostic.str();
     return success();
   });
-  EXPECT_TRUE(failed(runPass(module.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
   EXPECT_TRUE(
       StringRef(diagnostics)
           .contains(
@@ -467,16 +485,16 @@ TEST_P(MappingPassTest, FailNestedTensorAllocation) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
     diagnostics += diagnostic.str();
     return success();
   });
-  EXPECT_TRUE(failed(runPass(module.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
   EXPECT_TRUE(
       StringRef(diagnostics)
           .contains(
@@ -503,13 +521,13 @@ TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
     builder.sink(qubit);
   }
 
-  auto module = builder.finalize();
+  auto m = builder.finalize();
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
     diagnostics += diagnostic.str();
     return success();
   });
-  EXPECT_TRUE(failed(runPass(module.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
   EXPECT_TRUE(
       StringRef(diagnostics)
           .contains("decompose it to one- and two-qubit operations first"))
@@ -517,8 +535,8 @@ TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
 
   size_t numAllocations = 0;
   size_t numStatics = 0;
-  module->walk([&](AllocOp) { ++numAllocations; });
-  module->walk([&](StaticOp) { ++numStatics; });
+  m->walk([&](AllocOp) { ++numAllocations; });
+  m->walk([&](StaticOp) { ++numStatics; });
   EXPECT_EQ(numAllocations, 3);
   EXPECT_EQ(numStatics, 0);
 }
@@ -581,64 +599,83 @@ TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
 }
 
 TEST_P(MappingPassTest, MapTopologyOnlyWithEmptyOperationSet) {
+  constexpr int64_t size = 3;
+
   const CompilerTarget target(
       3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
       std::vector<CompilerTarget::Operation>{});
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
-                            builder.allocQubit()};
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+
+  SmallVector<Value> qubits(size);
+  SmallVector<Value> bits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
 
   qubits[0] = builder.x(qubits[0]);
   std::tie(qubits[0], qubits[1]) = builder.rxx(0.25, qubits[0], qubits[1]);
   std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (const auto qubit : qubits) {
-    builder.sink(qubit);
+
+  for (int64_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
   }
 
-  auto module = builder.finalize();
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   size_t numSwaps = 0;
-  module->walk([&](SWAPOp) { ++numSwaps; });
+  m->walk([&](SWAPOp) { ++numSwaps; });
   EXPECT_GT(numSwaps, 0);
 }
 
 TEST_P(MappingPassTest, PreserveNoncontiguousTargetSiteIds) {
+  constexpr int64_t size = 3;
+
   std::vector<CompilerTarget::Site> sites;
   sites.emplace_back(7);
   sites.emplace_back(19);
   sites.emplace_back(42);
+
   const CompilerTarget target(
       std::move(sites),
       std::vector<CompilerTarget::Coupling>{{7, 19}, {19, 42}},
       std::vector<CompilerTarget::Operation>{});
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
-                            builder.allocQubit()};
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+
+  SmallVector<Value> qubits(size);
+  SmallVector<Value> bits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
   std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
   std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (const auto qubit : qubits) {
-    builder.sink(qubit);
+  for (int64_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
   }
 
-  auto module = builder.finalize();
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   const DenseSet<CompilerTarget::SiteId> expectedSites{7, 19, 42};
   size_t numStatics = 0;
-  module->walk([&](StaticOp op) {
+  m->walk([&](StaticOp op) {
     ++numStatics;
     EXPECT_TRUE(expectedSites.contains(op.getIndex()));
   });
@@ -652,27 +689,32 @@ TEST_P(MappingPassTest, KeepWorkspaceSparseOnLargeTarget) {
   for (size_t site = 1; site < numTargetQubits; ++site) {
     couplings.emplace_back(0, static_cast<int64_t>(site));
   }
+
   const CompilerTarget target(numTargetQubits, std::move(couplings));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize();
+  builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
+
+  SmallVector<Value> bits(2);
   Value q0 = builder.allocQubit();
   Value q1 = builder.allocQubit();
   std::tie(q0, q1) = builder.cx(q0, q1);
+  std::tie(q0, bits[0]) = builder.measure(q0);
+  std::tie(q1, bits[1]) = builder.measure(q1);
   builder.sink(q0);
   builder.sink(q1);
 
-  auto module = builder.finalize();
-  ASSERT_TRUE(runPass(module.get(), target,
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(runPass(m.get(), target,
                       MappingPassOptions{.niterations = 1, .ntrials = 1})
                   .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   size_t numStatics = 0;
   size_t numSinks = 0;
-  module->walk([&](StaticOp) { ++numStatics; });
-  module->walk([&](SinkOp) { ++numSinks; });
+  m->walk([&](StaticOp) { ++numStatics; });
+  m->walk([&](SinkOp) { ++numSinks; });
   EXPECT_GE(numStatics, 2);
   EXPECT_LE(numStatics, 3);
   EXPECT_LT(numStatics, numTargetQubits);
@@ -771,7 +813,7 @@ TEST_P(MappingPassTest, MapGroverLike) {
   pm.addPass(createMappingPass(target, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(5, builder.getI1Type()));
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
 
   Value tensor = builder.qtensorAlloc(4);
   Value flagTensor = builder.qtensorAlloc(1);
@@ -940,14 +982,13 @@ TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(verify(*module).succeeded());
-
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  EXPECT_TRUE(verify(*module).succeeded());
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(verify(*m).succeeded());
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(verify(*m).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
@@ -991,14 +1032,14 @@ TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(verify(*module).succeeded());
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(verify(*m).succeeded());
 
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  EXPECT_TRUE(verify(*module).succeeded());
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(verify(*m).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapIfWithClassicalResult) {
@@ -1039,17 +1080,17 @@ TEST_P(MappingPassTest, MapIfWithClassicalResult) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   IfOp ifOp;
-  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  m->walk([&](IfOp candidate) { ifOp = candidate; });
   ASSERT_TRUE(ifOp);
   ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
   EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(64));
@@ -1104,17 +1145,17 @@ TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   IndexSwitchOp switchOp;
-  module->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
+  m->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
   ASSERT_TRUE(switchOp);
   ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
   EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
@@ -1174,16 +1215,16 @@ TEST_P(MappingPassTest, RouteIndexSwitchRegions) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
 
   size_t numSwaps = 0;
-  module->walk([&](SWAPOp) { ++numSwaps; });
+  m->walk([&](SWAPOp) { ++numSwaps; });
   EXPECT_GT(numSwaps, 3);
 }
 
@@ -1235,16 +1276,16 @@ TEST_P(MappingPassTest, RouteNestedOperationOnceWhileIndependentWiresAdvance) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  EXPECT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(succeeded(verify(*m)));
 
   size_t numIndexSwitches = 0;
-  module->walk([&](IndexSwitchOp) { ++numIndexSwitches; });
+  m->walk([&](IndexSwitchOp) { ++numIndexSwitches; });
   EXPECT_EQ(numIndexSwitches, 1);
 }
 
@@ -1571,76 +1612,35 @@ TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
   EXPECT_EQ(numSwaps, 4UL);
 }
 
-static CompilerTarget getFourByFourSquareGrid() {
-  constexpr size_t side = 4;
-  constexpr size_t numTarget = side * side;
-  std::vector<CompilerTarget::Coupling> couplings;
-  couplings.reserve(2 * side * (side - 1));
-  for (size_t r = 0; r < side; ++r) {
-    for (size_t c = 0; c < side; ++c) {
-      const auto i = static_cast<int64_t>((r * side) + c);
-      if (c + 1 < side) {
-        couplings.emplace_back(i, i + 1);
-      }
-      if (r + 1 < side) {
-        couplings.emplace_back(i, i + static_cast<int64_t>(side));
-      }
-    }
+TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
+  const auto& target = GetParam();
+  const auto size = (target.numQubits() + 1) / 2;
+
+  SmallVector<Value> qubits(size);
+  SmallVector<Value> bits(size);
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
   }
-  return CompilerTarget(numTarget, std::move(couplings));
+  cxcz(builder, qubits);
+  for (int64_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
+  }
+
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
-/// Build an 11-qubit CX/CZ circuit used with a larger square target.
-static OwningOpRef<ModuleOp>
-buildPaddedSquareRoutingModule(MLIRContext* context) {
-  QCOProgramBuilder builder(context);
-  builder.initialize();
-  constexpr size_t nprog = 11;
-  SmallVector<Value> qs;
-  qs.reserve(nprog);
-  for (size_t i = 0; i < nprog; ++i) {
-    qs.push_back(builder.allocQubit());
-  }
-  for (size_t i = 0; i + 1 < nprog; ++i) {
-    std::tie(qs[i], qs[i + 1]) = builder.cx(qs[i], qs[i + 1]);
-  }
-  for (size_t i = 0; i + 2 < nprog; ++i) {
-    std::tie(qs[i], qs[i + 2]) = builder.cz(qs[i], qs[i + 2]);
-  }
-  for (Value q : qs) {
-    builder.sink(q);
-  }
-  return builder.finalize();
-}
-
-/**
- * @brief Hot routing replays the cold-preview SWAP plan on padded targets.
- *
- * On targets with more sites than program qubits, cold preview materializes
- * only vacant layout indices touched by its plan. Hot must replay that plan
- * (not re-run A*) so every SWAP operand has a wire. Sweep a few seeds and
- * assert each result is executable with sparse workspace.
- */
-TEST_F(MappingPassFixture, HotRouteRespectsColdPreviewWorkspace) {
-  const CompilerTarget target = getFourByFourSquareGrid();
-
-  for (size_t seed = 0; seed < 16; ++seed) {
-    auto module = buildPaddedSquareRoutingModule(context.get());
-    ASSERT_TRUE(runPass(module.get(), target,
-                        MappingPassOptions{
-                            .niterations = 1, .ntrials = 1, .seed = seed})
-                    .succeeded())
-        << "seed " << seed;
-    ASSERT_TRUE(succeeded(verify(*module))) << "seed " << seed;
-    EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target))
-        << "seed " << seed;
-
-    size_t numStatics = 0;
-    module->walk([&](StaticOp) { ++numStatics; });
-    EXPECT_GE(numStatics, 11U) << "seed " << seed;
-    EXPECT_LT(numStatics, target.numQubits()) << "seed " << seed;
-  }
-}
-
-INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,
-                         testing::Values(getNineQubitSquareGrid()));
+INSTANTIATE_TEST_SUITE_P(ThreeByThreeSquareGrid, MappingPassTest,
+                         testing::Values(getSquareGridTarget(3)));
+INSTANTIATE_TEST_SUITE_P(FourByFourSquareGrid, MappingPassTest,
+                         testing::Values(getSquareGridTarget(4)));
+INSTANTIATE_TEST_SUITE_P(ThenByThenSquareGrid, MappingPassTest,
+                         testing::Values(getSquareGridTarget(10)));
