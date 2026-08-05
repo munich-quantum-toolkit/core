@@ -89,11 +89,11 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_MINIMUM_VERSION 1.3.2
+set(QDMI_MINIMUM_VERSION 1.3.3
         CACHE STRING "Minimum QDMI version")
-set(QDMI_VERSION 1.3.2
+set(QDMI_VERSION 1.3.3
         CACHE STRING "QDMI version")
-set(QDMI_REV "d05a0b418f42e54e9585d2e00af8ce23e745fd83" # v1.3.2
+set(QDMI_REV "ade7817b9bad239dcd9c25205f02d18977fd29b8" # QDMI PR #485
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
@@ -125,7 +125,7 @@ if(NOT TARGET spdlog::spdlog)
   cmake_dependent_option(SPDLOG_BUILD_SHARED "Build spdlog as shared library" ON
                          "BUILD_MQT_CORE_SHARED_LIBS" OFF)
   FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
-  list(APPEND FETCH_PACKAGES spdlog)
+  list(PREPEND FETCH_PACKAGES spdlog)
   set(MQT_CORE_MANAGES_SPDLOG ON)
 endif()
 
