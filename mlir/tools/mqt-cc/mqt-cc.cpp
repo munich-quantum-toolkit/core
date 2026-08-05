@@ -8,6 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "fomac/FoMaC.hpp"
+#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -19,10 +22,12 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
+#include "qdmi/driver/Driver.hpp"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
+#include <llvm/ADT/Twine.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -53,6 +58,7 @@
 #include <mlir/Target/LLVMIR/Export.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -83,6 +89,21 @@ static llvm::cl::opt<std::string> outputFormat(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
         "qir-adaptive, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
+
+static llvm::cl::opt<bool>
+    qdmiListDevices("qdmi-list-devices",
+                    llvm::cl::desc("List configured QDMI device IDs and exit"),
+                    llvm::cl::init(false));
+
+static llvm::cl::opt<std::string> qdmiDevice(
+    "qdmi-device",
+    llvm::cl::desc("Compile for the QDMI device with this stable ID"),
+    llvm::cl::value_desc("id"), llvm::cl::init(""));
+
+static llvm::cl::opt<std::string> qdmiConfig(
+    "qdmi-config",
+    llvm::cl::desc("Use an explicit QDMI registry configuration file"),
+    llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
@@ -179,18 +200,48 @@ parseOutputFormat(const StringRef format) {
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
     llvm::cl::desc(
-        "Decompose controlled X/Z/phase gates and qco.rccx with at least "
-        "--decompose-multi-controlled-min-controls controls (default 2)."),
+        "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
+        "least --decompose-multi-controlled-min-qubits qubits (default 3)."),
     llvm::cl::init(false));
 
-static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
-    "decompose-multi-controlled-min-controls",
+static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
+    "decompose-multi-controlled-min-qubits",
     llvm::cl::desc(
-        "Minimum control count for --decompose-multi-controlled: decompose "
-        "controlled X/Z/phase gates and qco.rccx with at least this many "
-        "controls (default 2; must be at least 2). Higher values leave smaller "
-        "controlled gates undecomposed."),
-    llvm::cl::init(2));
+        "Minimum qubit count for --decompose-multi-controlled: decompose "
+        "controlled X/Z/phase/SWAP gates and qco.rccx that act on at least "
+        "this many qubits (default 3; must be at least 3). Higher values leave "
+        "narrower gates undecomposed."),
+    llvm::cl::init(3));
+
+/**
+ * @brief Report a violated QDMI command-line constraint.
+ */
+[[nodiscard]] static LogicalResult reportQDMIErrorIf(const bool condition,
+                                                     const Twine& message) {
+  if (!condition) {
+    return success();
+  }
+  llvm::errs() << message << "\n";
+  return failure();
+}
+
+/**
+ * @brief Configure the QDMI registry before initializing its singleton.
+ */
+[[nodiscard]] static LogicalResult configureQDMIRegistry(const StringRef path) {
+#ifdef _WIN32
+  const auto status =
+      _putenv_s("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str());
+#else
+  // NOLINTBEGIN(misc-include-cleaner)
+  const auto status =
+      setenv("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str(), 1);
+  // NOLINTEND(misc-include-cleaner)
+#endif
+  return reportQDMIErrorIf(
+      status != 0,
+      Twine("Failed to configure the QDMI registry from '") + path + "'.");
+}
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -335,6 +386,24 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  if ((!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) ||
+      reportQDMIErrorIf(
+          qdmiListDevices && !qdmiDevice.empty(),
+          "--qdmi-list-devices cannot be combined with --qdmi-device.")
+          .failed() ||
+      reportQDMIErrorIf(
+          !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
+          "--qdmi-config requires --qdmi-device or --qdmi-list-devices.")
+          .failed()) {
+    return 1;
+  }
+  if (qdmiListDevices) {
+    for (const auto& id : qdmi::Driver::get().registeredDeviceIds()) {
+      llvm::outs() << id << "\n";
+    }
+    return 0;
+  }
+
   const auto parsedInputFormat = parseInputFormat(inputFormat, inputFilename);
   if (!parsedInputFormat) {
     llvm::errs() << "Could not determine the input format for '"
@@ -345,6 +414,30 @@ static int runCompiler(int argc, char** argv) {
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
+  }
+
+  std::optional<CompilerTarget> compilerTarget;
+  if (!qdmiDevice.empty()) {
+    if (reportQDMIErrorIf(
+            *parsedOutputFormat == OutputFormat::QCImport ||
+                *parsedOutputFormat == OutputFormat::QCO ||
+                *parsedOutputFormat == OutputFormat::Jeff,
+            "--qdmi-device requires qco-optimized, qc/mlir, qir-base, or "
+            "qir-adaptive output.")
+            .failed() ||
+        reportQDMIErrorIf(passPipeline.hasAnyOccurrences(),
+                          "--qdmi-device cannot be combined with --passes.")
+            .failed() ||
+        reportQDMIErrorIf(
+            enableDecomposeMultiControlled,
+            "--qdmi-device cannot be combined with "
+            "--decompose-multi-controlled; target compilation already "
+            "performs the required decomposition.")
+            .failed()) {
+      return 1;
+    }
+    const auto device = fomac::Session::openDevice(qdmiDevice);
+    compilerTarget.emplace(compilerTargetFromDevice(device));
   }
 
   // Set up MLIR context with all required dialects
@@ -391,9 +484,9 @@ static int runCompiler(int argc, char** argv) {
   }
   if (enableDecomposeMultiControlled &&
       !isDecomposeMultiControlledConfigValid(
-          decomposeMultiControlledMinControls.getValue())) {
+          decomposeMultiControlledMinQubits.getValue())) {
     llvm::errs()
-        << "decompose-multi-controlled-min-controls must be at least 2 when "
+        << "decompose-multi-controlled-min-qubits must be at least 3 when "
            "--decompose-multi-controlled is enabled.\n";
     return 1;
   }
@@ -422,6 +515,10 @@ static int runCompiler(int argc, char** argv) {
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO) {
     if (failed(runPasses([&](OpPassManager& pm) {
+          if (compilerTarget) {
+            populateTargetCompilationPipeline(pm, *compilerTarget);
+            return success();
+          }
           populateQCOCleanupPipeline(pm);
           if (passPipeline.hasAnyOccurrences()) {
             if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
@@ -433,7 +530,7 @@ static int runCompiler(int argc, char** argv) {
           } else {
             if (enableDecomposeMultiControlled) {
               populateDecomposeMultiControlledPipeline(
-                  pm, decomposeMultiControlledMinControls.getValue());
+                  pm, decomposeMultiControlledMinQubits.getValue());
             }
             populateDefaultQCOOptimizationPipeline(pm);
           }

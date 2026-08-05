@@ -396,11 +396,11 @@ bool QCOProgram::runQubitReusePipeline() {
       "failed to run the qubit reuse pipeline"));
 }
 
-bool QCOProgram::decomposeMultiControlled(const uint64_t minControls) {
+bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
   return succeeded(runPasses(
       mod(),
-      [minControls](OpPassManager& pm) {
-        populateDecomposeMultiControlledPipeline(pm, minControls);
+      [minQubits](OpPassManager& pm) {
+        populateDecomposeMultiControlledPipeline(pm, minQubits);
       },
       "failed to decompose multi-controlled gates"));
 }

@@ -10,13 +10,16 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 from qiskit import QuantumCircuit
 
+from mqt.core.fomac import open_device
 from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import (
+    CompilerTarget,
     JeffProgram,
     OutputFormat,
     QCOProgram,
@@ -287,6 +290,101 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert raw.ir != optimized.ir
 
 
+@pytest.fixture(scope="module")
+def garnet_target() -> CompilerTarget:
+    """Snapshot the bundled IQM Garnet device.
+
+    Returns:
+        The detached compiler target.
+    """
+    return CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
+
+
+def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
+    """Compile through the canonical target pipeline for a QDMI device."""
+    result = compile_program(
+        QASM_STRING,
+        output=OutputFormat.QCO_OPTIMIZED,
+        target=garnet_target,
+    )
+
+    assert isinstance(result, QCOProgram)
+    static_sites = {int(site) for site in re.findall(r"qco\.static (\d+)", result.ir)}
+    assert len(static_sites) == 2
+    assert static_sites <= {site.id for site in garnet_target.sites}
+    assert "qco.r(" in result.ir
+    assert "qco.ctrl" in result.ir
+    assert "qco.z " in result.ir
+    assert result.ir.count("qco.measure") == 2
+    assert "qco.rx" not in result.ir
+    assert "qco.ry" not in result.ir
+
+
+def test_qco_program_compiles_for_direct_sparse_target() -> None:
+    """Expose direct target construction and typed QCO compilation."""
+    target = CompilerTarget(
+        "sparse target",
+        [CompilerTarget.Site(10), CompilerTarget.Site(20)],
+        couplings=[(10, 20)],
+        operations=[
+            CompilerTarget.Operation("u", 1, 3),
+            CompilerTarget.Operation("cz", 2, 0),
+            CompilerTarget.Operation("measure", 1, 0),
+        ],
+    )
+    assert target.name == "sparse target"
+    assert [site.id for site in target.sites] == [10, 20]
+    assert target.couplings == [(10, 20)]
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.U
+    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.CZ
+
+    qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+
+    qco.compile_for_target(target)
+
+    assert {int(site) for site in re.findall(r"qco\.static (\d+)", qco.ir)} == {10, 20}
+    assert "qco.u(" in qco.ir
+    assert "qco.ctrl" in qco.ir
+    assert "qco.z " in qco.ir
+    assert qco.ir.count("qco.measure") == 2
+
+
+def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:
+    """Retain IQM topology and calibration independently of the live device."""
+    target = garnet_target
+
+    assert target.name == "IQM Garnet"
+    assert target.num_qubits == 20
+    assert len(target.couplings) == 30
+    assert target.sites[0].name == "QB1"
+    assert target.sites[0].t1 == 26626
+    assert target.sites[0].t2 == 8376
+    assert target.duration_unit is not None
+    assert target.duration_unit.unit == "us"
+    assert target.duration_unit.scale_factor == pytest.approx(0.001)
+    assert target.supports_operation("r", 1, 2)
+    assert target.supports_operation("cz", 2, 0)
+    assert target.supports_operation("measure", 1, 0)
+    assert not target.supports_operation("rx", 1, 1)
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.R
+    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.CZ
+    assert [operation.name for operation in target.operations] == ["r", "cz", "measure"]
+    assert [len(operation.site_tuples) for operation in target.operations] == [20, 30, 20]
+    assert all(
+        site_tuple.fidelity is not None for operation in target.operations for site_tuple in operation.site_tuples
+    )
+    assert all(site_tuple.duration is None for operation in target.operations for site_tuple in operation.site_tuples)
+
+
+def test_compiler_target_rejects_qdmi_zone_model() -> None:
+    """Reject neutral-atom zones at the circuit-target boundary."""
+    with pytest.raises(ValueError, match="only circuit-model devices"):
+        CompilerTarget.from_device(open_device("mqt.na.default"))
+
+
 def test_qco_program_runs_textual_pipeline() -> None:
     """Run registered QCO passes through MLIR textual pipeline syntax."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
@@ -375,7 +473,7 @@ def test_qco_program_decomposes_multi_controlled() -> None:
     assert "qco.ctrl" in before
 
     retained = qco.copy()
-    retained.decompose_multi_controlled(min_controls=3)
+    retained.decompose_multi_controlled(min_qubits=4)
     assert "controls_out:2" in retained.ir
 
     qco.decompose_multi_controlled()
@@ -383,7 +481,7 @@ def test_qco_program_decomposes_multi_controlled() -> None:
     assert "controls_out:2" not in qco.ir
 
     with pytest.raises(RuntimeError, match="MLIR operation failed"):
-        qco.decompose_multi_controlled(min_controls=1)
+        qco.decompose_multi_controlled(min_qubits=2)
 
 
 def test_compile_program_fails_for_missing_file() -> None:

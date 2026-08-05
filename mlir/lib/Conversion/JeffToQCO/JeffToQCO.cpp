@@ -58,7 +58,20 @@ using namespace qco;
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
 /**
+ * @brief Returns whether @p op carries a jeff gate modifier
+ *
+ * @tparam JeffOpType The operation type of the jeff operation
+ */
+template <typename JeffOpType>
+[[nodiscard]] static bool isModified(JeffOpType& op) {
+  return op.getNumCtrls() != 0 || op.getIsAdjoint() || op.getPower() != 1;
+}
+
+/**
  * @brief Creates a modified QCO operation from a jeff operation
+ *
+ * @details The jeff modifiers are nested in the canonical QCO order
+ * `ctrl { pow { inv { ... } } }`.
  *
  * @tparam JeffOpType The operation type of the jeff operation
  * @param op The jeff operation instance to convert
@@ -74,33 +87,41 @@ createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
                ValueRange controls, ValueRange targets,
                function_ref<SmallVector<Value>(ValueRange)> lambda) {
   auto loc = op.getLoc();
-  if (op.getNumCtrls() != 0) {
-    CtrlOp ctrlOp;
+
+  auto inverted = [&](ValueRange invTargets) -> SmallVector<Value> {
     if (!op.getIsAdjoint()) {
-      ctrlOp = CtrlOp::create(rewriter, loc, controls, targets, lambda);
-    } else {
-      ctrlOp = CtrlOp::create(
-          rewriter, loc, controls, targets,
-          [&](ValueRange ctrlTargets) -> SmallVector<Value> {
-            auto invOp = InvOp::create(rewriter, loc, ctrlTargets, lambda);
-            return invOp.getQubitsOut();
-          });
+      return lambda(invTargets);
     }
-    SmallVector<Value> results;
-    llvm::append_range(results, ctrlOp.getTargetsOut());
-    llvm::append_range(results, ctrlOp.getControlsOut());
-    rewriter.replaceOp(op, results);
-  } else if (op.getIsAdjoint()) {
-    auto invOp = InvOp::create(rewriter, loc, targets, lambda);
-    rewriter.replaceOp(op, invOp.getQubitsOut());
+    auto invOp = InvOp::create(rewriter, loc, invTargets, lambda);
+    return invOp.getQubitsOut();
+  };
+
+  auto raised = [&](ValueRange powTargets) -> SmallVector<Value> {
+    if (op.getPower() == 1) {
+      return inverted(powTargets);
+    }
+    auto powOp = PowOp::create(rewriter, loc, powTargets,
+                               static_cast<double>(op.getPower()), inverted);
+    return powOp.getQubitsOut();
+  };
+
+  if (op.getNumCtrls() == 0) {
+    rewriter.replaceOp(op, raised(targets));
+    return;
   }
+
+  auto ctrlOp = CtrlOp::create(rewriter, loc, controls, targets, raised);
+  SmallVector<Value> results;
+  llvm::append_range(results, ctrlOp.getTargetsOut());
+  llvm::append_range(results, ctrlOp.getControlsOut());
+  rewriter.replaceOp(op, results);
 }
 
 /**
  * @brief Creates a (potentially modified) QCO operation from a jeff operation.
  *
  * @details
- * This helper centralizes the "direct vs. ctrl/inv-wrapped" decision and uses
+ * This helper centralizes the "direct vs. modifier-wrapped" decision and uses
  * index sequences to forward the desired number of targets and parameters into
  * the QCO op builder.
  *
@@ -123,7 +144,7 @@ createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
                    ValueRange parameters,
                    std::index_sequence<TargetIndices...> /*targetIndices*/,
                    std::index_sequence<ParamIndices...> /*paramIndices*/) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+  if (!isModified(op)) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[TargetIndices]...,
                                            parameters[ParamIndices]...);
     return success();
@@ -170,7 +191,7 @@ createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
 static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
                             ConversionPatternRewriter& rewriter) {
   auto targets = adaptor.getInTargetQubits();
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+  if (!isModified(op)) {
     rewriter.replaceOpWithNewOp<BarrierOp>(op, targets);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> SmallVector<Value> {
@@ -696,12 +717,7 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   LogicalResult
   matchAndRewrite(jeff::GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
-    if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+    if (!isModified(op)) {
       rewriter.replaceOpWithNewOp<GPhaseOp>(op, op.getRotation());
     } else {
       auto lambda = [&](ValueRange /*targets*/) -> SmallVector<Value> {
@@ -739,11 +755,6 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
   LogicalResult
   matchAndRewrite(JeffOpType op, JeffOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 0>(
         op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit());
   }
@@ -773,11 +784,6 @@ struct ConvertJeffOneTargetOneParameterToQCO final
   LogicalResult
   matchAndRewrite(JeffOpType op, JeffOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 1>(
         op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         op.getRotation());
@@ -803,11 +809,6 @@ struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
   LogicalResult
   matchAndRewrite(jeff::UOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<UOp, jeff::UOp, 1, 3>(
         op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         {op.getTheta(), op.getPhi(), op.getLambda()});
@@ -833,11 +834,6 @@ struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
   LogicalResult
   matchAndRewrite(jeff::SwapOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<SWAPOp, jeff::SwapOp, 2, 0>(
         op, rewriter, adaptor.getInCtrlQubits(),
         {adaptor.getInQubitOne(), adaptor.getInQubitTwo()});
@@ -864,11 +860,6 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
   LogicalResult
   matchAndRewrite(jeff::CustomOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     auto controls = adaptor.getInCtrlQubits();
     auto targets = adaptor.getInTargetQubits();
     auto params = op.getParams();
@@ -971,11 +962,6 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
   LogicalResult
   matchAndRewrite(jeff::PPROp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     auto pauliGates = op.getPauliGates();
     auto targets = adaptor.getInQubits();
     auto controls = adaptor.getInCtrlQubits();

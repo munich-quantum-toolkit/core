@@ -1,0 +1,49 @@
+{
+  "schema-version": 1,
+  "name": "Two-way SC Test Device",
+  "numQubits": 2,
+  "durationUnit": {
+    "unit": "ns",
+    "scaleFactor": 1.0
+  },
+  "qubitProperties": {
+    "defaults": {},
+    "overrides": []
+  },
+  "couplings": [
+    [0, 1],
+    [1, 0]
+  ],
+  "operations": [
+    {
+      "name": "r",
+      "numQubits": 1,
+      "numParameters": 2
+    },
+    {
+      "name": "cx",
+      "numQubits": 2,
+      "numParameters": 0,
+      "sites": [
+        [0, 1],
+        [1, 0]
+      ],
+      "fidelity": 0.9,
+      "siteOverrides": [
+        {
+          "sites": [0, 1],
+          "fidelity": 0.91
+        },
+        {
+          "sites": [1, 0],
+          "fidelity": 0.92
+        }
+      ]
+    },
+    {
+      "name": "measure",
+      "numQubits": 1,
+      "numParameters": 0
+    }
+  ]
+}

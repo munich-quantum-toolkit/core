@@ -342,7 +342,6 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
                 "auth.json");
 }
 
-#if MQT_CORE_QDMI_HAS_ALL_BUILTIN_DEVICES
 TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const TemporaryDirectory directory;
   const auto configFile = emptyConfig(directory);
@@ -374,7 +373,6 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   assertPackagedModel("mqt.sc.iqm.garnet", "iqm-garnet.json");
   assertPackagedModel("mqt.sc.iqm.emerald", "iqm-emerald.json");
 }
-#endif
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
   const TemporaryDirectory directory;

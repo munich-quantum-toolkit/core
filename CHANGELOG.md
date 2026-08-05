@@ -12,6 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
+  ([**@burgholzer**])
+- ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
+  `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
   conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -31,7 +35,7 @@ releases may include breaking changes.
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
-  [#1979]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [#1979], [#2007]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
@@ -39,8 +43,9 @@ releases may include breaking changes.
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
-  RCCX, and constant-angle phase gates with a configurable `min-controls`
-  threshold ([#1810], [#1996]) ([**@simon1hofmann**])
+  SWAP, RCCX, and constant-angle phase gates with a configurable `min-qubits`
+  threshold (default 3: wider than two-qubit) ([#1810], [#1996], [#2001])
+  ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   and structured control flow ([#1910], [#1994]) ([**@burgholzer**],
@@ -68,7 +73,7 @@ releases may include breaking changes.
   rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
+  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
   [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
   circuits to compiler-target topologies while preserving target site IDs and
@@ -88,7 +93,7 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#1976], [#2006]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 
@@ -713,6 +718,11 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
+[#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
+[#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
+[#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
+[#2000]: https://github.com/munich-quantum-toolkit/core/pull/2000
 [#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999
 [#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
 [#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
@@ -817,6 +827,7 @@ for previous changelogs._
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
+[#1687]: https://github.com/munich-quantum-toolkit/core/pull/1687
 [#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
 [#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
 [#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
