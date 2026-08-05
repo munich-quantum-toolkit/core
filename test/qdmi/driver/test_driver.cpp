@@ -265,6 +265,15 @@ public:
   return driver.open(id);
 }
 
+[[nodiscard]] auto openOwnedSessionTestDevice(const std::string_view id)
+    -> fomac::Device {
+  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
+      {.id = std::string{id},
+       .library = MQT_CORE_QDMI_SESSION_DEVICE,
+       .prefix = "TEST_SESSION"}));
+  return fomac::Session::openDevice(id);
+}
+
 class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
@@ -469,8 +478,8 @@ TEST_P(DriverTest, JobOpen) {
 }
 
 TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
-  auto* const device =
-      openTestDevice(MQT_CORE_QDMI_SESSION_DEVICE, "TEST_SESSION");
+  const auto ownedDevice = openOwnedSessionTestDevice("test.open-job-client");
+  const QDMI_Device device = ownedDevice;
   QDMI_Job job = nullptr;
   ASSERT_EQ(QDMI_device_open_job(device, "session-job", &job), QDMI_SUCCESS);
   ASSERT_NE(job, nullptr);
@@ -497,8 +506,7 @@ TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
 }
 
 TEST(FoMaCJobTest, OpensExistingJobs) {
-  const auto device = fomac::Session::createSessionlessDevice(
-      openTestDevice(MQT_CORE_QDMI_SESSION_DEVICE, "TEST_SESSION"));
+  const auto device = openOwnedSessionTestDevice("test.open-job-fomac");
   const auto job = device.openJob("session-job");
   EXPECT_EQ(job.getId(), "session-job");
 }

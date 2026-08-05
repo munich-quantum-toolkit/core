@@ -470,6 +470,11 @@ int MQT_SC_QDMI_device_session_create_device_job(
   return session == nullptr ? QDMI_ERROR_INVALIDARGUMENT
                             : session->createDeviceJob(job);
 }
+int MQT_SC_QDMI_device_session_open_device_job(MQT_SC_QDMI_Device_Session,
+                                               const char*,
+                                               MQT_SC_QDMI_Device_Job*) {
+  return QDMI_ERROR_NOTSUPPORTED;
+}
 void MQT_SC_QDMI_device_job_free(MQT_SC_QDMI_Device_Job job) {
   if (job != nullptr) {
     job->free();
