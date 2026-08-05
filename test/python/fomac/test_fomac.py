@@ -169,6 +169,14 @@ def test_device_needs_calibration(device: Device) -> None:
         assert isinstance(needs_cal, int)
 
 
+def test_device_queue_depth(device: Device) -> None:
+    """Test that the optional device queue depth is a non-negative integer."""
+    queue_depth = device.queue_depth()
+    if queue_depth is not None:
+        assert isinstance(queue_depth, int)
+        assert queue_depth >= 0
+
+
 def test_device_length_unit(device: Device) -> None:
     """Test that the device length unit is a non-empty string."""
     lu = device.length_unit()

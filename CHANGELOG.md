@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Expose the optional QDMI device queue depth through the C++ and Python
+  FoMaC APIs ([#2010]) ([**@burgholzer**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
@@ -720,6 +722,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005

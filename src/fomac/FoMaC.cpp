@@ -275,6 +275,10 @@ std::optional<size_t> Device::getNeedsCalibration() const {
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
 
+std::optional<size_t> Device::getQueueDepth() const {
+  return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUEDEPTH);
+}
+
 std::optional<std::string> Device::getLengthUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);

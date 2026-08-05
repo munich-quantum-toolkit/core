@@ -297,6 +297,9 @@ class Device:
     def needs_calibration(self) -> int | None:
         """Returns whether the device needs calibration."""
 
+    def queue_depth(self) -> int | None:
+        """Returns the current queue depth, or None if unavailable."""
+
     def length_unit(self) -> str | None:
         """Returns the unit of length used by the device."""
 
