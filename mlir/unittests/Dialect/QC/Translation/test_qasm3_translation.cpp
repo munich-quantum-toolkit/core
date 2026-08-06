@@ -996,22 +996,22 @@ named_result = measure q;
   EXPECT_EQ(name.getValue(), "named_result");
 }
 
-TEST_F(QASM3TranslationTest, RetainsQuantumRegisterName) {
+TEST_F(QASM3TranslationTest, RetainsQubitRegisterName) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
 qubit[2] named_qubits;
 )qasm";
   auto translated = qc::translateQASM3ToQC(source, context.get());
   ASSERT_TRUE(translated);
 
-  memref::AllocOp quantumRegister;
+  memref::AllocOp qubitRegister;
   translated->walk([&](memref::AllocOp op) {
     if (isa<qc::QubitType>(op.getType().getElementType())) {
-      quantumRegister = op;
+      qubitRegister = op;
     }
   });
-  ASSERT_TRUE(quantumRegister);
-  const auto name = quantumRegister->getAttrOfType<StringAttr>(
-      utils::QUANTUM_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(qubitRegister);
+  const auto name =
+      qubitRegister->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }

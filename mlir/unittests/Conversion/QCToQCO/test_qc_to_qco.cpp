@@ -588,7 +588,7 @@ module {
   EXPECT_EQ(deallocations, 1U);
 }
 
-TEST_F(QCToQCORegressionTest, RetainsQuantumRegisterName) {
+TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   std::ignore = builder.allocQubitRegisterStorage(2, "named_qubits");
@@ -600,7 +600,7 @@ TEST_F(QCToQCORegressionTest, RetainsQuantumRegisterName) {
   moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
   const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUANTUM_REGISTER_NAME_ATTR);
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }

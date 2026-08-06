@@ -206,7 +206,7 @@ private:
     return uniqueName("out", nextScalar);
   }
 
-  [[nodiscard]] std::string quantumRegisterName(const StringRef requested) {
+  [[nodiscard]] std::string qubitRegisterName(const StringRef requested) {
     if (isValidOutputName(requested) && usedNames.insert(requested).second) {
       return requested.str();
     }
@@ -310,10 +310,10 @@ private:
       if (resource.kind == ResourceKind::Qubit) {
         StringRef requested;
         if (const auto attr = alloc->getAttrOfType<StringAttr>(
-                utils::QUANTUM_REGISTER_NAME_ATTR)) {
+                utils::QUBIT_REGISTER_NAME_ATTR)) {
           requested = attr.getValue();
         }
-        resource.name = quantumRegisterName(requested);
+        resource.name = qubitRegisterName(requested);
       } else {
         resource.output = returnedMemrefs.contains(alloc.getResult());
         StringRef requested;

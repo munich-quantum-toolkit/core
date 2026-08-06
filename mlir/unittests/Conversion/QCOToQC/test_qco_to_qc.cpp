@@ -86,7 +86,7 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   return pm.run(module);
 }
 
-TEST(QCOToQCRegressionTest, RetainsQuantumRegisterName) {
+TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
@@ -108,7 +108,7 @@ TEST(QCOToQCRegressionTest, RetainsQuantumRegisterName) {
   });
   ASSERT_TRUE(allocation);
   const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUANTUM_REGISTER_NAME_ATTR);
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }

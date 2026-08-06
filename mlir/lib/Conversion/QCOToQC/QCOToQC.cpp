@@ -280,7 +280,7 @@ struct ConvertQTensorAllocOp final
     auto tensorType = cast<RankedTensorType>(op.getResult().getType());
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
-    const auto registerName = op->getAttr(utils::QUANTUM_REGISTER_NAME_ATTR);
+    const auto registerName = op->getAttr(utils::QUBIT_REGISTER_NAME_ATTR);
     memref::AllocOp alloc;
     if (tensorType.hasStaticShape()) {
       // Static size: no dynamic size operand needed
@@ -291,7 +291,7 @@ struct ConvertQTensorAllocOp final
                                       op.getSize());
     }
     if (registerName) {
-      alloc->setAttr(utils::QUANTUM_REGISTER_NAME_ATTR, registerName);
+      alloc->setAttr(utils::QUBIT_REGISTER_NAME_ATTR, registerName);
     }
     rewriter.replaceOp(op, alloc.getResult());
     return success();

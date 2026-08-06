@@ -527,7 +527,7 @@ module {
   EXPECT_NE(emitted->find("output bit _mqt_out"), std::string::npos);
 }
 
-TEST(OpenQASM3EmissionTest, ReusesQuantumRegisterNames) {
+TEST(OpenQASM3EmissionTest, ReusesQubitRegisterNames) {
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();

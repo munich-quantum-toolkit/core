@@ -1381,8 +1381,8 @@ private:
   /// Track allocated memrefs for automatic deallocation
   DenseSet<Value> allocatedQregs;
 
-  /// Track non-empty source-level quantum register names.
-  llvm::StringSet<> quantumRegisterNames;
+  /// Track non-empty source-level qubit register names.
+  llvm::StringSet<> qubitRegisterNames;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

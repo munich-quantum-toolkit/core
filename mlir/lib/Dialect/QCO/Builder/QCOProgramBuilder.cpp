@@ -141,13 +141,13 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-  if (!name.empty() && !quantumRegisterNames.insert(name).second) {
-    llvm::reportFatalUsageError("Quantum register names must be unique");
+  if (!name.empty() && !qubitRegisterNames.insert(name).second) {
+    llvm::reportFatalUsageError("Qubit register names must be unique");
   }
 
   auto qtensor = qtensorAlloc(size);
   if (!name.empty()) {
-    qtensor.getDefiningOp()->setAttr(QUANTUM_REGISTER_NAME_ATTR,
+    qtensor.getDefiningOp()->setAttr(QUBIT_REGISTER_NAME_ATTR,
                                      getStringAttr(name));
   }
 
