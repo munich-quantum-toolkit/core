@@ -15,6 +15,8 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -81,6 +83,33 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(module);
+}
+
+TEST(QCOToQCRegressionTest, RetainsQuantumRegisterName) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  qco::QCOProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegister(2, "named_qubits");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+
+  memref::AllocOp allocation;
+  moduleOp->walk([&](memref::AllocOp op) {
+    if (isa<qc::QubitType>(op.getType().getElementType())) {
+      allocation = op;
+    }
+  });
+  ASSERT_TRUE(allocation);
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUANTUM_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
 static Value

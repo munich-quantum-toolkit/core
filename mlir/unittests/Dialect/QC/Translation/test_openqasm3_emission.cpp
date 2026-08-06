@@ -513,6 +513,7 @@ module {
     return %single, %bits, %measured : memref<1xi1>, memref<2xi1>, i1
   }
 }
+
 )mlir";
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
@@ -525,6 +526,22 @@ module {
   EXPECT_NE(emitted->find("output bit[1] single;"), std::string::npos);
   EXPECT_NE(emitted->find("output bit[2] bits;"), std::string::npos);
   EXPECT_NE(emitted->find("output bit _mqt_out"), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, ReusesQuantumRegisterNames) {
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegister(2, "named_qubits");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("qubit[2] named_qubits;"), std::string::npos);
 }
 
 TEST(OpenQASM3EmissionTest, DefinesECRWithOneEntanglingGate) {

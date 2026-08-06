@@ -138,6 +138,9 @@ Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
+  if (!name.empty() && !quantumRegisterNames.insert(name).second) {
+    llvm::reportFatalUsageError("Quantum register names must be unique");
+  }
 
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
   auto alloc = memref::AllocOp::create(*this, memrefType);

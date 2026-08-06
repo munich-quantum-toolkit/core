@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -279,14 +280,20 @@ struct ConvertQTensorAllocOp final
     auto tensorType = cast<RankedTensorType>(op.getResult().getType());
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
+    const auto registerName = op->getAttr(utils::QUANTUM_REGISTER_NAME_ATTR);
+    memref::AllocOp alloc;
     if (tensorType.hasStaticShape()) {
       // Static size: no dynamic size operand needed
-      rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType);
+      alloc = memref::AllocOp::create(rewriter, op.getLoc(), memrefType);
     } else {
       // Dynamic size: forward the runtime size operand
-      rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType,
-                                                   op.getSize());
+      alloc = memref::AllocOp::create(rewriter, op.getLoc(), memrefType,
+                                      op.getSize());
     }
+    if (registerName) {
+      alloc->setAttr(utils::QUANTUM_REGISTER_NAME_ATTR, registerName);
+    }
+    rewriter.replaceOp(op, alloc.getResult());
     return success();
   }
 };

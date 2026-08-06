@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -566,6 +567,7 @@ module {
     return
   }
 }
+
 )mlir";
 
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
@@ -583,6 +585,23 @@ module {
   moduleOp->walk([&](qtensor::DeallocOp) { ++deallocations; });
   EXPECT_EQ(allocations, 1U);
   EXPECT_EQ(deallocations, 1U);
+}
+
+TEST_F(QCToQCORegressionTest, RetainsQuantumRegisterName) {
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegisterStorage(2, "named_qubits");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUANTUM_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
 TEST_F(QCToQCORegressionTest, RejectsRegisterBackedReferenceEscapes) {

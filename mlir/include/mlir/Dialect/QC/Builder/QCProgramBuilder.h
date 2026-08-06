@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -1379,6 +1380,9 @@ private:
 
   /// Track allocated memrefs for automatic deallocation
   DenseSet<Value> allocatedQregs;
+
+  /// Track non-empty source-level quantum register names.
+  llvm::StringSet<> quantumRegisterNames;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

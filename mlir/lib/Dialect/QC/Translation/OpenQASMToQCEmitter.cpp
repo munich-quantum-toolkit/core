@@ -2407,7 +2407,7 @@ private:
         return;
       }
       qubitValues[statement.reg] = builder.allocQubitRegisterStorage(
-          static_cast<int64_t>(declaration.width));
+          static_cast<int64_t>(declaration.width), declaration.name);
       return;
     }
     if (outputBitRegisters[statement.reg]) {

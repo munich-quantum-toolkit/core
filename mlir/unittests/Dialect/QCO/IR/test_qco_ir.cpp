@@ -133,6 +133,17 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCOTest, BuilderRejectsDuplicateNonEmptyQuantumRegisterNames) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        std::ignore = builder.allocQubitRegister(1, "q");
+        std::ignore = builder.allocQubitRegister(1, "q");
+      },
+      "Quantum register names must be unique");
+}
+
 TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
