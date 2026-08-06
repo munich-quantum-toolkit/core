@@ -658,6 +658,55 @@ TEST_F(QCOQuantumIPOTest, noPromotionWithoutElementAccess) {
   expectModuleMatchesReference();
 }
 
+/**
+ * @brief A callee that touches several tensor elements gets one scalar argument
+ * and one scalar result per element.
+ */
+TEST_F(QCOQuantumIPOTest, promoteMultipleTensorElements) {
+  const auto tensorType = programBuilder.getQubitTensorType(2);
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {tensorType}, {tensorType});
+  auto [afterFirst, first] = programBuilder.qtensorExtract(args[0], 0);
+  auto firstTensor =
+      programBuilder.qtensorInsert(programBuilder.h(first), afterFirst, 0);
+  auto [afterSecond, second] = programBuilder.qtensorExtract(firstTensor, 1);
+  programBuilder.endFunction(
+      {programBuilder.qtensorInsert(programBuilder.x(second), afterSecond, 1)});
+
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto tensor = programBuilder.qtensorFromElements({q0, q1});
+  auto results = programBuilder.call("f", {tensor});
+  programBuilder.qtensorDealloc(results[0]);
+  module = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  const auto qubitType = referenceBuilder.getQubitType();
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
+                                                {qubitType, qubitType});
+  referenceBuilder.endFunction(
+      {referenceBuilder.h(refArgs[0]), referenceBuilder.x(refArgs[1])});
+
+  auto refQ0 = referenceBuilder.allocQubit();
+  auto refQ1 = referenceBuilder.allocQubit();
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1});
+  // The caller takes every promoted element out before the call and puts them
+  // all back afterwards.
+  auto [refAfterFirst, refFirst] =
+      referenceBuilder.qtensorExtract(refTensor, 0);
+  auto [refAfterSecond, refSecond] =
+      referenceBuilder.qtensorExtract(refAfterFirst, 1);
+  auto refResults = referenceBuilder.call("f", {refFirst, refSecond});
+  auto refFirstBack =
+      referenceBuilder.qtensorInsert(refResults[0], refAfterSecond, 0);
+  referenceBuilder.qtensorDealloc(
+      referenceBuilder.qtensorInsert(refResults[1], refFirstBack, 1));
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
 // ==========================================================================
 // Auxiliary qubit hoisting.
 // ==========================================================================
@@ -732,6 +781,301 @@ TEST_F(QCOQuantumIPOTest, noHoistingForReturnedQubit) {
   auto refResults = referenceBuilder.call("f", {refQ});
   referenceBuilder.sink(refResults[0]);
   referenceBuilder.sink(refResults[1]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief The auxiliary qubit is tracked across a measurement and a reset on its
+ * way to the release point.
+ *
+ * The measurement outcome is handed back to the caller so that the measurement
+ * is not dead, and the reset sits between two gates so that it is neither
+ * folded into the allocation nor into the release.
+ */
+TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughMeasureAndReset) {
+  const auto qubitType = programBuilder.getQubitType();
+  const auto bitType = programBuilder.getI1Type();
+
+  programBuilder.initialize({bitType});
+  auto args =
+      programBuilder.startFunction("f", {qubitType}, {qubitType, bitType});
+  auto aux = programBuilder.h(programBuilder.allocQubit());
+  Value bit;
+  std::tie(aux, bit) = programBuilder.measure(aux);
+  aux = programBuilder.reset(aux);
+  auto target = args[0];
+  std::tie(aux, target) = programBuilder.cx(aux, target);
+  programBuilder.sink(aux);
+  programBuilder.endFunction({target, bit});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("f", {q});
+  programBuilder.sink(results[0]);
+  module = programBuilder.finalize({results[1]});
+
+  referenceBuilder.initialize({bitType});
+  auto refArgs = referenceBuilder.startFunction(
+      "f", {qubitType, qubitType}, {qubitType, bitType, qubitType});
+  auto refAux = referenceBuilder.h(refArgs[1]);
+  Value refBit;
+  std::tie(refAux, refBit) = referenceBuilder.measure(refAux);
+  refAux = referenceBuilder.reset(refAux);
+  auto refTarget = refArgs[0];
+  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
+  refAux = referenceBuilder.reset(refAux);
+  referenceBuilder.endFunction({refTarget, refBit, refAux});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refAuxAlloc = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("f", {refQ, refAuxAlloc});
+  referenceBuilder.sink(refResults[0]);
+  referenceBuilder.sink(refResults[2]);
+  reference = referenceBuilder.finalize({refResults[1]});
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief The auxiliary qubit is tracked while it is parked in a tensor, past
+ * an extraction of an unrelated element.
+ */
+TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughTensor) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {qubitType}, {qubitType});
+  auto aux = programBuilder.allocQubit();
+  auto target = args[0];
+  std::tie(aux, target) = programBuilder.cx(aux, target);
+  // The auxiliary qubit sits at index 0, the argument qubit at index 1.
+  auto tensor = programBuilder.qtensorFromElements({aux, target});
+  auto [afterOther, other] = programBuilder.qtensorExtract(tensor, 1);
+  auto [afterAux, auxBack] = programBuilder.qtensorExtract(afterOther, 0);
+  programBuilder.sink(auxBack);
+  programBuilder.qtensorDealloc(afterAux);
+  programBuilder.endFunction({other});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("f", {q});
+  programBuilder.sink(results[0]);
+  module = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
+                                                {qubitType, qubitType});
+  auto refAux = refArgs[1];
+  auto refTarget = refArgs[0];
+  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
+  auto refTensor = referenceBuilder.qtensorFromElements({refAux, refTarget});
+  auto [refAfterOther, refOther] =
+      referenceBuilder.qtensorExtract(refTensor, 1);
+  auto [refAfterAux, refAuxBack] =
+      referenceBuilder.qtensorExtract(refAfterOther, 0);
+  auto refReset = referenceBuilder.reset(refAuxBack);
+  referenceBuilder.qtensorDealloc(refAfterAux);
+  referenceBuilder.endFunction({refOther, refReset});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refAuxAlloc = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("f", {refQ, refAuxAlloc});
+  referenceBuilder.sink(refResults[0]);
+  referenceBuilder.sink(refResults[1]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief The auxiliary qubit is tracked across a nested call on its way to the
+ * release point.
+ *
+ * The nested callee returns more than one qubit and the auxiliary one is not
+ * the first, so the walk has to match the operand position rather than simply
+ * taking the first result.
+ */
+TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughNestedCall) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  const auto buildNestedCallee = [&qubitType](QCOProgramBuilder& b) {
+    auto innerArgs =
+        b.startFunction("g", {qubitType, qubitType}, {qubitType, qubitType});
+    b.endFunction({b.h(innerArgs[0]), innerArgs[1]});
+  };
+
+  programBuilder.initialize();
+  buildNestedCallee(programBuilder);
+
+  auto args = programBuilder.startFunction("f", {qubitType}, {qubitType});
+  auto aux = programBuilder.allocQubit();
+  // The auxiliary qubit is the second operand and the second result.
+  auto nested = programBuilder.call("g", {args[0], aux});
+  auto target = nested[0];
+  aux = nested[1];
+  std::tie(aux, target) = programBuilder.cx(aux, target);
+  programBuilder.sink(aux);
+  programBuilder.endFunction({target});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("f", {q});
+  programBuilder.sink(results[0]);
+  module = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  buildNestedCallee(referenceBuilder);
+
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
+                                                {qubitType, qubitType});
+  auto refNested = referenceBuilder.call("g", {refArgs[0], refArgs[1]});
+  auto refTarget = refNested[0];
+  auto refAux = refNested[1];
+  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
+  refAux = referenceBuilder.reset(refAux);
+  referenceBuilder.endFunction({refTarget, refAux});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refAuxAlloc = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("f", {refQ, refAuxAlloc});
+  referenceBuilder.sink(refResults[0]);
+  referenceBuilder.sink(refResults[1]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief Every call site of a hoisted callee gets its own allocation.
+ */
+TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitWithMultipleCallSites) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {qubitType}, {qubitType});
+  auto aux = programBuilder.allocQubit();
+  auto target = args[0];
+  std::tie(aux, target) = programBuilder.cx(aux, target);
+  programBuilder.sink(aux);
+  programBuilder.endFunction({target});
+
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto results0 = programBuilder.call("f", {q0});
+  auto results1 = programBuilder.call("f", {q1});
+  programBuilder.sink(results0[0]);
+  programBuilder.sink(results1[0]);
+  module = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
+                                                {qubitType, qubitType});
+  auto refAux = refArgs[1];
+  auto refTarget = refArgs[0];
+  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
+  refAux = referenceBuilder.reset(refAux);
+  referenceBuilder.endFunction({refTarget, refAux});
+
+  auto refQ0 = referenceBuilder.allocQubit();
+  auto refQ1 = referenceBuilder.allocQubit();
+  auto refAux0 = referenceBuilder.allocQubit();
+  auto refResults0 = referenceBuilder.call("f", {refQ0, refAux0});
+  referenceBuilder.sink(refResults0[1]);
+  auto refAux1 = referenceBuilder.allocQubit();
+  auto refResults1 = referenceBuilder.call("f", {refQ1, refAux1});
+  referenceBuilder.sink(refResults1[1]);
+  referenceBuilder.sink(refResults0[0]);
+  referenceBuilder.sink(refResults1[0]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief A recursive callee is left alone, because its allocation would have to
+ * be threaded through every level of the recursion. A caller of a recursive
+ * function is still hoisted.
+ */
+TEST_F(QCOQuantumIPOTest, noHoistingForRecursiveFunction) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  const auto buildRecursiveCallee = [&qubitType](QCOProgramBuilder& b) {
+    auto innerArgs = b.startFunction("inner", {qubitType}, {qubitType});
+    auto innerAux = b.allocQubit();
+    auto innerTarget = innerArgs[0];
+    std::tie(innerAux, innerTarget) = b.cx(innerAux, innerTarget);
+    b.sink(innerAux);
+    b.endFunction({b.call("inner", {innerTarget})[0]});
+  };
+
+  programBuilder.initialize();
+  buildRecursiveCallee(programBuilder);
+
+  auto args = programBuilder.startFunction("outer", {qubitType}, {qubitType});
+  auto aux = programBuilder.allocQubit();
+  auto target = args[0];
+  std::tie(aux, target) = programBuilder.cx(aux, target);
+  programBuilder.sink(aux);
+  programBuilder.endFunction({programBuilder.call("inner", {target})[0]});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("outer", {q});
+  programBuilder.sink(results[0]);
+  module = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  // `inner` is recursive and therefore untouched, ...
+  buildRecursiveCallee(referenceBuilder);
+
+  // ... while `outer` is hoisted even though it calls a recursive function.
+  auto refArgs = referenceBuilder.startFunction("outer", {qubitType, qubitType},
+                                                {qubitType, qubitType});
+  auto refAux = refArgs[1];
+  auto refTarget = refArgs[0];
+  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
+  refAux = referenceBuilder.reset(refAux);
+  referenceBuilder.endFunction(
+      {referenceBuilder.call("inner", {refTarget})[0], refAux});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refAuxAlloc = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("outer", {refQ, refAuxAlloc});
+  referenceBuilder.sink(refResults[0]);
+  referenceBuilder.sink(refResults[1]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief An allocation nested inside a region is not hoisted, because it is not
+ * executed on every path through the function.
+ */
+TEST_F(QCOQuantumIPOTest, noHoistingForAllocInsideRegion) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  const auto buildProgram = [&qubitType](QCOProgramBuilder& b) {
+    b.initialize();
+    auto args = b.startFunction("f", {qubitType, b.getI1Type()}, {qubitType});
+    auto result = b.qcoIf(args[1], args[0], [&](Value qubit) {
+      auto aux = b.allocQubit();
+      auto inner = qubit;
+      std::tie(aux, inner) = b.cx(aux, inner);
+      b.sink(aux);
+      return inner;
+    });
+    b.endFunction({result});
+
+    auto q = b.allocQubit();
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    auto results = b.call("f", {q, bit});
+    b.sink(results[0]);
+  };
+
+  buildProgram(programBuilder);
+  module = programBuilder.finalize();
+
+  buildProgram(referenceBuilder);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
