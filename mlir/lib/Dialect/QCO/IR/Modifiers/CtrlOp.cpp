@@ -42,11 +42,9 @@ using namespace mlir::qco;
  * @brief Materialize a global phase controlled by @p controls.
  * @return The updated control qubits in their original order.
  */
-static SmallVector<Value> createControlledPhase(PatternRewriter& rewriter,
-                                                const Location controlledLoc,
-                                                const Location phaseLoc,
-                                                const ValueRange controls,
-                                                const Value theta) {
+static SmallVector<Value>
+createControlledPhase(PatternRewriter& rewriter, Location controlledLoc,
+                      Location phaseLoc, ValueRange controls, Value theta) {
   assert(!controls.empty());
   if (controls.size() == 1) {
     return {POp::create(rewriter, controlledLoc, controls.front(), theta)
