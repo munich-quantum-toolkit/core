@@ -568,7 +568,6 @@ module {
     return
   }
 }
-
 )mlir";
 
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
