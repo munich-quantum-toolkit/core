@@ -101,8 +101,8 @@ void TensorIterator::forward() {
   // The following operations define the end of the tensor's life-chain. A
   // `func.call` ends it because the tensor is handed to the callee; the tensor
   // the call returns starts a life-chain of its own.
-  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp, func::ReturnOp, func::CallOp>(
-          op_)) {
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp,
+          func::ReturnOp, func::CallOp>(op_)) {
     isFinal_ = true;
     return;
   }
@@ -156,8 +156,8 @@ void TensorIterator::backward() {
   }
 
   // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
-  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp, func::ReturnOp, func::CallOp>(
-          op_)) {
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp,
+          func::ReturnOp, func::CallOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     isFinal_ = false;
     return;
