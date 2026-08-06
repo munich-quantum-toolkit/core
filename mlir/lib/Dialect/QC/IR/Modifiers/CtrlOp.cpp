@@ -16,6 +16,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -33,17 +34,13 @@ using namespace mlir;
 using namespace mlir::qc;
 
 /**
- * @brief Materialize a global phase controlled by @p controls.
+ * @brief Materialize a global phase controlled by multiple @p controls.
  */
-static void createControlledPhase(PatternRewriter& rewriter,
-                                  Location controlledLoc, Location phaseLoc,
-                                  ValueRange controls, Value theta) {
-  assert(!controls.empty());
-  if (controls.size() == 1) {
-    POp::create(rewriter, controlledLoc, controls.front(), theta);
-    return;
-  }
-
+static void createMultiControlledPhase(PatternRewriter& rewriter,
+                                       Location controlledLoc,
+                                       Location phaseLoc, ValueRange controls,
+                                       Value theta) {
+  assert(controls.size() > 1);
   CtrlOp::create(
       rewriter, controlledLoc, controls.drop_back(), controls.back(),
       [&](Value target) { POp::create(rewriter, phaseLoc, target, theta); });
@@ -131,9 +128,19 @@ struct PullGPhaseOutOfCtrl final : OpRewritePattern<CtrlOp> {
 
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
+    Value theta = globalPhases.front().getTheta();
+    for (auto gphase : llvm::drop_begin(globalPhases)) {
+      theta = rewriter.createOrFold<arith::AddFOp>(gphase.getLoc(), theta,
+                                                   gphase.getTheta());
+    }
+    const auto phaseLoc = globalPhases.front().getLoc();
+    if (op.getNumControls() == 1) {
+      POp::create(rewriter, phaseLoc, op.getControl(0), theta);
+    } else {
+      createMultiControlledPhase(rewriter, phaseLoc, phaseLoc, op.getControls(),
+                                 theta);
+    }
     for (auto gphase : globalPhases) {
-      createControlledPhase(rewriter, gphase.getLoc(), gphase.getLoc(),
-                            op.getControls(), gphase.getTheta());
       rewriter.eraseOp(gphase);
     }
     return success();
@@ -174,8 +181,12 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
-    createControlledPhase(rewriter, op.getLoc(), gPhaseOp.getLoc(),
-                          op.getControls(), gPhaseOp.getTheta());
+    if (op.getNumControls() == 1) {
+      POp::create(rewriter, op.getLoc(), op.getControl(0), gPhaseOp.getTheta());
+    } else {
+      createMultiControlledPhase(rewriter, op.getLoc(), gPhaseOp.getLoc(),
+                                 op.getControls(), gPhaseOp.getTheta());
+    }
     rewriter.eraseOp(op);
     return success();
   }

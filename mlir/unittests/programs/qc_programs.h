@@ -1089,7 +1089,7 @@ Value ctrlGPhaseAndXRef(QCProgramBuilder& b);
 /// Creates a multi-control modifier containing two global phases and two gates.
 Value ctrlMultipleGPhases(QCProgramBuilder& b);
 
-/// Reference for ctrlMultipleGPhases with both phases lifted in order.
+/// Reference for ctrlMultipleGPhases with the combined phase lifted.
 Value ctrlMultipleGPhasesRef(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to a inverse modifier

@@ -20,6 +20,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -39,18 +40,15 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /**
- * @brief Materialize a global phase controlled by @p controls.
+ * @brief Materialize a global phase controlled by multiple @p controls.
  * @return The updated control qubits in their original order.
  */
-static SmallVector<Value>
-createControlledPhase(PatternRewriter& rewriter, Location controlledLoc,
-                      Location phaseLoc, ValueRange controls, Value theta) {
-  assert(!controls.empty());
-  if (controls.size() == 1) {
-    return {POp::create(rewriter, controlledLoc, controls.front(), theta)
-                .getOutputQubit(0)};
-  }
-
+static SmallVector<Value> createMultiControlledPhase(PatternRewriter& rewriter,
+                                                     Location controlledLoc,
+                                                     Location phaseLoc,
+                                                     ValueRange controls,
+                                                     Value theta) {
+  assert(controls.size() > 1);
   auto controlledPhase = CtrlOp::create(
       rewriter, controlledLoc, controls.drop_back(), controls.back(),
       [&](Value target) -> Value {
@@ -151,10 +149,21 @@ struct PullGPhaseOutOfCtrl final : OpRewritePattern<CtrlOp> {
     SmallVector<Value> controls(op.getControlsIn());
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
+    Value theta = globalPhases.front().getTheta();
+    for (auto gphase : llvm::drop_begin(globalPhases)) {
+      theta = rewriter.createOrFold<arith::AddFOp>(gphase.getLoc(), theta,
+                                                   gphase.getTheta());
+    }
+    const auto phaseLoc = globalPhases.front().getLoc();
+    if (controls.size() == 1) {
+      controls.front() =
+          POp::create(rewriter, phaseLoc, controls.front(), theta)
+              .getOutputQubit(0);
+    } else {
+      controls = createMultiControlledPhase(rewriter, phaseLoc, phaseLoc,
+                                            controls, theta);
+    }
     for (auto gphase : globalPhases) {
-      controls =
-          createControlledPhase(rewriter, gphase.getLoc(), gphase.getLoc(),
-                                controls, gphase.getTheta());
       rewriter.eraseOp(gphase);
     }
 
@@ -209,10 +218,17 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
-    auto outputs =
-        createControlledPhase(rewriter, op.getLoc(), gPhaseOp.getLoc(),
-                              op.getControlsIn(), gPhaseOp.getTheta());
-    rewriter.replaceOp(op, outputs);
+    if (op.getNumControls() == 1) {
+      auto output = POp::create(rewriter, op.getLoc(),
+                                op.getControlsIn().front(), gPhaseOp.getTheta())
+                        .getOutputQubit(0);
+      rewriter.replaceOp(op, output);
+    } else {
+      auto outputs =
+          createMultiControlledPhase(rewriter, op.getLoc(), gPhaseOp.getLoc(),
+                                     op.getControlsIn(), gPhaseOp.getTheta());
+      rewriter.replaceOp(op, outputs);
+    }
     return success();
   }
 };
