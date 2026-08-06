@@ -28,6 +28,7 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -78,10 +79,18 @@ private:
   using IndexPairType = std::pair<size_t, size_t>;
   using Window = SmallVector<IndexPairType>;
   using Wires = SmallVector<WireIterator>;
-  using RecursiveRoutingStackItem = std::pair<Operation*, SmallVector<size_t>>;
-  using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
   enum class RoutingMode : bool { Cold, Hot };
+
+  struct RecursiveRoutingStackItem {
+    /// The SCF op.
+    Operation* op;
+    /// Indices into a vector of wires, where the order of indices has no
+    /// meaning.
+    SmallVector<size_t> indices;
+  };
+
+  using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
   struct WireInfos {
     /// Return the mapped wire index of a program index.
@@ -149,12 +158,15 @@ private:
 
   /// Statistics collected while routing.
   struct Statistics {
+    /// The number of inserted swaps.
     size_t nswaps{0};
   };
 
   /// Parameters influencing the behavior of the A* search algorithm.
   struct Parameters {
+    /// The path weight.
     float alpha;
+    /// The lookahead decay factor.
     float lambda;
   };
 
@@ -163,6 +175,20 @@ private:
     Wires wires;
     WireInfos infos;
     Layout layout;
+
+    struct Patch {
+      std::optional<Layout> layout;
+      std::optional<WireInfos> infos;
+    };
+
+    void applyPatch(const Patch& patch) {
+      if (patch.layout) {
+        layout = *patch.layout;
+      }
+      if (patch.infos) {
+        infos = *patch.infos;
+      }
+    }
   };
 
   /// Describes a node in the A* search graph.
@@ -525,6 +551,56 @@ private:
     return newWhileOp;
   }
 
+  void place(RecursiveRoutingStackItem& item, Wires& wires,
+             IRRewriter& rewriter) {
+    assert(wires.size() == target->numQubits());
+
+    const auto nmissing = target->numQubits() - item.indices.size();
+
+    SmallVector<Value> missingQubits;
+    missingQubits.reserve(nmissing);
+
+    for (size_t i = 0; i < wires.size(); ++i) {
+
+      /// TODO: Use SetVector for indices?
+      bool found = false;
+      for (const size_t j : item.indices) {
+        if (i == j) {
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        item.indices.emplace_back(i);
+        if (wires[i] == std::default_sentinel) {
+          missingQubits.emplace_back(std::prev(wires[i], 2).qubit());
+        } else {
+          missingQubits.emplace_back(wires[i].qubit());
+        }
+      }
+    }
+
+    TypeSwitch<Operation*>(item.op)
+        .Case<scf::ForOp>([&](scf::ForOp forOp) {
+          item.op = extend(forOp, missingQubits, rewriter);
+        })
+        .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
+          item.op = extend(whileOp, missingQubits, rewriter);
+        })
+        .Case<IfOp>(
+            [&](IfOp ifOp) { item.op = extend(ifOp, missingQubits, rewriter); })
+        .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
+          item.op = extend(switchOp, missingQubits, rewriter);
+        })
+        .Default([](Operation* op) -> SmallVector<RoutingBundle, 0> {
+          report_fatal_error("unhandled region op in dispatch: " +
+                             op->getName().getStringRef());
+        });
+
+    item.op->getParentOp()->dumpPretty();
+  }
+
   /// Return the wires of a dynamic computation.
   /// Scalar `qco.alloc` operations define program qubits directly. For
   /// `qtensor` allocations, the mapping pass assumes an extraction and
@@ -697,10 +773,6 @@ private:
 
       SinkOp::create(rewriter, body.getLoc(), qubit);
     }
-
-    // Finally, update the SCF operations such that they take all static qubits
-    // as input. To handle recursively nested SCF operations, use a stack of
-    // (region, mapping) pairs.
 
     SmallVector<std::pair<Region&, DenseSet<Value>>> stack;
     stack.emplace_back(body, DenseSet<Value>{});
@@ -1300,10 +1372,10 @@ private:
   /// inserting epilogue SWAPs.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  LogicalResult dispatch(const RecursiveRoutingStackItem& item,
-                         RoutingBundle& parent, Statistics& stats,
-                         IRRewriter* rewriter = nullptr) {
-    const auto& [op, indices] = item;
+  FailureOr<RoutingBundle::Patch>
+  dispatch(const RecursiveRoutingStackItem& item, const RoutingBundle& parent,
+           Statistics& stats, IRRewriter* rewriter = nullptr) {
+    const auto [op, indices] = item;
 
     SmallVector<size_t> permutation(indices.size());
     SmallVector<RoutingBundle, 0> children =
@@ -1320,10 +1392,6 @@ private:
               return SmallVector<RoutingBundle, 0>(
                   switchOp.getNumRegions(),
                   RoutingBundle{.layout = parent.layout});
-            })
-            .Default([](Operation* op) -> SmallVector<RoutingBundle, 0> {
-              report_fatal_error("unhandled region op in dispatch: " +
-                                 op->getName().getStringRef());
             });
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
@@ -1524,31 +1592,22 @@ private:
       }
     }
 
-    // If the operation is a scf::ForOp, where the parent.layout =
-    // child.layout, we are done. Otherwise, propagate the final layout and
-    // index-to-program mapping to the parent.
+    // If the operation is a scf::ForOp, where the parent.layout = child.layout,
+    // we are done. Otherwise, propagate a patch with the final layout and
+    // index-to-program mapping.
 
-    if (!isa<scf::ForOp>(op)) {
-      WireInfos realigendInfos;
-      for (size_t i = 0; i < parent.wires.size(); ++i) {
-        const auto oldProg = parent.infos.lookupProgram(i);
-        const auto oldHw = parent.layout.getHardwareIndex(oldProg);
-        const auto newProg = exit.getProgramIndex(oldHw);
-        realigendInfos.insertOrUpdate(i, newProg);
-      }
-
-      parent.layout = exit;
-      parent.infos = std::move(realigendInfos);
+    if (isa<scf::ForOp>(op)) {
+      return RoutingBundle::Patch{};
     }
 
-    // Finally, move past the operation with nested regions by
-    // incrementing the respective global wires.
-
-    for_each(indices, [&](size_t i) {
-      std::advance(parent.wires[i], WireTraversalTraits<Direction>::stride());
-    });
-
-    return success();
+    RoutingBundle::Patch patch{.layout = exit, .infos = WireInfos{}};
+    for (size_t i = 0; i < parent.wires.size(); ++i) {
+      const auto oldProg = parent.infos.lookupProgram(i);
+      const auto oldHw = parent.layout.getHardwareIndex(oldProg);
+      const auto newProg = exit.getProgramIndex(oldHw);
+      patch.infos->insertOrUpdate(i, newProg);
+    }
+    return patch;
   }
 
   /// Iterates over a dynamically computed window of layers and uses A* search
@@ -1569,11 +1628,22 @@ private:
         if (stack.empty()) {
           break;
         }
-        for (const auto& item : stack) {
-          if (dispatch<Direction, Mode>(item, bundle, stats, rewriter)
-                  .failed()) {
+
+        for (auto& item : stack) {
+          const auto patch =
+              dispatch<Direction, Mode>(item, bundle, stats, rewriter);
+          if (failed(patch)) {
             return failure();
           }
+
+          bundle.applyPatch(*patch);
+
+          // Once the SCF op is mapped, move past this op by incrementing the
+          // respective global wires.
+
+          for_each(item.indices, [&](size_t i) {
+            std::advance(wires[i], WireTraversalTraits<Direction>::stride());
+          });
         }
       }
 
