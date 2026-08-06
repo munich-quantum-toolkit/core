@@ -34,4 +34,21 @@ def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
   }];
 }
 
+def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qc::QCDialect", "mlir::qco::QCODialect"];
+  let summary = "Unroll multi-operation modifiers into single-operation ones";
+  let description = [{
+    Splits `ctrl` and `inv` modifiers whose body holds more than one unitary
+    operation into a sequence of modifiers that each hold a single operation.
+    The targets of the new modifiers are narrowed to the qubits of the
+    respective operation. For `inv`, the order of the operations is reversed.
+    Classical operations of the body are moved in front of the modifier; a
+    modifier is left untouched if one of them depends on the body's qubits.
+
+    `pow` modifiers are left untouched because `pow(r) { a; b }` is generally
+    not equivalent to `pow(r) { a }; pow(r) { b }`. Modifiers nested in a `pow`
+    body are still unrolled.
+  }];
+}
+
 #endif // MLIR_DIALECT_UTILS_TRANSFORMS_PASSES_TD

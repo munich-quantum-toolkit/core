@@ -2176,6 +2176,16 @@ Value ctrlTwo(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+Value ctrlThree(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    b.x(targets[1]);
+    b.dcx(targets[1], targets[0]);
+    b.y(targets[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
 Value ctrlTwoMixed(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {

@@ -1073,6 +1073,11 @@ Value ctrlInvSandwich(QCProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to two gates.
 Value ctrlTwo(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to three gates that use
+/// the targets out of order, repeat one of them, and swap the qubits of a
+/// two-qubit gate.
+Value ctrlThree(QCProgramBuilder& b);
+
 /// Creates a circuit with a control modifier applied to a controlled and a
 /// non-controlled gate.
 Value ctrlTwoMixed(QCProgramBuilder& b);

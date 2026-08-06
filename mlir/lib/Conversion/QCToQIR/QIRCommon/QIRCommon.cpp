@@ -97,9 +97,8 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
                        LoweringState& state, StringRef fnName,
                        size_t numTargets, size_t numParams) {
   // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> controls =
-      inCtrlOp != 0 ? state.controls : SmallVector<Value>{};
+      state.inCtrlOp ? state.controls : SmallVector<Value>{};
   const size_t numCtrls = controls.size();
 
   // Define argument types
@@ -134,11 +133,9 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
   // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.inCtrlOp--;
-    if (state.inCtrlOp == 0) {
-      state.controls.clear();
-    }
+  if (state.inCtrlOp) {
+    state.inCtrlOp = false;
+    state.controls.clear();
   }
 
   // Replace operation with CallOp
@@ -242,8 +239,7 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   matchAndRewrite(OpType op, OpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.controls.size() : 0;
+    const size_t numCtrls = state.inCtrlOp ? state.controls.size() : 0;
     const auto fnName = GetFnName(numCtrls);
     return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
                                   state, fnName, NumTargets, NumParams);
@@ -325,7 +321,7 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (state.inCtrlOp != 0) {
+    if (state.inCtrlOp) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
     return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(), state,
@@ -360,13 +356,19 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    if (state.inCtrlOp != 0) {
+    if (state.inCtrlOp) {
       return rewriter.notifyMatchFailure(op,
                                          "Nested CtrlOps are not supported");
     }
 
+    if (op.getNumBodyUnitaries() > 1) {
+      return rewriter.notifyMatchFailure(
+          op, "CtrlOps with multiple body unitaries are not supported. Run the "
+              "unroll-modifiers pass before the conversion");
+    }
+
     // Update modifier information
-    state.inCtrlOp = op.getNumBodyUnitaries();
+    state.inCtrlOp = true;
     state.controls = llvm::to_vector(adaptor.getControls());
 
     // Inline block and remove operation

@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -49,8 +50,8 @@ namespace {
 
 struct QCToQIRBaseTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRBaseTestCase& info);
@@ -58,10 +59,10 @@ struct QCToQIRBaseTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCToQIRBaseTestCase& info) {
-  return os << "QCToQIRBase{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQIRBase{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQIRBaseTest : public testing::TestWithParam<QCToQIRBaseTestCase> {
@@ -83,6 +84,7 @@ protected:
 
 static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   PassManager pm(module.getContext());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRBase());
   return pm.run(module);
 }
@@ -307,9 +309,9 @@ TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsClassicalRegisterIndex) {
 TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -326,7 +328,7 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(
+  auto reference = ::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder, qir::QIRProgramBuilder::Profile::Base);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
@@ -896,4 +898,12 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{"AllocDeallocPair",
                             MQT_NAMED_BUILDER(qc::allocDeallocPair),
                             MQT_NAMED_BUILDER(qir::emptyQIR<true>)}));
+/// @}
+
+/// \name QCToQIRBase/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(QCToQIRBaseCtrlOpTest, QCToQIRBaseTest,
+                         testing::Values(QCToQIRBaseTestCase{
+                             "CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                             MQT_NAMED_BUILDER(qir::ctrlTwo<true>)}));
 /// @}

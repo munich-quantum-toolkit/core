@@ -3539,6 +3539,17 @@ Value ctrlTwo(QCOProgramBuilder& b) {
       b, {res.first[0], res.first[1], res.second[0], res.second[1]});
 }
 
+Value ctrlThree(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto res =
+      b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) -> SmallVector<Value> {
+        auto t1 = b.x(targets[1]);
+        auto [r1, r0] = b.dcx(t1, targets[0]);
+        return {r0, b.y(r1)};
+      });
+  return measureAndReturn(b, {res.first[0], res.second[0], res.second[1]});
+}
+
 Value ctrlTwoMixed(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {

@@ -22,6 +22,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "qdmi/driver/Driver.hpp"
 
@@ -548,6 +549,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -569,6 +571,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRBase &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCToQIRBase());
         populateQIRCleanupPipeline(pm, false);
         return success();
@@ -578,6 +581,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCToQIRAdaptive());
         populateQIRCleanupPipeline(pm, true);
         return success();
