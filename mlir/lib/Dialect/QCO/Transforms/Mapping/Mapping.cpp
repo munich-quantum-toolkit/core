@@ -28,7 +28,6 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -85,8 +84,7 @@ private:
   struct RecursiveRoutingStackItem {
     /// The SCF op.
     Operation* op;
-    /// Indices into a vector of wires, where the order of indices has no
-    /// meaning.
+    /// Indices into a wire vector, where the order of indices has no meaning.
     SmallVector<size_t> indices;
   };
 
@@ -160,6 +158,9 @@ private:
   struct Statistics {
     /// The number of inserted swaps.
     size_t nswaps{0};
+
+    /// Merge another statistics object into this one.
+    void merge(const Statistics& other) { nswaps += other.nswaps; }
   };
 
   /// Parameters influencing the behavior of the A* search algorithm.
@@ -392,20 +393,20 @@ protected:
 
     std::tie(wires, infos) = std::move(place(body, *layout, *comp, rewriter));
 
-    Statistics stats;
     RoutingBundle bundle{.wires = std::move(wires),
                          .infos = std::move(infos),
                          .layout = std::move(*layout)};
 
-    const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-        bundle, stats, &rewriter);
-    if (res.failed()) {
+    const auto routeRes =
+        route<WireDirection::Forward, RoutingMode::Hot>(bundle, &rewriter);
+    if (failed(routeRes)) {
       func.emitError() << "failed to map the function";
       signalPassFailure();
       return;
     }
 
     // Collect statistics.
+    const auto stats = *routeRes;
     numSwaps += stats.nswaps;
 
     // Fix SSA Dominance issues.
@@ -926,13 +927,17 @@ private:
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       for (size_t i = 0; i < niterations; ++i) {
-        if (route<WireDirection::Forward>(t.bundle, t.stats).failed()) {
+        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle);
+        if (failed(fwRouteRes)) {
           return;
         }
-        t.stats.nswaps = 0;
-        if (route<WireDirection::Backward>(t.bundle, t.stats).failed()) {
+
+        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
+        if (failed(bwRouteRes)) {
           return;
         }
+
+        t.stats = *bwRouteRes;
       }
 
       t.success = true;
@@ -1369,12 +1374,14 @@ private:
   }
 
   /// Processes the recursive stack item by routing the nested operation and
-  /// inserting epilogue SWAPs.
+  /// inserting a SWAP appendix. Returns a pair of the patch to apply to the
+  /// parent bundle and the accumulated statistics, or `failure` if routing
+  /// fails.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<RoutingBundle::Patch>
+  FailureOr<std::pair<RoutingBundle::Patch, Statistics>>
   dispatch(const RecursiveRoutingStackItem& item, const RoutingBundle& parent,
-           Statistics& stats, IRRewriter* rewriter = nullptr) {
+           IRRewriter* rewriter = nullptr) {
     const auto [op, indices] = item;
 
     SmallVector<size_t> permutation(indices.size());
@@ -1476,10 +1483,15 @@ private:
     // qubit op (note: might be a measurement) before the yield.
     // TODO: Parallelize multiple children, if possible.
 
+    Statistics totalStats;
+
     for (auto& child : children) {
-      if (failed(route<Direction, Mode>(child, stats, rewriter))) {
+      const auto stats = route<Direction, Mode>(child, rewriter);
+      if (failed(stats)) {
         return failure();
       }
+
+      totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(child.wires, [](auto& it) { std::advance(it, -2); });
@@ -1509,9 +1521,12 @@ private:
         children[1].infos.insertOrUpdate(i, prog);
       }
 
-      if (failed(route<Direction, Mode>(children[1], stats, rewriter))) {
+      const auto stats = route<Direction, Mode>(children[1], rewriter);
+      if (failed(stats)) {
         return failure();
       }
+
+      totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
         for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
@@ -1526,12 +1541,12 @@ private:
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
               const auto swaps = restore(children[0].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[0], stats, rewriter);
+              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter);
               return parent.layout;
             })
             .template Case<scf::WhileOp>([&](scf::WhileOp) {
               const auto swaps = restore(children[1].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[1], stats, rewriter);
+              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter);
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
@@ -1539,8 +1554,8 @@ private:
             .template Case<IfOp>([&](IfOp) {
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
-              insertSWAPs<Mode>(fst, children[0], stats, rewriter);
-              insertSWAPs<Mode>(snd, children[1], stats, rewriter);
+              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter);
+              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter);
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
@@ -1550,7 +1565,7 @@ private:
                   }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, winner);
-                insertSWAPs<Mode>(swaps, child, stats, rewriter);
+                insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
               }
               return winner;
             });
@@ -1597,7 +1612,7 @@ private:
     // index-to-program mapping.
 
     if (isa<scf::ForOp>(op)) {
-      return RoutingBundle::Patch{};
+      return std::make_pair(RoutingBundle::Patch{}, totalStats);
     }
 
     RoutingBundle::Patch patch{.layout = exit, .infos = WireInfos{}};
@@ -1607,22 +1622,24 @@ private:
       const auto newProg = exit.getProgramIndex(oldHw);
       patch.infos->insertOrUpdate(i, newProg);
     }
-    return patch;
+
+    return std::make_pair(patch, totalStats);
   }
 
   /// Iterates over a dynamically computed window of layers and uses A* search
   /// to find a SWAP sequence that makes each layer executable. Depending on
   /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. The function returns `failure` if A* is
-  /// unable to find a solution.
+  /// inserts the SWAPs into the IR. Returns `FailureOr<Statistics>` containing
+  /// the accumulated statistics on success, or `failure` if A* is unable to
+  /// find a solution.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  LogicalResult route(RoutingBundle& bundle, Statistics& stats,
-                      IRRewriter* rewriter = nullptr) {
+  FailureOr<Statistics> route(RoutingBundle& bundle,
+                              IRRewriter* rewriter = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
+    Statistics stats;
     while (true) {
-
       while (true) {
         const auto stack = advance<Direction>(wires, infos, layout);
         if (stack.empty()) {
@@ -1630,13 +1647,13 @@ private:
         }
 
         for (auto& item : stack) {
-          const auto patch =
-              dispatch<Direction, Mode>(item, bundle, stats, rewriter);
-          if (failed(patch)) {
+          const auto res = dispatch<Direction, Mode>(item, bundle, rewriter);
+          if (failed(res)) {
             return failure();
           }
 
-          bundle.applyPatch(*patch);
+          bundle.applyPatch(res->first);
+          stats.merge(res->second);
 
           // Once the SCF op is mapped, move past this op by incrementing the
           // respective global wires.
@@ -1686,7 +1703,7 @@ private:
       }
     }
 
-    return success();
+    return stats;
   }
 
   std::optional<CompilerTarget> target;
