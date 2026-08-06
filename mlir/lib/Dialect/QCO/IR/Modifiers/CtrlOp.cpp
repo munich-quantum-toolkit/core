@@ -38,17 +38,15 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
 /**
  * @brief Materialize a global phase controlled by @p controls.
  * @return The updated control qubits in their original order.
  */
-SmallVector<Value> createControlledPhase(PatternRewriter& rewriter,
-                                         const Location controlledLoc,
-                                         const Location phaseLoc,
-                                         const ValueRange controls,
-                                         const Value theta) {
+static SmallVector<Value> createControlledPhase(PatternRewriter& rewriter,
+                                                const Location controlledLoc,
+                                                const Location phaseLoc,
+                                                const ValueRange controls,
+                                                const Value theta) {
   assert(!controls.empty());
   if (controls.size() == 1) {
     return {POp::create(rewriter, controlledLoc, controls.front(), theta)
@@ -62,6 +60,8 @@ SmallVector<Value> createControlledPhase(PatternRewriter& rewriter,
       });
   return SmallVector<Value>(controlledPhase.getOutputQubits());
 }
+
+namespace {
 
 /**
  * @brief Merge nested control modifiers into a single one.

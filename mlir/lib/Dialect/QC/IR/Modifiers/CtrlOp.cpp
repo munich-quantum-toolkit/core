@@ -32,15 +32,14 @@
 using namespace mlir;
 using namespace mlir::qc;
 
-namespace {
-
 /**
  * @brief Materialize a global phase controlled by @p controls.
  */
-void createControlledPhase(PatternRewriter& rewriter,
-                           const Location controlledLoc,
-                           const Location phaseLoc, const ValueRange controls,
-                           const Value theta) {
+static void createControlledPhase(PatternRewriter& rewriter,
+                                  const Location controlledLoc,
+                                  const Location phaseLoc,
+                                  const ValueRange controls,
+                                  const Value theta) {
   assert(!controls.empty());
   if (controls.size() == 1) {
     POp::create(rewriter, controlledLoc, controls.front(), theta);
@@ -51,6 +50,8 @@ void createControlledPhase(PatternRewriter& rewriter,
       rewriter, controlledLoc, controls.drop_back(), controls.back(),
       [&](Value target) { POp::create(rewriter, phaseLoc, target, theta); });
 }
+
+namespace {
 
 /**
  * @brief Merge nested control modifiers into a single one.
