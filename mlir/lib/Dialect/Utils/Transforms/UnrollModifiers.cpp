@@ -32,17 +32,15 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mlir/Dialect/Utils/Transforms/Passes.h.inc"
 
-namespace {
-
 /// Return the unitary operations in @p body.
 template <typename UnitaryOpInterface>
-SmallVector<UnitaryOpInterface> getBodyUnitaries(Block& body) {
+static SmallVector<UnitaryOpInterface> getBodyUnitaries(Block& body) {
   return llvm::to_vector(body.getOps<UnitaryOpInterface>());
 }
 
 /// Return the distinct qubit operands of @p op in operand order.
 template <typename QubitType>
-SmallVector<Value> getQubitOperands(Operation* op) {
+static SmallVector<Value> getQubitOperands(Operation* op) {
   SmallVector<Value> qubits;
   for (auto operand : op->getOperands()) {
     if (isa<QubitType>(operand.getType()) &&
@@ -58,8 +56,8 @@ SmallVector<Value> getQubitOperands(Operation* op) {
 /// Fails if a classical operation is impure or depends on values defined in
 /// @p body.
 template <typename UnitaryOpInterface>
-LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
-                                RewriterBase& rewriter) {
+static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
+                                       RewriterBase& rewriter) {
   const auto isClassical = [](Operation& op) {
     return !isa<UnitaryOpInterface>(op) &&
            !op.hasTrait<OpTrait::IsTerminator>();
@@ -82,8 +80,9 @@ LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
 
 /// Clone @p unitary into the body of a new modifier, replacing its qubit
 /// operands @p qubits with the block arguments @p args, and return its results.
-SmallVector<Value> cloneIntoBody(Operation* unitary, ValueRange qubits,
-                                 ValueRange args, RewriterBase& rewriter) {
+static SmallVector<Value> cloneIntoBody(Operation* unitary, ValueRange qubits,
+                                        ValueRange args,
+                                        RewriterBase& rewriter) {
   IRMapping mapping;
   mapping.map(qubits, args);
   auto results = rewriter.clone(*unitary, mapping)->getResults();
@@ -95,7 +94,7 @@ SmallVector<Value> cloneIntoBody(Operation* unitary, ValueRange qubits,
 //===----------------------------------------------------------------------===//
 
 /// Unroll a `qc.ctrl` modifier with more than one body unitary.
-LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
+static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
     return failure();
   }
@@ -120,7 +119,7 @@ LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
 }
 
 /// Unroll a `qc.inv` modifier with more than one body unitary.
-LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
+static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
     return failure();
   }
@@ -149,20 +148,27 @@ LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
 // QCO
 //===----------------------------------------------------------------------===//
 
-/// Check that every unitary operation in @p body threads its qubit operands to
-/// its results, which is required to rewire the unrolled modifiers.
-bool hasThreadedBodyUnitaries(Block& body) {
+/// Check that @p body can be rewired, which requires every unitary operation to
+/// thread its qubit operands to its results and every qubit that the body uses
+/// or yields to be defined in the body.
+static bool isRewirableBody(Block& body) {
+  const auto isDefinedInBody = [&body](Value qubit) {
+    return qubit.getParentBlock() == &body;
+  };
   return llvm::all_of(body.getOps<qco::UnitaryOpInterface>(),
-                      [](qco::UnitaryOpInterface unitary) {
-                        return unitary->getNumResults() ==
-                               getQubitOperands<qco::QubitType>(unitary).size();
-                      });
+                      [&](qco::UnitaryOpInterface unitary) {
+                        const auto qubits =
+                            getQubitOperands<qco::QubitType>(unitary);
+                        return unitary->getNumResults() == qubits.size() &&
+                               llvm::all_of(qubits, isDefinedInBody);
+                      }) &&
+         llvm::all_of(body.getTerminator()->getOperands(), isDefinedInBody);
 }
 
 /// Unroll a `qco.ctrl` modifier with more than one body unitary.
-LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
+static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
-  if (op.getNumBodyUnitaries() < 2 || !hasThreadedBodyUnitaries(*body)) {
+  if (op.getNumBodyUnitaries() < 2 || !isRewirableBody(*body)) {
     return failure();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
@@ -199,9 +205,9 @@ LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
 }
 
 /// Unroll a `qco.inv` modifier with more than one body unitary.
-LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
+static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
-  if (op.getNumBodyUnitaries() < 2 || !hasThreadedBodyUnitaries(*body)) {
+  if (op.getNumBodyUnitaries() < 2 || !isRewirableBody(*body)) {
     return failure();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
@@ -234,6 +240,8 @@ LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
                               [&](Value arg) { return qubits.lookup(arg); }));
   return success();
 }
+
+namespace {
 
 struct UnrollModifiers final : impl::UnrollModifiersBase<UnrollModifiers> {
 protected:
