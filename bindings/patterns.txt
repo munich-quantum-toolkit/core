@@ -86,6 +86,48 @@ mqt\.core\.fomac\.Device\.Operation\.query_custom_property$:
     ) -> str | bool | int | float | bytes | None:
         \doc
 
+mqt\.core\.mlir\.CompilerTarget\.__init__$:
+    \from collections.abc import Sequence
+    \from typing import overload
+    @overload
+    def __init__(
+        self,
+        num_qubits: int,
+        *,
+        couplings: Sequence[tuple[int, int]] | None = None,
+        operations: Sequence[CompilerTarget.Operation] | None = None,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: str,
+        num_qubits: int,
+        *,
+        couplings: Sequence[tuple[int, int]] | None = None,
+        operations: Sequence[CompilerTarget.Operation] | None = None,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        sites: Sequence[CompilerTarget.Site],
+        *,
+        couplings: Sequence[tuple[int, int]] | None = None,
+        operations: Sequence[CompilerTarget.Operation] | None = None,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: str,
+        sites: Sequence[CompilerTarget.Site],
+        *,
+        couplings: Sequence[tuple[int, int]] | None = None,
+        operations: Sequence[CompilerTarget.Operation] | None = None,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+
 mqt.core.mlir.compile_program:
     \from typing import overload, Literal
     @overload
@@ -96,10 +138,12 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -112,10 +156,12 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -128,10 +174,29 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
+        *,
+        output: Literal[OutputFormat.OPENQASM3],
+        inplace: bool = False,
+        qco_pipeline: str = "mqt-qco-default",
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> OpenQASMProgram: ...
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | mqt.core.ir.QuantumComputation
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.JEFF],
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -144,10 +209,12 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -160,12 +227,14 @@ mqt.core.mlir.compile_program:
         | qiskit.circuit.QuantumCircuit
         | QCProgram
         | QCOProgram
-        | JeffProgram,
+        | JeffProgram
+        | OpenQASMProgram,
         *,
         output: OutputFormat,
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
-    ) -> QCProgram | QCOProgram | JeffProgram | QIRProgram:
+    ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
         \doc

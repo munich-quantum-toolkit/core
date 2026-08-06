@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -15,7 +16,9 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/Passes.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -28,9 +31,11 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -38,6 +43,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <cassert>
@@ -46,19 +52,16 @@
 #include <functional>
 #include <memory>
 #include <random>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::utils;
 
 namespace {
-struct Device {
-  size_t nqubits{};
-  DenseSet<std::pair<size_t, size_t>> couplingSet;
-};
-
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 SmallVector<Value> getQubitValues(ValueRange values) {
   return to_vector(llvm::make_filter_range(
@@ -68,9 +71,9 @@ SmallVector<Value> getQubitValues(ValueRange values) {
 
 /// Return true, if the operations within a region fulfill the given coupling
 /// constraints.
-static bool
-isExecutable(Region& body, DenseMap<Value, size_t>& m,
-             const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
+static bool isExecutable(Region& body,
+                         DenseMap<Value, CompilerTarget::SiteId>& m,
+                         const CompilerTarget& target) {
   for (Operation& op : body.getOps()) {
     if (auto staticOp = dyn_cast<StaticOp>(op)) {
       m.try_emplace(staticOp.getQubit(), staticOp.getIndex());
@@ -81,10 +84,12 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
       if (!isa<BarrierOp>(op) && unitaryOp.getNumQubits() > 1) {
         assert(unitaryOp.getNumQubits() <= 2 && "expected two-qubit decomp.");
 
-        const auto hwA = m.at(unitaryOp.getInputQubit(0));
-        const auto hwB = m.at(unitaryOp.getInputQubit(1));
-        if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
-          llvm::dbgs() << "The two-qubit gate (" << hwA << ", " << hwB
+        const auto siteA = m.at(unitaryOp.getInputQubit(0));
+        const auto siteB = m.at(unitaryOp.getInputQubit(1));
+        const auto vertexA = target.vertexForSite(siteA);
+        const auto vertexB = target.vertexForSite(siteB);
+        if (!vertexA || !vertexB || !target.areAdjacent(*vertexA, *vertexB)) {
+          llvm::dbgs() << "The two-qubit gate (" << siteA << ", " << siteB
                        << ") is not executable: \n";
           unitaryOp->dump();
           return false;
@@ -134,13 +139,13 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 
       const auto qubitArgs = getQubitValues(region.getArguments());
 
-      DenseMap<Value, size_t> localM;
+      DenseMap<Value, CompilerTarget::SiteId> localM;
       for (const auto [arg, hw] :
            llvm::zip_equal(qubitArgs, initialHardwareOrder)) {
         localM.try_emplace(arg, hw);
       }
 
-      if (!isExecutable(region, localM, couplingSet)) {
+      if (!isExecutable(region, localM, target)) {
         return false;
       }
 
@@ -208,20 +213,31 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 }
 
 /// Return true, if the entry point fulfills the given coupling constraints.
-static bool
-isExecutable(func::FuncOp entry,
-             const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
-  DenseMap<Value, size_t> m;
-  return isExecutable(entry.getFunctionBody(), m, couplingSet);
+static bool isExecutable(func::FuncOp entry, const CompilerTarget& target) {
+  DenseMap<Value, CompilerTarget::SiteId> m;
+  return isExecutable(entry.getFunctionBody(), m, target);
 }
 
-/// Return a 9x9 square-grid coupling set.
-static Device getNineQubitSquareGrid() {
-  return {.nqubits = 9,
-          .couplingSet = {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
-                          {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
-                          {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
-                          {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}}};
+/// Return a nxn square-grid compiler target.
+static CompilerTarget getSquareGridTarget(const size_t n) {
+  const auto numTarget = n * n;
+
+  std::vector<CompilerTarget::Coupling> couplings;
+  couplings.reserve(n * n);
+
+  for (size_t r = 0; r < n; ++r) {
+    for (size_t c = 0; c < n; ++c) {
+      const auto i = (r * n) + c;
+      if (c + 1 < n) {
+        couplings.emplace_back(i, i + 1);
+      }
+      if (r + 1 < n) {
+        couplings.emplace_back(i, i + n);
+      }
+    }
+  }
+
+  return CompilerTarget(numTarget, std::move(couplings));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -265,10 +281,19 @@ static void loopGHZ(QCOProgramBuilder& builder, Value& tensor,
                .front();
 }
 
+/// Creates an N-qubit CX/CZ circuit.
+static void cxcz(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+  for (size_t i = 0; i + 1 < qubits.size(); ++i) {
+    std::tie(qubits[i], qubits[i + 1]) = builder.cx(qubits[i], qubits[i + 1]);
+  }
+  for (size_t i = 0; i + 2 < qubits.size(); ++i) {
+    std::tie(qubits[i], qubits[i + 2]) = builder.cz(qubits[i], qubits[i + 2]);
+  }
+}
+
 namespace {
 
-class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<Device> {
+class MappingPassFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
@@ -279,29 +304,160 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static LogicalResult
-  runPass(ModuleOp m, const DenseSet<std::pair<size_t, size_t>>& couplingSet,
-          const MappingPassOptions& options) {
+  static LogicalResult runPass(ModuleOp m, const CompilerTarget& target,
+                               const MappingPassOptions& options) {
     PassManager pm(m->getContext());
-    pm.addPass(createMappingPass(couplingSet, options));
-    return pm.run(m);
+    pm.addPass(createMappingPass(target, options));
+    if (failed(pm.run(m))) {
+      return failure();
+    }
+
+    RewritePatternSet patterns(m.getContext());
+    SinkOp::getCanonicalizationPatterns(patterns, m.getContext());
+    return applyPatternsGreedily(m, std::move(patterns));
   }
 
   std::unique_ptr<MLIRContext> context;
 };
 
+class MappingPassTest : public MappingPassFixture,
+                        public testing::WithParamInterface<CompilerTarget> {};
+
 }; // namespace
 
+TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
+  constexpr int64_t size = 3;
+
+  const CompilerTarget target(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
+      std::vector<CompilerTarget::Operation>{});
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+
+  SmallVector<Value> qubits(size);
+  SmallVector<Value> bits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
+  qubits[0] = builder.x(qubits[0]);
+  std::tie(qubits[0], qubits[1]) = builder.rxx(0.25, qubits[0], qubits[1]);
+  std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+
+  for (int64_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
+  }
+
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numSwaps = 0;
+  m->walk([&](SWAPOp) { ++numSwaps; });
+  EXPECT_GT(numSwaps, 0);
+}
+
+TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
+  constexpr int64_t size = 3;
+
+  std::vector<CompilerTarget::Site> sites;
+  sites.emplace_back(7);
+  sites.emplace_back(19);
+  sites.emplace_back(42);
+
+  const CompilerTarget target(
+      std::move(sites),
+      std::vector<CompilerTarget::Coupling>{{7, 19}, {19, 42}},
+      std::vector<CompilerTarget::Operation>{});
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+
+  SmallVector<Value> qubits(size);
+  SmallVector<Value> bits(size);
+
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
+  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+  std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+  for (int64_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
+  }
+
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  const DenseSet<CompilerTarget::SiteId> expectedSites{7, 19, 42};
+  size_t numStatics = 0;
+  m->walk([&](StaticOp op) {
+    ++numStatics;
+    EXPECT_TRUE(expectedSites.contains(op.getIndex()));
+  });
+  EXPECT_EQ(numStatics, 3);
+}
+
+TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
+  constexpr size_t numTargetQubits = 64;
+  std::vector<CompilerTarget::Coupling> couplings;
+  couplings.reserve(numTargetQubits - 1);
+  for (size_t site = 1; site < numTargetQubits; ++site) {
+    couplings.emplace_back(0, static_cast<int64_t>(site));
+  }
+
+  const CompilerTarget target(numTargetQubits, std::move(couplings));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
+
+  SmallVector<Value> bits(2);
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  std::tie(q0, q1) = builder.cx(q0, q1);
+  std::tie(q0, bits[0]) = builder.measure(q0);
+  std::tie(q1, bits[1]) = builder.measure(q1);
+  builder.sink(q0);
+  builder.sink(q1);
+
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(runPass(m.get(), target,
+                      MappingPassOptions{.niterations = 1, .ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numStatics = 0;
+  size_t numSinks = 0;
+  m->walk([&](StaticOp) { ++numStatics; });
+  m->walk([&](SinkOp) { ++numSinks; });
+  EXPECT_GE(numStatics, 2);
+  EXPECT_LE(numStatics, 3);
+  EXPECT_LT(numStatics, numTargetQubits);
+  EXPECT_EQ(numSinks, numStatics);
+}
+
 TEST_P(MappingPassTest, FailNoEntryPoint) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
 
   OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = runPass(m.get(), target, MappingPassOptions{});
   ASSERT_TRUE(res.failed());
 }
 
-TEST_P(MappingPassTest, FailNoQubitAllocations) {
-  const auto& device = GetParam();
+TEST_P(MappingPassTest, MapScalarAllocation) {
+  const auto& target = GetParam();
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
@@ -314,13 +470,210 @@ TEST_P(MappingPassTest, FailNoQubitAllocations) {
   builder.sink(q0);
 
   auto m = builder.finalize(c0);
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = runPass(m.get(), target, MappingPassOptions{});
 
-  ASSERT_TRUE(res.failed());
+  ASSERT_TRUE(res.succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numAllocations = 0;
+  size_t numStatics = 0;
+  m->walk([&](AllocOp) { ++numAllocations; });
+  m->walk([&](StaticOp) { ++numStatics; });
+  EXPECT_EQ(numAllocations, 0);
+  EXPECT_EQ(numStatics, 1);
+}
+
+TEST_P(MappingPassTest, MapMixedScalarAndTensorAllocations) {
+  const auto& target = GetParam();
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value scalar = builder.allocQubit();
+  Value tensor = builder.qtensorAlloc(2);
+  Value tensorQubit0;
+  Value tensorQubit1;
+  std::tie(tensor, tensorQubit0) = builder.qtensorExtract(tensor, 0);
+  std::tie(tensor, tensorQubit1) = builder.qtensorExtract(tensor, 1);
+
+  scalar = builder.h(scalar);
+  std::tie(scalar, tensorQubit0) = builder.cx(scalar, tensorQubit0);
+  std::tie(tensorQubit0, tensorQubit1) =
+      builder.rzx(0.5, tensorQubit0, tensorQubit1);
+
+  builder.sink(scalar);
+  tensor = builder.qtensorInsert(tensorQubit0, tensor, 0);
+  tensor = builder.qtensorInsert(tensorQubit1, tensor, 1);
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numScalarAllocations = 0;
+  size_t numTensorAllocations = 0;
+  m->walk([&](AllocOp) { ++numScalarAllocations; });
+  m->walk([&](qtensor::AllocOp) { ++numTensorAllocations; });
+  EXPECT_EQ(numScalarAllocations, 0);
+  EXPECT_EQ(numTensorAllocations, 0);
+}
+
+TEST_P(MappingPassTest, MapProgramAfterQubitReuse) {
+  const auto& target = GetParam();
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize({builder.getI1Type(), builder.getI1Type()});
+
+  Value q0 = builder.allocQubit();
+  q0 = builder.h(q0);
+  Value bit0;
+  std::tie(q0, bit0) = builder.measure(q0);
+  builder.sink(q0);
+
+  Value q1 = builder.allocQubit();
+  q1 = builder.x(q1);
+  Value bit1;
+  std::tie(q1, bit1) = builder.measure(q1);
+  builder.sink(q1);
+
+  auto m = builder.finalize({bit0, bit1});
+  PassManager pm(context.get());
+  pm.addPass(createReuseQubits());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createMappingPass(target, MappingPassOptions{.ntrials = 1}));
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(pm.run(m.get()).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numStatics = 0;
+  size_t numResets = 0;
+  m->walk([&](StaticOp) { ++numStatics; });
+  m->walk([&](ResetOp) { ++numResets; });
+  EXPECT_EQ(numStatics, 1);
+  EXPECT_EQ(numResets, 1);
+}
+
+TEST_P(MappingPassTest, FailNestedScalarAllocation) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %condition = arith.constant true
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %nested = qco.alloc : !qco.qubit
+          qco.sink %nested : !qco.qubit
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "target mapping requires dynamic qubit allocations in the entry "
+              "function body"))
+      << diagnostics;
+}
+
+TEST_P(MappingPassTest, FailNestedTensorAllocation) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %condition = arith.constant true
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %nested = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+          qtensor.dealloc %nested : tensor<1x!qco.qubit>
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "target mapping requires dynamic qubit allocations in the entry "
+              "function body"))
+      << diagnostics;
+}
+
+TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
+  const auto& target = GetParam();
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
+                            builder.allocQubit()};
+  qubits = llvm::to_vector(builder.qcoIf(
+      true, qubits,
+      [&](ValueRange args) {
+        auto [controls, targetQubit] = builder.mcx({args[0], args[1]}, args[2]);
+        return SmallVector<Value>{controls[0], controls[1], targetQubit};
+      },
+      [](ValueRange args) { return llvm::to_vector(args); }));
+  for (const auto qubit : qubits) {
+    builder.sink(qubit);
+  }
+
+  auto m = builder.finalize();
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("decompose it to one- and two-qubit operations first"))
+      << diagnostics;
+
+  size_t numAllocations = 0;
+  size_t numStatics = 0;
+  m->walk([&](AllocOp) { ++numAllocations; });
+  m->walk([&](StaticOp) { ++numStatics; });
+  EXPECT_EQ(numAllocations, 3);
+  EXPECT_EQ(numStatics, 0);
 }
 
 TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
@@ -341,14 +694,14 @@ TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
   builder.qtensorDealloc(tensor0);
 
   auto m = builder.finalize(c0);
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = runPass(m.get(), target, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
 
 TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
-  const auto& device = GetParam();
-  const auto size = static_cast<int64_t>(device.nqubits) + 1;
+  const auto& target = GetParam();
+  const auto size = static_cast<int64_t>(target.numQubits()) + 1;
 
   SmallVector<Value> bits(size);
   SmallVector<Value> qubits(size);
@@ -371,13 +724,13 @@ TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = runPass(m.get(), target, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
 
 TEST_P(MappingPassTest, MapFlatGHZ) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   const int64_t size = 3;
 
   SmallVector<Value> qubits(size);
@@ -406,25 +759,23 @@ TEST_P(MappingPassTest, MapFlatGHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
-  const auto& device = GetParam();
-  const auto size = static_cast<int64_t>(device.nqubits);
+  const auto& target = GetParam();
+  const auto size = static_cast<int64_t>(target.numQubits());
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
 
   PassManager pm(context.get());
   pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll());
-  pm.addPass(createCSEPass());
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
+  populateQCOCleanupPipeline(pm);
+  pm.addPass(createMappingPass(target, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -450,25 +801,20 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = pm.run(m.get());
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(pm.run(m.get()).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapGroverLike) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   const int64_t size = 5;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
 
-  PassManager pm(context.get());
-  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
-
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(5, builder.getI1Type()));
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
 
   Value tensor = builder.qtensorAlloc(4);
   Value flagTensor = builder.qtensorAlloc(1);
@@ -516,22 +862,18 @@ TEST_P(MappingPassTest, MapGroverLike) {
   builder.qtensorDealloc(flagTensor);
 
   auto m = builder.finalize(bits);
-  auto res = pm.run(m.get());
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapParallelLoops) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr int64_t size = 6;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
-
-  PassManager pm(context.get());
-  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -595,15 +937,14 @@ TEST_P(MappingPassTest, MapParallelLoops) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res = pm.run(m.get());
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
@@ -637,19 +978,17 @@ TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(verify(*module).succeeded());
-
-  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
-                      MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  EXPECT_TRUE(verify(*module).succeeded());
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(verify(*m).succeeded());
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(verify(*m).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
@@ -689,19 +1028,18 @@ TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(verify(*module).succeeded());
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(verify(*m).succeeded());
 
-  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
-                      MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  EXPECT_TRUE(verify(*module).succeeded());
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(verify(*m).succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapIfWithClassicalResult) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
@@ -738,18 +1076,17 @@ TEST_P(MappingPassTest, MapIfWithClassicalResult) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
-                      MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   IfOp ifOp;
-  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  m->walk([&](IfOp candidate) { ifOp = candidate; });
   ASSERT_TRUE(ifOp);
   ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
   EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(64));
@@ -760,7 +1097,7 @@ TEST_P(MappingPassTest, MapIfWithClassicalResult) {
 }
 
 TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%selector: index) -> i64
@@ -804,18 +1141,17 @@ TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
-                      MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
   IndexSwitchOp switchOp;
-  module->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
+  m->walk([&](IndexSwitchOp candidate) { switchOp = candidate; });
   ASSERT_TRUE(switchOp);
   ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
   EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
@@ -826,8 +1162,8 @@ TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
   }
 }
 
-TEST_P(MappingPassTest, RouteIndexSwitchRegions) {
-  const auto& device = GetParam();
+TEST_P(MappingPassTest, MapIndexSwitchRegions) {
+  const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%selector: index)
@@ -875,22 +1211,21 @@ TEST_P(MappingPassTest, RouteIndexSwitchRegions) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
-                      MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
 
   size_t numSwaps = 0;
-  module->walk([&](SWAPOp) { ++numSwaps; });
+  m->walk([&](SWAPOp) { ++numSwaps; });
   EXPECT_GT(numSwaps, 3);
 }
 
-TEST_P(MappingPassTest, RouteNestedOperationOnceWhileIndependentWiresAdvance) {
-  const auto& device = GetParam();
+TEST_P(MappingPassTest, MapNestedOperationOnceWhileIndependentWiresAdvance) {
+  const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%selector: index)
@@ -937,22 +1272,21 @@ TEST_P(MappingPassTest, RouteNestedOperationOnceWhileIndependentWiresAdvance) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
 
-  ASSERT_TRUE(runPass(module.get(), device.couplingSet,
-                      MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  EXPECT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(succeeded(verify(*m)));
 
   size_t numIndexSwitches = 0;
-  module->walk([&](IndexSwitchOp) { ++numIndexSwitches; });
+  m->walk([&](IndexSwitchOp) { ++numIndexSwitches; });
   EXPECT_EQ(numIndexSwitches, 1);
 }
 
 TEST_P(MappingPassTest, MapSABRECircuit) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr int64_t size = 6;
 
   SmallVector<Value> qubits(size);
@@ -1016,15 +1350,14 @@ TEST_P(MappingPassTest, MapSABRECircuit) {
   builder.qtensorDealloc(tensorDown);
 
   auto m = builder.finalize(bits);
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapBranchingGHZ) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   constexpr int64_t size = 7;
 
   SmallVector<Value> qubits(size);
@@ -1069,16 +1402,14 @@ TEST_P(MappingPassTest, MapBranchingGHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
-  auto res =
-      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapDoUntil) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   const auto size = 4;
 
   QCOProgramBuilder builder(context.get());
@@ -1132,16 +1463,14 @@ TEST_P(MappingPassTest, MapDoUntil) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res =
-      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapNestedForSwitch) {
-  const auto& device = GetParam();
+  const auto& target = GetParam();
   const auto size = 9;
 
   std::mt19937 gen(42);
@@ -1227,16 +1556,15 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
 TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
-  const DenseSet<std::pair<size_t, size_t>> line = {
-      {0, 1}, {1, 0}, {1, 2}, {2, 1}};
+  const CompilerTarget target(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}});
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -1267,7 +1595,7 @@ TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
 
   auto m = builder.finalize();
   ASSERT_TRUE(
-      runPass(m.get(), line, MappingPassOptions{.ntrials = 1}).succeeded());
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
 
   size_t numSwaps = 0;
   m->walk([&](SWAPOp) { ++numSwaps; });
@@ -1276,5 +1604,35 @@ TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
   EXPECT_EQ(numSwaps, 4UL);
 }
 
-INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,
-                         testing::Values(getNineQubitSquareGrid()));
+TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
+  const auto& target = GetParam();
+  const auto size = (target.numQubits() + 1) / 2;
+
+  SmallVector<Value> qubits(size);
+  SmallVector<Value> bits(size);
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+
+  for (size_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+  cxcz(builder, qubits);
+  for (int64_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
+  }
+
+  auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+INSTANTIATE_TEST_SUITE_P(ThreeByThreeSquareGrid, MappingPassTest,
+                         testing::Values(getSquareGridTarget(3)));
+INSTANTIATE_TEST_SUITE_P(FourByFourSquareGrid, MappingPassTest,
+                         testing::Values(getSquareGridTarget(4)));
+INSTANTIATE_TEST_SUITE_P(TenByTenSquareGrid, MappingPassTest,
+                         testing::Values(getSquareGridTarget(10)));

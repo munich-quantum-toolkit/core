@@ -342,22 +342,37 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
                 "auth.json");
 }
 
-#if MQT_CORE_QDMI_HAS_ALL_BUILTIN_DEVICES
 TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const TemporaryDirectory directory;
   const auto configFile = emptyConfig(directory);
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
   const qdmi::detail::DeviceRegistry registry;
-  ASSERT_EQ(registry.definitions().size(), 3);
+  ASSERT_EQ(registry.definitions().size(), 5);
   EXPECT_EQ(registry.definitions().at(0).id, "mqt.ddsim.default");
   EXPECT_EQ(registry.definitions().at(1).id, "mqt.na.default");
   EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.default");
+  EXPECT_EQ(registry.definitions().at(3).id, "mqt.sc.iqm.emerald");
+  EXPECT_EQ(registry.definitions().at(4).id, "mqt.sc.iqm.garnet");
   for (const auto& definition : registry.definitions()) {
     EXPECT_TRUE(std::filesystem::is_regular_file(definition.library));
   }
+
+  const auto assertPackagedModel = [&](const std::string_view id,
+                                       const std::string_view filename) {
+    const auto* definition = findDefinition(registry, id);
+    ASSERT_NE(definition, nullptr);
+    ASSERT_TRUE(definition->session.deviceConfiguration);
+    const auto* file = std::get_if<qdmi::FileDeviceConfiguration>(
+        &*definition->session.deviceConfiguration);
+    ASSERT_NE(file, nullptr);
+    EXPECT_EQ(file->path.filename(), filename);
+    EXPECT_EQ(file->path.parent_path(), definition->library.parent_path());
+    EXPECT_TRUE(std::filesystem::is_regular_file(file->path));
+  };
+  assertPackagedModel("mqt.sc.iqm.garnet", "iqm-garnet.json");
+  assertPackagedModel("mqt.sc.iqm.emerald", "iqm-emerald.json");
 }
-#endif
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
   const TemporaryDirectory directory;

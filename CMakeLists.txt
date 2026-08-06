@@ -70,6 +70,12 @@ option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI de
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
+if(BUILD_MQT_CORE_TESTS
+   AND (NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE
+        OR NOT BUILD_MQT_CORE_QDMI_NA_DEVICE
+        OR NOT BUILD_MQT_CORE_QDMI_SC_DEVICE))
+  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
+endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR

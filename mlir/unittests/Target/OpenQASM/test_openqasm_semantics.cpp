@@ -13,6 +13,7 @@
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
@@ -88,6 +89,24 @@ cx q, q;
   ASSERT_FALSE(analyzed.diagnostics.empty());
   EXPECT_NE(analyzed.diagnostics.front().message.find("same qubit"),
             std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; qubit q; barrier q, q;",
+      "OPENQASM 3.1; qubit[2] q; barrier q[0], q[0];",
+      "OPENQASM 3.1; qubit[2] q; int i = 0; barrier q, q[i];",
+      "OPENQASM 3.1; barrier $0, $0;",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("same qubit"),
+              std::string::npos);
+  }
 }
 
 TEST(OpenQASMFrontendTest, CompatibilityGatePolicyIsExplicit) {
@@ -1233,6 +1252,224 @@ TEST(OpenQASMFrontendTest, AcceptsMixedPhysicalAndDeclaredQubits) {
   for (const auto source : sources) {
     auto analyzed = oq3::frontend::analyzeOpenQASM(source);
     EXPECT_TRUE(analyzed) << source.str();
+  }
+}
+
+TEST(OpenQASMFrontendTest, SkipsOpenQASM2StdlibGateRedefinition) {
+  // OpenQASM 2.0 programs often repeat standard library gate definitions; keep
+  // the standard-library entry and drop the duplicate body.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+gate sx a { U(pi/2, -pi/2, pi/2) a; }
+sx q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::none_of(analyzed.program->gates, [](const auto& gate) {
+    return gate.name == "sx";
+  }));
+}
+
+TEST(OpenQASMFrontendTest, RejectsOpenQASM3StdlibGateShadowing) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+gate sx a { U(pi/2, -pi/2, pi/2) a; }
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("already declared"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, PrefersMatchingCompatibilityGateCatalogEntries) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate r(theta, phi) q {
+  x q;
+}
+qubit q;
+r(0.5, 0.25) q;
+)qasm";
+
+  auto compatible = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(compatible) << compatible.diagnostics.front().message;
+  EXPECT_TRUE(llvm::none_of(compatible.program->gates,
+                            [](const auto& gate) { return gate.name == "r"; }));
+
+  auto strict = oq3::frontend::analyzeOpenQASM(
+      source, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  ASSERT_TRUE(strict) << strict.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(strict.program->gates,
+                           [](const auto& gate) { return gate.name == "r"; }));
+}
+
+TEST(OpenQASMFrontendTest, RejectsCompatibilityGateSignatureMismatch) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"qasm(OPENQASM 3.1;
+gate r(theta) q {}
+)qasm",
+      R"qasm(OPENQASM 3.1;
+gate r(theta, phi) q0, q1 {}
+)qasm",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(
+                  "does not match its compatibility signature"),
+              std::string::npos);
+  }
+}
+
+TEST(OpenQASMFrontendTest, AcceptsOpenQASM2PartialClassicalRegisterIf) {
+  // Classic OpenQASM 2.0: if (c == k) after measuring only some bits of c.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+measure q[0] -> c[0];
+if(c==1) x q[1];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralInOpenQASM2If) {
+  // 2^70 + 9 fits in an 80-bit register but exceeds uint64_t.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==1180591620717411303433) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+  }));
+}
+
+TEST(OpenQASMFrontendTest,
+     AcceptsWideIntegerLiteralWithDigitSeparatorsInOpenQASM2If) {
+  // Same value as above, spelled with grammar-legal digit separators.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==1_180_591_620_717_411_303_433) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+  }));
+}
+
+TEST(OpenQASMFrontendTest,
+     FoldsNonFittingWideIntegerOpenQASM2RegisterCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==123456789012345678901234567890) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  const oq3::frontend::IfStatement* conditional = nullptr;
+  for (const auto statement : analyzed.program->body) {
+    conditional = std::get_if<oq3::frontend::IfStatement>(
+        &analyzed.program->statements[statement].data);
+    if (conditional != nullptr) {
+      break;
+    }
+  }
+  ASSERT_NE(conditional, nullptr);
+  const auto& condition = analyzed.program->conditions[conditional->condition];
+  ASSERT_EQ(condition.kind, oq3::frontend::ConditionKind::Literal);
+  EXPECT_FALSE(condition.literal);
+}
+
+TEST(OpenQASMFrontendTest, AcceptsNarrowConstantAgainstWideOpenQASM2Register) {
+  // Zero-extend a narrow constant across the full >64-bit register.
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[80];
+measure q[0] -> c[0];
+if(c==1) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  // Truncating to 64 bits would omit Not(c[79]).
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [&](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Not &&
+           analyzed.program->conditions[c.lhs].kind ==
+               oq3::frontend::ConditionKind::Bit &&
+           analyzed.program->conditions[c.lhs].bit.index == 79;
+  }));
+}
+
+TEST(OpenQASMFrontendTest, RejectsNegativeOpenQASM2RegisterCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[2];
+if(c==-1) x q[0];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("unsigned integer"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, RejectsWideIntegerLiteralInOrdinaryConstants) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; int value = 999999999999999999999999999999;",
+      "OPENQASM 3.1; int value = 999_999_999_999_999_999_999_999_999_999;",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("exceeds 64-bit"),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
+}
+
+TEST(OpenQASMFrontendTest,
+     RejectsWideIntegerLiteralInShortCircuitedConstantOperands) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; const bool value = false && "
+      "(999999999999999999999999999999 == 0);",
+      "OPENQASM 3.1; const bool value = true || "
+      "(999999999999999999999999999999 == 0);",
+  });
+  for (const auto source : sources) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed) << source.str();
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("exceeds 64-bit"),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
   }
 }
 

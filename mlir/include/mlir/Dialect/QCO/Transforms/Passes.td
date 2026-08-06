@@ -33,10 +33,19 @@ def MergeSingleQubitRotationGates
     The gates are then folded one by one via the Hamilton product into a single quaternion, which is decomposed back into ZYZ Euler angles and emitted as a single `UOp`, representing the same rotation as the chain of single gates.
     The global phase of each gate is tracked alongside and combined together.
 
+    When every angle in the chain is a compile-time constant, the same algorithm
+    runs on host scalars and emits constant `U` / `gphase` results directly.
+    Otherwise it emits `arith` / `math` operations that compute the merged
+    parameters at run time.
+
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
-    Each merge emits a `GPhaseOp` carrying the accumulated input phase of the chain.
-    Because the synthesized `UOp` introduces an additional intrinsic phase of $(\phi + \lambda) / 2$, the `GPhaseOp` must compensate for it.
-    This applies even to chains composed entirely of $\mathrm{SU} (2)$ gates (`rx`, `ry`, `rz`, `r`) because the synthesis into a `UOp` still produces the intrinsic phase term.
+    Each merge computes a global-phase correction of
+    $\mathrm{inputPhase} - (\phi + \lambda) / 2$, which compensates for the
+    intrinsic phase of the synthesized `UOp`. This applies even to chains of
+    purely $\mathrm{SU} (2)$ gates (`rx`, `ry`, `rz`, `r`).
+    On the host (static) path, a near-zero correction may be omitted; on the
+    SSA (dynamic) path a `GPhaseOp` is always emitted and may later be removed
+    by global-phase normalization when it folds to near zero.
   }];
 }
 
@@ -67,80 +76,6 @@ def FuseSingleQubitUnitaryRuns
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
-def FuseTwoQubitUnitaryRuns
-    : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect",
-                           "::mlir::arith::ArithDialect"];
-  let summary = "Lower supported one- and two-qubit QCO unitaries to a "
-                "user-specified native gate menu.";
-  let description = [{
-    Rewrites supported one- and two-qubit unitaries to match the comma-separated
-    `native-gates` gateset. Fusion and synthesis require unitary matrices that
-    are available at compile time. Already-native runtime-parameterized
-    operations remain valid, but an off-gateset operation without a compile-time
-    matrix cannot be synthesized and causes the pass to fail.
-
-    `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is within the
-    two-qubit scope only when it has a single control and a single target. Every
-    entangler token listed in the menu is accepted as already native: bare
-    `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`, `qco.iswap`, or `qco.ecr`, or a
-    `qco.ctrl` with exactly one `qco.x` or `qco.z` body when `cx` or `cz` is
-    listed. Runtime-parameterized `rxx`/`ryy`/`rzx`/`rzz` operations remain
-    valid when their token is listed, although only operations with compile-time
-    matrices can participate in fusion or off-gateset synthesis. Entangler
-    preference (below) selects the Weyl synthesis basis only and does not
-    restrict which menu tokens count as native. Weyl synthesis emits
-    `rxx`/`ryy`/`rzx`/`rzz` at a fixed angle of π/2. Gates acting on more than
-    two qubits (e.g. multi-controlled `qco.ctrl`) are out of scope and left
-    untouched for a dedicated multi-controlled synthesis pass.
-
-    The gateset is a comma-separated list of gate tokens (order not
-    significant) from which the pass resolves a single-qubit Euler basis
-    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
-    `x`, `sx`, and `rz` are present; IQM-style `qco.r` when `r` is present;
-    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus one
-    two-qubit entangler from `rxx`, `ryy`, `rzx`, `rzz`, `iswap`, `cz`, `cx`, or
-    `ecr`.
-
-    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `rxx`, `ryy`,
-    `rzx`, `rzz`, `iswap`, `cz`, `cx`, `ecr`. An empty or whitespace-only
-    gateset is a no-op, which is the intended pipeline default when synthesis is
-    not needed. An unrecognised token causes the pass to fail.
-
-    Example gatesets (each line is one illustrative gateset; pick one entangler
-    or list several if multiple are native):
-    - IBM: `x,sx,rz,cx`, `x,sx,rz,cz`, or `x,sx,rz,ecr`
-    - Generic single-qubit U: `u,rxx`, `u,ryy`, `u,rzx`, `u,rzz`, `u,iswap`,
-      `u,cz`, `u,cx`, or `u,ecr`
-    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
-    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
-      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
-
-    When several entanglers are listed, synthesis preference is `rxx` > `ryy` >
-    `rzx` > `rzz` > `iswap` > `cz` > `cx` > `ecr` (alphabetic among two-qubit
-    rotations; then discrete named gates; ECR last).
-
-    Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
-    which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
-    and lower any remaining off-gateset two-qubit ops via Weyl synthesis; fuse
-    the single-qubit seams introduced by that synthesis. The pass fails if any
-    single- or two-qubit op remains off the native gateset afterwards; gates on
-    more than two qubits are left untouched and do not cause a failure.
-
-    Lowering is deterministic: entangler preference is `rxx` > `ryy` > `rzx` >
-    `rzz` > `iswap` > `cz` > `cx` > `ecr`; single-qubit factors use the resolved
-    Euler basis; and two-qubit run replacement uses the minimal entangler count
-    from the synthesizer.
-  }];
-  let options = [Option<
-      "nativeGates", "native-gates", "std::string", "\"\"",
-      "Comma-separated native gateset. Empty or whitespace-only is "
-      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, rxx, ryy, rzx, rzz, iswap, "
-      "cz, cx, ecr. "
-      "Examples: x,sx,rz,cx; x,sx,rz,ecr; u,rxx; u,ryy; u,rzx; u,rzz; u,iswap; "
-      "u,cx; r,cz; rx,rz,cx; x,sx,rz,rzz.">];
-}
-
 //===----------------------------------------------------------------------===//
 
 def QuantumLoopUnroll
@@ -168,13 +103,20 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let summary = "This pass ensures that a program meets the connectivity "
                 "constraints of a target architecture.";
   let description = [{
-    This pass maps the dynamically allocated qubits in a quantum program to the static qubits of a target architecture.
-    The pass performs both placement and routing of the qubits to ensure that all two-qubit operations in the program
-    can be executed on the target architecture.
+    This pass maps top-level scalar and tensor-backed dynamically allocated
+    qubits in a quantum program to the static sites of a `CompilerTarget`. It
+    uses only the target's undirected coupling topology: arbitrary one-qubit
+    operations pass through, and every two-qubit operation is routed to adjacent
+    target vertices. Higher-arity unitaries must be decomposed before mapping.
+    Target-defined site identifiers are retained in the resulting
+    `qco.static` operations.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
-    mapping, which is referred to as the initial layout. Then, it traverses the circuit and inserts `SWAP` operations to
-    ensure that all two-qubit operations are executable on the target architecture, a process known as routing.
+    mapping, which is referred to as the initial layout. The layout covers the
+    complete target virtually, while only program qubits and vacant sites used
+    as routing workspace are materialized. Then, the pass traverses the circuit
+    and inserts `qco.swap` operations to ensure that all two-qubit operations
+    are executable on the target architecture, a process known as routing.
 
     For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
     or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
@@ -383,32 +325,44 @@ def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Decompose controlled X/Z/phase gates and qco.rccx with at "
-                "least min-controls controls";
+  let summary = "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that "
+                "act on at least min-qubits qubits";
   let description = [{
-    Decomposes controlled X, Z, and constant-angle phase gates (`qco.ctrl` with
-    a `qco.x`, `qco.z`, or `qco.p` body, and `qco.rccx`) that have at least
-    `min-controls` controls.
+    Decomposes multi-qubit controlled operations that act on at least
+    `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
+    Supported shapes: `qco.ctrl` with a `qco.x`, `qco.z`, `qco.swap`, or
+    constant-angle `qco.p` body, and `qco.rccx`.
 
-    - Two or three controls (X/Z): elementary CCX/CCZ and CCCX/CCCZ; `rccx`
-      when `min-controls` is at most 2.
-    - Four or five controls (X/Z): specialized ancilla-free cores (relative-
-      phase `C^4(Z)`; Vale MCP(π) hybrid residual).
-    - Six or more controls (X/Z): Huang-Palsberg (HP24) borrowed-helper
-      synthesis with a compile-time CX policy table.
-    - Phase: optimized `C^2(P)` at two controls; Vale (Barenco-relative
-      residual at four) for three and four controls; da Silva-Park SP22
-      linear-depth decomposition at five and above. A compile-time angle of
-      `±π` is routed through the Z path for every control count.
+    | Family | Width (qubits) | Decomposition |
+    | ------ | -------------- | ------------- |
+    | X/Z | 3 | Elementary CCX/CCZ; `rccx` when `min-qubits` is at most 3 |
+    | X/Z | 4 | Elementary CCCX/CCCZ |
+    | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
+    | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with a compile-time CX policy table |
+    | Phase | 3 | Optimized `C^2(P)` |
+    | Phase | 4–5 | Vale (Barenco-relative residual) |
+    | Phase | ≥6 | da Silva-Park SP22 linear-depth |
+    | Phase | any (`±π`) | Routed through the Z path |
+    | SWAP | ≥ `min-qubits` | `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)` |
 
-    Intermediate two- and three-control building blocks may be left as
-    `qco.ctrl` / `qco.rccx` when `min-controls` keeps them; the greedy rewriter
-    lowers further when the threshold allows.
+    Width is the total number of qubits the gate acts on (controls plus
+    targets).
+
+    For controlled SWAP, `C ∪ {b}` is the original control set together with
+    SWAP target `b`, and the MCX target is the other SWAP qubit `a`. The
+    emitted MCX is then lowered by the X path under the same `min-qubits`
+    threshold.
+
+    Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
+    `min-qubits` keeps them; the greedy rewriter lowers further when the
+    threshold allows.
   }];
   let options = [Option<
-      "minControls", "min-controls", "uint64_t", "2",
-      "Decompose controlled X/Z/phase gates and qco.rccx with at least this "
-      "many controls (must be at least 2).">];
+      "minQubits", "min-qubits", "uint64_t", "3",
+      "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
+      "least this many qubits (must be at least 3; default 3 means wider than "
+      "two-qubit).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

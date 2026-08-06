@@ -15,6 +15,8 @@
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 #include <nlohmann/json_fwd.hpp>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <functional>
@@ -64,6 +66,68 @@ TEST(ScConfigurationTest, ParsesBundledDeviceStrictly) {
   EXPECT_EQ(device.couplings.back(), (std::pair<uint64_t, uint64_t>{89, 99}));
 }
 
+TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
+  const auto assertModel = [](const Device& device, const std::string& name,
+                              const size_t qubits, const size_t couplings,
+                              const size_t czSiteTuples) {
+    EXPECT_EQ(device.name, name);
+    EXPECT_EQ(device.numQubits, qubits);
+    EXPECT_EQ(device.couplings.size(), couplings);
+    EXPECT_EQ(device.durationUnit.unit, "us");
+    EXPECT_DOUBLE_EQ(device.durationUnit.scaleFactor, 0.001);
+    ASSERT_EQ(device.qubitProperties.overrides.size(), qubits);
+    for (size_t i = 0; i < qubits; ++i) {
+      const auto& qubit = device.qubitProperties.overrides[i];
+      EXPECT_EQ(qubit.qubit, i);
+      ASSERT_TRUE(qubit.name);
+      EXPECT_EQ(*qubit.name, "QB" + std::to_string(i + 1));
+    }
+
+    ASSERT_EQ(device.operations.size(), 3);
+    EXPECT_EQ(device.operations[0].name, "r");
+    EXPECT_EQ(device.operations[0].numParameters, 2);
+    EXPECT_EQ(device.operations[0].numQubits, 1);
+    EXPECT_EQ(device.operations[0].siteOverrides.size(), qubits);
+    EXPECT_EQ(device.operations[1].name, "cz");
+    EXPECT_EQ(device.operations[1].numParameters, 0);
+    EXPECT_EQ(device.operations[1].numQubits, 2);
+    EXPECT_EQ(device.operations[1].siteOverrides.size(), czSiteTuples);
+    EXPECT_EQ(device.operations[2].name, "measure");
+    EXPECT_EQ(device.operations[2].numParameters, 0);
+    EXPECT_EQ(device.operations[2].numQubits, 1);
+    EXPECT_EQ(device.operations[2].siteOverrides.size(), qubits);
+    for (const auto& operation : device.operations) {
+      EXPECT_FALSE(operation.duration);
+      for (const auto& siteOverride : operation.siteOverrides) {
+        EXPECT_FALSE(siteOverride.duration);
+        EXPECT_TRUE(siteOverride.fidelity);
+      }
+    }
+  };
+
+  const auto garnet = readJSON(IQM_GARNET_JSON);
+  assertModel(garnet, "IQM Garnet", 20, 30, 30);
+  EXPECT_EQ(std::ranges::count_if(
+                garnet.qubitProperties.overrides,
+                [](const auto& qubit) { return qubit.t1.has_value(); }),
+            20);
+  EXPECT_EQ(std::ranges::count_if(
+                garnet.qubitProperties.overrides,
+                [](const auto& qubit) { return qubit.t2.has_value(); }),
+            20);
+
+  const auto emerald = readJSON(IQM_EMERALD_JSON);
+  assertModel(emerald, "IQM Emerald", 54, 90, 81);
+  EXPECT_EQ(std::ranges::count_if(
+                emerald.qubitProperties.overrides,
+                [](const auto& qubit) { return qubit.t1.has_value(); }),
+            53);
+  EXPECT_EQ(std::ranges::count_if(
+                emerald.qubitProperties.overrides,
+                [](const auto& qubit) { return qubit.t2.has_value(); }),
+            54);
+}
+
 TEST(ScConfigurationTest, RejectsTopLevelSchemaErrors) {
   expectInvalid([](auto& root) { root["unknown"] = true; }, "unknown");
   expectInvalid([](auto& root) { root.erase("qubitProperties"); },
@@ -97,6 +161,30 @@ TEST(ScConfigurationTest, RejectsInvalidUnitsAndCalibration) {
             {{"qubit", 8}, {"t1", 0}});
       },
       "qubitProperties/overrides");
+  expectInvalid(
+      [](auto& root) {
+        root["qubitProperties"]["overrides"].push_back(
+            {{"qubit", 8}, {"name", ""}});
+      },
+      "qubitProperties/overrides");
+  expectInvalid(
+      [](auto& root) {
+        root["qubitProperties"]["overrides"].push_back({{"qubit", 8}});
+      },
+      "qubitProperties/overrides");
+}
+
+TEST(ScConfigurationTest, AcceptsOptionalSiteNames) {
+  auto root = bundledJson();
+  root["qubitProperties"]["overrides"].push_back(
+      {{"qubit", 8}, {"name", "QB9"}});
+  const auto device = readJSON(root.dump(), "site-name");
+  const auto& qubitOverride = device.qubitProperties.overrides.back();
+  EXPECT_EQ(qubitOverride.qubit, 8);
+  ASSERT_TRUE(qubitOverride.name);
+  EXPECT_EQ(*qubitOverride.name, "QB9");
+  EXPECT_FALSE(qubitOverride.t1);
+  EXPECT_FALSE(qubitOverride.t2);
 }
 
 TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {

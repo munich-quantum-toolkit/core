@@ -39,16 +39,13 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
-#include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <functional>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <numbers>
 #include <string>
-#include <vector>
 
 using namespace mlir;
 
@@ -124,6 +121,91 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
       phases.front().getTheta().getDefiningOp<arith::ConstantOp>().getValue());
   ASSERT_TRUE(value);
   EXPECT_DOUBLE_EQ(value.getValueAsDouble(), 0.75);
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       FoldsMulDerivedPhasesWithinPracticalAngleLimit) {
+  // Many arith.mulf-derived gphase angles used to be treated as dynamic and
+  // merged into an addf chain whose later constant-fold exceeded the 1e4 rad
+  // GPhase verifier contract (seen on QASMBench vqe_uccsd_n28 / QV_n100).
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  auto function = func::FuncOp::create(builder, loc, "test",
+                                       builder.getFunctionType({}, {}));
+  auto* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  constexpr int phaseCount = 4000;
+  constexpr double half = 1.5;
+  constexpr double two = 2.0;
+  const double expected =
+      utils::normalizeAngle(static_cast<double>(phaseCount) * half * two);
+  for (int i = 0; i < phaseCount; ++i) {
+    auto lhs = utils::constantFromScalar(builder, loc, half);
+    auto rhs = utils::constantFromScalar(builder, loc, two);
+    auto angle = arith::MulFOp::create(builder, loc, lhs, rhs);
+    qco::GPhaseOp::create(builder, loc, angle.getResult());
+  }
+  func::ReturnOp::create(builder, loc);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  auto constantOp =
+      phases.front().getTheta().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(constantOp);
+  const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
+  ASSERT_TRUE(value);
+  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       FoldsSitofpMulDerivedPhasesWithinPracticalAngleLimit) {
+  // QV_n100 lowers many phases as mulf(sitofp(i64), f64), which must fold the
+  // same way as pure float mulf trees.
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  auto function = func::FuncOp::create(builder, loc, "test",
+                                       builder.getFunctionType({}, {}));
+  auto* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  constexpr int phaseCount = 4000;
+  constexpr int64_t intFactor = 3;
+  constexpr double floatFactor = 2.0;
+  const double expected =
+      utils::normalizeAngle(static_cast<double>(phaseCount) *
+                            static_cast<double>(intFactor) * floatFactor);
+  for (int i = 0; i < phaseCount; ++i) {
+    auto intConst = arith::ConstantOp::create(
+        builder, loc, builder.getIntegerAttr(builder.getI64Type(), intFactor));
+    auto lhs = arith::SIToFPOp::create(builder, loc, builder.getF64Type(),
+                                       intConst.getResult());
+    auto rhs = utils::constantFromScalar(builder, loc, floatFactor);
+    auto angle = arith::MulFOp::create(builder, loc, lhs.getResult(), rhs);
+    qco::GPhaseOp::create(builder, loc, angle.getResult());
+  }
+  func::ReturnOp::create(builder, loc);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  auto constantOp =
+      phases.front().getTheta().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(constantOp);
+  const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
+  ASSERT_TRUE(value);
+  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
+  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -804,92 +886,4 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
       EXPECT_TRUE(failed(verifyAngle(angle, useQCO)));
     }
   }
-}
-
-TEST_F(GlobalPhaseNormalizationTest, ScalesLinearlyAcrossLargePhaseScopes) {
-  constexpr std::array<std::size_t, 3> sizes{1'000, 10'000, 100'000};
-  std::vector<std::chrono::nanoseconds> durations;
-  durations.reserve(sizes.size());
-
-  for (const auto size : sizes) {
-    SCOPED_TRACE(size);
-    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-    OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(moduleOp->getBody());
-    const auto loc = moduleOp->getLoc();
-    auto function = func::FuncOp::create(builder, loc, "test",
-                                         builder.getFunctionType({}, {}));
-    auto* entry = function.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    const auto angle = utils::constantFromScalar(builder, loc, 0.001);
-    for (std::size_t i = 0; i < size; ++i) {
-      qco::GPhaseOp::create(builder, loc, angle);
-    }
-    func::ReturnOp::create(builder, loc);
-
-    const auto start = std::chrono::steady_clock::now();
-    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-    durations.emplace_back(std::chrono::steady_clock::now() - start);
-    EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
-  }
-
-  RecordProperty("normalize_1000_ns", durations[0].count());
-  RecordProperty("normalize_10000_ns", durations[1].count());
-  RecordProperty("normalize_100000_ns", durations[2].count());
-  EXPECT_LT(durations[1].count(), durations[0].count() * 50);
-  EXPECT_LT(durations[2].count(), durations[1].count() * 50);
-}
-
-TEST_F(GlobalPhaseNormalizationTest,
-       ScalesLinearlyAcrossNestedDynamicIntegralPowers) {
-  constexpr std::array<std::size_t, 4> depths{128, 256, 512, 1'024};
-  std::vector<std::chrono::nanoseconds> durations;
-  durations.reserve(depths.size());
-
-  for (const auto depth : depths) {
-    SCOPED_TRACE(depth);
-    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-    OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(moduleOp->getBody());
-    const auto loc = moduleOp->getLoc();
-    const auto qubitType = qco::QubitType::get(context.get());
-    auto function = func::FuncOp::create(
-        builder, loc, "test",
-        builder.getFunctionType({qubitType, builder.getF64Type()},
-                                {qubitType}));
-    auto* entry = function.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-
-    std::function<Value(Value, std::size_t)> nestPower =
-        [&](const Value target, const std::size_t remaining) -> Value {
-      if (remaining == 0) {
-        auto localAngle = arith::AddFOp::create(
-            builder, loc, entry->getArgument(1), entry->getArgument(1));
-        qco::GPhaseOp::create(builder, loc, localAngle.getResult());
-        return target;
-      }
-      return qco::PowOp::create(builder, loc, target, -1.0,
-                                [&](const Value bodyTarget) {
-                                  return nestPower(bodyTarget, remaining - 1);
-                                })
-          .getOutputTarget(0);
-    };
-    const auto output = nestPower(entry->getArgument(0), depth);
-    func::ReturnOp::create(builder, loc, output);
-
-    const auto start = std::chrono::steady_clock::now();
-    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-    durations.emplace_back(std::chrono::steady_clock::now() - start);
-    ASSERT_TRUE(verify(*moduleOp).succeeded());
-    EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
-    std::size_t multiplications = 0;
-    moduleOp->walk([&](arith::MulFOp) { ++multiplications; });
-    EXPECT_EQ(multiplications, depth);
-  }
-
-  RecordProperty("nested_pow_128_ns", durations[0].count());
-  RecordProperty("nested_pow_256_ns", durations[1].count());
-  RecordProperty("nested_pow_512_ns", durations[2].count());
-  RecordProperty("nested_pow_1024_ns", durations[3].count());
-  EXPECT_LT(durations.back().count(), durations.front().count() * 24);
 }

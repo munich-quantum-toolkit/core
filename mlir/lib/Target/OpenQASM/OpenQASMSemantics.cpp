@@ -15,8 +15,12 @@
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -38,7 +42,6 @@
 #include <set>
 #include <stdexcept>
 #include <string>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -51,7 +54,7 @@ constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
 constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
 constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
-constexpr size_t TYPED_STATEMENT_LIMIT = 100'000;
+constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
 
 class SemanticError final : public std::runtime_error {
 public:
@@ -551,6 +554,11 @@ private:
               } else if constexpr (std::is_same_v<T, ForStatement> ||
                                    std::is_same_v<T, WhileStatement>) {
                 self(self, data.body, callback);
+              } else if constexpr (std::is_same_v<T, SwitchStatement>) {
+                for (const auto& switchCase : data.cases) {
+                  self(self, switchCase.body, callback);
+                }
+                self(self, data.defaultStatements, callback);
               }
             },
             statement.data);
@@ -797,6 +805,10 @@ private:
       const auto& expression = syntax.expressions[id];
       switch (expression.kind) {
       case Expr::Kind::Int:
+        if (!expression.wideInteger.empty()) {
+          fail(expression.location,
+               "integer literal exceeds 64-bit constant evaluation");
+        }
         if (expression.integer <=
             static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
           return {.type = ScalarType::Int,
@@ -1044,6 +1056,10 @@ private:
       const auto& expression = syntax.expressions[id];
       switch (expression.kind) {
       case Expr::Kind::Int:
+        if (!expression.wideInteger.empty()) {
+          fail(expression.location,
+               "integer literal exceeds 64-bit constant evaluation");
+        }
         return expression.integer <= static_cast<uint64_t>(
                                          std::numeric_limits<int64_t>::max())
                    ? ScalarType::Int
@@ -1880,6 +1896,8 @@ private:
             destination.push_back(analyzeFor(statement.location, data));
           } else if constexpr (std::is_same_v<T, SyntaxWhile>) {
             destination.push_back(analyzeWhile(statement.location, data));
+          } else if constexpr (std::is_same_v<T, SyntaxSwitch>) {
+            destination.push_back(analyzeSwitch(statement.location, data));
           }
         },
         statement.data);
@@ -2071,8 +2089,10 @@ private:
          .width = width,
          .isScalar = !declaration.size.has_value(),
          .location = getSourceLocation(location)});
+    // OpenQASM 2 classical bits are zero-initialized; OpenQASM 3 bits are not.
+    const bool initiallyInitialized = !isQubit && program.openQASM2;
     initializedBits.push_back(
-        std::make_shared<BitInitialization>(width, false));
+        std::make_shared<BitInitialization>(width, initiallyInitialized));
     dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
     bitGenerations.push_back(0);
     declare(location, declaration.identifier,
@@ -2114,6 +2134,26 @@ private:
     }
     if (const auto* catalog = lookupGate(declaration.identifier);
         catalog != nullptr && isGateAvailable(*catalog)) {
+      // OpenQASM 2 programs often repeat standard library gate definitions
+      // (e.g. `gate sx`). Prefer the standard-library entry and skip the
+      // duplicate body to avoid later inlining overhead.
+      if (program.openQASM2) {
+        return;
+      }
+      // MQT-compatible OpenQASM 3 may carry portable definitions for gates
+      // that the compatibility catalog lowers directly. Prefer the native
+      // lowering when the declaration has the catalog signature. Strict mode
+      // does not make compatibility entries available and analyzes the body as
+      // an ordinary custom gate.
+      if (catalog->availability == GateAvailability::Compatibility) {
+        if (declaration.parameters.size() != catalog->parameterCount ||
+            declaration.qubits.size() != catalog->qubitCount()) {
+          fail(location, "gate '" + declaration.identifier +
+                             "' does not match its compatibility signature");
+        }
+        return;
+      }
+      // OpenQASM 3 rejects shadowing language and standard-library gates.
       fail(location,
            "gate '" + declaration.identifier + "' is already declared");
     }
@@ -2204,6 +2244,55 @@ private:
       auto selection = resolveQubitOperand(operand);
       qubits.insert(qubits.end(), selection.begin(), selection.end());
     }
+
+    if (barrier.operands.size() > 1) {
+      llvm::DenseSet<std::pair<RegisterId, uint64_t>> staticRegisterQubits;
+      llvm::DenseSet<std::pair<RegisterId, ExpressionId>> dynamicRegisterQubits;
+      llvm::DenseSet<uint32_t> gateArguments;
+      llvm::DenseSet<uint64_t> hardwareQubitOperands;
+      llvm::DenseMap<RegisterId, size_t> staticRegisterQubitCounts;
+
+      for (const auto& qubit : qubits) {
+        bool inserted = false;
+        switch (qubit.kind) {
+        case QubitReferenceKind::Register:
+          if (qubit.dynamicIndex) {
+            inserted = dynamicRegisterQubits
+                           .insert({qubit.symbol, *qubit.dynamicIndex})
+                           .second;
+          } else {
+            inserted =
+                staticRegisterQubits.insert({qubit.symbol, qubit.index}).second;
+            if (inserted) {
+              ++staticRegisterQubitCounts[qubit.symbol];
+            }
+          }
+          break;
+        case QubitReferenceKind::GateArgument:
+          inserted = gateArguments.insert(qubit.symbol).second;
+          break;
+        case QubitReferenceKind::Hardware:
+          inserted = hardwareQubitOperands.insert(qubit.index).second;
+          break;
+        }
+        if (!inserted) {
+          fail(location,
+               "barrier operands must not reference the same qubit more than "
+               "once");
+        }
+      }
+
+      for (const auto& dynamicRegisterQubit : dynamicRegisterQubits) {
+        const auto reg = dynamicRegisterQubit.first;
+        if (staticRegisterQubitCounts.lookup(reg) ==
+            program.registers.at(reg).width) {
+          fail(location,
+               "barrier operands must not reference the same qubit more than "
+               "once");
+        }
+      }
+    }
+
     return addStatement(location,
                         BarrierStatement{.qubits = std::move(qubits)});
   }
@@ -2423,6 +2512,98 @@ private:
     return addStatement(location, std::move(result));
   }
 
+  [[nodiscard]] StatementId analyzeSwitch(SMLoc location,
+                                          const SyntaxSwitch& switchSyntax) {
+    SwitchStatement result{.control = analyzeExpression(switchSyntax.control)};
+    if (!isInteger(program.expressions[result.control].type)) {
+      fail(location, "switch control expression must have integer type");
+    }
+
+    std::set<int64_t> labels;
+    const auto beforeBitsInitialized = initializedBits;
+    const auto beforeInitialized = initializedScalars;
+    const auto beforeGenerations = scalarGenerations;
+    const auto beforeBitGenerations = bitGenerations;
+    const auto beforeDynamicBitFacts = dynamicBitFacts;
+    auto mergedScalarGenerations = beforeGenerations;
+    auto mergedBitGenerations = beforeBitGenerations;
+    std::vector<std::vector<std::shared_ptr<BitInitialization>>>
+        branchBitsInitialized;
+    std::vector<std::vector<bool>> branchScalarsInitialized;
+    const auto analyzeBranch =
+        [&](const ArrayRef<SyntaxStatementId> syntaxStatements,
+            std::vector<StatementId>& statements) {
+          restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
+                             beforeGenerations, beforeBitGenerations);
+          restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+          scopes.emplace_back();
+          analyzeBody(syntaxStatements, statements, /*global=*/false);
+          scopes.pop_back();
+          branchBitsInitialized.push_back(initializedBits);
+          branchScalarsInitialized.push_back(initializedScalars);
+          for (size_t index = 0; index < beforeGenerations.size(); ++index) {
+            mergedScalarGenerations[index] = std::max(
+                mergedScalarGenerations[index], scalarGenerations[index]);
+          }
+          for (size_t index = 0; index < beforeBitGenerations.size(); ++index) {
+            mergedBitGenerations[index] =
+                std::max(mergedBitGenerations[index], bitGenerations[index]);
+          }
+        };
+
+    result.cases.reserve(switchSyntax.cases.size());
+    for (const auto& syntaxCase : switchSyntax.cases) {
+      SwitchCase switchCase;
+      switchCase.labels.reserve(syntaxCase.labels.size());
+      for (const auto labelExpression : syntaxCase.labels) {
+        if (!isConstantExpression(labelExpression)) {
+          fail(syntax.expressions[labelExpression].location,
+               "switch case labels must be constant integer expressions");
+        }
+        const auto label = evaluateConstant(labelExpression);
+        if (!isInteger(label.type)) {
+          fail(syntax.expressions[labelExpression].location,
+               "switch case labels must have integer type");
+        }
+        if (label.type == ScalarType::Uint &&
+            std::get<uint64_t>(label.value) >
+                static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+          fail(syntax.expressions[labelExpression].location,
+               "switch case label does not fit in signed i64");
+        }
+        const auto value = asSigned(label);
+        if (!labels.insert(value).second) {
+          fail(syntax.expressions[labelExpression].location,
+               "duplicate switch case label");
+        }
+        switchCase.labels.push_back(value);
+      }
+      analyzeBranch(syntaxCase.body, switchCase.body);
+      result.cases.push_back(std::move(switchCase));
+    }
+    analyzeBranch(switchSyntax.defaultStatements, result.defaultStatements);
+
+    restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
+                       mergedScalarGenerations, mergedBitGenerations);
+    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+    for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
+      auto& initialized =
+          mutableBitInitialization(static_cast<RegisterId>(reg));
+      for (size_t bit = 0; bit < initialized.size(); ++bit) {
+        initialized[bit] =
+            llvm::all_of(branchBitsInitialized, [&](const auto& branch) {
+              return (*branch[reg])[bit];
+            });
+      }
+    }
+    for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
+      initializedScalars[scalar] =
+          llvm::all_of(branchScalarsInitialized,
+                       [&](const auto& branch) { return branch[scalar]; });
+    }
+    return addStatement(location, std::move(result));
+  }
+
   [[nodiscard]] ConditionId
   analyzeCondition(const SyntaxExpressionId syntaxId) {
     const auto& condition = syntax.expressions[syntaxId];
@@ -2508,36 +2689,59 @@ private:
           lhsSymbol != nullptr && lhsSymbol->kind == SymbolKind::Register &&
           program.registers[lhsSymbol->id].kind == RegisterKind::Bit &&
           isConstantExpression(*condition.rhs)) {
-        const auto expected = evaluateConstant(*condition.rhs);
-        if (!isInteger(expected.type) ||
-            (expected.type == ScalarType::Int &&
-             std::get<int64_t>(expected.value) < 0)) {
-          fail(condition.location,
-               "OpenQASM 2 register conditions require an unsigned integer");
-        }
-        const auto expectedValue =
-            expected.type == ScalarType::Uint
-                ? std::get<uint64_t>(expected.value)
-                : static_cast<uint64_t>(std::get<int64_t>(expected.value));
+        const auto& rhsSyntax = syntax.expressions[*condition.rhs];
         auto bits = resolveBits({.location = lhsSyntax.location,
                                  .identifier = lhsSyntax.identifier});
-        for (const auto& bit : bits) {
-          ensureBitInitialized(bit, condition.location);
+        // OpenQASM 2 classical bits default to 0, so partially written
+        // registers are valid in `if (c == k)` (e.g. mid-circuit feedback).
+        llvm::APInt expectedBits;
+        if (rhsSyntax.kind == Expr::Kind::Int &&
+            !rhsSyntax.wideInteger.empty()) {
+          llvm::SmallString<64> digits;
+          for (const char value : rhsSyntax.wideInteger) {
+            if (value != '_') {
+              digits.push_back(value);
+            }
+          }
+          const auto width = static_cast<unsigned>(
+              std::max<size_t>(bits.size(), digits.size() * 4));
+          expectedBits = llvm::APInt(width, digits, /*radix=*/10);
+        } else {
+          const auto expected = evaluateConstant(*condition.rhs);
+          if (!isInteger(expected.type) ||
+              (expected.type == ScalarType::Int &&
+               std::get<int64_t>(expected.value) < 0)) {
+            fail(condition.location,
+                 "OpenQASM 2 register conditions require an unsigned integer");
+          }
+          const auto expectedValue =
+              expected.type == ScalarType::Uint
+                  ? std::get<uint64_t>(expected.value)
+                  : static_cast<uint64_t>(std::get<int64_t>(expected.value));
+          expectedBits = llvm::APInt(/*numBits=*/64, expectedValue);
         }
-        const bool fits =
-            bits.size() >= 64 || (expectedValue >> bits.size()) == 0;
+        if (expectedBits.getActiveBits() > bits.size()) {
+          // Value cannot equal the register contents.
+          return addCondition(
+              {.kind = ConditionKind::Literal,
+               .location = getSourceLocation(condition.location),
+               .literal = false});
+        }
+        if (expectedBits.getBitWidth() < bits.size()) {
+          expectedBits = expectedBits.zext(static_cast<unsigned>(bits.size()));
+        } else if (expectedBits.getBitWidth() > bits.size()) {
+          expectedBits = expectedBits.trunc(static_cast<unsigned>(bits.size()));
+        }
         auto result =
             addCondition({.kind = ConditionKind::Literal,
                           .location = getSourceLocation(condition.location),
-                          .literal = fits});
+                          .literal = true});
         for (const auto [index, bit] : llvm::enumerate(bits)) {
           auto bitCondition =
               addCondition({.kind = ConditionKind::Bit,
                             .location = getSourceLocation(condition.location),
                             .bit = bit});
-          const bool expectedBit =
-              index < 64 && ((expectedValue >> index) & 1U) != 0;
-          if (!expectedBit) {
+          if (!expectedBits[index]) {
             bitCondition =
                 addCondition({.kind = ConditionKind::Not,
                               .location = getSourceLocation(condition.location),
@@ -2660,6 +2864,12 @@ private:
       }
     }
     if (standard != nullptr && !isGateAvailable(*standard)) {
+      standard = nullptr;
+    }
+    // Prefer a user-defined gate when present. Available standard-library
+    // names are not registered as custom gates (OpenQASM 2 redefinitions are
+    // skipped), so this only applies to non-stdlib custom definitions.
+    if (custom != customGates.end()) {
       standard = nullptr;
     }
     if (standard == nullptr && custom == customGates.end()) {

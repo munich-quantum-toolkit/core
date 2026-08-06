@@ -9,10 +9,10 @@
  */
 
 #include "dd/Package.hpp"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -456,7 +456,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
 
 [[nodiscard]] static Synthesized2QCircuit
 synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
-                   const NativeGateset& spec) {
+                   const CompilerTarget::SynthesisBasis basis) {
   OwningOpRef mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
   OpBuilder builder(ctx);
   builder.setInsertionPointToStart(mlirModule->getBody());
@@ -469,21 +469,20 @@ synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   auto* entry = func.addEntryBlock();
 
   builder.setInsertionPointToStart(entry);
-  const auto synthesized = synthesizeUnitary2QWeyl(
-      builder, loc, entry->getArgument(0), entry->getArgument(1), target, spec);
-  if (failed(synthesized)) {
-    ADD_FAILURE() << "synthesizeUnitary2QWeyl failed during test synthesis";
-  } else {
-    emitGPhaseIfNeeded(builder, loc, synthesized->globalPhase);
-    func::ReturnOp::create(
-        builder, loc, ValueRange{synthesized->qubit0, synthesized->qubit1});
-  }
+  const auto decomposition = decomposeUnitary2QWeyl(target, basis.entangler);
+  const auto synthesized =
+      emitUnitary2QWeyl(builder, loc, entry->getArgument(0),
+                        entry->getArgument(1), decomposition, basis);
+  emitGPhaseIfNeeded(builder, loc, synthesized.globalPhase);
+  func::ReturnOp::create(builder, loc,
+                         ValueRange{synthesized.qubit0, synthesized.qubit1});
   return {.mlirModule = std::move(mlirModule), .func = func};
 }
 
-static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
-                                      const NativeGateset& spec) {
-  const auto circuit = synthesize2QMatrix(ctx, target, spec);
+static void
+expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
+                          const CompilerTarget::SynthesisBasis basis) {
+  const auto circuit = synthesize2QMatrix(ctx, target, basis);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   const auto actual = computeTwoQubitUnitaryFromFunc(circuit.func);
   ASSERT_TRUE(succeeded(actual));
@@ -508,7 +507,7 @@ struct MlirTestContext {
 
 struct WeylSynthesisCase {
   const char* name;
-  const char* nativeGates;
+  CompilerTarget::SynthesisBasis basis;
   Matrix4x4 (*target)();
 };
 
@@ -519,7 +518,7 @@ protected:
   void SetUp() override { mlir.setUp(); }
 };
 
-class NativeGatesetMlirTest : public testing::Test {
+class WeylSynthesisMlirTest : public testing::Test {
 protected:
   MlirTestContext mlir;
 
@@ -529,22 +528,26 @@ protected:
 } // namespace
 
 TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
-  const auto spec = NativeGateset::parse(GetParam().nativeGates);
-  ASSERT_TRUE(spec);
-  expectSynthesized2QMatrix(mlir.ctx(), GetParam().target(), *spec);
+  expectSynthesized2QMatrix(mlir.ctx(), GetParam().target(), GetParam().basis);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Gatesets, WeylSynthesisTest,
+    TargetBases, WeylSynthesisTest,
     testing::Values(
-        WeylSynthesisCase{"CxGeneric", "u,cx",
-                          [] { return TWO_QUBIT_CONTROLLED_X01; }},
-        WeylSynthesisCase{"ProductGeneric", "u,cx",
-                          [] {
-                            return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
-                                                   RYOp::unitaryMatrix(0.3));
-                          }},
-        WeylSynthesisCase{"IbmBasic", "x,sx,rz,cx",
+        WeylSynthesisCase{
+            "CxGeneric",
+            {CompilerTarget::SingleQubitBasis::U, CompilerTarget::GateKind::CX},
+            [] { return TWO_QUBIT_CONTROLLED_X01; }},
+        WeylSynthesisCase{
+            "ProductGeneric",
+            {CompilerTarget::SingleQubitBasis::U, CompilerTarget::GateKind::CX},
+            [] {
+              return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
+                                     RYOp::unitaryMatrix(0.3));
+            }},
+        WeylSynthesisCase{"IbmBasic",
+                          {CompilerTarget::SingleQubitBasis::ZSXX,
+                           CompilerTarget::GateKind::CX},
                           [] {
                             return Matrix4x4::kron(HOp::getUnitaryMatrix(),
                                                    Matrix2x2::identity()) *
@@ -553,43 +556,54 @@ INSTANTIATE_TEST_SUITE_P(
                                                    RYOp::unitaryMatrix(0.1));
                           }},
         WeylSynthesisCase{
-            "RxxGeneric", "u,rxx",
+            "RxxGeneric",
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::GateKind::RXX},
             [] { return RXXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
-            "RyyGeneric", "u,ryy",
+            "RyyGeneric",
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::GateKind::RYY},
             [] { return RYYOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
-            "RzxGeneric", "u,rzx",
+            "RzxGeneric",
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::GateKind::RZX},
             [] { return RZXOp::unitaryMatrix(std::numbers::pi / 2.0); }},
         WeylSynthesisCase{
-            "RzzGeneric", "u,rzz",
+            "RzzGeneric",
+            {CompilerTarget::SingleQubitBasis::U,
+             CompilerTarget::GateKind::RZZ},
             [] { return RZZOp::unitaryMatrix(std::numbers::pi / 2.0); }},
-        WeylSynthesisCase{"IswapGeneric", "u,iswap",
+        WeylSynthesisCase{"IswapGeneric",
+                          {CompilerTarget::SingleQubitBasis::U,
+                           CompilerTarget::GateKind::ISWAP},
                           [] { return iSWAPOp::getUnitaryMatrix(); }},
-        WeylSynthesisCase{"CzGeneric", "u,cz",
-                          [] { return TWO_QUBIT_CONTROLLED_Z; }},
-        WeylSynthesisCase{"EcrGeneric", "u,ecr",
+        WeylSynthesisCase{
+            "CzGeneric",
+            {CompilerTarget::SingleQubitBasis::U, CompilerTarget::GateKind::CZ},
+            [] { return TWO_QUBIT_CONTROLLED_Z; }},
+        WeylSynthesisCase{"EcrGeneric",
+                          {CompilerTarget::SingleQubitBasis::U,
+                           CompilerTarget::GateKind::ECR},
                           [] { return ECROp::getUnitaryMatrix(); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* gateset : {"u,rxx", "u,ryy", "u,rzx", "u,rzz", "u,iswap",
-                              "u,cz", "u,cx", "u,ecr"}) {
-    const auto spec = NativeGateset::parse(gateset);
-    ASSERT_TRUE(spec) << gateset;
-    const auto native = spec->decomposeTarget(Matrix4x4::identity());
-    ASSERT_TRUE(native.has_value()) << gateset;
-    EXPECT_EQ(native->numBasisUses, 0U) << gateset;
+  for (const auto entangler :
+       {CompilerTarget::GateKind::RXX, CompilerTarget::GateKind::RYY,
+        CompilerTarget::GateKind::RZX, CompilerTarget::GateKind::RZZ,
+        CompilerTarget::GateKind::ISWAP, CompilerTarget::GateKind::CZ,
+        CompilerTarget::GateKind::CX, CompilerTarget::GateKind::ECR}) {
+    const auto native =
+        decomposeUnitary2QWeyl(Matrix4x4::identity(), entangler);
+    EXPECT_EQ(native.numBasisUses, 0U);
   }
 }
 
-TEST(WeylSynthesisTest, RejectsGatesetWithoutEntangler) {
-  EXPECT_FALSE(NativeGateset::parse("u").has_value());
-}
-
-TEST_F(NativeGatesetMlirTest, ReconstructionRejectsUnhandledOps) {
+TEST_F(WeylSynthesisMlirTest, ReconstructionRejectsUnhandledOps) {
   OpBuilder builder(mlir.ctx());
   const Location loc = UnknownLoc::get(mlir.ctx());
   const auto qubitTy = QubitType::get(mlir.ctx());
@@ -603,315 +617,4 @@ TEST_F(NativeGatesetMlirTest, ReconstructionRejectsUnhandledOps) {
   auto meas = MeasureOp::create(builder, loc, q0);
   func::ReturnOp::create(builder, loc, ValueRange{meas.getQubitOut(), q1});
   EXPECT_TRUE(failed(computeTwoQubitUnitaryFromFunc(func)));
-}
-
-TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEulerBasis) {
-  const NativeGateset spec{.gates = {NativeGateKind::CX}};
-  OpBuilder builder(mlir.ctx());
-  const auto qubitTy = QubitType::get(mlir.ctx());
-  const auto funcTy =
-      builder.getFunctionType({qubitTy, qubitTy}, {qubitTy, qubitTy});
-  auto func = func::FuncOp::create(builder, UnknownLoc::get(mlir.ctx()), "main",
-                                   funcTy);
-  auto* entry = func.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
-      builder, func.getLoc(), entry->getArgument(0), entry->getArgument(1),
-      TWO_QUBIT_CONTROLLED_X01, spec)));
-}
-
-TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEntangler) {
-  const NativeGateset spec{.gates = {NativeGateKind::U}};
-  OpBuilder builder(mlir.ctx());
-  const auto qubitTy = QubitType::get(mlir.ctx());
-  const auto funcTy =
-      builder.getFunctionType({qubitTy, qubitTy}, {qubitTy, qubitTy});
-  auto func = func::FuncOp::create(builder, UnknownLoc::get(mlir.ctx()), "main",
-                                   funcTy);
-  auto* entry = func.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
-      builder, func.getLoc(), entry->getArgument(0), entry->getArgument(1),
-      TWO_QUBIT_CONTROLLED_X01, spec)));
-}
-
-TEST(WeylSynthesisTest, EntanglerCountFailsWithoutEntangler) {
-  const NativeGateset spec{.gates = {NativeGateKind::U}};
-  EXPECT_FALSE(spec.decomposeTarget(Matrix4x4::identity()).has_value());
-}
-
-TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
-  const auto ibm = NativeGateset::parse("x,sx,rz,cx");
-  ASSERT_TRUE(ibm);
-  EXPECT_TRUE(ibm->gates.contains(NativeGateKind::CX));
-  EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
-  EXPECT_FALSE(NativeGateset::parse("x,sx,rz,not-a-gate").has_value());
-  EXPECT_FALSE(NativeGateset::parse("u").has_value());
-
-  const auto whitespaceToken = NativeGateset::parse("u, ,cx");
-  ASSERT_TRUE(whitespaceToken);
-  EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::U));
-  EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::CX));
-
-  EXPECT_FALSE(NativeGateset::parse("x,sx,p,cx").has_value());
-  EXPECT_FALSE(NativeGateset::parse("ry,p,cz").has_value());
-
-  const auto cxOnly = NativeGateset::parse("u,cx");
-  ASSERT_TRUE(cxOnly);
-  EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::U));
-  EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::CX));
-  EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::CZ));
-  EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::X));
-
-  const auto both = NativeGateset::parse("u,cx,cz");
-  ASSERT_TRUE(both);
-  EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
-  EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
-  EXPECT_EQ(both->entangler, NativeGateKind::CZ);
-
-  const auto ecrOnly = NativeGateset::parse("u,ecr");
-  ASSERT_TRUE(ecrOnly);
-  EXPECT_TRUE(ecrOnly->gates.contains(NativeGateKind::ECR));
-  EXPECT_EQ(ecrOnly->entangler, NativeGateKind::ECR);
-
-  // With CX/CZ also listed, CX/CZ win over ECR.
-  const auto cxCzOverEcr = NativeGateset::parse("u,cz,cx,ecr");
-  ASSERT_TRUE(cxCzOverEcr);
-  EXPECT_EQ(cxCzOverEcr->entangler, NativeGateKind::CZ);
-
-  const auto iswapOnly = NativeGateset::parse("u,iswap");
-  ASSERT_TRUE(iswapOnly);
-  EXPECT_TRUE(iswapOnly->gates.contains(NativeGateKind::ISWAP));
-  EXPECT_EQ(iswapOnly->entangler, NativeGateKind::ISWAP);
-
-  // iSWAP beats CZ/CX/ECR; two-qubit rotations still win when present.
-  const auto iswapOverCtrlEcr = NativeGateset::parse("u,iswap,cz,cx,ecr");
-  ASSERT_TRUE(iswapOverCtrlEcr);
-  EXPECT_EQ(iswapOverCtrlEcr->entangler, NativeGateKind::ISWAP);
-
-  // DCX is not a supported native-basis token.
-  EXPECT_FALSE(NativeGateset::parse("u,dcx").has_value());
-  EXPECT_FALSE(NativeGateset::parse("u,cx,dcx").has_value());
-
-  const auto rzxOnly = NativeGateset::parse("u,rzx");
-  ASSERT_TRUE(rzxOnly);
-  EXPECT_EQ(rzxOnly->entangler, NativeGateKind::RZX);
-
-  // Two-qubit rotations: RXX > RYY > RZX > RZZ (alphabetic).
-  const auto rxxOverRest =
-      NativeGateset::parse("u,rzx,rzz,ryy,rxx,iswap,cx,cz,ecr");
-  ASSERT_TRUE(rxxOverRest);
-  EXPECT_EQ(rxxOverRest->entangler, NativeGateKind::RXX);
-
-  const auto ryyOverRzxRzz = NativeGateset::parse("u,rzx,ryy,rzz,iswap,cx");
-  ASSERT_TRUE(ryyOverRzxRzz);
-  EXPECT_EQ(ryyOverRzxRzz->entangler, NativeGateKind::RYY);
-
-  const auto rzxOverRzz = NativeGateset::parse("u,rzx,rzz,iswap,cx,cz");
-  ASSERT_TRUE(rzxOverRzz);
-  EXPECT_EQ(rzxOverRzz->entangler, NativeGateKind::RZX);
-
-  const auto rzzOverDiscrete = NativeGateset::parse("u,rzz,iswap,cx,cz,ecr");
-  ASSERT_TRUE(rzzOverDiscrete);
-  EXPECT_EQ(rzzOverDiscrete->entangler, NativeGateKind::RZZ);
-
-  const auto rzzOnly = NativeGateset::parse("u,rzz");
-  ASSERT_TRUE(rzzOnly);
-  EXPECT_EQ(rzzOnly->entangler, NativeGateKind::RZZ);
-
-  const auto ryyOnly = NativeGateset::parse("u,ryy");
-  ASSERT_TRUE(ryyOnly);
-  EXPECT_EQ(ryyOnly->entangler, NativeGateKind::RYY);
-
-  const auto rxxOnly = NativeGateset::parse("u,rxx");
-  ASSERT_TRUE(rxxOnly);
-  EXPECT_EQ(rxxOnly->entangler, NativeGateKind::RXX);
-
-  const auto rotationThenDiscrete =
-      NativeGateset::parse("u,rzz,rxx,iswap,cz,cx,ecr");
-  ASSERT_TRUE(rotationThenDiscrete);
-  EXPECT_EQ(rotationThenDiscrete->entangler, NativeGateKind::RXX);
-
-  const auto withoutRxx = NativeGateset::parse("u,ryy,iswap,cz,cx,ecr");
-  ASSERT_TRUE(withoutRxx);
-  EXPECT_EQ(withoutRxx->entangler, NativeGateKind::RYY);
-
-  const auto withoutRotations = NativeGateset::parse("u,iswap,cz,cx,ecr");
-  ASSERT_TRUE(withoutRotations);
-  EXPECT_EQ(withoutRotations->entangler, NativeGateKind::ISWAP);
-}
-
-TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
-  EXPECT_FALSE(NativeGateset::parse("cx").has_value());
-  EXPECT_FALSE(NativeGateset::parse("cz").has_value());
-  EXPECT_FALSE(NativeGateset::parse("rx,cx").has_value());
-}
-
-TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
-  const auto uGateset = NativeGateset::parse("u,cx");
-  ASSERT_TRUE(uGateset);
-  EXPECT_EQ(*uGateset->eulerBasis, EulerBasis::U);
-
-  const auto zsxx = NativeGateset::parse("x,sx,rz,cx");
-  ASSERT_TRUE(zsxx);
-  EXPECT_EQ(*zsxx->eulerBasis, EulerBasis::ZSXX);
-
-  const auto rGateset = NativeGateset::parse("r,cz");
-  ASSERT_TRUE(rGateset);
-  EXPECT_EQ(*rGateset->eulerBasis, EulerBasis::R);
-
-  const auto xzx = NativeGateset::parse("rx,rz,cz");
-  ASSERT_TRUE(xzx);
-  EXPECT_EQ(*xzx->eulerBasis, EulerBasis::XZX);
-
-  const auto xyx = NativeGateset::parse("rx,ry,cz");
-  ASSERT_TRUE(xyx);
-  EXPECT_EQ(*xyx->eulerBasis, EulerBasis::XYX);
-
-  const auto zyz = NativeGateset::parse("ry,rz,cz");
-  ASSERT_TRUE(zyz);
-  EXPECT_EQ(*zyz->eulerBasis, EulerBasis::ZYZ);
-}
-
-TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
-  const auto spec = NativeGateset::parse("u,cx");
-  ASSERT_TRUE(spec);
-
-  OpBuilder builder(mlir.ctx());
-  const Location loc = UnknownLoc::get(mlir.ctx());
-  const auto qubitTy = QubitType::get(mlir.ctx());
-  const auto funcTy =
-      builder.getFunctionType({qubitTy, qubitTy}, {qubitTy, qubitTy});
-  auto func = func::FuncOp::create(builder, loc, "allows_op", funcTy);
-  auto* entry = func.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  Value q0 = entry->getArgument(0);
-  Value q1 = entry->getArgument(1);
-
-  EXPECT_TRUE(spec->allowsOp(
-      BarrierOp::create(builder, loc, ValueRange{q0, q1}).getOperation()));
-  EXPECT_TRUE(
-      spec->allowsOp(GPhaseOp::create(builder, loc, 0.1).getOperation()));
-  EXPECT_TRUE(spec->allowsOp(
-      UOp::create(builder, loc, q0, 0.1, 0.2, 0.3).getOperation()));
-
-  auto cx = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
-    return XOp::create(builder, loc, target).getOutputQubit(0);
-  });
-  EXPECT_TRUE(spec->allowsOp(cx.getOperation()));
-
-  auto cxWithInterleavedH =
-      CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
-        auto wire = XOp::create(builder, loc, target).getOutputQubit(0);
-        return HOp::create(builder, loc, wire).getOutputQubit(0);
-      });
-  EXPECT_FALSE(spec->allowsOp(cxWithInterleavedH.getOperation()));
-
-  EXPECT_FALSE(spec->allowsOp(XOp::create(builder, loc, q0).getOperation()));
-  EXPECT_FALSE(
-      spec->allowsOp(RXXOp::create(builder, loc, q0, q1, 0.2).getOperation()));
-  EXPECT_FALSE(
-      spec->allowsOp(ECROp::create(builder, loc, q0, q1).getOperation()));
-
-  const auto rzSpec = NativeGateset::parse("x,sx,rz,cx");
-  ASSERT_TRUE(rzSpec);
-  EXPECT_TRUE(
-      rzSpec->allowsOp(RZOp::create(builder, loc, q0, 0.3).getOperation()));
-  EXPECT_FALSE(
-      rzSpec->allowsOp(POp::create(builder, loc, q0, 0.3).getOperation()));
-
-  auto hCtrl = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
-    return HOp::create(builder, loc, target).getOutputQubit(0);
-  });
-  EXPECT_FALSE(spec->allowsOp(hCtrl.getOperation()));
-
-  const auto funcTy3 = builder.getFunctionType({qubitTy, qubitTy, qubitTy},
-                                               {qubitTy, qubitTy, qubitTy});
-  auto func3 = func::FuncOp::create(builder, loc, "allows_op_ccx", funcTy3);
-  auto* entry3 = func3.addEntryBlock();
-  builder.setInsertionPointToStart(entry3);
-  Value c0 = entry3->getArgument(0);
-  Value c1 = entry3->getArgument(1);
-  Value target = entry3->getArgument(2);
-  auto ccx =
-      CtrlOp::create(builder, loc, ValueRange{c0, c1}, target, [&](Value t) {
-        return XOp::create(builder, loc, t).getOutputQubit(0);
-      });
-  EXPECT_FALSE(spec->allowsOp(ccx.getOperation()));
-
-  const auto czSpec = NativeGateset::parse("u,cz");
-  ASSERT_TRUE(czSpec);
-  auto cz = CtrlOp::create(builder, loc, q0, q1, [&](Value t) {
-    return ZOp::create(builder, loc, t).getOutputQubit(0);
-  });
-  EXPECT_TRUE(czSpec->allowsOp(cz.getOperation()));
-  EXPECT_FALSE(czSpec->allowsOp(cx.getOperation()));
-
-  const auto rxxSpec = NativeGateset::parse("u,rxx");
-  ASSERT_TRUE(rxxSpec);
-  EXPECT_TRUE(rxxSpec->allowsOp(
-      RXXOp::create(builder, loc, q0, q1, 0.2).getOperation()));
-  EXPECT_TRUE(rxxSpec->allowsOp(
-      RXXOp::create(builder, loc, q0, q1, std::numbers::pi / 2.0)
-          .getOperation()));
-
-  const auto ryySpec = NativeGateset::parse("u,ryy");
-  ASSERT_TRUE(ryySpec);
-  EXPECT_TRUE(ryySpec->allowsOp(
-      RYYOp::create(builder, loc, q0, q1, 0.25).getOperation()));
-
-  const auto rzxSpec = NativeGateset::parse("u,rzx");
-  ASSERT_TRUE(rzxSpec);
-  EXPECT_TRUE(rzxSpec->allowsOp(
-      RZXOp::create(builder, loc, q0, q1, 0.25).getOperation()));
-
-  const auto rzzSpec = NativeGateset::parse("u,rzz");
-  ASSERT_TRUE(rzzSpec);
-  EXPECT_TRUE(rzzSpec->allowsOp(
-      RZZOp::create(builder, loc, q0, q1, 0.3).getOperation()));
-
-  const auto iswapSpec = NativeGateset::parse("u,iswap");
-  ASSERT_TRUE(iswapSpec);
-  auto iswap = iSWAPOp::create(builder, loc, q0, q1);
-  EXPECT_TRUE(iswapSpec->allowsOp(iswap.getOperation()));
-  EXPECT_FALSE(iswapSpec->allowsOp(cx.getOperation()));
-
-  const auto ecrSpec = NativeGateset::parse("u,ecr");
-  ASSERT_TRUE(ecrSpec);
-  auto ecr = ECROp::create(builder, loc, q0, q1);
-  EXPECT_TRUE(ecrSpec->allowsOp(ecr.getOperation()));
-  EXPECT_FALSE(ecrSpec->allowsOp(cx.getOperation()));
-
-  const FloatType f64Float = builder.getF64Type();
-  const Type f64Ty = Type::getFromOpaquePointer(f64Float.getAsOpaquePointer());
-  const auto funcTyTheta =
-      builder.getFunctionType({f64Ty, qubitTy, qubitTy}, {qubitTy, qubitTy});
-  OpBuilder::InsertionGuard guard(builder);
-  builder.clearInsertionPoint();
-  auto funcTheta = func::FuncOp::create(
-      builder, loc, "allows_op_runtime_two_qubit_rotations", funcTyTheta);
-  auto* entryTheta = funcTheta.addEntryBlock();
-  builder.setInsertionPointToStart(entryTheta);
-  Value runtimeTheta = entryTheta->getArgument(0);
-  Value runtimeQ0 = entryTheta->getArgument(1);
-  Value runtimeQ1 = entryTheta->getArgument(2);
-  auto runtimeRxx =
-      RXXOp::create(builder, loc, runtimeQ0, runtimeQ1, runtimeTheta);
-  EXPECT_TRUE(rxxSpec->allowsOp(runtimeRxx.getOperation()));
-  EXPECT_FALSE(spec->allowsOp(runtimeRxx.getOperation()));
-  auto runtimeRyy = RYYOp::create(builder, loc, runtimeRxx.getOutputQubit(0),
-                                  runtimeRxx.getOutputQubit(1), runtimeTheta);
-  EXPECT_TRUE(ryySpec->allowsOp(runtimeRyy.getOperation()));
-  auto runtimeRzx = RZXOp::create(builder, loc, runtimeRyy.getOutputQubit(0),
-                                  runtimeRyy.getOutputQubit(1), runtimeTheta);
-  EXPECT_TRUE(rzxSpec->allowsOp(runtimeRzx.getOperation()));
-  auto runtimeRzz = RZZOp::create(builder, loc, runtimeRzx.getOutputQubit(0),
-                                  runtimeRzx.getOutputQubit(1), runtimeTheta);
-  EXPECT_TRUE(rzzSpec->allowsOp(runtimeRzz.getOperation()));
-  func::ReturnOp::create(
-      builder, loc,
-      ValueRange{runtimeRzz.getOutputQubit(0), runtimeRzz.getOutputQubit(1)});
-  auto module = ModuleOp::create(loc);
-  module.getBody()->push_back(funcTheta);
-  EXPECT_TRUE(succeeded(verify(module)));
 }

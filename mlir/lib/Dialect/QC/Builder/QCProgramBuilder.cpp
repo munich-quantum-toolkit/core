@@ -65,7 +65,6 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
-  regionStack.emplace_back(entryBlock.getParent());
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {
@@ -119,6 +118,19 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 
 QCProgramBuilder::QubitRegister
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
+  auto memref = allocQubitRegisterStorage(size);
+
+  SmallVector<Value> qubits;
+  qubits.reserve(size);
+  for (int64_t i = 0; i < size; ++i) {
+    auto index = arith::ConstantIndexOp::create(*this, i);
+    qubits.emplace_back(loadQubit(memref, index));
+  }
+
+  return {.value = memref, .qubits = std::move(qubits)};
+}
+
+Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
@@ -127,44 +139,14 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
-  auto allocOp = memref::AllocOp::create(*this, memrefType);
-  auto memref = allocOp.getResult();
+  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
   allocatedQregs.insert(memref);
-
-  SmallVector<Value> qubits;
-  qubits.reserve(size);
-  auto& loadedQubitsForRegion =
-      loadedQubits[allocOp->getParentRegion()][memref];
-  for (int64_t i = 0; i < size; ++i) {
-    auto index = arith::ConstantIndexOp::create(*this, i);
-    auto load = memref::LoadOp::create(*this, memref, index.getResult());
-    const auto& qubit = qubits.emplace_back(load.getResult());
-    allocatedQubits.insert(qubit);
-    loadedQubitsForRegion.insert(index);
-  }
-
-  return {.value = memref, .qubits = std::move(qubits)};
+  return memref;
 }
 
 Value QCProgramBuilder::loadQubit(Value memref, Value index) {
   checkFinalized();
-
-  auto* region = getInsertionBlock()->getParent();
-
-  if (regionStack.size() == 1) {
-    llvm::reportFatalUsageError(
-        "Qubit cannot be loaded in the main function region");
-  }
-  for (Region* curr : regionStack) {
-    if (loadedQubits[curr][memref].contains(index)) {
-      llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
-    }
-  }
-
-  auto loadOp = memref::LoadOp::create(*this, memref, index);
-  loadedQubits[region][memref].insert(index);
-
-  return loadOp.getResult();
+  return memref::LoadOp::create(*this, memref, index).getResult();
 }
 
 Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
@@ -576,11 +558,8 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
 
   scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
                      [&](OpBuilder& b, Location l, Value iv, ValueRange) {
-                       regionStack.emplace_back(
-                           b.getInsertionBlock()->getParent());
                        body(iv);
                        scf::YieldOp::create(b, l);
-                       regionStack.pop_back();
                      });
   return *this;
 }
@@ -594,20 +573,16 @@ QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
       *this, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) {
         auto* insertionBlock = b.getInsertionBlock();
-        regionStack.emplace_back(insertionBlock->getParent());
         beforeBody();
         if (!isa_and_nonnull<scf::ConditionOp>(
                 insertionBlock->getTerminator())) {
           llvm::reportFatalUsageError(
               "scf.while beforeBody must terminate with scf.condition");
         }
-        regionStack.pop_back();
       },
       [&](OpBuilder& b, Location loc, ValueRange) {
-        regionStack.emplace_back(b.getInsertionBlock()->getParent());
         afterBody();
         scf::YieldOp::create(b, loc);
-        regionStack.pop_back();
       });
 
   return *this;
@@ -623,10 +598,8 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 
   auto buildRegion = [&](const function_ref<void()>& body) {
     return [&, body](OpBuilder& b, Location loc) {
-      regionStack.emplace_back(b.getInsertionBlock()->getParent());
       body();
       scf::YieldOp::create(b, loc);
-      regionStack.pop_back();
     };
   };
 
@@ -670,10 +643,8 @@ QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
   const InsertionGuard guard(*this);
   const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
     Block* block = createBlock(&region); // Implicitly sets the insertion point.
-    regionStack.emplace_back(&region);
     f();
     scf::YieldOp::create(*this, getLoc());
-    regionStack.pop_back();
   };
 
   for (auto [region, f] :
@@ -787,9 +758,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   }
 
   for (auto qubit : allocatedQubits) {
-    if (!isa<memref::LoadOp>(qubit.getDefiningOp())) {
-      DeallocOp::create(*this, qubit);
-    }
+    DeallocOp::create(*this, qubit);
   }
   allocatedQubits.clear();
 

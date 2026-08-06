@@ -41,6 +41,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
   "Typing :: Typed",
 ]
@@ -48,9 +49,15 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 
 [project.optional-dependencies]
+pennylane = [
+  "pennylane>=0.45.1,<0.46; python_version >= '3.11'",
+]
 qiskit = [
   "qiskit[qasm3-import]>=1.1.0",
 ]
+
+[project.entry-points."pennylane.plugins"]
+"mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
 
 [project.scripts]
 mqt-core-cli = "mqt.core.__main__:main"
@@ -150,6 +157,8 @@ filterwarnings = [
   "error",
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
   'ignore:.*datetime\.datetime\.utcfromtimestamp.*:DeprecationWarning:',
+  # Autograd 1.8 uses control flow that Python 3.14 reports while compiling the module.
+  "ignore:'return' in a 'finally' block:SyntaxWarning",
   # Qiskit 1.2 deprecations
   'ignore:.*no need for these schema-conformant objects.*:DeprecationWarning:',
   # Qiskit 1.3 deprecations
@@ -243,6 +252,7 @@ default.extend-ignore-re = [
 [tool.typos.default.extend-words]
 wille = "wille"
 anc = "anc"
+braket = "braket"
 mch = "mch"
 ket = "ket"
 optin = "optin"
@@ -264,12 +274,13 @@ build = "cp3*"
 skip = ["*-musllinux_*"]
 archs = "auto64"
 test-groups = ["test"]
-test-sources = ["test/python", "test/circuits", "json/na"]
+test-sources = ["test/python", "test/circuits", "json"]
 test-command = "pytest test/python"
 build-frontend = "uv"
 test-skip = [
   "cp3??t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels
+  "cp315*", # no 3.15 wheels yet
 ]
 
 [tool.cibuildwheel.linux]
@@ -328,6 +339,7 @@ docs = [
   "sphinxext-opengraph>=0.13.0",
   "qiskit[visualization]>=1.1.0",
   "openqasm-pygments>=0.2.0",
+  "pennylane>=0.45.1,<0.46; python_version >= '3.11'",
   "graphviz>=0.21.0",
   "sphinx>=8.1.3; python_version < '3.11'",
   "sphinx>=9.0; python_version >= '3.11'",
@@ -339,6 +351,7 @@ test = [
   "pytest-cov>=7.1.0",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8.0",
+  "pennylane>=0.45.1,<0.46; python_version >= '3.11'",
   "qiskit[qasm3-import]>=1.1.0",
   "numpy>=2.1; python_version >= '3.13'",
   "numpy>=2.3.2; python_version >= '3.14'",

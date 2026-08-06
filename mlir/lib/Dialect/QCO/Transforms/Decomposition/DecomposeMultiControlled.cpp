@@ -123,7 +123,7 @@ public:
     h(target);
   }
 
-  // Building blocks left as QCO ops (further lowered by min-controls)
+  // Building blocks left as QCO ops (further lowered by min-qubits)
   void emitCcx(size_t c0, size_t c1, size_t target) {
     emitCtrl({c0, c1}, target, [](OpBuilder& builder, Location loc, Value arg) {
       return XOp::create(builder, loc, arg).getOutputQubit(0);
@@ -1047,6 +1047,8 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
 
 // SP22 LDD for general-angle MCP at and above this width.
 static constexpr size_t K_MCP_SP22_MIN_CONTROLS = 5;
+// No-ancilla MCX/MCZ uses SP22 MCP(π) through this control count.
+static constexpr size_t K_MCX_SP22_MAX_CONTROLS = 32;
 
 static CircuitPlan planMcp(double theta, size_t numControls);
 
@@ -1104,18 +1106,6 @@ static CircuitPlan planMcpValeRelativeResidual(double theta,
   CircuitPlan plan;
   appendValeFig7Shell(plan, theta, numControls);
   appendMcpBarencoRelative(plan, theta / 2.0, numControls - 1, numControls - 1);
-  return plan;
-}
-
-/// Recursive Vale shells; Barenco-relative residual at width ≤ 4.
-/// Used for MCX/MCZ k=5 (shell at 5, then relative residual at 4).
-static CircuitPlan planMcpValeHybridResidual(double theta, size_t numControls) {
-  if (numControls <= K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS) {
-    return planMcpValeRelativeResidual(theta, numControls);
-  }
-  CircuitPlan plan;
-  appendValeFig7Shell(plan, theta, numControls);
-  appendPlanOps(plan, planMcpValeHybridResidual(theta / 2.0, numControls - 1));
   return plan;
 }
 
@@ -1232,13 +1222,14 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
   return plan;
 }
 
-// MCZ core: k=4 relative-phase C^4(Z); k=5 Vale hybrid; else HP24.
+// MCZ core: k=4 relative-phase C^4(Z); SP22 MCP(π) for 5..32; else HP24.
 static CircuitPlan mczCoreForWidth(size_t numControls, size_t numWires) {
   if (numControls == 4) {
     return planMczRelativePhaseK4();
   }
-  if (numControls == 5) {
-    return planMcpValeHybridResidual(K_PI, numControls);
+  if (numControls >= K_MCP_SP22_MIN_CONTROLS &&
+      numControls <= K_MCX_SP22_MAX_CONTROLS) {
+    return planMcpSp22(K_PI, numControls);
   }
   return planHp24Core(numWires, selectHp24Policy(numControls));
 }
@@ -1290,6 +1281,33 @@ matchControlledTarget(UnitaryOpInterface inner) {
   return std::nullopt;
 }
 
+/// Rewrite controlled-SWAP (Fredkin) as CX–MCX–CX.
+///
+/// Identity: MCSWAP(C, a, b) = CX(a, b) · MCX(C ∪ {b}, a) · CX(a, b).
+/// Callers gate on the controlled-SWAP's total qubit count (`min-qubits`).
+static SmallVector<Value>
+synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
+                         Value targetA, Value targetB) {
+  const auto makeX = [&](Value t) {
+    return XOp::create(builder, loc, t).getOutputQubit(0);
+  };
+
+  auto cx1 = CtrlOp::create(builder, loc, targetA, targetB, makeX);
+
+  SmallVector<Value, 4> mcxControls(controls);
+  mcxControls.push_back(cx1.getOutputTarget(0));
+  auto mcx =
+      CtrlOp::create(builder, loc, mcxControls, cx1.getOutputControl(0), makeX);
+
+  auto cx2 = CtrlOp::create(builder, loc, mcx.getOutputTarget(0),
+                            mcx.getOutputControl(controls.size()), makeX);
+
+  SmallVector<Value> results(mcx.getOutputControls().drop_back());
+  results.push_back(cx2.getOutputControl(0));
+  results.push_back(cx2.getOutputTarget(0));
+  return results;
+}
+
 //===----------------------------------------------------------------------===//
 // Patterns and pass
 //===----------------------------------------------------------------------===//
@@ -1298,17 +1316,31 @@ namespace {
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
-                                          uint64_t minControls)
-      : OpRewritePattern<CtrlOp>(context), minControls_(minControls) {}
+                                          uint64_t minQubits)
+      : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits) {}
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto numControls = op.getNumControls();
-    if (numControls < minControls_ || op.getNumTargets() != 1) {
+    if (op.getNumQubits() < minQubits_) {
       return failure();
     }
+
+    const auto numControls = op.getNumControls();
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
+      return failure();
+    }
+
+    // MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b).
+    if (op.getNumTargets() == 2 && isa<SWAPOp>(inner.getOperation())) {
+      rewriter.setInsertionPoint(op);
+      rewriter.replaceOp(op, synthesizeControlledSwap(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), op.getInputTarget(1)));
+      return success();
+    }
+
+    if (op.getNumTargets() != 1) {
       return failure();
     }
     const auto spec = matchControlledTarget(inner);
@@ -1318,8 +1350,8 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
     ControlledTarget gate = spec->gate;
     // A compile-time phase of +/- pi is exactly Z; route it through the
-    // multi-controlled-Z path (elementary at k=2/3, relative-phase / Vale at
-    // k=4/5, else HP24).
+    // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase / Vale
+    // at 5–6 qubits, else HP24).
     if (gate == ControlledTarget::Phase && spec->theta &&
         std::abs(std::abs(*spec->theta) - K_PI) <= utils::TOLERANCE) {
       gate = ControlledTarget::Z;
@@ -1333,7 +1365,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       return success();
     }
     if (numControls < 3) {
-      // Exactly two controls (k < 2 is rejected by min-controls >= 2).
+      // Exactly two controls (k < 2 is rejected by min-qubits >= 3).
       rewriter.replaceOp(op, synthesizeTwoControlled(
                                  rewriter, op.getLoc(), op.getControlsIn()[0],
                                  op.getControlsIn()[1], op.getInputTarget(0),
@@ -1353,16 +1385,16 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   }
 
 private:
-  uint64_t minControls_;
+  uint64_t minQubits_;
 };
 
 struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
-  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minControls)
-      : OpRewritePattern<RCCXOp>(context), minControls_(minControls) {}
+  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits)
+      : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits) {}
 
   LogicalResult matchAndRewrite(RCCXOp op,
                                 PatternRewriter& rewriter) const override {
-    if (minControls_ > 2) {
+    if (RCCXOp::getNumQubits() < minQubits_) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
@@ -1373,7 +1405,7 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
   }
 
 private:
-  uint64_t minControls_;
+  uint64_t minQubits_;
 };
 
 struct DecomposeMultiControlled final
@@ -1382,16 +1414,16 @@ struct DecomposeMultiControlled final
 
 protected:
   void runOnOperation() override {
-    if (minControls < 2) {
+    if (minQubits < 3) {
       getOperation().emitError()
-          << "decompose-multi-controlled requires min-controls >= 2";
+          << "decompose-multi-controlled requires min-qubits >= 3";
       signalPassFailure();
       return;
     }
 
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
-        &getContext(), minControls);
+        &getContext(), minQubits);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();

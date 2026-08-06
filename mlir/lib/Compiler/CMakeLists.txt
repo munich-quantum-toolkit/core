@@ -6,10 +6,47 @@
 #
 # Licensed under the MIT License
 
+# Build the immutable compiler target model
+add_mlir_library(
+  MQTCompilerTarget
+  PARTIAL_SOURCES_INTENDED
+  Target.cpp
+  ADDITIONAL_HEADER_DIRS
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
+  LINK_LIBS
+  PUBLIC
+  MLIRIR
+  MLIRQCODialect)
+
+mqt_mlir_target_use_project_options(MQTCompilerTarget)
+
+target_sources(MQTCompilerTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+                                        FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
+
+# Build the optional FoMaC-to-compiler-target adapter
+add_mlir_library(
+  MQTCompilerFoMaCAdapter
+  PARTIAL_SOURCES_INTENDED
+  FoMaCAdapter.cpp
+  ADDITIONAL_HEADER_DIRS
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
+  LINK_LIBS
+  PUBLIC
+  MQTCompilerTarget
+  MQT::CoreFoMaC)
+
+mqt_mlir_target_use_project_options(MQTCompilerFoMaCAdapter)
+
+target_sources(
+  MQTCompilerFoMaCAdapter PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+                                 ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/FoMaCAdapter.h)
+
 # Build the compiler pipeline library
 add_mlir_library(
   MQTCompilerPipeline
+  PARTIAL_SOURCES_INTENDED
   Programs.cpp
+  TargetCompilation.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
   LINK_LIBS
@@ -32,12 +69,14 @@ add_mlir_library(
   MLIRTargetLLVMIRExport
   MLIRBuiltinToLLVMIRTranslation
   MLIRLLVMToLLVMIRTranslation
+  MQTCompilerTarget
   MQT::MLIRSupport)
 
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
 # collect header files
 file(GLOB_RECURSE COMPILER_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/*.h")
+list(FILTER COMPILER_HEADERS_SOURCE EXCLUDE REGEX "/(FoMaCAdapter|Target)\\.h$")
 
 target_sources(MQTCompilerPipeline PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
                                           FILES ${COMPILER_HEADERS_SOURCE})
