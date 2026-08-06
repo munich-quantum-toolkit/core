@@ -2225,7 +2225,7 @@ Value ctrlMultipleGPhases(QCProgramBuilder& b) {
 
 Value ctrlMultipleGPhasesRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.cp(0.589, q[0], q[1]);
+  b.cp(0.579, q[0], q[1]);
   b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
     b.x(targets[0]);
     b.rxx(0.789, targets[0], targets[1]);

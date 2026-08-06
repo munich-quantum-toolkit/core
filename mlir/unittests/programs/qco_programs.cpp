@@ -3602,7 +3602,7 @@ Value ctrlMultipleGPhases(QCOProgramBuilder& b) {
 
 Value ctrlMultipleGPhasesRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  std::tie(q[0], q[1]) = b.cp(0.589, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.cp(0.579, q[0], q[1]);
   const auto [controls, targets] =
       b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange args) {
         auto target0 = b.x(args[0]);
