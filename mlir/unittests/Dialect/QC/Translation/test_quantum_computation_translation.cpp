@@ -143,6 +143,26 @@ TEST_F(QuantumComputationTranslationTest, RetainsClassicalRegisterName) {
   EXPECT_EQ(name.getValue(), "named_result");
 }
 
+TEST_F(QuantumComputationTranslationTest, RetainsQuantumRegisterName) {
+  ::qc::QuantumComputation comp;
+  comp.addQubitRegister(2, "named_qubits");
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+
+  mlir::memref::AllocOp quantumRegister;
+  translated->walk([&](mlir::memref::AllocOp op) {
+    if (mlir::isa<mlir::qc::QubitType>(op.getType().getElementType())) {
+      quantumRegister = op;
+    }
+  });
+  ASSERT_TRUE(quantumRegister);
+  const auto name = quantumRegister->getAttrOfType<mlir::StringAttr>(
+      mlir::utils::QUANTUM_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
 TEST_F(QuantumComputationTranslationTest, JoinsMeasurementsFromBothBranches) {
   ::qc::QuantumComputation comp;
   const auto& q = comp.addQubitRegister(2, "q");

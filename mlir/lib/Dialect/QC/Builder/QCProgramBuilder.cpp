@@ -117,8 +117,8 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 }
 
 QCProgramBuilder::QubitRegister
-QCProgramBuilder::allocQubitRegister(const int64_t size) {
-  auto memref = allocQubitRegisterStorage(size);
+QCProgramBuilder::allocQubitRegister(const int64_t size, const StringRef name) {
+  auto memref = allocQubitRegisterStorage(size, name);
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
@@ -130,7 +130,8 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = memref, .qubits = std::move(qubits)};
 }
 
-Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size) {
+Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size,
+                                                  const StringRef name) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
@@ -139,7 +140,11 @@ Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size) {
   }
 
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
-  auto memref = memref::AllocOp::create(*this, memrefType).getResult();
+  auto alloc = memref::AllocOp::create(*this, memrefType);
+  if (!name.empty()) {
+    alloc->setAttr(QUANTUM_REGISTER_NAME_ATTR, getStringAttr(name));
+  }
+  auto memref = alloc.getResult();
   allocatedQregs.insert(memref);
   return memref;
 }
