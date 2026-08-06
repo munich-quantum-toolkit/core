@@ -513,7 +513,6 @@ module {
     return %single, %bits, %measured : memref<1xi1>, memref<2xi1>, i1
   }
 }
-
 )mlir";
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
