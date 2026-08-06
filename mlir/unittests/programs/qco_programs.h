@@ -1258,6 +1258,18 @@ Value ctrlTwoMixed(QCOProgramBuilder& b);
 /// Creates a circuit with nested control modifiers applied to two gates.
 Value nestedCtrlTwo(QCOProgramBuilder& b);
 
+/// Creates a single-control modifier containing a global phase and an X gate.
+Value ctrlGPhaseAndX(QCOProgramBuilder& b);
+
+/// Reference for ctrlGPhaseAndX with the phase lifted onto the control.
+Value ctrlGPhaseAndXRef(QCOProgramBuilder& b);
+
+/// Creates a multi-control modifier containing two global phases and two gates.
+Value ctrlMultipleGPhases(QCOProgramBuilder& b);
+
+/// Reference for ctrlMultipleGPhases with both phases lifted in order.
+Value ctrlMultipleGPhasesRef(QCOProgramBuilder& b);
+
 /// Creates a circuit with a control modifier applied to an inverse modifier
 /// applied to two gates.
 Value ctrlInvTwo(QCOProgramBuilder& b);

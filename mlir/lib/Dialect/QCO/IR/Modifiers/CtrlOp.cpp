@@ -41,6 +41,29 @@ using namespace mlir::qco;
 namespace {
 
 /**
+ * @brief Materialize a global phase controlled by @p controls.
+ * @return The updated control qubits in their original order.
+ */
+SmallVector<Value> createControlledPhase(PatternRewriter& rewriter,
+                                         const Location controlledLoc,
+                                         const Location phaseLoc,
+                                         const ValueRange controls,
+                                         const Value theta) {
+  assert(!controls.empty());
+  if (controls.size() == 1) {
+    return {POp::create(rewriter, controlledLoc, controls.front(), theta)
+                .getOutputQubit(0)};
+  }
+
+  auto controlledPhase = CtrlOp::create(
+      rewriter, controlledLoc, controls.drop_back(), controls.back(),
+      [&](Value target) -> Value {
+        return POp::create(rewriter, phaseLoc, target, theta).getOutputQubit(0);
+      });
+  return SmallVector<Value>(controlledPhase.getOutputQubits());
+}
+
+/**
  * @brief Merge nested control modifiers into a single one.
  */
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
@@ -104,6 +127,49 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 };
 
 /**
+ * @brief Pull global phases out of multi-operation control modifiers.
+ */
+struct PullGPhaseOutOfCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumControls() == 0 || op.getNumBodyUnitaries() < 2) {
+      return failure();
+    }
+
+    SmallVector<GPhaseOp> globalPhases;
+    for (auto gphase : op.getBody()->getOps<GPhaseOp>()) {
+      // Moving the phase out must not leave its angle defined in the body.
+      if (gphase.getTheta().getParentBlock() == op.getBody()) {
+        return failure();
+      }
+      globalPhases.push_back(gphase);
+    }
+    if (globalPhases.empty()) {
+      return failure();
+    }
+
+    SmallVector<Value> controls(op.getControlsIn());
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(op);
+    for (auto gphase : globalPhases) {
+      controls =
+          createControlledPhase(rewriter, gphase.getLoc(), gphase.getLoc(),
+                                controls, gphase.getTheta());
+      rewriter.eraseOp(gphase);
+    }
+
+    rewriter.modifyOpInPlace(op, [&]() {
+      for (auto [index, control] : llvm::enumerate(controls)) {
+        op->setOperand(index, control);
+      }
+    });
+    return success();
+  }
+};
+
+/**
  * @brief Reduce controls for well-known gates.
  * @details Removes empty control ops and handles controlled IdOp, GPhaseOp and
  * BarrierOp.
@@ -143,41 +209,12 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Special case for single control: replace with a single POp
-    if (op.getNumControls() == 1) {
-      rewriter.replaceOpWithNewOp<POp>(op, op.getInputControl(0),
-                                       gPhaseOp.getTheta());
-      return success();
-    }
-
-    // Reinterpret the last control as a target qubit and apply a phase gate to
-    // it inside the (smaller) controlled region
-    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
-    auto segmentsAttr =
-        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
-    auto newSegments = DenseI32ArrayAttr::get(
-        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
-    op->setAttr(opSegmentsAttrName, newSegments);
-    const auto opResultSegmentsAttrName = CtrlOp::getResultSegmentSizeAttr();
-    op->setAttr(opResultSegmentsAttrName, newSegments);
-
-    // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
-                                         op.getLoc());
-
-    // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(gPhaseOp);
-    auto pOp =
-        POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
-
-    // Add the results of the POp to the yield operation
-    auto yieldOp = cast<YieldOp>(op.getBody()->back());
-    yieldOp->setOperands(pOp->getResults());
-
-    // Erase the GPhaseOp
-    rewriter.eraseOp(gPhaseOp);
-
+    rewriter.setInsertionPoint(op);
+    auto outputs =
+        createControlledPhase(rewriter, op.getLoc(), gPhaseOp.getLoc(),
+                              op.getControlsIn(), gPhaseOp.getTheta());
+    rewriter.replaceOp(op, outputs);
     return success();
   }
 };
@@ -323,7 +360,8 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
+  results.add<MergeNestedCtrl, PullGPhaseOutOfCtrl, ReduceCtrl, EraseEmptyCtrl>(
+      context);
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {

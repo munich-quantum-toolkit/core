@@ -2196,6 +2196,44 @@ Value nestedCtrlTwo(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+Value ctrlGPhaseAndX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) {
+    b.gphase(0.123);
+    b.x(target);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlGPhaseAndXRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.p(0.123, q[0]);
+  b.cx(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlMultipleGPhases(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    b.gphase(0.123);
+    b.x(targets[0]);
+    b.gphase(0.456);
+    b.rxx(0.789, targets[0], targets[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlMultipleGPhasesRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.cp(0.123, q[0], q[1]);
+  b.cp(0.456, q[0], q[1]);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    b.x(targets[0]);
+    b.rxx(0.789, targets[0], targets[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
 Value ctrlInvTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {

@@ -35,6 +35,24 @@ using namespace mlir::qc;
 namespace {
 
 /**
+ * @brief Materialize a global phase controlled by @p controls.
+ */
+void createControlledPhase(PatternRewriter& rewriter,
+                           const Location controlledLoc,
+                           const Location phaseLoc, const ValueRange controls,
+                           const Value theta) {
+  assert(!controls.empty());
+  if (controls.size() == 1) {
+    POp::create(rewriter, controlledLoc, controls.front(), theta);
+    return;
+  }
+
+  CtrlOp::create(
+      rewriter, controlledLoc, controls.drop_back(), controls.back(),
+      [&](Value target) { POp::create(rewriter, phaseLoc, target, theta); });
+}
+
+/**
  * @brief Merge nested control modifiers into a single one.
  */
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
@@ -89,6 +107,41 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 };
 
 /**
+ * @brief Pull global phases out of multi-operation control modifiers.
+ */
+struct PullGPhaseOutOfCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumControls() == 0 || op.getNumBodyUnitaries() < 2) {
+      return failure();
+    }
+
+    SmallVector<GPhaseOp> globalPhases;
+    for (auto gphase : op.getBody()->getOps<GPhaseOp>()) {
+      // Moving the phase out must not leave its angle defined in the body.
+      if (gphase.getTheta().getParentBlock() == op.getBody()) {
+        return failure();
+      }
+      globalPhases.push_back(gphase);
+    }
+    if (globalPhases.empty()) {
+      return failure();
+    }
+
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(op);
+    for (auto gphase : globalPhases) {
+      createControlledPhase(rewriter, gphase.getLoc(), gphase.getLoc(),
+                            op.getControls(), gphase.getTheta());
+      rewriter.eraseOp(gphase);
+    }
+    return success();
+  }
+};
+
+/**
  * @brief Reduce controls for well-known gates.
  * @details Removes empty control ops and handles controlled IdOp, GPhaseOp and
  * BarrierOp.
@@ -120,32 +173,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Special case for single control: replace with a single POp
-    if (op.getNumControls() == 1) {
-      rewriter.replaceOpWithNewOp<POp>(op, op.getControl(0),
-                                       gPhaseOp.getTheta());
-      return success();
-    }
-
-    // Reinterpret the last control as a target qubit and apply a phase gate to
-    // it inside the (smaller) controlled region
-    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
-    auto segmentsAttr =
-        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
-    auto newSegments = DenseI32ArrayAttr::get(
-        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
-    op->setAttr(opSegmentsAttrName, newSegments);
-
-    // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
-                                         op.getLoc());
-
-    // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(gPhaseOp);
-    POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
-    rewriter.eraseOp(gPhaseOp);
-
+    rewriter.setInsertionPoint(op);
+    createControlledPhase(rewriter, op.getLoc(), gPhaseOp.getLoc(),
+                          op.getControls(), gPhaseOp.getTheta());
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -242,5 +274,6 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
+  results.add<MergeNestedCtrl, PullGPhaseOutOfCtrl, ReduceCtrl, EraseEmptyCtrl>(
+      context);
 }
