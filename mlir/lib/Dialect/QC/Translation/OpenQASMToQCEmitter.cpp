@@ -112,7 +112,7 @@ public:
   OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
                       MLIRContext& mlirContext)
       : program(typedProgram), context(mlirContext), emissionBudget(context),
-        builder(&context), registerValues(program.registers.size()),
+        builder(&context), qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
         outputBitRegisters(program.registers.size(), false),
         bitValues(program.registers.size()),
@@ -201,7 +201,7 @@ private:
       context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   EmissionBudget emissionBudget;
   qc::QCProgramBuilder builder;
-  std::vector<SmallVector<Value>> registerValues;
+  std::vector<Value> qubitValues;
   std::vector<Value> classicalRegisters;
   std::vector<bool> outputBitRegisters;
   std::vector<SmallVector<Value>> bitValues;
@@ -312,26 +312,6 @@ private:
         << "OpenQASM QC emission error: projected emitted operation count "
            "exceeds the safe lowering limit";
     return false;
-  }
-
-  [[nodiscard]] bool
-  projectedMultiplicity(const ArrayRef<frontend::QubitReference> references,
-                        const size_t parentMultiplicity,
-                        const oq3::frontend::SourceLocation& source,
-                        size_t& result) const {
-    result = parentMultiplicity;
-    for (const auto& reference : references) {
-      if (!reference.dynamicIndex) {
-        continue;
-      }
-      const auto width =
-          static_cast<size_t>(program.registers.at(reference.symbol).width);
-      if (width != 0 && result > PROJECTED_EMISSION_LIMIT / width) {
-        return reportProjectedEmissionLimit(source);
-      }
-      result *= width;
-    }
-    return true;
   }
 
   [[nodiscard]] bool
@@ -494,31 +474,68 @@ private:
                                 projectedEmission, source);
   }
 
-  [[nodiscard]] bool
-  chargeDynamicDispatch(const ArrayRef<frontend::QubitReference> references,
-                        const size_t parentMultiplicity,
-                        size_t& projectedEmission,
-                        const oq3::frontend::SourceLocation& source) const {
-    auto switchMultiplicity = parentMultiplicity;
+  [[nodiscard]] static llvm::SmallDenseSet<frontend::RegisterId, 4>
+  collectDynamicallyIndexedRegisters(
+      const ArrayRef<frontend::QubitReference> references) {
+    llvm::SmallDenseSet<frontend::RegisterId, 4> registers;
     for (const auto& reference : references) {
-      if (!reference.dynamicIndex) {
+      if (reference.kind == frontend::QubitReferenceKind::Register &&
+          reference.dynamicIndex) {
+        registers.insert(reference.symbol);
+      }
+    }
+    return registers;
+  }
+
+  [[nodiscard]] bool
+  chargeQubitAccesses(const ArrayRef<frontend::QubitReference> references,
+                      const size_t multiplicity, size_t& projectedEmission,
+                      const oq3::frontend::SourceLocation& source) const {
+    struct RegisterAccessCounts {
+      size_t total = 0;
+      size_t dynamic = 0;
+    };
+    const auto dynamicallyIndexedRegisters =
+        collectDynamicallyIndexedRegisters(references);
+    llvm::DenseMap<frontend::RegisterId, RegisterAccessCounts> priorAccesses;
+
+    for (const auto& reference : references) {
+      if (reference.kind != frontend::QubitReferenceKind::Register ||
+          program.registers.at(reference.symbol).isScalar) {
         continue;
       }
-      const auto width =
-          static_cast<size_t>(program.registers.at(reference.symbol).width);
-      // Checked-index normalization plus the index cast and switch operation.
-      if (!chargeExpressionEmission(*reference.dynamicIndex, switchMultiplicity,
-                                    projectedEmission, source) ||
-          !chargeScaledEmission(9, switchMultiplicity, projectedEmission,
-                                source) ||
-          !chargeScaledEmission(width, switchMultiplicity, projectedEmission,
+
+      if (reference.dynamicIndex &&
+          !chargeExpressionEmission(*reference.dynamicIndex, multiplicity,
+                                    projectedEmission, source)) {
+        return false;
+      }
+      // A static access emits a constant index and a load. A checked dynamic
+      // access additionally normalizes signed negative indices, verifies the
+      // bounds, and casts to the MLIR index type.
+      const size_t accessCost = reference.dynamicIndex ? 12 : 2;
+      if (!chargeScaledEmission(accessCost, multiplicity, projectedEmission,
                                 source)) {
         return false;
       }
-      if (width != 0 && switchMultiplicity > PROJECTED_EMISSION_LIMIT / width) {
+
+      if (!dynamicallyIndexedRegisters.contains(reference.symbol)) {
+        continue;
+      }
+      auto& accesses = priorAccesses[reference.symbol];
+      const auto comparisons =
+          reference.dynamicIndex ? accesses.total : accesses.dynamic;
+      if (comparisons > PROJECTED_EMISSION_LIMIT / 2) {
         return reportProjectedEmissionLimit(source);
       }
-      switchMultiplicity *= width;
+      if (!chargeScaledEmission(2 * comparisons, multiplicity,
+                                projectedEmission, source)) {
+        return false;
+      }
+      ++accesses.total;
+      if (reference.dynamicIndex) {
+        ++accesses.dynamic;
+      }
     }
     return true;
   }
@@ -561,13 +578,9 @@ private:
                           const oq3::frontend::SourceLocation& source) const {
     const auto& condition = program.conditions.at(id);
     if (condition.kind == frontend::ConditionKind::Measurement) {
-      size_t operationMultiplicity = 0;
-      return chargeDynamicDispatch({condition.measurement}, multiplicity,
-                                   projectedEmission, source) &&
-             projectedMultiplicity({condition.measurement}, multiplicity,
-                                   source, operationMultiplicity) &&
-             chargeProjectedEmission(operationMultiplicity, projectedEmission,
-                                     source);
+      return chargeQubitAccesses({condition.measurement}, multiplicity,
+                                 projectedEmission, source) &&
+             chargeScaledEmission(1, multiplicity, projectedEmission, source);
     }
     if (condition.kind == frontend::ConditionKind::Literal) {
       return chargeScaledEmission(1, multiplicity, projectedEmission, source);
@@ -748,15 +761,9 @@ private:
                   multiplicity, projectedEmission, statement.location)) {
             return false;
           }
-        } else if (const auto* declaration =
-                       std::get_if<frontend::DeclarationStatement>(
-                           &statement.data)) {
-          const auto& reg = program.registers.at(declaration->reg);
-          size_t cost = 1;
-          if (reg.kind == frontend::RegisterKind::Qubit && !reg.isScalar) {
-            cost += 2 * static_cast<size_t>(reg.width);
-          }
-          if (!chargeScaledEmission(cost, multiplicity, projectedEmission,
+        } else if (std::holds_alternative<frontend::DeclarationStatement>(
+                       statement.data)) {
+          if (!chargeScaledEmission(1, multiplicity, projectedEmission,
                                     statement.location)) {
             return false;
           }
@@ -764,15 +771,10 @@ private:
                        std::get_if<frontend::MeasurementStatement>(
                            &statement.data)) {
           for (const auto& qubit : measurement->qubits) {
-            size_t operationMultiplicity = 0;
-            if (!chargeDynamicDispatch({qubit}, multiplicity, projectedEmission,
-                                       statement.location) ||
-                !projectedMultiplicity({qubit}, multiplicity,
-                                       statement.location,
-                                       operationMultiplicity) ||
-                !chargeProjectedEmission(operationMultiplicity,
-                                         projectedEmission,
-                                         statement.location)) {
+            if (!chargeQubitAccesses({qubit}, multiplicity, projectedEmission,
+                                     statement.location) ||
+                !chargeScaledEmission(1, multiplicity, projectedEmission,
+                                      statement.location)) {
               return false;
             }
           }
@@ -793,29 +795,20 @@ private:
         } else if (const auto* reset =
                        std::get_if<frontend::ResetStatement>(&statement.data)) {
           for (const auto& qubit : reset->qubits) {
-            size_t operationMultiplicity = 0;
-            if (!chargeDynamicDispatch({qubit}, multiplicity, projectedEmission,
-                                       statement.location) ||
-                !projectedMultiplicity({qubit}, multiplicity,
-                                       statement.location,
-                                       operationMultiplicity) ||
-                !chargeProjectedEmission(operationMultiplicity,
-                                         projectedEmission,
-                                         statement.location)) {
+            if (!chargeQubitAccesses({qubit}, multiplicity, projectedEmission,
+                                     statement.location) ||
+                !chargeScaledEmission(1, multiplicity, projectedEmission,
+                                      statement.location)) {
               return false;
             }
           }
         } else if (const auto* barrier =
                        std::get_if<frontend::BarrierStatement>(
                            &statement.data)) {
-          size_t operationMultiplicity = 0;
-          if (!chargeDynamicDispatch(barrier->qubits, multiplicity,
-                                     projectedEmission, statement.location) ||
-              !projectedMultiplicity(barrier->qubits, multiplicity,
-                                     statement.location,
-                                     operationMultiplicity) ||
-              !chargeProjectedEmission(operationMultiplicity, projectedEmission,
-                                       statement.location)) {
+          if (!chargeQubitAccesses(barrier->qubits, multiplicity,
+                                   projectedEmission, statement.location) ||
+              !chargeScaledEmission(1, multiplicity, projectedEmission,
+                                    statement.location)) {
             return false;
           }
         }
@@ -844,11 +837,8 @@ private:
           return false;
         }
       }
-      size_t operationMultiplicity = 0;
-      if (!projectedMultiplicity(application->qubits, multiplicity,
-                                 statement.location, operationMultiplicity) ||
-          !chargeDynamicDispatch(application->qubits, multiplicity,
-                                 projectedEmission, statement.location)) {
+      if (!chargeQubitAccesses(application->qubits, multiplicity,
+                               projectedEmission, statement.location)) {
         return false;
       }
       const auto* gate = findCustomGate(application->callee);
@@ -869,14 +859,14 @@ private:
             leafCost += 3;
           }
         }
-        if (!chargeScaledEmission(leafCost, operationMultiplicity,
-                                  projectedEmission, statement.location)) {
+        if (!chargeScaledEmission(leafCost, multiplicity, projectedEmission,
+                                  statement.location)) {
           return false;
         }
         continue;
       }
       if (!chargeScaledEmission(modifierEmissionCost(*application),
-                                operationMultiplicity, projectedEmission,
+                                multiplicity, projectedEmission,
                                 statement.location)) {
         return false;
       }
@@ -887,8 +877,7 @@ private:
                "structured control flow are not supported by the QC dialect";
         return false;
       }
-      if (!preflightStatements(gate->body, projectedEmission,
-                               operationMultiplicity)) {
+      if (!preflightStatements(gate->body, projectedEmission, multiplicity)) {
         return false;
       }
     }
@@ -1469,12 +1458,15 @@ private:
   }
 
   Value resolveQubit(const frontend::QubitReference& reference,
-                     ValueRange gateQubits) {
+                     ValueRange gateQubits, const Value index = {}) {
     switch (reference.kind) {
     case frontend::QubitReferenceKind::Register: {
-      assert(!reference.dynamicIndex &&
-             "dynamic qubit references require structured dispatch");
-      return registerValues.at(reference.symbol)[reference.index];
+      const auto& declaration = program.registers.at(reference.symbol);
+      if (declaration.isScalar) {
+        return qubitValues.at(reference.symbol);
+      }
+      assert(index && "register qubit references require an index");
+      return builder.loadQubit(qubitValues.at(reference.symbol), index);
     }
     case frontend::QubitReferenceKind::GateArgument:
       return gateQubits[reference.symbol];
@@ -1485,102 +1477,84 @@ private:
   }
 
   [[nodiscard]] SmallVector<Value>
-  emitDynamicQubitIndices(ArrayRef<frontend::QubitReference> references) {
+  emitQubitIndices(ArrayRef<frontend::QubitReference> references) {
     SmallVector<Value> indices(references.size());
     for (const auto [position, reference] : llvm::enumerate(references)) {
+      if (reference.kind != frontend::QubitReferenceKind::Register ||
+          program.registers.at(reference.symbol).isScalar) {
+        continue;
+      }
       if (!reference.dynamicIndex) {
+        indices[position] = arith::ConstantIndexOp::create(
+            builder, static_cast<int64_t>(reference.index));
         continue;
       }
       const auto width =
           static_cast<int64_t>(program.registers.at(reference.symbol).width);
-      indices[position] = emitCheckedIndex(*reference.dynamicIndex, width,
-                                           "dynamic qubit index out of bounds");
+      auto checked = emitCheckedIndex(*reference.dynamicIndex, width,
+                                      "dynamic qubit index out of bounds");
+      indices[position] =
+          arith::IndexCastOp::create(builder, builder.getIndexType(), checked);
     }
     return indices;
   }
 
   void
-  dispatchQubits(ArrayRef<frontend::QubitReference> references,
-                 ValueRange gateQubits, ValueRange dynamicIndices,
-                 llvm::function_ref<void(ValueRange)> emitResolvedOperation) {
-    SmallVector<Value> resolved(references.size());
-    const auto resolveAt = [&](auto&& self, const size_t position) -> void {
-      if (position == references.size()) {
-        emitResolvedOperation(resolved);
-        return;
-      }
+  emitDistinctQubitAssertions(ArrayRef<frontend::QubitReference> references,
+                              ValueRange indices, const StringRef message) {
+    const auto dynamicallyIndexedRegisters =
+        collectDynamicallyIndexedRegisters(references);
+    if (dynamicallyIndexedRegisters.empty()) {
+      return;
+    }
 
-      const auto& reference = references[position];
-      if (!reference.dynamicIndex) {
-        resolved[position] = resolveQubit(reference, gateQubits);
-        self(self, position + 1);
-        return;
-      }
-
-      const auto& qubits = registerValues.at(reference.symbol);
-      if (!emissionBudget.canConstruct(qubits.size() + 2)) {
-        return;
-      }
-      SmallVector<int64_t> cases;
-      cases.reserve(qubits.size() - 1);
-      for (size_t candidate = 0; candidate + 1 < qubits.size(); ++candidate) {
-        cases.push_back(static_cast<int64_t>(candidate));
-      }
-      auto selector = arith::IndexCastOp::create(
-          builder, builder.getIndexType(), dynamicIndices[position]);
-      auto switchOp = scf::IndexSwitchOp::create(builder, TypeRange{}, selector,
-                                                 cases, cases.size());
-      OpBuilder::InsertionGuard guard(builder);
-      const auto emitCase = [&](Region& region, const size_t candidate) {
-        auto& block = region.emplaceBlock();
-        builder.setInsertionPointToEnd(&block);
-        resolved[position] = qubits[candidate];
-        self(self, position + 1);
-        scf::YieldOp::create(builder);
-      };
-      for (const auto [candidate, region] :
-           llvm::enumerate(switchOp.getCaseRegions())) {
-        emitCase(region, candidate);
-      }
-      emitCase(switchOp.getDefaultRegion(), qubits.size() - 1);
+    struct PriorRegisterAccesses {
+      SmallVector<size_t> all;
+      SmallVector<size_t> dynamic;
     };
-    resolveAt(resolveAt, 0);
+    llvm::DenseMap<frontend::RegisterId, PriorRegisterAccesses> priorAccesses;
+
+    for (const auto [position, reference] : llvm::enumerate(references)) {
+      if (reference.kind != frontend::QubitReferenceKind::Register ||
+          program.registers.at(reference.symbol).isScalar ||
+          !dynamicallyIndexedRegisters.contains(reference.symbol)) {
+        continue;
+      }
+      auto& accesses = priorAccesses[reference.symbol];
+      const ArrayRef<size_t> possibleAliases =
+          reference.dynamicIndex ? accesses.all : accesses.dynamic;
+      for (const auto previousPosition : possibleAliases) {
+        auto distinct =
+            arith::CmpIOp::create(builder, arith::CmpIPredicate::ne,
+                                  indices[previousPosition], indices[position]);
+        cf::AssertOp::create(builder, distinct, message);
+      }
+      accesses.all.push_back(position);
+      if (reference.dynamicIndex) {
+        accesses.dynamic.push_back(position);
+      }
+    }
+  }
+
+  [[nodiscard]] SmallVector<Value>
+  resolveQubits(ArrayRef<frontend::QubitReference> references,
+                ValueRange gateQubits, ValueRange indices) {
+    SmallVector<Value> resolved;
+    resolved.reserve(references.size());
+    for (const auto [position, reference] : llvm::enumerate(references)) {
+      resolved.push_back(
+          resolveQubit(reference, gateQubits, indices[position]));
+    }
+    return resolved;
   }
 
   [[nodiscard]] Value
   emitQubitOperation(const frontend::QubitReference& reference,
                      ValueRange gateQubits,
                      llvm::function_ref<Value(Value)> emitResolvedOperation) {
-    if (!reference.dynamicIndex) {
-      return emitResolvedOperation(resolveQubit(reference, gateQubits));
-    }
-
-    const auto dynamicIndex = emitDynamicQubitIndices({reference}).front();
-    const auto& qubits = registerValues.at(reference.symbol);
-    if (!emissionBudget.canConstruct(qubits.size() + 2)) {
-      return {};
-    }
-    SmallVector<int64_t> cases;
-    cases.reserve(qubits.size() - 1);
-    for (size_t candidate = 0; candidate + 1 < qubits.size(); ++candidate) {
-      cases.push_back(static_cast<int64_t>(candidate));
-    }
-    auto selector = arith::IndexCastOp::create(builder, builder.getIndexType(),
-                                               dynamicIndex);
-    auto switchOp = scf::IndexSwitchOp::create(builder, builder.getI1Type(),
-                                               selector, cases, cases.size());
-    OpBuilder::InsertionGuard guard(builder);
-    const auto emitCase = [&](Region& region, const size_t candidate) {
-      auto& block = region.emplaceBlock();
-      builder.setInsertionPointToEnd(&block);
-      scf::YieldOp::create(builder, emitResolvedOperation(qubits[candidate]));
-    };
-    for (const auto [candidate, region] :
-         llvm::enumerate(switchOp.getCaseRegions())) {
-      emitCase(region, candidate);
-    }
-    emitCase(switchOp.getDefaultRegion(), qubits.size() - 1);
-    return switchOp.getResult(0);
+    const auto indices = emitQubitIndices({reference});
+    return emitResolvedOperation(
+        resolveQubit(reference, gateQubits, indices.front()));
   }
 
   static LogicalResult emitPrimitive(OpBuilder& opBuilder, const Location loc,
@@ -1877,33 +1851,10 @@ private:
       }
       parameters.push_back(parameter);
     }
-    const auto dynamicIndices = emitDynamicQubitIndices(application.qubits);
-    for (const auto [position, reference] :
-         llvm::enumerate(application.qubits)) {
-      if (reference.kind != frontend::QubitReferenceKind::Register) {
-        continue;
-      }
-      for (const auto [previousPosition, previous] :
-           llvm::enumerate(ArrayRef(application.qubits).take_front(position))) {
-        if (previous.kind != frontend::QubitReferenceKind::Register ||
-            previous.symbol != reference.symbol ||
-            (!previous.dynamicIndex && !reference.dynamicIndex)) {
-          continue;
-        }
-        auto previousIndex =
-            previous.dynamicIndex
-                ? dynamicIndices[previousPosition]
-                : builder.intConstant(static_cast<int64_t>(previous.index));
-        auto currentIndex =
-            reference.dynamicIndex
-                ? dynamicIndices[position]
-                : builder.intConstant(static_cast<int64_t>(reference.index));
-        auto distinct = arith::CmpIOp::create(builder, arith::CmpIPredicate::ne,
-                                              previousIndex, currentIndex);
-        cf::AssertOp::create(builder, distinct,
-                             "gate operands must not reference the same qubit");
-      }
-    }
+    const auto qubitIndices = emitQubitIndices(application.qubits);
+    emitDistinctQubitAssertions(
+        application.qubits, qubitIndices,
+        "gate operands must not reference the same qubit");
     SmallVector<int64_t> controlCounts(application.modifiers.size(), 0);
     SmallVector<std::variant<double, Value>> modifierOperands(
         application.modifiers.size());
@@ -1961,50 +1912,45 @@ private:
       controlCounts[position] = count;
     }
 
-    dispatchQubits(
-        application.qubits, gateQubits, dynamicIndices, [&](ValueRange qubits) {
-          llvm::DenseSet<Value> distinctQubits(qubits.begin(), qubits.end());
-          if (distinctQubits.size() != qubits.size()) {
-            return;
+    const auto qubits =
+        resolveQubits(application.qubits, gateQubits, qubitIndices);
+    size_t negativeOffset = 0;
+    for (const auto [position, modifier] :
+         llvm::enumerate(application.modifiers)) {
+      if (modifier.kind == frontend::ModifierKind::Ctrl ||
+          modifier.kind == frontend::ModifierKind::NegCtrl) {
+        if (modifier.kind == frontend::ModifierKind::NegCtrl) {
+          for (auto control : ValueRange(qubits).slice(
+                   negativeOffset, controlCounts[position])) {
+            qc::XOp::create(opBuilder, loc, control);
           }
-          size_t negativeOffset = 0;
-          for (const auto [position, modifier] :
-               llvm::enumerate(application.modifiers)) {
-            if (modifier.kind == frontend::ModifierKind::Ctrl ||
-                modifier.kind == frontend::ModifierKind::NegCtrl) {
-              if (modifier.kind == frontend::ModifierKind::NegCtrl) {
-                for (auto control :
-                     qubits.slice(negativeOffset, controlCounts[position])) {
-                  qc::XOp::create(opBuilder, loc, control);
-                }
-              }
-              negativeOffset += static_cast<size_t>(controlCounts[position]);
-            }
+        }
+        negativeOffset += static_cast<size_t>(controlCounts[position]);
+      }
+    }
+    const auto result =
+        emitModifiers(opBuilder, application, loc, parameters, controlCounts,
+                      modifierOperands, 0, qubits);
+    negativeOffset = 0;
+    for (const auto [position, modifier] :
+         llvm::enumerate(application.modifiers)) {
+      if (modifier.kind == frontend::ModifierKind::Ctrl ||
+          modifier.kind == frontend::ModifierKind::NegCtrl) {
+        if (modifier.kind == frontend::ModifierKind::NegCtrl) {
+          for (auto control : ValueRange(qubits).slice(
+                   negativeOffset, controlCounts[position])) {
+            qc::XOp::create(opBuilder, loc, control);
           }
-          const auto result =
-              emitModifiers(opBuilder, application, loc, parameters,
-                            controlCounts, modifierOperands, 0, qubits);
-          negativeOffset = 0;
-          for (const auto [position, modifier] :
-               llvm::enumerate(application.modifiers)) {
-            if (modifier.kind == frontend::ModifierKind::Ctrl ||
-                modifier.kind == frontend::ModifierKind::NegCtrl) {
-              if (modifier.kind == frontend::ModifierKind::NegCtrl) {
-                for (auto control :
-                     qubits.slice(negativeOffset, controlCounts[position])) {
-                  qc::XOp::create(opBuilder, loc, control);
-                }
-              }
-              negativeOffset += static_cast<size_t>(controlCounts[position]);
-            }
-          }
-          if (failed(result)) {
-            emissionFailed = true;
-            emitError(loc) << "OpenQASM QC emission error: gate '"
-                           << application.callee
-                           << "' has no lowering to the QC dialect";
-          }
-        });
+        }
+        negativeOffset += static_cast<size_t>(controlCounts[position]);
+      }
+    }
+    if (failed(result)) {
+      emissionFailed = true;
+      emitError(loc) << "OpenQASM QC emission error: gate '"
+                     << application.callee
+                     << "' has no lowering to the QC dialect";
+    }
   }
 
   [[nodiscard]] static Value emitScalarCast(OpBuilder& opBuilder,
@@ -2386,16 +2332,15 @@ private:
             emitMeasurement(data, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::ResetStatement>) {
             for (const auto& qubit : data.qubits) {
-              const auto indices = emitDynamicQubitIndices({qubit});
-              dispatchQubits({qubit}, gateQubits, indices,
-                             [&](ValueRange resolved) {
-                               builder.reset(resolved.front());
-                             });
+              const auto indices = emitQubitIndices({qubit});
+              builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
             }
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
-            const auto indices = emitDynamicQubitIndices(data.qubits);
-            dispatchQubits(data.qubits, gateQubits, indices,
-                           [&](ValueRange qubits) { builder.barrier(qubits); });
+            const auto indices = emitQubitIndices(data.qubits);
+            emitDistinctQubitAssertions(
+                data.qubits, indices,
+                "barrier operands must not reference the same qubit");
+            builder.barrier(resolveQubits(data.qubits, gateQubits, indices));
           } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
             emitIf(data, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::ForStatement>) {
@@ -2455,16 +2400,14 @@ private:
         if (!emissionBudget.canConstruct(1)) {
           return;
         }
-        registerValues[statement.reg] = {builder.allocQubit()};
+        qubitValues[statement.reg] = builder.allocQubit();
         return;
       }
-      const auto width = static_cast<size_t>(declaration.width);
-      if (!emissionBudget.canConstruct(1 + (2 * width))) {
+      if (!emissionBudget.canConstruct(1)) {
         return;
       }
-      auto allocation =
-          builder.allocQubitRegister(static_cast<int64_t>(declaration.width));
-      registerValues[statement.reg] = std::move(allocation.qubits);
+      qubitValues[statement.reg] = builder.allocQubitRegisterStorage(
+          static_cast<int64_t>(declaration.width));
       return;
     }
     if (outputBitRegisters[statement.reg]) {
@@ -2534,10 +2477,9 @@ private:
                        ValueRange gateQubits) {
     if (measurement.targets.empty()) {
       for (const auto& qubit : measurement.qubits) {
-        const auto indices = emitDynamicQubitIndices({qubit});
-        dispatchQubits({qubit}, gateQubits, indices, [&](ValueRange resolved) {
-          std::ignore = builder.measure(resolved.front());
-        });
+        const auto indices = emitQubitIndices({qubit});
+        std::ignore =
+            builder.measure(resolveQubit(qubit, gateQubits, indices.front()));
       }
       return;
     }

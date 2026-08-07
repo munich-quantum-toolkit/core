@@ -39,8 +39,8 @@ MLIR_STRING = r"""module {
     %c0 = arith.constant 0 : index
     %alloc = memref.alloc() : memref<2x!qc.qubit>
     %0 = memref.load %alloc[%c0] : memref<2x!qc.qubit>
-    %1 = memref.load %alloc[%c1] : memref<2x!qc.qubit>
     qc.h %0 : !qc.qubit
+    %1 = memref.load %alloc[%c1] : memref<2x!qc.qubit>
     qc.ctrl(%0) targets (%arg0 = %1) {
       qc.x %arg0 : !qc.qubit
       qc.yield

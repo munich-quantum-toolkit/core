@@ -8,17 +8,16 @@
  * Licensed under the MIT License
  */
 
+#include "ModifierUtils.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -595,14 +594,7 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult PowOp::verify() {
-  if (llvm::any_of(*getBody(), [](Operation& op) {
-        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
-                   memref::StoreOp>(op);
-      })) {
-    return emitOpError("body must not contain non-unitary quantum operations "
-                       "or modify a quantum register");
-  }
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,

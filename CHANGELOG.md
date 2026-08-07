@@ -12,6 +12,7 @@ releases may include breaking changes.
 
 ### Added
 
+- 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
@@ -50,8 +51,8 @@ releases may include breaking changes.
   ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
-  and structured control flow ([#1910], [#1994]) ([**@burgholzer**],
-  [**@denialhaag**])
+  structured control flow, and alias-safe qubit-register access ([#1910],
+  [#1987], [#1994]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -538,7 +539,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
 
 ### Added
 
-- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
+- 🐍 Start building CPython 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
@@ -720,6 +721,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
@@ -735,6 +737,7 @@ for previous changelogs._
 [#1994]: https://github.com/munich-quantum-toolkit/core/pull/1994
 [#1993]: https://github.com/munich-quantum-toolkit/core/pull/1993
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
+[#1987]: https://github.com/munich-quantum-toolkit/core/pull/1987
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983

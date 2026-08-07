@@ -9,8 +9,6 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
-#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -20,8 +18,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <iterator>
-
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -30,7 +26,7 @@ using namespace mlir::qtensor;
  */
 static bool isRemovableExtractInsertPair(InsertOp insert, ExtractOp extract) {
   return insert.getScalar() == extract.getResult() &&
-         areEquivalentIndices(insert.getIndex(), extract.getIndex());
+         isEqualConstantIntOrValue(insert.getIndex(), extract.getIndex());
 }
 
 /**
@@ -56,109 +52,40 @@ static Value foldInsertAfterExtract(InsertOp insert) {
 
 namespace {
 /**
- * @brief Remove an (insert, extract) pair when the inserted qubit has been
- * extracted previously with the same constant index.
- * @pre Assumes each qubit is extracted and inserted with the same index.
+ * @brief Commutes a directly chained insert and extract at provably distinct
+ * constant indices.
  */
-struct RemoveInsertExtractPairPattern final : OpRewritePattern<InsertOp> {
+struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
-    // Check: Insert has constant index.
-    if (!getConstantIntValue(insert.getIndex())) {
+    if (!insert.getResult().hasOneUse()) {
+      return failure();
+    }
+    auto extract = dyn_cast<ExtractOp>(*insert.getResult().getUsers().begin());
+    if (!extract || insert->getBlock() != extract->getBlock()) {
       return failure();
     }
 
-    // Search for an extract operation on the tensor-chain with the same
-    // constant index as the matched insert operation.
-    TensorIterator it(insert.getResult());
-    for (; it != std::default_sentinel; ++it) {
-      if (!isa<ExtractOp>(it.operation())) {
-        continue;
-      }
-
-      auto extract = cast<ExtractOp>(it.operation());
-
-      // Check: Extract has constant index.
-      if (!getConstantIntValue(extract.getIndex())) {
-        return failure();
-      }
-
-      // Check: Same constant index.
-      if (!areEquivalentIndices(extract.getIndex(), insert.getIndex())) {
-        continue;
-      }
-
-      //                 ┌─────────┐                 ┌──────────┐
-      // ... ─t = dest──▶│insert(i)│─▶ ... ─▶tensor─▶│extract(i)│─outTensor─▶...
-      //                 └────▲────┘                 └────┬─────┘
-      //          ... ─scalar─┘                           └result─▶ ...
-      // ------------------------- ⬇ (transformed) ⬇ -------------------------
-      // ... ─t = outTensor─▶ ...
-      // ... ─scalar = result─▶ ... (Assumption applied.)
-
-      rewriter.replaceOp(extract, {extract.getTensor(), insert.getScalar()});
-      rewriter.replaceOp(insert, insert.getDest());
-
-      return success();
-    }
-
-    return failure();
-  }
-};
-
-/**
- * @brief If possible, move insert after extract in tensor chain.
- * @pre Assumes that the extract and insertion index of any qubit is equivalent.
- */
-struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(InsertOp insert,
-                                PatternRewriter& rewriter) const override {
-    if (!getConstantIntValue(insert.getIndex())) {
+    const auto insertIndex = getConstantIntValue(insert.getIndex());
+    const auto extractIndex = getConstantIntValue(extract.getIndex());
+    if (!insertIndex || !extractIndex || insertIndex == extractIndex) {
       return failure();
     }
 
-    auto next = std::next(TensorIterator(insert.getResult()));
-    if (next == std::default_sentinel) {
-      return failure();
-    }
-
-    if (!isa<ExtractOp>(next.operation())) {
-      return failure();
-    }
-
-    auto extract = cast<ExtractOp>(next.operation());
-    if (!getConstantIntValue(extract.getIndex())) {
-      return failure();
-    }
-
-    if (areEquivalentIndices(extract.getIndex(), insert.getIndex())) {
-      return failure();
-    }
-
-    // i != j
-    //                ┌─────────┐                  ┌──────────┐
-    // ... ─t = dest─▶│insert(i)│─result = tensor─▶│extract(j)│─outTensor─▶ ...
-    //                └─────────┘                  └──────────┘
-    // -------------------------- ⬇ (transformed) ⬇ --------------------------
-    //                  ┌──────────┐                   ┌─────────┐
-    // ... ─t = tensor─▶│extract(j)│─outTensor = dest─▶│insert(i)│─result─▶ ...
-    //                  └──────────┘                   └─────────┘
-
-    const Value t = insert.getDest();
-    const Value outTensor = extract.getOutTensor();
-    const Value result = insert.getResult();
+    const Value tensorBeforeInsert = insert.getDest();
+    const Value tensorAfterExtract = extract.getOutTensor();
+    const Value tensorAfterInsert = insert.getResult();
 
     rewriter.moveOpAfter(insert, extract);
-    rewriter.modifyOpInPlace(extract,
-                             [&] { extract.getTensorMutable().assign(t); });
+    rewriter.modifyOpInPlace(extract, [&] {
+      extract.getTensorMutable().assign(tensorBeforeInsert);
+    });
     rewriter.modifyOpInPlace(
-        insert, [&] { insert.getDestMutable().assign(outTensor); });
-    rewriter.replaceAllUsesExcept(outTensor, result, insert);
-
+        insert, [&] { insert.getDestMutable().assign(tensorAfterExtract); });
+    rewriter.replaceAllUsesExcept(tensorAfterExtract, tensorAfterInsert,
+                                  insert);
     return success();
   }
 };
@@ -189,5 +116,5 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<RemoveInsertExtractPairPattern, BubbleDownInsertPattern>(context);
+  results.add<CommuteAdjacentInsertExtractPattern>(context);
 }

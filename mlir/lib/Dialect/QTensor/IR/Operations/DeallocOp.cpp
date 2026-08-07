@@ -28,10 +28,11 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check whether the tensor is directly defined by a qtensor::AllocOp.
+    // Check whether the tensor is directly defined by an otherwise unused
+    // qtensor::AllocOp.
     auto tensor = op.getTensor();
     auto allocOp = tensor.getDefiningOp<AllocOp>();
-    if (!allocOp) {
+    if (!allocOp || !allocOp->hasOneUse()) {
       return failure();
     }
 

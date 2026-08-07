@@ -187,9 +187,10 @@ public:
   Value staticQubit(uint64_t index);
 
   /**
-   * @brief Allocate a qubit register
+   * @brief Allocate a qubit register and eagerly load every element
    * @param size Number of qubits (must be positive)
-   * @return A `QubitRegister` structure
+   * @return A `QubitRegister` containing the backing memref and one reference
+   * for every eagerly loaded element
    *
    * @par Example:
    * ```c++
@@ -205,12 +206,18 @@ public:
   QubitRegister allocQubitRegister(int64_t size);
 
   /**
-   * @brief Explicitly loads a qubit from a memref
+   * @brief Allocate storage for a qubit register without loading its elements
+   * @param size Number of qubits (must be positive)
+   * @return The memref value representing the qubit register
    *
-   * @details Explicitly loads a qubit from a memref at the given index. This
-   * builder should only be called in a nested region inside the main function.
-   * The same index cannot be used to load a value multiple times in the same
-   * nested region.
+   * @details The register is tracked for automatic deallocation and remains
+   * intact until an element is loaded. Use `loadQubit` to obtain references at
+   * their points of use.
+   */
+  Value allocQubitRegisterStorage(int64_t size);
+
+  /**
+   * @brief Explicitly loads a qubit from a memref
    *
    * @param memref Source memref
    * @param index The index from where the qubit is loaded
@@ -1370,12 +1377,6 @@ private:
 
   /// Track allocated memrefs for automatic deallocation
   DenseSet<Value> allocatedQregs;
-
-  /// Per-region map of memrefs and their loaded indices
-  DenseMap<Region*, DenseMap<Value, DenseSet<Value>>> loadedQubits;
-
-  /// Stack of the nested regions where the insertion point of the builder is
-  SmallVector<Region*> regionStack;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

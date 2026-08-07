@@ -16,6 +16,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
@@ -37,7 +38,9 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -131,7 +134,7 @@ TEST_F(QTensorTest, AllocOpZeroSizeFailsVerification) {
   auto qubitType = qco::QubitType::get(context.get());
   auto tensorType = RankedTensorType::get({ShapedType::kDynamic}, qubitType);
   auto c0 = arith::ConstantIndexOp::create(b, 0);
-  AllocOp::create(b, tensorType, c0.getResult());
+  qtensor::AllocOp::create(b, tensorType, c0.getResult());
 
   EXPECT_TRUE(verify(module).failed());
 }
@@ -146,7 +149,7 @@ TEST_F(QTensorTest, AllocOpStaticTypeMismatchFailsVerification) {
   auto qubitType = qco::QubitType::get(context.get());
   auto tensorType = RankedTensorType::get({3}, qubitType);
   auto c2 = arith::ConstantIndexOp::create(b, 2);
-  AllocOp::create(b, tensorType, c2.getResult());
+  qtensor::AllocOp::create(b, tensorType, c2.getResult());
 
   EXPECT_TRUE(verify(module).failed());
 }
@@ -161,7 +164,7 @@ TEST_F(QTensorTest, AllocOpDynamicTypeWithConstantSizeVerifies) {
   auto qubitType = qco::QubitType::get(context.get());
   auto tensorType = RankedTensorType::get({ShapedType::kDynamic}, qubitType);
   auto c3 = arith::ConstantIndexOp::create(b, 3);
-  AllocOp::create(b, tensorType, c3.getResult());
+  qtensor::AllocOp::create(b, tensorType, c3.getResult());
 
   EXPECT_TRUE(verify(module).succeeded());
 }
@@ -184,7 +187,7 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
   auto qubitType = qco::QubitType::get(context.get());
   auto tensorType = RankedTensorType::get({3}, qubitType);
   auto size = block->getArgument(0);
-  AllocOp::create(b, tensorType, size);
+  qtensor::AllocOp::create(b, tensorType, size);
   func::ReturnOp::create(b);
 
   EXPECT_TRUE(verify(module).failed());
@@ -203,8 +206,8 @@ TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
   // Both AllocOp and DeallocOp should have been erased.
-  EXPECT_EQ(countOps<AllocOp>(*canonicalized), 0U);
-  EXPECT_EQ(countOps<DeallocOp>(*canonicalized), 0U);
+  EXPECT_EQ(countOps<qtensor::AllocOp>(*canonicalized), 0U);
+  EXPECT_EQ(countOps<qtensor::DeallocOp>(*canonicalized), 0U);
 }
 
 // ============================================================================
@@ -274,6 +277,65 @@ TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
 // ============================================================================
 // Canonicalization
 // ============================================================================
+
+namespace {
+enum class AdjacentIndexKind : std::uint8_t {
+  EqualConstants,
+  IdenticalDynamicValue,
+  PotentiallyAliasingDynamicValues,
+};
+} // namespace
+
+static OwningOpRef<ModuleOp>
+buildAdjacentInsertExtractProgram(MLIRContext* context,
+                                  const AdjacentIndexKind indexKind) {
+  const auto loc = UnknownLoc::get(context);
+  auto moduleOp = ModuleOp::create(loc);
+  ImplicitLocOpBuilder b(loc, context);
+  b.setInsertionPointToStart(moduleOp.getBody());
+
+  const auto indexType = b.getIndexType();
+  const auto functionType =
+      b.getFunctionType({indexType, indexType}, TypeRange{});
+  auto function = func::FuncOp::create(b, "test", functionType);
+  auto* block = function.addEntryBlock();
+  b.setInsertionPointToStart(block);
+
+  Value insertIndex;
+  Value extractIndex;
+  if (indexKind == AdjacentIndexKind::EqualConstants) {
+    insertIndex = arith::ConstantIndexOp::create(b, 0);
+    extractIndex = arith::ConstantIndexOp::create(b, 0);
+  } else {
+    insertIndex = block->getArgument(0);
+    extractIndex = indexKind == AdjacentIndexKind::IdenticalDynamicValue
+                       ? insertIndex
+                       : block->getArgument(1);
+  }
+
+  auto size = arith::ConstantIndexOp::create(b, 2);
+  const auto tensorType =
+      RankedTensorType::get({2}, qco::QubitType::get(context));
+  auto tensor = qtensor::AllocOp::create(b, tensorType, size.getResult());
+  auto firstExtract = ExtractOp::create(b, tensor, insertIndex);
+  auto h = qco::HOp::create(b, firstExtract.getResult());
+  auto insert = InsertOp::create(b, h.getResult(), firstExtract.getOutTensor(),
+                                 insertIndex);
+  auto secondExtract = ExtractOp::create(b, insert, extractIndex);
+  auto x = qco::XOp::create(b, secondExtract.getResult());
+  auto finalTensor = InsertOp::create(
+      b, x.getResult(), secondExtract.getOutTensor(), extractIndex);
+  qtensor::DeallocOp::create(b, finalTensor);
+  func::ReturnOp::create(b);
+
+  return moduleOp;
+}
+
+static LogicalResult canonicalize(ModuleOp moduleOp) {
+  PassManager manager(moduleOp.getContext());
+  manager.addPass(createCanonicalizerPass());
+  return manager.run(moduleOp);
+}
 
 static OwningOpRef<ModuleOp>
 buildTwoQubitInsertChainProgram(MLIRContext* context,
@@ -351,7 +413,40 @@ buildResetWithSameIndexInsertProgram(MLIRContext* context,
 
 namespace {
 
-TEST_F(QTensorTest, InsertChainPermutationEquivalence) {
+TEST_F(QTensorTest, AdjacentInsertExtractFoldsEqualConstants) {
+  auto moduleOp = buildAdjacentInsertExtractProgram(
+      context.get(), AdjacentIndexKind::EqualConstants);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 1U);
+}
+
+TEST_F(QTensorTest, AdjacentInsertExtractFoldsIdenticalDynamicValue) {
+  auto moduleOp = buildAdjacentInsertExtractProgram(
+      context.get(), AdjacentIndexKind::IdenticalDynamicValue);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 1U);
+  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 1U);
+}
+
+TEST_F(QTensorTest, AdjacentInsertExtractKeepsPotentialDynamicAlias) {
+  auto moduleOp = buildAdjacentInsertExtractProgram(
+      context.get(), AdjacentIndexKind::PotentiallyAliasingDynamicValues);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 2U);
+  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 2U);
+}
+
+TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -364,8 +459,8 @@ TEST_F(QTensorTest, InsertChainPermutationEquivalence) {
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+  EXPECT_EQ(countOps<InsertOp>(*program), 2U);
+  EXPECT_EQ(countOps<InsertOp>(*reference), 0U);
 }
 
 TEST_F(QTensorTest, InsertChainDifferentAssignmentsNotEquivalent) {
