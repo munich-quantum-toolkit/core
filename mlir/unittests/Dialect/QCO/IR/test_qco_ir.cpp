@@ -159,6 +159,20 @@ TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
   EXPECT_NO_FATAL_FAILURE(builder.x(output));
 }
 
+TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        auto size = arith::ConstantIndexOp::create(builder, 1);
+        const auto tensor =
+            qtensor::AllocOp::create(builder, size.getResult()).getResult();
+        const auto identity = [](Value value) { return value; };
+        builder.qcoIf(true, tensor, identity, identity);
+      },
+      "Invalid tensor value used");
+}
+
 TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -263,20 +277,6 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(verify(*ref).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(direct.get(), ref.get()));
-}
-
-TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context.get());
-        builder.initialize();
-        auto size = arith::ConstantIndexOp::create(builder, 1);
-        const auto tensor =
-            qtensor::AllocOp::create(builder, size.getResult()).getResult();
-        const auto identity = [](Value value) { return value; };
-        builder.qcoIf(true, tensor, identity, identity);
-      },
-      "Invalid tensor value used");
 }
 
 TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
