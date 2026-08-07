@@ -265,6 +265,20 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(areModulesEquivalentWithPermutations(direct.get(), ref.get()));
 }
 
+TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        auto size = arith::ConstantIndexOp::create(builder, 1);
+        const auto tensor =
+            qtensor::AllocOp::create(builder, size.getResult()).getResult();
+        const auto identity = [](Value value) { return value; };
+        builder.qcoIf(true, tensor, identity, identity);
+      },
+      "Invalid tensor value used");
+}
+
 TEST_F(QCOTest, DirectSingleTargetIndexSwitchBuilder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -313,20 +327,6 @@ TEST_F(QCOTest, IndexSwitchBuildersRejectMismatchedCasesAndBodies) {
                                identity);
       },
       "Each case must have a corresponding case body function");
-}
-
-TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context.get());
-        builder.initialize();
-        auto size = arith::ConstantIndexOp::create(builder, 1);
-        const auto tensor =
-            qtensor::AllocOp::create(builder, size.getResult()).getResult();
-        const auto identity = [](Value value) { return value; };
-        builder.qcoIf(true, tensor, identity, identity);
-      },
-      "Invalid tensor value used");
 }
 
 TEST_F(QCOTest, IndexSwitchTiedValuesAndTargetExtension) {
