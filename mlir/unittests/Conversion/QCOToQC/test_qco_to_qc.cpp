@@ -113,6 +113,41 @@ TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
+TEST(QCOToQCRegressionTest, RetainsDynamicQubitRegisterName) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
+    %reg = qtensor.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : tensor<?x!qco.qubit>
+    qtensor.dealloc %reg : tensor<?x!qco.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+
+  memref::AllocOp allocation;
+  moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  EXPECT_TRUE(allocation.getType().isDynamicDim(0));
+  ASSERT_EQ(allocation.getDynamicSizes().size(), 1);
+  EXPECT_EQ(allocation.getDynamicSizes().front(),
+            allocation->getBlock()->getArgument(0));
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
 static Value
 aliasSafeNestedForLoopCtrlOpWithExtractedQubit(qc::QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);

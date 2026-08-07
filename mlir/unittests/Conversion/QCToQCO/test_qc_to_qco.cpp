@@ -604,6 +604,32 @@ TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
+TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : memref<?x!qc.qubit>
+    memref.dealloc %reg : memref<?x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  EXPECT_TRUE(allocation.getResult().getType().isDynamicDim(0));
+  EXPECT_EQ(allocation.getSize(), allocation->getBlock()->getArgument(0));
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
 TEST_F(QCToQCORegressionTest, RejectsRegisterBackedReferenceEscapes) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
