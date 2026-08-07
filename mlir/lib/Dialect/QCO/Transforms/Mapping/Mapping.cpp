@@ -81,14 +81,12 @@ private:
 
   enum class RoutingMode : bool { Cold, Hot };
 
-  struct RecursiveRoutingStackItem {
-    /// The SCF op.
-    Operation* op;
+  struct CompositeUnitary {
+    /// The composite op (e.g. SCF).
+    Operation* op = nullptr;
     /// Indices into a wire vector, where the order of indices has no meaning.
     SmallVector<size_t> indices;
   };
-
-  using RecursiveRoutingStack = SmallVector<RecursiveRoutingStackItem>;
 
   struct WireInfos {
     /// Return the mapped wire index of a program index.
@@ -158,7 +156,6 @@ private:
   struct Statistics {
     /// The number of inserted swaps.
     size_t nswaps{0};
-
     /// Merge another statistics object into this one.
     void merge(const Statistics& other) { nswaps += other.nswaps; }
   };
@@ -180,6 +177,7 @@ private:
     struct Patch {
       std::optional<Layout> layout;
       std::optional<WireInfos> infos;
+      std::optional<Wires> wires;
     };
 
     void applyPatch(const Patch& patch) {
@@ -188,6 +186,9 @@ private:
       }
       if (patch.infos) {
         infos = *patch.infos;
+      }
+      if (patch.wires) {
+        wires = *patch.wires;
       }
     }
   };
@@ -420,6 +421,13 @@ private:
         values, [](Value value) { return isa<QubitType>(value.getType()); }));
   }
 
+  /// Return the qubit values in `values`, preserving their relative order.
+  static SmallVector<OpResult> getQubitValues(ResultRange values) {
+    return to_vector(llvm::make_filter_range(values, [](OpResult value) {
+      return isa<QubitType>(value.getType());
+    }));
+  }
+
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
@@ -550,56 +558,6 @@ private:
     }
 
     return newWhileOp;
-  }
-
-  void place(RecursiveRoutingStackItem& item, Wires& wires,
-             IRRewriter& rewriter) {
-    assert(wires.size() == target->numQubits());
-
-    const auto nmissing = target->numQubits() - item.indices.size();
-
-    SmallVector<Value> missingQubits;
-    missingQubits.reserve(nmissing);
-
-    for (size_t i = 0; i < wires.size(); ++i) {
-
-      /// TODO: Use SetVector for indices?
-      bool found = false;
-      for (const size_t j : item.indices) {
-        if (i == j) {
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        item.indices.emplace_back(i);
-        if (wires[i] == std::default_sentinel) {
-          missingQubits.emplace_back(std::prev(wires[i], 2).qubit());
-        } else {
-          missingQubits.emplace_back(wires[i].qubit());
-        }
-      }
-    }
-
-    TypeSwitch<Operation*>(item.op)
-        .Case<scf::ForOp>([&](scf::ForOp forOp) {
-          item.op = extend(forOp, missingQubits, rewriter);
-        })
-        .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-          item.op = extend(whileOp, missingQubits, rewriter);
-        })
-        .Case<IfOp>(
-            [&](IfOp ifOp) { item.op = extend(ifOp, missingQubits, rewriter); })
-        .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-          item.op = extend(switchOp, missingQubits, rewriter);
-        })
-        .Default([](Operation* op) -> SmallVector<RoutingBundle, 0> {
-          report_fatal_error("unhandled region op in dispatch: " +
-                             op->getName().getStringRef());
-        });
-
-    item.op->getParentOp()->dumpPretty();
   }
 
   /// Return the wires of a dynamic computation.
@@ -773,122 +731,6 @@ private:
       infos.insertOrUpdate(prog, prog);
 
       SinkOp::create(rewriter, body.getLoc(), qubit);
-    }
-
-    SmallVector<std::pair<Region&, DenseSet<Value>>> stack;
-    stack.emplace_back(body, DenseSet<Value>{});
-
-    while (!stack.empty()) {
-      for (auto [region, qubits] = stack.pop_back_val();
-           Operation& op : make_early_inc_range(region.getOps())) {
-        TypeSwitch<Operation*>(&op)
-            .Case<StaticOp>(
-                [&](StaticOp staticOp) { qubits.insert(staticOp.getQubit()); })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface& uOp) {
-              for (const auto [pred, succ] : llvm::zip_equal(
-                       uOp.getInputQubits(), uOp.getOutputQubits())) {
-                qubits.insert(succ);
-                qubits.erase(pred);
-              }
-            })
-            .Case<scf::ForOp>([&](scf::ForOp forOp) {
-              assert(qubits.size() == layout.nqubits());
-
-              llvm::for_each(getQubitValues(forOp.getInits()),
-                             [&](Value v) { qubits.erase(v); });
-
-              auto newForOp = extend(forOp, to_vector(qubits), rewriter);
-              for (const auto [init, result] : llvm::zip_equal(
-                       newForOp.getInits(), *newForOp.getLoopResults())) {
-                if (isa<QubitType>(init.getType())) {
-                  qubits.insert(result);
-                  qubits.erase(init);
-                }
-              }
-
-              const auto regionQubits =
-                  getQubitValues(newForOp.getRegionIterArgs());
-              stack.emplace_back(
-                  newForOp.getRegion(),
-                  DenseSet<Value>(regionQubits.begin(), regionQubits.end()));
-            })
-            .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-              assert(qubits.size() == layout.nqubits());
-
-              llvm::for_each(getQubitValues(whileOp.getInits()),
-                             [&](Value v) { qubits.erase(v); });
-
-              auto newWhileOp = extend(whileOp, to_vector(qubits), rewriter);
-              for (const auto [init, result] : llvm::zip_equal(
-                       newWhileOp.getInits(), newWhileOp.getResults())) {
-                if (isa<QubitType>(init.getType())) {
-                  qubits.insert(result);
-                  qubits.erase(init);
-                }
-              }
-
-              const auto beforeArgs =
-                  getQubitValues(newWhileOp.getBeforeArguments());
-              const auto afterArgs =
-                  getQubitValues(newWhileOp.getAfterArguments());
-              stack.emplace_back(
-                  newWhileOp.getBefore(),
-                  DenseSet<Value>(beforeArgs.begin(), beforeArgs.end()));
-              stack.emplace_back(
-                  newWhileOp.getAfter(),
-                  DenseSet<Value>(afterArgs.begin(), afterArgs.end()));
-            })
-            .Case<IfOp>([&](IfOp ifOp) {
-              assert(qubits.size() == layout.nqubits());
-
-              llvm::for_each(ifOp.getQubits(),
-                             [&](Value v) { qubits.erase(v); });
-
-              auto newIfOp = extend(ifOp, to_vector(qubits), rewriter);
-
-              for (const auto [qubit, result] : llvm::zip_equal(
-                       newIfOp.getQubits(), newIfOp.getLinearResults())) {
-                qubits.insert(result);
-                qubits.erase(qubit);
-              }
-
-              const auto thenArgs = newIfOp.getThenRegion().getArguments();
-              const auto elseArgs = newIfOp.getElseRegion().getArguments();
-              stack.emplace_back(
-                  newIfOp.getThenRegion(),
-                  DenseSet<Value>(thenArgs.begin(), thenArgs.end()));
-              stack.emplace_back(
-                  newIfOp.getElseRegion(),
-                  DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
-            })
-            .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-              assert(qubits.size() == layout.nqubits());
-
-              llvm::for_each(switchOp.getTargets(),
-                             [&](Value value) { qubits.erase(value); });
-
-              auto newSwitchOp = extend(switchOp, to_vector(qubits), rewriter);
-              for (const auto [target, result] :
-                   llvm::zip_equal(newSwitchOp.getTargets(),
-                                   newSwitchOp.getLinearResults())) {
-                qubits.insert(result);
-                qubits.erase(target);
-              }
-
-              for (Region* region : newSwitchOp.getRegions()) {
-                const auto args = region->getArguments();
-                stack.emplace_back(*region,
-                                   DenseSet<Value>(args.begin(), args.end()));
-              }
-            })
-            .Case<ResetOp, MeasureOp>([&](auto resetOp) {
-              qubits.insert(resetOp.getQubitOut());
-              qubits.erase(resetOp.getQubitIn());
-            })
-            .Case<AllocOp, qtensor::AllocOp>([&](auto) {
-              llvm::reportFatalInternalError("unexpected dynamic qubit alloc");
-            });
-      }
     }
 
     return {wires, infos};
@@ -1301,14 +1143,13 @@ private:
   /// gates are found. After the function returns, the wires point at the
   /// results of non-executable gates or operations with nested regions.
   template <WireDirection Direction>
-  RecursiveRoutingStack advance(Wires& wires, const WireInfos& infos,
-                                const Layout& layout) {
+  SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
+                                        const Layout& layout) {
     DenseSet<Operation*> visited;
-    RecursiveRoutingStack stack;
+    SmallVector<CompositeUnitary> composites;
 
-    // Advance wires past all executable gates and push operations with
-    // nested regions and the respective wire indices of their inputs onto the
-    // result stack.
+    // Advance wires past all executable gates and push composite unitaries and
+    // the respective wire indices of their inputs onto the vector.
 
     walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
                                            ReleasedOps& released) {
@@ -1334,7 +1175,7 @@ private:
 
         if (op->getNumRegions() > 0 && visited.insert(op).second) {
           assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
-          stack.emplace_back(op, indices);
+          composites.emplace_back(op, indices);
           continue;
         }
       }
@@ -1346,7 +1187,70 @@ private:
       return WalkResult::advance();
     });
 
-    return stack;
+    return composites;
+  }
+
+  /// Extends the composite unitary's operation to cover all target qubits by
+  /// adding operands for indices not in the composite's index set. Returns a
+  /// patch with the updated wire mapping which preserves the parent's wire
+  /// infos and layout.
+  RoutingBundle::Patch place(CompositeUnitary& composite,
+                             const RoutingBundle& parent,
+                             IRRewriter& rewriter) {
+    DenseSet<size_t> included; // Already included indices.
+    included.reserve(composite.indices.size());
+
+    // Maps the i-th included index to its result number.
+    DenseMap<size_t, size_t> indexToResultNum;
+    indexToResultNum.reserve(composite.indices.size());
+
+    for (const auto index : composite.indices) {
+      const WireIterator& it = parent.wires[index];
+      indexToResultNum.try_emplace(
+          index, cast<OpResult>(it.qubit()).getResultNumber());
+      included.insert(index);
+    }
+
+    const auto allIndices = to_vector(llvm::seq(target->numQubits()));
+
+    const SmallVector<size_t> excluded(llvm::make_filter_range(
+        allIndices, [&](const size_t i) { return !included.contains(i); }));
+
+    const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
+      // Make sure the qubits point to an already processed operation.
+      const auto& it = std::prev(
+          parent.wires[i], parent.wires[i] == std::default_sentinel ? 2 : 1);
+      return it.qubit();
+    }));
+
+    composite = CompositeUnitary{
+        .op = TypeSwitch<Operation*, Operation*>(composite.op)
+                  .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
+                      [&](auto cfOp) { return extend(cfOp, addons, rewriter); })
+                  .Default([](Operation* op) {
+                    report_fatal_error("place: unhandled op: " +
+                                       op->getName().getStringRef());
+                    return nullptr;
+                  }),
+        .indices = allIndices};
+
+    const auto results = composite.op->getResults();
+
+    Wires wires(allIndices.size());
+    for (size_t index : included) {
+      wires[index] = WireIterator(results[indexToResultNum.at(index)]);
+    }
+    for (const auto [index, res] :
+         llvm::zip_equal(excluded, results.take_back(excluded.size()))) {
+      wires[index] = WireIterator(res);
+    }
+
+    assert(llvm::all_of(wires, [&](WireIterator& it) {
+      return it.operation() == composite.op;
+    }));
+
+    return RoutingBundle::Patch{
+        .layout = std::nullopt, .infos = std::nullopt, .wires = wires};
   }
 
   /// Return `values` with only the qubit entries realigned according to the
@@ -1373,16 +1277,16 @@ private:
     return realigned;
   }
 
-  /// Processes the recursive stack item by routing the nested operation and
+  /// Processes the composite unitary by routing the nested operation and
   /// inserting a SWAP appendix. Returns a pair of the patch to apply to the
   /// parent bundle and the accumulated statistics, or `failure` if routing
   /// fails.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   FailureOr<std::pair<RoutingBundle::Patch, Statistics>>
-  dispatch(const RecursiveRoutingStackItem& item, const RoutingBundle& parent,
+  dispatch(const CompositeUnitary& composite, const RoutingBundle& parent,
            IRRewriter* rewriter = nullptr) {
-    const auto [op, indices] = item;
+    const auto [op, indices] = composite;
 
     SmallVector<size_t> permutation(indices.size());
     SmallVector<RoutingBundle, 0> children =
@@ -1639,15 +1543,22 @@ private:
     auto& [wires, infos, layout] = bundle;
 
     Statistics stats;
+
     while (true) {
       while (true) {
-        const auto stack = advance<Direction>(wires, infos, layout);
-        if (stack.empty()) {
+        auto composites = advance<Direction>(wires, infos, layout);
+        if (composites.empty()) {
           break;
         }
 
-        for (auto& item : stack) {
-          const auto res = dispatch<Direction, Mode>(item, bundle, rewriter);
+        for (auto& composite : composites) {
+          if constexpr (Mode == RoutingMode::Hot) {
+            const auto patch = place(composite, bundle, *rewriter);
+            bundle.applyPatch(patch);
+          }
+
+          const auto res =
+              dispatch<Direction, Mode>(composite, bundle, rewriter);
           if (failed(res)) {
             return failure();
           }
@@ -1655,10 +1566,10 @@ private:
           bundle.applyPatch(res->first);
           stats.merge(res->second);
 
-          // Once the SCF op is mapped, move past this op by incrementing the
-          // respective global wires.
+          // Once the composite is mapped, move past this op by incrementing the
+          // respective wires.
 
-          for_each(item.indices, [&](size_t i) {
+          for_each(composite.indices, [&](size_t i) {
             std::advance(wires[i], WireTraversalTraits<Direction>::stride());
           });
         }
