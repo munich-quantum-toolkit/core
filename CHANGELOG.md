@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
+  ([#2015]) ([**@denialhaag**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
@@ -721,6 +723,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
