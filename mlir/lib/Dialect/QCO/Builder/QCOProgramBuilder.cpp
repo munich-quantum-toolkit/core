@@ -246,7 +246,8 @@ Value QCOProgramBuilder::prepareInitArg(Value initArg,
     return initArg;
   }
 
-  const auto regId = validTensors[initArg].regId;
+  validateTensorValue(initArg);
+  const auto regId = validTensors.find(initArg)->second.regId;
   auto currentTensor = initArg;
   for (auto it = validQubits.begin(); it != validQubits.end();) {
     auto& [qubit, qubitInfo] = *it;
