@@ -148,7 +148,7 @@ TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
   EXPECT_EQ(qubit.regId, -1);
   EXPECT_FALSE(qubit.regIndex);
 
-  const Value output = builder.x(qubit);
+  auto output = builder.x(qubit);
   auto reassigned = QCOProgramBuilder::Qubit{qubit.value, 0, qubit.value};
   reassigned = output;
   EXPECT_EQ(reassigned.value, output);
