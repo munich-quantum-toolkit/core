@@ -117,7 +117,7 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::allocQubit() {
   // Track the allocated qubit as valid
   validQubits.insert(Qubit{qubit});
 
-  return {qubit};
+  return Qubit{qubit};
 }
 
 QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
@@ -130,7 +130,7 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
   // Track the static qubit as valid
   validQubits.insert(Qubit{qubit});
 
-  return {qubit};
+  return Qubit{qubit};
 }
 
 QCOProgramBuilder::QubitRegister
@@ -175,7 +175,7 @@ Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {
-  if (!validQubits.contains(qubit)) {
+  if (!validQubits.contains(Qubit{qubit})) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -189,7 +189,7 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
-  auto it = validQubits.find(inputQubit);
+  auto it = validQubits.find(Qubit{inputQubit});
   auto trackedQubit = *it;
 
   // Remove the input (consumed) value from tracking
@@ -346,7 +346,7 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
       llvm::reportFatalUsageError("Elements must be QubitType!");
     }
     validateQubitValue(element);
-    validQubits.erase(element);
+    validQubits.erase(Qubit{element});
   }
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
@@ -385,7 +385,7 @@ Value QCOProgramBuilder::qtensorInsert(
   auto outTensor = insertOp.getResult();
 
   validateQubitValue(scalar);
-  validQubits.erase(scalar);
+  validQubits.erase(Qubit{scalar});
   updateTensorTracking(tensor, outTensor);
 
   return outTensor;
@@ -1053,7 +1053,7 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
   checkFinalized();
 
   validateQubitValue(qubit);
-  validQubits.erase(qubit);
+  validQubits.erase(Qubit{qubit});
 
   SinkOp::create(*this, qubit);
 

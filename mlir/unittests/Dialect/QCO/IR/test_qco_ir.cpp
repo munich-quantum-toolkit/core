@@ -135,7 +135,9 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
 }
 
 TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
-  static_assert(std::is_convertible_v<Value, QCOProgramBuilder::Qubit>);
+  static_assert(!std::is_convertible_v<Value, QCOProgramBuilder::Qubit>);
+  static_assert(std::is_constructible_v<QCOProgramBuilder::Qubit, Value>);
+  static_assert(std::is_assignable_v<QCOProgramBuilder::Qubit&, Value>);
   static_assert(std::is_convertible_v<QCOProgramBuilder::Qubit, Value>);
 
   QCOProgramBuilder builder(context.get());
@@ -147,6 +149,12 @@ TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
   EXPECT_FALSE(qubit.regIndex);
 
   const Value output = builder.x(qubit);
+  auto reassigned = QCOProgramBuilder::Qubit{qubit.value, 0, qubit.value};
+  reassigned = output;
+  EXPECT_EQ(reassigned.value, output);
+  EXPECT_EQ(reassigned.regId, -1);
+  EXPECT_FALSE(reassigned.regIndex);
+
   EXPECT_DEATH(builder.x(qubit), "Invalid qubit value used");
   EXPECT_NO_FATAL_FAILURE(builder.x(output));
 }

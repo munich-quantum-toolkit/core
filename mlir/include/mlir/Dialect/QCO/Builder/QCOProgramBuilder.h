@@ -176,8 +176,20 @@ public:
      * @param regId ID of the register containing the qubit, or `-1`
      * @param regIndex Index of the qubit within its register, if applicable
      */
-    Qubit(Value value, int64_t regId = -1, Value regIndex = {})
+    explicit Qubit(Value value, int64_t regId = -1, Value regIndex = {})
         : value(value), regId(regId), regIndex(regIndex) {}
+
+    /**
+     * @brief Replace the underlying SSA value and discard register metadata.
+     * @param newValue The replacement qubit SSA value
+     * @return This tracked qubit
+     */
+    Qubit& operator=(Value newValue) {
+      value = newValue;
+      regId = -1;
+      regIndex = {};
+      return *this;
+    }
 
     /**
      * @brief Implicitly convert this tracked qubit to its underlying SSA value.
@@ -1946,10 +1958,10 @@ private:
 
   struct QubitDenseMapInfo {
     static Qubit getEmptyKey() {
-      return {llvm::DenseMapInfo<Value>::getEmptyKey()};
+      return Qubit{llvm::DenseMapInfo<Value>::getEmptyKey()};
     }
     static Qubit getTombstoneKey() {
-      return {llvm::DenseMapInfo<Value>::getTombstoneKey()};
+      return Qubit{llvm::DenseMapInfo<Value>::getTombstoneKey()};
     }
     static unsigned getHashValue(const Qubit& qubit) {
       return llvm::DenseMapInfo<Value>::getHashValue(qubit.value);
