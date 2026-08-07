@@ -419,13 +419,6 @@ private:
         values, [](Value value) { return isa<QubitType>(value.getType()); }));
   }
 
-  /// Return the qubit values in `values`, preserving their relative order.
-  static SmallVector<OpResult> getQubitValues(ResultRange values) {
-    return to_vector(llvm::make_filter_range(values, [](OpResult value) {
-      return isa<QubitType>(value.getType());
-    }));
-  }
-
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
@@ -1284,7 +1277,7 @@ private:
   FailureOr<std::pair<RoutingBundle::Patch, Statistics>>
   dispatch(const CompositeUnitary& composite, const RoutingBundle& parent,
            IRRewriter* rewriter = nullptr) {
-    const auto [op, indices] = composite;
+    const auto& [op, indices] = composite;
 
     SmallVector<size_t> permutation(indices.size());
     SmallVector<RoutingBundle, 0> children =
