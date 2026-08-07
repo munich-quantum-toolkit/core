@@ -48,6 +48,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 using namespace mlir;
@@ -133,6 +134,23 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
+  static_assert(std::is_convertible_v<Value, QCOProgramBuilder::Qubit>);
+  static_assert(std::is_convertible_v<QCOProgramBuilder::Qubit, Value>);
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+
+  EXPECT_TRUE(qubit.getDefiningOp<AllocOp>());
+  EXPECT_EQ(qubit.regId, -1);
+  EXPECT_FALSE(qubit.regIndex);
+
+  const Value output = builder.x(qubit);
+  EXPECT_DEATH(builder.x(qubit), "Invalid qubit value used");
+  EXPECT_NO_FATAL_FAILURE(builder.x(output));
+}
+
 TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -191,7 +209,7 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   ASSERT_EQ(pow.getQubitsOut().size(), 1);
   ASSERT_EQ(pow.getBody()->getNumArguments(), 1);
   ASSERT_EQ(pow.getBody()->getTerminator()->getNumOperands(), 1);
-  EXPECT_EQ(pow.getQubitsIn().front(), qubit);
+  EXPECT_EQ(pow.getQubitsIn().front(), qubit.value);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_EQ(pow.getBody()->getTerminator()->getOperand(0), bodyResult);
   EXPECT_TRUE(pow.verify().succeeded());
@@ -320,7 +338,7 @@ TEST_F(QCOTest, IndexSwitchTiedValuesAndTargetExtension) {
             defaultYieldOperand);
 
   EXPECT_FALSE(switchOp.getTiedResult(caseYieldOperand));
-  EXPECT_EQ(switchOp.getTiedTarget(cast<OpResult>(addon)), nullptr);
+  EXPECT_EQ(switchOp.getTiedTarget(cast<OpResult>(addon.value)), nullptr);
   EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(caseYieldOperand, 0));
   EXPECT_FALSE(switchOp.getTiedCaseBlockArgument(targetOperand, 1));
   EXPECT_EQ(switchOp.getTiedCaseYieldedValue(defaultArgument, 0), nullptr);
@@ -333,11 +351,12 @@ TEST_F(QCOTest, IndexSwitchTiedValuesAndTargetExtension) {
   EXPECT_EQ(switchOp.replaceWithAdditionalTargets(rewriter, ValueRange{}),
             switchOp);
 
-  auto expanded = switchOp.replaceWithAdditionalTargets(rewriter, addon);
+  auto expanded =
+      switchOp.replaceWithAdditionalTargets(rewriter, {addon.value});
   ASSERT_EQ(expanded.getTargets().size(), 2);
   ASSERT_EQ(expanded.getResults().size(), 2);
-  EXPECT_EQ(expanded.getTargets()[0], target);
-  EXPECT_EQ(expanded.getTargets()[1], addon);
+  EXPECT_EQ(expanded.getTargets()[0], target.value);
+  EXPECT_EQ(expanded.getTargets()[1], addon.value);
   for (Region* region : expanded.getRegions()) {
     ASSERT_EQ(region->getNumArguments(), 2);
     auto yield = cast<YieldOp>(region->front().getTerminator());
@@ -942,14 +961,13 @@ TEST_F(QCOTest, IndexSwitchCaseValuesAffectEquivalence) {
     QCOProgramBuilder builder(context.get());
     builder.initialize();
 
-    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
-    const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-        identity};
+    const auto identity = [](Value value) { return value; };
+    const SmallVector<function_ref<Value(Value)>> caseBodies{identity};
 
     const auto q0 = builder.allocQubit();
     const auto result = builder.qcoIndexSwitch(
         0, q0, SmallVector<int64_t>{caseValue}, caseBodies, identity);
-    builder.sink(result.front());
+    builder.sink(result);
     return builder.finalize();
   };
 
@@ -995,17 +1013,16 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
-  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-      identity, identity};
+  const auto identity = [](Value value) { return value; };
+  const SmallVector<function_ref<Value(Value)>> caseBodies{identity, identity};
 
   const auto q0 = builder.allocQubit();
   auto result = builder.qcoIndexSwitch(1, q0, SmallVector<int64_t>{0, 1},
                                        caseBodies, identity);
-  builder.sink(result.front());
+  builder.sink(result);
   [[maybe_unused]] auto module = builder.finalize();
 
-  auto switchOp = result.front().getDefiningOp<IndexSwitchOp>();
+  auto switchOp = result.getDefiningOp<IndexSwitchOp>();
   ASSERT_TRUE(switchOp);
 
   SmallVector<Attribute> unknownOperands(switchOp->getNumOperands());
