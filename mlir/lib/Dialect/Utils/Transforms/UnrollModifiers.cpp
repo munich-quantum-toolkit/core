@@ -17,6 +17,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/OpDefinition.h>
@@ -26,6 +27,8 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#define DEBUG_TYPE "unroll-modifiers"
 
 namespace mlir::mqt {
 
@@ -89,10 +92,11 @@ static SmallVector<Value> cloneIntoBody(Operation* unitary, ValueRange qubits,
 // QC
 //===----------------------------------------------------------------------===//
 
-/// Unroll a `qc.ctrl` modifier with more than one body unitary.
+/// Unroll a `qc.ctrl` modifier with more than one body unitary,
+/// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
-    return failure();
+    return success();
   }
   auto* body = op.getBody();
   if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
@@ -114,10 +118,11 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
   return success();
 }
 
-/// Unroll a `qc.inv` modifier with more than one body unitary.
+/// Unroll a `qc.inv` modifier with more than one body unitary,
+/// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
   if (op.getNumBodyUnitaries() < 2) {
-    return failure();
+    return success();
   }
   auto* body = op.getBody();
   if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
@@ -143,18 +148,20 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
 // QCO
 //===----------------------------------------------------------------------===//
 
-/// Unroll a `qco.ctrl` modifier with more than one body unitary.
+/// Unroll a `qco.ctrl` modifier with more than one body unitary,
+/// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return failure();
+    return success();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
 
-  // Maps the qubit arguments of the original body to the qubit values threaded
-  // through the new modifiers.
+  // Maps the qubits of the original body to the qubit values threaded through
+  // the new modifiers. The inputs of the modifier enter the body at its block
+  // arguments and leave it at the qubits it yields.
   IRMapping qubits;
   qubits.map(body->getArguments(), op.getTargetsIn());
 
@@ -183,18 +190,21 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   return success();
 }
 
-/// Unroll a `qco.inv` modifier with more than one body unitary.
+/// Unroll a `qco.inv` modifier with more than one body unitary,
+/// or fail if it cannot be unrolled.
 static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
   if (op.getNumBodyUnitaries() < 2) {
-    return failure();
+    return success();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
 
-  // Maps the qubit arguments of the original body to the qubit values threaded
-  // through the new modifiers.
+  // Maps the qubits of the original body to the qubit values threaded through
+  // the new modifiers. Inverting the body reverses its direction, so the inputs
+  // of the modifier enter the body at the qubits it yields and leave it at its
+  // block arguments.
   IRMapping qubits;
   qubits.map(body->getTerminator()->getOperands(), op.getQubitsIn());
 
@@ -237,7 +247,10 @@ protected:
     for (auto* modifier : modifiers) {
       llvm::TypeSwitch<Operation*>(modifier)
           .Case<qc::CtrlOp, qc::InvOp, qco::CtrlOp, qco::InvOp>([&](auto op) {
-            static_cast<void>(unrollModifier(op, rewriter));
+            if (failed(unrollModifier(op, rewriter))) {
+              LLVM_DEBUG(llvm::dbgs() << "Failed to unroll " << op->getName()
+                                      << " at " << op.getLoc() << "\n");
+            }
           });
     }
   }
