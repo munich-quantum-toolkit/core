@@ -170,15 +170,39 @@ public:
     /// Index of the qubit within its register
     Value regIndex;
 
+    /**
+     * @brief Construct a tracked qubit from an SSA value.
+     * @param value The underlying qubit SSA value
+     * @param regId ID of the register containing the qubit, or `-1`
+     * @param regIndex Index of the qubit within its register, if applicable
+     */
     Qubit(Value value, int64_t regId = -1, Value regIndex = {})
         : value(value), regId(regId), regIndex(regIndex) {}
 
+    /**
+     * @brief Implicitly convert this tracked qubit to its underlying SSA value.
+     * @return The underlying `Value`
+     */
     operator Value() const { return value; }
 
+    /**
+     * @brief Get the type of the underlying SSA value.
+     * @return The underlying value's type
+     */
     Type getType() const { return value.getType(); }
 
+    /**
+     * @brief Get the operation defining the underlying SSA value.
+     * @return The defining operation, or `nullptr` if the value has none
+     */
     Operation* getDefiningOp() const { return value.getDefiningOp(); }
 
+    /**
+     * @brief Get the operation defining the underlying SSA value as @p OpTy.
+     * @tparam OpTy The expected defining operation type
+     * @return The defining operation as @p OpTy, or a null operation if the
+     * value has no defining operation or it is not of type @p OpTy
+     */
     template <typename OpTy> OpTy getDefiningOp() const {
       return value.getDefiningOp<OpTy>();
     }
@@ -193,14 +217,38 @@ public:
     /// ID of the register the tensor corresponds to
     int64_t regId = -1;
 
+    /**
+     * @brief Construct a tracked tensor from an SSA value.
+     * @param value The underlying tensor SSA value
+     * @param regId ID of the corresponding register, or `-1`
+     */
     Tensor(Value value, int64_t regId = -1) : value(value), regId(regId) {}
 
+    /**
+     * @brief Implicitly convert this tracked tensor to its underlying SSA
+     * value.
+     * @return The underlying `Value`
+     */
     operator Value() const { return value; }
 
+    /**
+     * @brief Get the type of the underlying SSA value.
+     * @return The underlying value's type
+     */
     Type getType() const { return value.getType(); }
 
+    /**
+     * @brief Get the operation defining the underlying SSA value.
+     * @return The defining operation, or `nullptr` if the value has none
+     */
     Operation* getDefiningOp() const { return value.getDefiningOp(); }
 
+    /**
+     * @brief Get the operation defining the underlying SSA value as @p OpTy.
+     * @tparam OpTy The expected defining operation type
+     * @return The defining operation as @p OpTy, or a null operation if the
+     * value has no defining operation or it is not of type @p OpTy
+     */
     template <typename OpTy> OpTy getDefiningOp() const {
       return value.getDefiningOp<OpTy>();
     }
