@@ -174,6 +174,60 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       "Register index is out of bounds");
 }
 
+TEST_F(QCOTest, BuilderRejectsMisuseOfAdditionalFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        builder.startFunction("g", {qubitType}, {qubitType});
+      },
+      "Cannot start a function while another one is being built");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.endFunction({});
+      },
+      "endFunction\\(\\) called without a matching startFunction\\(\\)");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.call("does_not_exist", {});
+      },
+      "Callee not found in module");
+}
+
+TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        // The freshly allocated qubit is neither returned nor sunk.
+        builder.allocQubit();
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor consumed");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        // The freshly allocated register is neither returned nor deallocated.
+        builder.qtensorAlloc(2);
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor deallocated");
+}
+
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
