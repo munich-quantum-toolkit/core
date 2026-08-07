@@ -2319,21 +2319,6 @@ static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
   return c;
 }
 
-/// Reference for `ctrlTwo` after unrolling.
-static Value ctrlTwoUnrolled(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  auto first = b.ctrl({q[0], q[1]}, {q[2]}, [&](ValueRange targets) {
-    return SmallVector{b.x(targets[0])};
-  });
-  auto second = b.ctrl(first.first, {first.second[0], q[3]},
-                       [&](ValueRange targets) -> SmallVector<Value> {
-                         auto [t0, t1] = b.rxx(0.123, targets[0], targets[1]);
-                         return {t0, t1};
-                       });
-  return measureRegister(b, {second.first[0], second.first[1], second.second[0],
-                             second.second[1]});
-}
-
 /// Reference for `ctrlThree` after unrolling.
 static Value ctrlThreeUnrolled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
@@ -2350,20 +2335,6 @@ static Value ctrlThreeUnrolled(QCOProgramBuilder& b) {
              [&](ValueRange targets) { return SmallVector{b.y(targets[0])}; });
   return measureRegister(b,
                          {third.first[0], second.second[1], third.second[0]});
-}
-
-/// Reference for `invTwo` after unrolling.
-static Value invTwoUnrolled(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  auto first =
-      b.inv({q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto [t0, t1] = b.rxx(0.123, qubits[0], qubits[1]);
-        return {t0, t1};
-      });
-  auto second = b.inv({first[0]}, [&](ValueRange qubits) {
-    return SmallVector{b.x(qubits[0])};
-  });
-  return measureRegister(b, {second[0], first[1]});
 }
 
 /// Reference for `ctrlInvTwo` after unrolling.

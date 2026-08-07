@@ -300,34 +300,6 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
   return c;
 }
 
-/// Reference for `qco::ctrlTwo` after unrolling.
-static Value ctrlTwoUnrolled(qco::QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  auto first = b.ctrl({q[0], q[1]}, {q[2]}, [&](ValueRange targets) {
-    return SmallVector{b.x(targets[0])};
-  });
-  auto second = b.ctrl(first.first, {first.second[0], q[3]},
-                       [&](ValueRange targets) -> SmallVector<Value> {
-                         auto [t0, t1] = b.rxx(0.123, targets[0], targets[1]);
-                         return {t0, t1};
-                       });
-  return measureToRegister(b, {second.first[0], second.first[1],
-                               second.second[0], second.second[1]});
-}
-
-/// Reference for `qco::invTwo` after unrolling.
-static Value invTwoUnrolled(qco::QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  auto first =
-      b.inv({q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
-        auto [t0, t1] = b.rxx(0.123, qubits[0], qubits[1]);
-        return {t0, t1};
-      });
-  auto second = b.inv({first[0]}, [&](ValueRange qubits) {
-    return SmallVector{b.x(qubits[0])};
-  });
-  return measureToRegister(b, {second[0], first[1]});
-}
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
@@ -522,30 +494,29 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
 INSTANTIATE_TEST_SUITE_P(QCOCtrlOpTest, JeffRoundTripTest,
                          testing::Values(JeffRoundTripTestCase{
                              "CtrlTwo", MQT_NAMED_BUILDER(qco::ctrlTwo),
-                             MQT_NAMED_BUILDER(ctrlTwoUnrolled)}));
+                             MQT_NAMED_BUILDER(qco::ctrlTwoUnrolled)}));
 /// @}
 
 /// \name JeffRoundTrip/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, JeffRoundTripTest,
-    testing::Values(JeffRoundTripTestCase{"InvTwo",
-                                          MQT_NAMED_BUILDER(qco::invTwo),
-                                          MQT_NAMED_BUILDER(invTwoUnrolled)},
-                    JeffRoundTripTestCase{"InverseiSWAP",
-                                          MQT_NAMED_BUILDER(qco::inverseIswap),
-                                          MQT_NAMED_BUILDER(qco::inverseIswap)},
-                    JeffRoundTripTestCase{
-                        "InverseMultipleControllediSWAP",
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
-                    JeffRoundTripTestCase{"InverseDCX",
-                                          MQT_NAMED_BUILDER(qco::inverseDcx),
-                                          MQT_NAMED_BUILDER(qco::inverseDcx)},
-                    JeffRoundTripTestCase{
-                        "InverseMultipleControlledDCX",
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
+    testing::Values(
+        JeffRoundTripTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
+                              MQT_NAMED_BUILDER(qco::invTwoUnrolled)},
+        JeffRoundTripTestCase{"InverseiSWAP",
+                              MQT_NAMED_BUILDER(qco::inverseIswap),
+                              MQT_NAMED_BUILDER(qco::inverseIswap)},
+        JeffRoundTripTestCase{
+            "InverseMultipleControllediSWAP",
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
+        JeffRoundTripTestCase{"InverseDCX", MQT_NAMED_BUILDER(qco::inverseDcx),
+                              MQT_NAMED_BUILDER(qco::inverseDcx)},
+        JeffRoundTripTestCase{
+            "InverseMultipleControlledDCX",
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
 /// @}
 
 /// \name JeffRoundTrip/Modifiers/PowOp.cpp

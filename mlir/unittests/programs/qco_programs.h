@@ -1251,6 +1251,9 @@ Value ctrlInvSandwich(QCOProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to two gates.
 Value ctrlTwo(QCOProgramBuilder& b);
 
+/// Creates the reference for `ctrlTwo` after unrolling.
+Value ctrlTwoUnrolled(QCOProgramBuilder& b);
+
 /// Creates a circuit with a control modifier applied to three gates that use
 /// the targets out of order, repeat one of them, and swap the qubits of a
 /// two-qubit gate.
@@ -1286,6 +1289,9 @@ Value invCtrlSandwich(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to two gates.
 Value invTwo(QCOProgramBuilder& b);
+
+/// Creates the reference for `invTwo` after unrolling.
+Value invTwoUnrolled(QCOProgramBuilder& b);
 
 /// Creates a circuit with a power modifier applied to two gates.
 Value powTwo(QCOProgramBuilder& b);
