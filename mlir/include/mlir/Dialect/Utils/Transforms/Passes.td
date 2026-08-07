@@ -44,7 +44,7 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     respective operation. For `inv`, the order of the operations is reversed.
     Classical operations of the body are moved in front of the new modifiers.
 
-    If a modifier cannot be unrolled, the modifier is left intouched. Such
+    If a modifier cannot be unrolled, the modifier is left untouched. Such
     modifiers are skipped silently; the pass never fails.
 
     In addition, `pow` modifiers are left untouched because `pow(r) { a; b }`
