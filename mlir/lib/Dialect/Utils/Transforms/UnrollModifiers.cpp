@@ -32,12 +32,6 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mlir/Dialect/Utils/Transforms/Passes.h.inc"
 
-/// Return the unitary operations in @p body.
-template <typename UnitaryOpInterface>
-static SmallVector<UnitaryOpInterface> getBodyUnitaries(Block& body) {
-  return llvm::to_vector(body.getOps<UnitaryOpInterface>());
-}
-
 /// Return the distinct qubit operands of @p op in operand order.
 template <typename QubitType>
 static SmallVector<Value> getQubitOperands(Operation* op) {
@@ -51,10 +45,12 @@ static SmallVector<Value> getQubitOperands(Operation* op) {
   return qubits;
 }
 
-/// Move the classical operations of @p body in front of @p modifier.
-///
-/// Fails if a classical operation is impure or depends on values defined in
-/// @p body.
+/**
+ *@brief Move the classical operations of @p body in front of @p modifier.
+ *
+ * @details Fails if a classical operation is impure or depends on values
+ * defined in @p body.
+ */
 template <typename UnitaryOpInterface>
 static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
                                        RewriterBase& rewriter) {
@@ -104,7 +100,7 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
   }
 
   rewriter.setInsertionPoint(op);
-  for (auto unitary : getBodyUnitaries<qc::UnitaryOpInterface>(*body)) {
+  for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
     const auto qubits = getQubitOperands<qc::QubitType>(unitary);
     const auto targets = llvm::map_to_vector(qubits, [&](Value qubit) {
       return utils::getValueFromBlockArgument(qubit, op.getTargets());
@@ -130,8 +126,7 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
 
   rewriter.setInsertionPoint(op);
   // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
-  auto unitaries = getBodyUnitaries<qc::UnitaryOpInterface>(*body);
-  for (auto unitary : llvm::reverse(unitaries)) {
+  for (auto unitary : llvm::reverse(body->getOps<qc::UnitaryOpInterface>())) {
     const auto qubits = getQubitOperands<qc::QubitType>(unitary);
     const auto targets = llvm::map_to_vector(qubits, [&](Value qubit) {
       return utils::getValueFromBlockArgument(qubit, op.getQubits());
@@ -148,41 +143,25 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
 // QCO
 //===----------------------------------------------------------------------===//
 
-/// Check that @p body can be rewired, which requires every unitary operation to
-/// thread its qubit operands to its results and every qubit that the body uses
-/// or yields to be defined in the body.
-static bool isRewirableBody(Block& body) {
-  const auto isDefinedInBody = [&body](Value qubit) {
-    return qubit.getParentBlock() == &body;
-  };
-  return llvm::all_of(body.getOps<qco::UnitaryOpInterface>(),
-                      [&](qco::UnitaryOpInterface unitary) {
-                        const auto qubits =
-                            getQubitOperands<qco::QubitType>(unitary);
-                        return unitary->getNumResults() == qubits.size() &&
-                               llvm::all_of(qubits, isDefinedInBody);
-                      }) &&
-         llvm::all_of(body.getTerminator()->getOperands(), isDefinedInBody);
-}
-
 /// Unroll a `qco.ctrl` modifier with more than one body unitary.
 static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
-  if (op.getNumBodyUnitaries() < 2 || !isRewirableBody(*body)) {
+  if (op.getNumBodyUnitaries() < 2) {
     return failure();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
 
-  rewriter.setInsertionPoint(op);
-  // Maps the qubits of the body to the qubits threaded through the new
-  // modifiers.
+  // Maps the qubit arguments of the original body to the qubit values threaded
+  // through the new modifiers.
   IRMapping qubits;
   qubits.map(body->getArguments(), op.getTargetsIn());
 
   SmallVector<Value> controls(op.getControlsIn());
-  for (auto unitary : getBodyUnitaries<qco::UnitaryOpInterface>(*body)) {
+
+  rewriter.setInsertionPoint(op);
+  for (auto unitary : body->getOps<qco::UnitaryOpInterface>()) {
     const auto operands = getQubitOperands<qco::QubitType>(unitary);
     const auto targets = llvm::map_to_vector(
         operands, [&](Value qubit) { return qubits.lookup(qubit); });
@@ -207,22 +186,21 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
 /// Unroll a `qco.inv` modifier with more than one body unitary.
 static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   auto* body = op.getBody();
-  if (op.getNumBodyUnitaries() < 2 || !isRewirableBody(*body)) {
+  if (op.getNumBodyUnitaries() < 2) {
     return failure();
   }
   if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
     return failure();
   }
 
-  rewriter.setInsertionPoint(op);
-  // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
-  // Consequently, the inputs of the modifier feed the qubits that its body
-  // yields.
+  // Maps the qubit arguments of the original body to the qubit values threaded
+  // through the new modifiers.
   IRMapping qubits;
   qubits.map(body->getTerminator()->getOperands(), op.getQubitsIn());
 
-  auto unitaries = getBodyUnitaries<qco::UnitaryOpInterface>(*body);
-  for (auto unitary : llvm::reverse(unitaries)) {
+  rewriter.setInsertionPoint(op);
+  // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
+  for (auto unitary : llvm::reverse(body->getOps<qco::UnitaryOpInterface>())) {
     const auto operands = getQubitOperands<qco::QubitType>(unitary);
     const auto targets =
         llvm::map_to_vector(unitary->getResults(),

@@ -42,17 +42,14 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     operation into a sequence of modifiers that each hold a single operation.
     The targets of the new modifiers are narrowed to the qubits of the
     respective operation. For `inv`, the order of the operations is reversed.
-    Classical operations of the body are moved in front of the modifier.
+    Classical operations of the body are moved in front of the new modifiers.
 
-    `pow` modifiers are left untouched because `pow(r) { a; b }` is generally
-    not equivalent to `pow(r) { a }; pow(r) { b }`. Modifiers nested in a `pow`
-    body are still unrolled.
-
-    A modifier is also left untouched when it cannot be unrolled, that is, when
-    a classical operation of its body is impure or uses a value defined in the
-    body, or when a `qco` body operation does not thread every distinct qubit
-    operand to a result or uses a qubit defined outside the body. Such
+    If a modifier cannot be unrolled, the modifier is left intouched. Such
     modifiers are skipped silently; the pass never fails.
+
+    In addition, `pow` modifiers are left untouched because `pow(r) { a; b }`
+    is generally not equivalent to `pow(r) { a }; pow(r) { b }`. Modifiers
+    nested in a `pow` body are still unrolled.
   }];
 }
 
