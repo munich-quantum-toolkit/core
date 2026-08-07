@@ -65,8 +65,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <ios>
 #include <memory>
 #include <optional>
 #include <span>
@@ -231,8 +229,7 @@ bool OpenQASMProgram::write(const std::filesystem::path& path) const {
   stream << source_;
   stream.flush();
   if (stream.has_error()) {
-    llvm::errs() << "failed to write OpenQASM output file '" << path.string()
-                 << "'\n";
+    llvm::errs() << "failed to write OpenQASM file '" << path.string() << "'\n";
     return false;
   }
   return true;
@@ -528,17 +525,8 @@ std::vector<std::byte> JeffProgram::toBytes() const {
 }
 
 bool JeffProgram::write(const std::filesystem::path& path) const {
-  const auto bytes = toBytes();
-  std::ofstream output(path, std::ios::binary);
-  if (!output) {
-    mod().emitError() << "failed to open output file '" << path.string() << "'";
-    return false;
-  }
-  output.write(reinterpret_cast<const char*>(bytes.data()),
-               static_cast<std::streamsize>(bytes.size()));
-  if (!output) {
-    mod().emitError() << "failed to write output file '" << path.string()
-                      << "'";
+  if (failed(serializeToFile(mod(), path.string()))) {
+    mod().emitError() << "failed to write jeff file '" << path.string() << "'";
     return false;
   }
   return true;
@@ -626,8 +614,8 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::WriteBitcodeToFile(*llvmModule, stream);
   stream.flush();
   if (stream.has_error()) {
-    mod().emitError() << "failed to write bitcode output file '"
-                      << path.string() << "'";
+    mod().emitError() << "failed to write bitcode file '" << path.string()
+                      << "'";
     return false;
   }
   return true;

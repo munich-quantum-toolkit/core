@@ -25,8 +25,8 @@ endif()
 # Fetch jeff-mlir
 FetchContent_Declare(
   jeff-mlir
-  GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-  GIT_TAG v0.3.0)
+  GIT_REPOSITORY https://github.com/denialhaag/jeff-mlir.git
+  GIT_TAG 198d2eb7c17c7625fc9f41fac3601832647302a9)
 # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option and
 # defines a global `check` target when it is enabled. Do not let an embedding project's test setting
 # leak into this third-party dependency.
