@@ -19,6 +19,7 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
