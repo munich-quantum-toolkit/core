@@ -12,6 +12,8 @@ add_mlir_library(
   MLIRQCOTransforms
   ${PASSES_SOURCES}
   LINK_LIBS
+  PUBLIC
+  MQTCompilerTarget
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils

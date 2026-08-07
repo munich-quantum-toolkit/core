@@ -12,8 +12,20 @@ releases may include breaking changes.
 
 ### Added
 
+- 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
+- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
+  ([**@burgholzer**])
+- ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
+  `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add structured OpenQASM emission from the QC dialect to the C++ and Python
+  compiler APIs and `mqt-cc` ([#2003]) ([**@burgholzer**])
+- ✨ Add immutable MLIR compiler targets and a canonical target compilation
+  pipeline for decomposition, optimization, mapping, native synthesis, and
+  conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
+  stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
-  semantics and synthesis integration ([#1986]) ([**@burgholzer**])
+  semantics and synthesis integration ([#1986], [#1995]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
 - ✨ Make superconducting QDMI devices runtime configurable with session-owned
@@ -26,19 +38,21 @@ releases may include breaking changes.
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
-  [#1979]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
+  [#1979], [#2007]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
-- ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1865], [#1961])
-  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add target-independent two-qubit gate fusion, target-native post-routing
+  synthesis, and operation-capability and static-site conformance ([#1865],
+  [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `decompose-multi-controlled` pass for decomposing controlled X, Z,
-  RCCX, and constant-angle phase gates with a configurable `min-controls`
-  threshold ([#1810]) ([**@simon1hofmann**])
+  SWAP, RCCX, and constant-angle phase gates with a configurable `min-qubits`
+  threshold (default 3: wider than two-qubit) ([#1810], [#1996], [#2001])
+  ([**@simon1hofmann**])
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
-  and structured control flow ([#1910]) ([**@burgholzer**], [**@denialhaag**])
+  structured control flow, and alias-safe qubit-register access ([#1910],
+  [#1987], [#1994]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -59,15 +73,17 @@ releases may include breaking changes.
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
   ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
-  rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
-  [**@denialhaag**], [**@MatthiasReumann**])
+  rotation gates using quaternions ([#1407], [#1674], [#2002]) ([**@J4MMlE**],
+  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934]) ([**@denialhaag**],
+  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
   [**@burgholzer**])
-- ✨ Add a `place-and-route` pass for mapping circuits to architectures with
-  restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870], [#1904],
-  [#1911], [#1951]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
+  circuits to compiler-target topologies while preserving target site IDs and
+  materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
+  [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
+  [#1870], [#1904], [#1911], [#1951], [#1997]) ([**@MatthiasReumann**],
+  [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
   ([**@DRovara**], [**@burgholzer**])
@@ -80,7 +96,7 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#1976], [#2006]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 
@@ -523,7 +539,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
 
 ### Added
 
-- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
+- 🐍 Start building CPython 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
@@ -705,6 +721,23 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
+[#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
+[#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
+[#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
+[#2003]: https://github.com/munich-quantum-toolkit/core/pull/2003
+[#2002]: https://github.com/munich-quantum-toolkit/core/pull/2002
+[#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
+[#2000]: https://github.com/munich-quantum-toolkit/core/pull/2000
+[#1999]: https://github.com/munich-quantum-toolkit/core/pull/1999
+[#1998]: https://github.com/munich-quantum-toolkit/core/pull/1998
+[#1997]: https://github.com/munich-quantum-toolkit/core/pull/1997
+[#1996]: https://github.com/munich-quantum-toolkit/core/pull/1996
+[#1995]: https://github.com/munich-quantum-toolkit/core/pull/1995
+[#1994]: https://github.com/munich-quantum-toolkit/core/pull/1994
+[#1993]: https://github.com/munich-quantum-toolkit/core/pull/1993
+[#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
+[#1987]: https://github.com/munich-quantum-toolkit/core/pull/1987
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
@@ -801,6 +834,7 @@ for previous changelogs._
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
+[#1687]: https://github.com/munich-quantum-toolkit/core/pull/1687
 [#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
 [#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
 [#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674

@@ -139,7 +139,7 @@ def qiskit(session: nox.Session) -> None:
         session.run("uv", "pip", "show", "qiskit", env=env)
 
 
-@nox.session(python="3.14", reuse_venv=False)
+@nox.session(python="3.14", reuse_venv=True)
 def docs(session: nox.Session) -> None:
     """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
     parser = argparse.ArgumentParser()
@@ -152,8 +152,7 @@ def docs(session: nox.Session) -> None:
 
     env = {
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
-        # Favor fast compilation for this short-lived documentation build.
-        "SKBUILD_CMAKE_BUILD_TYPE": "Debug",
+        "SKBUILD_CMAKE_BUILD_TYPE": "Release",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
         # Header-set verification and IPO remain enabled by default elsewhere.

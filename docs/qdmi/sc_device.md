@@ -35,7 +35,7 @@ and fidelity, and optional tuple-specific overrides.
   "durationUnit": {"unit": "ns", "scaleFactor": 1.0},
   "qubitProperties": {
     "defaults": {"t1": 100000, "t2": 150000},
-    "overrides": [{"qubit": 1, "t1": 95000}]
+    "overrides": [{"qubit": 1, "name": "QB2", "t1": 95000}]
   },
   "couplings": [[0, 1]],
   "operations": [
@@ -66,11 +66,32 @@ exact ordered edge in the coupling map. Every site override must select one of
 the operation's supported tuples and supply a duration, fidelity, or both.
 
 When operation duration or fidelity is queried, a matching tuple override wins
-over the operation default. Missing data returns `QDMI_ERROR_NOTSUPPORTED`.
-Qubit T1 and T2 use a per-qubit override first and the qubit default second. The
-order of a configured site tuple is significant. Handles from another session
-are rejected.
+over the operation default. Missing data returns `QDMI_ERROR_NOTSUPPORTED`. Each
+qubit override may also provide a non-empty site name. Qubit T1 and T2 use a
+per-qubit override first and the qubit default second. The order of a configured
+site tuple is significant. Handles from another session are rejected.
 
 The calibration values bundled in `json/sc/mqt-core-qdmi-sc-device.json` are
 synthetic examples for testing and documentation; they are not measurements of
 physical hardware.
+
+## Bundled IQM models
+
+The SC provider also installs `json/sc/iqm-garnet.json` and
+`json/sc/iqm-emerald.json`. They model the 20-qubit, 30-edge Garnet and
+54-qubit, 90-edge Emerald architectures and expose the portable IQM operation
+set `r`, `cz`, and `measure`. Their stable registry IDs are `mqt.sc.iqm.garnet`
+and `mqt.sc.iqm.emerald`.
+
+The snapshots were derived from authenticated IQM architecture and calibration
+data retrieved on 2 August 2026 through
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM). Site names and
+topology came from each static architecture, operation sites from its default
+dynamic architecture, and available T1, T2, and fidelities for individual site
+tuples from its default calibration-set quality metrics. Coherence times were
+rounded to the nearest nanosecond and stored as integral values using unit `us`
+and scale factor `0.001`. They are historical compiler-facing snapshots, not
+claims about current hardware calibration.
+
+The IQM interface did not report operation durations, so the files intentionally
+omit them.

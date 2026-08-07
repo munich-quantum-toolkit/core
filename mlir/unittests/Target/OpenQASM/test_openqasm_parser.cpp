@@ -312,9 +312,9 @@ TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
       llvm::MemoryBuffer::getMemBufferCopy(
           "OPENQASM 3.1; include \"level-0.inc\";", "main.qasm"),
       llvm::SMLoc());
-  for (size_t index = 0; index < 18; ++index) {
+  for (size_t index = 0; index < 21; ++index) {
     std::string source;
-    if (index == 17) {
+    if (index == 20) {
       source = "int leaf = 1;";
     } else {
       const auto next = "level-" + std::to_string(index + 1) + ".inc";
@@ -517,8 +517,6 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
        .source = "OPENQASM 3.1; include \"missing.inc\";"},
       {.name = "invalid-hardware-qubit",
        .source = "OPENQASM 3.1; qubit q; x $;"},
-      {.name = "integer-overflow",
-       .source = "OPENQASM 3.1; int value = 999999999999999999999999999999;"},
       {.name = "float-overflow",
        .source = "OPENQASM 3.1; float value = 1e99999;"},
       {.name = "unsupported-angle", .source = "OPENQASM 3.1; angle theta;"},
@@ -537,6 +535,14 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
        .source = "OPENQASM 3.1; for int i in [:] {}"},
       {.name = "missing-while-condition",
        .source = "OPENQASM 3.1; while () {}"},
+      {.name = "switch-without-cases",
+       .source = "OPENQASM 3.1; int value = 0; switch (value) {}"},
+      {.name = "switch-case-after-default",
+       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                 "default {} case 0 {} }"},
+      {.name = "switch-with-repeated-default",
+       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                 "case 0 {} default {} default {} }"},
       {.name = "const-without-initializer",
        .source = "OPENQASM 3.1; const int value;"},
   });
@@ -552,12 +558,10 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",      "cal",        "defcal",   "extern",
-      "box",           "let",      "break",      "continue", "end",
-      "return",        "switch",   "case",       "default",  "pragma",
-      "input",         "readonly", "mutable",    "complex",  "array",
-      "void",          "stretch",  "durationof", "delay",    "im",
-      "#dim",          "#pragma",
+      "defcalgrammar", "def",        "cal",      "defcal",  "extern", "box",
+      "let",           "break",      "continue", "end",     "return", "pragma",
+      "input",         "readonly",   "mutable",  "complex", "array",  "void",
+      "stretch",       "durationof", "delay",    "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -611,6 +615,14 @@ TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
   auto valid = oq3::frontend::parseOpenQASM(
       "OPENQASM 3.1; int hex = 0xA_B; float value = 1_2.3_4e+5_6;");
   ASSERT_TRUE(valid) << valid.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralsWithDigitSeparators) {
+  // DecimalIntegerLiteral allows '_' separators; values beyond uint64_t are
+  // still valid tokens (wide integers). Constant evaluation may reject them.
+  auto parsed = oq3::frontend::parseOpenQASM(
+      "OPENQASM 3.1; int value = 999_999_999_999_999_999_999;");
+  ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
 TEST(OpenQASMFrontendTest, SourceManagerOverloadsPreserveParseFailures) {

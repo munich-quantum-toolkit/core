@@ -106,6 +106,9 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("else", TokenKind::Else)
       .Case("for", TokenKind::For)
       .Case("while", TokenKind::While)
+      .Case("switch", TokenKind::Switch)
+      .Case("case", TokenKind::Case)
+      .Case("default", TokenKind::Default)
       .Case("in", TokenKind::In)
       .Case("gphase", TokenKind::Gphase)
       .Case("inv", TokenKind::Inv)
@@ -124,8 +127,7 @@ decodeCodePoint(const char* position, const char* end) {
              TokenKind::UnsupportedKeyword)
       .Cases("extern", "box", "let", "break", "continue",
              TokenKind::UnsupportedKeyword)
-      .Cases("end", "return", "switch", "case", "default",
-             TokenKind::UnsupportedKeyword)
+      .Cases("end", "return", TokenKind::UnsupportedKeyword)
       .Cases("pragma", "input", "readonly", "mutable",
              TokenKind::UnsupportedKeyword)
       .Cases("complex", "array", "void", "stretch",
@@ -325,9 +327,12 @@ Token Lexer::lexNumber(const char* start) {
     }
   } else {
     token.kind = TokenKind::IntegerLiteral;
-    if (invalidSeparators ||
-        StringRef(normalized).getAsInteger(10, token.intValue)) {
+    if (invalidSeparators) {
       token.kind = TokenKind::Error;
+    } else if (StringRef(normalized).getAsInteger(10, token.intValue)) {
+      token.wideInteger = true;
+      token.stringValue = text;
+      token.intValue = 0;
     }
   }
   return token;

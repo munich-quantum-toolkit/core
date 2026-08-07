@@ -44,6 +44,9 @@ enum class TokenKind : uint8_t {
   Else,
   For,
   While,
+  Switch,
+  Case,
+  Default,
   In,
   Gphase,
   Inv,
@@ -123,10 +126,11 @@ struct Token {
   TokenKind kind = TokenKind::Eof;
   SMLoc loc;
   StringRef identifier;  ///< For `Identifier` tokens.
-  StringRef stringValue; ///< For `StringLiteral` tokens.
+  StringRef stringValue; ///< For `StringLiteral` tokens / wide integers.
   StringRef spelling;    ///< Zero-copy source spelling.
   uint64_t intValue = 0;
   double floatValue = 0.0;
+  bool wideInteger = false; ///< True when an integer literal exceeds `uint64_t`
 };
 
 /**

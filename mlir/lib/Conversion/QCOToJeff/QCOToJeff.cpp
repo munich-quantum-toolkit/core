@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -89,14 +90,19 @@ struct LoweringState {
   // Modifier information
   bool inCtrlOp = false;
   bool inInvOp = false;
+  bool inPowOp = false;
   CtrlOp ctrlOp;
   InvOp invOp;
+  PowOp powOp;
   SmallVector<Value> controlsIn;
   SmallVector<Value> controlsOut;
   SmallVector<Value> targetsIn;
   SmallVector<Value> targetsOut;
+  uint8_t power = 1;
 
-  [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
+  [[nodiscard]] bool inModifier() const {
+    return inCtrlOp || inInvOp || inPowOp;
+  }
 
   /// Per-region map from a classical-bit-register memref to its latest tensor
   /// value
@@ -238,6 +244,33 @@ getEffectiveTargetOperands(OpType op, OpAdaptorType adaptor,
 }
 
 /**
+ * @brief Records the qubits the body of @p op operates on.
+ *
+ * @details Outside of an enclosing modifier, the body operates on @p qubitsIn
+ * directly. Inside one, @p qubitsIn are block arguments aliasing the qubits of
+ * the enclosing modifier and are resolved accordingly.
+ *
+ * @param op The `qco.inv` or `qco.pow` operation being converted.
+ * @param qubitsIn The type-converted input qubits of @p op.
+ * @param state The lowering state.
+ */
+template <typename OpType>
+static void updateTargetsIn(OpType op, ValueRange qubitsIn,
+                            LoweringState& state) {
+  if (state.targetsIn.empty()) {
+    state.targetsIn = llvm::to_vector(qubitsIn);
+    return;
+  }
+
+  auto outerQubits = state.targetsIn;
+  SmallVector<Value> innerQubits;
+  for (auto arg : op.getBody()->getArguments()) {
+    innerQubits.push_back(outerQubits[arg.getArgNumber()]);
+  }
+  state.targetsIn = std::move(innerQubits);
+}
+
+/**
  * @brief Lowers QCO gates to matching jeff ops.
  *
  * @details Uses `getEffectiveTargetOperands` and forwards target and parameter
@@ -267,7 +300,7 @@ convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
       /*in_ctrl_qubits=*/state.controlsIn,
       /*num_ctrls=*/state.controlsIn.size(),
       /*is_adjoint=*/state.inInvOp ^ ExtraAdjoint,
-      /*power=*/1);
+      /*power=*/state.power);
 
   // jeff well-known gates: leading results are transformed targets, then ctrl
   // outs (same ordering as `getOutQubit` / `getOutCtrlQubits` accessors).
@@ -305,7 +338,7 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
       /*in_ctrl_qubits=*/state.controlsIn, /*params=*/params,
       /*num_ctrls=*/state.controlsIn.size(),
       /*is_adjoint=*/state.inInvOp ^ isAdjoint,
-      /*power=*/1, /*name=*/name, /*num_targets=*/targets.size(),
+      /*power=*/state.power, /*name=*/name, /*num_targets=*/targets.size(),
       /*num_params=*/params.size());
 
   handleResult(op, rewriter, state, jeffOp.getOutTargetQubits(),
@@ -329,13 +362,13 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
   auto pauliGatesAttr =
       DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
 
-  auto jeffOp =
-      jeff::PPROp::create(rewriter, op.getLoc(), targets,
-                          /*in_ctrl_qubits=*/state.controlsIn,
-                          /*rotation=*/op.getParameter(0),
-                          /*num_ctrls=*/state.controlsIn.size(),
-                          /*is_adjoint=*/state.inInvOp,
-                          /*power=*/1, /*pauli_gates=*/pauliGatesAttr);
+  auto jeffOp = jeff::PPROp::create(rewriter, op.getLoc(), targets,
+                                    /*in_ctrl_qubits=*/state.controlsIn,
+                                    /*rotation=*/op.getParameter(0),
+                                    /*num_ctrls=*/state.controlsIn.size(),
+                                    /*is_adjoint=*/state.inInvOp,
+                                    /*power=*/state.power,
+                                    /*pauli_gates=*/pauliGatesAttr);
 
   handleResult(op, rewriter, state, jeffOp.getOutQubits(),
                jeffOp.getOutCtrlQubits());
@@ -846,7 +879,7 @@ struct ConvertQCOGPhaseOpToJeff final : StatefulOpConversionPattern<GPhaseOp> {
                                /*in_ctrl_qubits=*/state.controlsIn,
                                /*num_ctrls=*/state.controlsIn.size(),
                                /*is_adjoint=*/state.inInvOp,
-                               /*power=*/1);
+                               /*power=*/state.power);
 
     rewriter.eraseOp(op);
     if (state.inCtrlOp) {
@@ -1044,7 +1077,8 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<U2Op> {
                                     op.getParameter(0), op.getParameter(1),
                                     /*in_ctrl_qubits=*/state.controlsIn,
                                     /*num_ctrls=*/state.controlsIn.size(),
-                                    /*is_adjoint=*/state.inInvOp, /*power=*/1);
+                                    /*is_adjoint=*/state.inInvOp,
+                                    /*power=*/state.power);
 
     handleResult(op, rewriter, state, jeffOp.getOutQubit(),
                  jeffOp.getOutCtrlQubits());
@@ -1117,10 +1151,10 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
               "canonicalization pass before the conversion");
     }
 
-    if (state.inInvOp) {
+    if (state.inInvOp || state.inPowOp) {
       return rewriter.notifyMatchFailure(
-          op, "Control modifiers inside inversion modifiers are not supported. "
-              "Run the canonicalization pass before the conversion");
+          op, "Control modifiers inside inversion or power modifiers are not "
+              "supported. Run the canonicalization pass before the conversion");
     }
 
     // Set modifier information
@@ -1176,16 +1210,72 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
     // Set modifier information
     state.inInvOp = true;
     state.invOp = op;
-    if (state.targetsIn.empty()) {
-      state.targetsIn = llvm::to_vector(adaptor.getQubitsIn());
-    } else {
-      auto outerQubits = state.targetsIn;
-      SmallVector<Value> innerQubits;
-      for (auto arg : op.getBody()->getArguments()) {
-        innerQubits.push_back(outerQubits[arg.getArgNumber()]);
-      }
-      state.targetsIn = std::move(innerQubits);
+    updateTargetsIn(op, adaptor.getQubitsIn(), state);
+
+    // Inline region
+    rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
+                               op->getIterator(), state.targetsIn);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.pow to jeff by inlining the region
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = qco.pow(%exponent) (%a_in = %q_in) {
+ *   %a_res = qco.u(%theta, %phi, %lambda) %a_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a_res : !qco.qubit
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 :
+ * i8, power = 2 : i8} %q_in : !jeff.qubit
+ * ```
+ */
+struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(PowOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 1) {
+      return rewriter.notifyMatchFailure(op,
+                                         "Power modifiers with multiple body "
+                                         "unitaries are not supported.");
     }
+
+    auto& state = getState();
+
+    if (state.inPowOp) {
+      return rewriter.notifyMatchFailure(
+          op, "Nested power modifiers are not supported. Run the "
+              "canonicalization pass before the conversion");
+    }
+
+    if (state.inInvOp) {
+      return rewriter.notifyMatchFailure(
+          op, "Power modifiers inside inversion modifiers are not supported. "
+              "Run the canonicalization pass before the conversion");
+    }
+
+    // jeff only supports compile-time integer exponents between 0 and 255
+    const auto exponent = op.getExponentValue();
+    if (!exponent || !utils::isIntegerExponent(*exponent) || *exponent < 0.0 ||
+        *exponent > std::numeric_limits<uint8_t>::max()) {
+      return rewriter.notifyMatchFailure(
+          op, "Only compile-time integer exponents between 0 and 255 are "
+              "supported");
+    }
+
+    // Set modifier information
+    state.inPowOp = true;
+    state.powOp = op;
+    state.power = static_cast<uint8_t>(*exponent);
+    updateTargetsIn(op, adaptor.getQubitsIn(), state);
 
     // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
@@ -1211,6 +1301,17 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
 
       state.inInvOp = false;
       state.invOp = nullptr;
+
+      if (!state.inCtrlOp && !state.inPowOp) {
+        state.targetsIn.clear();
+        state.targetsOut.clear();
+      }
+    } else if (state.inPowOp) {
+      rewriter.replaceOp(state.powOp, state.targetsOut);
+
+      state.inPowOp = false;
+      state.powOp = nullptr;
+      state.power = 1;
 
       if (!state.inCtrlOp) {
         state.targetsIn.clear();
@@ -1838,10 +1939,11 @@ protected:
         patterns, typeConverter, context, state, "rccx");
 
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-                 ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-                 ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
-                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff,
-                 ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
+                 ConvertQCOInvOpToJeff, ConvertQCOPowOpToJeff,
+                 ConvertQCOYieldOpToJeff, ConvertQCOIfOpToJeff,
+                 ConvertSCFForOpToJeff, ConvertSCFWhileOpToJeff,
+                 ConvertQCOMainToJeff, ConvertFuncReturnOpToJeff>(
+        typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(moduleOp, target, std::move(patterns))

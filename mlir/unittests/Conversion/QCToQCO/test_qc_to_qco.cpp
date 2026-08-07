@@ -14,29 +14,43 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -49,6 +63,8 @@ struct QCToQCOTestCase {
   std::string name;
   mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  bool expectsCompleteTensorState = false;
+  bool skipReferenceComparison = false;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQCOTestCase& info);
@@ -108,6 +124,91 @@ protected:
           operation->getDialect() == context.getLoadedDialect<qc::QCDialect>();
     });
     EXPECT_FALSE(retainsQCOperations);
+  }
+
+public:
+  static void expectOperationLocalRegisterAccesses(ModuleOp moduleOp) {
+    std::size_t extracts = 0;
+    std::size_t inserts = 0;
+    llvm::DenseSet<Operation*> committedExtracts;
+    moduleOp.walk([&](qtensor::ExtractOp extract) {
+      ++extracts;
+      ASSERT_TRUE(extract.getResult().hasOneUse());
+      auto* user = *extract.getResult().getUsers().begin();
+      EXPECT_EQ(user->getDialect(),
+                moduleOp.getContext()->getOrLoadDialect<qco::QCODialect>());
+    });
+    moduleOp.walk([&](qtensor::InsertOp insert) {
+      ++inserts;
+      auto* producer = insert.getScalar().getDefiningOp();
+      ASSERT_NE(producer, nullptr);
+      EXPECT_EQ(producer->getDialect(),
+                moduleOp.getContext()->getOrLoadDialect<qco::QCODialect>());
+
+      Value input;
+      if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(producer)) {
+        input = unitary.getInputForOutput(insert.getScalar());
+      } else if (auto measure = dyn_cast<qco::MeasureOp>(producer)) {
+        EXPECT_EQ(insert.getScalar(), measure.getQubitOut());
+        input = measure.getQubitIn();
+      } else if (auto reset = dyn_cast<qco::ResetOp>(producer)) {
+        EXPECT_EQ(insert.getScalar(), reset.getQubitOut());
+        input = reset.getQubitIn();
+      }
+      ASSERT_TRUE(input);
+
+      auto extract = input.getDefiningOp<qtensor::ExtractOp>();
+      ASSERT_TRUE(extract);
+      EXPECT_TRUE(
+          isEqualConstantIntOrValue(extract.getIndex(), insert.getIndex()));
+      EXPECT_EQ(extract->getBlock(), producer->getBlock());
+      EXPECT_EQ(producer->getBlock(), insert->getBlock());
+      EXPECT_TRUE(extract->isBeforeInBlock(producer));
+      EXPECT_TRUE(producer->isBeforeInBlock(insert));
+      committedExtracts.insert(extract);
+    });
+    EXPECT_GT(extracts, 0U);
+    EXPECT_EQ(extracts, inserts);
+    EXPECT_EQ(committedExtracts.size(), extracts);
+
+    moduleOp.walk([&](memref::LoadOp load) {
+      EXPECT_FALSE(isa<qc::QubitType>(load.getMemRefType().getElementType()));
+    });
+  }
+
+  static void expectStructuredStateUsesCompleteTensors(ModuleOp moduleOp) {
+    bool sawStructuredQuantumState = false;
+    moduleOp.walk([&](Operation* operation) {
+      if (!isa<qco::IfOp, qco::IndexSwitchOp, scf::ForOp, scf::WhileOp>(
+              operation)) {
+        return;
+      }
+      const auto isQubitTensor = [](Type type) {
+        const auto tensor = dyn_cast<RankedTensorType>(type);
+        return tensor && isa<qco::QubitType>(tensor.getElementType());
+      };
+      const bool hasTensorOperand =
+          llvm::any_of(operation->getOperandTypes(), isQubitTensor);
+      const bool hasTensorResult =
+          llvm::any_of(operation->getResultTypes(), isQubitTensor);
+      EXPECT_TRUE(hasTensorOperand);
+      EXPECT_TRUE(hasTensorResult);
+      const auto tensorOperands = llvm::to_vector(
+          llvm::make_filter_range(operation->getOperandTypes(), isQubitTensor));
+      const auto tensorResults = llvm::to_vector(
+          llvm::make_filter_range(operation->getResultTypes(), isQubitTensor));
+      EXPECT_EQ(tensorOperands, tensorResults);
+      for (Region& region : operation->getRegions()) {
+        if (region.empty()) {
+          continue;
+        }
+        const auto tensorArguments = llvm::to_vector(llvm::make_filter_range(
+            region.front().getArgumentTypes(), isQubitTensor));
+        EXPECT_EQ(tensorArguments, tensorResults);
+      }
+      sawStructuredQuantumState = true;
+    });
+    EXPECT_TRUE(sawStructuredQuantumState);
   }
 };
 
@@ -437,8 +538,767 @@ module {
   expectNoQCOperations(*module);
 }
 
-TEST_P(QCToQCOTest, ProgramEquivalence) {
-  const auto& [_, programBuilder, referenceBuilder] = GetParam();
+TEST_F(QCToQCORegressionTest,
+       MaterializesSequentialPotentialAliasesAtEachOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%i: index) attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q0 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.h %q0 : !qc.qubit
+    %q1 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.x %q1 : !qc.qubit
+    %q2 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.y %q2 : !qc.qubit
+    %q3 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    %unused = qc.measure %q3 : !qc.qubit -> i1
+    %q4 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.reset %q4 : !qc.qubit
+    %q5 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.barrier %q5 : !qc.qubit
+    %q6 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.inv (%arg0 = %q6) {
+      qc.z %arg0 : !qc.qubit
+      qc.yield
+    } : !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  expectOperationLocalRegisterAccesses(*moduleOp);
+  expectNoQCOperations(*moduleOp);
+
+  std::size_t allocations = 0;
+  std::size_t deallocations = 0;
+  moduleOp->walk([&](qtensor::AllocOp) { ++allocations; });
+  moduleOp->walk([&](qtensor::DeallocOp) { ++deallocations; });
+  EXPECT_EQ(allocations, 1U);
+  EXPECT_EQ(deallocations, 1U);
+}
+
+TEST_F(QCToQCORegressionTest, RejectsRegisterBackedReferenceEscapes) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @escape(!qc.qubit)
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    func.call @escape(%q) : (!qc.qubit) -> ()
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("cannot consume a register-backed qubit reference");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, PreflightRejectsNonOneDimensionalQubitRegisters) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<!qc.qubit>
+    %q = memref.load %reg[] : memref<!qc.qubit>
+    qc.x %q : !qc.qubit
+    memref.dealloc %reg : memref<!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires one-dimensional qubit register storage");
+    return success();
+  });
+
+  PassManager pm(&context);
+  pm.enableVerifier(false);
+  pm.addPass(createQCToQCO());
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, PreflightRejectsDerivedQubitRegisterValues) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %cast = memref.cast %reg : memref<1x!qc.qubit> to memref<?x!qc.qubit>
+    memref.dealloc %cast : memref<?x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires a directly allocated qubit register");
+    return success();
+  });
+
+  PassManager pm(&context);
+  pm.enableVerifier(false);
+  pm.addPass(createQCToQCO());
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumBlockArguments) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main(%q: !qc.qubit)
+      attributes {passthrough = ["entry_point"]} {
+    qc.x %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main(%reg: memref<1x!qc.qubit>)
+      attributes {passthrough = ["entry_point"]} {
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main(%reg: memref<*x!qc.qubit>)
+      attributes {passthrough = ["entry_point"]} {
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("cannot convert arbitrary qubit or qubit-register "
+                        "block arguments; only QC modifier qubit arguments are "
+                        "supported");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumRegionCaptures) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    scf.execute_region {
+      qc.x %q : !qc.qubit
+      scf.yield
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    scf.execute_region {
+      qc.x %q : !qc.qubit
+      scf.yield
+    }
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("cannot capture quantum values in an unsupported "
+                        "region-bearing operation");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCToQCORegressionTest, CapturesQubitsUsedByPowInsideFor) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %exponent = arith.constant 2.0 : f64
+    scf.for %i = %c0 to %c1 step %c1 {
+      qc.pow(%exponent) (%arg0 = %q) {
+        qc.x %arg0 : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  scf::ForOp loop;
+  moduleOp->walk([&](scf::ForOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getNumResults(), 1);
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(0).getType()));
+  EXPECT_FALSE(loop.getBody()->getOps<qco::PowOp>().empty());
+  expectNoQCOperations(*moduleOp);
+}
+
+namespace {
+
+enum class ModifierKind : std::uint8_t { Inv, Ctrl, Pow };
+enum class StructuredKind : std::uint8_t { For, While, If, IndexSwitch };
+
+struct NestedModifierCase {
+  std::string name;
+  ModifierKind modifier;
+  StructuredKind structured;
+};
+
+} // namespace
+
+static void emitStructuredQubitUse(qc::QCProgramBuilder& builder,
+                                   const StructuredKind kind,
+                                   const Value qubit) {
+  switch (kind) {
+  case StructuredKind::For:
+    builder.scfFor(0, 1, 1, [&](Value) { builder.x(qubit); });
+    return;
+  case StructuredKind::While:
+    builder.scfWhile(
+        [&] {
+          builder.x(qubit);
+          builder.scfCondition(
+              arith::ConstantOp::create(builder, builder.getBoolAttr(false)));
+        },
+        [&] { builder.y(qubit); });
+    return;
+  case StructuredKind::If:
+    builder.scfIf(true, [&] { builder.x(qubit); }, [&] { builder.y(qubit); });
+    return;
+  case StructuredKind::IndexSwitch: {
+    const auto caseBody = [&] { builder.x(qubit); };
+    const auto defaultBody = [&] { builder.y(qubit); };
+    const SmallVector<int64_t> cases{0};
+    const SmallVector<llvm::function_ref<void()>> caseBodies{caseBody};
+    builder.scfIndexSwitch(0, cases, caseBodies, defaultBody);
+    return;
+  }
+  }
+  llvm_unreachable("unknown structured operation");
+}
+
+static OwningOpRef<ModuleOp>
+buildNestedModifierProgram(MLIRContext* context,
+                           const NestedModifierCase& testCase,
+                           const bool registerBacked) {
+  qc::QCProgramBuilder builder(context);
+  builder.initialize();
+  Value target;
+  if (registerBacked) {
+    const auto reg = builder.allocQubitRegisterStorage(1);
+    auto index = arith::ConstantIndexOp::create(builder, 0);
+    target = builder.loadQubit(reg, index.getResult());
+  } else {
+    target = builder.allocQubit();
+  }
+  const auto body = [&](const Value argument) {
+    emitStructuredQubitUse(builder, testCase.structured, argument);
+  };
+
+  switch (testCase.modifier) {
+  case ModifierKind::Inv:
+    builder.inv(target, body);
+    break;
+  case ModifierKind::Ctrl:
+    builder.ctrl(builder.allocQubit(), target, body);
+    break;
+  case ModifierKind::Pow:
+    builder.pow(2.0, target, body);
+    break;
+  }
+  return builder.finalize();
+}
+
+namespace {
+
+class NestedModifierConversionTest
+    : public QCToQCORegressionTest,
+      public testing::WithParamInterface<NestedModifierCase> {};
+
+} // namespace
+
+TEST_P(NestedModifierConversionTest, CarriesQubitThroughStructuredOperation) {
+  for (const bool registerBacked : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "register_backed=" << registerBacked);
+    auto moduleOp =
+        buildNestedModifierProgram(&context, GetParam(), registerBacked);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    qco::YieldOp modifierYield;
+    moduleOp->walk([&](qco::YieldOp yield) {
+      if (isa<qco::InvOp, qco::CtrlOp, qco::PowOp>(yield->getParentOp())) {
+        modifierYield = yield;
+      }
+    });
+    ASSERT_TRUE(modifierYield);
+    ASSERT_EQ(modifierYield.getNumOperands(), 1);
+
+    Value structuredResult;
+    switch (GetParam().structured) {
+    case StructuredKind::For:
+      moduleOp->walk(
+          [&](scf::ForOp op) { structuredResult = op.getResults().back(); });
+      break;
+    case StructuredKind::While:
+      moduleOp->walk(
+          [&](scf::WhileOp op) { structuredResult = op.getResults().back(); });
+      break;
+    case StructuredKind::If:
+      moduleOp->walk([&](qco::IfOp op) {
+        structuredResult = op.getLinearResults().back();
+      });
+      break;
+    case StructuredKind::IndexSwitch:
+      moduleOp->walk([&](qco::IndexSwitchOp op) {
+        structuredResult = op.getLinearResults().back();
+      });
+      break;
+    }
+
+    ASSERT_TRUE(structuredResult);
+    EXPECT_EQ(modifierYield.getOperand(0), structuredResult);
+    if (registerBacked) {
+      expectOperationLocalRegisterAccesses(*moduleOp);
+    }
+    expectNoQCOperations(*moduleOp);
+  }
+}
+
+static StringRef modifierName(const ModifierKind modifier) {
+  switch (modifier) {
+  case ModifierKind::Inv:
+    return "inv";
+  case ModifierKind::Ctrl:
+    return "ctrl";
+  case ModifierKind::Pow:
+    return "pow";
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+static OwningOpRef<ModuleOp>
+buildInvalidNestedRegisterLoadProgram(MLIRContext* context,
+                                      const ModifierKind modifier) {
+  qc::QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto reg = builder.allocQubitRegisterStorage(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto body = [&](const Value) {
+    builder.scfIf(true, [&] {
+      const auto loaded = builder.loadQubit(reg, index.getResult());
+      builder.x(loaded);
+    });
+  };
+
+  switch (modifier) {
+  case ModifierKind::Inv:
+    builder.inv(target, body);
+    break;
+  case ModifierKind::Ctrl:
+    builder.ctrl(builder.allocQubit(), target, body);
+    break;
+  case ModifierKind::Pow:
+    builder.pow(2.0, target, body);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsNestedRegisterLoadsInEveryModifier) {
+  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
+                                 ModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    auto moduleOp = buildInvalidNestedRegisterLoadProgram(&context, modifier);
+    ASSERT_TRUE(moduleOp);
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("body must not contain non-unitary quantum operations "
+                        "or modify a quantum register");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+static OwningOpRef<ModuleOp> buildInvalidModifierCaptureProgram(
+    MLIRContext* context, const ModifierKind modifier,
+    const bool registerBacked, const bool nested) {
+  qc::QCProgramBuilder builder(context);
+  builder.initialize();
+
+  Value target;
+  Value captured;
+  if (registerBacked) {
+    const auto reg = builder.allocQubitRegisterStorage(2);
+    auto targetIndex = arith::ConstantIndexOp::create(builder, 0);
+    auto capturedIndex = arith::ConstantIndexOp::create(builder, 1);
+    target = builder.loadQubit(reg, targetIndex.getResult());
+    captured = builder.loadQubit(reg, capturedIndex.getResult());
+  } else {
+    target = builder.allocQubit();
+    captured = builder.allocQubit();
+  }
+
+  const auto modifierBody = [&](const Value) {
+    if (nested) {
+      builder.scfIf(true, [&] { builder.x(captured); });
+      return;
+    }
+    builder.x(captured);
+  };
+  switch (modifier) {
+  case ModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case ModifierKind::Ctrl:
+    builder.ctrl(builder.allocQubit(), target, modifierBody);
+    break;
+  case ModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsEveryUnsupportedModifierQubitCapture) {
+  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
+                                 ModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    for (const bool registerBacked : {false, true}) {
+      for (const bool nested : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << "modifier=" << modifierName(modifier).str()
+                     << ", register_backed=" << registerBacked
+                     << ", nested=" << nested);
+        auto moduleOp = buildInvalidModifierCaptureProgram(
+            &context, modifier, registerBacked, nested);
+        ASSERT_TRUE(moduleOp);
+
+        bool sawExpectedDiagnostic = false;
+        ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str())
+                  .contains("body must not capture qubits from above; use only "
+                            "its aliased block arguments");
+          return success();
+        });
+
+        PassManager pm(&context);
+        pm.enableVerifier(false);
+        pm.addPass(createQCToQCO());
+        EXPECT_TRUE(failed(pm.run(*moduleOp)));
+        EXPECT_TRUE(sawExpectedDiagnostic);
+      }
+    }
+  }
+}
+
+static OwningOpRef<ModuleOp>
+buildClassicalCaptureProgram(MLIRContext* context,
+                             const ModifierKind modifier) {
+  qc::QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto theta =
+      arith::ConstantOp::create(builder, builder.getF64FloatAttr(0.75))
+          .getResult();
+  const auto modifierBody = [&](const Value argument) {
+    builder.rx(theta, argument);
+  };
+
+  switch (modifier) {
+  case ModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case ModifierKind::Ctrl:
+    builder.ctrl(builder.allocQubit(), target, modifierBody);
+    break;
+  case ModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCToQCORegressionTest, ModifiersPermitClassicalCaptures) {
+  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
+                                 ModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    auto moduleOp = buildClassicalCaptureProgram(&context, modifier);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    expectNoQCOperations(*moduleOp);
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       NestedModifiersCarryTheStructuredOperationResultByRegion) {
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  builder.inv(target, [&](const Value outerArgument) {
+    builder.pow(2.0, outerArgument, [&](const Value innerArgument) {
+      builder.scfFor(0, 1, 1, [&](Value) { builder.x(innerArgument); });
+    });
+  });
+
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  qco::InvOp inv;
+  qco::PowOp pow;
+  scf::ForOp loop;
+  moduleOp->walk([&](qco::InvOp op) { inv = op; });
+  moduleOp->walk([&](qco::PowOp op) { pow = op; });
+  moduleOp->walk([&](scf::ForOp op) { loop = op; });
+  ASSERT_TRUE(inv);
+  ASSERT_TRUE(pow);
+  ASSERT_TRUE(loop);
+
+  auto invYield = cast<qco::YieldOp>(inv.getBody()->getTerminator());
+  auto powYield = cast<qco::YieldOp>(pow.getBody()->getTerminator());
+  ASSERT_EQ(invYield.getNumOperands(), 1);
+  ASSERT_EQ(powYield.getNumOperands(), 1);
+  EXPECT_EQ(invYield.getOperand(0), pow.getQubitsOut().front());
+  EXPECT_EQ(powYield.getOperand(0), loop.getResults().back());
+  expectNoQCOperations(*moduleOp);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ModifierStructuredMatrix, NestedModifierConversionTest,
+    testing::Values(
+        NestedModifierCase{"InvFor", ModifierKind::Inv, StructuredKind::For},
+        NestedModifierCase{"InvWhile", ModifierKind::Inv,
+                           StructuredKind::While},
+        NestedModifierCase{"InvIf", ModifierKind::Inv, StructuredKind::If},
+        NestedModifierCase{"InvIndexSwitch", ModifierKind::Inv,
+                           StructuredKind::IndexSwitch},
+        NestedModifierCase{"CtrlFor", ModifierKind::Ctrl, StructuredKind::For},
+        NestedModifierCase{"CtrlWhile", ModifierKind::Ctrl,
+                           StructuredKind::While},
+        NestedModifierCase{"CtrlIf", ModifierKind::Ctrl, StructuredKind::If},
+        NestedModifierCase{"CtrlIndexSwitch", ModifierKind::Ctrl,
+                           StructuredKind::IndexSwitch},
+        NestedModifierCase{"PowFor", ModifierKind::Pow, StructuredKind::For},
+        NestedModifierCase{"PowWhile", ModifierKind::Pow,
+                           StructuredKind::While},
+        NestedModifierCase{"PowIf", ModifierKind::Pow, StructuredKind::If},
+        NestedModifierCase{"PowIndexSwitch", ModifierKind::Pow,
+                           StructuredKind::IndexSwitch}),
+    [](const testing::TestParamInfo<NestedModifierCase>& info) {
+      return info.param.name;
+    });
+
+TEST_F(QCToQCORegressionTest, DoesNotCaptureQubitsAllocatedInsideIf) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1)
+      attributes {passthrough = ["entry_point"]} {
+    scf.if %condition {
+      %q = qc.alloc : !qc.qubit
+      qc.h %q : !qc.qubit
+      qc.dealloc %q : !qc.qubit
+    }
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  scf::IfOp ifOp;
+  moduleOp->walk([&](scf::IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  EXPECT_EQ(ifOp.getNumResults(), 0);
+  std::size_t allocations = 0;
+  ifOp.getThenRegion().walk([&](qco::AllocOp) { ++allocations; });
+  EXPECT_EQ(allocations, 1);
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsSameDynamicRegisterIndexWithinOneOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%i: index) attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("use the same dynamic index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsEqualConstantRegisterIndicesWithinOneOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %lhs = arith.constant 0 : index
+    %rhs = arith.constant 0 : index
+    %q0 = memref.load %reg[%lhs] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%rhs] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("same constant index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_P(QCToQCOTest, ProgramConversion) {
+  const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
+               skipReferenceComparison] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
@@ -454,22 +1314,30 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
   EXPECT_TRUE(succeeded(runQCToQCOConversion(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+  if (expectsCompleteTensorState) {
+    QCToQCORegressionTest::expectOperationLocalRegisterAccesses(program.get());
+    QCToQCORegressionTest::expectStructuredStateUsesCompleteTensors(
+        program.get());
+  }
 
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
-  ASSERT_TRUE(reference);
-  printer.record(reference.get(), "Reference QCO IR" + name);
-  EXPECT_TRUE(verify(*reference).succeeded());
+  if (!skipReferenceComparison) {
+    auto reference =
+        mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+    ASSERT_TRUE(reference);
+    printer.record(reference.get(), "Reference QCO IR" + name);
+    EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
-  printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
-  EXPECT_TRUE(verify(*reference).succeeded());
+    EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
+    printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
+    EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(program.get(), reference.get()));
+  }
 }
 
 /// \name QCToQCO/QubitManagement/StaticOp.cpp
@@ -1021,7 +1889,8 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::partialMeasurementToRegister)},
         QCToQCOTestCase{"DynamicallyIndexedMeasurement",
                         MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
-                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement)},
+                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement),
+                        true},
         QCToQCOTestCase{"MeasurementWithoutRegisters",
                         MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
                         MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
@@ -1050,32 +1919,37 @@ INSTANTIATE_TEST_SUITE_P(
     SCFIfOpTest, QCToQCOTest,
     testing::Values(
         QCToQCOTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
-                        MQT_NAMED_BUILDER(qco::simpleIf)},
+                        MQT_NAMED_BUILDER(qco::simpleIfCompleteTensorState),
+                        true},
         QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
-                        MQT_NAMED_BUILDER(qco::ifElse)},
+                        MQT_NAMED_BUILDER(qco::ifElseCompleteTensorState),
+                        true},
         QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
-        QCToQCOTestCase{"IfWithMeasurement",
-                        MQT_NAMED_BUILDER(qc::ifWithMeasurement),
-                        MQT_NAMED_BUILDER(qco::ifWithMeasurement)},
+                        MQT_NAMED_BUILDER(qco::ifTwoQubitsCompleteTensorState),
+                        true},
+        QCToQCOTestCase{
+            "IfWithMeasurement", MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+            MQT_NAMED_BUILDER(qco::ifWithMeasurementCompleteTensorState), true},
         QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
-                        MQT_NAMED_BUILDER(qco::ifWithCreg)},
+                        MQT_NAMED_BUILDER(qco::ifWithCregCompleteTensorState),
+                        true},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
-                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
+                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop), true}));
 /// @}
 
 /// \name QCToQCO/Operations/IndexSwitchOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOIndexSwitchOpTest, QCToQCOTest,
-    testing::Values(QCToQCOTestCase{"SimpleIndexSwitchOp",
-                                    MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
-                                    MQT_NAMED_BUILDER(qco::simpleIndexSwitch)},
-                    QCToQCOTestCase{
-                        "IndexSwitchMultiCase",
-                        MQT_NAMED_BUILDER(qc::indexSwitchMultiCase),
-                        MQT_NAMED_BUILDER(qco::indexSwitchMultiCase)}));
+    testing::Values(
+        QCToQCOTestCase{
+            "SimpleIndexSwitchOp", MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
+            MQT_NAMED_BUILDER(qco::simpleIndexSwitchCompleteTensorState), true},
+        QCToQCOTestCase{
+            "IndexSwitchMultiCase", MQT_NAMED_BUILDER(qc::indexSwitchMultiCase),
+            MQT_NAMED_BUILDER(qco::indexSwitchMultiCaseCompleteTensorState),
+            true}));
 /// @}
 
 /// \name QCToQCO/Operations/WhileOp.cpp
@@ -1096,22 +1970,26 @@ INSTANTIATE_TEST_SUITE_P(
     SCFForOpTest, QCToQCOTest,
     testing::Values(
         QCToQCOTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qc::simpleForLoop),
-                        MQT_NAMED_BUILDER(qco::simpleForLoop)},
+                        MQT_NAMED_BUILDER(qco::simpleForLoop), true},
         QCToQCOTestCase{"NestedForLoopIfOp",
                         MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp)},
-        QCToQCOTestCase{"NestedForLoopWhileOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp)},
-        QCToQCOTestCase{"NestedForLoopSwitchOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp)},
+                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp), true},
+        QCToQCOTestCase{
+            "NestedForLoopWhileOp", MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
+            MQT_NAMED_BUILDER(qco::nestedForLoopWhileOpCompleteTensorState),
+            true},
+        QCToQCOTestCase{
+            "NestedForLoopSwitchOp",
+            MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
+            MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOpCompleteTensorState),
+            true},
         QCToQCOTestCase{
             "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
-            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit), true},
         QCToQCOTestCase{
             "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
-            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
+            true}));
 /// @}

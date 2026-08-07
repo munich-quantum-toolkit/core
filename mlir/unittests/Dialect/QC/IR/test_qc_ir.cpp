@@ -18,16 +18,25 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -67,7 +76,7 @@ void QCTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
   registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect>();
+                  memref::MemRefDialect, scf::SCFDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
@@ -158,6 +167,59 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       "Register index is out of bounds");
 }
 
+TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto reg = builder.allocQubitRegisterStorage(1);
+  const auto index = arith::ConstantIndexOp::create(builder, 0).getResult();
+
+  builder.h(builder.loadQubit(reg, index));
+  builder.x(builder.loadQubit(reg, index));
+  builder.scfIf(true, [&] {
+    builder.y(builder.loadQubit(reg, index));
+    builder.scfIf(true, [&] { builder.z(builder.loadQubit(reg, index)); });
+  });
+
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  std::size_t qubitLoads = 0;
+  moduleOp->walk([&](memref::LoadOp load) {
+    if (isa<QubitType>(load.getMemRefType().getElementType())) {
+      ++qubitLoads;
+      EXPECT_EQ(load.getMemref(), reg);
+      EXPECT_TRUE(isEqualConstantIntOrValue(load.getIndices().front(), index));
+    }
+  });
+  EXPECT_EQ(qubitLoads, 4U);
+}
+
+TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto reg = builder.allocQubitRegisterStorage(4);
+
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t allocations = 0;
+  size_t qubitLoads = 0;
+  moduleOp->walk([&](memref::AllocOp allocation) {
+    if (isa<QubitType>(allocation.getType().getElementType())) {
+      ++allocations;
+      EXPECT_EQ(allocation.getResult(), reg);
+      EXPECT_EQ(allocation.getType().getShape(), ArrayRef<int64_t>{4});
+    }
+  });
+  moduleOp->walk([&](memref::LoadOp load) {
+    qubitLoads += isa<QubitType>(load.getMemRefType().getElementType());
+  });
+  EXPECT_EQ(allocations, 1U);
+  EXPECT_EQ(qubitLoads, 0U);
+}
+
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
@@ -174,6 +236,200 @@ TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getQubits().front(), qubit);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+namespace {
+
+enum class VerifierModifierKind : std::uint8_t { Inv, Ctrl, Pow };
+enum class ForbiddenModifierBodyOp : std::uint8_t {
+  Alloc,
+  Dealloc,
+  Measure,
+  Reset,
+  Load,
+  Store
+};
+
+} // namespace
+
+static StringRef modifierName(const VerifierModifierKind kind) {
+  switch (kind) {
+  case VerifierModifierKind::Inv:
+    return "inv";
+  case VerifierModifierKind::Ctrl:
+    return "ctrl";
+  case VerifierModifierKind::Pow:
+    return "pow";
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
+  switch (kind) {
+  case ForbiddenModifierBodyOp::Alloc:
+    return "alloc";
+  case ForbiddenModifierBodyOp::Dealloc:
+    return "dealloc";
+  case ForbiddenModifierBodyOp::Measure:
+    return "measure";
+  case ForbiddenModifierBodyOp::Reset:
+    return "reset";
+  case ForbiddenModifierBodyOp::Load:
+    return "load";
+  case ForbiddenModifierBodyOp::Store:
+    return "store";
+  }
+  llvm_unreachable("unknown forbidden modifier operation");
+}
+
+static void emitForbiddenModifierBodyOperation(
+    QCProgramBuilder& builder, const ForbiddenModifierBodyOp kind,
+    const Value argument, const Value reg, const Value index) {
+  switch (kind) {
+  case ForbiddenModifierBodyOp::Alloc:
+    AllocOp::create(builder);
+    return;
+  case ForbiddenModifierBodyOp::Dealloc:
+    DeallocOp::create(builder, argument);
+    return;
+  case ForbiddenModifierBodyOp::Measure:
+    MeasureOp::create(builder, argument);
+    return;
+  case ForbiddenModifierBodyOp::Reset:
+    ResetOp::create(builder, argument);
+    return;
+  case ForbiddenModifierBodyOp::Load:
+    memref::LoadOp::create(builder, reg, index);
+    return;
+  case ForbiddenModifierBodyOp::Store:
+    memref::StoreOp::create(builder, argument, reg, index);
+    return;
+  }
+  llvm_unreachable("unknown forbidden modifier operation");
+}
+
+static OwningOpRef<ModuleOp> buildInvalidNestedModifierProgram(
+    MLIRContext* context, const VerifierModifierKind modifier,
+    const ForbiddenModifierBodyOp forbiddenOperation) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto control = builder.allocQubit();
+  const auto reg = builder.allocQubitRegisterStorage(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto modifierBody = [&](const Value argument) {
+    builder.scfIf(true, [&] {
+      emitForbiddenModifierBodyOperation(builder, forbiddenOperation, argument,
+                                         reg, index.getResult());
+    });
+  };
+
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case VerifierModifierKind::Ctrl:
+    builder.ctrl(control, target, modifierBody);
+    break;
+  case VerifierModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+  constexpr std::array forbiddenOperations{
+      ForbiddenModifierBodyOp::Alloc,   ForbiddenModifierBodyOp::Dealloc,
+      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::Reset,
+      ForbiddenModifierBodyOp::Load,    ForbiddenModifierBodyOp::Store};
+
+  for (const auto modifier : modifiers) {
+    for (const auto forbiddenOperation : forbiddenOperations) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", operation="
+                   << forbiddenOperationName(forbiddenOperation).str());
+      auto moduleOp = buildInvalidNestedModifierProgram(context.get(), modifier,
+                                                        forbiddenOperation);
+      ASSERT_TRUE(moduleOp);
+
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not contain non-unitary quantum "
+                              "operations or modify a quantum register");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(*moduleOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
+  }
+}
+
+static OwningOpRef<ModuleOp>
+buildInvalidModifierCaptureProgram(MLIRContext* context,
+                                   const VerifierModifierKind modifier,
+                                   const bool nested) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto captured = builder.allocQubit();
+  const auto control = builder.allocQubit();
+  const auto modifierBody = [&](const Value) {
+    if (nested) {
+      builder.scfIf(true, [&] { builder.x(captured); });
+      return;
+    }
+    builder.x(captured);
+  };
+
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case VerifierModifierKind::Ctrl:
+    builder.ctrl(control, target, modifierBody);
+    break;
+  case VerifierModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    for (const bool nested : {false, true}) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", nested=" << nested);
+      auto moduleOp =
+          buildInvalidModifierCaptureProgram(context.get(), modifier, nested);
+      ASSERT_TRUE(moduleOp);
+
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not capture qubits from above; use "
+                              "only its aliased block arguments");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(*moduleOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
+  }
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp

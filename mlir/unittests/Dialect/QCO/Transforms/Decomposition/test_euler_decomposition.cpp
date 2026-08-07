@@ -59,7 +59,7 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-using enum EulerBasis;
+using enum SingleQubitBasis;
 
 // File layout:
 //   1. Fixtures and parametric test types
@@ -100,7 +100,7 @@ struct SynthesizedCircuit {
 
 class EulerSynthesisExactTest
     : public testing::TestWithParam<
-          std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
+          std::tuple<SingleQubitBasis, Matrix2x2 (*)(MLIRContext*)>> {};
 
 } // namespace
 
@@ -256,7 +256,7 @@ template <typename OpTy>
 }
 
 [[nodiscard]] static std::size_t countBasisGates(func::FuncOp funcOp,
-                                                 EulerBasis basis) {
+                                                 SingleQubitBasis basis) {
   switch (basis) {
   case ZYZ:
     return countZYZGates(funcOp);
@@ -277,7 +277,8 @@ template <typename OpTy>
 }
 
 [[nodiscard]] static SynthesizedCircuit
-synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix, EulerBasis basis) {
+synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
+                 SingleQubitBasis basis) {
   OwningOpRef mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
   OpBuilder builder(ctx);
   builder.setInsertionPointToStart(mlirModule->getBody());
@@ -303,13 +304,13 @@ synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix, EulerBasis basis) {
 
 [[nodiscard]] static std::size_t expectedGateCount(MLIRContext* ctx,
                                                    const Matrix2x2& segment,
-                                                   EulerBasis basis) {
+                                                   SingleQubitBasis basis) {
   return countBasisGates(synthesizeMatrix(ctx, segment, basis).func, basis);
 }
 
 static void checkSynthesizedReferenceExtras(MLIRContext* ctx,
                                             func::FuncOp funcOp,
-                                            EulerBasis basis,
+                                            SingleQubitBasis basis,
                                             const Matrix2x2& matrix) {
   if (basis == U) {
     EXPECT_EQ(countOps<UOp>(funcOp), expectedGateCount(ctx, matrix, basis));
@@ -327,7 +328,7 @@ static void checkSynthesizedReferenceExtras(MLIRContext* ctx,
 
 template <typename ExtraChecksT>
 static void expectSynthesizedMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
-                                    EulerBasis basis,
+                                    SingleQubitBasis basis,
                                     ExtraChecksT extraChecks) {
   const auto circuit = synthesizeMatrix(ctx, matrix, basis);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
@@ -457,7 +458,7 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
   for (int i = 0; i < 200; ++i) {
     const auto original = randomUnitaryMatrix(rng);
     forEachBasis([&fx, &original](StringRef basisStr) {
-      const auto parsed = parseEulerBasis(basisStr);
+      const auto parsed = parseSingleQubitBasis(basisStr);
       ASSERT_TRUE(parsed) << "basis=" << basisStr.str();
       const auto circuit = synthesizeMatrix(fx.ctx(), original, *parsed);
       ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)))
@@ -555,7 +556,7 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
 //===----------------------------------------------------------------------===//
 
 [[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
-                                             EulerBasis basis) {
+                                             SingleQubitBasis basis) {
   switch (basis) {
   case ZYZ:
     return isa<RZOp, RYOp>(op);
@@ -580,7 +581,7 @@ template <typename ParentOp> [[nodiscard]] static bool inParent(Operation* op) {
 }
 
 static WalkResult visitBasisGateOp(Operation* op, StringRef basis,
-                                   EulerBasis parsedBasis) {
+                                   SingleQubitBasis parsedBasis) {
   if (isa<arith::ConstantOp, GPhaseOp, BarrierOp>(*op)) {
     return WalkResult::advance();
   }
@@ -617,7 +618,7 @@ template <typename ParentOp>
 }
 
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
-  const auto parsed = parseEulerBasis(basis);
+  const auto parsed = parseSingleQubitBasis(basis);
   ASSERT_TRUE(parsed) << basis.str();
 
   funcOp.walk<WalkOrder::PreOrder>(
@@ -655,7 +656,7 @@ template <typename OpTy, typename ParentOp>
 }
 static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
                                        MLIRContext* ctx) {
-  const auto parsed = parseEulerBasis(basis);
+  const auto parsed = parseSingleQubitBasis(basis);
   ASSERT_TRUE(parsed) << basis.str();
   const std::size_t ht =
       expectedGateCount(ctx, splitFixtureHTSegmentMatrix(), *parsed);
@@ -686,7 +687,7 @@ template <typename BoundaryPred>
 static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
                                        MLIRContext* ctx,
                                        BoundaryPred isBoundary) {
-  const auto parsed = parseEulerBasis(basis);
+  const auto parsed = parseSingleQubitBasis(basis);
   ASSERT_TRUE(parsed) << basis.str();
   const std::size_t ht =
       expectedGateCount(ctx, splitFixtureHTSegmentMatrix(), *parsed);

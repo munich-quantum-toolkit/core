@@ -16,6 +16,7 @@ target_link_libraries(
   PRIVATE GTest::gtest_main
           MLIRParser
           MLIRSupportMQT
+          MLIRQCToQCO
           MLIRQCProgramBuilder
           MLIRQCTranslation
           MLIRQCPrograms

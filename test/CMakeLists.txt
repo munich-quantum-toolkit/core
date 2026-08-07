@@ -15,9 +15,7 @@ add_subdirectory(na)
 add_subdirectory(zx)
 add_subdirectory(qir)
 add_subdirectory(qdmi)
-if(BUILD_MQT_CORE_QDMI_NA_DEVICE)
-  add_subdirectory(fomac)
-endif()
+add_subdirectory(fomac)
 
 # copy test circuits to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/test/circuits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

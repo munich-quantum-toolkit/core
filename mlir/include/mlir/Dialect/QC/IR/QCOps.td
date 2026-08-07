@@ -939,6 +939,9 @@ def CtrlOp
         However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
@@ -999,6 +1002,9 @@ def InvOp : QCOp<"inv",
         A modifier operation that inverts the gates defined in its body region.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
@@ -1060,6 +1066,9 @@ def PowOp : QCOp<"pow",
           - r < 0: equivalent to inv @ pow(-r) @ g.
 
           The body region may contain an arbitrary amount of unitary and classical operations.
+          Classical SSA values may be captured from above, but every qubit used
+          in the body must be passed through a modifier operand and accessed via
+          its aliased block argument.
           Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
           Example:

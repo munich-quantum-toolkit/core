@@ -218,16 +218,20 @@ void validateFidelity(const std::optional<double>& fidelity,
         const auto pointer = "$/qubitProperties/overrides/" + std::to_string(i);
         const auto& value = overrides[i];
         object(value, source, pointer);
-        keys(value, {"qubit", "t1", "t2"}, source, pointer);
+        keys(value, {"qubit", "name", "t1", "t2"}, source, pointer);
         Device::QubitOverride entry;
         entry.qubit = required<uint64_t>(value, "qubit", source, pointer);
+        entry.name = optional<std::string>(value, "name", source, pointer);
         entry.t1 = optional<uint64_t>(value, "t1", source, pointer);
         entry.t2 = optional<uint64_t>(value, "t2", source, pointer);
-        if (entry.qubit >= result.numQubits || (entry.t1 && *entry.t1 == 0) ||
-            (entry.t2 && *entry.t2 == 0) || (!entry.t1 && !entry.t2) ||
+        if (entry.qubit >= result.numQubits ||
+            (entry.name && entry.name->empty()) ||
+            (entry.t1 && *entry.t1 == 0) || (entry.t2 && *entry.t2 == 0) ||
+            (!entry.name && !entry.t1 && !entry.t2) ||
             !overridden.emplace(entry.qubit).second) {
           fail(source, pointer,
-               "must select one unique valid qubit and override t1 or t2");
+               "must select one unique valid qubit and override name, t1, or "
+               "t2 with valid values");
         }
         result.qubitProperties.overrides.emplace_back(entry);
       }

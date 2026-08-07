@@ -15,6 +15,12 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
+#include <memory>
+
+namespace mlir {
+class CompilerTarget;
+} // namespace mlir
+
 namespace mlir::qco {
 
 #define GEN_PASS_DECL
@@ -32,5 +38,21 @@ void runQuantumArgumentPromotion(ModuleOp module);
 void runAuxiliaryQubitHoisting(ModuleOp module);
 void runQuantumFunctionBoundaryCommutation(ModuleOp module,
                                            SymbolTable& symbolTable);
+/**
+ * @brief Create target-independent two-qubit gate fusion.
+ */
+[[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
+
+/**
+ * @brief Create post-routing synthesis for one immutable compiler target.
+ */
+[[nodiscard]] std::unique_ptr<Pass>
+createTargetNativeSynthesis(const CompilerTarget& target);
+
+/**
+ * @brief Create the final mapped-operation conformance verifier.
+ */
+[[nodiscard]] std::unique_ptr<Pass>
+createVerifyTargetConformance(const CompilerTarget& target);
 
 } // namespace mlir::qco
