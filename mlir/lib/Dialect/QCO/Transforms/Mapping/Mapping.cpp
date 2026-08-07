@@ -22,14 +22,12 @@
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
