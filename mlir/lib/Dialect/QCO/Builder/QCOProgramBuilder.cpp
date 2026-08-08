@@ -107,7 +107,7 @@ Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
   return qubits[index];
 }
 
-Value QCOProgramBuilder::allocQubit() {
+QCOProgramBuilder::Qubit QCOProgramBuilder::allocQubit() {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
@@ -115,12 +115,12 @@ Value QCOProgramBuilder::allocQubit() {
   auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.try_emplace(qubit, QubitInfo{});
+  validQubits.insert(Qubit{qubit});
 
-  return qubit;
+  return Qubit{qubit};
 }
 
-Value QCOProgramBuilder::staticQubit(const uint64_t index) {
+QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Static);
 
@@ -128,9 +128,9 @@ Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.try_emplace(qubit, QubitInfo{});
+  validQubits.insert(Qubit{qubit});
 
-  return qubit;
+  return Qubit{qubit};
 }
 
 QCOProgramBuilder::QubitRegister
@@ -175,7 +175,7 @@ Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {
-  if (!validQubits.contains(qubit)) {
+  if (!validQubits.contains(Qubit{qubit})) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -189,14 +189,15 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
-  auto it = validQubits.find(inputQubit);
-  auto info = it->second;
+  auto it = validQubits.find(Qubit{inputQubit});
+  auto trackedQubit = *it;
 
   // Remove the input (consumed) value from tracking
   validQubits.erase(it);
 
   // Add the output (new) value to tracking
-  validQubits.try_emplace(outputQubit, info);
+  validQubits.insert(
+      Qubit{outputQubit, trackedQubit.regId, trackedQubit.regIndex});
 }
 
 void QCOProgramBuilder::validateTensorValue(Value tensor) const {
@@ -223,13 +224,13 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validateTensorValue(inputTensor);
 
   auto it = validTensors.find(inputTensor);
-  auto info = it->second;
+  auto trackedTensor = *it;
 
   // Remove the input (consumed) value from tracking
   validTensors.erase(it);
 
   // Add the output (new) value to tracking
-  validTensors.try_emplace(outputTensor, info);
+  validTensors.insert(Tensor{outputTensor, trackedTensor.regId});
 }
 
 Value QCOProgramBuilder::prepareInitArg(Value initArg,
@@ -238,15 +239,16 @@ Value QCOProgramBuilder::prepareInitArg(Value initArg,
     return initArg;
   }
 
-  const auto regId = validTensors[initArg].regId;
+  validateTensorValue(initArg);
+  const auto regId = validTensors.find(Tensor{initArg})->regId;
   auto currentTensor = initArg;
   for (auto it = validQubits.begin(); it != validQubits.end();) {
-    auto& [qubit, qubitInfo] = *it;
-    if (qubitInfo.regId == regId &&
+    const auto& qubit = *it;
+    if (qubit.regId == regId &&
         (initQubits == nullptr || !initQubits->contains(qubit))) {
-      auto newTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
-                                                 qubitInfo.regIndex)
-                           .getResult();
+      auto newTensor =
+          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
+              .getResult();
       updateTensorTracking(currentTensor, newTensor);
       currentTensor = newTensor;
       validQubits.erase(it++);
@@ -327,7 +329,8 @@ Value QCOProgramBuilder::qtensorAlloc(
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
 
   auto result = allocOp.getResult();
-  validTensors.try_emplace(result, TensorInfo{tensorCounter++});
+  const auto regId = tensorCounter++;
+  validTensors.insert(Tensor{result, regId});
 
   return result;
 }
@@ -344,12 +347,13 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
       llvm::reportFatalUsageError("Elements must be QubitType!");
     }
     validateQubitValue(element);
-    validQubits.erase(element);
+    validQubits.erase(Qubit{element});
   }
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
   auto result = fromElementsOp.getResult();
-  validTensors.try_emplace(result, TensorInfo{tensorCounter++});
+  const auto regId = tensorCounter++;
+  validTensors.insert(Tensor{result, regId});
   return result;
 }
 
@@ -364,10 +368,9 @@ QCOProgramBuilder::qtensorExtract(Value tensor,
   auto outTensor = extractOp.getOutTensor();
 
   validateTensorValue(tensor);
-  const auto regId = validTensors[tensor].regId;
+  const auto regId = validTensors.find(tensor)->regId;
 
-  validQubits.try_emplace(qubit,
-                          QubitInfo{.regId = regId, .regIndex = indexValue});
+  validQubits.insert(Qubit{qubit, regId, indexValue});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, qubit};
@@ -383,7 +386,7 @@ Value QCOProgramBuilder::qtensorInsert(
   auto outTensor = insertOp.getResult();
 
   validateQubitValue(scalar);
-  validQubits.erase(scalar);
+  validQubits.erase(Qubit{scalar});
   updateTensorTracking(tensor, outTensor);
 
   return outTensor;
@@ -1051,7 +1054,7 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
   checkFinalized();
 
   validateQubitValue(qubit);
-  validQubits.erase(qubit);
+  validQubits.erase(Qubit{qubit});
 
   SinkOp::create(*this, qubit);
 
@@ -1437,28 +1440,28 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
   }
 
   DenseSet<int64_t> validTensorIds;
-  for (const auto& [tensor, info] : validTensors) {
-    validTensorIds.insert(info.regId);
+  for (const auto& tensor : validTensors) {
+    validTensorIds.insert(tensor.regId);
   }
 
-  DenseMap<int64_t, SmallVector<std::pair<Value, QubitInfo>>> qubitsByRegister;
-  for (auto [qubit, info] : validQubits) {
-    if (info.regId == -1 || !validTensorIds.contains(info.regId)) {
+  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
+  for (const auto& qubit : validQubits) {
+    if (qubit.regId == -1 || !validTensorIds.contains(qubit.regId)) {
       // Automatically deallocate all still-allocated qubits
       SinkOp::create(*this, qubit);
     } else {
-      qubitsByRegister[info.regId].emplace_back(qubit, info);
+      qubitsByRegister[qubit.regId].emplace_back(qubit);
     }
   }
 
   // Automatically deallocate all still-allocated tensors
-  for (auto& [tensor, tensorInfo] : validTensors) {
-    auto currentTensor = tensor;
+  for (const auto& tensor : validTensors) {
+    Value currentTensor = tensor;
     // Filter out qubits belonging to this tensor
-    for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
-      currentTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
-                                                qubitInfo.regIndex)
-                          .getResult();
+    for (const auto& qubit : qubitsByRegister[tensor.regId]) {
+      currentTensor =
+          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
+              .getResult();
     }
     // Deallocate tensor
     qtensor::DeallocOp::create(*this, currentTensor);
