@@ -40,8 +40,11 @@ releases may include breaking changes.
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
   [#1979], [#2007]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
-- ✨ Add decision diagram-based construction and simulation of static unitary
-  QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add decision diagram-based construction and simulation of QCO functions,
+  including static unitaries, mid-circuit `measure`/`reset`, concrete
+  `if`/`index_switch`/`scf.for`/`func.call`, richer classical SSA, dense `k>3`
+  wire embedding, multi-shot `sample` / `sampleWithClassics`, `memref` classical
+  registers, and Python wrappers ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -746,6 +749,7 @@ for previous changelogs._
 [#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
 [#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
+[#1973]: https://github.com/munich-quantum-toolkit/core/pull/1973
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965

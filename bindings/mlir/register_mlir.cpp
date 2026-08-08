@@ -8,14 +8,22 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Package.hpp"
 #include "fomac/FoMaC.hpp" // NOLINT(misc-include-cleaner)
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/map.h>         // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
@@ -28,6 +36,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <random>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -98,6 +107,58 @@ void requireValid(const mlir::Program& program) {
     throw std::runtime_error(
         "This compiler program has already been consumed.");
   }
+}
+
+[[nodiscard]] mlir::func::FuncOp entryFunc(const mlir::QCOProgram& program) {
+  requireValid(program);
+  auto func = program.entryFunc();
+  if (!func) {
+    throw nb::value_error("QCO program has no func.func entry point");
+  }
+  return *func;
+}
+
+[[nodiscard]] std::mt19937_64 makeRng(const std::uint64_t seed) {
+  if (seed == 0) {
+    std::random_device rd;
+    return std::mt19937_64(rd());
+  }
+  return std::mt19937_64(seed);
+}
+
+[[nodiscard]] std::mt19937_64
+makeRng(const std::optional<std::uint64_t>& seed) {
+  if (!seed.has_value()) {
+    std::random_device rd;
+    return std::mt19937_64(rd());
+  }
+  return makeRng(*seed);
+}
+
+/// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
+/// appending any emitted MLIR diagnostics to @p message.
+template <typename Fn>
+[[nodiscard]] auto takeFailureOr(mlir::MLIRContext* context,
+                                 const char* message, Fn&& fn) {
+  std::string diagnostics;
+  const mlir::ScopedDiagnosticHandler handler(
+      context, [&](mlir::Diagnostic& diag) {
+        if (!diagnostics.empty()) {
+          diagnostics.push_back('\n');
+        }
+        llvm::raw_string_ostream os(diagnostics);
+        os << diag;
+        return mlir::success();
+      });
+  auto result = std::forward<Fn>(fn)();
+  if (mlir::failed(result)) {
+    std::string full = message;
+    if (!diagnostics.empty()) {
+      full.append(": ").append(diagnostics);
+    }
+    throw nb::value_error(full.c_str());
+  }
+  return *std::move(result);
 }
 
 template <class ProgramType>
@@ -771,6 +832,136 @@ LLVM bitcode.)pb");
       .def("write_bitcode",
            &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
            "path"_a, "Write this program as LLVM bitcode.");
+
+  nb::module_::import_("mqt.core.dd");
+
+  nb::class_<mlir::qco::SampleResult>(m, "SampleResult",
+                                      R"pb(Histograms from QCO DD sampling.)pb")
+      .def_ro("shots", &mlir::qco::SampleResult::shots,
+              R"pb(Final computational-basis outcome histogram.)pb")
+      .def_ro("classical", &mlir::qco::SampleResult::classical,
+              R"pb(Mid-circuit measure-bit histogram (encounter order).)pb");
+
+  m.def(
+      "build_functionality",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
+        auto func = entryFunc(program);
+        return takeFailureOr(
+            func.getContext(),
+            "cannot build DD functionality for this QCO program",
+            [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
+      },
+      "program"_a, "dd_package"_a,
+      // Keep the DD package alive while the returned matrix DD is alive
+      // (arg index 2; free-function equivalent of method keep_alive<0, 1>).
+      nb::keep_alive<0, 2>(),
+      R"pb(Build a matrix DD for a static unitary QCO program.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is used to build a matrix DD.
+    dd_package: DD package with enough qubits for the program.
+
+Returns:
+    Matrix DD of the program functionality.
+
+Raises:
+    ValueError: When the program is unsupported for functionality construction.)pb");
+
+  m.def(
+      "simulate",
+      [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
+         dd::Package& ddPackage, const std::optional<std::uint64_t> seed) {
+        auto func = entryFunc(program);
+        if (!seed.has_value()) {
+          return takeFailureOr(
+              func.getContext(), "cannot simulate this QCO program", [&] {
+                return mlir::qco::simulate(func, initialState, ddPackage);
+              });
+        }
+        auto rng = makeRng(*seed);
+        return takeFailureOr(
+            func.getContext(), "cannot simulate this QCO program", [&] {
+              return mlir::qco::simulate(func, initialState, ddPackage, rng);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      // Keep the DD package alive while the returned vector DD is alive.
+      nb::keep_alive<0, 3>(),
+      R"pb(Simulate a QCO program on a DD state.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is simulated.
+    initial_state: Input state DD (one reference is consumed).
+    dd_package: DD package with enough qubits for the program.
+    seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
+        RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+
+Returns:
+    Output state DD.
+
+Raises:
+    ValueError: When the program is unsupported for simulation.)pb");
+
+  // Sampling uses a caller-provided ``dd::Package`` for the call only; the
+  // binding does not share that package across threads. Release the GIL only
+  // around the C++ sample (not entryFunc / exception translation).
+  m.def(
+      "sample",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
+         const size_t shots, const std::optional<uint64_t> seed) {
+        auto func = entryFunc(program);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot sample this QCO program", [&] {
+              const nb::gil_scoped_release release;
+              return mlir::qco::sample(func, ddPackage, shots, rng);
+            });
+      },
+      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = nb::none(),
+      R"pb(Sample final computational-basis outcomes from a QCO program.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is sampled.
+    dd_package: DD package with enough qubits for the program. Not thread-safe;
+        do not share it across threads while sampling (the GIL is released for
+        the duration of the call).
+    shots: Number of shots (default 1024).
+    seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+
+Returns:
+    Histogram of final ``measureAll`` bitstrings.
+
+Raises:
+    ValueError: When the program is unsupported for sampling.)pb");
+
+  m.def(
+      "sample_with_classics",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
+         const size_t shots, const std::optional<uint64_t> seed) {
+        auto func = entryFunc(program);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot sample this QCO program", [&] {
+              const nb::gil_scoped_release release;
+              return mlir::qco::sampleWithClassics(func, ddPackage, shots, rng);
+            });
+      },
+      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = nb::none(),
+      R"pb(Sample final and mid-circuit classical outcomes from a QCO program.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is sampled.
+    dd_package: DD package with enough qubits for the program. Not thread-safe;
+        do not share it across threads while sampling (the GIL is released for
+        the duration of the call).
+    shots: Number of shots (default 1024).
+    seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+
+Returns:
+    A :class:`SampleResult` with ``shots`` and ``classical`` histograms.
+
+Raises:
+    ValueError: When the program is unsupported for sampling.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
