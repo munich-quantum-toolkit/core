@@ -52,6 +52,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -635,7 +636,7 @@ private:
 
     // Create and save static qubit operations.
     rewriter.setInsertionPointToStart(&body.front());
-    for (size_t hw = 0; hw < layout.nqubits(); ++hw) {
+    for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
       const auto site = target->siteForVertex(hw);
       auto op = StaticOp::create(rewriter, body.getLoc(), site);
       staticQubits.emplace_back(op.getQubit());
@@ -687,7 +688,7 @@ private:
     // Create sinks for remaining, unused, static qubits.
 
     rewriter.setInsertionPoint(body.back().getTerminator());
-    for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
+    for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
       const auto site = target->siteForVertex(hw);
       const auto qubit = staticQubits[site];
@@ -719,7 +720,7 @@ private:
               }
             })
             .Case<scf::ForOp>([&](scf::ForOp forOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == layout.nHardwareQubits());
 
               llvm::for_each(getQubitValues(forOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
@@ -740,7 +741,7 @@ private:
                   DenseSet<Value>(regionQubits.begin(), regionQubits.end()));
             })
             .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == layout.nHardwareQubits());
 
               llvm::for_each(getQubitValues(whileOp.getInits()),
                              [&](Value v) { qubits.erase(v); });
@@ -766,7 +767,7 @@ private:
                   DenseSet<Value>(afterArgs.begin(), afterArgs.end()));
             })
             .Case<IfOp>([&](IfOp ifOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == layout.nHardwareQubits());
 
               llvm::for_each(ifOp.getQubits(),
                              [&](Value v) { qubits.erase(v); });
@@ -789,7 +790,7 @@ private:
                   DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
             })
             .Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
-              assert(qubits.size() == layout.nqubits());
+              assert(qubits.size() == layout.nHardwareQubits());
 
               llvm::for_each(switchOp.getTargets(),
                              [&](Value value) { qubits.erase(value); });
@@ -849,7 +850,8 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(target->numQubits(), rng())});
+                        .layout = Layout::random(target->numQubits(),
+                                                 target->numQubits(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -913,7 +915,19 @@ private:
     frontier.emplace(root);
 
     DenseMap<ArrayRef<size_t>, size_t> bestDepth;
+    // Owns the materialized layout snapshots that `bestDepth` keys point into.
+    // std::deque never invalidates pointers to existing elements on push_back,
+    // so ArrayRefs already in `bestDepth` stay stable as we grow it.
+    std::deque<SmallVector<size_t>> keyStorage;
     SmallVector<IndexPairType, 6> expansionSet;
+
+    const auto materializeKey = [](const Layout& layout) {
+      SmallVector<size_t> key(layout.nHardwareQubits());
+      for (size_t prog = 0; prog < layout.nHardwareQubits(); ++prog) {
+        key[prog] = layout.getHardwareIndex(prog);
+      }
+      return key;
+    };
 
     size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -925,9 +939,11 @@ private:
       // already at a lower depth don't reexpand the current node (and hence
       // recreate the same child nodes).
 
+      keyStorage.push_back(materializeKey(curr->layout));
       const auto [it, inserted] = bestDepth.try_emplace(
-          curr->layout.getProgramToHardware(), curr->depth);
+          ArrayRef<size_t>(keyStorage.back()), curr->depth);
       if (!inserted) {
+        keyStorage.pop_back();
         if (const auto otherDepth = it->getSecond();
             curr->depth >= otherDepth) {
           ++i;
@@ -1073,7 +1089,7 @@ private:
   /// is the order (the permutation) of program-to-hardware indices.
   template <typename Range> static Layout vote(Range layouts) {
     assert(!layouts.empty() && "expected at least one layout");
-    const auto ncandidates = (*layouts.begin()).nqubits();
+    const auto ncandidates = (*layouts.begin()).nHardwareQubits();
 
     SmallVector<size_t> scores(ncandidates, 0);
     for (const Layout& layout : layouts) {
