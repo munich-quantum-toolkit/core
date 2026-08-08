@@ -376,8 +376,8 @@ class Device:
     ) -> Job:
         """Submits an exact byte payload to the device."""
 
-    def open_job(self, job_id: str) -> Job:
-        """Opens an existing job by its device-provided ID."""
+    def retrieve_job_by_id(self, job_id: str) -> Job:
+        """Retrieves an existing job by its device-provided ID."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
