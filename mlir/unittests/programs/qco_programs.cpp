@@ -3569,6 +3569,50 @@ Value nestedCtrlTwo(QCOProgramBuilder& b) {
       b, {res.first[0], res.second[0], res.second[1], res.second[2]});
 }
 
+Value ctrlGPhaseAndX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto [controls, targets] =
+      b.ctrl(q[0], q[1], [&](Value target) -> Value {
+        b.gphase(0.123);
+        return b.x(target);
+      });
+  return measureAndReturn(b, {controls, targets});
+}
+
+Value ctrlGPhaseAndXRef(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  q[0] = b.p(0.123, q[0]);
+  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlMultipleGPhases(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  const auto [controls, targets] =
+      b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange args) {
+        b.gphase(0.123);
+        auto target0 = b.x(args[0]);
+        b.gphase(0.456);
+        auto [output0, output1] = b.rxx(0.789, target0, args[1]);
+        return SmallVector{output0, output1};
+      });
+  return measureAndReturn(b,
+                          {controls[0], controls[1], targets[0], targets[1]});
+}
+
+Value ctrlMultipleGPhasesRef(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  std::tie(q[0], q[1]) = b.cp(0.579, q[0], q[1]);
+  const auto [controls, targets] =
+      b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange args) {
+        auto target0 = b.x(args[0]);
+        auto [output0, output1] = b.rxx(0.789, target0, args[1]);
+        return SmallVector{output0, output1};
+      });
+  return measureAndReturn(b,
+                          {controls[0], controls[1], targets[0], targets[1]});
+}
+
 Value ctrlInvTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {

@@ -1096,6 +1096,11 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(fourControlledRxx)},
         QCOTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
                     MQT_NAMED_BUILDER(ctrlTwo)},
+        QCOTestCase{"CtrlGPhaseAndX", MQT_NAMED_BUILDER(ctrlGPhaseAndX),
+                    MQT_NAMED_BUILDER(ctrlGPhaseAndXRef)},
+        QCOTestCase{"CtrlMultipleGPhases",
+                    MQT_NAMED_BUILDER(ctrlMultipleGPhases),
+                    MQT_NAMED_BUILDER(ctrlMultipleGPhasesRef)},
         QCOTestCase{"ModifierBodyReuseReordered",
                     MQT_NAMED_BUILDER(modifierBodyReuseReordered),
                     MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
