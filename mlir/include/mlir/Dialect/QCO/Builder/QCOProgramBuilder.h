@@ -10,12 +10,14 @@
 
 #pragma once
 
+#include <llvm/ADT/DenseSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -1756,6 +1758,109 @@ public:
                                   ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
+  // Additional functions
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Start building an additional private function in the module
+   *
+   * @details
+   * Creates a new private `func.func` at the end of the module and moves the
+   * insertion point into its entry block. Qubit- and qubit-tensor-typed
+   * arguments are added to the linear-type tracking so that operations can be
+   * applied to them; a tensor argument is treated as a register the callee
+   * owns for the duration of the call. Arguments of other types (e.g., `f64`)
+   * are returned as-is without tracking. Must be called after `initialize()`
+   * and must be paired with a call to `endFunction()`; function definitions
+   * cannot be nested.
+   *
+   * @param name The name of the function
+   * @param argTypes The argument types of the function
+   * @param resultTypes The result types of the function
+   * @return The entry block arguments of the new function
+   *
+   * @par Example:
+   * ```c++
+   * auto args = builder.startFunction(
+   *     "f", {builder.getQubitType()}, {builder.getQubitType()});
+   * auto q = builder.h(args[0]);
+   * builder.endFunction({q});
+   * ```
+   * ```mlir
+   * func.func private @f(%arg0: !qco.qubit) -> !qco.qubit {
+   *   %q = qco.h %arg0 : !qco.qubit -> !qco.qubit
+   *   return %q : !qco.qubit
+   * }
+   * ```
+   */
+  SmallVector<Value> startFunction(StringRef name, TypeRange argTypes,
+                                   TypeRange resultTypes);
+
+  /**
+   * @brief Finish the function started with `startFunction()`
+   *
+   * @details
+   * Creates the `func.return` with the given values and restores the insertion
+   * point to where it was before `startFunction()` was called. All qubits and
+   * tensors that were created within the function (from arguments or
+   * operations) must either be consumed (e.g., by `sink()` or
+   * `qtensorDealloc()`) or returned; otherwise a usage error is reported.
+   *
+   * @param returnValues The values to return from the function
+   */
+  void endFunction(ValueRange returnValues);
+
+  /**
+   * @brief Call a function previously defined in the module
+   *
+   * @details
+   * Creates a `func.call` to the named function. Qubit- and qubit-tensor-typed
+   * operands are validated and consumed; results of those types are added to
+   * the tracking.
+   *
+   * The i-th qubit operand is paired with the i-th qubit result, and likewise
+   * for tensors, so a function that threads its linear values through keeps
+   * the register association intact. Surplus operands are treated as consumed
+   * and surplus results as freshly created. This positional pairing is a
+   * calling convention, not something the IR enforces: a callee that returns
+   * its qubits in a different order than it takes them will be tracked
+   * incorrectly.
+   *
+   * @param callee The name of the function to call
+   * @param operands The operands to pass to the call
+   * @return The results of the call operation
+   *
+   * @par Example:
+   * ```c++
+   * auto results = builder.call("f", {q0});
+   * ```
+   * ```mlir
+   * %q1 = call @f(%q0) : (!qco.qubit) -> !qco.qubit
+   * ```
+   */
+  SmallVector<Value> call(StringRef callee, ValueRange operands);
+
+  /**
+   * @brief Get the qubit type
+   * @return The `!qco.qubit` type
+   */
+  Type getQubitType();
+
+  /**
+   * @brief Get a one-dimensional tensor type holding qubits
+   * @param size The number of qubits in the tensor
+   * @return The `tensor<size x !qco.qubit>` type
+   */
+  Type getQubitTensorType(int64_t size);
+
+  /**
+   * @brief Check whether the given type is a tensor of qubits
+   * @param type The type to check
+   * @return True if @p type is a ranked tensor with `!qco.qubit` elements
+   */
+  static bool isQubitTensor(Type type);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -1943,6 +2048,21 @@ private:
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
+
+  /**
+   * @brief State of an additional function under construction
+   */
+  struct FunctionScope {
+    /// Insertion point to restore when the function is finished
+    OpBuilder::InsertPoint savedInsertPoint;
+    /// Qubit values that were already tracked before the function was started
+    llvm::DenseSet<Value> outerQubits;
+    /// Tensor values that were already tracked before the function was started
+    llvm::DenseSet<Value> outerTensors;
+  };
+
+  /// Active function scope, if a function is currently under construction.
+  std::optional<FunctionScope> functionScope;
 };
 } // namespace qco
 } // namespace mlir

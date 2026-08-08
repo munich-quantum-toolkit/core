@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
@@ -33,6 +34,10 @@ namespace mlir::qco {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
+void runQuantumArgumentPromotion(ModuleOp module);
+void runAuxiliaryQubitHoisting(ModuleOp module);
+void runQuantumFunctionBoundaryCommutation(ModuleOp module,
+                                           SymbolTable& symbolTable);
 /**
  * @brief Create target-independent two-qubit gate fusion.
  */
