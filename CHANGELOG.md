@@ -82,7 +82,7 @@ releases may include breaking changes.
   circuits to compiler-target topologies while preserving target site IDs and
   materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
   [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
-  [#1870], [#1904], [#1911], [#1951], [#1997]) ([**@MatthiasReumann**],
+  [#1870], [#1904], [#1911], [#1951], [#1997], [#2016]) ([**@MatthiasReumann**],
   [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
@@ -721,6 +721,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
