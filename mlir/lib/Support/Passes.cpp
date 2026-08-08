@@ -58,6 +58,7 @@ void registerMQTCompilerPasses() {
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
     mqt::registerNormalizeGlobalPhases();
+    mqt::registerUnrollModifiers();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);

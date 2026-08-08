@@ -73,7 +73,7 @@ struct LoweringState {
   DenseSet<Operation*> returnedStaticResults;
 
   /// Modifier information
-  size_t inCtrlOp = 0;
+  bool inCtrlOp = false;
   SmallVector<Value> controls;
 
   /// Allocator and StringSaver for stable StringRefs

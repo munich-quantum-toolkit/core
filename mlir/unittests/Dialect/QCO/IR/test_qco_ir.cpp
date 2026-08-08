@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -40,6 +41,7 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -57,18 +59,18 @@ namespace {
 
 struct QCOTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
-  return os << "QCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCO{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCOTest : public testing::TestWithParam<QCOTestCase> {
@@ -91,9 +93,9 @@ protected:
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -102,7 +104,8 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference =
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -230,7 +233,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(verify(*direct).succeeded());
 
   auto ref =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
   ASSERT_TRUE(ref);
   EXPECT_TRUE(verify(*ref).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
@@ -381,7 +384,7 @@ TEST_F(QCOTest, IfOpParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
   EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto ref = mqt::test::buildMLIRProgram(
+  auto ref = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor));
   ASSERT_TRUE(ref);
   EXPECT_TRUE(verify(*ref).succeeded());
@@ -663,7 +666,7 @@ TEST_F(QCOTest, IndexSwitchParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
   EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto ref = mqt::test::buildMLIRProgram(
+  auto ref = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedForLoopSwitchOp));
   ASSERT_TRUE(ref);
   EXPECT_TRUE(verify(*ref).succeeded());
@@ -1161,7 +1164,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
   auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
 
   auto funcOp = cast<func::FuncOp>(program->getBody()->front());
@@ -1174,7 +1177,7 @@ TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
 }
 
 TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
-  auto program = mqt::test::buildMLIRProgram(
+  auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
   ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -1199,7 +1202,7 @@ TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
 /// rxx(2θ). Verify cleanup and the hoisted parameter's SSA dominance.
 TEST_F(QCOTest, PowRxxFold) {
   auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -1227,7 +1230,7 @@ TEST_F(QCOTest, PowRxxFold) {
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCOTest, NegPowHNoFold) {
   auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -1242,8 +1245,8 @@ TEST_F(QCOTest, NegPowHNoFold) {
 /// normalization then turns the controlled GPhase into P on the control.
 /// Verify the CtrlOp survives and the relative phase remains observable.
 TEST_F(QCOTest, CtrlPowSxExpands) {
-  auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
+  auto program = ::mqt::test::buildMLIRProgram(context.get(),
+                                               MQT_NAMED_BUILDER(ctrlPowSx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -2279,4 +2282,138 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(deadGatesWithIfOpSimplified)},
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(allocQubitNoMeasure)}));
+/// @}
+
+/// \name UnrollModifiers
+/// @{
+static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
+  return pm.run(moduleOp);
+}
+
+/// Unrolls @p program and checks that it matches @p reference.
+static void
+expectUnrollsTo(MLIRContext* context,
+                const function_ref<Value(QCOProgramBuilder&)> program,
+                const function_ref<Value(QCOProgramBuilder&)> reference) {
+  auto moduleOp = QCOProgramBuilder::build(context, program);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runUnrollModifiers(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
+
+  auto referenceOp = QCOProgramBuilder::build(context, reference);
+  ASSERT_TRUE(referenceOp);
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(referenceOp.get())));
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(moduleOp.get(), referenceOp.get()));
+}
+
+static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, qubit] : llvm::enumerate(qubits)) {
+    b.measure(qubit, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
+
+/// Reference for `ctrlThree` after unrolling.
+static Value ctrlThreeUnrolled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto first = b.ctrl(q[0], {q[2]}, [&](ValueRange targets) {
+    return SmallVector{b.x(targets[0])};
+  });
+  auto second = b.ctrl(first.first[0], {first.second[0], q[1]},
+                       [&](ValueRange targets) -> SmallVector<Value> {
+                         auto [t0, t1] = b.dcx(targets[0], targets[1]);
+                         return {t0, t1};
+                       });
+  auto third =
+      b.ctrl(second.first[0], {second.second[0]},
+             [&](ValueRange targets) { return SmallVector{b.y(targets[0])}; });
+  return measureRegister(b,
+                         {third.first[0], second.second[1], third.second[0]});
+}
+
+/// Reference for `ctrlInvTwo` after unrolling.
+static Value ctrlInvTwoUnrolled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto first = b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    return llvm::to_vector(
+        b.inv(targets, [&](ValueRange qubits) -> SmallVector<Value> {
+          auto [t0, t1] = b.rxx(0.123, qubits[0], qubits[1]);
+          return {t0, t1};
+        }));
+  });
+  auto second =
+      b.ctrl(first.first[0], {first.second[0]}, [&](ValueRange targets) {
+        return llvm::to_vector(b.inv(targets, [&](ValueRange qubits) {
+          return SmallVector{b.x(qubits[0])};
+        }));
+      });
+  return measureRegister(b,
+                         {second.first[0], second.second[0], first.second[1]});
+}
+
+/// Applies a control modifier to an inverse modifier with two operations,
+/// followed by a further operation.
+static Value ctrlTwoInvTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto res = b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    auto inner = b.inv(targets, [&](ValueRange qubits) -> SmallVector<Value> {
+      auto i0 = b.x(qubits[0]);
+      auto [t0, t1] = b.rxx(0.123, i0, qubits[1]);
+      return {t0, t1};
+    });
+    return SmallVector{b.h(inner[0]), inner[1]};
+  });
+  return measureRegister(b, {res.first[0], res.second[0], res.second[1]});
+}
+
+/// Reference for `ctrlTwoInvTwo` after unrolling.
+static Value ctrlTwoInvTwoUnrolled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto first = b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    return llvm::to_vector(
+        b.inv(targets, [&](ValueRange qubits) -> SmallVector<Value> {
+          auto [t0, t1] = b.rxx(0.123, qubits[0], qubits[1]);
+          return {t0, t1};
+        }));
+  });
+  auto second =
+      b.ctrl(first.first[0], {first.second[0]}, [&](ValueRange targets) {
+        return llvm::to_vector(b.inv(targets, [&](ValueRange qubits) {
+          return SmallVector{b.x(qubits[0])};
+        }));
+      });
+  auto third =
+      b.ctrl(second.first[0], {second.second[0]},
+             [&](ValueRange targets) { return SmallVector{b.h(targets[0])}; });
+  return measureRegister(b, {third.first[0], third.second[0], first.second[1]});
+}
+TEST_F(QCOTest, UnrollModifiersSplitsCtrl) {
+  expectUnrollsTo(context.get(), ctrlTwo, ctrlTwoUnrolled);
+}
+
+TEST_F(QCOTest, UnrollModifiersSplitsCtrlWithReorderedTargets) {
+  expectUnrollsTo(context.get(), ctrlThree, ctrlThreeUnrolled);
+}
+
+TEST_F(QCOTest, UnrollModifiersReversesInv) {
+  expectUnrollsTo(context.get(), invTwo, invTwoUnrolled);
+}
+
+TEST_F(QCOTest, UnrollModifiersUnrollsNestedModifiers) {
+  expectUnrollsTo(context.get(), ctrlInvTwo, ctrlInvTwoUnrolled);
+}
+
+TEST_F(QCOTest, UnrollModifiersUnrollsNestedModifiersAndTrailingOperation) {
+  expectUnrollsTo(context.get(), ctrlTwoInvTwo, ctrlTwoInvTwoUnrolled);
+}
+
+TEST_F(QCOTest, UnrollModifiersLeavesPowUntouched) {
+  expectUnrollsTo(context.get(), powTwo, powTwo);
+}
 /// @}

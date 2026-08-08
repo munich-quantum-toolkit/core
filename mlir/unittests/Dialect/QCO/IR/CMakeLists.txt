@@ -17,6 +17,7 @@ target_link_libraries(
           MLIRQCOPrograms
           MLIRQCODDFunctionality
           MLIRQCOUtils
+          MLIRMQTTransforms
           MQT::CoreDD)
 mqt_mlir_configure_unittest_target(${qco_ir_target})
 

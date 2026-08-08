@@ -26,6 +26,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 
 #include <capnp/common.h>
@@ -333,6 +334,7 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   if (failed(runPasses(
           mod(),
           [profile](OpPassManager& pm) {
+            pm.addPass(mqt::createUnrollModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
             } else {
@@ -467,7 +469,11 @@ std::optional<QCProgram> QCOProgram::intoQC() && {
 
 std::optional<JeffProgram> QCOProgram::intoJeff() && {
   if (failed(runPasses(
-          mod(), [](OpPassManager& pm) { pm.addPass(createQCOToJeff()); },
+          mod(),
+          [](OpPassManager& pm) {
+            pm.addPass(mqt::createUnrollModifiers());
+            pm.addPass(createQCOToJeff());
+          },
           "failed to convert QCO to jeff"))) {
     return std::nullopt;
   }
