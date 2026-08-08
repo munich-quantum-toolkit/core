@@ -320,6 +320,15 @@ static ParsedProgram loadJeffFile(const StringRef filename,
  * @brief Write serialized `jeff` bytes to an output file or standard output.
  */
 static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
+  if (filename != "-") {
+    if (failed(serializeToFile(mod, filename))) {
+      llvm::errs() << "Failed to write jeff file '" << filename << "'.\n";
+      return failure();
+    }
+    return success();
+  }
+
+  // `serializeToFile` takes a path, so standard output is served from a buffer.
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -333,7 +342,7 @@ static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
                      bytes.size());
   output->os().flush();
   if (output->os().has_error()) {
-    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    llvm::errs() << "I/O error while writing to standard output\n";
     return failure();
   }
 
