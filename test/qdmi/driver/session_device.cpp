@@ -212,7 +212,7 @@ TEST_SESSION_QDMI_device_session_create_device_job(QDMI_Device_Session session,
   return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
 
-extern "C" int TEST_SESSION_QDMI_device_session_open_device_job(
+extern "C" int TEST_SESSION_QDMI_device_session_retrieve_device_job_by_id(
     QDMI_Device_Session session, const char* jobId, QDMI_Device_Job* job) {
   if (session == nullptr || !session->initialized || jobId == nullptr ||
       *jobId == '\0' || job == nullptr) {

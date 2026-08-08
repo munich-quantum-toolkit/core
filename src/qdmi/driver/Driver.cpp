@@ -142,7 +142,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     LOAD_DYNAMIC_SYMBOL(device_session_set_parameter)
     // device job interface
     LOAD_DYNAMIC_SYMBOL(device_session_create_device_job)
-    LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_open_device_job)
+    LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
     LOAD_DYNAMIC_SYMBOL(device_job_free)
     LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
     LOAD_DYNAMIC_SYMBOL(device_job_query_property)
@@ -405,16 +405,16 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
   return QDMI_SUCCESS;
 }
 
-auto QDMI_Device_impl_d::openJob(const char* const jobId, QDMI_Job* job)
+auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId, QDMI_Job* job)
     -> int {
   if (jobId == nullptr || *jobId == '\0' || job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (library_->device_session_open_device_job == nullptr) {
+  if (library_->device_session_retrieve_device_job_by_id == nullptr) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   QDMI_Device_Job deviceJob = nullptr;
-  const auto result = library_->device_session_open_device_job(
+  const auto result = library_->device_session_retrieve_device_job_by_id(
       deviceSession_, jobId, &deviceJob);
   if (result != QDMI_SUCCESS) {
     return result;
@@ -826,11 +826,12 @@ int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) {
   return dev->createJob(job);
 }
 
-int QDMI_device_open_job(QDMI_Device dev, const char* jobId, QDMI_Job* job) {
+int QDMI_session_retrieve_job_by_id(QDMI_Device dev, const char* jobId,
+                                    QDMI_Job* job) {
   if (dev == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return dev->openJob(jobId, job);
+  return dev->retrieveJobById(jobId, job);
 }
 
 void QDMI_job_free(QDMI_Job job) {

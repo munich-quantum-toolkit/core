@@ -552,14 +552,14 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /**
-   * @brief Opens an existing job by its device-provided ID.
+   * @brief Retrieves an existing job by its device-provided ID.
    * @details Opening a job does not submit, clone, or modify the remote job.
    * The returned handle can be used to query its state and retrieve results.
    * @param jobId The nonempty opaque ID returned by @ref Job::getId.
-   * @throws std::runtime_error If the driver or device cannot open the job.
-   * @see QDMI_device_open_job
+   * @throws std::runtime_error If the driver or device cannot retrieve the job.
+   * @see QDMI_session_retrieve_job_by_id
    */
-  [[nodiscard]] Job openJob(std::string_view jobId) const;
+  [[nodiscard]] Job retrieveJobById(std::string_view jobId) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 

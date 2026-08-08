@@ -471,12 +471,12 @@ when the custom slot is unsupported.)pb");
       "Submits an exact byte payload to the device.");
 
   device.def(
-      "open_job",
+      "retrieve_job_by_id",
       [](const fomac::Device& self, const std::string& jobId) {
-        return self.openJob(jobId);
+        return self.retrieveJobById(jobId);
       },
       "job_id"_a, nb::rv_policy::reference_internal,
-      "Opens an existing job by its device-provided ID.");
+      "Retrieves an existing job by its device-provided ID.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";

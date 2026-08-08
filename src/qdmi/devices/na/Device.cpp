@@ -684,7 +684,7 @@ int MQT_NA_QDMI_device_session_create_device_job(
   return session->createDeviceJob(job);
 }
 
-int MQT_NA_QDMI_device_session_open_device_job(
+int MQT_NA_QDMI_device_session_retrieve_device_job_by_id(
     [[maybe_unused]] MQT_NA_QDMI_Device_Session session,
     [[maybe_unused]] const char* jobId,
     [[maybe_unused]] MQT_NA_QDMI_Device_Job* job) {

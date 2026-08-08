@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add support for reopening existing QDMI jobs in C++, Python, and the QDMI
-  driver ([#2008]) ([**@burgholzer**])
+- ✨ Add support for retrieving existing QDMI jobs by ID in C++, Python, and the
+  QDMI driver ([#2008]) ([**@burgholzer**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and

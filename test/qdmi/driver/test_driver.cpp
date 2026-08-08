@@ -465,24 +465,29 @@ TEST_P(DriverTest, JobCreate) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_P(DriverTest, JobOpen) {
+TEST_P(DriverTest, JobRetrieveById) {
   QDMI_Job job = nullptr;
-  const auto result = QDMI_device_open_job(device, "session-job", &job);
+  const auto result =
+      QDMI_session_retrieve_job_by_id(device, "session-job", &job);
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return;
   }
   ASSERT_EQ(result, QDMI_SUCCESS);
   ASSERT_NE(job, nullptr);
   QDMI_job_free(job);
-  EXPECT_EQ(QDMI_device_open_job(device, "", &job), QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(QDMI_device_open_job(device, "unknown", &job), QDMI_ERROR_NOTFOUND);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "unknown", &job),
+            QDMI_ERROR_NOTFOUND);
 }
 
-TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
-  const auto ownedDevice = openOwnedSessionTestDevice("test.open-job-client");
+TEST(JobRetrieveByIdTest, RetrievesExistingJobThroughClientApi) {
+  const auto ownedDevice =
+      openOwnedSessionTestDevice("test.retrieve-job-client");
   QDMI_Device device = ownedDevice;
   QDMI_Job job = nullptr;
-  ASSERT_EQ(QDMI_device_open_job(device, "session-job", &job), QDMI_SUCCESS);
+  ASSERT_EQ(QDMI_session_retrieve_job_by_id(device, "session-job", &job),
+            QDMI_SUCCESS);
   ASSERT_NE(job, nullptr);
 
   size_t size = 0;
@@ -501,19 +506,21 @@ TEST(JobOpenTest, OpensExistingJobThroughClientApi) {
   EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_BADSTATE);
   QDMI_job_free(job);
 
-  EXPECT_EQ(QDMI_device_open_job(nullptr, "session-job", &job),
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(nullptr, "session-job", &job),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(QDMI_device_open_job(device, nullptr, &job),
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, nullptr, &job),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(QDMI_device_open_job(device, "", &job), QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(QDMI_device_open_job(device, "session-job", nullptr),
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "", &job),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(QDMI_device_open_job(device, "unknown", &job), QDMI_ERROR_NOTFOUND);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "session-job", nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "unknown", &job),
+            QDMI_ERROR_NOTFOUND);
 }
 
-TEST(FoMaCJobTest, OpensExistingJobs) {
-  const auto device = openOwnedSessionTestDevice("test.open-job-fomac");
-  const auto job = device.openJob("session-job");
+TEST(FoMaCJobTest, RetrievesExistingJobs) {
+  const auto device = openOwnedSessionTestDevice("test.retrieve-job-fomac");
+  const auto job = device.retrieveJobById("session-job");
   EXPECT_EQ(job.getId(), "session-job");
 }
 
