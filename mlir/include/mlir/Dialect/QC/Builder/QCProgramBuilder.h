@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -189,6 +190,7 @@ public:
   /**
    * @brief Allocate a qubit register and eagerly load every element
    * @param size Number of qubits (must be positive)
+   * @param name Optional source-level register name
    * @return A `QubitRegister` containing the backing memref and one reference
    * for every eagerly loaded element
    *
@@ -203,18 +205,19 @@ public:
    * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
    * ```
    */
-  QubitRegister allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size, StringRef name = {});
 
   /**
    * @brief Allocate storage for a qubit register without loading its elements
    * @param size Number of qubits (must be positive)
+   * @param name Optional source-level register name
    * @return The memref value representing the qubit register
    *
    * @details The register is tracked for automatic deallocation and remains
    * intact until an element is loaded. Use `loadQubit` to obtain references at
    * their points of use.
    */
-  Value allocQubitRegisterStorage(int64_t size);
+  Value allocQubitRegisterStorage(int64_t size, StringRef name = {});
 
   /**
    * @brief Explicitly loads a qubit from a memref
@@ -1377,6 +1380,9 @@ private:
 
   /// Track allocated memrefs for automatic deallocation
   DenseSet<Value> allocatedQregs;
+
+  /// Track non-empty source-level qubit register names.
+  llvm::StringSet<> qubitRegisterNames;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
