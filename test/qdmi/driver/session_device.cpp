@@ -27,6 +27,7 @@ struct QDMI_Device_Session_impl_d {
 
 struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
+  bool retrieved = false;
 };
 
 namespace {
@@ -205,14 +206,32 @@ TEST_SESSION_QDMI_device_session_create_device_job(QDMI_Device_Session session,
   }
   // The QDMI C API transfers this allocation through an opaque raw handle.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *job = new (std::nothrow) QDMI_Device_Job_impl_d{session};
+  *job = new (std::nothrow) QDMI_Device_Job_impl_d{session, false};
+  return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_session_retrieve_device_job_by_id(
+    QDMI_Device_Session session, const char* jobId, QDMI_Device_Job* job) {
+  if (session == nullptr || !session->initialized || jobId == nullptr ||
+      jobId[0] == '\0' || job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (std::strcmp(jobId, "session-job") != 0) {
+    return QDMI_ERROR_NOTFOUND;
+  }
+  // The QDMI C API transfers this allocation through an opaque raw handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  *job = new (std::nothrow) QDMI_Device_Job_impl_d{session, true};
   return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     QDMI_Device_Job job, QDMI_Device_Job_Parameter /*parameter*/,
     size_t /*size*/, const void* /*value*/) {
-  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_SUCCESS;
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->retrieved ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(
@@ -233,7 +252,7 @@ extern "C" int TEST_SESSION_QDMI_device_job_submit(QDMI_Device_Job job) {
   if (job == nullptr || job->session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return QDMI_SUCCESS;
+  return job->retrieved ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_cancel(QDMI_Device_Job /*job*/) {

@@ -12,8 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Expose optional QDMI device queue length and job queue position through the
-  C++ and Python FoMaC APIs ([#2010]) ([**@burgholzer**])
+- ✨ Support retrieving existing jobs by ID through the QDMI client API and
+  expose optional device queue length and job queue position through the C++ and
+  Python FoMaC APIs ([#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
