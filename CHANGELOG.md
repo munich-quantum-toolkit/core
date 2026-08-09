@@ -14,6 +14,9 @@ releases may include breaking changes.
 
 - ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
   ([#2015]) ([**@denialhaag**])
+- ✨ Support retrieving existing jobs by ID through the QDMI client API and
+  expose optional device queue length and job queue position through the C++ and
+  Python FoMaC APIs ([#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
@@ -40,8 +43,9 @@ releases may include breaking changes.
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
-  [#1979], [#2007]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
-  [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
+  [#1979], [#2007], [#2026]) ([**@burgholzer**], [**@denialhaag**],
+  [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
+  [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
@@ -54,7 +58,7 @@ releases may include breaking changes.
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   structured control flow, and alias-safe qubit-register access ([#1910],
-  [#1987], [#1994]) ([**@burgholzer**], [**@denialhaag**])
+  [#1987], [#1994], [#2026]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -98,9 +102,9 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@J4MMlE**])
+  [#1976], [#2006], [#2026]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -723,8 +727,10 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
+[#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005

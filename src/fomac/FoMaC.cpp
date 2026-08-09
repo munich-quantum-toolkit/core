@@ -275,6 +275,10 @@ std::optional<size_t> Device::getNeedsCalibration() const {
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
 
+std::optional<size_t> Device::getQueueLength() const {
+  return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
+}
+
 std::optional<std::string> Device::getLengthUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
@@ -522,6 +526,14 @@ size_t Job::getNumShots() const {
                               sizeof(numShots), &numShots, nullptr),
       "Querying number of shots");
   return numShots;
+}
+
+std::optional<size_t> Job::getQueuePosition() const {
+  size_t queuePosition = 0;
+  const auto result =
+      QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
+                              sizeof(queuePosition), &queuePosition, nullptr);
+  return detail::queuePositionFromResult(result, queuePosition);
 }
 
 std::vector<std::string> Job::getShots() const {

@@ -28,10 +28,12 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -449,9 +451,42 @@ Value getResultPtr(LoweringState& state, Operation* op,
   return result;
 }
 
-LogicalResult stripReturnedMeasurements(Operation* moduleOp,
-                                        LoweringState& state) {
+static bool isLeadingZeroInitialization(memref::StoreOp storeOp,
+                                        memref::AllocOp allocOp) {
+  if (storeOp->getBlock() != allocOp->getBlock() ||
+      !allocOp->isBeforeInBlock(storeOp) ||
+      !matchPattern(storeOp.getValueToStore(), m_Zero())) {
+    return false;
+  }
+
+  const auto type = allocOp.getType();
+  const auto index = getConstantIntValue(storeOp.getIndices().front());
+  if (!index || type.isDynamicDim(0) || *index < 0 ||
+      *index >= type.getDimSize(0)) {
+    return false;
+  }
+
+  for (const auto& use : allocOp.getMemref().getUses()) {
+    auto* user = use.getOwner();
+    auto* ancestor = storeOp->getBlock()->findAncestorOpInBlock(*user);
+    if (ancestor == nullptr || ancestor == storeOp ||
+        !ancestor->isBeforeInBlock(storeOp)) {
+      continue;
+    }
+
+    auto previousStore = dyn_cast<memref::StoreOp>(user);
+    if (ancestor != user || !previousStore ||
+        !matchPattern(previousStore.getValueToStore(), m_Zero())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+LogicalResult prepareClassicalResults(Operation* moduleOp,
+                                      LoweringState& state) {
   bool hasInvalidMemory = false;
+  SmallVector<memref::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
     // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
@@ -503,11 +538,21 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
       }
       auto allocOp = storeOp.getMemref().getDefiningOp<memref::AllocOp>();
       auto measureOp = storeOp.getValueToStore().getDefiningOp<MeasureOp>();
-      if (!allocOp || !state.cregIndices.contains(allocOp.getOperation()) ||
-          !measureOp) {
+      if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
         storeOp.emitError(
             "QIR conversion only supports storing direct measurement results "
             "in classical result registers");
+        hasInvalidMemory = true;
+        return;
+      }
+      if (!measureOp) {
+        if (isLeadingZeroInitialization(storeOp, allocOp)) {
+          consumedStores.push_back(storeOp);
+          return;
+        }
+        storeOp.emitError(
+            "QIR conversion only supports storing direct measurement results "
+            "or leading zero initialization in classical result registers");
         hasInvalidMemory = true;
         return;
       }
@@ -522,6 +567,7 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
             "register locations during QIR conversion");
         hasInvalidMemory = true;
       }
+      consumedStores.push_back(storeOp);
     });
 
     const auto markRegisterForRecording = [&](const size_t registerIndex) {
@@ -575,7 +621,13 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
           keptReturnTypes));
     });
   });
-  return failure(hasInvalidMemory);
+  if (hasInvalidMemory) {
+    return failure();
+  }
+  for (auto storeOp : consumedStores) {
+    storeOp.erase();
+  }
+  return success();
 }
 
 } // namespace mlir
