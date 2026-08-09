@@ -59,11 +59,28 @@ namespace qc {
  */
 class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
+  /// Initialization policy for newly allocated classical bit registers.
+  enum class ClassicalRegisterInitialization : uint8_t {
+    Uninitialized,
+    Zero,
+  };
+
   /**
    * @brief Construct a new QCProgramBuilder
    * @param context The MLIR context to use for building operations
    */
   explicit QCProgramBuilder(MLIRContext* context);
+
+  /**
+   * @brief Construct a new QCProgramBuilder with a classical-register
+   * initialization policy
+   * @param context The MLIR context to use for building operations
+   * @param classicalRegisterInitialization Initialization policy for classical
+   * bit registers allocated by this builder
+   */
+  QCProgramBuilder(
+      MLIRContext* context,
+      ClassicalRegisterInitialization classicalRegisterInitialization);
 
   //===--------------------------------------------------------------------===//
   // Initialization
@@ -237,7 +254,9 @@ public:
    * @brief Allocate a classical bit register
    *
    * @details The register is backed by a memref of `i1` elements. It is not
-   * deallocated automatically so that it can be returned from the program.
+   * deallocated automatically so that it can be returned from the program. If
+   * the builder was constructed with `ClassicalRegisterInitialization::Zero`,
+   * every element is initialized to false immediately after allocation.
    *
    * @param size Number of bits (must be positive)
    * @param name Optional source-level register name
@@ -1354,6 +1373,11 @@ public:
   build(MLIRContext* context,
         const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc);
 
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc,
+        ClassicalRegisterInitialization classicalRegisterInitialization);
+
   /**
    * @brief Convenience method for building quantum programs with one return
    * value.
@@ -1365,6 +1389,11 @@ public:
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<Value(QCProgramBuilder&)>& buildFunc);
+
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const function_ref<Value(QCProgramBuilder&)>& buildFunc,
+        ClassicalRegisterInitialization classicalRegisterInitialization);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
@@ -1383,6 +1412,9 @@ private:
 
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Initialization policy for classical bit registers.
+  ClassicalRegisterInitialization classicalRegisterInitialization;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);

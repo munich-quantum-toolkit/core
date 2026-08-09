@@ -10,6 +10,7 @@
 
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
@@ -135,8 +136,14 @@ protected:
   }
 
   [[nodiscard]] OwningOpRef<ModuleOp>
-  buildQCReference(const QCProgramBuilderFn builder) const {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
+  buildQCReference(const QCProgramBuilderFn builder,
+                   const bool zeroInitializeClassicalRegisters) const {
+    const auto initialization =
+        zeroInitializeClassicalRegisters
+            ? QCProgramBuilder::ClassicalRegisterInitialization::Zero
+            : QCProgramBuilder::ClassicalRegisterInitialization::Uninitialized;
+    auto module =
+        mqt::test::buildMLIRProgram(context.get(), builder, initialization);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
@@ -247,12 +254,38 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
     expected = buildQIRReference(testCase.qirReferenceBuilder);
   } else {
     ASSERT_TRUE(testCase.qcReferenceBuilder);
-    expected = buildQCReference(testCase.qcReferenceBuilder);
+    expected = buildQCReference(testCase.qcReferenceBuilder,
+                                testCase.startFromQuantumComputation);
   }
   ASSERT_TRUE(expected);
   const auto actualIR =
       std::visit([](const auto& value) { return value.str(); }, *compiled);
   expectEquivalent("Final output", actualIR, expected.get());
+}
+
+TEST(CompilerPipelineRegressionTest,
+     ZeroInitializedRegisterConditionsReachAdaptiveQIR) {
+  MLIRContext context;
+  context.loadDialect<QCDialect, arith::ArithDialect, func::FuncDialect,
+                      memref::MemRefDialect, scf::SCFDialect>();
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(2, "c");
+  comp.if_(::qc::X, q[0], c, 0U);
+
+  auto module = translateQuantumComputationToQC(&context, comp);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  module->print(sourceStream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto compiled = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                     ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<QIRProgram>(*compiled));
 }
 
 /** @brief Raw QCO stops before the registered default optimization pipeline. */
