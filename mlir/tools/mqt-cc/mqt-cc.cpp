@@ -35,6 +35,7 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
+#include <llvm/Support/Path.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
@@ -81,7 +82,10 @@ static llvm::cl::opt<std::string> inputFormat(
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
 static llvm::cl::opt<std::string>
-    outputFilename("o", llvm::cl::desc("Output filename"),
+    outputFilename("o",
+                   llvm::cl::desc("Output filename (for QIR, - and .ll write "
+                                  "textual LLVM IR; .bc and other names write "
+                                  "LLVM bitcode)"),
                    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> outputFormat(
@@ -360,7 +364,7 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
       writeBytecodeToFile(mod, output->os());
     }
   } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
-    if (filename == "-") {
+    if (filename == "-" || llvm::sys::path::extension(filename) == ".ll") {
       mod->print(output->os(), nullptr);
     } else {
       llvm::WriteBitcodeToFile(*mod, output->os());
