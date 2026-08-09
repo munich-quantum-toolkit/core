@@ -2946,7 +2946,7 @@ QkConditionType qk_control_flow_switch_target_type(const QkControlFlowInstructio
  * @return The index of the classical bit in the circuit.
  *
  * Panics if ``cf_inst`` is not a Switch control flow instruction with a classical bit target.
- *  
+ *
  * # Example
  * ```c
  * // Assuming cf_inst is a Switch instruction with a classical bit target
@@ -6276,7 +6276,7 @@ bool qk_transpiler_pass_check_gate_direction(const QkDag *dag,
  * QkDag *dag = qk_dag_new();
  * QkQuantumRegister *qr = qk_quantum_register_new(3, "qr");
  * qk_dag_add_quantum_register(dag, qr);
- * qk_dag_apply_gate(dag, QkGate_CX, (uint32_t[]){1,0}, NULL, false);  
+ * qk_dag_apply_gate(dag, QkGate_CX, (uint32_t[]){1,0}, NULL, false);
  *
  * qk_transpiler_pass_gate_direction(dag, target);
  * qk_quantum_register_free(qr);
