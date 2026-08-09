@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
+  ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
 - ✨ Expose registered QDMI device IDs without loading device libraries
@@ -627,6 +629,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
