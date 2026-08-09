@@ -297,7 +297,8 @@ when the custom slot is unsupported.)pb");
 
   job.def_prop_ro(
       "queue_position", &fomac::Job::getQueuePosition,
-      "The number of jobs ahead in the queue, or None if unsupported.");
+      "The number of jobs ahead in the queue, or None if unavailable or not "
+      "applicable in the current state.");
 
   job.def(nb::self == nb::self,
           nb::sig("def __eq__(self, arg: object, /) -> bool"));

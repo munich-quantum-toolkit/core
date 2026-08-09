@@ -258,6 +258,23 @@ TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
                std::invalid_argument);
 }
 
+TEST(QueuePositionTest, ReturnsPositionOnSuccess) {
+  EXPECT_EQ(detail::queuePositionFromResult(QDMI_SUCCESS, 3), 3);
+}
+
+TEST(QueuePositionTest, ReturnsNulloptWhenUnavailable) {
+  EXPECT_EQ(detail::queuePositionFromResult(QDMI_ERROR_NOTSUPPORTED, 0),
+            std::nullopt);
+  EXPECT_EQ(detail::queuePositionFromResult(QDMI_ERROR_BADSTATE, 0),
+            std::nullopt);
+}
+
+TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
+  EXPECT_THROW(std::ignore = detail::queuePositionFromResult(
+                   QDMI_ERROR_INVALIDARGUMENT, 0),
+               std::invalid_argument);
+}
+
 TEST(FoMaCTest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
   EXPECT_STREQ(qdmi::toString(QDMI_SUCCESS), "Success");

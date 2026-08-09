@@ -69,6 +69,15 @@ concept custom_property_value =
     std::same_as<T, std::vector<std::byte>>;
 
 namespace detail {
+[[nodiscard]] inline std::optional<size_t>
+queuePositionFromResult(const int result, const size_t queuePosition) {
+  if (result == QDMI_ERROR_NOTSUPPORTED || result == QDMI_ERROR_BADSTATE) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(result, "Querying job queue position");
+  return queuePosition;
+}
+
 template <custom_property_value T, typename Query>
 [[nodiscard]] std::optional<T>
 queryCustomValue(Query query, const std::string_view description) {
@@ -694,10 +703,10 @@ public:
 
   /**
    * @brief Gets the current number of jobs ahead of this job in its queue.
-   * @return The queue position, or `std::nullopt` if the device does not
-   * support queue-position queries.
-   * @throws std::runtime_error If the job is not currently queued or the
-   * provider status refresh fails.
+   * @return The queue position, or `std::nullopt` if it is unavailable or not
+   * applicable in the job's current state.
+   * @throws std::runtime_error If the provider status refresh or property query
+   * fails for another reason.
    * @see QDMI_JOB_PROPERTY_QUEUEPOSITION
    */
   [[nodiscard]] std::optional<size_t> getQueuePosition() const;

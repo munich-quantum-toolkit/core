@@ -533,11 +533,7 @@ std::optional<size_t> Job::getQueuePosition() const {
   const auto result =
       QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
                               sizeof(queuePosition), &queuePosition, nullptr);
-  if (result == QDMI_ERROR_NOTSUPPORTED) {
-    return std::nullopt;
-  }
-  qdmi::throwIfError(result, "Querying job queue position");
-  return queuePosition;
+  return detail::queuePositionFromResult(result, queuePosition);
 }
 
 std::vector<std::string> Job::getShots() const {

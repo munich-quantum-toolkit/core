@@ -630,6 +630,12 @@ def test_job_queue_position_is_unavailable(submitted_job: Job) -> None:
     assert submitted_job.queue_position is None
 
 
+def test_job_queue_position_is_none_after_completion(submitted_job: Job) -> None:
+    """Test that queue position is None when it no longer applies."""
+    assert submitted_job.wait()
+    assert submitted_job.queue_position is None
+
+
 def test_job_custom_property_and_result_unsupported(submitted_job: Job) -> None:
     """Test custom job-property and result queries for unsupported slots."""
     property_value: bytes | None = submitted_job.query_custom_property(CustomProperty.CUSTOM1, bytes)

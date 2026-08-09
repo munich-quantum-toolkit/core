@@ -182,7 +182,7 @@ class Job:
 
     @property
     def queue_position(self) -> int | None:
-        """The number of jobs ahead in the queue, or None if unsupported."""
+        """The number of jobs ahead in the queue, or None if unavailable or not applicable in the current state."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
