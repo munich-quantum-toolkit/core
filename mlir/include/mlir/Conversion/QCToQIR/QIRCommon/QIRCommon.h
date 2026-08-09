@@ -65,6 +65,9 @@ struct LoweringState {
   /// Destination register index and bit index of each stored measurement.
   DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
 
+  /// Leading stores that zero-initialize classical result registers.
+  DenseSet<Operation*> cregInitializations;
+
   /// Map from index to `StaticResult`
   DenseMap<int64_t, qir::StaticResult> staticResults;
 

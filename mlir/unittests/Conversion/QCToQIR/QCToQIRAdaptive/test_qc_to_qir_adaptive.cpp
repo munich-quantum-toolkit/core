@@ -226,6 +226,31 @@ TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
       qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
 }
 
+TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                   scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(false), c,
+                          zero.getResult());
+  builder.scfIf(c, 0, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
+}
+
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
   MLIRContext context;
   context
@@ -286,6 +311,52 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
     diagnostic.print(stream);
     sawExpectedDiagnostic |= StringRef(message).contains(
         "only supports storing direct measurement results");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto c = builder.allocClassicalBitRegister(1);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(false), c,
+                          zero.getResult());
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsZeroStoreAfterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  builder.measure(q, c, 0);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(false), c,
+                          zero.getResult());
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |=
+        StringRef(message).contains("leading zero initialization");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));

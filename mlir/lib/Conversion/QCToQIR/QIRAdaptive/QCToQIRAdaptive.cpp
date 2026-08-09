@@ -250,6 +250,10 @@ struct ConvertMemRefStoreOp final
   LogicalResult
   matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (getState().cregInitializations.contains(op.getOperation())) {
+      rewriter.eraseOp(op);
+      return success();
+    }
     auto measureOp = op.getValueToStore().getDefiningOp<MeasureOp>();
     if (!measureOp ||
         !getState().cregMeasurements.contains(measureOp.getOperation())) {
