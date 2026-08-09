@@ -14,8 +14,8 @@ conservative Quake form from QC. CUDA-Q is not an MQT Core dependency: the
 boundary between the two packages is one textual MLIR serialization.
 
 The live CUDA-Q path in this notebook is used when `cudaq` is installed. The
-regular documentation build instead executes the checked-in CUDA-Q 0.15
-fixture, so the page remains reproducible without CUDA-Q.
+regular documentation build instead executes the checked-in CUDA-Q 0.15 fixture,
+so the page remains reproducible without CUDA-Q.
 
 ```{code-cell} ipython3
 from pathlib import Path
@@ -60,8 +60,8 @@ quake_source = str(cudaq.synthesize(kernel, *arguments))
 ## Quake to QC, QCO, QIR, and DDSIM
 
 Parse Quake and translate it to QC. The source `QuakeProgram` is consumed by
-default; `copy=True` is available on the Python conversion when both objects
-are needed.
+default; `copy=True` is available on the Python conversion when both objects are
+needed.
 
 ```{code-cell} ipython3
 quake = QuakeProgram.from_mlir_str(quake_source)
@@ -131,15 +131,15 @@ else:
 
 ## Supported subset and compatibility
 
-| Area | Behavior |
-| --- | --- |
-| Common kernels | Static `ref`/`veq` allocation and access, standard gates and parameters, adjoints, ordered positive/negative controls, reset, named measurements, scalar measurement feedback, named kernel application, `cc.if`, and bounded `cc.loop` are supported. |
-| Runtime arguments | Specialize first with `str(cudaq.synthesize(kernel, *arguments))`. |
-| Quantum semantics | Import requires reference-form `ref`/`veq`; SSI `wire`/`cable` programs are rejected. |
-| Unsupported operations | State initialization, noise, custom-unitary definitions, unspecialized dynamic allocations/accesses, indirect callables, and unsupported CC forms fail at the first relevant operation or type. |
-| Global phase | QC to Quake rejects a nonzero phase by default. `ignore_global_phase=True` explicitly drops it. `quake.phase` will be added after it appears in a CUDA-Q release. |
-| Version policy | CUDA-Q 0.15 is the initial textual baseline. Compatibility is maintained per syntax feature and retained fixtures, not as a promised CUDA-Q version range. |
-| Dependencies | CUDA-Q is installed separately. MQT Core never links CUDA-Q's MLIR libraries. |
+| Area                   | Behavior                                                                                                                                                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Common kernels         | Static `ref`/`veq` allocation and access, standard gates and parameters, adjoints, ordered positive/negative controls, reset, named measurements, scalar measurement feedback, named kernel application, `cc.if`, and bounded `cc.loop` are supported. |
+| Runtime arguments      | Specialize first with `str(cudaq.synthesize(kernel, *arguments))`.                                                                                                                                                                                     |
+| Quantum semantics      | Import requires reference-form `ref`/`veq`; SSI `wire`/`cable` programs are rejected.                                                                                                                                                                  |
+| Unsupported operations | State initialization, noise, custom-unitary definitions, unspecialized dynamic allocations/accesses, indirect callables, and unsupported CC forms fail at the first relevant operation or type.                                                        |
+| Global phase           | QC to Quake rejects a nonzero phase by default. `ignore_global_phase=True` explicitly drops it. `quake.phase` will be added after it appears in a CUDA-Q release.                                                                                      |
+| Version policy         | CUDA-Q 0.15 is the initial textual baseline. Compatibility is maintained per syntax feature and retained fixtures, not as a promised CUDA-Q version range.                                                                                             |
+| Dependencies           | CUDA-Q is installed separately. MQT Core never links CUDA-Q's MLIR libraries.                                                                                                                                                                          |
 
 The compatibility dialect deliberately models only this surface. If a future
 CUDA-Q release changes relevant syntax, MQT Core can add a focused parser or

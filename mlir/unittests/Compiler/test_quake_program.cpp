@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
  * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
@@ -83,8 +84,7 @@ TEST(QuakeProgramTest, ExportsQCAndRoundTripsBackToQC) {
   EXPECT_NE(exported->str().find(
                 "round_trip = \"round_trip_PyKernelEntryPointRewrite\""),
             std::string::npos);
-  EXPECT_EQ(exported->str().find("__nvqpp__mlirgen__bell"),
-            std::string::npos);
+  EXPECT_EQ(exported->str().find("__nvqpp__mlirgen__bell"), std::string::npos);
   EXPECT_NE(exported->str().find("quake.x ["), std::string::npos);
   auto roundTripped = std::move(*exported).intoQC();
   ASSERT_TRUE(roundTripped);

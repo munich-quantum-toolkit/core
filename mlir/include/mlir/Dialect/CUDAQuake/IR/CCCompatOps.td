@@ -25,12 +25,10 @@ def CCIfOp : CCCompatOp<"if"> {
 def CCLoopOp : CCCompatOp<"loop"> {
   let summary = "CUDA-Q generalized structured loop";
   let arguments = (ins Variadic<AnyType>:$initialArgs,
-                       BoolAttr:$post_condition);
+      BoolAttr:$post_condition);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$whileRegion,
-                         AnyRegion:$bodyRegion,
-                         AnyRegion:$stepRegion,
-                         AnyRegion:$elseRegion);
+  let regions = (region SizedRegion<1>:$whileRegion, AnyRegion:$bodyRegion,
+      AnyRegion:$stepRegion, AnyRegion:$elseRegion);
   let hasCustomAssemblyFormat = 1;
 }
 

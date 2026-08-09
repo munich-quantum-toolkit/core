@@ -33,8 +33,7 @@ def QuakeDeallocOp : QuakeCompatOp<"dealloc"> {
 def QuakeExtractRefOp : QuakeCompatOp<"extract_ref"> {
   let summary = "Extract a qubit reference from a vector";
   let arguments = (ins QuakeVeqType:$veq,
-                       Optional<AnySignlessIntegerOrIndex>:$index,
-                       I64Attr:$rawIndex);
+      Optional<AnySignlessIntegerOrIndex>:$index, I64Attr:$rawIndex);
   let results = (outs QuakeRefType:$reference);
   let assemblyFormat = [{
     $veq `[` custom<RawIndex>($index, $rawIndex) `]` `:`
@@ -50,22 +49,22 @@ def QuakeRelaxSizeOp : QuakeCompatOp<"relax_size"> {
   let summary = "Forget the static size of a qubit vector";
   let arguments = (ins QuakeVeqType:$input);
   let results = (outs QuakeVeqType:$result);
-  let assemblyFormat = "$input `:` functional-type(operands, results) attr-dict";
+  let assemblyFormat =
+      "$input `:` functional-type(operands, results) attr-dict";
 }
 
 def QuakeConcatOp : QuakeCompatOp<"concat"> {
   let summary = "Concatenate qubit references and vectors";
   let arguments = (ins Variadic<AnyType>:$inputs);
   let results = (outs QuakeVeqType:$result);
-  let assemblyFormat = "$inputs `:` functional-type(operands, results) attr-dict";
+  let assemblyFormat =
+      "$inputs `:` functional-type(operands, results) attr-dict";
 }
 
 def QuakeApplyOp : QuakeCompatOp<"apply", [AttrSizedOperandSegments]> {
   let summary = "Apply a named CUDA-Q kernel";
-  let arguments = (ins SymbolRefAttr:$callee,
-                       UnitAttr:$is_adj,
-                       Variadic<AnyType>:$controls,
-                       Variadic<AnyType>:$actuals);
+  let arguments = (ins SymbolRefAttr:$callee, UnitAttr:$is_adj,
+      Variadic<AnyType>:$controls, Variadic<AnyType>:$actuals);
   let results = (outs Variadic<AnyType>:$results);
   let hasCustomAssemblyFormat = 1;
 }
@@ -74,12 +73,13 @@ def QuakeResetOp : QuakeCompatOp<"reset"> {
   let summary = "Reset qubit references";
   let arguments = (ins Variadic<AnyType>:$targets);
   let results = (outs Variadic<AnyType>:$wires);
-  let assemblyFormat = "$targets `:` functional-type(operands, results) attr-dict";
+  let assemblyFormat =
+      "$targets `:` functional-type(operands, results) attr-dict";
 }
 
 class QuakeMeasurement<string mnemonic> : QuakeCompatOp<mnemonic> {
   let arguments = (ins Variadic<AnyType>:$targets,
-                       OptionalAttr<StrAttr>:$registerName);
+      OptionalAttr<StrAttr>:$registerName);
   let results = (outs AnyType:$measurement, Variadic<AnyType>:$wires);
   let assemblyFormat = [{
     $targets (`name` $registerName^)? `:` functional-type(operands, results)
@@ -95,16 +95,15 @@ def QuakeDiscriminateOp : QuakeCompatOp<"discriminate"> {
   let summary = "Convert a measurement result to classical data";
   let arguments = (ins AnyType:$measurement);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$measurement `:` functional-type(operands, results) attr-dict";
+  let assemblyFormat =
+      "$measurement `:` functional-type(operands, results) attr-dict";
 }
 
-class QuakeOperator<string mnemonic> :
-    QuakeCompatOp<mnemonic, [AttrSizedOperandSegments]> {
-  let arguments = (ins UnitAttr:$is_adj,
-                       Variadic<AnyFloat>:$parameters,
-                       Variadic<AnyType>:$controls,
-                       Variadic<AnyType>:$targets,
-                       OptionalAttr<DenseBoolArrayAttr>:$negated_qubit_controls);
+class QuakeOperator<string mnemonic>
+    : QuakeCompatOp<mnemonic, [AttrSizedOperandSegments]> {
+  let arguments = (ins UnitAttr:$is_adj, Variadic<AnyFloat>:$parameters,
+      Variadic<AnyType>:$controls, Variadic<AnyType>:$targets,
+      OptionalAttr<DenseBoolArrayAttr>:$negated_qubit_controls);
   let results = (outs Variadic<AnyType>:$wires);
   let assemblyFormat = [{
     (`<` `adj` $is_adj^ `>`)? (`(` $parameters^ `)`)?

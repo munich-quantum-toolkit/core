@@ -19,20 +19,27 @@ QIR to the bundled DDSIM QDMI device.
 
 ## Progress
 
-- [x] (2026-08-09 21:56Z) Allocated an isolated worktree from current `origin/main` and read repository policy.
-- [x] (2026-08-10 00:10Z) Inspected CUDA-Q 0.15 Quake/CC assembly and current MQT compiler extension points.
-- [x] (2026-08-10 00:18Z) Added compact compatibility dialects and native Quake-to-QC and QC-to-Quake conversions.
-- [x] (2026-08-10 00:32Z) Added `QuakeProgram`, compiler formats, Python bindings, CLI behavior, and focused native/Python tests.
-- [x] (2026-08-10 00:39Z) Added the MyST-NB interoperability guide, CUDA-Q 0.15 fixture, and restrained live CUDA-Q smoke workflow.
-- [x] (2026-08-10 01:07Z) Ran focused native/Python tests, executable documentation, generated-stub validation, the full pre-commit suite, and final diff checks.
+- [x] (2026-08-09 21:56Z) Allocated an isolated worktree from current
+      `origin/main` and read repository policy.
+- [x] (2026-08-10 00:10Z) Inspected CUDA-Q 0.15 Quake/CC assembly and current
+      MQT compiler extension points.
+- [x] (2026-08-10 00:18Z) Added compact compatibility dialects and native
+      Quake-to-QC and QC-to-Quake conversions.
+- [x] (2026-08-10 00:32Z) Added `QuakeProgram`, compiler formats, Python
+      bindings, CLI behavior, and focused native/Python tests.
+- [x] (2026-08-10 00:39Z) Added the MyST-NB interoperability guide, CUDA-Q 0.15
+      fixture, and restrained live CUDA-Q smoke workflow.
+- [x] (2026-08-10 01:07Z) Ran focused native/Python tests, executable
+      documentation, generated-stub validation, the full pre-commit suite, and
+      final diff checks.
 
 ## Surprises & Discoveries
 
 - Observation: The current compiler already supports OpenQASM 3 as an output
   format in addition to the program types described in the original issue.
-  Evidence: `ProgramFormat::OpenQASM3` and its Python/CLI handling are present in
-  `mlir/include/mlir/Compiler/Programs.h`, `bindings/mlir/register_mlir.cpp`, and
-  `mlir/tools/mqt-cc/mqt-cc.cpp`. The Quake integration should follow that
+  Evidence: `ProgramFormat::OpenQASM3` and its Python/CLI handling are present
+  in `mlir/include/mlir/Compiler/Programs.h`, `bindings/mlir/register_mlir.cpp`,
+  and `mlir/tools/mqt-cc/mqt-cc.cpp`. The Quake integration should follow that
   current shape rather than an older snapshot.
 - Observation: QC measurements must remain externally observable across the
   existing QC-to-QCO optimization path. Evidence: returning a generated
@@ -86,9 +93,9 @@ small textual compatibility dialect, imports common CUDA-Q 0.15 reference-form
 kernels into QC, and emits conservative reference-form Quake from QC. The public
 C++/Python compiler APIs and `mqt-cc` recognize `.qke` and Quake as a normal
 program format. QCO remains deliberately absent from the direct API and is used
-through the existing QC conversions. The executable guide proves the reproducible
-MQT-only fallback path through QC, QCO, QIR Base Profile, and DDSIM, while one
-Linux CI smoke job covers live CUDA-Q synthesis and execution.
+through the existing QC conversions. The executable guide proves the
+reproducible MQT-only fallback path through QC, QCO, QIR Base Profile, and
+DDSIM, while one Linux CI smoke job covers live CUDA-Q synthesis and execution.
 
 Validation completed successfully: the compiler unit-test and CLI targets built;
 all five `QuakeProgramTest.*` tests passed; both focused Python API/file-format
@@ -120,9 +127,9 @@ parse and emit the supported textual boundary.
 Dialect definitions and conversions live under `mlir/include/mlir/Dialect/` and
 `mlir/lib/Dialect/` or `mlir/include/mlir/Conversion/` and
 `mlir/lib/Conversion/`, with CMake files in the same hierarchy. MLIR unit tests
-live under `mlir/unittests/`. The Python compiler guide is the executable MyST-NB
-page `docs/mlir/python_compiler_collection.md`; the CUDA-Q page should use the
-same format and be linked from `docs/mlir/index.md`.
+live under `mlir/unittests/`. The Python compiler guide is the executable
+MyST-NB page `docs/mlir/python_compiler_collection.md`; the CUDA-Q page should
+use the same format and be linked from `docs/mlir/index.md`.
 
 The implementation must preserve unrelated changes and remain entirely within
 this task's worktree. It must follow `AGENTS.md` and `docs/ai_usage.md`. This
@@ -140,10 +147,10 @@ with CUDA-Q's Apache-2.0 attribution.
 Next, implement Quake-to-QC and QC-to-Quake conversion passes. Import must
 validate the module before changing it, select the CUDA-Q entry point, inline or
 reject unsupported calls deterministically, translate allocations, gates,
-controls, adjoints, measurements, and the supported structured classical
-control flow, and produce a valid QC program. Export must emit conservative
-CUDA-Q 0.15 reference-form Quake. It must reject a nonzero global phase unless
-the caller explicitly permits dropping it.
+controls, adjoints, measurements, and the supported structured classical control
+flow, and produce a valid QC program. Export must emit conservative CUDA-Q 0.15
+reference-form Quake. It must reject a nonzero global phase unless the caller
+explicitly permits dropping it.
 
 Then extend the typed compiler program API with `QuakeProgram`, add Quake to the
 input and result variants and coordinated pipeline, bind the type and conversion
@@ -151,13 +158,13 @@ methods to Python, and add Quake input/output handling to `mqt-cc`. Do not add
 any direct method on `QCOProgram`; generic pipeline output may compose through
 QC internally. Regenerate Python stubs with the repository Nox session.
 
-Finally, add `docs/mlir/CUDAQuake.md` as a MyST-NB page. It should
-use a captured CUDA-Q 0.15 Bell fixture when CUDA-Q is unavailable, convert it
-through QC and QCO to QIR, and submit QIR to the bundled DDSIM device. When
-CUDA-Q is importable, the same page should synthesize the fixture live. Include
-a short reverse-direction example and an explicit limitations table. Add one
-small Linux smoke workflow that installs CUDA-Q directly and checks the two
-expected boundary crossings; do not add a version or packaging matrix.
+Finally, add `docs/mlir/CUDAQuake.md` as a MyST-NB page. It should use a
+captured CUDA-Q 0.15 Bell fixture when CUDA-Q is unavailable, convert it through
+QC and QCO to QIR, and submit QIR to the bundled DDSIM device. When CUDA-Q is
+importable, the same page should synthesize the fixture live. Include a short
+reverse-direction example and an explicit limitations table. Add one small Linux
+smoke workflow that installs CUDA-Q directly and checks the two expected
+boundary crossings; do not add a version or packaging matrix.
 
 ## Concrete Steps
 
@@ -227,12 +234,12 @@ live smoke job to its supported Linux CI environment.
 
 ## Artifacts and Notes
 
-- `mqt-core-mlir-unittests-compiler` built successfully with the compact
-  dialect and both translations linked.
+- `mqt-core-mlir-unittests-compiler` built successfully with the compact dialect
+  and both translations linked.
 - All five focused `QuakeProgramTest.*` native tests passed.
-- `mqt-cc` successfully imported the checked-in Bell Quake fixture, emitted
-  QC, emitted reference-form Quake with measurement names, and lowered the
-  same input to QIR Base Profile.
+- `mqt-cc` successfully imported the checked-in Bell Quake fixture, emitted QC,
+  emitted reference-form Quake with measurement names, and lowered the same
+  input to QIR Base Profile.
 - The focused Python Quake/`.qke` tests passed (2 passed, 44 deselected), and
   Nox regenerated the public stub successfully.
 - The full MyST-NB/Sphinx documentation build passed with the CUDA-Q-free

@@ -170,11 +170,10 @@ ParseResult cudaq_compat::quake::QuakeApplyOp::parse(OpAsmParser& parser,
     return failure();
   }
   state.addTypes(functionType.getResults());
-  state.addAttribute(
-      "operand_segment_sizes",
-      parser.getBuilder().getDenseI32ArrayAttr(
-          {static_cast<int32_t>(controls.size()),
-           static_cast<int32_t>(actuals.size())}));
+  state.addAttribute("operand_segment_sizes",
+                     parser.getBuilder().getDenseI32ArrayAttr(
+                         {static_cast<int32_t>(controls.size()),
+                          static_cast<int32_t>(actuals.size())}));
   return success();
 }
 

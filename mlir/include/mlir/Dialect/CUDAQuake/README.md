@@ -6,12 +6,12 @@ projection of the textual `quake` and `cc` MLIR dialects from NVIDIA CUDA-Q
 
 The assembly formats and the small custom parser/printer portions were derived
 from CUDA-Q's `QuakeTypes.td`, `QuakeOps.td`, `CCTypes.td`, `CCOps.td`, and the
-corresponding implementation files. Those portions are licensed under the
-Apache License 2.0 and retain NVIDIA's copyright notices. MQT-specific
-conversion and compiler integration code is not derived from CUDA-Q and uses
-MQT Core's MIT license.
+corresponding implementation files. Those portions are licensed under the Apache
+License 2.0 and retain NVIDIA's copyright notices. MQT-specific conversion and
+compiler integration code is not derived from CUDA-Q and uses MQT Core's MIT
+license.
 
-This is not a full copy of either CUDA-Q dialect. New definitions should only
-be added when they occur at the supported textual interoperability boundary.
+This is not a full copy of either CUDA-Q dialect. New definitions should only be
+added when they occur at the supported textual interoperability boundary.
 
 See `LICENSE` in this directory for the Apache License 2.0 text.

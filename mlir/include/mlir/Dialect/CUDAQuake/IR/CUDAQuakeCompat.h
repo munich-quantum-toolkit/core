@@ -8,15 +8,23 @@
 
 #pragma once
 
-#include <cstdint>
-#include <limits>
-
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/OpDefinition.h>
 
+#include <cstdint>
+#include <limits>
+
+//===----------------------------------------------------------------------===//
+// Dialects
+//===----------------------------------------------------------------------===//
+
 #include "mlir/Dialect/CUDAQuake/IR/CCCompatOpsDialect.h.inc" // IWYU pragma: export
 #include "mlir/Dialect/CUDAQuake/IR/QuakeCompatOpsDialect.h.inc" // IWYU pragma: export
+
+//===----------------------------------------------------------------------===//
+// Types
+//===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/CUDAQuake/IR/CCCompatOpsTypes.h.inc" // IWYU pragma: export

@@ -1,4 +1,5 @@
-# Copyright (c) 2026 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -14,9 +15,9 @@ import pytest
 from mqt.core.mlir import QuakeProgram
 
 cudaq = pytest.importorskip("cudaq", reason="CUDA-Q is an optional dependency")
-h = getattr(cudaq, "h")
-mz = getattr(cudaq, "mz")
-x = getattr(cudaq, "x")
+h = cudaq.h
+mz = cudaq.mz
+x = cudaq.x
 
 
 def test_live_cudaq_quake_round_trip() -> None:

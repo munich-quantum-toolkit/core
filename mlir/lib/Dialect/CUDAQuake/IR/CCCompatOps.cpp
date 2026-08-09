@@ -33,8 +33,8 @@ void cudaq_compat::cc::CCCompatDialect::initialize() {
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/CUDAQuake/IR/CCCompatOpsTypes.cpp.inc"
 
-static void ensureContinueTerminator(OpBuilder& builder,
-                                     OperationState& state, Region* region) {
+static void ensureContinueTerminator(OpBuilder& builder, OperationState& state,
+                                     Region* region) {
   if (region->empty()) {
     return;
   }
@@ -44,21 +44,20 @@ static void ensureContinueTerminator(OpBuilder& builder,
   }
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToEnd(&block);
-  cudaq_compat::cc::CCContinueOp::create(builder, state.location,
-                                         ValueRange{});
+  cudaq_compat::cc::CCContinueOp::create(builder, state.location, ValueRange{});
 }
 
 void cudaq_compat::cc::CCIfOp::print(OpAsmPrinter& printer) {
   printer << '(' << getCondition() << ')';
   printer.printOptionalArrowTypeList(getResultTypes());
   printer << ' ';
-  const bool printTerminators = !getThenRegion().hasOneBlock() ||
-                                getNumResults() != 0;
+  const bool printTerminators =
+      !getThenRegion().hasOneBlock() || getNumResults() != 0;
   printer.printRegion(getThenRegion(), false, printTerminators);
   if (!getElseRegion().empty()) {
     printer << " else ";
-    const bool printElseTerminators = !getElseRegion().hasOneBlock() ||
-                                      getNumResults() != 0;
+    const bool printElseTerminators =
+        !getElseRegion().hasOneBlock() || getNumResults() != 0;
     printer.printRegion(getElseRegion(), false, printElseTerminators);
   }
   printer.printOptionalAttrDict((*this)->getAttrs());
@@ -96,11 +95,10 @@ static void printInitializationList(OpAsmPrinter& printer,
     return;
   }
   printer << "((";
-  llvm::interleaveComma(llvm::zip(blockArgs, initializers), printer,
-                        [&](const auto item) {
-                          printer << std::get<0>(item) << " = "
-                                  << std::get<1>(item);
-                        });
+  llvm::interleaveComma(
+      llvm::zip(blockArgs, initializers), printer, [&](const auto item) {
+        printer << std::get<0>(item) << " = " << std::get<1>(item);
+      });
   printer << ") -> (" << initializers.getTypes() << ")) ";
 }
 

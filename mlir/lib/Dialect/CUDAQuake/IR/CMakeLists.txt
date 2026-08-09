@@ -21,10 +21,8 @@ add_mlir_dialect_library(
 
 mqt_mlir_target_use_project_options(MLIRCUDAQuakeCompatDialect)
 
-file(GLOB_RECURSE IR_HEADERS_SOURCE
-     "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/CUDAQuake/IR/*.h")
-file(GLOB_RECURSE IR_HEADERS_BUILD
-     "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/CUDAQuake/IR/*.inc")
+file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/CUDAQuake/IR/*.h")
+file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/CUDAQuake/IR/*.inc")
 
 target_sources(
   MLIRCUDAQuakeCompatDialect
