@@ -523,6 +523,10 @@ TEST_P(DriverJobTest, JobQueryProperty) {
     EXPECT_EQ(numShots, 1);
   }
 
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_QUEUEPOSITION, 0,
+                                    nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+
   constexpr std::array customProperties{
       QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
       QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,

@@ -470,8 +470,8 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
   [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
 
-  /// @see QDMI_DEVICE_PROPERTY_QUEUEDEPTH
-  [[nodiscard]] std::optional<size_t> getQueueDepth() const;
+  /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
+  [[nodiscard]] std::optional<size_t> getQueueLength() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
   [[nodiscard]] std::optional<std::string> getLengthUnit() const;
@@ -691,6 +691,16 @@ public:
 
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;
+
+  /**
+   * @brief Gets the current number of jobs ahead of this job in its queue.
+   * @return The queue position, or `std::nullopt` if the device does not
+   * support queue-position queries.
+   * @throws std::runtime_error If the job is not currently queued or the
+   * provider status refresh fails.
+   * @see QDMI_JOB_PROPERTY_QUEUEPOSITION
+   */
+  [[nodiscard]] std::optional<size_t> getQueuePosition() const;
 
   /**
    * @brief Queries an implementation-defined custom job property.

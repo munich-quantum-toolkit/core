@@ -219,8 +219,12 @@ extern "C" int TEST_SESSION_QDMI_device_job_query_property(
     QDMI_Device_Job job, const QDMI_Device_Job_Property prop, const size_t size,
     void* value, size_t* sizeRet) {
   if (job == nullptr || job->session == nullptr ||
-      prop != QDMI_DEVICE_JOB_PROPERTY_ID) {
+      (prop != QDMI_DEVICE_JOB_PROPERTY_ID &&
+       prop != QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION)) {
     return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION) {
+    return QDMI_ERROR_NOTSUPPORTED;
   }
   return queryString("session-job", size, value, sizeRet);
 }

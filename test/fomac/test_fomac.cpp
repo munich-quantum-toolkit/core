@@ -348,7 +348,8 @@ TEST(FoMaCTest, DevicePropertyToString) {
                "SUPPORTED PROGRAM FORMATS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CHILDDEVICES),
                "CHILD DEVICES");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_QUEUEDEPTH), "QUEUE DEPTH");
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_QUEUELENGTH),
+               "QUEUE LENGTH");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_MAX), "MAX");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM1), "CUSTOM1");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM2), "CUSTOM2");
@@ -424,8 +425,8 @@ TEST_P(DeviceTest, NeedsCalibration) {
   EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
 }
 
-TEST_F(DDSimulatorDeviceTest, QueueDepthIsUnavailable) {
-  EXPECT_EQ(device.getQueueDepth(), std::nullopt);
+TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
+  EXPECT_EQ(device.getQueueLength(), std::nullopt);
 }
 
 TEST_P(DeviceTest, LengthUnit) {
@@ -834,6 +835,10 @@ c[0] = measure q[0];
       device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
+}
+
+TEST_F(JobTest, QueuePositionIsUnavailable) {
+  EXPECT_EQ(job.getQueuePosition(), std::nullopt);
 }
 
 TEST_F(JobTest, UnsupportedCustomPropertyAndResultReturnNullopt) {
