@@ -958,10 +958,12 @@ TEST(DeviceRegistrationTest,
   const auto idsBefore = driver.registeredDeviceIds();
   driver.registerDevice({.id = "test.enumeration.first",
                          .library = "/nonexistent/first-device-library",
-                         .prefix = "MISSING_FIRST"});
+                         .prefix = "MISSING_FIRST",
+                         .session = {}});
   driver.registerDevice({.id = "test.enumeration.second",
                          .library = "/nonexistent/second-device-library",
-                         .prefix = "MISSING_SECOND"});
+                         .prefix = "MISSING_SECOND",
+                         .session = {}});
 
   const auto idsAfter = driver.registeredDeviceIds();
   ASSERT_EQ(idsAfter.size(), idsBefore.size() + 2);
@@ -1026,12 +1028,14 @@ TEST(DeviceRegistrationTest,
 }
 
 TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
+  qdmi::DeviceSessionConfig sessionConfig;
+  sessionConfig.deviceConfiguration =
+      qdmi::InlineDeviceConfiguration{.json = R"({"name":"inline"})"};
   static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
       {.id = "test.typed-configuration",
        .library = MQT_CORE_QDMI_SESSION_DEVICE,
        .prefix = "TEST_SESSION",
-       .session = {.deviceConfiguration = qdmi::InlineDeviceConfiguration{
-                       .json = R"({"name":"inline"})"}}}));
+       .session = std::move(sessionConfig)}));
 
   const auto inlineDevice =
       fomac::Session::openDevice("test.typed-configuration");
@@ -1050,13 +1054,15 @@ TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
 
 TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
   auto& driver = qdmi::Driver::get();
+  qdmi::DeviceSessionConfig conflictingConfig;
+  conflictingConfig.deviceConfiguration =
+      qdmi::InlineDeviceConfiguration{.json = "{}"};
+  conflictingConfig.custom1 = "raw";
   const qdmi::DeviceDefinition definition{
       .id = "test.typed-conflict",
       .library = MQT_CORE_QDMI_SESSION_DEVICE,
       .prefix = "TEST_SESSION",
-      .session = {.deviceConfiguration =
-                      qdmi::InlineDeviceConfiguration{.json = "{}"},
-                  .custom1 = "raw"}};
+      .session = std::move(conflictingConfig)};
   EXPECT_THROW(driver.registerDevice(definition), std::invalid_argument);
 
   registerSessionTestDevice();

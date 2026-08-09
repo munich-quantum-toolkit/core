@@ -219,3 +219,13 @@ Revision note: Created the plan after comparing the live `main` and `v3.x` heads
 and the exact upstream pull requests. The initial scope deliberately separates
 v3-compatible library work from the v4-only compiler series. Updated the scope
 after proving that #1979's `QCToQIR` implementation does not exist on v3.x.
+
+Publication note: The selected changes were published as pull request #2024.
+Local validation passed for the QDMI driver, DD and ZX suites, Python 3.10 and
+3.14 boundaries, the Python 3.12 minimums environment, generated stubs, forced
+and cached documentation builds, and the complete lint session. The first CI
+revision passed the complete test matrix and documentation build. Its C++ lint
+job identified four Clang 22 missing-field-initializer diagnostics in newly
+backported QDMI test aggregates; the remediation explicitly initializes each
+device definition and constructs partial session configurations through normal
+assignment before rerunning the driver and lint suites.
