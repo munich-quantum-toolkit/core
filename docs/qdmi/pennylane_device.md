@@ -67,10 +67,10 @@ MQT Core selects the program format in the following order:
 3. A format error before job creation if neither format is available.
 
 The OpenQASM 3 converter selects operation spellings advertised by the QDMI
-device and validates the program against its topology. If conversion fails, MQT
-MQT Core reports the OpenQASM 3 error rather than retrying with OpenQASM 2. A device
-that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm` serializer
-after device preprocessing.
+device and validates the program against its topology. MQT Core reports
+conversion failures as OpenQASM 3 errors rather than retrying with OpenQASM 2. A
+device that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm`
+serializer after device preprocessing.
 
 ## End-to-end use case: finite-shot MaxCut QAOA
 

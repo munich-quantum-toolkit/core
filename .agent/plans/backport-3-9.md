@@ -10,16 +10,15 @@ repository root.
 ## Purpose / Big Picture
 
 MQT Core 3.9.0 should make gate-based QDMI devices usable through PennyLane
-without adopting the v4 compiler architecture. After this work, a Python 3.11
-or newer installation can install the optional `pennylane` extra, construct the
+without adopting the v4 compiler architecture. After this work, a Python 3.11 or
+newer installation can install the optional `pennylane` extra, construct the
 built-in DD-based simulator as `qp.device("mqt.ddsim.default", ...)`, and run
 finite-shot PennyLane programs through the same QDMI path used by external
-devices. The release also receives a small set of independent fixes and
-bindings that are valuable on the maintained v3 line and do not require
-LLVM/MLIR 22.
+devices. The release also receives a small set of independent fixes and bindings
+that are valuable on the maintained v3 line and do not require LLVM/MLIR 22.
 
-The observable end-to-end result is the executable PennyLane MaxCut notebook
-and the DDSIM tests under `test/python/plugins/qdmi_pennylane/`. Python 3.10
+The observable end-to-end result is the executable PennyLane MaxCut notebook and
+the DDSIM tests under `test/python/plugins/qdmi_pennylane/`. Python 3.10
 continues to install and test MQT Core without PennyLane.
 
 ## Progress
@@ -28,11 +27,15 @@ continues to install and test MQT Core without PennyLane.
   backport precedent, and inventoried changes merged after 3.8.0.
 - [x] (2026-08-09 08:20Z) Selected the v3-compatible functionality groups and
   recorded explicit exclusions.
-- [ ] Backport typed QDMI device configuration and stable device-ID enumeration.
-- [ ] Backport the independent DD serialization bindings and ZX
-  multi-controlled-X complexity improvement.
-- [ ] Port the PennyLane QDMI device, tests, packaging, and executable notebook.
-- [ ] Regenerate stubs and `uv.lock`, then run focused and broad validation.
+- [x] (2026-08-09 09:10Z) Backported typed QDMI device configuration and stable
+  device-ID enumeration.
+- [x] (2026-08-09 09:35Z) Backported the independent DD serialization bindings
+      and ZX multi-controlled-X complexity improvement.
+- [x] (2026-08-09 10:05Z) Ported the PennyLane QDMI device, tests, packaging,
+  and executable notebook.
+- [x] (2026-08-09 10:50Z) Regenerated stubs and `uv.lock`; completed the native
+      QDMI, DD, and ZX tests, the Python 3.10, minimums 3.12, and 3.14
+      boundaries, and both forced and cached documentation builds.
 - [ ] Publish the signed, functionality-scoped commit series as a pull request
   targeting `v3.x` and monitor its checks.
 
@@ -49,33 +52,33 @@ continues to install and test MQT Core without PennyLane.
   OpenQASM frontend changes depend on new v4 MLIR dialect contracts.
 - Observation: The QIR classical-result ordering fix from #1979 modifies the
   `QCToQIR` conversion, which does not exist on v3.x. Evidence: applying the
-  upstream change produces modify/delete conflicts for every implementation
-  and test file because those paths were introduced only with the v4 compiler
+  upstream change produces modify/delete conflicts for every implementation and
+  test file because those paths were introduced only with the v4 compiler
   collection.
 
 ## Decision Log
 
-- Decision: Backport the typed QDMI configuration transport before the
-  PennyLane device. Rationale: the public PennyLane constructor maps device
-  descriptions into this typed transport, and carrying that contract avoids a
-  v3-only adapter API. Date/Author: 2026-08-09 / Codex.
+- Decision: Backport the typed QDMI configuration transport before the PennyLane
+  device. Rationale: the public PennyLane constructor maps device descriptions
+  into this typed transport, and carrying that contract avoids a v3-only adapter
+  API. Date/Author: 2026-08-09 / Codex.
 - Decision: Backport registered device-ID enumeration before the PennyLane
   device. Rationale: PennyLane entry-point discovery and stable QDMI device IDs
   should use the same load-free enumeration API as `main`. Date/Author:
   2026-08-09 / Codex.
 - Decision: Include the DD serialization API and ZX multi-controlled-X
   complexity improvement as separate commits. Rationale: each is an
-  independently tested v3-compatible API or complexity improvement suitable
-  for a minor release. Date/Author: 2026-08-09 / Codex.
+  independently tested v3-compatible API or complexity improvement suitable for
+  a minor release. Date/Author: 2026-08-09 / Codex.
 - Decision: Exclude the LLVM/MLIR 22 compiler-target series, the typed OpenQASM
   frontend and emitter, QCO mapping fixes, specialized neutral-atom and
   superconducting runtime configuration, and routine dependency churn.
   Rationale: those changes either rely on the v4 compiler architecture, are
-  outside this gate-based integration, or do not justify expanding the
-  backport. Date/Author: 2026-08-09 / Codex.
-- Decision: Exclude #1979 after testing patch applicability. Rationale: v3.x
-  has no `QCToQIR` conversion to fix, and importing that subsystem would violate
-  the v3 compiler boundary. Date/Author: 2026-08-09 / Codex.
+  outside this gate-based integration, or do not justify expanding the backport.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: Exclude #1979 after testing patch applicability. Rationale: v3.x has
+  no `QCToQIR` conversion to fix, and importing that subsystem would violate the
+  v3 compiler boundary. Date/Author: 2026-08-09 / Codex.
 - Decision: Keep Python 3.10 as a base-package boundary and enable PennyLane on
   Python 3.11 through 3.14. Rationale: this matches the upstream plugin and
   prevents the optional dependency from constraining existing v3 deployments.
@@ -83,15 +86,22 @@ continues to install and test MQT Core without PennyLane.
 
 ## Outcomes & Retrospective
 
-Implementation and publication are in progress. This section will record the
-final commit series, exact validation evidence, and any remaining release work.
+The backport is split into independently reviewable commits for the two QDMI
+prerequisites, DD serialization, the ZX construction, and the PennyLane device.
+The QDMI driver suites passed 127 tests in total; the focused DD and ZX suites
+passed 7 tests; the Python DD bindings passed 16 tests; and the PennyLane suite
+passed 33 tests on Python 3.14, 10 tests with minimum dependencies on Python
+3.12, and its optional-dependency boundary on Python 3.10. Stub generation and
+both documentation builds completed successfully. The v3 documentation build
+retains its existing C++ and optional-MLIR warning baseline; the PennyLane
+notebook executes successfully. Publication and remote CI remain in progress.
 
 ## Context and Orientation
 
-`v3.x` is the maintained MQT Core 3 release line. It retains optional
-LLVM/MLIR 21 support, unlike `main`, which contains the v4 compiler collection
-and requires LLVM/MLIR 22. A backport therefore ports user-visible behavior
-against existing v3 interfaces rather than merging the complete `main` tree.
+`v3.x` is the maintained MQT Core 3 release line. It retains optional LLVM/MLIR
+21 support, unlike `main`, which contains the v4 compiler collection and
+requires LLVM/MLIR 22. A backport therefore ports user-visible behavior against
+existing v3 interfaces rather than merging the complete `main` tree.
 
 The QDMI driver lives under `include/mqt-core/qdmi/driver/` and
 `src/qdmi/driver/`. FoMaC exposes it to Python through
@@ -161,9 +171,9 @@ provide the non-Python integration boundary.
 ## Validation and Acceptance
 
 Acceptance requires QDMI driver tests to prove that typed configuration and
-registered-ID enumeration preserve ordering and do not eagerly load devices.
-DD serialization must round-trip terminal and non-terminal vector and matrix
-DDs in text and binary forms. The ZX tests must prove unitary equivalence,
+registered-ID enumeration preserve ordering and do not eagerly load devices. DD
+serialization must round-trip terminal and non-terminal vector and matrix DDs in
+text and binary forms. The ZX tests must prove unitary equivalence,
 dirty-workspace restoration, and a quadratic resource bound.
 
 On Python 3.11 or newer, `qp.device("mqt.ddsim.default", wires=2)` must execute
@@ -183,16 +193,15 @@ publication.
 All validation commands are repeatable. Builds, Nox environments, and caches
 remain worktree-local. If an upstream patch conflicts, abort only that
 in-progress application or resolve it against the current v3 file; never reset
-the worktree or discard unrelated changes. A failed lockfile update can be
-rerun after correcting `pyproject.toml` without changing committed source.
+the worktree or discard unrelated changes. A failed lockfile update can be rerun
+after correcting `pyproject.toml` without changing committed source.
 
 ## Artifacts and Notes
 
 The authoritative upstream functionality is represented by MQT Core pull
-requests #1967, #1972, #1983, #1984, and #2005. The 3.8.0 precedent is
-pull request #1966. Their changes are ported independently so reviewers can
-inspect or revert each capability without coupling it to the rest of the
-release series.
+requests #1967, #1972, #1983, #1984, and #2005. The 3.8.0 precedent is pull
+request #1966. Their changes are ported independently so reviewers can inspect
+or revert each capability without coupling it to the rest of the release series.
 
 ## Interfaces and Dependencies
 
@@ -203,11 +212,10 @@ PennyLane entry point. `QDMIDevice` must consume stable `device_id`, finite
 
 The `pennylane` optional extra must require a compatible PennyLane release only
 on Python 3.11 or newer. The base MQT Core installation and Python 3.10 test
-environment must not resolve or import PennyLane. No direct Amazon Braket SDK
-or device-specific dependency belongs in MQT Core.
+environment must not resolve or import PennyLane. No direct Amazon Braket SDK or
+device-specific dependency belongs in MQT Core.
 
-Revision note: Created the plan after comparing the live `main` and `v3.x`
-heads and the exact upstream pull requests. The initial scope deliberately
-separates v3-compatible library work from the v4-only compiler series. Updated
-the scope after proving that #1979's `QCToQIR` implementation does not exist on
-v3.x.
+Revision note: Created the plan after comparing the live `main` and `v3.x` heads
+and the exact upstream pull requests. The initial scope deliberately separates
+v3-compatible library work from the v4-only compiler series. Updated the scope
+after proving that #1979's `QCToQIR` implementation does not exist on v3.x.
