@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "Dialect/QC/Translation/ClassicalRegisterTestUtils.h"
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -139,10 +138,12 @@ protected:
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder,
                    const bool zeroInitializeClassicalRegisters) const {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
-    if (zeroInitializeClassicalRegisters) {
-      mqt::test::zeroInitializeClassicalRegisters(*module);
-    }
+    const auto initialization =
+        zeroInitializeClassicalRegisters
+            ? QCProgramBuilder::ClassicalRegisterInitialization::Zero
+            : QCProgramBuilder::ClassicalRegisterInitialization::Uninitialized;
+    auto module =
+        mqt::test::buildMLIRProgram(context.get(), builder, initialization);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }

@@ -481,9 +481,10 @@ static bool isLeadingZeroInitialization(memref::StoreOp storeOp,
   return true;
 }
 
-LogicalResult stripReturnedMeasurements(Operation* moduleOp,
-                                        LoweringState& state) {
+LogicalResult prepareClassicalResults(Operation* moduleOp,
+                                      LoweringState& state) {
   bool hasInvalidMemory = false;
+  SmallVector<memref::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
     // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
@@ -544,7 +545,7 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
       }
       if (!measureOp) {
         if (isLeadingZeroInitialization(storeOp, allocOp)) {
-          state.cregInitializations.insert(storeOp.getOperation());
+          consumedStores.push_back(storeOp);
           return;
         }
         storeOp.emitError(
@@ -564,6 +565,7 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
             "register locations during QIR conversion");
         hasInvalidMemory = true;
       }
+      consumedStores.push_back(storeOp);
     });
 
     const auto markRegisterForRecording = [&](const size_t registerIndex) {
@@ -617,7 +619,13 @@ LogicalResult stripReturnedMeasurements(Operation* moduleOp,
           keptReturnTypes));
     });
   });
-  return failure(hasInvalidMemory);
+  if (hasInvalidMemory) {
+    return failure();
+  }
+  for (auto storeOp : consumedStores) {
+    storeOp.erase();
+  }
+  return success();
 }
 
 } // namespace mlir

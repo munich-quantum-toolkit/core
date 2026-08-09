@@ -65,9 +65,6 @@ struct LoweringState {
   /// Destination register index and bit index of each stored measurement.
   DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
 
-  /// Leading stores that zero-initialize classical result registers.
-  DenseSet<Operation*> cregInitializations;
-
   /// Map from index to `StaticResult`
   DenseMap<int64_t, qir::StaticResult> staticResults;
 
@@ -174,29 +171,27 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
 /**
- * @brief Strips returned measurement results from function return statements
+ * @brief Prepares classical result registers for QIR conversion
  *
  * @details
- * Walks all `func::ReturnOp` operations in the module to identify operands
- * that correspond to measurement results. For each such operand:
- * - The defining operations are added to the `state` so that they are included
- * in the output recording.
- * - The operand is removed from the return statement.
+ * Inventories classical result registers, records the destination of each
+ * stored measurement, consumes supported classical-register stores, and strips
+ * classical results from `func::ReturnOp` operations so QIR output recording
+ * can replace them.
  *
- * Non-measurement return values are preserved. After stripping, the enclosing
- * `func::FuncOp` function type is updated to match the new return operands.
+ * A direct measurement-result store is consumed because the QIR measurement
+ * call writes to the corresponding result slot. A leading false store is
+ * consumed because Base and Adaptive QIR result storage starts at false.
+ * Other classical-register stores are rejected.
  *
  * This must be called **before** func-to-LLVM conversion, while
- * `func::ReturnOp` and `qc::MeasureOp` are still in the IR.
- *
- * Return values that are indirectly computed from measurement outcomes remain
- * unaffected.
+ * `func::ReturnOp`, `qc::MeasureOp`, and `memref::StoreOp` are still in the IR.
  *
  * @param moduleOp The top-level module operation to walk
- * @param state The lowering state; `returnedStaticResults` is populated
+ * @param state The lowering state populated for profile-specific conversion
  */
-[[nodiscard]] LogicalResult stripReturnedMeasurements(Operation* moduleOp,
-                                                      LoweringState& state);
+[[nodiscard]] LogicalResult prepareClassicalResults(Operation* moduleOp,
+                                                    LoweringState& state);
 
 /**
  * @brief Returns a result pointer for a measurement that does not write into a

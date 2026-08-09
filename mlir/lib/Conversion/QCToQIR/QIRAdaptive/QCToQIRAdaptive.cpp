@@ -238,34 +238,6 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
 };
 
 /**
- * @brief Erases `memref.store` operations
- *
- * @details
- * Measurement results are implicitly stored by `__quantum__qis__mz__body`.
- */
-struct ConvertMemRefStoreOp final
-    : StatefulOpConversionPattern<memref::StoreOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    if (getState().cregInitializations.contains(op.getOperation())) {
-      rewriter.eraseOp(op);
-      return success();
-    }
-    auto measureOp = op.getValueToStore().getDefiningOp<MeasureOp>();
-    if (!measureOp ||
-        !getState().cregMeasurements.contains(measureOp.getOperation())) {
-      return rewriter.notifyMatchFailure(
-          op, "unsupported classical-register store");
-    }
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-/**
  * @brief Converts memref.dealloc to QIR qubit-array release
  *
  * @par Example:
@@ -488,9 +460,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
                          ValueRange{adaptor.getQubit(), result});
 
     // Create read-result call if the result is used
-    if (op.getResult().use_empty() ||
-        (op.getResult().hasOneUse() &&
-         isa<memref::StoreOp>(*op.getResult().user_begin()))) {
+    if (op.getResult().use_empty()) {
       rewriter.eraseOp(op);
     } else {
       auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
@@ -515,7 +485,7 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefStoreOp,
+  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);
@@ -683,8 +653,8 @@ protected:
       }
     }
 
-    // Stage 2.0: Strip returned measurements from func::ReturnOp
-    if (failed(stripReturnedMeasurements(moduleOp, state))) {
+    // Stage 2.0: Prepare classical result registers
+    if (failed(prepareClassicalResults(moduleOp, state))) {
       signalPassFailure();
       return;
     }

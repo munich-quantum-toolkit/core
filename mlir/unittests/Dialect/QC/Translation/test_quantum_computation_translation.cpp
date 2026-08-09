@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "ClassicalRegisterTestUtils.h"
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/IfElseOperation.hpp"
@@ -129,9 +128,10 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference = mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder,
+      mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   ASSERT_TRUE(reference);
-  mqt::test::zeroInitializeClassicalRegisters(*reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
@@ -332,9 +332,10 @@ TEST_F(QuantumComputationTranslationTest,
   const auto referenceBuilder =
       mqt::test::namedBuilder("partiallyMeasuredRegisterControlReference",
                               partiallyMeasuredRegisterControlReference);
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference = mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder,
+      mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   ASSERT_TRUE(reference);
-  mqt::test::zeroInitializeClassicalRegisters(*reference);
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*reference)));
   ASSERT_TRUE(mlir::succeeded(runQCCleanupPipeline(*reference)));
 

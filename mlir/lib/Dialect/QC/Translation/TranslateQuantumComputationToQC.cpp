@@ -209,7 +209,6 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
   memrefs.reserve(cregPtrs.size());
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
-  const auto zero = cregPtrs.empty() ? Value{} : builder.boolConstant(false);
   for (const auto* reg : cregPtrs) {
     auto memref = builder.allocClassicalBitRegister(
         static_cast<int64_t>(reg->getSize()), reg->getName());
@@ -217,9 +216,6 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
     for (size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
       bitMap[globalIdx] = {memref, i};
-      auto index =
-          arith::ConstantIndexOp::create(builder, static_cast<int64_t>(i));
-      memref::StoreOp::create(builder, zero, memref, index.getResult());
     }
   }
 
@@ -913,7 +909,8 @@ translateOperations(QCProgramBuilder& builder,
 OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
-  QCProgramBuilder builder(context);
+  QCProgramBuilder builder(
+      context, QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   builder.initialize();
 
   // Allocate quantum registers using the builder

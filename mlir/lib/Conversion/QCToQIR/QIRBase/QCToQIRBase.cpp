@@ -180,34 +180,6 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
 };
 
 /**
- * @brief Erases `memref.store` operations
- *
- * @details
- * Measurement results are implicitly stored by `__quantum__qis__mz__body`.
- */
-struct ConvertMemRefStoreOp final
-    : StatefulOpConversionPattern<memref::StoreOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    if (getState().cregInitializations.contains(op.getOperation())) {
-      rewriter.eraseOp(op);
-      return success();
-    }
-    auto measureOp = op.getValueToStore().getDefiningOp<MeasureOp>();
-    if (!measureOp ||
-        !getState().cregMeasurements.contains(measureOp.getOperation())) {
-      return rewriter.notifyMatchFailure(
-          op, "unsupported classical-register store");
-    }
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-/**
  * @brief Erases memref.dealloc during the QIR Base Profile conversion
  */
 struct ConvertMemRefDeallocOp final
@@ -339,9 +311,10 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                         MLIRContext* ctx,
                                         LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefStoreOp,
-               ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCMeasureOp,
-               ConvertQCDeallocOp>(typeConverter, ctx, &state);
+  patterns
+      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
+           ConvertQCAllocOp, ConvertQCMeasureOp, ConvertQCDeallocOp>(
+          typeConverter, ctx, &state);
 }
 
 namespace {
@@ -480,8 +453,8 @@ protected:
 
     LoweringState state;
 
-    // Stage 1.0: Strip returned measurements from func::ReturnOp
-    if (failed(stripReturnedMeasurements(moduleOp, state))) {
+    // Stage 1.0: Prepare classical result registers
+    if (failed(prepareClassicalResults(moduleOp, state))) {
       signalPassFailure();
       return;
     }

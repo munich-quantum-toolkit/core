@@ -112,7 +112,12 @@ public:
   OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
                       MLIRContext& mlirContext)
       : program(typedProgram), context(mlirContext), emissionBudget(context),
-        builder(&context), qubitValues(program.registers.size()),
+        builder(&context,
+                program.openQASM2
+                    ? QCProgramBuilder::ClassicalRegisterInitialization::Zero
+                    : QCProgramBuilder::ClassicalRegisterInitialization::
+                          Uninitialized),
+        qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
         outputBitRegisters(program.registers.size(), false),
         bitValues(program.registers.size()),
@@ -2424,7 +2429,7 @@ private:
     const bool hasClassicalStorage = outputBitRegisters[statement.reg];
     size_t operationCount = 1 + static_cast<size_t>(hasClassicalStorage);
     if (program.openQASM2 && hasClassicalStorage) {
-      operationCount += 2 * static_cast<size_t>(declaration.width);
+      operationCount += 1 + (2 * static_cast<size_t>(declaration.width));
     }
     if (!emissionBudget.canConstruct(operationCount)) {
       return;
@@ -2437,14 +2442,6 @@ private:
     if (program.openQASM2) {
       auto zero = builder.boolConstant(false);
       llvm::fill(bitValues[statement.reg], zero);
-      if (hasClassicalStorage) {
-        const auto reg = classicalRegisters[statement.reg];
-        for (uint64_t bit = 0; bit < declaration.width; ++bit) {
-          auto index = arith::ConstantIndexOp::create(
-              builder, static_cast<int64_t>(bit));
-          memref::StoreOp::create(builder, zero, reg, index.getResult());
-        }
-      }
       return;
     }
     auto poison =
