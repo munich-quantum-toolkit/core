@@ -905,7 +905,13 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  const auto initialization =
+      StringRef(source).contains("OPENQASM 2")
+          ? qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero
+          : qc::QCProgramBuilder::ClassicalRegisterInitialization::
+                Uninitialized;
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
+                                               initialization);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

@@ -42,9 +42,16 @@ using namespace mlir::utils;
 namespace mlir::qc {
 
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
+    : QCProgramBuilder(context,
+                       ClassicalRegisterInitialization::Uninitialized) {}
+
+QCProgramBuilder::QCProgramBuilder(
+    MLIRContext* context,
+    const ClassicalRegisterInitialization registerInitialization)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)) {
+      ctx(context), module(ModuleOp::create(*this)),
+      classicalRegisterInitialization(registerInitialization) {
   ctx->loadDialect<QCDialect>();
 }
 
@@ -170,7 +177,16 @@ Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
   if (!name.empty()) {
     alloc->setAttr(CLASSICAL_REGISTER_NAME_ATTR, getStringAttr(name));
   }
-  return alloc.getResult();
+  const auto memref = alloc.getResult();
+  if (classicalRegisterInitialization ==
+      ClassicalRegisterInitialization::Zero) {
+    const auto zero = boolConstant(false);
+    for (int64_t bit = 0; bit < size; ++bit) {
+      auto index = arith::ConstantIndexOp::create(*this, bit);
+      memref::StoreOp::create(*this, zero, memref, index.getResult());
+    }
+  }
+  return memref;
 }
 
 //===----------------------------------------------------------------------===//
@@ -788,7 +804,15 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
     const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc) {
-  QCProgramBuilder builder(context);
+  return build(context, buildFunc,
+               ClassicalRegisterInitialization::Uninitialized);
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc,
+    const ClassicalRegisterInitialization registerInitialization) {
+  QCProgramBuilder builder(context, registerInitialization);
   builder.initialize();
   auto result = buildFunc(builder);
   builder.retype(ValueRange(result).getTypes());
@@ -798,7 +822,15 @@ OwningOpRef<ModuleOp> QCProgramBuilder::build(
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
     const function_ref<Value(QCProgramBuilder&)>& buildFunc) {
-  QCProgramBuilder builder(context);
+  return build(context, buildFunc,
+               ClassicalRegisterInitialization::Uninitialized);
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<Value(QCProgramBuilder&)>& buildFunc,
+    const ClassicalRegisterInitialization registerInitialization) {
+  QCProgramBuilder builder(context, registerInitialization);
   builder.initialize();
   auto result = buildFunc(builder);
   builder.retype(result.getType());

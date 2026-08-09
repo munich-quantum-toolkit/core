@@ -169,6 +169,14 @@ def test_device_needs_calibration(device: Device) -> None:
         assert isinstance(needs_cal, int)
 
 
+def test_device_queue_length(device: Device) -> None:
+    """Test that the optional device queue length is a non-negative integer."""
+    queue_length = device.queue_length()
+    if queue_length is not None:
+        assert isinstance(queue_length, int)
+        assert queue_length >= 0
+
+
 def test_device_length_unit(device: Device) -> None:
     """Test that the device length unit is a non-empty string."""
     lu = device.length_unit()
@@ -615,6 +623,17 @@ c[0] = measure q[0];
     job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
 
     assert job1.id != job2.id
+
+
+def test_job_queue_position_is_unavailable(submitted_job: Job) -> None:
+    """Test that DDSIM does not manufacture a queue position."""
+    assert submitted_job.queue_position is None
+
+
+def test_job_queue_position_is_none_after_completion(submitted_job: Job) -> None:
+    """Test that queue position is None when it no longer applies."""
+    assert submitted_job.wait()
+    assert submitted_job.queue_position is None
 
 
 def test_job_custom_property_and_result_unsupported(submitted_job: Job) -> None:
