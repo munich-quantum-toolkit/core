@@ -26,6 +26,7 @@ from mqt.core.fomac import (
     open_device,
     register_device,
     register_device_if_absent,
+    registered_device_ids,
 )
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
@@ -977,6 +978,19 @@ def test_register_device_if_absent_only_ignores_existing_id() -> None:
     assert not register_device_if_absent(definition)
     with pytest.raises(ValueError, match="library must not be empty"):
         register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
+
+
+def test_registered_device_ids_include_runtime_registrations_in_order() -> None:
+    """Stable-ID enumeration is ordered and does not load native libraries."""
+    ids_before = registered_device_ids()
+    register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
+    register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
+
+    assert registered_device_ids() == [
+        *ids_before,
+        "python.enumeration.first",
+        "python.enumeration.second",
+    ]
 
 
 def test_open_device_rejects_unknown_id() -> None:

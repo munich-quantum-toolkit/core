@@ -673,6 +673,14 @@ auto Driver::registerDeviceIfAbsent(DeviceDefinition definition) -> bool {
   return true;
 }
 
+auto Driver::registeredDeviceIds() const -> std::vector<std::string> {
+  std::vector<std::string> ids;
+  ids.reserve(definitions_.size());
+  std::ranges::transform(definitions_, std::back_inserter(ids),
+                         &DeviceDefinition::id);
+  return ids;
+}
+
 auto Driver::open(const std::string_view id) -> QDMI_Device {
   if (disabledDeviceIds_.contains(std::string(id))) {
     throw std::runtime_error("QDMI device ID '" + std::string(id) +
