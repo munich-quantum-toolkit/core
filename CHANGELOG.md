@@ -19,6 +19,11 @@ releases may include breaking changes.
 - ✨ Add typed runtime configuration transport and relocatable assets for QDMI
   device descriptions ([#1967]) ([**@burgholzer**])
 
+### Changed
+
+- 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
+  ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
+
 ## [3.8.0] - 2026-07-30
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
@@ -622,6 +627,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967

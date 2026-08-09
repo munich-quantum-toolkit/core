@@ -145,25 +145,49 @@ void FunctionalityConstruction::addMcphase(ZXDiagram& diag,
                                            const std::vector<Qubit>& controls,
                                            const Qubit target,
                                            std::vector<Vertex>& qubits) {
-  auto newConst = phase.getConst() / 2;
-  auto newPhase = phase / 2.0;
-  newPhase.setConst(newConst);
-  addZSpider(diag, target, qubits, newPhase);
-  addMcx(diag, controls, target, qubits);
-  addZSpider(diag, target, qubits, -newPhase);
-  addMcx(diag, controls, target, qubits);
-  switch (controls.size()) {
-  case 1:
-    addZSpider(diag, controls[0], qubits, newPhase);
+  if (controls.empty()) {
+    addZSpider(diag, target, qubits, phase);
     return;
-  case 2:
-    addCphase(diag, newPhase, controls[0], controls[1], qubits);
-    return;
-  default:
-    addMcphase(diag, newPhase,
-               std::vector<Qubit>(controls.begin(), controls.end() - 1),
-               controls.back(), qubits);
   }
+  if (controls.size() == 1) {
+    addCphase(diag, phase, controls.front(), target, qubits);
+    return;
+  }
+  if (controls.size() == 2) {
+    auto halfPhase = phase / 2.0;
+    halfPhase.setConst(phase.getConst() / 2);
+    addZSpider(diag, target, qubits, halfPhase);
+    addCcx(diag, controls.front(), controls.back(), target, qubits);
+    addZSpider(diag, target, qubits, -halfPhase);
+    addCcx(diag, controls.front(), controls.back(), target, qubits);
+    addCphase(diag, halfPhase, controls.front(), controls.back(), qubits);
+    return;
+  }
+
+  // Vale et al., Fig. 7 (arXiv:2302.06377): split the controls and use each
+  // half as dirty workspace for the other half. Recursing on the residual
+  // controlled phase yields an exact ancilla-free O(N^2) construction.
+  const auto firstSize = (controls.size() + 1) / 2;
+  const auto split = controls.begin() + static_cast<std::ptrdiff_t>(firstSize);
+  const std::vector<Qubit> first(controls.begin(), split);
+  const std::vector<Qubit> second(split, controls.end());
+  auto quarterPhase = phase / 4.0;
+  quarterPhase.setConst(phase.getConst() / 4);
+
+  addMcxWithDirtyAncillas(diag, first, target, second, qubits);
+  addZSpider(diag, target, qubits, -quarterPhase);
+  addMcxWithDirtyAncillas(diag, second, target, first, qubits);
+  addZSpider(diag, target, qubits, quarterPhase);
+  addMcxWithDirtyAncillas(diag, first, target, second, qubits);
+  addZSpider(diag, target, qubits, -quarterPhase);
+  addMcxWithDirtyAncillas(diag, second, target, first, qubits);
+  addZSpider(diag, target, qubits, quarterPhase);
+
+  auto halfPhase = phase / 2.0;
+  halfPhase.setConst(phase.getConst() / 2);
+  addMcphase(diag, halfPhase,
+             std::vector<Qubit>(controls.begin(), controls.end() - 1),
+             controls.back(), qubits);
 }
 
 void FunctionalityConstruction::addRzz(
@@ -496,6 +520,58 @@ void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
   addMcx(diag, controls, target, qubits);
 }
 
+void FunctionalityConstruction::addMcxWithDirtyAncillas(
+    ZXDiagram& diag, const std::vector<Qubit>& controls, const Qubit target,
+    const std::vector<Qubit>& ancillas, std::vector<Vertex>& qubits) {
+  switch (controls.size()) {
+  case 0:
+    addXSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
+    return;
+  case 1:
+    addCnot(diag, controls.front(), target, qubits);
+    return;
+  case 2:
+    addCcx(diag, controls.front(), controls.back(), target, qubits);
+    return;
+  default:
+    break;
+  }
+
+  const auto requiredAncillas = controls.size() - 2;
+  if (ancillas.size() < requiredAncillas) {
+    throw ZXException("Insufficient dirty ancillas for MCX decomposition");
+  }
+
+  const auto addAction = [&](const Qubit control0, const Qubit control1,
+                             const Qubit actionTarget) {
+    addZSpider(diag, actionTarget, qubits, PiExpression(), EdgeType::Hadamard);
+    addZSpider(diag, actionTarget, qubits, PiExpression(PiRational(1, 4)));
+    addCnot(diag, control0, actionTarget, qubits);
+    addZSpider(diag, actionTarget, qubits, PiExpression(PiRational(-1, 4)));
+    addCnot(diag, control1, actionTarget, qubits);
+  };
+  const auto addReset = [&](const Qubit control0, const Qubit control1,
+                            const Qubit actionTarget) {
+    addCnot(diag, control1, actionTarget, qubits);
+    addZSpider(diag, actionTarget, qubits, PiExpression(PiRational(1, 4)));
+    addCnot(diag, control0, actionTarget, qubits);
+    addZSpider(diag, actionTarget, qubits, PiExpression(PiRational(-1, 4)));
+    addZSpider(diag, actionTarget, qubits, PiExpression(), EdgeType::Hadamard);
+  };
+
+  for (std::size_t pass = 0; pass < 2; ++pass) {
+    addCcx(diag, controls.back(), ancillas[requiredAncillas - 1], target,
+           qubits);
+    for (auto i = requiredAncillas - 1; i-- > 0;) {
+      addAction(controls[i + 2], ancillas[i], ancillas[i + 1]);
+    }
+    addRccx(diag, controls[0], controls[1], ancillas[0], qubits);
+    for (std::size_t i = 0; i + 1 < requiredAncillas; ++i) {
+      addReset(controls[i + 2], ancillas[i], ancillas[i + 1]);
+    }
+  }
+}
+
 void FunctionalityConstruction::addMcx(ZXDiagram& diag,
                                        std::vector<Qubit> controls,
                                        const Qubit target,
@@ -508,30 +584,11 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
     addCcx(diag, controls.front(), controls.back(), target, qubits);
     return;
   default:
-    const auto half = static_cast<std::ptrdiff_t>((controls.size() + 1) / 2);
-    const std::vector<Qubit> first(controls.begin(), controls.begin() + half);
-    const std::vector<Qubit> second(controls.begin() + half, controls.end());
-
-    addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
+    // MCX = H · MCP(pi) · H. The Vale-style MCP construction uses O(N^2)
+    // spiders and no qubits beyond the controls and target.
     addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addMcx(diag, first, target, qubits);
+    addMcphase(diag, PiExpression(PiRational(1, 1)), controls, target, qubits);
     addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
-    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addMcx(diag, second, target, qubits);
-    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
-    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addMcx(diag, first, target, qubits);
-    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
-    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    addMcx(diag, second, target, qubits);
-    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-    const Qubit lastControl = controls.back();
-    controls.pop_back();
-    addMcphase(diag, PiExpression(PiRational(1, 2)), controls, lastControl,
-               qubits);
   }
 }
 
