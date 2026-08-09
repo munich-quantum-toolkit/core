@@ -45,13 +45,16 @@ class OutputFormat(enum.Enum):
     OPENQASM3 = 4
     """OpenQASM 3 after the optimized QCO round trip."""
 
-    JEFF = 5
+    QUAKE = 5
+    """CUDA-Q reference-form Quake after the optimized QCO round trip."""
+
+    JEFF = 6
     """Serializable ``jeff`` MLIR."""
 
-    QIR_BASE = 6
+    QIR_BASE = 7
     """QIR for the Base Profile."""
 
-    QIR_ADAPTIVE = 7
+    QIR_ADAPTIVE = 8
     """QIR for the Adaptive Profile."""
 
 class CompilerTarget:
@@ -315,6 +318,29 @@ class Program:
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
 
+class QuakeProgram(Program):
+    """A CUDA-Q reference-form Quake program.
+
+    The program contains textual-schema-compatible Quake without linking CUDA-Q.
+    """
+
+    @staticmethod
+    def from_mlir_str(source: str) -> QuakeProgram:
+        """Parse a textual Quake MLIR source string."""
+
+    @staticmethod
+    def from_mlir_file(path: str | os.PathLike) -> QuakeProgram:
+        """Parse textual Quake MLIR from a file."""
+
+    def copy(self) -> QuakeProgram:
+        """Return an independent copy of this program."""
+
+    def to_qc(self, *, copy: bool = False) -> QCProgram:
+        """Translate this reference-form Quake program to QC.
+
+        Set ``copy=True`` to preserve it.
+        """
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
@@ -362,6 +388,15 @@ class QCProgram(Program):
         """Convert this program to QCO.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    def to_quake(
+        self, *, name: str = "mqt_kernel", ignore_global_phase: bool = False, copy: bool = False
+    ) -> QuakeProgram:
+        """Translate this QC program to CUDA-Q reference-form Quake.
+
+        Set ``ignore_global_phase=True`` to explicitly drop a nonzero global phase and
+        ``copy=True`` to preserve this program.
         """
 
     def to_qir(self, profile: QIRProfile, *, copy: bool = False) -> QIRProgram:

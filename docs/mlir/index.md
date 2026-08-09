@@ -22,6 +22,8 @@ We define multiple dialects, each with its dedicated purpose:
   collections of qubits such as registers.
 - The {doc}`OpenQASM support <OpenQASM>` translates supported OpenQASM input
   directly to QC and emits structured OpenQASM from QC.
+- The {doc}`CUDA-Q interoperability <CUDAQuake>` page demonstrates native
+  reference-form Quake conversion without linking CUDA-Q.
 
 These dialects define various canonicalization and transformation passes that
 enable the compilation of quantum programs to native quantum hardware. For
@@ -36,6 +38,7 @@ QC
 QCO
 QTensor
 OpenQASM
+CUDAQuake
 Conversions
 ```
 

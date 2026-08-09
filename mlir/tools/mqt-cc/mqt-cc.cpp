@@ -17,6 +17,8 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h"
+#include "mlir/Dialect/CUDAQuake/Translation/QuakeQCTranslation.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -72,12 +74,13 @@ using namespace mlir;
 // Command-line options
 static llvm::cl::opt<std::string>
     inputFilename(llvm::cl::Positional,
-                  llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
+                  llvm::cl::desc("<input .jeff/.mlir/.qasm/.qke file>"),
                   llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> inputFormat(
     "input-format",
-    llvm::cl::desc("Input format: auto, jeff, mlir, or qasm (default: auto)"),
+    llvm::cl::desc(
+        "Input format: auto, jeff, mlir, qasm, or quake (default: auto)"),
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
 static llvm::cl::opt<std::string>
@@ -88,7 +91,7 @@ static llvm::cl::opt<std::string> outputFormat(
     "emit",
     llvm::cl::desc(
         "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
-        "qir-adaptive, openqasm3, or jeff"),
+        "qir-adaptive, openqasm3, quake, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
 
 static llvm::cl::opt<bool>
@@ -107,14 +110,15 @@ static llvm::cl::opt<std::string> qdmiConfig(
     llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
 namespace {
-enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
-enum class InputDialect : std::uint8_t { QC, QCO };
+enum class InputFormat : std::uint8_t { MLIR, QASM, Quake, Jeff };
+enum class InputDialect : std::uint8_t { QC, QCO, Quake };
 enum class OutputFormat : std::uint8_t {
   QCImport,
   QC,
   QCO,
   QCOOptimized,
   OpenQASM3,
+  Quake,
   QIRBase,
   QIRAdaptive,
   Jeff
@@ -136,6 +140,9 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   }
   if (format == "qasm" || (format == "auto" && filename.ends_with(".qasm"))) {
     return InputFormat::QASM;
+  }
+  if (format == "quake" || (format == "auto" && filename.ends_with(".qke"))) {
+    return InputFormat::Quake;
   }
   if (format == "jeff" || (format == "auto" && filename.ends_with(".jeff"))) {
     return InputFormat::Jeff;
@@ -167,6 +174,9 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   if (moduleUsesDialect(mod, "qco")) {
     return InputDialect::QCO;
   }
+  if (moduleUsesDialect(mod, "quake")) {
+    return InputDialect::Quake;
+  }
   return InputDialect::QC;
 }
 
@@ -189,6 +199,9 @@ parseOutputFormat(const StringRef format) {
   }
   if (format == "openqasm3") {
     return OutputFormat::OpenQASM3;
+  }
+  if (format == "quake") {
+    return OutputFormat::Quake;
   }
   if (format == "qir-base") {
     return OutputFormat::QIRBase;
@@ -379,6 +392,24 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   return success();
 }
 
+static LogicalResult writeTextualMLIROutput(ModuleOp mod,
+                                            const StringRef filename) {
+  std::string errorMessage;
+  const auto output = openOutputFile(filename, &errorMessage);
+  if (!output) {
+    llvm::errs() << errorMessage << "\n";
+    return failure();
+  }
+  mod.print(output->os());
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    return failure();
+  }
+  output->keep();
+  return success();
+}
+
 static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
@@ -447,11 +478,12 @@ static int runCompiler(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry
-      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-              LLVM::LLVMDialect, math::MathDialect, memref::MemRefDialect,
-              qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-              scf::SCFDialect, jeff::JeffDialect>();
+  registry.insert<
+      arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+      LLVM::LLVMDialect, math::MathDialect, memref::MemRefDialect,
+      qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+      cudaq_compat::quake::QuakeCompatDialect,
+      cudaq_compat::cc::CCCompatDialect, scf::SCFDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 
@@ -467,12 +499,25 @@ static int runCompiler(int argc, char** argv) {
   case InputFormat::QASM:
     program.mod = loadQASMFile(inputFilename, &context);
     break;
+  case InputFormat::Quake:
+    program.mod = loadMLIRFile(inputFilename, &context);
+    program.dialect = InputDialect::Quake;
+    break;
   case InputFormat::Jeff:
     program = loadJeffFile(inputFilename, &context);
     break;
   }
   if (!program.mod) {
     return 1;
+  }
+
+  if (program.dialect == InputDialect::Quake) {
+    auto translated = cudaq_compat::translateQuakeToQC(*program.mod);
+    if (failed(translated)) {
+      return 1;
+    }
+    program.mod = std::move(*translated);
+    program.dialect = InputDialect::QC;
   }
 
   if (*parsedOutputFormat == OutputFormat::QCImport &&
@@ -557,6 +602,7 @@ static int runCompiler(int argc, char** argv) {
 
   if ((*parsedOutputFormat == OutputFormat::QC ||
        *parsedOutputFormat == OutputFormat::OpenQASM3 ||
+       *parsedOutputFormat == OutputFormat::Quake ||
        *parsedOutputFormat == OutputFormat::QIRBase ||
        *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
       failed(runPasses([](OpPassManager& pm) {
@@ -585,6 +631,14 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
+  if (*parsedOutputFormat == OutputFormat::Quake) {
+    auto translated = cudaq_compat::translateQCToQuake(*program.mod);
+    if (failed(translated)) {
+      return 1;
+    }
+    program.mod = std::move(*translated);
+  }
+
   // Write the output
   if (*parsedOutputFormat == OutputFormat::Jeff) {
     if (writeJeffOutput(*program.mod, outputFilename).failed()) {
@@ -602,6 +656,10 @@ static int runCompiler(int argc, char** argv) {
       return 1;
     }
     output->keep();
+  } else if (*parsedOutputFormat == OutputFormat::Quake) {
+    if (writeTextualMLIROutput(*program.mod, outputFilename).failed()) {
+      return 1;
+    }
   } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
              *parsedOutputFormat == OutputFormat::QIRAdaptive) {
     llvm::LLVMContext llvmContext;

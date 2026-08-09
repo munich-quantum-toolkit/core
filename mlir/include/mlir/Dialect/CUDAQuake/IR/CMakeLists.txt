@@ -6,9 +6,5 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QCO)
-add_subdirectory(QIR)
-add_subdirectory(QC)
-add_subdirectory(QTensor)
-add_subdirectory(CUDAQuake)
-add_subdirectory(Utils)
+add_mlir_dialect(QuakeCompatOps quake)
+add_mlir_dialect(CCCompatOps cc)

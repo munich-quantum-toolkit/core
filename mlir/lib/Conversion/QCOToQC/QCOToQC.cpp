@@ -577,6 +577,7 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
 
     // Create qc.measure (in-place operation, returns only bit)
     auto qcOp = qc::MeasureOp::create(rewriter, op.getLoc(), qcQubit);
+    qcOp->setAttrs(op->getAttrs());
 
     auto measureBit = qcOp.getResult();
 

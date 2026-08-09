@@ -30,6 +30,7 @@ from mqt.core.mlir import (
     QCProgram,
     QIRProfile,
     QIRProgram,
+    QuakeProgram,
     compile_program,
 )
 
@@ -62,6 +63,19 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 bit[2] c = measure q;
+"""
+
+QUAKE_STRING = r"""module attributes {quake.mangled_name_map = {bell = "bell_PyKernelEntryPointRewrite"}} {
+  func.func @bell() attributes {"cudaq-entrypoint", "cudaq-kernel"} {
+    %q = quake.alloca !quake.veq<2>
+    %q0 = quake.extract_ref %q[0] : (!quake.veq<2>) -> !quake.ref
+    %q1 = quake.extract_ref %q[1] : (!quake.veq<2>) -> !quake.ref
+    quake.h %q0 : (!quake.ref) -> ()
+    quake.x [%q0] %q1 : (!quake.ref, !quake.ref) -> ()
+    %m = quake.mz %q name "result" : (!quake.veq<2>) -> !cc.stdvec<!cc.measure_handle>
+    return
+  }
+}
 """
 
 
@@ -128,6 +142,38 @@ def test_compile_program_mlir_file_named_module(tmp_path: Path) -> None:
 
     assert isinstance(result, QCProgram)
     assert result.ir == MLIR_STRING
+
+
+def test_quake_program_converts_through_qc() -> None:
+    """Convert reference-form Quake to QC and back through the public API."""
+    quake = QuakeProgram.from_mlir_str(QUAKE_STRING)
+    qc = quake.to_qc(copy=True)
+
+    assert quake.is_valid
+    assert qc.is_valid
+    assert qc.ir.count("qc.alloc") == 2
+    assert qc.ir.count("qc.h ") == 1
+    assert qc.ir.count("qc.ctrl(") == 1
+    assert qc.ir.count("qc.measure") == 2
+    assert 'register_name = "result"' in qc.ir
+
+    emitted = qc.to_quake(name="mqt_bell", copy=True)
+    assert qc.is_valid
+    assert "@mqt_bell" in emitted.ir
+    assert 'mqt_bell = "mqt_bell_PyKernelEntryPointRewrite"' in emitted.ir
+    assert "__nvqpp__mlirgen__bell" not in emitted.ir
+
+
+def test_compile_program_accepts_qke_files(tmp_path: Path) -> None:
+    """Recognize the Quake file extension in the coordinated compiler."""
+    path = tmp_path / "bell.qke"
+    path.write_text(QUAKE_STRING, encoding="utf-8")
+
+    result = compile_program(path, output=OutputFormat.QC_IMPORT)
+
+    assert isinstance(result, QCProgram)
+    assert result.ir.count("qc.alloc") == 2
+    assert result.ir.count("qc.measure") == 2
 
 
 def test_compile_program_rejects_unsupported_file(tmp_path: Path) -> None:

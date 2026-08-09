@@ -56,6 +56,7 @@ add_mlir_library(
   MLIRTransforms
   MLIRTransformUtils
   MLIRMQTTransforms
+  MLIRCUDAQuakeTranslation
   MLIRQCToQCO
   MLIRQCOToQC
   MLIRQCOToJeff

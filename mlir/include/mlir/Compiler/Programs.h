@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/CUDAQuake/Translation/QuakeQCTranslation.h"
+
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -34,6 +36,7 @@ namespace mlir {
 
 class QCProgram;
 class QCOProgram;
+class QuakeProgram;
 class JeffProgram;
 class OpenQASMProgram;
 class QIRProgram;
@@ -63,6 +66,8 @@ enum class ProgramFormat : uint8_t {
   QC,
   /// Portable OpenQASM after the optimized QCO round trip.
   OpenQASM3,
+  /// CUDA-Q reference-form Quake after the optimized QCO round trip.
+  Quake,
   /// Serializable `jeff` MLIR.
   Jeff,
   /// QIR for the Base Profile.
@@ -70,6 +75,8 @@ enum class ProgramFormat : uint8_t {
   /// QIR for the Adaptive Profile.
   QIRAdaptive,
 };
+
+using QuakeExportOptions = cudaq_compat::QuakeExportOptions;
 
 /**
  * @brief A move-aware MLIR program with a shared dialect context.
@@ -134,6 +141,28 @@ private:
 };
 
 /**
+ * @brief A CUDA-Q reference-form Quake program.
+ */
+class QuakeProgram final : public Program {
+public:
+  explicit QuakeProgram(Storage storage) : Program(std::move(storage)) {}
+
+  /// Parse textual CUDA-Q reference-form Quake MLIR.
+  [[nodiscard]] static std::optional<QuakeProgram>
+  fromMLIRString(std::string_view source);
+
+  /// Parse textual CUDA-Q reference-form Quake MLIR from a file.
+  [[nodiscard]] static std::optional<QuakeProgram>
+  fromMLIRFile(const std::filesystem::path& path);
+
+  /// Create an independent Quake program copy.
+  [[nodiscard]] QuakeProgram copy() const;
+
+  /// Consume this program and translate it to QC.
+  [[nodiscard]] std::optional<QCProgram> intoQC() &&;
+};
+
+/**
  * @brief A QC program with reference semantics.
  */
 class QCProgram final : public Program {
@@ -174,6 +203,10 @@ public:
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
+
+  /// Consume this program and translate it to CUDA-Q reference-form Quake.
+  [[nodiscard]] std::optional<QuakeProgram>
+  intoQuake(const QuakeExportOptions& options = {}) &&;
 
   /// Consume this program and lower it to QIR.
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
@@ -304,12 +337,12 @@ private:
 };
 
 /// Valid input variants for the default compiler pipeline.
-using CompilerInput =
-    std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram>;
+using CompilerInput = std::variant<QCProgram, QCOProgram, QuakeProgram,
+                                   JeffProgram, OpenQASMProgram>;
 
 /// The program variants returned by the default compiler pipeline.
-using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
-                                     OpenQASMProgram, QIRProgram>;
+using CompilerProgram = std::variant<QCProgram, QCOProgram, QuakeProgram,
+                                     JeffProgram, OpenQASMProgram, QIRProgram>;
 
 /**
  * @brief Run the coordinated default compiler pipeline.

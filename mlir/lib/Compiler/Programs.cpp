@@ -18,6 +18,8 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h"
+#include "mlir/Dialect/CUDAQuake/Translation/QuakeQCTranslation.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -82,10 +84,12 @@ namespace mlir {
 
 [[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
-  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect,
-                  memref::MemRefDialect, jeff::JeffDialect>();
+  registry
+      .insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+              cudaq_compat::quake::QuakeCompatDialect,
+              cudaq_compat::cc::CCCompatDialect, arith::ArithDialect,
+              cf::ControlFlowDialect, func::FuncDialect, scf::SCFDialect,
+              LLVM::LLVMDialect, memref::MemRefDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 
@@ -239,6 +243,37 @@ bool OpenQASMProgram::write(const std::filesystem::path& path) const {
 }
 
 //===----------------------------------------------------------------------===//
+// QuakeProgram
+//===----------------------------------------------------------------------===//
+
+std::optional<QuakeProgram>
+QuakeProgram::fromMLIRString(const std::string_view source) {
+  return parseTypedProgram<QuakeProgram>(
+      "quake", [source](MLIRContext* context) {
+        return parseMLIRString(context, source);
+      });
+}
+
+std::optional<QuakeProgram>
+QuakeProgram::fromMLIRFile(const std::filesystem::path& path) {
+  return parseTypedProgram<QuakeProgram>(
+      "quake",
+      [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
+}
+
+QuakeProgram QuakeProgram::copy() const { return QuakeProgram(cloneStorage()); }
+
+std::optional<QCProgram> QuakeProgram::intoQC() && {
+  auto translated = cudaq_compat::translateQuakeToQC(mod());
+  if (failed(translated)) {
+    return std::nullopt;
+  }
+  auto storage = std::move(*this).releaseStorage();
+  storage.mod = std::move(*translated);
+  return QCProgram(std::move(storage));
+}
+
+//===----------------------------------------------------------------------===//
 // QCProgram
 //===----------------------------------------------------------------------===//
 
@@ -327,6 +362,17 @@ std::optional<QCOProgram> QCProgram::intoQCO() && {
     return std::nullopt;
   }
   return QCOProgram(std::move(*this).releaseStorage());
+}
+
+std::optional<QuakeProgram>
+QCProgram::intoQuake(const QuakeExportOptions& options) && {
+  auto translated = cudaq_compat::translateQCToQuake(mod(), options);
+  if (failed(translated)) {
+    return std::nullopt;
+  }
+  auto storage = std::move(*this).releaseStorage();
+  storage.mod = std::move(*translated);
+  return QuakeProgram(std::move(storage));
 }
 
 std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
@@ -672,8 +718,14 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
         return CompilerProgram(std::move(*qc));
       }
     }
-    llvm::errs() << "QCImport output is only available for QC or OpenQASM "
-                    "input.\n";
+    if (std::holds_alternative<QuakeProgram>(program)) {
+      auto qc = std::move(std::get<QuakeProgram>(program)).intoQC();
+      if (qc) {
+        return CompilerProgram(std::move(*qc));
+      }
+    }
+    llvm::errs() << "QCImport output is only available for QC, Quake, or "
+                    "OpenQASM input.\n";
     return std::nullopt;
   }
 
@@ -684,6 +736,12 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
           return std::forward<T>(value);
         } else if constexpr (std::is_same_v<ProgramType, OpenQASMProgram>) {
           auto qc = QCProgram::fromQASMString(value.source());
+          if (!qc) {
+            return std::nullopt;
+          }
+          return std::move(*qc).intoQCO();
+        } else if constexpr (std::is_same_v<ProgramType, QuakeProgram>) {
+          auto qc = std::forward<T>(value).intoQC();
           if (!qc) {
             return std::nullopt;
           }
@@ -736,6 +794,13 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
       return std::nullopt;
     }
     return CompilerProgram(std::move(*openQASM));
+  }
+  if (output == ProgramFormat::Quake) {
+    auto quake = std::move(*qc).intoQuake();
+    if (!quake) {
+      return std::nullopt;
+    }
+    return CompilerProgram(std::move(*quake));
   }
 
   const auto profile = output == ProgramFormat::QIRAdaptive
