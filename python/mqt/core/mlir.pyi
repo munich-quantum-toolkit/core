@@ -358,6 +358,9 @@ class QCProgram(Program):
     def to_openqasm3(self) -> OpenQASMProgram:
         """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
 
+    def to_qiskit(self) -> qiskit.circuit.QuantumCircuit:
+        """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it."""
+
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.
 
@@ -637,3 +640,6 @@ def compile_program(
     Returns:
         A typed compiler program for the requested output format.
     """
+
+def _qiskit_compiler_bridge_available() -> bool:
+    """Whether the installed final Qiskit release has a compiler adapter."""

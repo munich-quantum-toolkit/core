@@ -108,8 +108,13 @@ public:
    */
   void initialize(TypeRange returnTypes);
 
-  /** Initialize the entry point with explicit input and return types. */
-  void initialize(TypeRange inputTypes, TypeRange returnTypes);
+  /**
+   * @brief Initialize a program with explicit entry-point inputs and results.
+   * @param inputTypes The input types for the main function
+   * @param returnTypes The return types for the main function
+   * @return The entry block arguments corresponding to @p inputTypes
+   */
+  SmallVector<Value> initialize(TypeRange inputTypes, TypeRange returnTypes);
 
   /**
    * @brief Modify the return types of the main function after initialization.
@@ -150,6 +155,9 @@ public:
    * ```
    */
   Value intConstant(int64_t value);
+
+  /** Create a constant double-precision floating-point value. */
+  Value floatConstant(double value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -994,6 +1002,9 @@ public:
    * ```
    */
   QCProgramBuilder& barrier(ValueRange qubits);
+
+  /** Apply an explicitly represented dense unitary matrix. */
+  QCProgramBuilder& unitary(ValueRange qubits, DenseElementsAttr matrix);
 
   //===--------------------------------------------------------------------===//
   // Modifiers

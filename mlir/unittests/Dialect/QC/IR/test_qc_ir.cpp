@@ -37,6 +37,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <array>
@@ -288,6 +289,48 @@ TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getQubits().front(), qubit);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+TEST_F(QCTest, DenseUnitaryParsesPrintsAndVerifies) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    qc.unitary dense<[[(0.0,0.0), (1.0,0.0)],
+                      [(1.0,0.0), (0.0,0.0)]]>
+        : tensor<2x2xcomplex<f64>> %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  std::string printed;
+  llvm::raw_string_ostream stream(printed);
+  module->print(stream);
+  auto reparsed = parseSourceString<ModuleOp>(stream.str(), context.get());
+  ASSERT_TRUE(reparsed);
+  EXPECT_TRUE(succeeded(verify(*reparsed)));
+}
+
+TEST_F(QCTest, DenseUnitaryRejectsDimensionThatDoesNotMatchQubitArity) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    qc.unitary dense<(0.0,0.0)> : tensor<3x3xcomplex<f64>> %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  EXPECT_FALSE(module);
 }
 
 namespace {

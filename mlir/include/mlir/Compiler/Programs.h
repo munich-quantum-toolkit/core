@@ -30,6 +30,10 @@ namespace qc {
 class QuantumComputation;
 } // namespace qc
 
+namespace mqt::bindings::qiskit {
+class QCProgramAccess;
+} // namespace mqt::bindings::qiskit
+
 namespace mlir {
 
 class QCProgram;
@@ -177,6 +181,9 @@ public:
 
   /// Consume this program and lower it to QIR.
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
+
+private:
+  friend class ::mqt::bindings::qiskit::QCProgramAccess;
 };
 
 /**

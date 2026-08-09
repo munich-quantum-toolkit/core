@@ -124,6 +124,67 @@ indices. Dynamic indexing, dynamic ranges, surviving runtime assertions,
 checked-index machinery, and live poison values fail with an MLIR diagnostic.
 See {doc}`OpenQASM` for the complete support table.
 
+## Use Qiskit circuits directly
+
+Install the optional Qiskit integration with {code}`mqt-core[qiskit]`. Final
+Qiskit 2.5 releases can be translated directly between
+{py:class}`~qiskit.circuit.QuantumCircuit` and
+{py:class}`~mqt.core.mlir.QCProgram`:
+
+```{code-cell} ipython3
+from qiskit import QuantumCircuit
+
+qiskit_bell = QuantumCircuit(2, 2)
+qiskit_bell.h(0)
+qiskit_bell.cx(0, 1)
+qiskit_bell.measure(range(2), range(2))
+
+direct = QCProgram.from_qiskit(qiskit_bell)
+restored = direct.to_qiskit()
+compiled_qiskit = compile_program(qiskit_bell)
+
+assert direct.is_valid  # Export does not consume the QC program.
+assert restored.count_ops() == qiskit_bell.count_ops()
+assert compiled_qiskit.is_valid
+```
+
+This compiler route uses Qiskit's experimental C API inside the existing MLIR
+extension. It does not construct an intermediate
+{py:class}`~mqt.core.ir.QuantumComputation`. The legacy
+{py:func}`~mqt.core.plugins.qiskit.qiskit_to_mqt`,
+{py:func}`~mqt.core.plugins.qiskit.mqt_to_qiskit`, and {py:func}`mqt.core.load`
+interfaces remain independent and retain their existing version range and
+behavior.
+
+Import supports standard gates and their exact control, inverse, and power
+forms; dense unitaries; global phase; measurement; reset; barriers; numeric and
+bare-symbol parameters; and register membership. Supported nested
+{code}`if`/{code}`else`, {code}`while`, {code}`for`, and {code}`switch` regions
+are lowered to SCF. Classical conditions may use bits or registers directly, or
+inspectable Boolean, unsigned-integer (up to 64 bits), and floating-point
+expression trees.
+
+Export supports the flat subset that Qiskit's 2.5 C API can construct. It
+rejects surviving structured control or classical execution, overlapping or
+otherwise non-constructible register layouts, and operations without an exact
+native representation before allocating the output circuit. Import similarly
+rejects custom instructions, delays, boxes, break/continue, composite symbolic
+parameters, duration/stretch expressions, unsafe integer widths, and other
+unsupported classical types with an explicit diagnostic.
+
+The binding imports Qiskit only when one of these compiler bridge entry points
+is called. It accepts the installed package only when its complete version is a
+final release in the registered {code}`>=2.5.0,<2.6.0` range, then verifies the
+capsule's reported major/minor version. Unsupported or prerelease packages fail
+before capsule access; there is no user override. Weekly upstream CI separately
+builds a non-shipping adapter for the exact Qiskit development version.
+
+The supported-minor registry is experimental, release-specific compatibility
+metadata rather than an MQT Core major-version guarantee. Support for a Qiskit
+minor may be removed in an MQT Core minor release with a changelog and
+documentation update. A patch release may remove an adapter only when it is
+unsafe or broken.
+
 ## Run passes explicitly
 
 {code}`QCProgram`, {code}`QCOProgram`, {code}`JeffProgram`, and

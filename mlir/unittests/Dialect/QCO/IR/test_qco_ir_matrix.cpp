@@ -205,6 +205,35 @@ protected:
 
 /// \name QCO/Modifiers/CtrlOp.cpp
 /// @{
+TEST_F(QCOMatrixTest, DenseUnitaryExposesItsDynamicMatrix) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+    %q = qco.alloc : !qco.qubit
+    %out = qco.unitary dense<[[(0.0,0.0), (0.0,-1.0)],
+                              [(0.0,1.0), (0.0,0.0)]]>
+        : tensor<2x2xcomplex<f64>> %q : !qco.qubit -> !qco.qubit
+    %qout, %result = qco.measure %out : !qco.qubit
+    qco.sink %qout : !qco.qubit
+    return %result : i1
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  UnitaryOp unitary;
+  module->walk([&](UnitaryOp candidate) { unitary = candidate; });
+  ASSERT_TRUE(unitary);
+  const auto matrix = unitary.getUnitaryMatrix();
+  ASSERT_EQ(matrix.rows(), 2);
+  ASSERT_EQ(matrix.cols(), 2);
+  EXPECT_EQ(matrix(0, 1), Complex(0.0, -1.0));
+  EXPECT_EQ(matrix(1, 0), Complex(0.0, 1.0));
+}
+
 TEST_F(QCOMatrixTest, CXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledX);
   ASSERT_TRUE(moduleOp);

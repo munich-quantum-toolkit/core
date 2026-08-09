@@ -16,6 +16,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
@@ -23,6 +24,8 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 
@@ -514,3 +517,86 @@ void QCODialect::initialize() {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
+
+void UnitaryOp::build(OpBuilder& /*builder*/, OperationState& state,
+                      const ValueRange qubits, const ElementsAttr matrix) {
+  state.addOperands(qubits);
+  state.addTypes(qubits.getTypes());
+  state.addAttribute("matrix", matrix);
+}
+
+LogicalResult UnitaryOp::verify() {
+  const auto matrix = dyn_cast<DenseElementsAttr>(getMatrix());
+  if (!matrix) {
+    return emitOpError("matrix must use dense element storage");
+  }
+  const auto type = dyn_cast<RankedTensorType>(matrix.getType());
+  if (!type || type.getRank() != 2 ||
+      type.getShape()[0] != type.getShape()[1]) {
+    return emitOpError("matrix must be a square rank-two tensor");
+  }
+  const auto complexType = dyn_cast<ComplexType>(type.getElementType());
+  if (!complexType || !complexType.getElementType().isF64()) {
+    return emitOpError("matrix elements must have type complex<f64>");
+  }
+  if (getQubitsIn().empty()) {
+    return emitOpError("requires at least one input qubit");
+  }
+  if (getQubitsIn().size() >= 63U) {
+    return emitOpError(
+        "has too many input qubits to represent its matrix dimension");
+  }
+  const auto expectedDimension =
+      static_cast<int64_t>(uint64_t{1} << getQubitsIn().size());
+  if (type.getShape()[0] != expectedDimension) {
+    return emitOpError() << "matrix dimension must be 2^n = "
+                         << expectedDimension << " for " << getQubitsIn().size()
+                         << " input qubits";
+  }
+  if (getQubitsOut().size() != getQubitsIn().size()) {
+    return emitOpError("must return one qubit for every input qubit");
+  }
+  if (llvm::any_of(matrix.getValues<std::complex<double>>(),
+                   [](const std::complex<double> value) {
+                     return !std::isfinite(value.real()) ||
+                            !std::isfinite(value.imag());
+                   })) {
+    return emitOpError("matrix entries must be finite");
+  }
+  return success();
+}
+
+Value UnitaryOp::getInputForOutput(const Value output) {
+  for (const auto [input, candidate] :
+       llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
+    if (candidate == output) {
+      return input;
+    }
+  }
+  llvm::reportFatalUsageError("Given qubit is not an output of UnitaryOp");
+}
+
+Value UnitaryOp::getOutputForInput(const Value input) {
+  for (const auto [candidate, output] :
+       llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
+    if (candidate == input) {
+      return output;
+    }
+  }
+  llvm::reportFatalUsageError("Given qubit is not an input of UnitaryOp");
+}
+
+DynamicMatrix UnitaryOp::getUnitaryMatrix() {
+  const auto matrix = cast<DenseElementsAttr>(getMatrix());
+  const auto dimension = matrix.getType().getShape()[0];
+  DynamicMatrix result(dimension);
+  auto values = matrix.getValues<std::complex<double>>();
+  auto iterator = values.begin();
+  for (int64_t row = 0; row < dimension; ++row) {
+    for (int64_t column = 0; column < dimension; ++column) {
+      result(row, column) = *iterator;
+      ++iterator;
+    }
+  }
+  return result;
+}

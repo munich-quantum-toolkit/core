@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import nox
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Callable, Generator, MutableMapping, Sequence
 
 nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
@@ -62,7 +62,8 @@ def _run_tests(
     session: nox.Session,
     *,
     install_args: Sequence[str] = (),
-    extra_command: Sequence[str] = (),
+    prepare_build: Callable[[nox.Session, MutableMapping[str, str]], None] | None = None,
+    project_install_args: Sequence[str] = (),
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
@@ -83,6 +84,8 @@ def _run_tests(
         *install_args,
         env=env,
     )
+    if prepare_build is not None:
+        prepare_build(session, env)
     session.run(
         "uv",
         "sync",
@@ -90,11 +93,10 @@ def _run_tests(
         "--no-dev",  # do not auto-install dev dependencies
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
+        *project_install_args,
         *install_args,
         env=env,
     )
-    if extra_command:
-        session.run(*extra_command, env=env)
     session.run(
         "uv",
         "run",
@@ -129,14 +131,70 @@ def minimums(session: nox.Session) -> None:
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
 def qiskit(session: nox.Session) -> None:
-    """Tests against the latest version of Qiskit."""
+    """Test against Qiskit main with an exact, non-shipping C-API adapter."""
+
+    def prepare_upstream_build(current_session: nox.Session, env: MutableMapping[str, str]) -> None:
+        current_session.run(
+            "uv",
+            "pip",
+            "install",
+            "--reinstall",
+            "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git",
+            env=env,
+        )
+        details = current_session.run(
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-c",
+            ("import qiskit; from qiskit import capi; print(qiskit.__version__); print(capi.get_include())"),
+            env=env,
+            silent=True,
+        )
+        if details is None:
+            current_session.error("failed to inspect the installed Qiskit build")
+        version, include = details.strip().splitlines()
+        include_path = Path(include).resolve(strict=True)
+        env["SKBUILD_CMAKE_ARGS"] = ";".join([
+            f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include_path}",
+            f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
+        ])
+
     with preserve_lockfile():
         _run_tests(
             session,
-            extra_command=["uv", "pip", "install", "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git"],
+            prepare_build=prepare_upstream_build,
+            project_install_args=["--no-install-package", "qiskit"],
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "pip", "show", "qiskit", env=env)
+
+
+@nox.session(python="3.14", venv_backend="uv")
+def qiskit_c_api_adopt(session: nox.Session) -> None:
+    """Prepare and validate a released Qiskit-minor adapter for review."""
+    if len(session.posargs) != 1:
+        session.error("usage: nox -s qiskit_c_api_adopt -- <final-version>")
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    with preserve_lockfile():
+        session.run(
+            "uv",
+            "sync",
+            "--inexact",
+            "--only-group",
+            "build",
+            "--only-group",
+            "test",
+            env=env,
+        )
+        session.install("packaging>=24")
+        session.run(
+            "python",
+            "scripts/qiskit_c_api_adopt.py",
+            session.posargs[0],
+            env=env,
+        )
 
 
 @nox.session(python="3.14", reuse_venv=True)

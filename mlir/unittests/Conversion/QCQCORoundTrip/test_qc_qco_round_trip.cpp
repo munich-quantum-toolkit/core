@@ -11,6 +11,7 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <gtest/gtest.h>
@@ -141,4 +142,43 @@ module {
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   EXPECT_EQ(returnOp.getOperand(0), switchOp.getResult(0));
   expectNoScratchStorage(*module);
+}
+
+TEST_F(QCQCORoundTripTest, PreservesDenseUnitaryMatrixAndQubitArity) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q0 = qc.alloc : !qc.qubit
+    %q1 = qc.alloc : !qc.qubit
+    qc.unitary dense<[
+        [(1.0,0.0), (0.0,0.0), (0.0,0.0), (0.0,0.0)],
+        [(0.0,0.0), (0.0,0.0), (1.0,0.0), (0.0,0.0)],
+        [(0.0,0.0), (1.0,0.0), (0.0,0.0), (0.0,0.0)],
+        [(0.0,0.0), (0.0,0.0), (0.0,0.0), (1.0,0.0)]]>
+        : tensor<4x4xcomplex<f64>> %q0, %q1 : !qc.qubit, !qc.qubit
+    qc.dealloc %q0 : !qc.qubit
+    qc.dealloc %q1 : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  DenseElementsAttr originalMatrix;
+  module->walk([&](qc::UnitaryOp unitary) {
+    originalMatrix = cast<DenseElementsAttr>(unitary.getMatrix());
+  });
+  ASSERT_TRUE(originalMatrix);
+
+  ASSERT_TRUE(succeeded(runRoundTrip(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  qc::UnitaryOp unitary;
+  module->walk([&](qc::UnitaryOp candidate) { unitary = candidate; });
+  ASSERT_TRUE(unitary);
+  EXPECT_EQ(unitary.getQubits().size(), 2U);
+  EXPECT_EQ(unitary.getMatrix(), originalMatrix);
 }

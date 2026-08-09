@@ -58,10 +58,11 @@ QCProgramBuilder::QCProgramBuilder(
 void QCProgramBuilder::initialize() { initialize({}, {getI64Type()}); }
 
 void QCProgramBuilder::initialize(TypeRange returnTypes) {
-  initialize({}, returnTypes);
+  initialize(TypeRange{}, returnTypes);
 }
 
-void QCProgramBuilder::initialize(TypeRange inputTypes, TypeRange returnTypes) {
+SmallVector<Value> QCProgramBuilder::initialize(TypeRange inputTypes,
+                                                TypeRange returnTypes) {
   // Set insertion point to the module body
   setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
@@ -74,8 +75,11 @@ void QCProgramBuilder::initialize(TypeRange inputTypes, TypeRange returnTypes) {
   mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
 
   // Create entry block and set insertion point
-  auto* entryBlock = mainFunc.addEntryBlock();
-  setInsertionPointToStart(entryBlock);
+  auto& entryBlock = mainFunc.getBody().emplaceBlock();
+  SmallVector<Location> argumentLocations(inputTypes.size(), getLoc());
+  entryBlock.addArguments(inputTypes, argumentLocations);
+  setInsertionPointToStart(&entryBlock);
+  return {entryBlock.getArguments().begin(), entryBlock.getArguments().end()};
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {
@@ -96,6 +100,11 @@ Value QCProgramBuilder::boolConstant(const bool value) {
 Value QCProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QCProgramBuilder::floatConstant(const double value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
 Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
@@ -505,6 +514,13 @@ DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
 QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
   checkFinalized();
   BarrierOp::create(*this, qubits);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::unitary(ValueRange qubits,
+                                            DenseElementsAttr matrix) {
+  checkFinalized();
+  UnitaryOp::create(*this, matrix, qubits);
   return *this;
 }
 
