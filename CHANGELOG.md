@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add typed runtime configuration transport and relocatable assets for QDMI
+  device descriptions ([#1967]) ([**@burgholzer**])
+
 ## [3.8.0] - 2026-07-30
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
@@ -613,6 +618,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952

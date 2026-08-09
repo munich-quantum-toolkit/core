@@ -24,6 +24,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 namespace fomac {
@@ -31,6 +32,20 @@ class Session;
 }
 
 namespace qdmi {
+
+/// Inline JSON used to configure one QDMI device session.
+struct InlineDeviceConfiguration {
+  std::string json;
+};
+
+/// JSON file used to configure one QDMI device session.
+struct FileDeviceConfiguration {
+  std::filesystem::path path;
+};
+
+/// One replaceable source for a runtime device description.
+using DeviceConfigurationSource =
+    std::variant<InlineDeviceConfiguration, FileDeviceConfiguration>;
 
 /**
  * @brief Configuration for device session parameters.
@@ -50,6 +65,8 @@ struct DeviceSessionConfig {
   std::optional<std::string> username;
   /// Password for authentication
   std::optional<std::string> password;
+  /// Typed runtime device-description source.
+  std::optional<DeviceConfigurationSource> deviceConfiguration;
   /// Custom configuration parameter 1
   std::optional<std::string> custom1;
   /// Custom configuration parameter 2

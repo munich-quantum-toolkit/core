@@ -992,6 +992,36 @@ def test_open_device_creates_a_fresh_session() -> None:
     assert first != second
 
 
+def test_device_configuration_arguments_are_mutually_exclusive() -> None:
+    """Typed device configuration must select exactly one source."""
+    DeviceDefinition(
+        "python.inline-config",
+        "/nonexistent/device.so",
+        "PREFIX",
+        device_config="{}",
+    )
+    DeviceDefinition(
+        "python.file-config",
+        "/nonexistent/device.so",
+        "PREFIX",
+        device_config_file="device.json",
+    )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        DeviceDefinition(
+            "python.config-conflict",
+            "/nonexistent/device.so",
+            "PREFIX",
+            device_config="{}",
+            device_config_file="device.json",
+        )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        open_device(
+            "mqt.na.default",
+            device_config="{}",
+            device_config_file="device.json",
+        )
+
+
 def test_site_keeps_fresh_session_alive() -> None:
     """A site should remain usable after its device wrapper is destroyed."""
     site = open_device("mqt.na.default").sites()[0]

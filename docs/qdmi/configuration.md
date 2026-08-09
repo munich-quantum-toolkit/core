@@ -22,7 +22,9 @@ The following `qdmi.json` registers one device:
         "session": {
           "base-url": "https://device.example",
           "auth-file": "credentials.json",
-          "custom1": "device-specific"
+          "device-config": {
+            "file": "device.json"
+          }
         }
       }
     ]
@@ -32,7 +34,28 @@ The following `qdmi.json` registers one device:
 
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
-`auth-url`, `username`, `password`, and `custom1` through `custom5`.
+`auth-url`, `username`, `password`, `device-config`, and `custom1` through
+`custom5`.
+
+`device-config` selects exactly one provider configuration source:
+
+```json
+{"device-config": {"inline": {"schema-version": 1}}}
+```
+
+or:
+
+```json
+{"device-config": {"file": "device.json"}}
+```
+
+The inline value must be a JSON object. A relative file path is resolved against
+the registry file that declares it. The complete source is one merge field:
+changing from `inline` to `file` at a higher-precedence layer replaces the
+inherited inline JSON. The Driver adapts inline JSON to QDMI v1 CUSTOM1 and a
+file path to CUSTOM2 when opening the native session. Consequently,
+`device-config` cannot be combined with raw `custom1` or `custom2`; CUSTOM3
+through CUSTOM5 remain available to providers.
 
 Relative library and authentication-file paths are resolved against the file
 that declared them. For `MQT_CORE_QDMI_CONFIG_JSON`, they resolve against the
@@ -95,10 +118,15 @@ register_device(
         "/path/to/libexample-device.so",
         "EXAMPLE",
         base_url="https://device.example",
+        device_config_file="/path/to/device.json",
     )
 )
 device = open_device("example.device")
 ```
+
+`DeviceDefinition` and `open_device` also accept `device_config="<json>"` for
+inline configuration. `device_config` and `device_config_file` are mutually
+exclusive.
 
 Every `open_device` call creates a fresh device session while preserving the
 registered defaults and stable ID. This lets separate backend instances use
@@ -171,4 +199,7 @@ set_property(
 ```
 
 When `mqt_copy_qdmi_runtime` receives that built or imported target, it
-generates the relocatable manifest while copying the device.
+generates the relocatable manifest while copying the device. Device targets may
+also declare `RUNTIME_FILES` through `mqt_configure_qdmi_device`; their exported
+`QDMI_RUNTIME_FILES` basenames are copied beside the provider as part of the
+same operation.

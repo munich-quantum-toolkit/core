@@ -1003,6 +1003,50 @@ TEST(DeviceRegistrationTest,
   EXPECT_EQ(clientCatalogSize(), catalogSizeBefore);
 }
 
+TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
+  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
+      {.id = "test.typed-configuration",
+       .library = MQT_CORE_QDMI_SESSION_DEVICE,
+       .prefix = "TEST_SESSION",
+       .session = {.deviceConfiguration = qdmi::InlineDeviceConfiguration{
+                       .json = R"({"name":"inline"})"}}}));
+
+  const auto inlineDevice =
+      fomac::Session::openDevice("test.typed-configuration");
+  EXPECT_THAT(
+      inlineDevice.getName(),
+      testing::HasSubstr(R"(custom1={"name":"inline"};custom2=<unset>)"));
+
+  qdmi::DeviceSessionConfig fileOverrides;
+  fileOverrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{.path = "device.json"};
+  const auto fileDevice =
+      fomac::Session::openDevice("test.typed-configuration", fileOverrides);
+  EXPECT_THAT(fileDevice.getName(),
+              testing::HasSubstr("custom1=<unset>;custom2=device.json"));
+}
+
+TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
+  auto& driver = qdmi::Driver::get();
+  const qdmi::DeviceDefinition definition{
+      .id = "test.typed-conflict",
+      .library = MQT_CORE_QDMI_SESSION_DEVICE,
+      .prefix = "TEST_SESSION",
+      .session = {.deviceConfiguration =
+                      qdmi::InlineDeviceConfiguration{.json = "{}"},
+                  .custom1 = "raw"}};
+  EXPECT_THROW(driver.registerDevice(definition), std::invalid_argument);
+
+  registerSessionTestDevice();
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{.path = "device.json"};
+  overrides.custom2 = "raw";
+  EXPECT_THROW(static_cast<void>(fomac::Session::openDevice(
+                   "test.session-overrides", overrides)),
+               std::invalid_argument);
+}
+
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   registerSessionTestDevice();
   const auto first = fomac::Session::openDevice("test.session-overrides");

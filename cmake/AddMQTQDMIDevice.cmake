@@ -22,7 +22,7 @@ endfunction()
 # Configure and register a relocatable built-in QDMI device. The generated fragment is emitted
 # beside the runtime library in both build and install trees.
 function(mqt_configure_qdmi_device target)
-  cmake_parse_arguments(ARG "" "ID;PREFIX" "" ${ARGN})
+  cmake_parse_arguments(ARG "" "ID;PREFIX" "RUNTIME_FILES" ${ARGN})
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI device target: ${target}")
   endif()
@@ -51,16 +51,28 @@ function(mqt_configure_qdmi_device target)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}"
             "$<TARGET_FILE_DIR:${target}>/${target}.qdmi.json")
+  set(runtime_file_names)
+  foreach(runtime_file IN LISTS ARG_RUNTIME_FILES)
+    get_filename_component(runtime_file_name "${runtime_file}" NAME)
+    list(APPEND runtime_file_names "${runtime_file_name}")
+    add_custom_command(
+      TARGET ${target}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${runtime_file}"
+              "$<TARGET_FILE_DIR:${target}>/${runtime_file_name}")
+  endforeach()
   set_target_properties(
     ${target}
     PROPERTIES QDMI_DEVICE_ID "${ARG_ID}"
                QDMI_DEVICE_PREFIX "${ARG_PREFIX}"
-               QDMI_MANIFEST_NAME "${target}.qdmi.json")
+               QDMI_MANIFEST_NAME "${target}.qdmi.json"
+               QDMI_RUNTIME_FILES "${runtime_file_names}")
   set_property(GLOBAL APPEND PROPERTY MQT_QDMI_DEVICE_TARGETS ${target})
   set_property(
     TARGET ${target}
     APPEND
-    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_MANIFEST_NAME)
+    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_MANIFEST_NAME
+             QDMI_RUNTIME_FILES)
   if(WIN32)
     # Shared-library targets are runtime artifacts on Windows and are installed under bin. Keep the
     # fragment beside the DLL so its relative path resolves.
@@ -76,6 +88,12 @@ function(mqt_configure_qdmi_device target)
     FILES "${fragment}"
     DESTINATION ${fragment_install_dir}
     ${install_arguments})
+  if(ARG_RUNTIME_FILES)
+    install(
+      FILES ${ARG_RUNTIME_FILES}
+      DESTINATION ${fragment_install_dir}
+      ${install_arguments})
+  endif()
 endfunction()
 
 # Return every QDMI device registered through mqt_configure_qdmi_device.
@@ -141,5 +159,16 @@ function(mqt_copy_qdmi_runtime target)
               "$<TARGET_FILE_DIR:${target}>"
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${manifest}"
               "$<TARGET_FILE_DIR:${target}>/${manifest_name}")
+    get_target_property(runtime_files ${device_target} QDMI_RUNTIME_FILES)
+    if(runtime_files)
+      foreach(runtime_file IN LISTS runtime_files)
+        add_custom_command(
+          TARGET ${target}
+          POST_BUILD
+          COMMAND
+            ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE_DIR:${device}>/${runtime_file}"
+            "$<TARGET_FILE_DIR:${target}>/${runtime_file}")
+      endforeach()
+    endif()
   endforeach()
 endfunction()
