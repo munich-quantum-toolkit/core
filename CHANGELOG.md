@@ -52,7 +52,7 @@ releases may include breaking changes.
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   structured control flow, and alias-safe qubit-register access ([#1910],
-  [#1987], [#1994]) ([**@burgholzer**], [**@denialhaag**])
+  [#1987], [#1994], [#2026]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -96,9 +96,9 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@J4MMlE**])
+  [#1976], [#2006], [#2026]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -721,6 +721,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
