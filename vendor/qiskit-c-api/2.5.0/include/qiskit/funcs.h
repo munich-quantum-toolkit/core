@@ -6236,7 +6236,7 @@ void qk_transpiler_pass_standalone_gate_direction(QkCircuit *circuit,
  * QkDag *dag = qk_dag_new();
  * QkQuantumRegister *qr = qk_quantum_register_new(2, "qr");
  * qk_dag_add_quantum_register(dag, qr);
- * qk_dag_apply_gate(dag, QkGate_CX, (uint32_t[]){1,0}, NULL, false);  
+ * qk_dag_apply_gate(dag, QkGate_CX, (uint32_t[]){1,0}, NULL, false);
  *
  * bool direction_ok = qk_transpiler_pass_check_gate_direction(dag, target);
  * qk_quantum_register_free(qr);
@@ -6276,7 +6276,7 @@ bool qk_transpiler_pass_check_gate_direction(const QkDag *dag,
  * QkDag *dag = qk_dag_new();
  * QkQuantumRegister *qr = qk_quantum_register_new(3, "qr");
  * qk_dag_add_quantum_register(dag, qr);
- * qk_dag_apply_gate(dag, QkGate_CX, (uint32_t[]){1,0}, NULL, false);
+ * qk_dag_apply_gate(dag, QkGate_CX, (uint32_t[]){1,0}, NULL, false);  
  *
  * qk_transpiler_pass_gate_direction(dag, target);
  * qk_quantum_register_free(qr);
