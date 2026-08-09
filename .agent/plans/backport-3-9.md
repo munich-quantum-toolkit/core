@@ -29,8 +29,8 @@ continues to install and test MQT Core without PennyLane.
 - [x] (2026-08-09 08:20Z) Selected the v3-compatible functionality groups and
   recorded explicit exclusions.
 - [ ] Backport typed QDMI device configuration and stable device-ID enumeration.
-- [ ] Backport the independent QIR result-order fix, DD serialization bindings,
-  and ZX multi-controlled-X complexity improvement.
+- [ ] Backport the independent DD serialization bindings and ZX
+  multi-controlled-X complexity improvement.
 - [ ] Port the PennyLane QDMI device, tests, packaging, and executable notebook.
 - [ ] Regenerate stubs and `uv.lock`, then run focused and broad validation.
 - [ ] Publish the signed, functionality-scoped commit series as a pull request
@@ -47,6 +47,11 @@ continues to install and test MQT Core without PennyLane.
   Evidence: the selected changes affect the existing QDMI driver, DD, ZX, QIR,
   and Python plugin surfaces, while the excluded compiler-target and typed
   OpenQASM frontend changes depend on new v4 MLIR dialect contracts.
+- Observation: The QIR classical-result ordering fix from #1979 modifies the
+  `QCToQIR` conversion, which does not exist on v3.x. Evidence: applying the
+  upstream change produces modify/delete conflicts for every implementation
+  and test file because those paths were introduced only with the v4 compiler
+  collection.
 
 ## Decision Log
 
@@ -58,16 +63,19 @@ continues to install and test MQT Core without PennyLane.
   device. Rationale: PennyLane entry-point discovery and stable QDMI device IDs
   should use the same load-free enumeration API as `main`. Date/Author:
   2026-08-09 / Codex.
-- Decision: Include the QIR result-order fix, DD serialization API, and ZX
-  multi-controlled-X complexity improvement as separate commits. Rationale:
-  each is an independently tested v3-compatible correctness, API, or complexity
-  improvement suitable for a minor release. Date/Author: 2026-08-09 / Codex.
+- Decision: Include the DD serialization API and ZX multi-controlled-X
+  complexity improvement as separate commits. Rationale: each is an
+  independently tested v3-compatible API or complexity improvement suitable
+  for a minor release. Date/Author: 2026-08-09 / Codex.
 - Decision: Exclude the LLVM/MLIR 22 compiler-target series, the typed OpenQASM
   frontend and emitter, QCO mapping fixes, specialized neutral-atom and
   superconducting runtime configuration, and routine dependency churn.
   Rationale: those changes either rely on the v4 compiler architecture, are
   outside this gate-based integration, or do not justify expanding the
   backport. Date/Author: 2026-08-09 / Codex.
+- Decision: Exclude #1979 after testing patch applicability. Rationale: v3.x
+  has no `QCToQIR` conversion to fix, and importing that subsystem would violate
+  the v3 compiler boundary. Date/Author: 2026-08-09 / Codex.
 - Decision: Keep Python 3.10 as a base-package boundary and enable PennyLane on
   Python 3.11 through 3.14. Rationale: this matches the upstream plugin and
   prevents the optional dependency from constraining existing v3 deployments.
@@ -154,9 +162,8 @@ provide the non-Python integration boundary.
 
 Acceptance requires QDMI driver tests to prove that typed configuration and
 registered-ID enumeration preserve ordering and do not eagerly load devices.
-The QIR regression must record returned classical registers in function-result
-order. DD serialization must round-trip terminal and non-terminal vector and
-matrix DDs in text and binary forms. The ZX tests must prove unitary equivalence,
+DD serialization must round-trip terminal and non-terminal vector and matrix
+DDs in text and binary forms. The ZX tests must prove unitary equivalence,
 dirty-workspace restoration, and a quadratic resource bound.
 
 On Python 3.11 or newer, `qp.device("mqt.ddsim.default", wires=2)` must execute
@@ -182,7 +189,7 @@ rerun after correcting `pyproject.toml` without changing committed source.
 ## Artifacts and Notes
 
 The authoritative upstream functionality is represented by MQT Core pull
-requests #1967, #1972, #1979, #1983, #1984, and #2005. The 3.8.0 precedent is
+requests #1967, #1972, #1983, #1984, and #2005. The 3.8.0 precedent is
 pull request #1966. Their changes are ported independently so reviewers can
 inspect or revert each capability without coupling it to the rest of the
 release series.
@@ -201,4 +208,6 @@ or device-specific dependency belongs in MQT Core.
 
 Revision note: Created the plan after comparing the live `main` and `v3.x`
 heads and the exact upstream pull requests. The initial scope deliberately
-separates v3-compatible library work from the v4-only compiler series.
+separates v3-compatible library work from the v4-only compiler series. Updated
+the scope after proving that #1979's `QCToQIR` implementation does not exist on
+v3.x.
