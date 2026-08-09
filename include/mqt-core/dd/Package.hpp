@@ -1926,7 +1926,7 @@ public:
   template <class Node, class Edge = Edge<Node>,
             std::size_t N = std::tuple_size_v<decltype(Node::e)>>
   Edge deserialize(std::istream& is, const bool readBinary = false) {
-    auto result = CachedEdge<Node>{};
+    auto result = CachedEdge<Node>::one();
     ComplexValue rootweight{};
 
     std::unordered_map<std::int64_t, Node*> nodes{};
