@@ -370,8 +370,9 @@ struct EntryInfo {
   std::vector<std::string> outputRecordings;
 };
 
-[[nodiscard]] std::string
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+} // namespace
+
+[[nodiscard]] static std::string
 openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   std::string name = info.param.name.str();
   for (auto& character : name) {
@@ -382,16 +383,15 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   return name;
 }
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-[[nodiscard]] std::string printType(const Type type) {
+[[nodiscard]] static std::string printType(const Type type) {
   std::string text;
   llvm::raw_string_ostream stream(text);
   type.print(stream);
   return text;
 }
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-[[nodiscard]] std::optional<EntryInfo> inspectEntry(const llvm::StringRef ir) {
+[[nodiscard]] static std::optional<EntryInfo>
+inspectEntry(const llvm::StringRef ir) {
   DialectRegistry registry;
   registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, cf::ControlFlowDialect,
@@ -432,8 +432,7 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   return info;
 }
 
-[[nodiscard]] testing::AssertionResult
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+[[nodiscard]] static testing::AssertionResult
 throughOptimizedQCO(const qasm::OpenQASMProgram& source,
                     std::optional<QCProgram>& restored,
                     std::vector<std::string>& resultTypes) {
@@ -467,8 +466,7 @@ throughOptimizedQCO(const qasm::OpenQASMProgram& source,
   return testing::AssertionSuccess();
 }
 
-[[nodiscard]] testing::AssertionResult
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+[[nodiscard]] static testing::AssertionResult
 roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
                               std::optional<QCProgram>& restored,
                               std::vector<std::string>& resultTypes) {
@@ -561,6 +559,8 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
   return matchesEntry(*restored, "restored QC");
 }
 
+namespace {
+
 TEST(OpenQASMCompilerOutputTest,
      CanonicalizesMixedScalarAndRegisterResultsThroughQCO) {
   constexpr llvm::StringLiteral source = R"qasm(
@@ -634,10 +634,12 @@ if (flag) {
 
 enum class OutputRecordingShape : std::uint8_t { AdaptiveArrays, BaseArrays };
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
-                        const ArrayRef<std::string> sourceResultTypes,
-                        const OutputRecordingShape outputShape) {
+} // namespace
+
+static void expectQIRArtifacts(const QIRProgram& program,
+                               const llvm::StringRef name,
+                               const ArrayRef<std::string> sourceResultTypes,
+                               const OutputRecordingShape outputShape) {
   const auto entry = inspectEntry(program.str());
   ASSERT_TRUE(entry) << name.str() << ": QIR entry inspection";
   ASSERT_EQ(entry->resultTypes.size(), 1) << name.str() << ": QIR main result";
@@ -670,6 +672,8 @@ void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
   EXPECT_EQ(std::to_integer<std::uint8_t>((*bitcode)[2]), 0xC0U);
   EXPECT_EQ(std::to_integer<std::uint8_t>((*bitcode)[3]), 0xDEU);
 }
+
+namespace {
 
 TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitStandardPipeline) {
   const auto& source = GetParam();
