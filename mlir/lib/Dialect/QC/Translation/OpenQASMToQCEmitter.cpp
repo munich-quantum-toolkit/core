@@ -761,10 +761,20 @@ private:
                   multiplicity, projectedEmission, statement.location)) {
             return false;
           }
-        } else if (std::holds_alternative<frontend::DeclarationStatement>(
-                       statement.data)) {
-          if (!chargeScaledEmission(1, multiplicity, projectedEmission,
-                                    statement.location)) {
+        } else if (const auto* declaration =
+                       std::get_if<frontend::DeclarationStatement>(
+                           &statement.data)) {
+          const auto& reg = program.registers.at(declaration->reg);
+          size_t declarationCost = 1;
+          if (reg.kind == frontend::RegisterKind::Bit &&
+              outputBitRegisters[declaration->reg]) {
+            ++declarationCost;
+            if (program.openQASM2) {
+              declarationCost += 2 * static_cast<size_t>(reg.width);
+            }
+          }
+          if (!chargeScaledEmission(declarationCost, multiplicity,
+                                    projectedEmission, statement.location)) {
             return false;
           }
         } else if (const auto* measurement =
@@ -2410,11 +2420,33 @@ private:
           static_cast<int64_t>(declaration.width));
       return;
     }
-    if (outputBitRegisters[statement.reg]) {
+
+    const bool hasClassicalStorage = outputBitRegisters[statement.reg];
+    size_t operationCount = 1 + static_cast<size_t>(hasClassicalStorage);
+    if (program.openQASM2 && hasClassicalStorage) {
+      operationCount += 2 * static_cast<size_t>(declaration.width);
+    }
+    if (!emissionBudget.canConstruct(operationCount)) {
+      return;
+    }
+    if (hasClassicalStorage) {
       classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
           static_cast<int64_t>(declaration.width), declaration.name);
     }
     bitValues[statement.reg].resize(declaration.width);
+    if (program.openQASM2) {
+      auto zero = builder.boolConstant(false);
+      llvm::fill(bitValues[statement.reg], zero);
+      if (hasClassicalStorage) {
+        const auto reg = classicalRegisters[statement.reg];
+        for (uint64_t bit = 0; bit < declaration.width; ++bit) {
+          auto index = arith::ConstantIndexOp::create(
+              builder, static_cast<int64_t>(bit));
+          memref::StoreOp::create(builder, zero, reg, index.getResult());
+        }
+      }
+      return;
+    }
     auto poison =
         ub::PoisonOp::create(builder, builder.getI1Type()).getResult();
     llvm::fill(bitValues[statement.reg], poison);

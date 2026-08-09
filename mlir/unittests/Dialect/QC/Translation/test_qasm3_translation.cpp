@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ClassicalRegisterTestUtils.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
@@ -907,6 +908,9 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
   auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
+  if (StringRef(source).contains("OPENQASM 2")) {
+    mqt::test::zeroInitializeClassicalRegisters(*reference);
+  }
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
