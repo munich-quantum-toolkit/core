@@ -65,6 +65,11 @@ TEST(JobParameters, SetAndQueryBasics) {
             QDMI_SUCCESS);
   EXPECT_EQ(shotsOut, shots);
 
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_query_property(
+          j.job, QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION, 0, nullptr, nullptr),
+      QDMI_ERROR_NOTSUPPORTED);
+
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size),
             QDMI_SUCCESS);
