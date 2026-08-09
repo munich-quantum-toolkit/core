@@ -83,6 +83,9 @@ types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate.
 - Run the supported test sessions with `./.agent/run.sh uvx nox -s tests` and
   `./.agent/run.sh uvx nox -s minimums`. Python 3.14 variants are `tests-3.14`
   and `minimums-3.14`.
+- For finite-shot tests, choose shot counts and tolerances with a sufficiently
+  low false-failure probability; avoid placing expected values on tolerance
+  boundaries.
 - If a file in `bindings/` is added or changed, regenerate type stubs with
   `./.agent/run.sh uvx nox -s stubs`. Never edit generated `.pyi` files in
   `python/mqt/core/` manually.

@@ -952,6 +952,30 @@ TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
                std::runtime_error);
 }
 
+TEST(DeviceRegistrationTest,
+     EnumeratesEnabledIdsInOrderWithoutLoadingLibraries) {
+  auto& driver = qdmi::Driver::get();
+  const auto idsBefore = driver.registeredDeviceIds();
+  driver.registerDevice({.id = "test.enumeration.first",
+                         .library = "/nonexistent/first-device-library",
+                         .prefix = "MISSING_FIRST",
+                         .session = {}});
+  driver.registerDevice({.id = "test.enumeration.second",
+                         .library = "/nonexistent/second-device-library",
+                         .prefix = "MISSING_SECOND",
+                         .session = {}});
+
+  const auto idsAfter = driver.registeredDeviceIds();
+  ASSERT_EQ(idsAfter.size(), idsBefore.size() + 2);
+  EXPECT_TRUE(std::equal(idsBefore.begin(), idsBefore.end(), idsAfter.begin()));
+  EXPECT_EQ(idsAfter[idsBefore.size()], "test.enumeration.first");
+  EXPECT_EQ(idsAfter[idsBefore.size() + 1], "test.enumeration.second");
+  EXPECT_THAT(idsAfter, testing::Not(testing::Contains("test.disabled")));
+
+  EXPECT_THROW(static_cast<void>(driver.open("test.enumeration.first")),
+               std::runtime_error);
+}
+
 TEST(DeviceRegistrationTest, SynthesizesManifestForMetadataOnlyTarget) {
   std::ifstream manifest(MQT_CORE_QDMI_METADATA_MANIFEST);
   ASSERT_TRUE(manifest);
@@ -1001,6 +1025,54 @@ TEST(DeviceRegistrationTest,
       fomac::Session::openDevice("test.session-overrides", probeOverrides);
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
   EXPECT_EQ(clientCatalogSize(), catalogSizeBefore);
+}
+
+TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
+  qdmi::DeviceSessionConfig sessionConfig;
+  sessionConfig.deviceConfiguration =
+      qdmi::InlineDeviceConfiguration{.json = R"({"name":"inline"})"};
+  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
+      {.id = "test.typed-configuration",
+       .library = MQT_CORE_QDMI_SESSION_DEVICE,
+       .prefix = "TEST_SESSION",
+       .session = std::move(sessionConfig)}));
+
+  const auto inlineDevice =
+      fomac::Session::openDevice("test.typed-configuration");
+  EXPECT_THAT(
+      inlineDevice.getName(),
+      testing::HasSubstr(R"(custom1={"name":"inline"};custom2=<unset>)"));
+
+  qdmi::DeviceSessionConfig fileOverrides;
+  fileOverrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{.path = "device.json"};
+  const auto fileDevice =
+      fomac::Session::openDevice("test.typed-configuration", fileOverrides);
+  EXPECT_THAT(fileDevice.getName(),
+              testing::HasSubstr("custom1=<unset>;custom2=device.json"));
+}
+
+TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
+  auto& driver = qdmi::Driver::get();
+  qdmi::DeviceSessionConfig conflictingConfig;
+  conflictingConfig.deviceConfiguration =
+      qdmi::InlineDeviceConfiguration{.json = "{}"};
+  conflictingConfig.custom1 = "raw";
+  const qdmi::DeviceDefinition definition{
+      .id = "test.typed-conflict",
+      .library = MQT_CORE_QDMI_SESSION_DEVICE,
+      .prefix = "TEST_SESSION",
+      .session = std::move(conflictingConfig)};
+  EXPECT_THROW(driver.registerDevice(definition), std::invalid_argument);
+
+  registerSessionTestDevice();
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{.path = "device.json"};
+  overrides.custom2 = "raw";
+  EXPECT_THROW(static_cast<void>(fomac::Session::openDevice(
+                   "test.session-overrides", overrides)),
+               std::invalid_argument);
 }
 
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {

@@ -24,6 +24,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 namespace fomac {
@@ -31,6 +32,20 @@ class Session;
 }
 
 namespace qdmi {
+
+/// Inline JSON used to configure one QDMI device session.
+struct InlineDeviceConfiguration {
+  std::string json;
+};
+
+/// JSON file used to configure one QDMI device session.
+struct FileDeviceConfiguration {
+  std::filesystem::path path;
+};
+
+/// One replaceable source for a runtime device description.
+using DeviceConfigurationSource =
+    std::variant<InlineDeviceConfiguration, FileDeviceConfiguration>;
 
 /**
  * @brief Configuration for device session parameters.
@@ -50,6 +65,8 @@ struct DeviceSessionConfig {
   std::optional<std::string> username;
   /// Password for authentication
   std::optional<std::string> password;
+  /// Typed runtime device-description source.
+  std::optional<DeviceConfigurationSource> deviceConfiguration;
   /// Custom configuration parameter 1
   std::optional<std::string> custom1;
   /// Custom configuration parameter 2
@@ -482,6 +499,14 @@ public:
    * complete definition is validated before checking for either condition.
    */
   auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
+
+  /**
+   * @brief Lists the stable IDs of all registered devices.
+   * @returns The enabled device IDs in deterministic registration order.
+   * @details This query includes runtime registrations and does not load device
+   * libraries or expose their definitions.
+   */
+  [[nodiscard]] auto registeredDeviceIds() const -> std::vector<std::string>;
 
   /**
    * @brief Opens the registered device with the given stable ID.

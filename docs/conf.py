@@ -90,6 +90,7 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "qiskit": ("https://docs.quantum.ibm.com/api/qiskit", None),
+    "pennylane": ("https://docs.pennylane.ai/en/stable/", None),
     "mqt": ("https://mqt.readthedocs.io/en/latest", None),
     "ddsim": ("https://mqt.readthedocs.io/projects/ddsim/en/latest", None),
     "qmap": ("https://mqt.readthedocs.io/projects/qmap/en/latest", None),
@@ -161,6 +162,15 @@ python_use_unqualified_type_names = True
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
+# AutoAPI renders these typing expressions as Python cross-references although
+# they are not documented objects.
+nitpick_ignore_regex = [
+    ("py:class", r"Ellipsis"),
+    ("py:class", r"ParametersType"),
+    ("py:class", r"pennylane\.tape\.QuantumScriptOrBatch"),
+    ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),
+    ("py:class", r"pennylane\.typing\.(Result|ResultBatch)"),
+]
 
 breathe_projects = {"mqt.core": "_build/doxygen/xml"}
 breathe_default_project = "mqt.core"

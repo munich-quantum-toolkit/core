@@ -33,8 +33,10 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -219,6 +221,7 @@ void applyOverride(std::optional<T>& value,
   applyOverride(merged.authUrl, overrides.authUrl);
   applyOverride(merged.username, overrides.username);
   applyOverride(merged.password, overrides.password);
+  applyOverride(merged.deviceConfiguration, overrides.deviceConfiguration);
   applyOverride(merged.custom1, overrides.custom1);
   applyOverride(merged.custom2, overrides.custom2);
   applyOverride(merged.custom3, overrides.custom3);
@@ -276,6 +279,29 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
   setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
   setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
   setParameter(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD);
+  if (config.deviceConfiguration &&
+      (config.custom1.has_value() || config.custom2.has_value())) {
+    library_->device_session_free(deviceSession_);
+    deviceSession_ = nullptr;
+    throw std::invalid_argument(
+        "Typed device configuration cannot be combined with raw custom1 or "
+        "custom2 session parameters");
+  }
+  if (config.deviceConfiguration) {
+    std::visit(
+        [&](const auto& source) {
+          using Source = std::decay_t<decltype(source)>;
+          if constexpr (std::is_same_v<Source,
+                                       qdmi::InlineDeviceConfiguration>) {
+            setParameter(std::optional{source.json},
+                         QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+          } else {
+            setParameter(std::optional{source.path.string()},
+                         QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+          }
+        },
+        *config.deviceConfiguration);
+  }
   setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
   setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
   setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3);
@@ -585,6 +611,12 @@ void validateDefinition(const DeviceDefinition& definition) {
   if (definition.prefix.empty()) {
     throw std::invalid_argument("Device definition prefix must not be empty");
   }
+  if (definition.session.deviceConfiguration &&
+      (definition.session.custom1 || definition.session.custom2)) {
+    throw std::invalid_argument(
+        "Typed device configuration cannot be combined with raw custom1 or "
+        "custom2 session parameters");
+  }
 }
 } // namespace
 
@@ -639,6 +671,14 @@ auto Driver::registerDeviceIfAbsent(DeviceDefinition definition) -> bool {
   }
   definitions_.emplace_back(std::move(definition));
   return true;
+}
+
+auto Driver::registeredDeviceIds() const -> std::vector<std::string> {
+  std::vector<std::string> ids;
+  ids.reserve(definitions_.size());
+  std::ranges::transform(definitions_, std::back_inserter(ids),
+                         &DeviceDefinition::id);
+  return ids;
 }
 
 auto Driver::open(const std::string_view id) -> QDMI_Device {
