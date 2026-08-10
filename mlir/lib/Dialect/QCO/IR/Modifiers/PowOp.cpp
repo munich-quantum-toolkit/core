@@ -595,7 +595,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             })
             // --- Hermitian gates (integer exponent): even => id, odd => gate
             // --- pow(n) { h } => id (n even) | h (n odd)
-            .Case<HOp>([&](auto gate) {
+            .Case<HOp>([&](auto) {
               if (utils::isEvenExponent(r)) {
                 // pow(even) { h } => identity: thread inputs to results.
                 rewriter.replaceOp(op, op.getQubitsIn());
@@ -606,7 +606,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(n) { ecr/rccx/swap } => id (n even) | gate (n odd)
-            .Case<ECROp, RCCXOp, SWAPOp>([&](auto gate) {
+            .Case<ECROp, RCCXOp, SWAPOp>([&](auto) {
               if (utils::isEvenExponent(r)) {
                 rewriter.replaceOp(op, op.getQubitsIn());
               } else {

@@ -18,7 +18,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
@@ -34,6 +33,8 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
 
 #define DEBUG_TYPE "unroll-modifiers"
 

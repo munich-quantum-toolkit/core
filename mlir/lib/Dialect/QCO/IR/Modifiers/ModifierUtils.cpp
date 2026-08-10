@@ -15,13 +15,17 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/RegionUtils.h>
+
+#include <cstddef>
 
 namespace mlir::qco::detail {
 

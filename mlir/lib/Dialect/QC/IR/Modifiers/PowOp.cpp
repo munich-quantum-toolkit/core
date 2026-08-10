@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -539,7 +540,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         })
         // --- Hermitian gates (integer exponent): even => erase/id, odd => gate
         // --- pow(n) { h } => id (n even) | h (n odd)
-        .Case<HOp>([&](auto gate) {
+        .Case<HOp>([&](auto) {
           if (utils::isEvenExponent(r)) {
             // pow(even) { h } => identity. Erase it.
             rewriter.eraseOp(op);
@@ -554,7 +555,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           return success();
         })
         // pow(n) { ecr/rccx/swap } => erase (n even) | gate (n odd)
-        .Case<ECROp, RCCXOp, SWAPOp>([&](auto gate) {
+        .Case<ECROp, RCCXOp, SWAPOp>([&](auto) {
           if (utils::isEvenExponent(r)) {
             // pow(even) { ecr/rccx/swap } => identity. Erase it.
             rewriter.eraseOp(op);
