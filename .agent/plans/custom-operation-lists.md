@@ -31,15 +31,15 @@ providers demonstrate that unsupported properties return `std::nullopt` and
       test-provider paths.
 - [x] (2026-08-10 16:25Z) Added the generic handle-array decoder, shared
       operation-wrapper path, and public C++ API.
-- [x] (2026-08-10 16:29Z) Bound the API to Python and regenerated the
-      checked-in stub.
+- [x] (2026-08-10 16:29Z) Bound the API to Python and regenerated the checked-in
+      stub.
 - [x] (2026-08-10 16:34Z) Extended the native test provider and added raw QDMI,
       C++, Python unsupported-result, operation-property, and ownership tests.
 - [ ] Add the changelog entry after the draft pull request provides its number.
-- [x] (2026-08-10 16:52Z) Ran focused and full C++ tests, focused Python
-      tests, generated-file checks, documentation, changed-line clang-tidy 22,
-      and full lint. The final lint check will be repeated after the
-      PR-numbered changelog entry.
+- [x] (2026-08-10 16:52Z) Ran focused and full C++ tests, focused Python tests,
+      generated-file checks, documentation, changed-line clang-tidy 22, and full
+      lint. The final lint check will be repeated after the PR-numbered
+      changelog entry.
 - [ ] Publish the exact reviewed head and inspect replacement
       continuous-integration checks.
 
@@ -74,11 +74,11 @@ providers demonstrate that unsupported properties return `std::nullopt` and
 ## Outcomes & Retrospective
 
 The C++, Python, and raw QDMI paths are implemented and locally validated. The
-successful provider path distinguishes unsupported, empty, malformed, and
-valid arrays; normal operation-property queries and ownership after
-device-wrapper destruction both pass. The documentation build completed
-without a content warning. Publication, the PR-numbered changelog entry, and
-live continuous integration remain.
+successful provider path distinguishes unsupported, empty, malformed, and valid
+arrays; normal operation-property queries and ownership after device-wrapper
+destruction both pass. The documentation build completed without a content
+warning. Publication, the PR-numbered changelog entry, and live continuous
+integration remain.
 
 ## Context and Orientation
 
@@ -248,5 +248,5 @@ provider implementations.
 Revision note (2026-08-10): Recorded the completed API, provider fixture,
 generated binding, and local native, Python, ownership, and clang-tidy evidence.
 
-Revision note (2026-08-10): Recorded the successful full documentation build
-and completed local validation gate before publication.
+Revision note (2026-08-10): Recorded the successful full documentation build and
+completed local validation gate before publication.
