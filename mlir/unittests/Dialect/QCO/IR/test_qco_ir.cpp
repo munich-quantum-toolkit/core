@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -44,6 +45,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -198,6 +200,85 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_EQ(pow.getBody()->getTerminator()->getOperand(0), bodyResult);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+namespace {
+
+enum class VerifierModifierKind : std::uint8_t { Inv, Ctrl, Pow };
+
+} // namespace
+
+static StringRef modifierName(const VerifierModifierKind kind) {
+  switch (kind) {
+  case VerifierModifierKind::Inv:
+    return "inv";
+  case VerifierModifierKind::Ctrl:
+    return "ctrl";
+  case VerifierModifierKind::Pow:
+    return "pow";
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+static Operation*
+buildInvalidModifierCapture(QCOProgramBuilder& builder,
+                            const VerifierModifierKind modifier,
+                            const bool nested) {
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto captured = builder.allocQubit();
+  const auto control = builder.allocQubit();
+  const auto modifierBody = [&](const Value argument) -> Value {
+    if (nested) {
+      const auto condition = builder.boolConstant(true);
+      auto ifOp = scf::IfOp::create(builder, TypeRange{}, condition, false);
+      const OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+      XOp::create(builder, captured);
+    } else {
+      XOp::create(builder, captured);
+    }
+    return argument;
+  };
+
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    return InvOp::create(builder, target, modifierBody).getOperation();
+  case VerifierModifierKind::Ctrl:
+    return CtrlOp::create(builder, control, target, modifierBody)
+        .getOperation();
+  case VerifierModifierKind::Pow:
+    return PowOp::create(builder, target, 2.0, modifierBody).getOperation();
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    for (const bool nested : {false, true}) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", nested=" << nested);
+      QCOProgramBuilder builder(context.get());
+      auto* modifierOp = buildInvalidModifierCapture(builder, modifier, nested);
+
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not capture qubits from above; use "
+                              "only its aliased block arguments");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(modifierOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
+  }
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {

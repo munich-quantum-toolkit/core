@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ModifierUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -20,7 +21,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -271,12 +271,8 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
-  if (llvm::any_of(block, [](Operation& op) {
-        return isa<AllocOp, SinkOp, StaticOp, MeasureOp, ResetOp,
-                   qtensor::ExtractOp, qtensor::InsertOp>(op);
-      })) {
-    return emitOpError("body must not contain non-unitary quantum operations "
-                       "or modify a quantum register");
+  if (failed(detail::verifyModifierBody(getOperation(), block))) {
+    return failure();
   }
 
   const auto numTargets = getNumTargets();
