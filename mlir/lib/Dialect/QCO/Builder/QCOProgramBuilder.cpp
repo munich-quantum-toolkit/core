@@ -134,14 +134,22 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
 }
 
 QCOProgramBuilder::QubitRegister
-QCOProgramBuilder::allocQubitRegister(const int64_t size) {
+QCOProgramBuilder::allocQubitRegister(const int64_t size,
+                                      const StringRef name) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
+  if (!name.empty() && !qubitRegisterNames.insert(name).second) {
+    llvm::reportFatalUsageError("Qubit register names must be unique");
+  }
 
   auto qtensor = qtensorAlloc(size);
+  if (!name.empty()) {
+    qtensor.getDefiningOp()->setAttr(QUBIT_REGISTER_NAME_ATTR,
+                                     getStringAttr(name));
+  }
 
   SmallVector<Value> qubits;
   qubits.reserve(size);

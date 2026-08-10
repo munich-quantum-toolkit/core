@@ -48,6 +48,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -173,6 +174,17 @@ TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
         builder.qcoIf(true, tensor, identity, identity);
       },
       "Invalid tensor value used");
+}
+
+TEST_F(QCOTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        std::ignore = builder.allocQubitRegister(1, "q");
+        std::ignore = builder.allocQubitRegister(1, "q");
+      },
+      "Qubit register names must be unique");
 }
 
 TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {

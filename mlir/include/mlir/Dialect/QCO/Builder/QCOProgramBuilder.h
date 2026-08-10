@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -313,6 +314,7 @@ public:
   /**
    * @brief Allocate a qubit tensor and eagerly extract every element
    * @param size Number of qubits (must be positive)
+   * @param name Optional source-level register name
    * @return A `QubitRegister` containing the residual tensor and one standalone
    * qubit value for every eagerly extracted element
    *
@@ -327,7 +329,7 @@ public:
    * %t3, %q2 = qtensor.extract %t2[%c2]: tensor<3x!qco.qubit>
    * ```
    */
-  QubitRegister allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size, StringRef name = {});
 
   /**
    * @brief Allocate a classical bit register
@@ -1923,6 +1925,9 @@ private:
 
   MLIRContext* ctx{};
   Operation* module;
+
+  /// Track non-empty source-level qubit register names.
+  llvm::StringSet<> qubitRegisterNames;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

@@ -527,6 +527,27 @@ module {
   EXPECT_NE(emitted->find("output bit _mqt_out"), std::string::npos);
 }
 
+TEST(OpenQASM3EmissionTest, ReusesQubitRegisterNames) {
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegister(2, "named_qubits");
+  std::ignore = builder.allocQubitRegister(2, "not-valid");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("qubit[2] named_qubits;"), std::string::npos);
+  EXPECT_EQ(emitted->find("qubit[2] not-valid;"), std::string::npos);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, DefinesECRWithOneEntanglingGate) {
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
