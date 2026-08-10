@@ -47,9 +47,12 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     If a modifier cannot be unrolled, the modifier is left untouched. Such
     modifiers are skipped silently; the pass never fails.
 
-    In addition, `pow` modifiers are left untouched because `pow(r) { a; b }`
-    is generally not equivalent to `pow(r) { a }; pow(r) { b }`. Modifiers
-    nested in a `pow` body are still unrolled.
+    A `pow` modifier is only unrolled if its exponent is a compile-time known
+    integer and its operations act on disjoint qubits. Otherwise, `pow(r) { a;
+    b }` is generally not equivalent to `pow(r) { a }; pow(r) { b }`: the
+    operations do not commute if they share a qubit, and for a non-integer
+    exponent, the principal branch of the matrix power does not distribute over
+    them. Modifiers nested in a `pow` body are unrolled either way.
   }];
 }
 

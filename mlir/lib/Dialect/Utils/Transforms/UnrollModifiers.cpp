@@ -17,6 +17,8 @@
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
@@ -93,6 +95,12 @@ static SmallVector<Value> cloneIntoBody(Operation* unitary, ValueRange qubits,
   return {results.begin(), results.end()};
 }
 
+/// Check whether the exponent of @p op is a compile-time known integer.
+template <typename PowOp> static bool hasIntegerExponent(PowOp op) {
+  const auto exponent = op.getExponentValue();
+  return exponent && utils::isIntegerExponent(*exponent);
+}
+
 //===----------------------------------------------------------------------===//
 // QC
 //===----------------------------------------------------------------------===//
@@ -144,6 +152,48 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
     qc::InvOp::create(rewriter, op.getLoc(), targets, [&](ValueRange args) {
       cloneIntoBody(unitary, qubits, args, rewriter);
     });
+  }
+  rewriter.eraseOp(op);
+  return success();
+}
+
+/// Check that the unitary operations in @p body act on disjoint qubits.
+static bool hasDisjointBodyQubits(Block& body) {
+  DenseSet<Value> qubits;
+  for (auto unitary : body.getOps<qc::UnitaryOpInterface>()) {
+    for (auto qubit : getQubitOperands<qc::QubitType>(unitary)) {
+      if (!qubits.insert(qubit).second) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/// Unroll a `qc.pow` modifier with more than one body unitary,
+/// or fail if it cannot be unrolled.
+static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
+  if (op.getNumBodyUnitaries() < 2) {
+    return success();
+  }
+  auto* body = op.getBody();
+  if (!hasIntegerExponent(op) || !hasDisjointBodyQubits(*body)) {
+    return failure();
+  }
+  if (failed(hoistClassicalOps<qc::UnitaryOpInterface>(*body, op, rewriter))) {
+    return failure();
+  }
+
+  rewriter.setInsertionPoint(op);
+  for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
+    const auto qubits = getQubitOperands<qc::QubitType>(unitary);
+    const auto targets = llvm::map_to_vector(qubits, [&](Value qubit) {
+      return utils::getValueFromBlockArgument(qubit, op.getQubits());
+    });
+    qc::PowOp::create(rewriter, op.getLoc(), op.getExponent(), targets,
+                      [&](ValueRange args) {
+                        cloneIntoBody(unitary, qubits, args, rewriter);
+                      });
   }
   rewriter.eraseOp(op);
   return success();
@@ -234,6 +284,72 @@ static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   return success();
 }
 
+/// Check that the unitary operations in @p body act on disjoint wires.
+static bool hasDisjointBodyWires(Block& body) {
+  DenseMap<Value, size_t> wires;
+  for (auto [index, arg] : llvm::enumerate(body.getArguments())) {
+    wires.try_emplace(arg, index);
+  }
+
+  DenseSet<size_t> used;
+  for (auto unitary : body.getOps<qco::UnitaryOpInterface>()) {
+    const auto qubits = getQubitOperands<qco::QubitType>(unitary);
+    for (auto [qubit, result] :
+         llvm::zip_equal(qubits, unitary->getResults())) {
+      const auto it = wires.find(qubit);
+      if (it == wires.end()) {
+        return false;
+      }
+      const auto wire = it->second;
+      if (!used.insert(wire).second) {
+        return false;
+      }
+      wires.try_emplace(result, wire);
+    }
+  }
+  return true;
+}
+
+/// Unroll a `qco.pow` modifier with more than one body unitary,
+/// or fail if it cannot be unrolled.
+static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
+  if (op.getNumBodyUnitaries() < 2) {
+    return success();
+  }
+  auto* body = op.getBody();
+  if (!hasIntegerExponent(op) || !hasDisjointBodyWires(*body)) {
+    return failure();
+  }
+  if (failed(hoistClassicalOps<qco::UnitaryOpInterface>(*body, op, rewriter))) {
+    return failure();
+  }
+
+  // Maps the qubits of the original body to the qubit values threaded through
+  // the new modifiers.
+  IRMapping qubits;
+  qubits.map(body->getArguments(), op.getQubitsIn());
+
+  rewriter.setInsertionPoint(op);
+  for (auto unitary : body->getOps<qco::UnitaryOpInterface>()) {
+    const auto operands = getQubitOperands<qco::QubitType>(unitary);
+    const auto targets = llvm::map_to_vector(
+        operands, [&](Value qubit) { return qubits.lookup(qubit); });
+    auto powOp = qco::PowOp::create(
+        rewriter, op.getLoc(), targets, op.getExponent(),
+        [&](ValueRange args) -> SmallVector<Value> {
+          return cloneIntoBody(unitary, operands, args, rewriter);
+        });
+    qubits.map(unitary->getResults(), powOp.getResults());
+  }
+
+  rewriter.replaceOp(op,
+                     llvm::map_to_vector(body->getTerminator()->getOperands(),
+                                         [&](Value yielded) {
+                                           return qubits.lookup(yielded);
+                                         }));
+  return success();
+}
+
 namespace {
 
 struct UnrollModifiers final : impl::UnrollModifiersBase<UnrollModifiers> {
@@ -241,7 +357,8 @@ protected:
   void runOnOperation() override {
     SmallVector<Operation*> modifiers;
     getOperation()->walk([&](Operation* op) {
-      if (isa<qc::CtrlOp, qc::InvOp, qco::CtrlOp, qco::InvOp>(op)) {
+      if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
+              qco::PowOp>(op)) {
         modifiers.push_back(op);
       }
     });
@@ -251,7 +368,8 @@ protected:
     IRRewriter rewriter(&getContext());
     for (auto* modifier : modifiers) {
       llvm::TypeSwitch<Operation*>(modifier)
-          .Case<qc::CtrlOp, qc::InvOp, qco::CtrlOp, qco::InvOp>([&](auto op) {
+          .Case<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
+                qco::PowOp>([&](auto op) {
             if (failed(unrollModifier(op, rewriter))) {
               LLVM_DEBUG(llvm::dbgs() << "Failed to unroll " << op->getName()
                                       << " at " << op.getLoc() << "\n");

@@ -1223,6 +1223,14 @@ Value ctrlPowSxRef(QCProgramBuilder& b);
 /// pow bodies untouched; checks verification and the QC↔QCO round-trip.
 Value powTwo(QCProgramBuilder& b);
 
+/// Creates a circuit with a power modifier applied to two gates that act on
+/// disjoint qubits.
+Value powTwoDisjoint(QCProgramBuilder& b);
+
+/// Creates a circuit with a non-integer power modifier applied to two gates
+/// that act on disjoint qubits.
+Value powHalfDisjoint(QCProgramBuilder& b);
+
 /// pow(0) with a two-unitary body (x; rxx) — folds to identity (erased at top
 /// level).
 Value pow0Two(QCProgramBuilder& b);

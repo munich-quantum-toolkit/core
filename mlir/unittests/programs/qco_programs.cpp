@@ -3714,6 +3714,24 @@ Value powTwo(QCOProgramBuilder& b) {
   return measureAndReturn(b, powOut);
 }
 
+Value powTwoDisjoint(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut =
+      b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return {b.s(qubits[0]), b.t(qubits[1])};
+      });
+  return measureAndReturn(b, powOut);
+}
+
+Value powHalfDisjoint(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut =
+      b.pow(0.5, {q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return {b.s(qubits[0]), b.t(qubits[1])};
+      });
+  return measureAndReturn(b, powOut);
+}
+
 Value invCtrlTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {

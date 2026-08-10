@@ -2524,6 +2524,24 @@ Value powTwo(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+Value powTwoDisjoint(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.s(qubits[0]);
+    b.t(qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powHalfDisjoint(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.5, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.s(qubits[0]);
+    b.t(qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
 Value pow0Two(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.pow(0.0, {q[0], q[1]}, [&](ValueRange qubits) {

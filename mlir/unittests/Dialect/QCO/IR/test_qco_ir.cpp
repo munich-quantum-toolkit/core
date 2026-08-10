@@ -2473,6 +2473,18 @@ static Value ctrlTwoInvTwoUnrolled(QCOProgramBuilder& b) {
              [&](ValueRange targets) { return SmallVector{b.h(targets[0])}; });
   return measureRegister(b, {third.first[0], third.second[0], first.second[1]});
 }
+/// Reference for `powTwoDisjoint` after unrolling.
+static Value powTwoDisjointUnrolled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto first = b.pow(2.0, {q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.s(qubits[0])};
+  });
+  auto second = b.pow(2.0, {q[1]}, [&](ValueRange qubits) {
+    return SmallVector{b.t(qubits[0])};
+  });
+  return measureRegister(b, {first[0], second[0]});
+}
+
 TEST_F(QCOTest, UnrollModifiersSplitsCtrl) {
   expectUnrollsTo(context.get(), ctrlTwo, ctrlTwoUnrolled);
 }
@@ -2493,7 +2505,15 @@ TEST_F(QCOTest, UnrollModifiersUnrollsNestedModifiersAndTrailingOperation) {
   expectUnrollsTo(context.get(), ctrlTwoInvTwo, ctrlTwoInvTwoUnrolled);
 }
 
-TEST_F(QCOTest, UnrollModifiersLeavesPowUntouched) {
+TEST_F(QCOTest, UnrollModifiersSplitsDisjointPow) {
+  expectUnrollsTo(context.get(), powTwoDisjoint, powTwoDisjointUnrolled);
+}
+
+TEST_F(QCOTest, UnrollModifiersLeavesOverlappingPowUntouched) {
   expectUnrollsTo(context.get(), powTwo, powTwo);
+}
+
+TEST_F(QCOTest, UnrollModifiersLeavesNonIntegerPowUntouched) {
+  expectUnrollsTo(context.get(), powHalfDisjoint, powHalfDisjoint);
 }
 /// @}

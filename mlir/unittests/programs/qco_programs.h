@@ -1296,6 +1296,14 @@ Value invTwoUnrolled(QCOProgramBuilder& b);
 /// Creates a circuit with a power modifier applied to two gates.
 Value powTwo(QCOProgramBuilder& b);
 
+/// Creates a circuit with a power modifier applied to two gates that act on
+/// disjoint qubits.
+Value powTwoDisjoint(QCOProgramBuilder& b);
+
+/// Creates a circuit with a non-integer power modifier applied to two gates
+/// that act on disjoint qubits.
+Value powHalfDisjoint(QCOProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to a control modifier
 /// applied to two gates.
 Value invCtrlTwo(QCOProgramBuilder& b);
