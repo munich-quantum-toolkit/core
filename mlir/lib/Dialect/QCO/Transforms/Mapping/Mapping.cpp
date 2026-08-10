@@ -180,13 +180,13 @@ private:
 
     void applyPatch(Patch&& patch) {
       Patch p = std::move(patch);
-      if (patch.layout) {
+      if (p.layout) {
         layout = std::move(*p.layout);
       }
-      if (patch.infos) {
+      if (p.infos) {
         infos = std::move(*p.infos);
       }
-      if (patch.wires) {
+      if (p.wires) {
         wires = std::move(*p.wires);
       }
     }
