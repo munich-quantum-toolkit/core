@@ -190,20 +190,12 @@ def docs(session: nox.Session) -> None:
 
     env = {
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
-        # Keep LLVM/MLIR code optimized while favoring smaller, less expensive
-        # native compilation than the regular Release build on RTD workers.
-        "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
+        "SKBUILD_CMAKE_BUILD_TYPE": "Release",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
-        # Only DDSIM is exercised by the docs; omit the other bundled device
-        # providers. Header-set verification and IPO remain enabled by default
-        # elsewhere.
+        # Header-set verification and IPO remain enabled by default elsewhere.
         "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;"
-            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
-            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
-            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
-            "-DENABLE_IPO=OFF"
+            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;-DENABLE_IPO=OFF"
         ),
     }
     # install build and docs dependencies on top of the existing environment
@@ -235,8 +227,6 @@ def docs(session: nox.Session) -> None:
         "--no-dev",  # do not auto-install dev dependencies
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
-        "--reinstall-package",
-        "mqt-core",  # honor the docs-specific CMake configuration on reused environments
         "sphinx-autobuild" if serve else "sphinx-build",
         *shared_args,
         env=env,
