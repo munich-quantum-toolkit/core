@@ -312,6 +312,7 @@ static void promoteArgument(BlockArgument arg,
       continue;
     }
     builder.setInsertionPoint(callOp);
+    const auto callLoc = callOp.getLoc();
 
     SmallVector<Value> newOperands = llvm::to_vector(callOp.getOperands());
     Value currentTensor = newOperands[argIndex];
@@ -319,24 +320,24 @@ static void promoteArgument(BlockArgument arg,
 
     // Take the promoted qubits out of the tensor before the call, ...
     for (size_t i = 0; i < numSlots; ++i) {
-      Value index =
-          arith::ConstantIndexOp::create(builder, loc, slots[i].extractIndex);
+      Value index = arith::ConstantIndexOp::create(builder, callLoc,
+                                                   slots[i].extractIndex);
       auto extractOp =
-          qtensor::ExtractOp::create(builder, loc, currentTensor, index);
+          qtensor::ExtractOp::create(builder, callLoc, currentTensor, index);
       currentTensor = extractOp.getOutTensor();
       newOperands.insert(
           std::next(newOperands.begin(), static_cast<ptrdiff_t>(argIndex + i)),
           extractOp.getResult());
     }
 
-    auto newCall = func::CallOp::create(builder, loc, funcOp, newOperands);
+    auto newCall = func::CallOp::create(builder, callLoc, funcOp, newOperands);
 
     // ... and put them back afterwards.
     for (size_t i = 0; i < numSlots; ++i) {
-      Value index =
-          arith::ConstantIndexOp::create(builder, loc, slots[i].insertIndex);
+      Value index = arith::ConstantIndexOp::create(builder, callLoc,
+                                                   slots[i].insertIndex);
       currentTensor =
-          qtensor::InsertOp::create(builder, loc, newCall.getResult(i),
+          qtensor::InsertOp::create(builder, callLoc, newCall.getResult(i),
                                     currentTensor, index)
               .getResult();
     }

@@ -102,6 +102,93 @@ struct ContextSensitiveSpecializationPattern final
       std::array<double, 5>{0.0, std::numbers::pi, std::numbers::pi / 2,
                             1.5 * std::numbers::pi, 2 * std::numbers::pi};
 
+  /// Tolerance used when comparing rotation angles.
+  constexpr static double ANGLE_TOLERANCE = 1e-9;
+
+  /// Discardable attribute recording which rotation specializations a function
+  /// already represents. Each entry carries the specialized operand index and
+  /// the angle that was baked into the body, which mirrors the identity used by
+  /// `PreviousSpecializations::rotationSpecializations`.
+  constexpr static llvm::StringLiteral ROTATION_SPECIALIZATION_ATTR =
+      "qco.rotation_specializations";
+  /// Key of the operand index inside one specialization entry.
+  constexpr static llvm::StringLiteral ROTATION_SPECIALIZATION_OPERAND =
+      "operand";
+  /// Key of the baked-in angle inside one specialization entry.
+  constexpr static llvm::StringLiteral ROTATION_SPECIALIZATION_ANGLE = "angle";
+
+  /**
+   * @brief Compare two rotation angles up to the specialization tolerance.
+   *
+   * @param lhs The first angle.
+   * @param rhs The second angle.
+   * @return True if the angles are considered equal.
+   */
+  static bool anglesAreEqual(double lhs, double rhs) {
+    return std::abs(lhs - rhs) < ANGLE_TOLERANCE;
+  }
+
+  /**
+   * @brief Check whether a function already is the rotation specialization for
+   * the given operand and angle.
+   *
+   * @details
+   * Uses a discardable attribute rather than the function name, so that a
+   * specialization for one operand or angle does not block specialization for
+   * another, and so that user-chosen names cannot be mistaken for markers.
+   *
+   * @param funcOp The candidate callee.
+   * @param operand The index of the angle argument.
+   * @param angle The angle passed at the call site.
+   * @return True if @p funcOp already bakes in that angle for that operand.
+   */
+  static bool hasRotationSpecialization(func::FuncOp funcOp, unsigned operand,
+                                        double angle) {
+    const auto marker =
+        funcOp->getAttrOfType<ArrayAttr>(ROTATION_SPECIALIZATION_ATTR);
+    if (!marker) {
+      return false;
+    }
+    return llvm::any_of(
+        marker.getAsRange<DictionaryAttr>(), [&](DictionaryAttr entry) {
+          const auto operandAttr =
+              entry.getAs<IntegerAttr>(ROTATION_SPECIALIZATION_OPERAND);
+          const auto angleAttr =
+              entry.getAs<FloatAttr>(ROTATION_SPECIALIZATION_ANGLE);
+          return operandAttr && angleAttr && operandAttr.getInt() == operand &&
+                 anglesAreEqual(angleAttr.getValueAsDouble(), angle);
+        });
+  }
+
+  /**
+   * @brief Record on a cloned function which rotation specialization it is.
+   *
+   * @details
+   * Existing markers are kept, so a function specialized for several operands
+   * accumulates one entry per operand.
+   *
+   * @param funcOp The clone to mark.
+   * @param operand The index of the angle argument.
+   * @param angle The angle baked into the body.
+   * @param builder Builder used to create the attributes.
+   */
+  static void markRotationSpecialization(func::FuncOp funcOp, unsigned operand,
+                                         double angle, OpBuilder& builder) {
+    SmallVector<Attribute> entries;
+    if (const auto existing =
+            funcOp->getAttrOfType<ArrayAttr>(ROTATION_SPECIALIZATION_ATTR)) {
+      entries.assign(existing.begin(), existing.end());
+    }
+    entries.emplace_back(builder.getDictionaryAttr(
+        {builder.getNamedAttr(
+             ROTATION_SPECIALIZATION_OPERAND,
+             builder.getI32IntegerAttr(static_cast<int32_t>(operand))),
+         builder.getNamedAttr(ROTATION_SPECIALIZATION_ANGLE,
+                              builder.getF64FloatAttr(angle))}));
+    funcOp->setAttr(ROTATION_SPECIALIZATION_ATTR,
+                    builder.getArrayAttr(entries));
+  }
+
   /**
    * @brief Check whether an operation leaves a qubit in the |0> state alone.
    *
@@ -320,14 +407,14 @@ struct ContextSensitiveSpecializationPattern final
                                       double angle, unsigned operand,
                                       PatternRewriter& rewriter) const {
     if (std::ranges::none_of(ANGLES_TO_SPECIALIZE, [angle](double a) {
-          return std::abs(a - angle) < 1e-9;
+          return anglesAreEqual(a, angle);
         })) {
       return false;
     }
 
-    const std::string suffix = "_spec_fixed_angle_" + std::to_string(operand);
-    if (funcOp.getName().contains(suffix)) {
-      // Already specialized
+    if (hasRotationSpecialization(funcOp, operand, angle)) {
+      // This callee already is the specialization for that operand and angle,
+      // so specializing it again would clone it forever.
       return false;
     }
 
@@ -339,7 +426,10 @@ struct ContextSensitiveSpecializationPattern final
       return true;
     }
 
-    auto newFunc = copyFunction(funcOp, funcOp.getName().str() + suffix);
+    auto newFunc =
+        copyFunction(funcOp, funcOp.getName().str() + "_spec_fixed_angle_" +
+                                 std::to_string(operand));
+    markRotationSpecialization(newFunc, operand, angle, rewriter);
     symbolTable.insert(newFunc);
     previousSpecializations.rotationSpecializations.insert({key, newFunc});
 

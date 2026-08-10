@@ -1399,6 +1399,10 @@ SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
                                                     TypeRange resultTypes) {
   checkFinalized();
 
+  if (SymbolTable::lookupSymbolIn(module, name) != nullptr) {
+    llvm::reportFatalUsageError("Function with the same name already exists");
+  }
+
   if (functionScope.has_value()) {
     llvm::reportFatalUsageError(
         "Cannot start a function while another one is being built");

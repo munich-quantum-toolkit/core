@@ -453,6 +453,61 @@ TEST_F(QCOQuantumIPOTest, specializeHalfPiRotationAngle) {
 }
 
 /**
+ * @brief Two call sites passing different constant angles to the same callee
+ * each get their own specialization.
+ */
+TEST_F(QCOQuantumIPOTest, separateRotationSpecializationPerAngle) {
+  const auto qubitType = programBuilder.getQubitType();
+  const auto floatType = programBuilder.getF64Type();
+
+  programBuilder.initialize();
+  auto args =
+      programBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
+  programBuilder.endFunction({programBuilder.rz(args[1], args[0])});
+
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto results0 = programBuilder.call(
+      "f", {q0, programBuilder.floatConstant(std::numbers::pi)});
+  auto results1 = programBuilder.call(
+      "f", {q1, programBuilder.floatConstant(std::numbers::pi / 2)});
+  programBuilder.sink(results0[0]);
+  programBuilder.sink(results1[0]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs =
+      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
+  referenceBuilder.endFunction({referenceBuilder.rz(refArgs[1], refArgs[0])});
+
+  // The rewriter reaches the pi/2 call first, so that specialization keeps the
+  // plain name and the pi one gets the uniqued name.
+  auto specHalfPiArgs = referenceBuilder.startFunction(
+      "f_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
+  referenceBuilder.endFunction(
+      {referenceBuilder.rz(std::numbers::pi / 2, specHalfPiArgs[0])});
+
+  auto specPiArgs = referenceBuilder.startFunction(
+      "f_spec_fixed_angle_1_0", {qubitType, floatType}, {qubitType});
+  referenceBuilder.endFunction(
+      {referenceBuilder.rz(std::numbers::pi, specPiArgs[0])});
+
+  auto refQ0 = referenceBuilder.allocQubit();
+  auto refQ1 = referenceBuilder.allocQubit();
+  auto refResults0 = referenceBuilder.call(
+      "f_spec_fixed_angle_1_0",
+      {refQ0, referenceBuilder.floatConstant(std::numbers::pi)});
+  auto refResults1 = referenceBuilder.call(
+      "f_spec_fixed_angle_1",
+      {refQ1, referenceBuilder.floatConstant(std::numbers::pi / 2)});
+  referenceBuilder.sink(refResults0[0]);
+  referenceBuilder.sink(refResults1[0]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
  * @brief An angle outside the set of specialized angles leaves the callee
  * untouched.
  */
