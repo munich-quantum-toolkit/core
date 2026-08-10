@@ -25,6 +25,8 @@
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/RegionUtils.h>
 
+#include <cstddef>
+
 namespace mlir::qc::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {

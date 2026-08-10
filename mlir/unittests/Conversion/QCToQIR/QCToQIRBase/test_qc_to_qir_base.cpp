@@ -40,6 +40,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
