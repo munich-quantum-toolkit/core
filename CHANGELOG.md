@@ -12,9 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Support retrieving existing jobs by ID through the QDMI client API and
-  expose optional device queue length and job queue position through the C++ and
-  Python FoMaC APIs ([#2010]) ([**@burgholzer**])
+- ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
+  and Python FoMaC APIs, and expose optional device queue length and job queue
+  position ([#2008], [#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
@@ -100,7 +100,8 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006], [#2017], [#2026]) ([**@burgholzer**], [**@denialhaag**],
+  [#1976], [#2006], [#2017], [#2026], [#2028]) ([**@burgholzer**],
+  [**@denialhaag**],
   [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
   [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
@@ -725,10 +726,12 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
+[#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
