@@ -179,14 +179,15 @@ private:
     };
 
     void applyPatch(Patch&& patch) {
+      Patch p = std::move(patch);
       if (patch.layout) {
-        layout = std::move(*patch.layout);
+        layout = std::move(*p.layout);
       }
       if (patch.infos) {
-        infos = std::move(*patch.infos);
+        infos = std::move(*p.infos);
       }
       if (patch.wires) {
-        wires = std::move(*patch.wires);
+        wires = std::move(*p.wires);
       }
     }
   };
