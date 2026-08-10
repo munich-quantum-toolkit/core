@@ -12,15 +12,14 @@
 
 #include "mlir/Compiler/Programs.h"
 
-struct _object;
-using PyObject = _object;
-
 namespace mqt::bindings::qiskit {
 
-[[nodiscard]] mlir::QCProgram importCircuit(PyObject* circuit);
+using PythonHandle = void;
+
+[[nodiscard]] mlir::QCProgram importCircuit(PythonHandle* circuit);
 
 /** Return a new owned Python reference to a Qiskit QuantumCircuit. */
-[[nodiscard]] PyObject* exportCircuit(const mlir::QCProgram& program);
+[[nodiscard]] PythonHandle* exportCircuit(const mlir::QCProgram& program);
 
 /** Inspect Qiskit lazily and report whether a released adapter is available. */
 [[nodiscard]] bool compilerBridgeAvailable();

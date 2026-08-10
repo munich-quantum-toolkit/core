@@ -653,8 +653,8 @@ before conversion to QCO.)pb");
           "to_qiskit",
           [](const mlir::QCProgram& program) {
             requireValid(program);
-            return nb::steal<nb::object>(
-                bindings::qiskit::exportCircuit(program));
+            return nb::steal<nb::object>(static_cast<PyObject*>(
+                bindings::qiskit::exportCircuit(program)));
           },
           nb::sig("def to_qiskit(self) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.)pb")

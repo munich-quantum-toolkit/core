@@ -33,9 +33,11 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -46,6 +48,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -232,6 +235,70 @@ module {
   ASSERT_EQ(matrix.cols(), 2);
   EXPECT_EQ(matrix(0, 1), Complex(0.0, -1.0));
   EXPECT_EQ(matrix(1, 0), Complex(0.0, 1.0));
+  EXPECT_EQ(unitary.getInputForOutput(unitary.getQubitsOut().front()),
+            unitary.getQubitsIn().front());
+  EXPECT_EQ(unitary.getOutputForInput(unitary.getQubitsIn().front()),
+            unitary.getQubitsOut().front());
+  EXPECT_DEATH(unitary.getInputForOutput(unitary.getQubitsIn().front()),
+               "not an output of UnitaryOp");
+  EXPECT_DEATH(unitary.getOutputForInput(unitary.getQubitsOut().front()),
+               "not an input of UnitaryOp");
+}
+
+TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsMalformedInputs) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto complexType = ComplexType::get(builder.getF64Type());
+  const auto denseComplex = [&](const ArrayRef<int64_t> shape,
+                                const std::complex<double> value = {}) {
+    return DenseElementsAttr::get(RankedTensorType::get(shape, complexType),
+                                  value);
+  };
+  const auto expectRejected =
+      [&](const ElementsAttr matrix, // NOLINT(misc-include-cleaner)
+          const ValueRange qubits) {
+        auto unitary = UnitaryOp::create(builder, qubits, matrix);
+        EXPECT_TRUE(failed(unitary.verify()));
+        unitary.erase();
+      };
+
+  const auto sparseType = RankedTensorType::get({2, 2}, complexType);
+  const auto indices = DenseIntElementsAttr::get(
+      RankedTensorType::get({1, 2}, builder.getI64Type()),
+      {int64_t{0}, int64_t{0}});
+  const auto values = DenseElementsAttr::get(
+      RankedTensorType::get({1}, complexType), std::complex<double>{1.0, 0.0});
+  expectRejected(SparseElementsAttr::get(sparseType, indices, values),
+                 ValueRange{qubit});
+  expectRejected(denseComplex({2}), ValueRange{qubit});
+  expectRejected(denseComplex({2, 3}), ValueRange{qubit});
+  expectRejected(DenseElementsAttr::get(
+                     RankedTensorType::get({2, 2}, builder.getF64Type()), 0.0),
+                 ValueRange{qubit});
+  expectRejected(denseComplex({1, 1}), ValueRange{});
+
+  SmallVector<Value> tooManyQubits;
+  for (size_t i = 0; i < 63U; ++i) {
+    tooManyQubits.push_back(builder.allocQubit());
+  }
+  expectRejected(denseComplex({1, 1}), tooManyQubits);
+  expectRejected(denseComplex({3, 3}), ValueRange{qubit});
+
+  auto finiteFailure = UnitaryOp::create(
+      builder, ValueRange{qubit},
+      denseComplex({2, 2}, {std::numeric_limits<double>::infinity(), 0.0}));
+  EXPECT_TRUE(failed(finiteFailure.verify()));
+  finiteFailure.erase();
+
+  OperationState mismatchedResults(builder.getLoc(),
+                                   UnitaryOp::getOperationName());
+  UnitaryOp::build(builder, mismatchedResults, ValueRange{qubit},
+                   denseComplex({2, 2}));
+  mismatchedResults.addTypes(QubitType::get(context.get()));
+  auto mismatch = cast<UnitaryOp>(builder.create(mismatchedResults));
+  EXPECT_TRUE(failed(mismatch.verify()));
+  mismatch.erase();
 }
 
 TEST_F(QCOMatrixTest, CXOpMatrix) {

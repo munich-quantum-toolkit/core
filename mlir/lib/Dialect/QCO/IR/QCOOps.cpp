@@ -11,10 +11,13 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpImplementation.h>

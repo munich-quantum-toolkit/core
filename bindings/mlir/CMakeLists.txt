@@ -33,12 +33,13 @@ if(NOT TARGET ${TARGET_NAME})
     set(adapter_target "${TARGET_NAME}-qiskit-${adapter_suffix}")
     add_library(${adapter_target} OBJECT qiskit/Adapter${adapter_suffix}.cpp)
     target_compile_features(${adapter_target} PRIVATE cxx_std_20)
-    target_compile_definitions(${adapter_target} PRIVATE QISKIT_PYTHON_EXTENSION)
+    target_compile_definitions(${adapter_target} PRIVATE QISKIT_PYTHON_EXTENSION
+                                                         Py_LIMITED_API=0x030C0000)
     target_include_directories(
       ${adapter_target} SYSTEM
       PRIVATE ${PROJECT_SOURCE_DIR}/vendor/qiskit-c-api/${adapter_release}/include)
     target_link_libraries(${adapter_target} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
-                                                    Python::Module)
+                                                    Python::SABIModule)
     set_target_properties(${adapter_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
     list(APPEND qiskit_adapter_objects $<TARGET_OBJECTS:${adapter_target}>)
   endforeach()
@@ -67,12 +68,13 @@ if(NOT TARGET ${TARGET_NAME})
     set(candidate_target "${TARGET_NAME}-qiskit-candidate")
     add_library(${candidate_target} OBJECT ${CMAKE_CURRENT_BINARY_DIR}/AdapterCandidate.cpp)
     target_compile_features(${candidate_target} PRIVATE cxx_std_20)
-    target_compile_definitions(${candidate_target} PRIVATE QISKIT_PYTHON_EXTENSION)
+    target_compile_definitions(${candidate_target} PRIVATE QISKIT_PYTHON_EXTENSION
+                                                           Py_LIMITED_API=0x030C0000)
     target_include_directories(${candidate_target} SYSTEM
                                PRIVATE ${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE})
     target_include_directories(${candidate_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/qiskit)
     target_link_libraries(${candidate_target} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
-                                                      Python::Module)
+                                                      Python::SABIModule)
     set_target_properties(${candidate_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
     list(APPEND qiskit_adapter_objects $<TARGET_OBJECTS:${candidate_target}>)
   endif()

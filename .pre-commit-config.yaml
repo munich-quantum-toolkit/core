@@ -24,8 +24,10 @@ repos:
         fail_fast: true
         priority: 0
       - id: end-of-file-fixer
+        exclude: ^vendor/
         priority: 1
       - id: trailing-whitespace
+        exclude: ^vendor/
         priority: 2
 
   ## Check JSON schemata
@@ -66,7 +68,7 @@ repos:
         name: Disallow improper capitalization
         language: pygrep
         entry: \b(Nanobind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum)\b
-        exclude: ^(\.pre-commit-config\.yaml)$
+        exclude: ^(\.pre-commit-config\.yaml|vendor/)
         priority: 0
 
   ## Check for typos
@@ -110,6 +112,7 @@ repos:
     hooks:
       - id: prettier
         types_or: [yaml, html, css, scss, javascript, json, json5]
+        exclude: ^vendor/
         priority: 5
 
   ## Format Markdown files with rumdl
@@ -118,8 +121,10 @@ repos:
     hooks:
       - id: rumdl
         args: [--fix]
+        exclude: ^vendor/
         priority: 5
       - id: rumdl-fmt
+        exclude: ^vendor/
         priority: 6
 
   ## Format CMake files with cmake-format
@@ -130,6 +135,7 @@ repos:
         additional_dependencies: [pyyaml]
         types: [file]
         files: (\.cmake|CMakeLists.txt)(.in)?$
+        exclude: ^vendor/
         priority: 5
 
   ## Format C++ files with clang-format
@@ -144,6 +150,7 @@ repos:
         name: clang-format (TableGen)
         types_or: [file]
         files: \.td$
+        exclude: ^vendor/
         priority: 5
 
   ## Format and lint Python files with ruff
@@ -151,10 +158,12 @@ repos:
     rev: v0.16.1
     hooks:
       - id: ruff-check
+        exclude: ^vendor/
         require_serial: true
         priority: 6
       - id: ruff-format
         types_or: [python, pyi, jupyter, markdown]
+        exclude: ^vendor/
         priority: 7
 
   ## Check Python types with ty

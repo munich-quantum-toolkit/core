@@ -19,12 +19,16 @@
 #include <string_view>
 #include <vector>
 
-struct _object;
-using PyObject = _object;
-
 namespace mqt::bindings::qiskit {
 
-enum class OperationKind : std::uint8_t {
+using PythonHandle = void;
+
+// These value types cross the adapter boundary as explicit, zero-initialized
+// aggregates. Keep that property visible even for members whose library types
+// already default-initialize themselves.
+// NOLINTBEGIN(readability-redundant-member-init)
+
+enum class OperationKind : std::uint8_t { // NOLINT(performance-enum-size)
   Gate,
   Barrier,
   Delay,
@@ -36,28 +40,49 @@ enum class OperationKind : std::uint8_t {
 };
 
 struct Register {
-  std::string name;
-  std::vector<std::uint32_t> bits;
+  std::string name{};
+  std::vector<std::uint32_t> bits{};
 };
 
-enum class ParameterKind : std::uint8_t { Number, Symbol, Expression };
+enum class ParameterKind : std::uint8_t { // NOLINT(performance-enum-size)
+  Number,
+  Symbol,
+  Expression,
+};
 
 struct Parameter {
   ParameterKind kind = ParameterKind::Number;
   double number = 0.0;
-  std::string text;
+  std::string text{};
+};
+
+enum class GateModifierKind : std::uint8_t { // NOLINT(performance-enum-size)
+  Control,
+  Inverse,
+  Power,
+};
+
+struct GateModifier {
+  GateModifierKind kind = GateModifierKind::Inverse;
+  std::uint32_t numControls = 0;
+  Parameter exponent{.kind = ParameterKind::Number, .number = 1.0};
 };
 
 struct Instruction {
   OperationKind kind = OperationKind::Unknown;
-  std::string name;
-  std::vector<std::uint32_t> qubits;
-  std::vector<std::uint32_t> clbits;
-  std::vector<Parameter> parameters;
+  std::string name{};
+  std::vector<std::uint32_t> qubits{};
+  std::vector<std::uint32_t> clbits{};
+  std::vector<Parameter> parameters{};
+  std::vector<GateModifier> modifiers{};
 };
 
-enum class ClassicalType : std::uint8_t { Bool, Uint, Float };
-enum class ExpressionKind : std::uint8_t {
+enum class ClassicalType : std::uint8_t { // NOLINT(performance-enum-size)
+  Bool,
+  Uint,
+  Float,
+};
+enum class ExpressionKind : std::uint8_t { // NOLINT(performance-enum-size)
   Unary,
   Binary,
   Cast,
@@ -65,7 +90,7 @@ enum class ExpressionKind : std::uint8_t {
   Variable,
   Index,
 };
-enum class BinaryOperation : std::uint8_t {
+enum class BinaryOperation : std::uint8_t { // NOLINT(performance-enum-size)
   BitAnd,
   BitOr,
   BitXor,
@@ -84,7 +109,11 @@ enum class BinaryOperation : std::uint8_t {
   Multiply,
   Divide,
 };
-enum class UnaryOperation : std::uint8_t { BitNot, LogicNot, Negate };
+enum class UnaryOperation : std::uint8_t { // NOLINT(performance-enum-size)
+  BitNot,
+  LogicNot,
+  Negate,
+};
 
 /** One normalized Qiskit classical-expression tree. */
 struct Expression {
@@ -96,12 +125,12 @@ struct Expression {
   bool boolValue = false;
   std::uint64_t uintValue = 0;
   double floatValue = 0.0;
-  std::string variableName;
-  std::unique_ptr<Expression> left;
-  std::unique_ptr<Expression> right;
+  std::string variableName{};
+  std::unique_ptr<Expression> left{};
+  std::unique_ptr<Expression> right{};
 };
 
-enum class ControlFlowKind : std::uint8_t {
+enum class ControlFlowKind : std::uint8_t { // NOLINT(performance-enum-size)
   Box,
   Break,
   Continue,
@@ -110,7 +139,7 @@ enum class ControlFlowKind : std::uint8_t {
   Switch,
   While,
 };
-enum class ClassicalTargetKind : std::uint8_t {
+enum class ClassicalTargetKind : std::uint8_t { // NOLINT(performance-enum-size)
   ClassicalBit,
   ClassicalRegister,
   Expression,
@@ -123,7 +152,7 @@ struct ClassicalTarget {
   Register reg;
   std::uint64_t expectedRegister = 0;
   std::uint32_t width = 1;
-  std::unique_ptr<Expression> expression;
+  std::unique_ptr<Expression> expression{};
 };
 
 struct Loop {
@@ -131,14 +160,16 @@ struct Loop {
   std::int64_t start = 0;
   std::int64_t stop = 0;
   std::int64_t step = 1;
-  std::vector<std::int64_t> values;
-  std::optional<std::string> parameter;
+  std::vector<std::int64_t> values{};
+  std::optional<std::string> parameter{};
 };
 
 struct SwitchCase {
   bool isDefault = false;
-  std::vector<std::uint64_t> labels;
+  std::vector<std::uint64_t> labels{};
 };
+
+// NOLINTEND(readability-redundant-member-init)
 
 class ControlFlowView;
 
@@ -211,7 +242,7 @@ public:
                           const std::vector<std::uint32_t>& qubits) = 0;
 
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
-  [[nodiscard]] virtual PyObject* finish() = 0;
+  [[nodiscard]] virtual PythonHandle* finish() = 0;
 };
 
 class Adapter {
@@ -224,7 +255,7 @@ public:
   virtual ~Adapter() = default;
 
   [[nodiscard]] virtual std::unique_ptr<CircuitView>
-  openCircuit(PyObject* circuit) const = 0;
+  openCircuit(PythonHandle* circuit) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
   createCircuit(std::uint32_t looseQubits, std::uint32_t looseClbits) const = 0;
 };

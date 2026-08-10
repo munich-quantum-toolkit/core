@@ -21,13 +21,16 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -41,9 +44,11 @@
 #include <mlir/Support/LLVM.h>
 
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -317,6 +322,36 @@ module {
   EXPECT_TRUE(succeeded(verify(*reparsed)));
 }
 
+TEST_F(QCTest, BuilderSupportsInputsFloatConstantsAndDenseUnitary) {
+  QCProgramBuilder builder(context.get());
+  const SmallVector<Type> inputTypes{builder.getF64Type()};
+  const SmallVector<Type> returnTypes{builder.getI64Type()};
+  const auto arguments = builder.initialize(inputTypes, returnTypes);
+  ASSERT_EQ(arguments.size(), 1U);
+  EXPECT_TRUE(arguments.front().getType().isF64());
+
+  builder.gphase(arguments.front());
+  builder.gphase(builder.floatConstant(0.25));
+  const auto qubit = builder.allocQubit();
+  const auto matrixType = RankedTensorType::get(
+      {2, 2},
+      ComplexType::get(
+          builder.getF64Type())); // NOLINT(cppcoreguidelines-slicing)
+  const std::array<std::complex<double>, 4> matrixValues{
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+  const auto matrix = DenseElementsAttr::get(
+      matrixType, llvm::ArrayRef<std::complex<double>>(matrixValues));
+  builder.unitary(ValueRange{qubit}, matrix);
+
+  auto module = builder.finalize(builder.intConstant(0));
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  EXPECT_EQ(function.getNumArguments(), 1U);
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<UnitaryOp>()), 1U);
+}
+
 TEST_F(QCTest, DenseUnitaryRejectsDimensionThatDoesNotMatchQubitArity) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
@@ -331,6 +366,50 @@ module {
 
   auto module = parseSourceString<ModuleOp>(source, context.get());
   EXPECT_FALSE(module);
+}
+
+TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedInputs) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto complexType = ComplexType::get(builder.getF64Type());
+  const auto denseComplex = [&](const ArrayRef<int64_t> shape,
+                                const std::complex<double> value = {}) {
+    return DenseElementsAttr::get(RankedTensorType::get(shape, complexType),
+                                  value);
+  };
+  const auto expectRejected =
+      [&](const ElementsAttr matrix, // NOLINT(misc-include-cleaner)
+          const ValueRange qubits) {
+        auto unitary = UnitaryOp::create(builder, matrix, qubits);
+        EXPECT_TRUE(failed(unitary.verify()));
+        unitary.erase();
+      };
+
+  const auto sparseType = RankedTensorType::get({2, 2}, complexType);
+  const auto indices = DenseIntElementsAttr::get(
+      RankedTensorType::get({1, 2}, builder.getI64Type()),
+      {int64_t{0}, int64_t{0}});
+  const auto values = DenseElementsAttr::get(
+      RankedTensorType::get({1}, complexType), std::complex<double>{1.0, 0.0});
+  expectRejected(SparseElementsAttr::get(sparseType, indices, values),
+                 ValueRange{qubit});
+  expectRejected(denseComplex({2}), ValueRange{qubit});
+  expectRejected(denseComplex({2, 3}), ValueRange{qubit});
+  expectRejected(DenseElementsAttr::get(
+                     RankedTensorType::get({2, 2}, builder.getF64Type()), 0.0),
+                 ValueRange{qubit});
+  expectRejected(denseComplex({1, 1}), ValueRange{});
+
+  SmallVector<Value> tooManyQubits;
+  for (size_t i = 0; i < 63U; ++i) {
+    tooManyQubits.push_back(builder.allocQubit());
+  }
+  expectRejected(denseComplex({1, 1}), tooManyQubits);
+  expectRejected(denseComplex({3, 3}), ValueRange{qubit});
+  expectRejected(
+      denseComplex({2, 2}, {std::numeric_limits<double>::infinity(), 0.0}),
+      ValueRange{qubit});
 }
 
 namespace {

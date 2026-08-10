@@ -18,7 +18,17 @@ import numpy as np
 import pytest
 import qiskit
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
-from qiskit.circuit import Clbit, Gate, Parameter, Qubit, library
+from qiskit.circuit import (
+    AnnotatedOperation,
+    Clbit,
+    ControlModifier,
+    Gate,
+    InverseModifier,
+    Parameter,
+    PowerModifier,
+    Qubit,
+    library,
+)
 from qiskit.circuit.classical import expr, types
 from qiskit.quantum_info import Operator
 
@@ -193,6 +203,60 @@ def test_qiskit_bridge_exports_constructible_qc_modifiers() -> None:
 
 
 @requires_bridge
+def test_qiskit_bridge_imports_controlled_and_annotated_operations() -> None:
+    """Preserve closed controls and ordered inverse/power annotations."""
+    phase_sensitive = AnnotatedOperation(library.SGate(), [InverseModifier(), ControlModifier(1)])
+    circuit = QuantumCircuit(2)
+    circuit.append(phase_sensitive, range(2))
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "qc.ctrl" in program.ir
+    assert program.ir.index("qc.ctrl") < program.ir.index("qc.inv") < program.ir.index("qc.s")
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+    multiply_controlled = QuantumCircuit(3)
+    multiply_controlled.append(library.HGate().control(2, annotated=True), range(3))
+    assert "qc.ctrl(%0, %1)" in QCProgram.from_qiskit(multiply_controlled).ir
+
+
+@requires_bridge
+def test_qiskit_bridge_imports_symbolic_power_modifiers_in_nested_blocks() -> None:
+    """Discover modifier-only parameters and inspect operations inside control flow."""
+    exponent = Parameter("exponent")
+    operation = AnnotatedOperation(library.RXGate(0.25), PowerModifier(exponent))
+    circuit = QuantumCircuit(1, 1)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.append(operation, [0])
+
+    program = QCProgram.from_qiskit(circuit)
+
+    assert 'mqt.qiskit.parameter_name = "exponent"' in program.ir
+    assert "scf.if" in program.ir
+    assert "qc.pow(%arg0)" in program.ir
+    assert "qc.rx" in program.ir
+
+
+@requires_bridge
+def test_qiskit_bridge_rejects_unsupported_modifier_forms() -> None:
+    """Reject open controls and composite power exponents explicitly."""
+    open_control = QuantumCircuit(2)
+    open_control.append(library.HGate().control(1, ctrl_state=0), range(2))
+    with pytest.raises(RuntimeError, match="open-control modifiers"):
+        QCProgram.from_qiskit(open_control)
+
+    exponent = Parameter("exponent")
+    composite = QuantumCircuit(1)
+    composite.append(
+        AnnotatedOperation(library.HGate(), PowerModifier(exponent + 1)),
+        [0],
+    )
+    with pytest.raises(RuntimeError, match="unsupported expression"):
+        QCProgram.from_qiskit(composite)
+
+
+@requires_bridge
 def test_qiskit_bridge_exports_dynamic_qc_allocations() -> None:
     """Represent flat dynamic QC qubits as loose QkCircuit bits."""
     program = QCProgram.from_mlir_str(
@@ -326,6 +390,43 @@ def test_qiskit_bridge_imports_supported_classical_expressions(
 
     assert f"%arg0: {argument_type}" in program.ir
     assert operation in program.ir
+
+
+@requires_bridge
+def test_qiskit_bridge_preserves_unsigned_control_flow_values() -> None:
+    """Widen register conditions and switch targets without sign extension."""
+    qreg = QuantumRegister(1, "q")
+    creg = ClassicalRegister(2, "c")
+
+    condition = QuantumCircuit(qreg, creg)
+    with condition.if_test((creg, 4)):
+        condition.x(0)
+    condition_ir = QCProgram.from_qiskit(condition).ir
+    assert "arith.extui" in condition_ir
+    assert "arith.constant -4 : i3" in condition_ir
+
+    switched = QuantumCircuit(qreg, creg)
+    with switched.switch(creg, None, None, None, label=None) as case:
+        with case(3):
+            switched.x(0)
+        with case(case.DEFAULT):
+            switched.h(0)
+    switch_ir = QCProgram.from_qiskit(switched).ir
+    assert "arith.index_castui" in switch_ir
+    assert "case 3" in switch_ir
+
+
+@requires_bridge
+def test_qiskit_bridge_rejects_mismatched_shift_widths() -> None:
+    """Reject shift amounts that cannot be represented without narrowing."""
+    value = expr.Var.new("value", types.Uint(8))
+    amount = expr.Var.new("amount", types.Uint(64))
+    circuit = QuantumCircuit(1, inputs=[value, amount])
+    with circuit.if_test(expr.equal(expr.shift_left(value, amount), 0)):
+        circuit.x(0)
+
+    with pytest.raises(RuntimeError, match="shift amount wider than its integer operand"):
+        QCProgram.from_qiskit(circuit)
 
 
 @requires_bridge

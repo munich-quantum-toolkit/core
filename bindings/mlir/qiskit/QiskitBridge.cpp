@@ -13,35 +13,40 @@
 #include "Dispatcher.h"
 #include "QiskitAdapter.h"
 #include "jeff/IR/JeffDialect.h"
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Dialect/Utils/Utils.h" // NOLINT(misc-include-cleaner)
 
 #include <llvm/ADT/APInt.h>
-#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseMap.h> // NOLINT(misc-include-cleaner)
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringMap.h> // NOLINT(misc-include-cleaner)
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSet.h>
+#include <llvm/ADT/StringSet.h>   // NOLINT(misc-include-cleaner)
+#include <llvm/Support/Casting.h> // NOLINT(misc-include-cleaner)
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/ExecutionEngine/OptUtils.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h> // NOLINT(misc-include-cleaner)
+#include <mlir/IR/Attributes.h>                  // NOLINT(misc-include-cleaner)
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinDialect.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
@@ -51,17 +56,18 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <cstdint>
+#include <cstdint> // NOLINT(misc-include-cleaner)
 #include <functional>
-#include <limits>
+#include <limits> // NOLINT(misc-include-cleaner)
 #include <memory>
+#include <numeric> // NOLINT(misc-include-cleaner)
 #include <optional>
 #include <stdexcept>
-#include <string>
+#include <string> // NOLINT(misc-include-cleaner)
 #include <string_view>
 #include <utility>
 #include <variant>
-#include <vector>
+#include <vector> // NOLINT(misc-include-cleaner)
 
 namespace mqt::bindings::qiskit {
 
@@ -207,6 +213,27 @@ void requireArity(const Instruction& instruction, const std::size_t qubits,
   }
 }
 
+using GateArity = std::pair<std::size_t, std::size_t>;
+
+[[nodiscard]] std::optional<GateArity> gateArity(const std::string_view name) {
+  static const llvm::StringMap<GateArity> ARITIES = {
+      {"id", {1, 0}},    {"x", {1, 0}},          {"y", {1, 0}},
+      {"z", {1, 0}},     {"h", {1, 0}},          {"s", {1, 0}},
+      {"sdg", {1, 0}},   {"t", {1, 0}},          {"tdg", {1, 0}},
+      {"sx", {1, 0}},    {"sxdg", {1, 0}},       {"rx", {1, 1}},
+      {"ry", {1, 1}},    {"rz", {1, 1}},         {"p", {1, 1}},
+      {"u1", {1, 1}},    {"r", {1, 2}},          {"u2", {1, 2}},
+      {"u", {1, 3}},     {"u3", {1, 3}},         {"swap", {2, 0}},
+      {"iswap", {2, 0}}, {"dcx", {2, 0}},        {"ecr", {2, 0}},
+      {"rxx", {2, 1}},   {"ryy", {2, 1}},        {"rzx", {2, 1}},
+      {"rzz", {2, 1}},   {"xx_plus_yy", {2, 2}}, {"xx_minus_yy", {2, 2}},
+      {"rccx", {3, 0}},
+  };
+  const auto arity = ARITIES.find(name);
+  return arity == ARITIES.end() ? std::nullopt
+                                : std::optional<GateArity>{arity->second};
+}
+
 void emitBaseGate(mlir::qc::QCProgramBuilder& builder,
                   const std::string_view name, const mlir::ValueRange qubits,
                   const llvm::ArrayRef<ParameterValue> parameters) {
@@ -284,21 +311,94 @@ void emitControlledGate(mlir::qc::QCProgramBuilder& builder,
   });
 }
 
+void emitModifiedGate(mlir::qc::QCProgramBuilder& builder,
+                      const Instruction& instruction,
+                      const mlir::ValueRange qubits,
+                      const llvm::ArrayRef<ParameterValue> parameters,
+                      const Symbols& symbols,
+                      const llvm::ArrayRef<mlir::Value> arguments,
+                      const LocalParameters& localParameters) {
+  const auto arity = gateArity(instruction.name);
+  if (!arity) {
+    throw std::runtime_error("unsupported modified Qiskit standard gate '" +
+                             instruction.name + "'");
+  }
+  std::size_t numControls = 0;
+  for (const auto& modifier : instruction.modifiers) {
+    if (modifier.kind == GateModifierKind::Control) {
+      if (modifier.numControls >
+          std::numeric_limits<std::size_t>::max() - numControls) {
+        throw std::runtime_error("Qiskit control count is too large");
+      }
+      numControls += modifier.numControls;
+    }
+  }
+  if (instruction.qubits.size() != numControls + arity->first ||
+      instruction.parameters.size() != arity->second) {
+    throw std::runtime_error("Qiskit instruction '" + instruction.name +
+                             "' has an unsupported modified operand arity");
+  }
+
+  const auto targets = qubits.drop_front(numControls);
+  const auto emitModifiers =
+      [&](auto&& self, const std::size_t count,
+          const mlir::ValueRange targetArguments) -> void {
+    if (count == 0U) {
+      emitBaseGate(builder, instruction.name, targetArguments, parameters);
+      return;
+    }
+    const auto& modifier = instruction.modifiers[count - 1U];
+    switch (modifier.kind) {
+    case GateModifierKind::Control:
+      // Closed controls commute with the other supported Qiskit modifiers and
+      // are represented together by the outer qc.ctrl below.
+      self(self, count - 1U, targetArguments);
+      return;
+    case GateModifierKind::Inverse:
+      builder.inv(targetArguments, [&](const mlir::ValueRange innerArguments) {
+        self(self, count - 1U, innerArguments);
+      });
+      return;
+    case GateModifierKind::Power: {
+      const auto exponent = parameterValue(modifier.exponent, symbols,
+                                           arguments, localParameters);
+      builder.pow(exponent, targetArguments,
+                  [&](const mlir::ValueRange innerArguments) {
+                    self(self, count - 1U, innerArguments);
+                  });
+      return;
+    }
+    }
+  };
+
+  if (numControls == 0U) {
+    emitModifiers(emitModifiers, instruction.modifiers.size(), targets);
+    return;
+  }
+  builder.ctrl(qubits.take_front(numControls), targets,
+               [&](const mlir::ValueRange targetArguments) {
+                 emitModifiers(emitModifiers, instruction.modifiers.size(),
+                               targetArguments);
+               });
+}
+
 void emitRC3X(mlir::qc::QCProgramBuilder& builder,
               const mlir::ValueRange qubits) {
   constexpr std::size_t dimension = 16U;
   std::vector<std::complex<double>> matrix(dimension * dimension);
   for (std::size_t index = 0; index < dimension; ++index) {
-    matrix[index * dimension + index] = 1.0;
+    matrix[(index * dimension) + index] = 1.0;
   }
-  matrix[3U * dimension + 3U] = {0.0, 1.0};
-  matrix[7U * dimension + 7U] = 0.0;
-  matrix[7U * dimension + 15U] = 1.0;
-  matrix[11U * dimension + 11U] = {0.0, -1.0};
-  matrix[15U * dimension + 15U] = 0.0;
-  matrix[15U * dimension + 7U] = -1.0;
+  matrix[(3U * dimension) + 3U] = {0.0, 1.0};
+  matrix[(7U * dimension) + 7U] = 0.0;
+  matrix[(7U * dimension) + 15U] = 1.0;
+  matrix[(11U * dimension) + 11U] = {0.0, -1.0};
+  matrix[(15U * dimension) + 15U] = 0.0;
+  matrix[(15U * dimension) + 7U] = -1.0;
   const auto type = mlir::RankedTensorType::get(
-      {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
+      {dimension, dimension},
+      mlir::ComplexType::get(
+          builder.getF64Type())); // NOLINT(cppcoreguidelines-slicing)
   builder.unitary(qubits,
                   mlir::DenseElementsAttr::get(
                       type, llvm::ArrayRef<std::complex<double>>(matrix)));
@@ -329,6 +429,11 @@ void emitGate(mlir::qc::QCProgramBuilder& builder,
 
   const auto& name = instruction.name;
   const llvm::ArrayRef<mlir::Value> qubitRange(qubits);
+  if (!instruction.modifiers.empty()) {
+    emitModifiedGate(builder, instruction, qubitRange, parameters, symbols,
+                     arguments, localParameters);
+    return;
+  }
   if (name == "global_phase") {
     requireArity(instruction, 0, 1);
     builder.gphase(parameters[0]);
@@ -391,24 +496,11 @@ void emitGate(mlir::qc::QCProgramBuilder& builder,
     return;
   }
 
-  static const llvm::StringMap<std::pair<std::size_t, std::size_t>> arities = {
-      {"id", {1, 0}},    {"x", {1, 0}},          {"y", {1, 0}},
-      {"z", {1, 0}},     {"h", {1, 0}},          {"s", {1, 0}},
-      {"sdg", {1, 0}},   {"t", {1, 0}},          {"tdg", {1, 0}},
-      {"sx", {1, 0}},    {"sxdg", {1, 0}},       {"rx", {1, 1}},
-      {"ry", {1, 1}},    {"rz", {1, 1}},         {"p", {1, 1}},
-      {"u1", {1, 1}},    {"r", {1, 2}},          {"u2", {1, 2}},
-      {"u", {1, 3}},     {"u3", {1, 3}},         {"swap", {2, 0}},
-      {"iswap", {2, 0}}, {"dcx", {2, 0}},        {"ecr", {2, 0}},
-      {"rxx", {2, 1}},   {"ryy", {2, 1}},        {"rzx", {2, 1}},
-      {"rzz", {2, 1}},   {"xx_plus_yy", {2, 2}}, {"xx_minus_yy", {2, 2}},
-      {"rccx", {3, 0}},
-  };
-  const auto arity = arities.find(name);
-  if (arity == arities.end()) {
+  const auto arity = gateArity(name);
+  if (!arity) {
     throw std::runtime_error("unsupported Qiskit standard gate '" + name + "'");
   }
-  requireArity(instruction, arity->second.first, arity->second.second);
+  requireArity(instruction, arity->first, arity->second);
   emitBaseGate(builder, name, qubits, parameters);
 }
 
@@ -442,9 +534,10 @@ void emitGate(mlir::qc::QCProgramBuilder& builder,
 void collectCircuitSymbols(const CircuitView& circuit, Symbols& symbols,
                            llvm::StringSet<> localParameters);
 
-void collectControlFlowSymbols(const ControlFlowView& controlFlow,
-                               Symbols& symbols,
-                               llvm::StringSet<> localParameters) {
+void collectControlFlowSymbols(
+    const ControlFlowView& controlFlow, Symbols& symbols,
+    llvm::StringSet<>
+        localParameters) { // NOLINT(performance-unnecessary-value-param)
   switch (controlFlow.kind()) {
   case ControlFlowKind::Box:
     throw std::runtime_error("Qiskit box instructions are not supported");
@@ -481,13 +574,20 @@ void collectControlFlowSymbols(const ControlFlowView& controlFlow,
   }
 }
 
-void collectCircuitSymbols(const CircuitView& circuit, Symbols& symbols,
-                           llvm::StringSet<> localParameters) {
+void collectCircuitSymbols(
+    const CircuitView& circuit, Symbols& symbols,
+    llvm::StringSet<>
+        localParameters) { // NOLINT(performance-unnecessary-value-param)
   collectParameter(circuit.globalPhase(), symbols, localParameters);
   for (std::size_t index = 0; index < circuit.numInstructions(); ++index) {
     const auto instruction = circuit.instruction(index);
     for (const auto& parameter : instruction.parameters) {
       collectParameter(parameter, symbols, localParameters);
+    }
+    for (const auto& modifier : instruction.modifiers) {
+      if (modifier.kind == GateModifierKind::Power) {
+        collectParameter(modifier.exponent, symbols, localParameters);
+      }
     }
     if (instruction.kind == OperationKind::ControlFlow) {
       const auto controlFlow = circuit.controlFlow(index);
@@ -509,7 +609,7 @@ void collectCircuitSymbols(const CircuitView& circuit, Symbols& symbols,
     }
     return builder.getIntegerType(width);
   case ClassicalType::Float:
-    return builder.getF64Type();
+    return builder.getF64Type(); // NOLINT(cppcoreguidelines-slicing)
   }
   throw std::runtime_error("unknown normalized Qiskit classical type");
 }
@@ -697,6 +797,15 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
       throw std::runtime_error(
           "Qiskit classical operation requires integer operands");
     }
+    if (expression.binaryOperation == BinaryOperation::ShiftLeft ||
+        expression.binaryOperation == BinaryOperation::ShiftRight) {
+      const auto shiftType = llvm::dyn_cast<mlir::IntegerType>(right.getType());
+      if (!shiftType || shiftType.getWidth() > integerType.getWidth()) {
+        throw std::runtime_error(
+            "Qiskit compiler bridge does not support a shift amount wider "
+            "than its integer operand");
+      }
+    }
     right = castInteger(builder, right, integerType);
     switch (expression.binaryOperation) {
     case BinaryOperation::BitAnd:
@@ -794,7 +903,9 @@ emitCondition(mlir::qc::QCProgramBuilder& builder,
         .getResult();
   }
   case ClassicalTargetKind::ClassicalRegister: {
-    const auto actual = packRegister(builder, classicalStorage, target.reg);
+    const auto actual = castInteger(
+        builder, packRegister(builder, classicalStorage, target.reg),
+        builder.getIntegerType(target.width));
     const auto expected =
         integerConstant(builder, target.width, target.expectedRegister);
     return mlir::arith::CmpIOp::create(builder, mlir::arith::CmpIPredicate::eq,
@@ -834,19 +945,19 @@ emitSwitchTarget(mlir::qc::QCProgramBuilder& builder,
   if (!llvm::isa<mlir::IntegerType>(value.getType())) {
     throw std::runtime_error("Qiskit switch targets must be Boolean or Uint");
   }
-  return mlir::arith::IndexCastOp::create(builder, builder.getIndexType(),
-                                          value)
+  return mlir::arith::IndexCastUIOp::create(builder, builder.getIndexType(),
+                                            value)
       .getResult();
 }
 
-void translateCircuit(mlir::qc::QCProgramBuilder& builder,
-                      const CircuitView& circuit,
-                      llvm::ArrayRef<std::uint32_t> qubitMap,
-                      llvm::ArrayRef<std::uint32_t> clbitMap,
-                      llvm::ArrayRef<mlir::Value> allQubits,
-                      mlir::Value classicalStorage, const Symbols& symbols,
-                      llvm::ArrayRef<mlir::Value> arguments,
-                      LocalParameters localParameters);
+void translateCircuit(
+    mlir::qc::QCProgramBuilder& builder, const CircuitView& circuit,
+    llvm::ArrayRef<std::uint32_t> qubitMap,
+    llvm::ArrayRef<std::uint32_t> clbitMap,
+    llvm::ArrayRef<mlir::Value> allQubits, mlir::Value classicalStorage,
+    const Symbols& symbols, llvm::ArrayRef<mlir::Value> arguments,
+    LocalParameters
+        localParameters); // NOLINT(performance-unnecessary-value-param)
 
 [[nodiscard]] std::int64_t rangeLength(const Loop& loop) {
   if (loop.step == 0) {
@@ -861,10 +972,13 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                                   static_cast<std::uint64_t>(loop.start)
                             : static_cast<std::uint64_t>(loop.start) -
                                   static_cast<std::uint64_t>(loop.stop);
+  // The unsigned conversion deliberately handles INT64_MIN without negation.
+  // NOLINTBEGIN(readability-redundant-casting)
   const auto magnitude =
       loop.step > 0 ? static_cast<std::uint64_t>(loop.step)
                     : std::uint64_t{0} - static_cast<std::uint64_t>(loop.step);
-  const auto count = (distance - 1U) / magnitude + 1U;
+  // NOLINTEND(readability-redundant-casting)
+  const auto count = ((distance - 1U) / magnitude) + 1U;
   if (count >
       static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
     throw std::runtime_error(
@@ -874,8 +988,9 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
 }
 
 void requireExactLoopParameter(const std::int64_t value) {
-  constexpr std::int64_t MAX_EXACT_DOUBLE_INTEGER = std::int64_t{1} << 53U;
-  if (value < -MAX_EXACT_DOUBLE_INTEGER || value > MAX_EXACT_DOUBLE_INTEGER) {
+  constexpr std::int64_t maxExactDoubleInteger =
+      std::int64_t{1} << 53U; // NOLINT(readability-redundant-casting)
+  if (value < -maxExactDoubleInteger || value > maxExactDoubleInteger) {
     throw std::runtime_error(
         "Qiskit loop parameter integer cannot be represented exactly as f64");
   }
@@ -893,7 +1008,10 @@ loopParameterValue(mlir::qc::QCProgramBuilder& builder,
   const auto value = mlir::arith::AddIOp::create(
                          builder, builder.intConstant(loop.start), offset)
                          .getResult();
-  return mlir::arith::SIToFPOp::create(builder, builder.getF64Type(), value)
+  return mlir::arith::SIToFPOp::create(
+             builder,
+             builder.getF64Type(), // NOLINT(cppcoreguidelines-slicing)
+             value)
       .getResult();
 }
 
@@ -1039,15 +1157,15 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
   }
 }
 
-void translateCircuit(mlir::qc::QCProgramBuilder& builder,
-                      const CircuitView& circuit,
-                      const llvm::ArrayRef<std::uint32_t> qubitMap,
-                      const llvm::ArrayRef<std::uint32_t> clbitMap,
-                      const llvm::ArrayRef<mlir::Value> allQubits,
-                      const mlir::Value classicalStorage,
-                      const Symbols& symbols,
-                      const llvm::ArrayRef<mlir::Value> arguments,
-                      LocalParameters localParameters) {
+void translateCircuit(
+    mlir::qc::QCProgramBuilder& builder, const CircuitView& circuit,
+    const llvm::ArrayRef<std::uint32_t> qubitMap,
+    const llvm::ArrayRef<std::uint32_t> clbitMap,
+    const llvm::ArrayRef<mlir::Value> allQubits,
+    const mlir::Value classicalStorage, const Symbols& symbols,
+    const llvm::ArrayRef<mlir::Value> arguments,
+    LocalParameters
+        localParameters) { // NOLINT(performance-unnecessary-value-param)
   builder.gphase(parameterValue(circuit.globalPhase(), symbols, arguments,
                                 localParameters));
   const auto getQubit = [&](const std::uint32_t local) {
@@ -1103,9 +1221,13 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
           static_cast<std::size_t>(std::numeric_limits<std::int64_t>::digits)) {
         throw std::runtime_error("Qiskit unitary is too large to represent");
       }
-      const auto dimension = std::int64_t{1} << operands.size();
+      const auto dimension =
+          std::int64_t{1} // NOLINT(readability-redundant-casting)
+          << operands.size();
       const auto type = mlir::RankedTensorType::get(
-          {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
+          {dimension, dimension},
+          mlir::ComplexType::get(
+              builder.getF64Type())); // NOLINT(cppcoreguidelines-slicing)
       const auto values = circuit.unitary(index);
       builder.unitary(operands,
                       mlir::DenseElementsAttr::get(
@@ -1128,13 +1250,22 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
 }
 
 struct ExportedInstruction {
-  enum class Kind : std::uint8_t { Gate, Measure, Reset, Barrier, Unitary };
+  // The export queue is an explicit, zero-initialized value aggregate.
+  // NOLINTBEGIN(readability-redundant-member-init)
+  enum class Kind : std::uint8_t { // NOLINT(performance-enum-size)
+    Gate,
+    Measure,
+    Reset,
+    Barrier,
+    Unitary,
+  };
   Kind kind = Kind::Gate;
-  std::string name;
-  std::vector<std::uint32_t> qubits;
-  std::vector<std::uint32_t> clbits;
-  std::vector<Parameter> parameters;
-  std::vector<std::complex<double>> matrix;
+  std::string name{};
+  std::vector<std::uint32_t> qubits{};
+  std::vector<std::uint32_t> clbits{};
+  std::vector<Parameter> parameters{};
+  std::vector<std::complex<double>> matrix{};
+  // NOLINTEND(readability-redundant-member-init)
 };
 
 [[nodiscard]] Parameter exportParameter(const mlir::Value value,
@@ -1161,8 +1292,17 @@ struct ExportedInstruction {
 
 [[nodiscard]] std::uint32_t checkedIndex(const std::int64_t index,
                                          const std::string_view kind) {
-  if (index < 0 || static_cast<std::uint64_t>(index) >
-                       std::numeric_limits<std::uint32_t>::max()) {
+  if (index < 0 ||
+      std::cmp_greater(index, std::numeric_limits<std::uint32_t>::max())) {
+    throw std::runtime_error(std::string(kind) +
+                             " index cannot be represented by Qiskit");
+  }
+  return static_cast<std::uint32_t>(index);
+}
+
+[[nodiscard]] std::uint32_t checkedIndex(const std::uint64_t index,
+                                         const std::string_view kind) {
+  if (index > std::numeric_limits<std::uint32_t>::max()) {
     throw std::runtime_error(std::string(kind) +
                              " index cannot be represented by Qiskit");
   }
@@ -1250,12 +1390,12 @@ modifierQubitMap(const llvm::DenseMap<mlir::Value, std::uint32_t>& outer,
 [[nodiscard]] std::string controlledGateName(const std::string_view base,
                                              const std::size_t controls) {
   if (controls == 1U) {
-    static const llvm::StringMap<std::string> names = {
+    static const llvm::StringMap<std::string> NAMES = {
         {"h", "ch"}, {"x", "cx"},     {"y", "cy"},   {"z", "cz"},
         {"p", "cp"}, {"rx", "crx"},   {"ry", "cry"}, {"rz", "crz"},
         {"s", "cs"}, {"sdg", "csdg"}, {"sx", "csx"}, {"swap", "cswap"},
     };
-    if (const auto name = names.find(base); name != names.end()) {
+    if (const auto name = NAMES.find(base); name != NAMES.end()) {
       return name->second;
     }
   }
@@ -1276,23 +1416,23 @@ modifierQubitMap(const llvm::DenseMap<mlir::Value, std::uint32_t>& outer,
 }
 
 void invertGate(ExportedInstruction& instruction) {
-  static const llvm::StringMap<std::string> inverseNames = {
+  static const llvm::StringMap<std::string> INVERSE_NAMES = {
       {"id", "id"},   {"x", "x"},     {"y", "y"},         {"z", "z"},
       {"h", "h"},     {"s", "sdg"},   {"sdg", "s"},       {"t", "tdg"},
       {"tdg", "t"},   {"sx", "sxdg"}, {"sxdg", "sx"},     {"swap", "swap"},
       {"cx", "cx"},   {"cy", "cy"},   {"cz", "cz"},       {"ch", "ch"},
       {"ccx", "ccx"}, {"ccz", "ccz"}, {"cswap", "cswap"}, {"ecr", "ecr"},
   };
-  if (const auto inverse = inverseNames.find(instruction.name);
-      inverse != inverseNames.end()) {
+  if (const auto inverse = INVERSE_NAMES.find(instruction.name);
+      inverse != INVERSE_NAMES.end()) {
     instruction.name = inverse->second;
     return;
   }
-  static const llvm::StringSet<> negateFirst = {
+  static const llvm::StringSet<> NEGATE_FIRST = {
       "p",   "rx",  "ry",  "rz",  "rxx", "ryy",
       "rzz", "rzx", "crx", "cry", "crz", "cp",
   };
-  if (negateFirst.contains(instruction.name) &&
+  if (NEGATE_FIRST.contains(instruction.name) &&
       !instruction.parameters.empty()) {
     auto& parameter = instruction.parameters.front();
     if (parameter.kind != ParameterKind::Number) {
@@ -1596,7 +1736,8 @@ readRegisterMetadata(mlir::ModuleOp module, const llvm::StringRef name) {
     Register reg{.name = registerName.str()};
     reg.bits.reserve(bits.size());
     for (const auto bit : bits.asArrayRef()) {
-      reg.bits.push_back(checkedIndex(bit, "register bit"));
+      reg.bits.push_back(
+          checkedIndex(static_cast<std::int64_t>(bit), "register bit"));
     }
     result.push_back(std::move(reg));
   }
@@ -1620,8 +1761,7 @@ validateRegisterLayout(const std::vector<Register>& registers,
       inRegister[bit] = true;
     }
   }
-  const auto firstRegistered =
-      std::find(inRegister.begin(), inRegister.end(), true);
+  const auto firstRegistered = std::ranges::find(inRegister, true);
   const auto loose =
       static_cast<std::uint32_t>(firstRegistered - inRegister.begin());
   std::uint32_t expected = loose;
@@ -1644,7 +1784,7 @@ validateRegisterLayout(const std::vector<Register>& registers,
 
 } // namespace
 
-mlir::QCProgram importCircuit(PyObject* circuit) {
+mlir::QCProgram importCircuit(PythonHandle* circuit) {
   auto adapter = selectAdapter();
   auto view = adapter->openCircuit(circuit);
 
@@ -1706,7 +1846,7 @@ mlir::QCProgram importCircuit(PyObject* circuit) {
   return QCProgramAccess::create(std::move(context), std::move(module));
 }
 
-PyObject* exportCircuit(const mlir::QCProgram& program) {
+PythonHandle* exportCircuit(const mlir::QCProgram& program) {
   auto module = QCProgramAccess::module(program);
   const auto functions = module.getOps<mlir::func::FuncOp>();
   if (functions.empty() || !llvm::hasSingleElement(functions)) {
