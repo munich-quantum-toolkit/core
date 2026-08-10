@@ -1461,7 +1461,6 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       OpenQASMProgram{.name = "controlled-inverse-pow-s",
                       .source = controlledInversePowS},
       OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
-      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
       OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
       OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
   };
@@ -1501,6 +1500,7 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
       OpenQASMProgram{.name = "checked-integer-state",
                       .source = checkedIntegerState},
       OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
+      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
       OpenQASMProgram{.name = "bit-vector-builtins",
                       .source = bitVectorBuiltins},
   };
