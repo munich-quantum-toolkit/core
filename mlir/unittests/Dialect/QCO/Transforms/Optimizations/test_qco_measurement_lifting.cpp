@@ -537,7 +537,7 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
   auto q0S0 = programBuilder.allocQubit();
   auto q1S0 = programBuilder.allocQubit();
 
-  auto [q0S1, q1S1] = programBuilder.ctrl({q0S0}, q1S0, [&](Value target) {
+  auto [q0S1, q1S1] = programBuilder.ctrl(q0S0, q1S0, [&](Value target) {
     auto t = programBuilder.z(target);
     return programBuilder.x(t);
   });

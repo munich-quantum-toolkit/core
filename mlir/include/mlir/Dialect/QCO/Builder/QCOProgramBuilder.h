@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <llvm/ADT/DenseMapInfo.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -159,6 +161,105 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief A tracked qubit value and its register information.
+   */
+  struct Qubit {
+    /// The tracked SSA value
+    Value value;
+    /// ID of the register the qubit belongs to
+    int64_t regId = -1;
+    /// Index of the qubit within its register
+    Value regIndex;
+
+    /**
+     * @brief Implicitly construct a tracked qubit from an SSA value.
+     * @param value The underlying qubit SSA value
+     * @param regId ID of the register containing the qubit, or `-1`
+     * @param regIndex Index of the qubit within its register, if applicable
+     */
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    Qubit(Value value, int64_t regId = -1, Value regIndex = {})
+        : value(value), regId(regId), regIndex(regIndex) {}
+
+    /**
+     * @brief Implicitly convert this tracked qubit to its underlying SSA value.
+     * @return The underlying `Value`
+     */
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator Value() const { return value; }
+
+    /**
+     * @brief Get the type of the underlying SSA value.
+     * @return The underlying value's type
+     */
+    Type getType() const { return value.getType(); }
+
+    /**
+     * @brief Get the operation defining the underlying SSA value.
+     * @return The defining operation, or `nullptr` if the value has none
+     */
+    Operation* getDefiningOp() const { return value.getDefiningOp(); }
+
+    /**
+     * @brief Get the operation defining the underlying SSA value as @p OpTy.
+     * @tparam OpTy The expected defining operation type
+     * @return The defining operation as @p OpTy, or a null operation if the
+     * value has no defining operation or it is not of type @p OpTy
+     */
+    template <typename OpTy> OpTy getDefiningOp() const {
+      return value.getDefiningOp<OpTy>();
+    }
+  };
+
+  /**
+   * @brief A tracked qubit tensor value and its register information.
+   */
+  struct Tensor {
+    /// The tracked SSA value
+    Value value;
+    /// ID of the register the tensor corresponds to
+    int64_t regId = -1;
+
+    /**
+     * @brief Implicitly construct a tracked tensor from an SSA value.
+     * @param value The underlying tensor SSA value
+     * @param regId ID of the corresponding register, or `-1`
+     */
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    Tensor(Value value, int64_t regId = -1) : value(value), regId(regId) {}
+
+    /**
+     * @brief Implicitly convert this tracked tensor to its underlying SSA
+     * value.
+     * @return The underlying `Value`
+     */
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator Value() const { return value; }
+
+    /**
+     * @brief Get the type of the underlying SSA value.
+     * @return The underlying value's type
+     */
+    Type getType() const { return value.getType(); }
+
+    /**
+     * @brief Get the operation defining the underlying SSA value.
+     * @return The defining operation, or `nullptr` if the value has none
+     */
+    Operation* getDefiningOp() const { return value.getDefiningOp(); }
+
+    /**
+     * @brief Get the operation defining the underlying SSA value as @p OpTy.
+     * @tparam OpTy The expected defining operation type
+     * @return The defining operation as @p OpTy, or a null operation if the
+     * value has no defining operation or it is not of type @p OpTy
+     */
+    template <typename OpTy> OpTy getDefiningOp() const {
+      return value.getDefiningOp<OpTy>();
+    }
+  };
+
+  /**
    * @brief Represents a qubit register with its qubits.
    */
   struct QubitRegister {
@@ -183,7 +284,7 @@ public:
 
   /**
    * @brief Allocate a single qubit initialized to |0⟩
-   * @return A tracked, valid qubit SSA value
+   * @return A tracked qubit handle (convertible to `Value`)
    *
    * @par Example:
    * ```c++
@@ -193,12 +294,12 @@ public:
    * %q = qco.alloc : !qco.qubit
    * ```
    */
-  Value allocQubit();
+  Qubit allocQubit();
 
   /**
    * @brief Get a static qubit by index
    * @param index The qubit index
-   * @return A tracked, valid qubit SSA value
+   * @return A tracked qubit handle (convertible to `Value`)
    *
    * @par Example:
    * ```c++
@@ -208,7 +309,7 @@ public:
    * %q0 = qco.static 0 : !qco.qubit
    * ```
    */
-  Value staticQubit(uint64_t index);
+  Qubit staticQubit(uint64_t index);
 
   /**
    * @brief Allocate a qubit tensor and eagerly extract every element
@@ -1852,21 +1953,26 @@ private:
   /// Count unique tensors
   int64_t tensorCounter = 0;
 
-  /**
-   * @brief Information about a qubit
-   */
-  struct QubitInfo {
-    /// ID of the register the qubit belongs to
-    int64_t regId = -1;
-    /// Index of the qubit within its register
-    Value regIndex;
+  struct QubitDenseMapInfo {
+    static Qubit getEmptyKey() {
+      return Qubit{llvm::DenseMapInfo<Value>::getEmptyKey()};
+    }
+    static Qubit getTombstoneKey() {
+      return Qubit{llvm::DenseMapInfo<Value>::getTombstoneKey()};
+    }
+    static unsigned getHashValue(const Qubit& qubit) {
+      return llvm::DenseMapInfo<Value>::getHashValue(qubit.value);
+    }
+    static bool isEqual(const Qubit& lhs, const Qubit& rhs) {
+      return lhs.value == rhs.value;
+    }
   };
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
-  /// Only values present in this map are valid for use in operations.
+  /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
-  DenseMap<Value, QubitInfo> validQubits;
+  DenseSet<Qubit, QubitDenseMapInfo> validQubits;
 
   /**
    * @brief Validate that a tensor value is valid and unconsumed. This also
@@ -1929,19 +2035,26 @@ private:
    */
   static void checkQubitType(ValueRange values);
 
-  /**
-   * @brief Information about a tensor
-   */
-  struct TensorInfo {
-    /// ID of the register the tensor corresponds to
-    int64_t regId = -1;
+  struct TensorDenseMapInfo {
+    static Tensor getEmptyKey() {
+      return {llvm::DenseMapInfo<Value>::getEmptyKey()};
+    }
+    static Tensor getTombstoneKey() {
+      return {llvm::DenseMapInfo<Value>::getTombstoneKey()};
+    }
+    static unsigned getHashValue(const Tensor& tensor) {
+      return llvm::DenseMapInfo<Value>::getHashValue(tensor.value);
+    }
+    static bool isEqual(const Tensor& lhs, const Tensor& rhs) {
+      return lhs.value == rhs.value;
+    }
   };
 
   /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
-  /// Only values present in this map are valid for use in operations.
+  /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
-  DenseMap<Value, TensorInfo> validTensors;
+  DenseSet<Tensor, TensorDenseMapInfo> validTensors;
 
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
