@@ -79,8 +79,9 @@ releases may include breaking changes.
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
   ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
-  rotation gates using quaternions ([#1407], [#1674], [#2002], [#2038]) ([**@J4MMlE**],
-  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
+  rotation gates using quaternions ([#1407], [#1674], [#2002], [#2038])
+  ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**],
+  [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
   [**@burgholzer**])
