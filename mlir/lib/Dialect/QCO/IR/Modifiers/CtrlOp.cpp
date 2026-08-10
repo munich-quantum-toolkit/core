@@ -145,8 +145,12 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     // Special case for single control: replace with a single POp
     if (op.getNumControls() == 1) {
-      rewriter.replaceOpWithNewOp<POp>(op, op.getInputControl(0),
-                                       gPhaseOp.getTheta());
+      auto pOp = POp::create(rewriter, op.getLoc(), op.getInputControl(0),
+                             gPhaseOp.getTheta());
+      // The phase acts only on the control; every target passes through.
+      SmallVector<Value> outputs{pOp.getOutputQubit(0)};
+      llvm::append_range(outputs, op.getTargetsIn());
+      rewriter.replaceOp(op, outputs);
       return success();
     }
 
