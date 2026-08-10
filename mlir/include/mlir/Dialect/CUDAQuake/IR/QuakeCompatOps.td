@@ -69,6 +69,16 @@ def QuakeApplyOp : QuakeCompatOp<"apply", [AttrSizedOperandSegments]> {
   let hasCustomAssemblyFormat = 1;
 }
 
+def QuakeComputeActionOp : QuakeCompatOp<"compute_action"> {
+  let summary = "CUDA-Q compute/action/uncompute idiom";
+  let arguments = (ins UnitAttr:$is_dagger, CCCallableType:$compute,
+      CCCallableType:$action);
+  let assemblyFormat = [{
+    (`<` `dag` $is_dagger^ `>`)? $compute `,` $action `:`
+      qualified(type($compute)) `,` qualified(type($action)) attr-dict
+  }];
+}
+
 def QuakeResetOp : QuakeCompatOp<"reset"> {
   let summary = "Reset qubit references";
   let arguments = (ins Variadic<AnyType>:$targets);

@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -80,9 +81,11 @@ TEST(QuakeProgramTest, ExportsQCAndRoundTripsBackToQC) {
   options.entryPointName = "round_trip";
   auto exported = std::move(qc->copy()).intoQuake(options);
   ASSERT_TRUE(exported);
-  EXPECT_NE(exported->str().find("@round_trip"), std::string::npos);
+  EXPECT_NE(exported->str().find("@__nvqpp__mlirgen__round_trip"),
+            std::string::npos);
   EXPECT_NE(exported->str().find(
-                "round_trip = \"round_trip_PyKernelEntryPointRewrite\""),
+                "__nvqpp__mlirgen__round_trip = "
+                "\"__nvqpp__mlirgen__round_trip_PyKernelEntryPointRewrite\""),
             std::string::npos);
   EXPECT_EQ(exported->str().find("__nvqpp__mlirgen__bell"), std::string::npos);
   EXPECT_NE(exported->str().find("quake.x ["), std::string::npos);
@@ -100,6 +103,122 @@ TEST(QuakeProgramTest, ImportsStructuredFeedbackAndBoundedLoop) {
   EXPECT_NE(text.find("qc.rx"), std::string::npos);
   EXPECT_NE(text.find("scf.if"), std::string::npos);
   EXPECT_NE(text.find("scf.while"), std::string::npos);
+}
+
+TEST(QuakeProgramTest, PropagatesFailuresFromConditionalRegions) {
+  constexpr auto source = R"mlir(
+module {
+  func.func @broken() attributes {"cudaq-entrypoint", "cudaq-kernel"} {
+    %q = quake.alloca !quake.ref
+    %condition = arith.constant true
+    cc.if (%condition) {
+      quake.apply @missing %q : (!quake.ref) -> ()
+    }
+    return
+  }
+})mlir";
+  auto quake = mlir::QuakeProgram::fromMLIRString(source);
+  ASSERT_TRUE(quake);
+  EXPECT_FALSE(std::move(*quake).intoQC());
+}
+
+TEST(QuakeProgramTest, ImportsMeasurementsReturnedFromAppliedKernels) {
+  constexpr auto source = R"mlir(
+module {
+  func.func @measure(%q: !quake.ref) -> !cc.measure_handle
+      attributes {"cudaq-kernel"} {
+    %measurement = quake.mz %q name "applied" : (!quake.ref) -> !cc.measure_handle
+    return %measurement : !cc.measure_handle
+  }
+  func.func @entry() attributes {"cudaq-entrypoint", "cudaq-kernel"} {
+    %q = quake.alloca !quake.ref
+    %measurement = quake.apply @measure %q : (!quake.ref) -> !cc.measure_handle
+    %condition = quake.discriminate %measurement : (!cc.measure_handle) -> i1
+    cc.if (%condition) {
+      quake.x %q : (!quake.ref) -> ()
+    }
+    return
+  }
+})mlir";
+  auto quake = mlir::QuakeProgram::fromMLIRString(source);
+  ASSERT_TRUE(quake);
+  auto qc = std::move(*quake).intoQC();
+  ASSERT_TRUE(qc);
+  const auto text = qc->str();
+  EXPECT_NE(text.find("register_name = \"applied\""), std::string::npos);
+  EXPECT_NE(text.find("scf.if"), std::string::npos);
+  EXPECT_NE(text.find("memref<1xi1>"), std::string::npos);
+}
+
+TEST(QuakeProgramTest, ImportsComputeActionLambdas) {
+  constexpr auto source = R"mlir(
+module {
+  func.func @compute_action() attributes {"cudaq-entrypoint", "cudaq-kernel"} {
+    %q = quake.alloca !quake.ref
+    %compute = cc.create_lambda {
+      cc.scope {
+        quake.s %q : (!quake.ref) -> ()
+      }
+      cc.return
+    } : !cc.callable<() -> ()>
+    %action = cc.create_lambda {
+      cc.scope {
+        quake.x %q : (!quake.ref) -> ()
+      }
+      cc.return
+    } : !cc.callable<() -> ()>
+    quake.compute_action %compute, %action : !cc.callable<() -> ()>, !cc.callable<() -> ()>
+    return
+  }
+})mlir";
+  auto quake = mlir::QuakeProgram::fromMLIRString(source);
+  ASSERT_TRUE(quake);
+  auto qc = std::move(*quake).intoQC();
+  ASSERT_TRUE(qc);
+  const auto text = qc->str();
+  EXPECT_NE(text.find("qc.s"), std::string::npos);
+  EXPECT_NE(text.find("qc.x"), std::string::npos);
+  EXPECT_NE(text.find("qc.inv"), std::string::npos);
+}
+
+TEST(QuakeProgramTest, ExportsMeasurementFeedbackThroughClassicalRegisters) {
+  constexpr auto source = R"mlir(
+module {
+  func.func @main() -> memref<2xi1>
+      attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    %bits = memref.alloc() : memref<2xi1>
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %first = qc.measure %q : !qc.qubit -> i1 {register_name = "first"}
+    memref.store %first, %bits[%c0] : memref<2xi1>
+    %condition = memref.load %bits[%c0] : memref<2xi1>
+    scf.if %condition {
+      qc.x %q : !qc.qubit
+    }
+    %second = qc.measure %q : !qc.qubit -> i1 {register_name = "second"}
+    memref.store %second, %bits[%c1] : memref<2xi1>
+    qc.dealloc %q : !qc.qubit
+    return %bits : memref<2xi1>
+  }
+})mlir";
+  auto qc = mlir::QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(qc);
+  auto quake = std::move(*qc).intoQuake();
+  ASSERT_TRUE(quake);
+  const auto text = quake->str();
+  EXPECT_NE(text.find("quake.discriminate"), std::string::npos);
+  EXPECT_NE(text.find("cc.if"), std::string::npos);
+  auto roundTripped = std::move(*quake).intoQC();
+  ASSERT_TRUE(roundTripped);
+  EXPECT_NE(roundTripped->str().find("memref<2xi1>"), std::string::npos);
+}
+
+TEST(QuakeProgramTest, AppendsQuakeToTheProgramFormatEnum) {
+  EXPECT_EQ(static_cast<uint8_t>(mlir::ProgramFormat::Jeff), 5U);
+  EXPECT_EQ(static_cast<uint8_t>(mlir::ProgramFormat::QIRBase), 6U);
+  EXPECT_EQ(static_cast<uint8_t>(mlir::ProgramFormat::QIRAdaptive), 7U);
+  EXPECT_EQ(static_cast<uint8_t>(mlir::ProgramFormat::Quake), 8U);
 }
 
 TEST(QuakeProgramTest, RejectsSSIAllocation) {

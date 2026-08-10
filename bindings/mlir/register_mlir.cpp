@@ -282,13 +282,13 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
              "QC after the optimized QCO round trip.")
       .value("OPENQASM3", mlir::ProgramFormat::OpenQASM3,
              "OpenQASM 3 after the optimized QCO round trip.")
-      .value("QUAKE", mlir::ProgramFormat::Quake,
-             "CUDA-Q reference-form Quake after the optimized QCO round trip.")
       .value("JEFF", mlir::ProgramFormat::Jeff, "Serializable ``jeff`` MLIR.")
       .value("QIR_BASE", mlir::ProgramFormat::QIRBase,
              "QIR for the Base Profile.")
       .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
-             "QIR for the Adaptive Profile.");
+             "QIR for the Adaptive Profile.")
+      .value("QUAKE", mlir::ProgramFormat::Quake,
+             "CUDA-Q reference-form Quake after the optimized QCO round trip.");
 
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
       m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
@@ -547,6 +547,7 @@ Programs own their MLIR module. Conversions can consume a program; use
           },
           "Return the textual MLIR representation of this program.");
 
+  // NOLINTNEXTLINE(readability-isolate-declaration,readability-identifier-naming)
   auto quakeProgram = nb::class_<mlir::QuakeProgram, mlir::Program>(
       m, "QuakeProgram", R"pb(A CUDA-Q reference-form Quake program.
 

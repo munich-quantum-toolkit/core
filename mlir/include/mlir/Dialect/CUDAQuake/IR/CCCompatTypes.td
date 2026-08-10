@@ -15,6 +15,12 @@ class CCCompatType<string name, string typeMnemonic>
   let mnemonic = typeMnemonic;
 }
 
+def CCCallableType : CCCompatType<"Callable", "callable"> {
+  let summary = "CUDA-Q callable value";
+  let parameters = (ins "::mlir::FunctionType":$signature);
+  let assemblyFormat = "`<` $signature `>`";
+}
+
 def CCStdvecType : CCCompatType<"Stdvec", "stdvec"> {
   let summary = "CUDA-Q vector-like classical value";
   let parameters = (ins "::mlir::Type":$elementType);

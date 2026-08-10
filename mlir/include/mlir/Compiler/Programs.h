@@ -66,14 +66,14 @@ enum class ProgramFormat : uint8_t {
   QC,
   /// Portable OpenQASM after the optimized QCO round trip.
   OpenQASM3,
-  /// CUDA-Q reference-form Quake after the optimized QCO round trip.
-  Quake,
   /// Serializable `jeff` MLIR.
   Jeff,
   /// QIR for the Base Profile.
   QIRBase,
   /// QIR for the Adaptive Profile.
   QIRAdaptive,
+  /// CUDA-Q reference-form Quake after the optimized QCO round trip.
+  Quake,
 };
 
 using QuakeExportOptions = cudaq_compat::QuakeExportOptions;

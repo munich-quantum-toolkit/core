@@ -10,29 +10,49 @@
 
 #include "mlir/Dialect/CUDAQuake/Translation/QuakeQCTranslation.h"
 
-#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompat.h"
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h" // IWYU pragma: keep
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
+#include "mlir/Dialect/QC/IR/QCOps.h" // IWYU pragma: keep
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/IRMapping.h>
-#include <mlir/IR/SymbolTable.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
+#include <utility>
 
 namespace mlir::cudaq_compat {
 namespace {
+// Clang-tidy's LLVM profile prefers static free functions, while its general
+// readability profile rejects redundant static declarations in this namespace.
+// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 
 using QubitMap = DenseMap<Value, SmallVector<Value>>;
+using ClassicalRegisterMap = DenseMap<Value, SmallVector<Value>>;
 
 struct ImportState {
   IRMapping values;
@@ -76,7 +96,7 @@ struct ImportState {
 [[nodiscard]] LogicalResult
 emitQCGate(OpBuilder& builder, const Location loc, const StringRef name,
            const ValueRange parameters, const ValueRange explicitControls,
-           const ArrayRef<bool> negativeControls,
+           const llvm::ArrayRef<bool> negativeControls,
            const ValueRange inheritedControls, const ValueRange targets,
            const bool adjoint) {
   SmallVector<Value> controls(inheritedControls);
@@ -99,10 +119,14 @@ emitQCGate(OpBuilder& builder, const Location loc, const StringRef name,
     }
   });
 
-  const auto qcName = name == "r1"          ? StringRef("p")
-                      : name == "u3"        ? StringRef("u")
-                      : name == "phased_rx" ? StringRef("r")
-                                            : name;
+  auto qcName = name;
+  if (name == "r1") {
+    qcName = "p";
+  } else if (name == "u3") {
+    qcName = "u";
+  } else if (name == "phased_rx") {
+    qcName = "r";
+  }
   const auto emitBase = [&](const ValueRange gateTargets) {
     OperationState operationState(loc, ("qc." + qcName).str());
     operationState.addOperands(gateTargets);
@@ -194,6 +218,9 @@ public:
       main.setType(builder.getFunctionType({}, {registerType}));
       func::ReturnOp::create(builder, entry.getLoc(),
                              resultRegister.getResult());
+    }
+    if (failed(verify(result))) {
+      return result.emitError("Quake import produced invalid QC IR");
     }
     return OwningOpRef<ModuleOp>(result);
   }
@@ -314,8 +341,80 @@ private:
       }
       SmallVector<Value> controls(inheritedControls);
       llvm::append_range(controls, flattenQubits(state, apply.getControls()));
-      return translateBlock(callee.getBody().front(), builder, child, controls,
-                            inheritedAdjoint != apply.getIsAdj());
+      if (failed(translateBlock(callee.getBody().front(), builder, child,
+                                controls,
+                                inheritedAdjoint != apply.getIsAdj()))) {
+        return failure();
+      }
+      auto returned =
+          dyn_cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+      if (!returned || returned.getNumOperands() != apply.getNumResults()) {
+        return apply.emitOpError("callee result count mismatch");
+      }
+      for (const auto [sourceResult, returnedValue] :
+           llvm::zip(apply.getResults(), returned.getOperands())) {
+        if (isa<quake::RefType, quake::VeqType>(sourceResult.getType())) {
+          const auto qubits = lookupQubits(child, returnedValue);
+          if (qubits.empty()) {
+            return apply.emitOpError("callee returned an unmapped qubit value");
+          }
+          state.qubits[sourceResult] = qubits;
+          continue;
+        }
+        if (const auto measurement = child.measurements.find(returnedValue);
+            measurement != child.measurements.end()) {
+          state.measurements[sourceResult] = measurement->second;
+          continue;
+        }
+        const auto mapped = child.values.lookupOrNull(returnedValue);
+        if (!mapped) {
+          return apply.emitOpError(
+              "callee returned an unmapped classical value");
+        }
+        state.values.map(sourceResult, mapped);
+      }
+      state.allocatedQubits = std::move(child.allocatedQubits);
+      state.measurementResults = std::move(child.measurementResults);
+      return success();
+    }
+    if (isa<cc::CCCreateLambdaOp>(operation)) {
+      return success();
+    }
+    if (auto scope = dyn_cast<cc::CCScopeOp>(operation)) {
+      if (scope.getNumResults() != 0 || !scope.getBody().hasOneBlock()) {
+        return scope.emitOpError(
+            "only single-block, result-free cc.scope is supported");
+      }
+      return translateBlock(scope.getBody().front(), builder, state,
+                            inheritedControls, inheritedAdjoint);
+    }
+    if (auto computeAction = dyn_cast<quake::QuakeComputeActionOp>(operation)) {
+      const auto translateCallable = [&](const Value callable,
+                                         const bool adjoint) -> LogicalResult {
+        auto lambda = callable.getDefiningOp<cc::CCCreateLambdaOp>();
+        if (!lambda || !lambda.getBody().hasOneBlock()) {
+          return computeAction.emitOpError(
+              "compute/action operands must be local single-block lambdas");
+        }
+        const auto signature =
+            cast<cc::CallableType>(callable.getType()).getSignature();
+        if (signature.getNumInputs() != 0 || signature.getNumResults() != 0) {
+          return computeAction.emitOpError(
+              "only argument-free, result-free compute/action lambdas are "
+              "supported");
+        }
+        return translateBlock(lambda.getBody().front(), builder, state,
+                              inheritedControls, adjoint);
+      };
+      if (failed(translateCallable(computeAction.getCompute(),
+                                   computeAction.getIsDagger())) ||
+          failed(
+              translateCallable(computeAction.getAction(), inheritedAdjoint)) ||
+          failed(translateCallable(computeAction.getCompute(),
+                                   !computeAction.getIsDagger()))) {
+        return failure();
+      }
+      return success();
     }
 
     if (auto measurement = dyn_cast<quake::QuakeMzOp>(operation)) {
@@ -345,12 +444,15 @@ private:
       if (!condition) {
         return conditional.emitOpError("condition is not a mapped i1 value");
       }
+      bool regionFailed = false;
       auto thenBuilder = [&](OpBuilder& nested, Location) {
         ImportState child = state;
         if (failed(translateBlock(conditional.getThenRegion().front(), nested,
                                   child, inheritedControls,
                                   inheritedAdjoint))) {
+          regionFailed = true;
           conditional.emitOpError("failed to translate then region");
+          return;
         }
         scf::YieldOp::create(nested, loc);
       };
@@ -362,11 +464,16 @@ private:
           if (failed(translateBlock(conditional.getElseRegion().front(), nested,
                                     child, inheritedControls,
                                     inheritedAdjoint))) {
+            regionFailed = true;
             conditional.emitOpError("failed to translate else region");
+            return;
           }
           scf::YieldOp::create(nested, loc);
         };
         scf::IfOp::create(builder, loc, condition, thenBuilder, elseBuilder);
+      }
+      if (regionFailed) {
+        return failure();
       }
       return success();
     }
@@ -506,11 +613,10 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult translateGate(Operation& operation,
-                                            OpBuilder& builder,
-                                            ImportState& state,
-                                            const ValueRange inheritedControls,
-                                            const bool inheritedAdjoint) {
+  [[nodiscard]] static LogicalResult
+  translateGate(Operation& operation, OpBuilder& builder, ImportState& state,
+                const ValueRange inheritedControls,
+                const bool inheritedAdjoint) {
     return llvm::TypeSwitch<Operation*, LogicalResult>(&operation)
         .Case<quake::QuakeHOp, quake::QuakePhasedRxOp, quake::QuakeR1Op,
               quake::QuakeRxOp, quake::QuakeRyOp, quake::QuakeRzOp,
@@ -552,8 +658,9 @@ private:
 
 class QCExporter final {
 public:
-  QCExporter(ModuleOp input, const QuakeExportOptions& options)
-      : input(input), options(options), context(input.getContext()) {}
+  QCExporter(ModuleOp input, QuakeExportOptions options)
+      : input(input), options(std::move(options)), context(input.getContext()) {
+  }
 
   [[nodiscard]] FailureOr<OwningOpRef<ModuleOp>> run() {
     func::FuncOp entry;
@@ -577,14 +684,19 @@ public:
     auto result = ModuleOp::create(input.getLoc());
     result->setAttrs(input->getAttrs());
     OpBuilder builder(context);
+    constexpr llvm::StringLiteral nvqppPrefix = "__nvqpp__mlirgen__";
+    auto entryPointSymbol = options.entryPointName;
+    if (!llvm::StringRef(entryPointSymbol).starts_with(nvqppPrefix)) {
+      entryPointSymbol = (nvqppPrefix + entryPointSymbol).str();
+    }
     result->setAttr("quake.mangled_name_map",
                     builder.getDictionaryAttr({builder.getNamedAttr(
-                        options.entryPointName,
-                        builder.getStringAttr(options.entryPointName +
+                        entryPointSymbol,
+                        builder.getStringAttr(entryPointSymbol +
                                               "_PyKernelEntryPointRewrite"))}));
     builder.setInsertionPointToStart(result.getBody());
     auto function =
-        func::FuncOp::create(builder, entry.getLoc(), options.entryPointName,
+        func::FuncOp::create(builder, entry.getLoc(), entryPointSymbol,
                              builder.getFunctionType({}, {}));
     function->setAttr("cudaq-entrypoint", builder.getUnitAttr());
     function->setAttr("cudaq-kernel", builder.getUnitAttr());
@@ -592,11 +704,15 @@ public:
     builder.setInsertionPointToStart(&destination);
     IRMapping values;
     DenseMap<Value, Value> qregValues;
+    ClassicalRegisterMap classicalRegisters;
     if (failed(translateBlock(entry.getBody().front(), builder, values,
-                              qregValues, {}, false))) {
+                              qregValues, classicalRegisters, {}, false))) {
       return failure();
     }
     func::ReturnOp::create(builder, entry.getLoc());
+    if (failed(verify(result))) {
+      return result.emitError("QC export produced invalid Quake IR");
+    }
     return OwningOpRef<ModuleOp>(result);
   }
 
@@ -617,11 +733,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] LogicalResult translateBlock(Block& source, OpBuilder& builder,
-                                             IRMapping& values,
-                                             DenseMap<Value, Value>& qregValues,
-                                             const ValueRange inheritedControls,
-                                             const bool inheritedAdjoint) {
+  [[nodiscard]] LogicalResult
+  translateBlock(Block& source, OpBuilder& builder, IRMapping& values,
+                 DenseMap<Value, Value>& qregValues,
+                 ClassicalRegisterMap& classicalRegisters,
+                 const ValueRange inheritedControls,
+                 const bool inheritedAdjoint) {
     for (Operation& operation : source.without_terminator()) {
       const auto loc = operation.getLoc();
       if (auto alloc = dyn_cast<qc::AllocOp>(operation)) {
@@ -642,7 +759,10 @@ private:
           qregValues[alloc.getResult()] = quakeAlloc.getReference();
           continue;
         }
-        if (type && type.getRank() == 1 && type.getElementType().isInteger(1)) {
+        if (type && type.hasStaticShape() && type.getRank() == 1 &&
+            type.getElementType().isInteger(1)) {
+          classicalRegisters[alloc.getResult()].resize(
+              static_cast<size_t>(type.getDimSize(0)));
           continue;
         }
       }
@@ -661,10 +781,48 @@ private:
           values.map(load.getResult(), extracted.getReference());
           continue;
         }
+        if (const auto classical = classicalRegisters.find(load.getMemref());
+            classical != classicalRegisters.end()) {
+          auto index =
+              load.getIndices().front().getDefiningOp<arith::ConstantIndexOp>();
+          if (!index || index.value() < 0 ||
+              static_cast<size_t>(index.value()) >= classical->second.size()) {
+            return load.emitOpError(
+                "classical register access requires an in-bounds constant "
+                "index");
+          }
+          const auto stored =
+              classical->second[static_cast<size_t>(index.value())];
+          if (!stored) {
+            return load.emitOpError("classical register element is undefined");
+          }
+          values.map(load.getResult(), stored);
+          continue;
+        }
+        if (const auto type = dyn_cast<MemRefType>(load.getMemref().getType());
+            type && type.getElementType().isInteger(1)) {
+          return load.emitOpError("unsupported classical register source");
+        }
       }
       if (auto store = dyn_cast<memref::StoreOp>(operation)) {
         if (const auto type = dyn_cast<MemRefType>(store.getMemref().getType());
             type && type.getElementType().isInteger(1)) {
+          const auto classical = classicalRegisters.find(store.getMemref());
+          auto index = store.getIndices()
+                           .front()
+                           .getDefiningOp<arith::ConstantIndexOp>();
+          if (classical == classicalRegisters.end() || !index ||
+              index.value() < 0 ||
+              static_cast<size_t>(index.value()) >= classical->second.size()) {
+            return store.emitOpError(
+                "classical register store requires an in-bounds constant "
+                "index");
+          }
+          const auto stored = values.lookupOrNull(store.getValue());
+          if (!stored) {
+            return store.emitOpError("stored classical value is not mapped");
+          }
+          classical->second[static_cast<size_t>(index.value())] = stored;
           continue;
         }
       }
@@ -677,6 +835,9 @@ private:
         if (const auto found = qregValues.find(dealloc.getMemref());
             found != qregValues.end()) {
           quake::QuakeDeallocOp::create(builder, loc, found->second);
+          continue;
+        }
+        if (classicalRegisters.contains(dealloc.getMemref())) {
           continue;
         }
       }
@@ -717,7 +878,8 @@ private:
           child.map(argument, values.lookup(target));
         }
         if (failed(translateBlock(ctrl.getRegion().front(), builder, child,
-                                  qregValues, controls, inheritedAdjoint))) {
+                                  qregValues, classicalRegisters, controls,
+                                  inheritedAdjoint))) {
           return failure();
         }
         continue;
@@ -729,8 +891,8 @@ private:
           child.map(argument, values.lookup(qubit));
         }
         if (failed(translateBlock(inv.getRegion().front(), builder, child,
-                                  qregValues, inheritedControls,
-                                  !inheritedAdjoint))) {
+                                  qregValues, classicalRegisters,
+                                  inheritedControls, !inheritedAdjoint))) {
           return failure();
         }
         continue;
@@ -751,14 +913,14 @@ private:
           if (sourceRegion.empty()) {
             return success();
           }
-          auto* block = new Block();
-          destinationRegion.push_back(block);
+          auto& block = destinationRegion.emplaceBlock();
           OpBuilder::InsertionGuard guard(builder);
-          builder.setInsertionPointToStart(block);
+          builder.setInsertionPointToStart(&block);
           IRMapping child = values;
+          ClassicalRegisterMap childRegisters = classicalRegisters;
           if (failed(translateBlock(sourceRegion.front(), builder, child,
-                                    qregValues, inheritedControls,
-                                    inheritedAdjoint))) {
+                                    qregValues, childRegisters,
+                                    inheritedControls, inheritedAdjoint))) {
             return failure();
           }
           cc::CCContinueOp::create(builder, loc, ValueRange{});
@@ -787,21 +949,20 @@ private:
         auto* emitted = builder.create(state);
         {
           OpBuilder::InsertionGuard guard(builder);
-          auto* block = new Block();
-          emitted->getRegion(0).push_back(block);
+          auto& block = emitted->getRegion(0).emplaceBlock();
           for (const auto argument : loop.getBefore().front().getArguments()) {
-            block->addArgument(argument.getType(), argument.getLoc());
+            block.addArgument(argument.getType(), argument.getLoc());
           }
-          builder.setInsertionPointToStart(block);
+          builder.setInsertionPointToStart(&block);
           IRMapping child = values;
           for (const auto [sourceArgument, destinationArgument] :
                llvm::zip(loop.getBefore().front().getArguments(),
-                         block->getArguments())) {
+                         block.getArguments())) {
             child.map(sourceArgument, destinationArgument);
           }
           if (failed(translateBlock(loop.getBefore().front(), builder, child,
-                                    qregValues, inheritedControls,
-                                    inheritedAdjoint))) {
+                                    qregValues, classicalRegisters,
+                                    inheritedControls, inheritedAdjoint))) {
             return failure();
           }
           auto condition =
@@ -815,21 +976,20 @@ private:
         }
         {
           OpBuilder::InsertionGuard guard(builder);
-          auto* block = new Block();
-          emitted->getRegion(1).push_back(block);
+          auto& block = emitted->getRegion(1).emplaceBlock();
           for (const auto argument : loop.getAfter().front().getArguments()) {
-            block->addArgument(argument.getType(), argument.getLoc());
+            block.addArgument(argument.getType(), argument.getLoc());
           }
-          builder.setInsertionPointToStart(block);
+          builder.setInsertionPointToStart(&block);
           IRMapping child = values;
           for (const auto [sourceArgument, destinationArgument] :
                llvm::zip(loop.getAfter().front().getArguments(),
-                         block->getArguments())) {
+                         block.getArguments())) {
             child.map(sourceArgument, destinationArgument);
           }
           if (failed(translateBlock(loop.getAfter().front(), builder, child,
-                                    qregValues, inheritedControls,
-                                    inheritedAdjoint))) {
+                                    qregValues, classicalRegisters,
+                                    inheritedControls, inheritedAdjoint))) {
             return failure();
           }
           auto yielded =
@@ -860,9 +1020,11 @@ private:
           controls.push_back(values.lookup(control));
         }
         auto name = unitary.getBaseSymbol();
-        name = name == "p"   ? StringRef("r1")
-               : name == "u" ? StringRef("u3")
-                             : name;
+        if (name == "p") {
+          name = "r1";
+        } else if (name == "u") {
+          name = "u3";
+        }
         OperationState state(loc, ("quake." + name).str());
         state.addOperands(parameters);
         state.addOperands(controls);
@@ -878,10 +1040,16 @@ private:
         builder.create(state);
         continue;
       }
-      if (operation.getDialect() &&
-          operation.getDialect()->getNamespace() == "qc") {
+      if (const auto* dialect = operation.getDialect();
+          dialect != nullptr && dialect->getNamespace() == "qc") {
         return operation.emitOpError(
             "unsupported QC operation for Quake export");
+      }
+      if (llvm::any_of(operation.getOperands(), [&](const Value operand) {
+            return !values.contains(operand);
+          })) {
+        return operation.emitOpError(
+            "cannot export operation with an unmapped operand");
       }
       builder.clone(operation, values);
     }
@@ -889,10 +1057,11 @@ private:
   }
 
   ModuleOp input;
-  const QuakeExportOptions& options;
+  QuakeExportOptions options;
   MLIRContext* context;
 };
 
+// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 } // namespace
 
 FailureOr<OwningOpRef<ModuleOp>> translateQuakeToQC(ModuleOp input) {

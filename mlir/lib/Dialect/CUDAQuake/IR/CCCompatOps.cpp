@@ -6,20 +6,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompat.h"
 #include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
+#include <llvm/ADT/SmallVector.h> // IWYU pragma: keep
+#include <llvm/ADT/TypeSwitch.h>  // IWYU pragma: keep
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 
 #include "mlir/Dialect/CUDAQuake/IR/CCCompatOpsDialect.cpp.inc"
 
-void cudaq_compat::cc::CCCompatDialect::initialize() {
+void cudaq_compat::cc::CCCompatDialect::
+    initialize() { // NOLINT(readability-convert-member-functions-to-static)
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "mlir/Dialect/CUDAQuake/IR/CCCompatOpsTypes.cpp.inc"
@@ -45,6 +52,52 @@ static void ensureContinueTerminator(OpBuilder& builder, OperationState& state,
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToEnd(&block);
   cudaq_compat::cc::CCContinueOp::create(builder, state.location, ValueRange{});
+}
+
+void cudaq_compat::cc::CCScopeOp::print(OpAsmPrinter& printer) {
+  const bool printTerminators =
+      !getBody().hasOneBlock() || getNumResults() != 0;
+  printer.printOptionalArrowTypeList(getResultTypes());
+  printer << ' ';
+  printer.printRegion(getBody(), false, printTerminators);
+  printer.printOptionalAttrDict((*this)->getAttrs());
+}
+
+ParseResult cudaq_compat::cc::CCScopeOp::parse(OpAsmParser& parser,
+                                               OperationState& state) {
+  auto* body = state.addRegion();
+  if (failed(parser.parseOptionalArrowTypeList(state.types)) ||
+      failed(parser.parseRegion(*body)) ||
+      failed(parser.parseOptionalAttrDict(state.attributes))) {
+    return failure();
+  }
+  OpBuilder builder(parser.getContext());
+  ensureContinueTerminator(builder, state, body);
+  return success();
+}
+
+void cudaq_compat::cc::CCCreateLambdaOp::print(OpAsmPrinter& printer) {
+  printer << ' ';
+  printer.printRegion(getBody(), !getBody().getArguments().empty(), true);
+  printer << " : " << getCallable().getType();
+  printer.printOptionalAttrDict((*this)->getAttrs());
+}
+
+ParseResult cudaq_compat::cc::CCCreateLambdaOp::parse(OpAsmParser& parser,
+                                                      OperationState& state) {
+  auto* body = state.addRegion();
+  Type callableType;
+  if (failed(parser.parseRegion(*body)) ||
+      failed(parser.parseColonType(callableType)) ||
+      failed(parser.parseOptionalAttrDict(state.attributes))) {
+    return failure();
+  }
+  if (!isa<cudaq_compat::cc::CallableType>(callableType)) {
+    return parser.emitError(parser.getNameLoc(),
+                            "expected a !cc.callable result type");
+  }
+  state.addTypes(callableType);
+  return success();
 }
 
 void cudaq_compat::cc::CCIfOp::print(OpAsmPrinter& printer) {

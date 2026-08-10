@@ -45,17 +45,17 @@ class OutputFormat(enum.Enum):
     OPENQASM3 = 4
     """OpenQASM 3 after the optimized QCO round trip."""
 
-    QUAKE = 5
-    """CUDA-Q reference-form Quake after the optimized QCO round trip."""
-
-    JEFF = 6
+    JEFF = 5
     """Serializable ``jeff`` MLIR."""
 
-    QIR_BASE = 7
+    QIR_BASE = 6
     """QIR for the Base Profile."""
 
-    QIR_ADAPTIVE = 8
+    QIR_ADAPTIVE = 7
     """QIR for the Adaptive Profile."""
+
+    QUAKE = 8
+    """CUDA-Q reference-form Quake after the optimized QCO round trip."""
 
 class CompilerTarget:
     """Immutable MLIR compiler target.

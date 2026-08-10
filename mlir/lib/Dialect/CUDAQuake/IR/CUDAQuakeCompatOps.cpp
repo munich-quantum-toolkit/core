@@ -8,11 +8,17 @@
 
 #include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h"
 
-#include <llvm/ADT/TypeSwitch.h>
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompat.h"
+
+#include <llvm/ADT/APInt.h>
+#include <llvm/ADT/SmallVector.h> // IWYU pragma: keep
+#include <llvm/ADT/TypeSwitch.h>  // IWYU pragma: keep
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cstdint>
 #include <optional>
@@ -25,7 +31,8 @@ using namespace mlir;
 
 #include "mlir/Dialect/CUDAQuake/IR/QuakeCompatOpsDialect.cpp.inc"
 
-void cudaq_compat::quake::QuakeCompatDialect::initialize() {
+void cudaq_compat::quake::QuakeCompatDialect::
+    initialize() { // NOLINT(readability-convert-member-functions-to-static)
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "mlir/Dialect/CUDAQuake/IR/QuakeCompatOpsTypes.cpp.inc"
@@ -93,7 +100,7 @@ parseRawIndex(OpAsmParser& parser,
     index = operand;
   }
   rawIndex = IntegerAttr::get(IntegerType::get(parser.getContext(), 64),
-                              constantIndex);
+                              llvm::APInt(64, constantIndex));
   return success();
 }
 
