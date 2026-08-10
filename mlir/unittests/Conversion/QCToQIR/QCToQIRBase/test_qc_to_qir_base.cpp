@@ -128,18 +128,15 @@ static void expectFollowingXIsUncontrolled(
 TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
   expectFollowingXIsUncontrolled(
       [](qc::QCProgramBuilder& builder, const Value control,
-         const Value target) {
-        builder.ctrl(control, target, [](Value) {});
-      });
+         const Value target) { builder.ctrl(control, target, [](Value) {}); });
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
-  expectFollowingXIsUncontrolled(
-      [](qc::QCProgramBuilder& builder, const Value control,
-         const Value target) {
-        builder.ctrl(control, target,
-                     [&](const Value bodyTarget) { builder.barrier(bodyTarget); });
-      });
+  expectFollowingXIsUncontrolled([](qc::QCProgramBuilder& builder,
+                                    const Value control, const Value target) {
+    builder.ctrl(control, target,
+                 [&](const Value bodyTarget) { builder.barrier(bodyTarget); });
+  });
 }
 
 TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {

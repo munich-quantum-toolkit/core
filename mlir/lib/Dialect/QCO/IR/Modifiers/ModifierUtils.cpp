@@ -70,8 +70,7 @@ SmallVector<size_t> getUsedQubitIndices(Block& body) {
   return used;
 }
 
-SmallVector<Value> restoreUnusedQubits(ValueRange inputs,
-                                       ArrayRef<size_t> used,
+SmallVector<Value> restoreUnusedQubits(ValueRange inputs, ArrayRef<size_t> used,
                                        ValueRange narrowedResults) {
   SmallVector<Value> results(inputs);
   for (auto [index, result] : llvm::zip_equal(used, narrowedResults)) {

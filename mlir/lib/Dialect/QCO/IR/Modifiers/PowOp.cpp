@@ -50,9 +50,9 @@ static void replacePowResults(PowOp powOp, UnitaryOpInterface bodyUnitary,
   mapping.map(powOp.getBody()->getArguments(), powOp.getQubitsIn());
   mapping.map(bodyUnitary.getOutputQubits(), replacement.getOutputQubits());
   rewriter.replaceOp(
-      powOp,
-      llvm::map_to_vector(powOp.getBody()->getTerminator()->getOperands(),
-                          [&](Value yielded) { return mapping.lookup(yielded); }));
+      powOp, llvm::map_to_vector(
+                 powOp.getBody()->getTerminator()->getOperands(),
+                 [&](Value yielded) { return mapping.lookup(yielded); }));
 }
 
 /**

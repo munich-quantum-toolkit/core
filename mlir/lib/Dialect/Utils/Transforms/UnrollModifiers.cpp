@@ -107,10 +107,9 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
     const auto targets = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
       return utils::getValueFromBlockArgument(q, op.getTargets());
     });
-    qc::CtrlOp::create(rewriter, op.getLoc(), op.getControls(), targets,
-                       [&](ValueRange args) {
-                         cloneIntoBody(unitary, args, rewriter);
-                       });
+    qc::CtrlOp::create(
+        rewriter, op.getLoc(), op.getControls(), targets,
+        [&](ValueRange args) { cloneIntoBody(unitary, args, rewriter); });
   }
   rewriter.eraseOp(op);
   return success();
@@ -173,10 +172,9 @@ static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
     const auto qubits = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
       return utils::getValueFromBlockArgument(q, op.getQubits());
     });
-    qc::PowOp::create(rewriter, op.getLoc(), op.getExponent(), qubits,
-                      [&](ValueRange args) {
-                        cloneIntoBody(unitary, args, rewriter);
-                      });
+    qc::PowOp::create(
+        rewriter, op.getLoc(), op.getExponent(), qubits,
+        [&](ValueRange args) { cloneIntoBody(unitary, args, rewriter); });
   }
   rewriter.eraseOp(op);
   return success();
@@ -219,11 +217,11 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
   for (auto unitary : body->getOps<qco::UnitaryOpInterface>()) {
     const auto targets = llvm::map_to_vector(
         unitary.getInputQubits(), [&](Value q) { return qubits.lookup(q); });
-    auto ctrlOp = qco::CtrlOp::create(
-        rewriter, op.getLoc(), controls, targets,
-        [&](ValueRange args) -> SmallVector<Value> {
-          return cloneIntoBody(unitary, args, rewriter);
-        });
+    auto ctrlOp =
+        qco::CtrlOp::create(rewriter, op.getLoc(), controls, targets,
+                            [&](ValueRange args) -> SmallVector<Value> {
+                              return cloneIntoBody(unitary, args, rewriter);
+                            });
     controls.assign(ctrlOp.getControlsOut().begin(),
                     ctrlOp.getControlsOut().end());
     qubits.map(unitary.getOutputQubits(), ctrlOp.getTargetsOut());
@@ -258,11 +256,11 @@ static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
   for (auto unitary : llvm::reverse(unitaries)) {
     const auto inputs = llvm::map_to_vector(
         unitary.getOutputQubits(), [&](Value q) { return qubits.lookup(q); });
-    auto invOp = qco::InvOp::create(rewriter, op.getLoc(), inputs,
-                                    [&](ValueRange args) -> SmallVector<Value> {
-                                      return cloneIntoBody(unitary, args,
-                                                           rewriter);
-                                    });
+    auto invOp =
+        qco::InvOp::create(rewriter, op.getLoc(), inputs,
+                           [&](ValueRange args) -> SmallVector<Value> {
+                             return cloneIntoBody(unitary, args, rewriter);
+                           });
     qubits.map(unitary.getInputQubits(), invOp.getResults());
   }
 
@@ -318,11 +316,11 @@ static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
   for (auto unitary : body->getOps<qco::UnitaryOpInterface>()) {
     const auto inputs = llvm::map_to_vector(
         unitary.getInputQubits(), [&](Value q) { return qubits.lookup(q); });
-    auto powOp = qco::PowOp::create(
-        rewriter, op.getLoc(), inputs, op.getExponent(),
-        [&](ValueRange args) -> SmallVector<Value> {
-          return cloneIntoBody(unitary, args, rewriter);
-        });
+    auto powOp =
+        qco::PowOp::create(rewriter, op.getLoc(), inputs, op.getExponent(),
+                           [&](ValueRange args) -> SmallVector<Value> {
+                             return cloneIntoBody(unitary, args, rewriter);
+                           });
     qubits.map(unitary.getOutputQubits(), powOp.getResults());
   }
 

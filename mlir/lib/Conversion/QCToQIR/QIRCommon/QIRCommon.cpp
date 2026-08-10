@@ -369,14 +369,13 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
               "unroll-modifiers pass before the conversion");
     }
 
-    // Empty controls and controls around no-op unitaries do not need lowering
-    // state. In particular, barrier lowering erases the operation without
-    // consuming that state, which would otherwise control the following gate.
-    auto bodyUnitary = op.getNumBodyUnitaries() == 1
-                           ? op.getBodyUnitary(0)
-                           : UnitaryOpInterface{};
-    if (bodyUnitary &&
-        !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
+    // Empty control bodies and controls around no-op unitaries do not need
+    // lowering state. In particular, barrier lowering erases the operation
+    // without consuming that state, which would otherwise control the next
+    // gate.
+    auto bodyUnitary = op.getNumBodyUnitaries() == 1 ? op.getBodyUnitary(0)
+                                                     : UnitaryOpInterface{};
+    if (bodyUnitary && !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
       state.inCtrlOp = true;
       state.controls = llvm::to_vector(adaptor.getControls());
     }

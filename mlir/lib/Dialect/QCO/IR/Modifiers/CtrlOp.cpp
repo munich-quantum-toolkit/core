@@ -233,9 +233,9 @@ struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
                        });
 
     SmallVector<Value> results(newOp.getControlsOut());
-    llvm::append_range(results, qco::detail::restoreUnusedQubits(
-                                    op.getTargetsIn(), used,
-                                    newOp.getTargetsOut()));
+    llvm::append_range(results,
+                       qco::detail::restoreUnusedQubits(op.getTargetsIn(), used,
+                                                        newOp.getTargetsOut()));
     rewriter.replaceOp(op, results);
     return success();
   }

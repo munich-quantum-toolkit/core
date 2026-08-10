@@ -633,11 +633,11 @@ struct DropUnusedQubits final : OpRewritePattern<PowOp> {
 
     const auto qubits = llvm::map_to_vector(
         used, [&](const size_t index) { return op.getQubits()[index]; });
-    PowOp::create(
-        rewriter, op.getLoc(), op.getExponent(), qubits, [&](ValueRange args) {
-          qc::detail::inlineNarrowedBody(*body, op.getQubits(), used, args,
-                                        rewriter);
-        });
+    PowOp::create(rewriter, op.getLoc(), op.getExponent(), qubits,
+                  [&](ValueRange args) {
+                    qc::detail::inlineNarrowedBody(*body, op.getQubits(), used,
+                                                   args, rewriter);
+                  });
     rewriter.eraseOp(op);
     return success();
   }

@@ -1437,8 +1437,7 @@ TEST_F(QCOTest, PowRxxFold) {
 static Value powRzxWithReorderedBody(QCOProgramBuilder& builder) {
   auto qubits = builder.allocQubitRegister(2);
   const auto powOut = builder.pow(
-      2.0, qubits.qubits,
-      [&](ValueRange args) -> SmallVector<Value> {
+      2.0, qubits.qubits, [&](ValueRange args) -> SmallVector<Value> {
         auto [out1, out0] = builder.rzx(0.123, args[1], args[0]);
         return {out0, out1};
       });

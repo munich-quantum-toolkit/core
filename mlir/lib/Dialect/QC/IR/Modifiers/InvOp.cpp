@@ -365,7 +365,7 @@ struct DropUnusedQubits final : OpRewritePattern<InvOp> {
         used, [&](const size_t index) { return op.getQubits()[index]; });
     InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange args) {
       qc::detail::inlineNarrowedBody(*body, op.getQubits(), used, args,
-                                    rewriter);
+                                     rewriter);
     });
     rewriter.eraseOp(op);
     return success();
