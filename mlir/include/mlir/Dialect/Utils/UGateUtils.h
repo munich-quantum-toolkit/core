@@ -47,8 +47,8 @@ powerUParameters(const double theta, const double phi, const double lambda,
   using Matrix = std::array<Complex, 4>;
   const auto multiply = [](const Matrix& lhs, const Matrix& rhs) {
     return Matrix{
-        lhs[0] * rhs[0] + lhs[1] * rhs[2], lhs[0] * rhs[1] + lhs[1] * rhs[3],
-        lhs[2] * rhs[0] + lhs[3] * rhs[2], lhs[2] * rhs[1] + lhs[3] * rhs[3]};
+        (lhs[0] * rhs[0]) + (lhs[1] * rhs[2]), (lhs[0] * rhs[1]) + (lhs[1] * rhs[3]),
+        (lhs[2] * rhs[0]) + (lhs[3] * rhs[2]), (lhs[2] * rhs[1]) + (lhs[3] * rhs[3])};
   };
 
   const double halfTheta = theta / 2.0;
@@ -70,7 +70,7 @@ powerUParameters(const double theta, const double phi, const double lambda,
     }
   }
 
-  const Complex determinant = result[0] * result[3] - result[1] * result[2];
+  const Complex determinant = (result[0] * result[3]) - (result[1] * result[2]);
   const double determinantArgument = std::arg(determinant);
   const double resultTheta =
       2.0 * std::atan2(std::abs(result[2]), std::abs(result[0]));
