@@ -60,6 +60,7 @@
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/ModuleTranslation.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cassert>
 #include <cstddef>
@@ -335,6 +336,7 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
           mod(),
           [profile](OpPassManager& pm) {
             pm.addPass(mqt::createUnrollModifiers());
+            pm.addPass(createCanonicalizerPass());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
             } else {
@@ -472,6 +474,7 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
           mod(),
           [](OpPassManager& pm) {
             pm.addPass(mqt::createUnrollModifiers());
+            pm.addPass(createCanonicalizerPass());
             pm.addPass(createQCOToJeff());
           },
           "failed to convert QCO to jeff"))) {

@@ -86,6 +86,14 @@ void QCTest::SetUp() {
   context->loadAllAvailableDialects();
 }
 
+static Value measureRegister(QCProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, qubit] : llvm::enumerate(qubits)) {
+    b.measure(qubit, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
+
 TEST_P(QCTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
@@ -487,6 +495,13 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
 /// @}
 
+/// A power modifier with a qubit that its body does not use.
+static Value powWithUnusedQubit(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) { b.barrier(qubits[0]); });
+  return measureRegister(b, q.qubits);
+}
+
 /// \name QC/Modifiers/PowOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -526,7 +541,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InvPowSquaredZ", MQT_NAMED_BUILDER(invPowSquaredZ),
                    MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCTestCase{"CtrlPowSxExpands", MQT_NAMED_BUILDER(ctrlPowSx),
-                   MQT_NAMED_BUILDER(ctrlPowSxRef)}));
+                   MQT_NAMED_BUILDER(ctrlPowSxRef)},
+        QCTestCase{"PowWithUnusedQubit", MQT_NAMED_BUILDER(powWithUnusedQubit),
+                   MQT_NAMED_BUILDER(twoQubitsOneBarrier)}));
 /// @}
 
 TEST_F(QCTest, PowExponentIsUnitaryParameter) {
@@ -1526,14 +1543,6 @@ expectUnrollsTo(MLIRContext* context,
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(moduleOp.get(), referenceOp.get()));
-}
-
-static Value measureRegister(QCProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
-  for (auto [i, qubit] : llvm::enumerate(qubits)) {
-    b.measure(qubit, c, static_cast<int64_t>(i));
-  }
-  return c;
 }
 
 /// Reference for `ctrlTwo` after unrolling.

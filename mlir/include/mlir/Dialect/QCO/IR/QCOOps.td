@@ -1225,10 +1225,8 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{
         custom<TargetAliasing>($region, $qubits_in)
-        attr-dict `:`
-        `{` type($qubits_in) `}`
-        `->`
-        `{` type($qubits_out) `}`
+        attr-dict
+        ( `:` `{` type($qubits_in)^ `}` `->` `{` type($qubits_out) `}` )?
     }];
 
   let extraClassDeclaration = [{
@@ -1311,10 +1309,8 @@ def PowOp
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{
         `(` $exponent `)` custom<TargetAliasing>($region, $qubits_in)
-        attr-dict `:`
-        `{` type($qubits_in) `}`
-        `->`
-        `{` type($qubits_out) `}`
+        attr-dict
+        ( `:` `{` type($qubits_in)^ `}` `->` `{` type($qubits_out) `}` )?
     }];
 
   let extraClassDeclaration = [{

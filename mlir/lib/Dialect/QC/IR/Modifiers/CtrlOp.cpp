@@ -166,6 +166,36 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
+/**
+ * @brief Drop the target qubits that the body does not use.
+ */
+struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    SmallVector<Value> targets;
+    for (auto [arg, qubit] :
+         llvm::zip_equal(body->getArguments(), op.getTargets())) {
+      if (!arg.use_empty()) {
+        targets.push_back(qubit);
+      }
+    }
+    if (targets.size() == op.getNumTargets()) {
+      return failure();
+    }
+
+    CtrlOp::create(rewriter, op.getLoc(), op.getControls(), targets,
+                   [&](ValueRange args) {
+                     qc::detail::inlineNarrowedBody(*body, op.getTargets(),
+                                                    args, rewriter);
+                   });
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 } // namespace
 
 static void
@@ -242,5 +272,6 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
+  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl, DropUnusedTargets>(
+      context);
 }

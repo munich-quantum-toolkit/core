@@ -303,6 +303,7 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
   pm.addPass(createQCOToJeff());
   return pm.run(module);
 }

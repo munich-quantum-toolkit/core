@@ -40,12 +40,12 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
   let description = [{
     Splits `ctrl` and `inv` modifiers whose body holds more than one unitary
     operation into a sequence of modifiers that each hold a single operation.
-    The targets of the new modifiers are narrowed to the qubits of the
-    respective operation. For `inv`, the order of the operations is reversed.
-    Classical operations of the body are moved in front of the new modifiers.
+    For `inv`, the order of the operations is reversed. Classical operations of
+    the body are moved in front of the new modifiers.
 
-    If a modifier cannot be unrolled, the modifier is left untouched. Such
-    modifiers are skipped silently; the pass never fails.
+    The new modifiers keep all qubits of the original one, and canonicalization
+    drops the qubits that their body does not use. A canonicalization therefore
+    has to run before a conversion that reads the qubits of a modifier.
 
     A `pow` modifier is only unrolled if its exponent is a compile-time known
     integer and its operations act on disjoint qubits. Otherwise, `pow(r) { a;
@@ -53,6 +53,9 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     operations do not commute if they share a qubit, and for a non-integer
     exponent, the principal branch of the matrix power does not distribute over
     them. Modifiers nested in a `pow` body are unrolled either way.
+
+    If a modifier cannot be unrolled, the modifier is left untouched. Such
+    modifiers are skipped silently; the pass never fails.
   }];
 }
 

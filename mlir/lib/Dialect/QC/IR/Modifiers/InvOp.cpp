@@ -346,6 +346,34 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   }
 };
 
+/**
+ * @brief Drop the qubits that the body does not use.
+ */
+struct DropUnusedQubits final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    SmallVector<Value> qubits;
+    for (auto [arg, qubit] :
+         llvm::zip_equal(body->getArguments(), op.getQubits())) {
+      if (!arg.use_empty()) {
+        qubits.push_back(qubit);
+      }
+    }
+    if (qubits.size() == op.getNumQubits()) {
+      return failure();
+    }
+
+    InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange args) {
+      qc::detail::inlineNarrowedBody(*body, op.getQubits(), args, rewriter);
+    });
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 } // namespace
 
 static void
@@ -399,6 +427,7 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow,
-              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv>(context);
+  results
+      .add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow, InlineSelfAdjoint,
+           ReplaceWithKnownGates, EraseEmptyInv, DropUnusedQubits>(context);
 }

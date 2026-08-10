@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
@@ -45,6 +46,32 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   }
 
   return success();
+}
+
+SmallVector<size_t> getUsedQubits(Block& body) {
+  SmallVector<size_t> used;
+  for (auto [index, arg, yielded] : llvm::enumerate(
+           body.getArguments(), body.getTerminator()->getOperands())) {
+    // A qubit that the body only yields back is not acted upon.
+    if (!arg.hasOneUse() || yielded != arg) {
+      used.push_back(index);
+    }
+  }
+  return used;
+}
+
+SmallVector<Value> inlineNarrowedBody(Block& body, ValueRange qubits,
+                                      ArrayRef<size_t> used, ValueRange args,
+                                      RewriterBase& rewriter) {
+  SmallVector<Value> replacements(qubits);
+  for (auto [index, arg] : llvm::zip_equal(used, args)) {
+    replacements[index] = arg;
+  }
+
+  const auto yielded =
+      utils::inlineBodyReturningYields(body, replacements, rewriter);
+  return llvm::map_to_vector(
+      used, [&](const size_t index) { return yielded[index]; });
 }
 
 } // namespace mlir::qco::detail

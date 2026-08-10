@@ -58,6 +58,7 @@
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Export.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
 #include <cstdlib>
@@ -550,6 +551,7 @@ static int runCompiler(int argc, char** argv) {
   if (*parsedOutputFormat == OutputFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
         pm.addPass(mqt::createUnrollModifiers());
+        pm.addPass(createCanonicalizerPass());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -572,6 +574,7 @@ static int runCompiler(int argc, char** argv) {
   if (*parsedOutputFormat == OutputFormat::QIRBase &&
       failed(runPasses([](OpPassManager& pm) {
         pm.addPass(mqt::createUnrollModifiers());
+        pm.addPass(createCanonicalizerPass());
         pm.addPass(createQCToQIRBase());
         populateQIRCleanupPipeline(pm, false);
         return success();
@@ -582,6 +585,7 @@ static int runCompiler(int argc, char** argv) {
   if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
       failed(runPasses([](OpPassManager& pm) {
         pm.addPass(mqt::createUnrollModifiers());
+        pm.addPass(createCanonicalizerPass());
         pm.addPass(createQCToQIRAdaptive());
         populateQIRCleanupPipeline(pm, true);
         return success();

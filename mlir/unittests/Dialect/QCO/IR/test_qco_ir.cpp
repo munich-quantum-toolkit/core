@@ -79,18 +79,28 @@ class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
-    // Register all necessary dialects
-    DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect,
-                    qtensor::QTensorDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
+  void SetUp() override;
 };
 } // namespace
+
+void QCOTest::SetUp() {
+  // Register all necessary dialects
+  DialectRegistry registry;
+  registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect, scf::SCFDialect,
+                  qtensor::QTensorDialect>();
+  context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+}
+
+static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, qubit] : llvm::enumerate(qubits)) {
+    b.measure(qubit, c, static_cast<int64_t>(i));
+  }
+  return c;
+}
 
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
@@ -1204,6 +1214,16 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(tdg)}));
 /// @}
 
+/// A power modifier with a qubit that its body does not use.
+static Value powWithUnusedQubit(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut =
+      b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return {b.id(qubits[0]), qubits[1]};
+      });
+  return measureRegister(b, powOut);
+}
+
 /// \name QCO/Modifiers/PowOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -1239,7 +1259,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"InvPowEvenSwap", MQT_NAMED_BUILDER(invPowEvenSwap),
                     MQT_NAMED_BUILDER(alloc2QubitRegister)},
         QCOTestCase{"InvPowSquaredZ", MQT_NAMED_BUILDER(invPowSquaredZ),
-                    MQT_NAMED_BUILDER(alloc1QubitRegister)}));
+                    MQT_NAMED_BUILDER(alloc1QubitRegister)},
+        QCOTestCase{"PowWithUnusedQubit", MQT_NAMED_BUILDER(powWithUnusedQubit),
+                    MQT_NAMED_BUILDER(alloc2QubitRegister)}));
 /// @}
 
 TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
@@ -2389,14 +2411,6 @@ expectUnrollsTo(MLIRContext* context,
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(moduleOp.get(), referenceOp.get()));
-}
-
-static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
-  for (auto [i, qubit] : llvm::enumerate(qubits)) {
-    b.measure(qubit, c, static_cast<int64_t>(i));
-  }
-  return c;
 }
 
 /// Reference for `ctrlThree` after unrolling.

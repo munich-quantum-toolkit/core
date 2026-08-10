@@ -68,6 +68,12 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
+    // The rewrite hands the qubits of the modifier to the inner operation, so
+    // it must act on all of them.
+    if (innerCtrlOp.getNumQubits() != op.getNumTargets()) {
+      return failure();
+    }
+
     // The inner control's controls and targets are block arguments of the outer
     // body that alias outer targets. Re-resolve them to the outer qubits: inner
     // controls join the outer controls, inner targets become the merged
@@ -117,6 +123,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
     auto* innerOp = inner.getOperation();
+    // The modifier is replaced by a single operation, so it must not act on
+    // more qubits than its body.
+    if (inner.getNumQubits() != op.getNumTargets()) {
+      return failure();
+    }
 
     // Inline ops from empty control modifiers, IdOp and BarrierOp
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
@@ -194,6 +205,40 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     rewriter.replaceOp(op, op.getOperands());
+    return success();
+  }
+};
+
+/**
+ * @brief Drop the target qubits that the body does not use.
+ */
+struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    const auto used = qco::detail::getUsedQubits(*body);
+    if (used.size() == op.getNumTargets()) {
+      return failure();
+    }
+
+    const auto targets = llvm::map_to_vector(
+        used, [&](const size_t index) { return op.getTargetsIn()[index]; });
+    auto newOp =
+        CtrlOp::create(rewriter, op.getLoc(), op.getControlsIn(), targets,
+                       [&](ValueRange args) -> SmallVector<Value> {
+                         return qco::detail::inlineNarrowedBody(
+                             *body, op.getTargetsIn(), used, args, rewriter);
+                       });
+
+    // The dropped qubits are handed back unchanged.
+    SmallVector<Value> results(newOp.getControlsOut());
+    llvm::append_range(results, op.getTargetsIn());
+    for (auto [index, qubit] : llvm::zip_equal(used, newOp.getTargetsOut())) {
+      results[op.getNumControls() + index] = qubit;
+    }
+    rewriter.replaceOp(op, results);
     return success();
   }
 };
@@ -319,7 +364,8 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
+  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl, DropUnusedTargets>(
+      context);
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {

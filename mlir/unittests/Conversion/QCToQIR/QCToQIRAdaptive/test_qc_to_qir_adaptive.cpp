@@ -38,6 +38,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <iosfwd>
 #include <memory>
@@ -87,6 +88,13 @@ protected:
 static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createQCToQIRAdaptive());
+  return pm.run(moduleOp);
+}
+
+static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
 }
@@ -189,7 +197,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
   auto module = builder.finalize();
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
   bool retainsMathPopulationCount = false;
@@ -284,7 +292,7 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
   builder.retype(result.getType());
   auto module = builder.finalize(result);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(
       qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
@@ -314,7 +322,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
         "only supports storing direct measurement results");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
@@ -360,7 +368,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsZeroStoreAfterMeasurement) {
         StringRef(message).contains("leading zero initialization");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 

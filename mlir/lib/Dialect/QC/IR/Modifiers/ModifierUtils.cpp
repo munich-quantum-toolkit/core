@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -51,6 +52,19 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   }
 
   return success();
+}
+
+void inlineNarrowedBody(Block& body, ValueRange qubits, ValueRange args,
+                        RewriterBase& rewriter) {
+  SmallVector<Value> replacements(qubits);
+  auto next = args.begin();
+  for (auto [arg, replacement] :
+       llvm::zip_equal(body.getArguments(), replacements)) {
+    if (!arg.use_empty()) {
+      replacement = *next++;
+    }
+  }
+  utils::inlineBodyReturningYields(body, replacements, rewriter);
 }
 
 } // namespace mlir::qc::detail

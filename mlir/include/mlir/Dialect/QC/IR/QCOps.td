@@ -1021,8 +1021,7 @@ def InvOp : QCOp<"inv",
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{
         custom<TargetAliasing>($region, $qubits)
-        attr-dict `:`
-        type($qubits)
+        attr-dict ( `:` type($qubits)^ )?
     }];
 
   let extraClassDeclaration = [{

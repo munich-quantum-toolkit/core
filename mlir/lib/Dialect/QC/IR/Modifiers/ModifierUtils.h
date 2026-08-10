@@ -10,7 +10,13 @@
 
 #pragma once
 
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
 
 namespace mlir {
 
@@ -24,6 +30,16 @@ namespace qc::detail {
  */
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
                                                Block& body);
+
+/**
+ * @brief Inline @p body into the modifier currently being built, dropping the
+ * qubits that the body does not use.
+ *
+ * @details The block arguments of unused qubits have no uses, so they are
+ * replaced with the corresponding qubit of the original modifier.
+ */
+void inlineNarrowedBody(Block& body, ValueRange qubits, ValueRange args,
+                        RewriterBase& rewriter);
 
 } // namespace qc::detail
 
