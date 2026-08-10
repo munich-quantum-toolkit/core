@@ -54,8 +54,8 @@ namespace {
 
 struct JeffRoundTripTestCase {
   std::string name;
-  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
-  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);
@@ -63,10 +63,10 @@ struct JeffRoundTripTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
-  return os << "JeffRoundTrip{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
+  return os << "JeffRoundTrip{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
@@ -351,7 +351,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
                   memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
-  auto program = ::mqt::test::buildMLIRProgram(
+  auto program = mqt::test::buildMLIRProgram(
       &context, MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit));
   ASSERT_TRUE(program);
   ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
@@ -439,9 +439,9 @@ module {
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
-  ::mqt::test::DeferredPrinter printer;
+  mqt::test::DeferredPrinter printer;
 
-  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -475,8 +475,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

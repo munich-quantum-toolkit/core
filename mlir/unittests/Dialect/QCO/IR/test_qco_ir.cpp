@@ -61,18 +61,18 @@ namespace {
 
 struct QCOTestCase {
   std::string name;
-  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
-  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
-  return os << "QCO{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
+  return os << "QCO{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCOTest : public testing::TestWithParam<QCOTestCase> {
@@ -95,9 +95,9 @@ protected:
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  ::mqt::test::DeferredPrinter printer;
+  mqt::test::DeferredPrinter printer;
 
-  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -106,8 +106,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -314,7 +313,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(verify(*direct).succeeded());
 
   auto ref =
-      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(simpleIf));
   ASSERT_TRUE(ref);
   EXPECT_TRUE(verify(*ref).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
@@ -465,7 +464,7 @@ TEST_F(QCOTest, IfOpParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
   EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto ref = ::mqt::test::buildMLIRProgram(
+  auto ref = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor));
   ASSERT_TRUE(ref);
   EXPECT_TRUE(verify(*ref).succeeded());
@@ -747,7 +746,7 @@ TEST_F(QCOTest, IndexSwitchParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsed.get()).succeeded());
   EXPECT_TRUE(verify(*parsed).succeeded());
 
-  auto ref = ::mqt::test::buildMLIRProgram(
+  auto ref = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedForLoopSwitchOp));
   ASSERT_TRUE(ref);
   EXPECT_TRUE(verify(*ref).succeeded());
@@ -1245,7 +1244,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
   auto program =
-      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
 
   auto funcOp = cast<func::FuncOp>(program->getBody()->front());
@@ -1258,7 +1257,7 @@ TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
 }
 
 TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
-  auto program = ::mqt::test::buildMLIRProgram(
+  auto program = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
   ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -1283,7 +1282,7 @@ TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
 /// rxx(2θ). Verify cleanup and the hoisted parameter's SSA dominance.
 TEST_F(QCOTest, PowRxxFold) {
   auto program =
-      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -1311,7 +1310,7 @@ TEST_F(QCOTest, PowRxxFold) {
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCOTest, NegPowHNoFold) {
   auto program =
-      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
@@ -1326,8 +1325,8 @@ TEST_F(QCOTest, NegPowHNoFold) {
 /// normalization then turns the controlled GPhase into P on the control.
 /// Verify the CtrlOp survives and the relative phase remains observable.
 TEST_F(QCOTest, CtrlPowSxExpands) {
-  auto program = ::mqt::test::buildMLIRProgram(context.get(),
-                                               MQT_NAMED_BUILDER(ctrlPowSx));
+  auto program =
+      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(ctrlPowSx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());

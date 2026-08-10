@@ -29,7 +29,7 @@
 #include <variant>
 #include <vector>
 
-namespace mqt::test {
+namespace mlir::mqt::test {
 
 template <typename BuilderT, typename RetT = void> struct NamedBuilder {
   const char* name = nullptr;
@@ -53,8 +53,8 @@ namedBuilder(const char* name, RetT (*fn)(BuilderT&)) noexcept {
 }
 
 template <typename BuilderT> struct NamedMLIRBuilder {
-  using SingleFn = mlir::Value (*)(BuilderT&);
-  using MultiFn = mlir::SmallVector<mlir::Value> (*)(BuilderT&);
+  using SingleFn = Value (*)(BuilderT&);
+  using MultiFn = SmallVector<Value> (*)(BuilderT&);
 
   const char* name = nullptr;
   std::variant<std::monostate, SingleFn, MultiFn> fn;
@@ -75,23 +75,22 @@ template <typename BuilderT> struct NamedMLIRBuilder {
 
 template <typename BuilderT>
 [[nodiscard]] constexpr NamedMLIRBuilder<BuilderT>
-namedBuilder(const char* name, mlir::Value (*fn)(BuilderT&)) noexcept {
+namedBuilder(const char* name, Value (*fn)(BuilderT&)) noexcept {
   return NamedMLIRBuilder<BuilderT>{name, fn};
 }
 
 template <typename BuilderT>
 [[nodiscard]] constexpr NamedMLIRBuilder<BuilderT>
-namedBuilder(const char* name,
-             mlir::SmallVector<mlir::Value> (*fn)(BuilderT&)) noexcept {
+namedBuilder(const char* name, SmallVector<Value> (*fn)(BuilderT&)) noexcept {
   return NamedMLIRBuilder<BuilderT>{name, fn};
 }
 
 template <typename BuilderT, typename... Args>
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-buildMLIRProgram(mlir::MLIRContext* context,
+[[nodiscard]] OwningOpRef<ModuleOp>
+buildMLIRProgram(MLIRContext* context,
                  const NamedMLIRBuilder<BuilderT>& builder, Args&&... args) {
   return std::visit(
-      [&]<typename T>(T fn) -> mlir::OwningOpRef<mlir::ModuleOp> {
+      [&]<typename T>(T fn) -> OwningOpRef<ModuleOp> {
         if constexpr (requires {
                         BuilderT::build(context, fn,
                                         std::forward<Args>(args)...);
@@ -161,7 +160,7 @@ public:
    * module do not affect already-captured snapshots). The output is deferred
    * until the printer is destroyed.
    */
-  void record(mlir::ModuleOp module, llvm::StringRef header) {
+  void record(ModuleOp module, llvm::StringRef header) {
     llvm::SmallString<4096> irString;
     llvm::raw_svector_ostream irStream(irString);
     module.print(irStream);
@@ -178,11 +177,11 @@ public:
       return;
     }
     for (const auto& [header, ir] : entries_) {
-      mlir::printBoxTop();
-      mlir::printBoxLine(header);
-      mlir::printBoxMiddle();
-      mlir::printBoxText(ir);
-      mlir::printBoxBottom();
+      printBoxTop();
+      printBoxLine(header);
+      printBoxMiddle();
+      printBoxText(ir);
+      printBoxBottom();
       llvm::errs().flush();
     }
   }
@@ -191,6 +190,6 @@ private:
   std::vector<std::pair<std::string, std::string>> entries_;
 };
 
-} // namespace mqt::test
+} // namespace mlir::mqt::test
 
-#define MQT_NAMED_BUILDER(fn) ::mqt::test::namedBuilder(#fn, fn)
+#define MQT_NAMED_BUILDER(fn) mlir::mqt::test::namedBuilder(#fn, fn)

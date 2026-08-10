@@ -47,8 +47,9 @@ namespace {
 
 struct QuantumComputationTranslationTestCase {
   std::string name;
-  mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
-  mqt::test::NamedMLIRBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
+  mlir::mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
+  mlir::mqt::test::NamedMLIRBuilder<mlir::qc::QCProgramBuilder>
+      referenceBuilder;
 
   friend std::ostream&
   operator<<(std::ostream& os,
@@ -58,10 +59,10 @@ struct QuantumComputationTranslationTestCase {
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os,
                          const QuantumComputationTranslationTestCase& test) {
-  return os << "QuantumComputationTranslation{" << test.name
-            << ", original=" << mqt::test::displayName(test.programBuilder.name)
+  return os << "QuantumComputationTranslation{" << test.name << ", original="
+            << mlir::mqt::test::displayName(test.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(test.referenceBuilder.name) << "}";
+            << mlir::mqt::test::displayName(test.referenceBuilder.name) << "}";
 }
 
 class QuantumComputationTranslationTest
@@ -114,7 +115,7 @@ partiallyMeasuredRegisterControlReference(mlir::qc::QCProgramBuilder& builder) {
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  mlir::mqt::test::DeferredPrinter printer;
 
   ::qc::QuantumComputation comp;
   programBuilder.fn(comp);
@@ -128,7 +129,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(
+  auto reference = mlir::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder,
       mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   ASSERT_TRUE(reference);
@@ -330,9 +331,9 @@ TEST_F(QuantumComputationTranslationTest,
   ASSERT_TRUE(mlir::succeeded(runQCCleanupPipeline(*translated)));
 
   const auto referenceBuilder =
-      mqt::test::namedBuilder("partiallyMeasuredRegisterControlReference",
-                              partiallyMeasuredRegisterControlReference);
-  auto reference = mqt::test::buildMLIRProgram(
+      mlir::mqt::test::namedBuilder("partiallyMeasuredRegisterControlReference",
+                                    partiallyMeasuredRegisterControlReference);
+  auto reference = mlir::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder,
       mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   ASSERT_TRUE(reference);
