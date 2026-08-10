@@ -29,6 +29,7 @@
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -41,6 +42,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -127,6 +129,17 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        std::ignore = builder.allocQubitRegisterStorage(1, "q");
+        std::ignore = builder.allocQubitRegisterStorage(1, "q");
+      },
+      "Qubit register names must be unique");
+}
+
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -165,6 +178,32 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         builder.scfCondition(c, 1);
       },
       "Register index is out of bounds");
+}
+
+TEST_F(QCTest, BuilderClassicalRegisterInitializationPolicy) {
+  const auto countStores = [&](const auto initialization) {
+    QCProgramBuilder builder(context.get(), initialization);
+    builder.initialize();
+    const auto reg = builder.allocClassicalBitRegister(3);
+    builder.retype(reg.getType());
+    auto moduleOp = builder.finalize(reg);
+    EXPECT_TRUE(moduleOp);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+
+    size_t stores = 0;
+    moduleOp->walk([&](memref::StoreOp storeOp) {
+      EXPECT_TRUE(matchPattern(storeOp.getValueToStore(), m_Zero()));
+      ++stores;
+    });
+    return stores;
+  };
+
+  EXPECT_EQ(
+      countStores(QCProgramBuilder::ClassicalRegisterInitialization::Zero), 3);
+  EXPECT_EQ(
+      countStores(
+          QCProgramBuilder::ClassicalRegisterInitialization::Uninitialized),
+      0);
 }
 
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {

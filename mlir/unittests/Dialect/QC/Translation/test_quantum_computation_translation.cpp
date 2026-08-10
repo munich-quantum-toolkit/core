@@ -23,6 +23,7 @@
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -30,12 +31,17 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -76,6 +82,34 @@ protected:
 
 } // namespace
 
+static mlir::SmallVector<mlir::Value>
+partiallyMeasuredRegisterControlReference(mlir::qc::QCProgramBuilder& builder) {
+  auto q = builder.allocQubitRegister(1);
+  auto prefix = builder.allocClassicalBitRegister(2, "prefix");
+  auto condition = builder.allocClassicalBitRegister(3, "condition");
+  builder.measure(q[0], condition, 0);
+
+  mlir::Value packed;
+  for (int64_t bit = 0; bit < 3; ++bit) {
+    auto index = mlir::arith::ConstantIndexOp::create(builder, bit);
+    auto value =
+        mlir::memref::LoadOp::create(builder, condition, index.getResult());
+    mlir::Value extended = mlir::arith::ExtUIOp::create(
+        builder, builder.getI64Type(), value.getResult());
+    if (bit != 0) {
+      auto shift = mlir::arith::ConstantIntOp::create(builder, bit, 64);
+      extended = mlir::arith::ShLIOp::create(builder, extended, shift);
+    }
+    packed = packed ? mlir::arith::OrIOp::create(builder, packed, extended)
+                    : extended;
+  }
+  auto expected = builder.intConstant(5);
+  auto comparison = mlir::arith::CmpIOp::create(
+      builder, mlir::arith::CmpIPredicate::eq, packed, expected);
+  builder.scfIf(comparison.getResult(), [&] { builder.x(q[0]); });
+  return {prefix, condition};
+}
+
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
@@ -93,7 +127,9 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference = mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder,
+      mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
@@ -141,6 +177,188 @@ TEST_F(QuantumComputationTranslationTest, RetainsClassicalRegisterName) {
       mlir::utils::CLASSICAL_REGISTER_NAME_ATTR);
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_result");
+}
+
+TEST_F(QuantumComputationTranslationTest, RetainsQubitRegisterName) {
+  ::qc::QuantumComputation comp;
+  comp.addQubitRegister(2, "named_qubits");
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+
+  mlir::memref::AllocOp qubitRegister;
+  translated->walk([&](mlir::memref::AllocOp op) {
+    if (mlir::isa<mlir::qc::QubitType>(op.getType().getElementType())) {
+      qubitRegister = op;
+    }
+  });
+  ASSERT_TRUE(qubitRegister);
+  const auto name = qubitRegister->getAttrOfType<mlir::StringAttr>(
+      mlir::utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       AllowsSingleBitControlBeforeMeasurement) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  comp.if_(::qc::X, q[0], c[0], false);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+
+  size_t zeroStores = 0;
+  translated->walk([&](mlir::memref::StoreOp store) {
+    auto constant = store.getValue().getDefiningOp<mlir::arith::ConstantOp>();
+    if (constant == nullptr) {
+      return;
+    }
+    const auto value = mlir::dyn_cast<mlir::IntegerAttr>(constant.getValue());
+    if (value && value.getValue().isZero()) {
+      ++zeroStores;
+    }
+  });
+  EXPECT_EQ(zeroStores, 1);
+
+  size_t conditionals = 0;
+  translated->walk([&](mlir::scf::IfOp) { ++conditionals; });
+  EXPECT_EQ(conditionals, 1);
+}
+
+TEST_F(QuantumComputationTranslationTest, AllowsUnmeasuredRegisterControl) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(2, "c");
+  comp.if_(::qc::X, q[0], c, 0U);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+
+  size_t loads = 0;
+  translated->walk([&](mlir::memref::LoadOp load) {
+    if (load.getType().isInteger(1)) {
+      ++loads;
+    }
+  });
+  EXPECT_EQ(loads, 2);
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       TranslatesRegisterComparisonsInLittleEndianOrder) {
+  constexpr std::array comparisons{
+      std::pair{::qc::ComparisonKind::Eq, mlir::arith::CmpIPredicate::eq},
+      std::pair{::qc::ComparisonKind::Neq, mlir::arith::CmpIPredicate::ne},
+      std::pair{::qc::ComparisonKind::Lt, mlir::arith::CmpIPredicate::ult},
+      std::pair{::qc::ComparisonKind::Leq, mlir::arith::CmpIPredicate::ule},
+      std::pair{::qc::ComparisonKind::Gt, mlir::arith::CmpIPredicate::ugt},
+      std::pair{::qc::ComparisonKind::Geq, mlir::arith::CmpIPredicate::uge},
+  };
+
+  for (const auto& [kind, expectedPredicate] : comparisons) {
+    SCOPED_TRACE(::qc::toString(kind));
+    ::qc::QuantumComputation comp;
+    const auto& q = comp.addQubitRegister(1, "q");
+    comp.addClassicalRegister(2, "prefix");
+    const auto& condition = comp.addClassicalRegister(3, "condition");
+    ASSERT_EQ(condition.getStartIndex(), 2U);
+    comp.measure(q[0], condition[0]);
+    comp.if_(::qc::X, q[0], condition, 5U, kind);
+
+    auto translated =
+        mlir::translateQuantumComputationToQC(context.get(), comp);
+    ASSERT_TRUE(translated);
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+
+    mlir::scf::IfOp conditional;
+    translated->walk([&](mlir::scf::IfOp op) { conditional = op; });
+    ASSERT_TRUE(conditional);
+    auto comparison =
+        conditional.getCondition().getDefiningOp<mlir::arith::CmpIOp>();
+    ASSERT_TRUE(comparison);
+    EXPECT_EQ(comparison.getPredicate(), expectedPredicate);
+    const auto comparisonType =
+        mlir::dyn_cast<mlir::IntegerType>(comparison.getLhs().getType());
+    ASSERT_TRUE(comparisonType);
+    EXPECT_EQ(comparisonType.getWidth(), 64U);
+    auto expected =
+        comparison.getRhs().getDefiningOp<mlir::arith::ConstantOp>();
+    ASSERT_TRUE(expected);
+    const auto expectedValue =
+        mlir::dyn_cast<mlir::IntegerAttr>(expected.getValue());
+    ASSERT_TRUE(expectedValue);
+    EXPECT_EQ(expectedValue.getValue().getZExtValue(), 5U);
+
+    mlir::SmallVector<int64_t> loadedIndices;
+    translated->walk([&](mlir::memref::LoadOp load) {
+      auto alloc = load.getMemref().getDefiningOp<mlir::memref::AllocOp>();
+      if (alloc == nullptr) {
+        return;
+      }
+      const auto name = alloc->getAttrOfType<mlir::StringAttr>(
+          mlir::utils::CLASSICAL_REGISTER_NAME_ATTR);
+      if (!name || name.getValue() != "condition") {
+        return;
+      }
+      auto index =
+          load.getIndices().front().getDefiningOp<mlir::arith::ConstantOp>();
+      if (index == nullptr) {
+        return;
+      }
+      const auto value = mlir::dyn_cast<mlir::IntegerAttr>(index.getValue());
+      if (!value) {
+        return;
+      }
+      loadedIndices.push_back(value.getInt());
+    });
+    llvm::sort(loadedIndices);
+    EXPECT_EQ(loadedIndices, (mlir::SmallVector<int64_t>{0, 1, 2}));
+
+    mlir::SmallVector<int64_t> shiftAmounts;
+    translated->walk([&](mlir::arith::ShLIOp shift) {
+      auto amount = shift.getRhs().getDefiningOp<mlir::arith::ConstantOp>();
+      if (amount == nullptr) {
+        return;
+      }
+      const auto value = mlir::dyn_cast<mlir::IntegerAttr>(amount.getValue());
+      if (!value) {
+        return;
+      }
+      shiftAmounts.push_back(value.getInt());
+    });
+    llvm::sort(shiftAmounts);
+    EXPECT_EQ(shiftAmounts, (mlir::SmallVector<int64_t>{1, 2}));
+  }
+}
+
+TEST_F(QuantumComputationTranslationTest,
+       MatchesPartiallyMeasuredRegisterControlReference) {
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  comp.addClassicalRegister(2, "prefix");
+  const auto& condition = comp.addClassicalRegister(3, "condition");
+  comp.measure(q[0], condition[0]);
+  comp.if_(::qc::X, q[0], condition, 5U);
+
+  auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
+  ASSERT_TRUE(translated);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*translated)));
+  ASSERT_TRUE(mlir::succeeded(runQCCleanupPipeline(*translated)));
+
+  const auto referenceBuilder =
+      mqt::test::namedBuilder("partiallyMeasuredRegisterControlReference",
+                              partiallyMeasuredRegisterControlReference);
+  auto reference = mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder,
+      mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
+  ASSERT_TRUE(reference);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*reference)));
+  ASSERT_TRUE(mlir::succeeded(runQCCleanupPipeline(*reference)));
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*translated, *reference));
 }
 
 TEST_F(QuantumComputationTranslationTest, JoinsMeasurementsFromBothBranches) {

@@ -69,6 +69,15 @@ concept custom_property_value =
     std::same_as<T, std::vector<std::byte>>;
 
 namespace detail {
+[[nodiscard]] inline std::optional<size_t>
+queuePositionFromResult(const int result, const size_t queuePosition) {
+  if (result == QDMI_ERROR_NOTSUPPORTED || result == QDMI_ERROR_BADSTATE) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(result, "Querying job queue position");
+  return queuePosition;
+}
+
 template <custom_property_value T, typename Query>
 [[nodiscard]] std::optional<T>
 queryCustomValue(Query query, const std::string_view description) {
@@ -470,6 +479,9 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
   [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
 
+  /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
+  [[nodiscard]] std::optional<size_t> getQueueLength() const;
+
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
   [[nodiscard]] std::optional<std::string> getLengthUnit() const;
 
@@ -550,6 +562,16 @@ public:
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /**
+   * @brief Retrieves an existing job by its device-provided ID.
+   * @details Opening a job does not submit, clone, or modify the remote job.
+   * The returned handle can be used to query its state and retrieve results.
+   * @param jobId The nonempty opaque ID returned by @ref Job::getId.
+   * @throws std::runtime_error If the driver or device cannot retrieve the job.
+   * @see QDMI_session_retrieve_job_by_id
+   */
+  [[nodiscard]] Job retrieveJobById(std::string_view jobId) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
@@ -688,6 +710,16 @@ public:
 
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;
+
+  /**
+   * @brief Gets the current number of jobs ahead of this job in its queue.
+   * @return The queue position, or `std::nullopt` if it is unavailable or not
+   * applicable in the job's current state.
+   * @throws std::runtime_error If the provider status refresh or property query
+   * fails for another reason.
+   * @see QDMI_JOB_PROPERTY_QUEUEPOSITION
+   */
+  [[nodiscard]] std::optional<size_t> getQueuePosition() const;
 
   /**
    * @brief Queries an implementation-defined custom job property.

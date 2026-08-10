@@ -905,7 +905,13 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  const auto initialization =
+      StringRef(source).contains("OPENQASM 2")
+          ? qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero
+          : qc::QCProgramBuilder::ClassicalRegisterInitialization::
+                Uninitialized;
+  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
+                                               initialization);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -994,6 +1000,26 @@ named_result = measure q;
       utils::CLASSICAL_REGISTER_NAME_ATTR);
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_result");
+}
+
+TEST_F(QASM3TranslationTest, RetainsQubitRegisterName) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+qubit[2] named_qubits;
+)qasm";
+  auto translated = qc::translateQASM3ToQC(source, context.get());
+  ASSERT_TRUE(translated);
+
+  memref::AllocOp qubitRegister;
+  translated->walk([&](memref::AllocOp op) {
+    if (isa<qc::QubitType>(op.getType().getElementType())) {
+      qubitRegister = op;
+    }
+  });
+  ASSERT_TRUE(qubitRegister);
+  const auto name =
+      qubitRegister->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
 TEST_F(QASM3TranslationTest, DistinguishesScalarAndWidthOneQubitAllocations) {
