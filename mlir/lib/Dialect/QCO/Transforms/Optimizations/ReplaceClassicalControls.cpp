@@ -58,6 +58,11 @@ static bool isPhaseGate(Operation* op) {
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp, RZOp>(op);
 }
 
+/**
+ * @brief Apply a phase gate to @p target, controlled by @p controls.
+ * @return A pair containing the updated controls in their input order and the
+ * updated target.
+ */
 static std::pair<SmallVector<Value>, Value>
 applyControlledPhase(PatternRewriter& rewriter, Location loc,
                      ValueRange controls, Value target, Value theta) {
@@ -72,6 +77,11 @@ applyControlledPhase(PatternRewriter& rewriter, Location loc,
           phase.getOutputTarget(0)};
 }
 
+/**
+ * @brief Apply a phase to the conjunction of @p controls, using the last
+ * control as the phase target.
+ * @return The updated controls in their input order.
+ */
 static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
                                                 Location loc,
                                                 ValueRange controls,

@@ -738,9 +738,45 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
-  std::size_t ifCount = 0;
+  size_t ifCount = 0;
   program->walk([&](IfOp) { ++ifCount; });
   EXPECT_EQ(ifCount, 0U);
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       replacesMeasuredRZZTargetWhenAllControlsAreMeasured) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target0 = programBuilder.h(programBuilder.allocQubit());
+  auto target1 = programBuilder.h(programBuilder.allocQubit());
+  Value controlOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  Value targetOutcome;
+  std::tie(target0, targetOutcome) = programBuilder.measure(target0);
+  const auto [outputControl, outputTargets] =
+      programBuilder.crzz(0.789, control, target0, target1);
+  programBuilder.sink(outputControl);
+  programBuilder.sink(outputTargets.first);
+  programBuilder.sink(outputTargets.second);
+  program = programBuilder.finalize({controlOutcome, targetOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_FALSE(program->getBody()
+                   ->walk([](CtrlOp ctrlOp) {
+                     return llvm::any_of(ctrlOp.getControlsIn(),
+                                         [](Value input) {
+                                           return isa_and_nonnull<MeasureOp>(
+                                               input.getDefiningOp());
+                                         })
+                                ? WalkResult::interrupt()
+                                : WalkResult::advance();
+                   })
+                   .wasInterrupted());
+  EXPECT_FALSE(program->getBody()
+                   ->walk([](IfOp) { return WalkResult::interrupt(); })
+                   .wasInterrupted());
 }
 
 TEST_F(QCOReplaceClassicalControlsTest,
@@ -763,7 +799,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
-  std::size_t ifCount = 0;
+  size_t ifCount = 0;
   program->walk([&](IfOp) { ++ifCount; });
   EXPECT_EQ(ifCount, 0U);
 }
@@ -841,9 +877,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(r[2], referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(r[2]);
   std::tie(r[0], r[1]) = referenceBuilder.cp(-theta / 2.0, r[0], r[1]);
-  std::tie(controls, r[3]) = referenceBuilder.mcp(theta, {r[0], r[1]}, r[3]);
-  r[0] = controls[0];
-  r[1] = controls[1];
+  SmallVector<Value> referenceControls;
+  std::tie(referenceControls, r[3]) =
+      referenceBuilder.mcp(theta, {r[0], r[1]}, r[3]);
+  r[0] = referenceControls[0];
+  r[1] = referenceControls[1];
   auto conditionalQubits = referenceBuilder.qcoIf(
       referenceMeasuredTargetOutcome, ValueRange{r[0], r[1], r[3]},
       [&](ValueRange qubits) -> SmallVector<Value> {

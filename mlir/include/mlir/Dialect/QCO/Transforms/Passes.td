@@ -271,16 +271,34 @@ def ReplaceClassicalControls
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
   ];
-  let summary =
-      "This pass attempts to replace controlled gates that are controlled by "
-      "values that are in a computational basis state and available as "
-      "measurement outcome by a classical "
-      "`qco.if` instruction. This is done to enable qubit reuse and other "
-      "optimizations.";
+  let summary = "Replace measured quantum controls and supported measured "
+                "phase targets with classical `qco.if` operations";
   let description = [{
-    This pass searches for control operations that immediately follow measurements and replaces them
-    with classically controlled operations, represented by `qco.if` operations.
-    This reduces quantum interactions and allows for more optimizations, e.g., by enabling qubit reuse.
+    This pass rewrites a `qco.ctrl` that immediately consumes one or more
+    measured controls into one `qco.if`. Multiple measurement outcomes are
+    combined into the condition, while unmeasured controls remain quantum
+    controls inside the `qco.if`. The controlled body is otherwise unrestricted
+    and may contain multi-control, multi-target, diagonal, or anti-diagonal
+    gates. This rewrite does not duplicate the body gates.
+
+    A measured target of a single-target phase gate (`z`, `s`, `sdg`, `t`,
+    `tdg`, `p`, `id`, or `rz`) may be exchanged with an unmeasured control so
+    that the general measured-control rewrite applies. For `rz`, the exchange
+    replaces the `rz` with `p` and adds one (possibly controlled) phase
+    correction; the other listed phase gates require no additional gate.
+
+    A controlled `rzz` with at least one control, exactly two targets, and
+    exactly one measured target is replaced by one `qco.if` and four `p` gates:
+    two before the conditional and two in its body. Thus, the rewrite replaces
+    one `rzz` with three additional gate operations. The specialized `rzz`
+    rewrite declines operations with no controls, a target count other than
+    two, or zero or multiple measured targets. A measured phase target is left
+    unchanged when no unmeasured control is available for the exchange. In all
+    such cases, the general measured-control rewrite may still apply when a
+    control itself has been measured.
+
+    Replacing quantum controls with classical conditions reduces quantum
+    interactions and can enable qubit reuse and subsequent optimizations.
   }];
 }
 
