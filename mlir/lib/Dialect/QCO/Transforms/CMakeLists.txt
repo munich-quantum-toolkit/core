@@ -7,8 +7,6 @@
 # Licensed under the MIT License
 
 file(GLOB_RECURSE PASSES_SOURCES *.cpp)
-set_source_files_properties(Decomposition/BasisDecomposer.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION
-                                                                         ON)
 
 add_mlir_library(
   MLIRQCOTransforms

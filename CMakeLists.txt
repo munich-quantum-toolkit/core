@@ -107,12 +107,6 @@ include(SetupMLIR)
 
 include(cmake/ExternalDependencies.cmake)
 
-# Cap'n Proto combines translation units with conflicting internal helper names. Keep it out of
-# unity builds while allowing downstream targets to opt in.
-if(TARGET capnp)
-  set_target_properties(capnp PROPERTIES UNITY_BUILD OFF)
-endif()
-
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
 

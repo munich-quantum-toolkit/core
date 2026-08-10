@@ -163,7 +163,6 @@ def docs(session: nox.Session) -> None:
             "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
             "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
             "-DCMAKE_UNITY_BUILD=ON;"
-            "-DCMAKE_UNITY_BUILD_BATCH_SIZE=4;"
             "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
             "-DENABLE_IPO=OFF"
         ),

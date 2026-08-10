@@ -10,8 +10,6 @@ file(GLOB_RECURSE MODIFIERS "${CMAKE_CURRENT_SOURCE_DIR}/Modifiers/*.cpp")
 file(GLOB_RECURSE OPERATIONS "${CMAKE_CURRENT_SOURCE_DIR}/Operations/*.cpp")
 file(GLOB_RECURSE QUBIT_MANAGEMENT "${CMAKE_CURRENT_SOURCE_DIR}/QubitManagement/*.cpp")
 file(GLOB_RECURSE SCF "${CMAKE_CURRENT_SOURCE_DIR}/SCF/*.cpp")
-set_source_files_properties(Modifiers/InvOp.cpp SCF/IndexSwitchOp.cpp
-                            PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
 add_mlir_dialect_library(
   MLIRQCODialect

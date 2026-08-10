@@ -9,8 +9,6 @@
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
   # collect source files
   file(GLOB_RECURSE DD_SOURCES **.cpp)
-  set_source_files_properties(register_matrix_dds.cpp register_vector_dds.cpp
-                              PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
   # declare the Python module
   add_mqt_python_binding_nanobind(
