@@ -17,9 +17,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
@@ -53,17 +51,6 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   }
 
   return success();
-}
-
-void getModifierSuccessorRegions(Operation* modifierOp, Region& body,
-                                 RegionBranchPoint point,
-                                 SmallVectorImpl<RegionSuccessor>& regions) {
-  if (point.isParent()) {
-    regions.emplace_back(&body, body.getArguments());
-    return;
-  }
-  // QC modifiers have no results, so nothing is forwarded back out.
-  regions.emplace_back(modifierOp, modifierOp->getResults());
 }
 
 } // namespace mlir::qc::detail

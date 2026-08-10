@@ -17,10 +17,7 @@
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/RegionUtils.h>
@@ -48,17 +45,6 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   }
 
   return success();
-}
-
-void getModifierSuccessorRegions(Operation* modifierOp, Region& body,
-                                 RegionBranchPoint point,
-                                 ResultRange successorInputs,
-                                 SmallVectorImpl<RegionSuccessor>& regions) {
-  if (point.isParent()) {
-    regions.emplace_back(&body, body.getArguments());
-    return;
-  }
-  regions.emplace_back(modifierOp, successorInputs);
 }
 
 } // namespace mlir::qco::detail

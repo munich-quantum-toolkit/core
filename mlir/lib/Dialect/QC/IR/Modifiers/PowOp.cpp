@@ -22,10 +22,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -594,23 +591,6 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   odsBuilder.setInsertionPointToStart(&block);
   bodyBuilder(block.getArgument(0));
   YieldOp::create(odsBuilder, odsState.location);
-}
-
-void PowOp::getSuccessorRegions(RegionBranchPoint point,
-                                SmallVectorImpl<RegionSuccessor>& regions) {
-  detail::getModifierSuccessorRegions(getOperation(), getRegion(), point,
-                                      regions);
-}
-
-OperandRange PowOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
-  return getQubits();
-}
-
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void PowOp::getRegionInvocationBounds(
-    ArrayRef<Attribute> /*operands*/,
-    SmallVectorImpl<InvocationBounds>& invocationBounds) {
-  invocationBounds.emplace_back(1, 1);
 }
 
 LogicalResult PowOp::verify() {

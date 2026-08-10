@@ -28,10 +28,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -440,23 +437,6 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                       YieldOp::create(builder, odsState.location,
                                       bodyBuilder(block.getArgument(0)));
                     });
-}
-
-void InvOp::getSuccessorRegions(RegionBranchPoint point,
-                                SmallVectorImpl<RegionSuccessor>& regions) {
-  detail::getModifierSuccessorRegions(getOperation(), getRegion(), point,
-                                      getQubitsOut(), regions);
-}
-
-OperandRange InvOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
-  return getQubitsIn();
-}
-
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void InvOp::getRegionInvocationBounds(
-    ArrayRef<Attribute> /*operands*/,
-    SmallVectorImpl<InvocationBounds>& invocationBounds) {
-  invocationBounds.emplace_back(1, 1);
 }
 
 LogicalResult InvOp::verify() {

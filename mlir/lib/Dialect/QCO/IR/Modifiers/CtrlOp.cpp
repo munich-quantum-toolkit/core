@@ -27,10 +27,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -270,24 +267,6 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    Value control, Value target,
                    function_ref<Value(Value)> bodyBuilder) {
   build(odsBuilder, odsState, ValueRange{control}, target, bodyBuilder);
-}
-
-void CtrlOp::getSuccessorRegions(RegionBranchPoint point,
-                                 SmallVectorImpl<RegionSuccessor>& regions) {
-  // Only the targets are threaded through the body; the controls bypass it.
-  detail::getModifierSuccessorRegions(getOperation(), getRegion(), point,
-                                      getTargetsOut(), regions);
-}
-
-OperandRange CtrlOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
-  return getTargetsIn();
-}
-
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void CtrlOp::getRegionInvocationBounds(
-    ArrayRef<Attribute> /*operands*/,
-    SmallVectorImpl<InvocationBounds>& invocationBounds) {
-  invocationBounds.emplace_back(1, 1);
 }
 
 LogicalResult CtrlOp::verify() {
