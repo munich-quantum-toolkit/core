@@ -29,7 +29,9 @@
 #include <mlir/Transforms/Passes.h>
 
 #include <array>
+#include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <tuple>
 
 namespace {
@@ -87,7 +89,77 @@ class QCOReplaceClassicalControlsRZZTest
     : public QCOReplaceClassicalControlsTest,
       public testing::WithParamInterface<size_t> {};
 
+[[nodiscard]] static std::complex<double>
+phaseFromExponent(const double exponent) {
+  return std::polar(1.0, exponent);
+}
+
+static void expectSamePhase(const std::complex<double>& actual,
+                            const std::complex<double>& expected) {
+  EXPECT_NEAR(actual.real(), expected.real(), 1e-12);
+  EXPECT_NEAR(actual.imag(), expected.imag(), 1e-12);
+}
+
 } // namespace
+
+TEST(QCOClassicalControlPhaseIdentityTest,
+     controlledRZAndRZZRewritesPreserveBasisPhases) {
+  constexpr std::array angles{0.125, -0.789, 2.3};
+  for (const size_t numControls : {1U, 2U, 3U, 5U}) {
+    const uint64_t controlMask = (uint64_t{1} << numControls) - 1U;
+    const size_t numQubits = numControls + 2U;
+    for (const double theta : angles) {
+      for (uint64_t basis = 0; basis < (uint64_t{1} << numQubits); ++basis) {
+        SCOPED_TRACE(testing::Message()
+                     << "controls=" << numControls << ", theta=" << theta
+                     << ", basis=" << basis);
+        const bool controlsActive = (basis & controlMask) == controlMask;
+        const bool targetA = (basis & (uint64_t{1} << numControls)) != 0;
+        const bool targetB =
+            (basis & (uint64_t{1} << (numControls + 1U))) != 0;
+
+        const double controlledRZExponent =
+            controlsActive ? (targetA ? theta / 2.0 : -theta / 2.0) : 0.0;
+        double rewrittenRZExponent = 0.0;
+        if (controlsActive) {
+          rewrittenRZExponent -= theta / 2.0;
+          if (targetA) {
+            rewrittenRZExponent += theta;
+          }
+        }
+        expectSamePhase(phaseFromExponent(rewrittenRZExponent),
+                        phaseFromExponent(controlledRZExponent));
+
+        const double zA = targetA ? -1.0 : 1.0;
+        const double zB = targetB ? -1.0 : 1.0;
+        const double controlledRZZExponent =
+            controlsActive ? -theta * zA * zB / 2.0 : 0.0;
+        double rewrittenRZZExponent = 0.0;
+        if (controlsActive) {
+          rewrittenRZZExponent -= theta / 2.0;
+          if (targetA) {
+            rewrittenRZZExponent += theta;
+          }
+          if (targetB) {
+            rewrittenRZZExponent += theta;
+          }
+          if (targetA && targetB) {
+            rewrittenRZZExponent -= 2.0 * theta;
+          }
+        }
+        expectSamePhase(phaseFromExponent(rewrittenRZZExponent),
+                        phaseFromExponent(controlledRZZExponent));
+
+        const double twoMeasuredTargetsExponent =
+            controlsActive
+                ? -theta / 2.0 + (targetA != targetB ? theta : 0.0)
+                : 0.0;
+        expectSamePhase(phaseFromExponent(twoMeasuredTargetsExponent),
+                        phaseFromExponent(controlledRZZExponent));
+      }
+    }
+  }
+}
 
 /**
  * @brief Test: Tests replacing a classically controlled gate where there is
