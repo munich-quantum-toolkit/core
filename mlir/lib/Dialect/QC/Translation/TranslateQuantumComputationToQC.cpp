@@ -139,8 +139,8 @@ allocateQregs(QCProgramBuilder& builder,
   // Allocate quantum registers using the builder
   SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
-    auto qubitRegister =
-        builder.allocQubitRegister(static_cast<int64_t>(qregPtr->getSize()));
+    auto qubitRegister = builder.allocQubitRegister(
+        static_cast<int64_t>(qregPtr->getSize()), qregPtr->getName());
     qregs.emplace_back(qregPtr, std::move(qubitRegister.qubits));
   }
 

@@ -594,6 +594,14 @@ c[0] = measure q[0];
     assert job3.num_shots == 1000
 
 
+def test_device_retrieve_job_by_id_reports_unsupported_provider(
+    ddsim_device: Device,
+) -> None:
+    """Expose job retrieval through Python without requiring DDSIM support."""
+    with pytest.raises(RuntimeError, match=r"Retrieving job: Not supported\."):
+        ddsim_device.retrieve_job_by_id("unknown")
+
+
 @pytest.fixture
 def submitted_job(ddsim_device: Device) -> Job:
     """Fixture that provides a submitted job for testing.

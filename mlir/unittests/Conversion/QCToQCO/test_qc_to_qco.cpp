@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -54,6 +55,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 
@@ -583,6 +585,49 @@ module {
   moduleOp->walk([&](qtensor::DeallocOp) { ++deallocations; });
   EXPECT_EQ(allocations, 1U);
   EXPECT_EQ(deallocations, 1U);
+}
+
+TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegisterStorage(2, "named_qubits");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
+TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : memref<?x!qc.qubit>
+    memref.dealloc %reg : memref<?x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  EXPECT_TRUE(allocation.getResult().getType().isDynamicDim(0));
+  EXPECT_EQ(allocation.getSize(), allocation->getBlock()->getArgument(0));
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
 TEST_F(QCToQCORegressionTest, RejectsRegisterBackedReferenceEscapes) {
