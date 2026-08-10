@@ -430,7 +430,7 @@ TEST_F(QIRRuntimeTest, ThreeControlsUseGenericSpecialization) {
   for (size_t i = 0; i < controlQubits.size(); ++i) {
     std::memcpy(__quantum__rt__array_get_element_ptr_1d(
                     controls, static_cast<int64_t>(i)),
-                &controlQubits[i], sizeof(Qubit*));
+                static_cast<const void*>(&controlQubits[i]), sizeof(Qubit*));
   }
 
   __quantum__qis__x__ctl(controls, target);
@@ -455,14 +455,14 @@ TEST_F(QIRRuntimeTest, GenericControlledRotationUsesArgumentTuple) {
   for (size_t i = 0; i < controlQubits.size(); ++i) {
     std::memcpy(__quantum__rt__array_get_element_ptr_1d(
                     controls, static_cast<int64_t>(i)),
-                &controlQubits[i], sizeof(Qubit*));
+                static_cast<const void*>(&controlQubits[i]), sizeof(Qubit*));
   }
 
   struct Args {
     double angle;
     Qubit* target;
   };
-  const Args args{qc::PI, target};
+  const Args args{.angle = qc::PI, .target = target};
   auto* tuple = __quantum__rt__tuple_create(sizeof(Args));
   std::memcpy(tuple, &args, sizeof(Args));
 

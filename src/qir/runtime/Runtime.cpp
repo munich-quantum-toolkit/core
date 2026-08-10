@@ -12,9 +12,13 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
+#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "qir/runtime/QIR.h"
 
 #include <algorithm>

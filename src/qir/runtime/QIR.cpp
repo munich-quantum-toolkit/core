@@ -10,7 +10,7 @@
 
 #include "qir/runtime/QIR.h"
 
-// NOLINTNEXTLINE(misc-include-cleaner)
+#include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "qir/runtime/Runtime.hpp"
 
@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <new>
@@ -79,7 +80,7 @@ static auto applyControlledTuple(const qc::OpType op, Array* controls,
         "QIR generic controlled argument tuple must not be null");
   }
   const auto validateSize = [&](const std::size_t expected) {
-    if (getTupleHeader(tuple)->size != static_cast<int64_t>(expected)) {
+    if (std::cmp_not_equal(getTupleHeader(tuple)->size, expected)) {
       throw std::invalid_argument(
           "QIR generic controlled argument tuple has an invalid size");
     }
@@ -194,7 +195,8 @@ Tuple* __quantum__rt__tuple_create(const int64_t size) {
       ::operator new(bytes, std::align_val_t{alignof(TupleHeader)}));
   auto* header = std::construct_at(reinterpret_cast<TupleHeader*>(storage));
   header->size = size;
-  auto* payload = storage + sizeof(TupleHeader);
+  auto* payload =
+      std::next(storage, static_cast<std::ptrdiff_t>(sizeof(TupleHeader)));
   std::ranges::fill_n(payload, size, std::byte{0});
   return reinterpret_cast<Tuple*>(payload);
 }
