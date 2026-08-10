@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 
@@ -20,11 +21,14 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <array>
+#include <cstddef>
 #include <tuple>
 
 namespace {
@@ -77,6 +81,10 @@ protected:
     return pm.run(program);
   }
 };
+
+class QCOReplaceClassicalControlsRZZTest
+    : public QCOReplaceClassicalControlsTest,
+      public testing::WithParamInterface<size_t> {};
 
 } // namespace
 
@@ -524,6 +532,297 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapPhase) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       replaceClassicalControlsSwapRZWithCorrection) {
+  constexpr double theta = 0.789;
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto target = programBuilder.h(programBuilder.allocQubit());
+  auto control = programBuilder.h(programBuilder.allocQubit());
+
+  Value initialTargetOutcome;
+  std::tie(target, initialTargetOutcome) = programBuilder.measure(target);
+  std::tie(control, target) = programBuilder.crz(theta, control, target);
+  Value controlOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  programBuilder.sink(control);
+  programBuilder.sink(target);
+  program = programBuilder.finalize({initialTargetOutcome, controlOutcome});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto referenceTarget = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+
+  Value referenceInitialTargetOutcome;
+  std::tie(referenceTarget, referenceInitialTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  referenceControl = referenceBuilder.p(-theta / 2.0, referenceControl);
+  referenceControl = referenceBuilder.qcoIf(
+      referenceInitialTargetOutcome, referenceControl,
+      [&](Value qubit) -> Value { return referenceBuilder.p(theta, qubit); });
+  Value referenceControlOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTarget);
+  reference = referenceBuilder.finalize(
+      {referenceInitialTargetOutcome, referenceControlOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       replaceClassicalControlsSwapMultiControlledRZWithCorrection) {
+  constexpr double theta = 0.789;
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  auto q = programBuilder.allocQubitRegister(3);
+  for (auto& qubit : q.qubits) {
+    qubit = programBuilder.h(qubit);
+  }
+  Value targetOutcome;
+  std::tie(q[2], targetOutcome) = programBuilder.measure(q[2]);
+  auto [controls, target] = programBuilder.mcrz(theta, {q[0], q[1]}, q[2]);
+  Value control0;
+  Value control0Outcome;
+  std::tie(control0, control0Outcome) = programBuilder.measure(controls[0]);
+  Value control1;
+  Value control1Outcome;
+  std::tie(control1, control1Outcome) = programBuilder.measure(controls[1]);
+  programBuilder.sink(control0);
+  programBuilder.sink(control1);
+  programBuilder.sink(target);
+  program = programBuilder.finalize(
+      {targetOutcome, control0Outcome, control1Outcome});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto r = referenceBuilder.allocQubitRegister(3);
+  for (auto& qubit : r.qubits) {
+    qubit = referenceBuilder.h(qubit);
+  }
+  Value referenceTargetOutcome;
+  std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
+  std::tie(r[1], r[0]) = referenceBuilder.cp(-theta / 2.0, r[1], r[0]);
+  auto conditionalControls =
+      referenceBuilder.qcoIf(referenceTargetOutcome, ValueRange{r[1], r[0]},
+                             [&](ValueRange qubits) -> SmallVector<Value> {
+                               Value c1 = qubits[0];
+                               Value c0 = qubits[1];
+                               std::tie(c1, c0) =
+                                   referenceBuilder.cp(theta, c1, c0);
+                               return {c1, c0};
+                             });
+  r[1] = conditionalControls[0];
+  r[0] = conditionalControls[1];
+  Value referenceControl0Outcome;
+  std::tie(r[0], referenceControl0Outcome) = referenceBuilder.measure(r[0]);
+  Value referenceControl1Outcome;
+  std::tie(r[1], referenceControl1Outcome) = referenceBuilder.measure(r[1]);
+  for (auto qubit : r.qubits) {
+    referenceBuilder.sink(qubit);
+  }
+  reference = referenceBuilder.finalize({referenceTargetOutcome,
+                                         referenceControl0Outcome,
+                                         referenceControl1Outcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
+}
+
+TEST_P(QCOReplaceClassicalControlsRZZTest,
+       replaceMeasuredRZZTargetWithCorrection) {
+  constexpr double theta = 0.789;
+  const size_t measuredTargetIndex = GetParam();
+  const size_t otherTargetIndex = 1U - measuredTargetIndex;
+
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  std::array targets{programBuilder.h(programBuilder.allocQubit()),
+                     programBuilder.h(programBuilder.allocQubit())};
+  Value measuredTargetOutcome;
+  std::tie(targets[measuredTargetIndex], measuredTargetOutcome) =
+      programBuilder.measure(targets[measuredTargetIndex]);
+  auto [outputControl, outputTargetPair] =
+      programBuilder.crzz(theta, control, targets[0], targets[1]);
+  std::array outputTargets{outputTargetPair.first, outputTargetPair.second};
+  Value controlOutcome;
+  std::tie(outputControl, controlOutcome) =
+      programBuilder.measure(outputControl);
+  Value otherTargetOutcome;
+  std::tie(outputTargets[otherTargetIndex], otherTargetOutcome) =
+      programBuilder.measure(outputTargets[otherTargetIndex]);
+  programBuilder.sink(outputControl);
+  programBuilder.sink(outputTargets[0]);
+  programBuilder.sink(outputTargets[1]);
+  program = programBuilder.finalize(
+      {measuredTargetOutcome, controlOutcome, otherTargetOutcome});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  std::array referenceTargets{
+      referenceBuilder.h(referenceBuilder.allocQubit()),
+      referenceBuilder.h(referenceBuilder.allocQubit())};
+  Value referenceMeasuredTargetOutcome;
+  std::tie(referenceTargets[measuredTargetIndex],
+           referenceMeasuredTargetOutcome) =
+      referenceBuilder.measure(referenceTargets[measuredTargetIndex]);
+  referenceControl = referenceBuilder.p(-theta / 2.0, referenceControl);
+  std::tie(referenceControl, referenceTargets[otherTargetIndex]) =
+      referenceBuilder.cp(theta, referenceControl,
+                          referenceTargets[otherTargetIndex]);
+  auto conditionalQubits = referenceBuilder.qcoIf(
+      referenceMeasuredTargetOutcome,
+      ValueRange{referenceControl, referenceTargets[otherTargetIndex]},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        Value conditionalControl = referenceBuilder.p(theta, qubits[0]);
+        Value conditionalTarget = qubits[1];
+        std::tie(conditionalControl, conditionalTarget) = referenceBuilder.cp(
+            -2.0 * theta, conditionalControl, conditionalTarget);
+        return {conditionalControl, conditionalTarget};
+      });
+  referenceControl = conditionalQubits[0];
+  referenceTargets[otherTargetIndex] = conditionalQubits[1];
+  Value referenceControlOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  Value referenceOtherTargetOutcome;
+  std::tie(referenceTargets[otherTargetIndex], referenceOtherTargetOutcome) =
+      referenceBuilder.measure(referenceTargets[otherTargetIndex]);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTargets[0]);
+  referenceBuilder.sink(referenceTargets[1]);
+  reference = referenceBuilder.finalize({referenceMeasuredTargetOutcome,
+                                         referenceControlOutcome,
+                                         referenceOtherTargetOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
+}
+
+INSTANTIATE_TEST_SUITE_P(MeasuredTargetPositions,
+                         QCOReplaceClassicalControlsRZZTest,
+                         testing::Values(0U, 1U));
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       replaceMeasuredRZZTargetWithMultipleControls) {
+  constexpr double theta = 0.789;
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  auto q = programBuilder.allocQubitRegister(4);
+  for (auto& qubit : q.qubits) {
+    qubit = programBuilder.h(qubit);
+  }
+  Value measuredTargetOutcome;
+  std::tie(q[2], measuredTargetOutcome) = programBuilder.measure(q[2]);
+  auto [controls, targets] =
+      programBuilder.mcrzz(theta, {q[0], q[1]}, q[2], q[3]);
+  Value measuredControl;
+  Value controlOutcome;
+  std::tie(measuredControl, controlOutcome) =
+      programBuilder.measure(controls[0]);
+  Value otherTargetOutcome;
+  std::tie(targets.second, otherTargetOutcome) =
+      programBuilder.measure(targets.second);
+  programBuilder.sink(measuredControl);
+  programBuilder.sink(controls[1]);
+  programBuilder.sink(targets.first);
+  programBuilder.sink(targets.second);
+  program = programBuilder.finalize(
+      {measuredTargetOutcome, controlOutcome, otherTargetOutcome});
+
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto r = referenceBuilder.allocQubitRegister(4);
+  for (auto& qubit : r.qubits) {
+    qubit = referenceBuilder.h(qubit);
+  }
+  Value referenceMeasuredTargetOutcome;
+  std::tie(r[2], referenceMeasuredTargetOutcome) =
+      referenceBuilder.measure(r[2]);
+  std::tie(r[0], r[1]) = referenceBuilder.cp(-theta / 2.0, r[0], r[1]);
+  std::tie(controls, r[3]) = referenceBuilder.mcp(theta, {r[0], r[1]}, r[3]);
+  r[0] = controls[0];
+  r[1] = controls[1];
+  auto conditionalQubits = referenceBuilder.qcoIf(
+      referenceMeasuredTargetOutcome, ValueRange{r[0], r[1], r[3]},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        Value c0 = qubits[0];
+        Value c1 = qubits[1];
+        std::tie(c0, c1) = referenceBuilder.cp(theta, c0, c1);
+        Value target = qubits[2];
+        SmallVector<Value> conditionalControls;
+        std::tie(conditionalControls, target) =
+            referenceBuilder.mcp(-2.0 * theta, {c0, c1}, target);
+        return {conditionalControls[0], conditionalControls[1], target};
+      });
+  r[0] = conditionalQubits[0];
+  r[1] = conditionalQubits[1];
+  r[3] = conditionalQubits[2];
+  Value referenceControlOutcome;
+  std::tie(r[0], referenceControlOutcome) = referenceBuilder.measure(r[0]);
+  Value referenceOtherTargetOutcome;
+  std::tie(r[3], referenceOtherTargetOutcome) = referenceBuilder.measure(r[3]);
+  for (auto qubit : r.qubits) {
+    referenceBuilder.sink(qubit);
+  }
+  reference = referenceBuilder.finalize({referenceMeasuredTargetOutcome,
+                                         referenceControlOutcome,
+                                         referenceOtherTargetOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       replaceMeasuredRZZTargetAndMeasuredControl) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto q = programBuilder.allocQubitRegister(4);
+  for (auto& qubit : q.qubits) {
+    qubit = programBuilder.h(qubit);
+  }
+  Value controlOutcome;
+  std::tie(q[0], controlOutcome) = programBuilder.measure(q[0]);
+  Value targetOutcome;
+  std::tie(q[2], targetOutcome) = programBuilder.measure(q[2]);
+  auto [controls, targets] =
+      programBuilder.mcrzz(0.789, {q[0], q[1]}, q[2], q[3]);
+  programBuilder.sink(controls[0]);
+  programBuilder.sink(controls[1]);
+  programBuilder.sink(targets.first);
+  programBuilder.sink(targets.second);
+  program = programBuilder.finalize({controlOutcome, targetOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_FALSE(program->getBody()
+                   ->walk([](CtrlOp ctrlOp) {
+                     return llvm::any_of(ctrlOp.getControlsIn(),
+                                         [](Value control) {
+                                           return isa_and_nonnull<MeasureOp>(
+                                               control.getDefiningOp());
+                                         })
+                                ? WalkResult::interrupt()
+                                : WalkResult::advance();
+                   })
+                   .wasInterrupted());
 }
 
 /**

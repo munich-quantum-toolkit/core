@@ -24,6 +24,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco {
@@ -53,7 +54,159 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
  * @return true if the operation is a phase gate, false otherwise
  */
 static bool isPhaseGate(Operation* op) {
-  return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
+  return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp, RZOp>(op);
+}
+
+static std::pair<SmallVector<Value>, Value>
+applyControlledPhase(PatternRewriter& rewriter, Location loc,
+                     ValueRange controls, Value target, Value theta) {
+  if (controls.empty()) {
+    return {{}, POp::create(rewriter, loc, target, theta).getOutputQubit(0)};
+  }
+  auto phase = CtrlOp::create(
+      rewriter, loc, controls, target, [&](Value innerTarget) -> Value {
+        return POp::create(rewriter, loc, innerTarget, theta).getOutputQubit(0);
+      });
+  return {SmallVector<Value>(phase.getOutputControls()),
+          phase.getOutputTarget(0)};
+}
+
+static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
+                                                Location loc,
+                                                ValueRange controls,
+                                                Value theta) {
+  assert(!controls.empty());
+  auto [prefix, last] = applyControlledPhase(
+      rewriter, loc, controls.drop_back(), controls.back(), theta);
+  prefix.push_back(last);
+  return prefix;
+}
+
+/**
+ * @brief Rewrite controlled RZ into a symmetric controlled phase plus its
+ * phase correction.
+ *
+ * For controls C and selected control c, uses
+ * C^nRZ(theta) = C^(n-1)P_c(-theta/2) C^nP_target(theta). The latter phase
+ * operation is symmetric, so c and the original target may subsequently be
+ * swapped.
+ *
+ * @return The updated controls, including the corrected selected control.
+ */
+static SmallVector<Value>
+rewriteRZForControlTargetSwap(CtrlOp ctrlOp, RZOp rzOp,
+                              const size_t selectedControlIndex,
+                              PatternRewriter& rewriter) {
+  utils::hoistSupportingOpsBefore(*ctrlOp.getBody(), rzOp, ctrlOp, rewriter);
+  const Value theta = rzOp.getTheta();
+
+  rewriter.setInsertionPoint(rzOp);
+  rewriter.replaceOpWithNewOp<POp>(rzOp, rzOp.getInputTarget(0), theta);
+
+  rewriter.setInsertionPoint(ctrlOp);
+  const auto minusHalf =
+      utils::constantFromScalar(rewriter, ctrlOp.getLoc(), -0.5);
+  const Value correction =
+      arith::MulFOp::create(rewriter, ctrlOp.getLoc(), theta, minusHalf);
+
+  SmallVector<Value> controls(ctrlOp.getControlsIn());
+  SmallVector<Value> otherControls;
+  otherControls.reserve(controls.size() - 1U);
+  for (auto [index, control] : llvm::enumerate(controls)) {
+    if (index != selectedControlIndex) {
+      otherControls.push_back(control);
+    }
+  }
+  Value selectedControl = controls[selectedControlIndex];
+  std::tie(otherControls, selectedControl) = applyControlledPhase(
+      rewriter, ctrlOp.getLoc(), otherControls, selectedControl, correction);
+
+  size_t otherIndex = 0;
+  for (auto [index, control] : llvm::enumerate(controls)) {
+    if (index == selectedControlIndex) {
+      control = selectedControl;
+    } else {
+      control = otherControls[otherIndex++];
+    }
+  }
+  return controls;
+}
+
+/**
+ * @brief Replace a controlled RZZ with one measured target by classical
+ * control flow.
+ *
+ * For the conjunction d of all controls, measured target a, and remaining
+ * target b, the phase polynomial identity is
+ *
+ * C^nRZZ(theta) = C^(n-1)P_d(-theta/2) C^nP_b(theta)
+ *                   C_a[C^(n-1)P_d(theta) C^nP_b(-2 theta)].
+ */
+static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
+                                                 PatternRewriter& rewriter) {
+  if (op.getNumControls() == 0 || op.getNumTargets() != 2) {
+    return failure();
+  }
+
+  std::optional<size_t> measuredTargetIndex;
+  Value condition;
+  for (auto [index, target] : llvm::enumerate(op.getTargetsIn())) {
+    if (Value outcome = getPredecessorMeasurementOutcome(target)) {
+      if (measuredTargetIndex) {
+        return failure();
+      }
+      measuredTargetIndex = index;
+      condition = outcome;
+    }
+  }
+  if (!measuredTargetIndex) {
+    return failure();
+  }
+
+  const size_t otherTargetIndex = 1U - *measuredTargetIndex;
+  const Value measuredTarget = op.getInputTarget(*measuredTargetIndex);
+  SmallVector<Value> controls(op.getControlsIn());
+  Value otherTarget = op.getInputTarget(otherTargetIndex);
+
+  utils::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter);
+  const Value theta = rzzOp.getTheta();
+  rewriter.setInsertionPoint(op);
+  const Value minusHalf =
+      utils::constantFromScalar(rewriter, op.getLoc(), -0.5);
+  const Value minusTwo = utils::constantFromScalar(rewriter, op.getLoc(), -2.0);
+  const Value negativeHalfTheta =
+      arith::MulFOp::create(rewriter, op.getLoc(), theta, minusHalf);
+  const Value negativeDoubleTheta =
+      arith::MulFOp::create(rewriter, op.getLoc(), theta, minusTwo);
+
+  controls =
+      applyConjunctionPhase(rewriter, op.getLoc(), controls, negativeHalfTheta);
+  std::tie(controls, otherTarget) =
+      applyControlledPhase(rewriter, op.getLoc(), controls, otherTarget, theta);
+
+  SmallVector<Value> ifOperands(controls);
+  ifOperands.push_back(otherTarget);
+  auto ifOp = IfOp::create(
+      rewriter, op.getLoc(), condition, ifOperands,
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        SmallVector<Value> conditionalControls(qubits.drop_back());
+        conditionalControls = applyConjunctionPhase(rewriter, op.getLoc(),
+                                                    conditionalControls, theta);
+        Value conditionalTarget;
+        std::tie(conditionalControls, conditionalTarget) =
+            applyControlledPhase(rewriter, op.getLoc(), conditionalControls,
+                                 qubits.back(), negativeDoubleTheta);
+        conditionalControls.push_back(conditionalTarget);
+        return conditionalControls;
+      });
+
+  SmallVector<Value> replacements(ifOp.getLinearResults().drop_back());
+  replacements.resize(op.getNumQubits());
+  replacements[op.getNumControls() + *measuredTargetIndex] = measuredTarget;
+  replacements[op.getNumControls() + otherTargetIndex] =
+      ifOp.getLinearResults().back();
+  rewriter.replaceOp(op, replacements);
+  return success();
 }
 
 /**
@@ -63,6 +216,7 @@ static bool isPhaseGate(Operation* op) {
  * @param rewriter The pattern rewriter used to perform the transformation
  */
 static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
+                                               UnitaryOpInterface unitary,
                                                PatternRewriter& rewriter) {
   assert(op.getNumTargets() == 1 &&
          "Only single-qubit gates can be swapped around controls");
@@ -81,11 +235,22 @@ static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
       continue;
     }
 
+    Value swappedTarget = control;
+    SmallVector<Value> updatedControls(op.getControlsIn());
+    if (auto rzOp = dyn_cast<RZOp>(unitary.getOperation())) {
+      updatedControls =
+          rewriteRZForControlTargetSwap(op, rzOp, controlIndex, rewriter);
+      swappedTarget = updatedControls[controlIndex];
+    }
+
     Value controlOut = op.getControlsOut()[controlIndex];
     Value targetOut = op.getTargetsOut()[0];
 
     rewriter.modifyOpInPlace(op, [&]() {
-      op.getTargetsInMutable()[0].set(control);
+      for (auto [index, updatedControl] : llvm::enumerate(updatedControls)) {
+        op.getControlsInMutable()[index].set(updatedControl);
+      }
+      op.getTargetsInMutable()[0].set(swappedTarget);
       op.getControlsInMutable()[controlIndex].set(target);
     });
 
@@ -120,8 +285,16 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
     if (auto unitary =
             utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody());
-        unitary && isPhaseGate(unitary.getOperation())) {
-      trySwapControlAndTargetOfPhaseGate(ctrlOp, rewriter);
+        unitary) {
+      if (auto rzzOp = dyn_cast<RZZOp>(unitary.getOperation());
+          rzzOp &&
+          succeeded(tryReplaceMeasuredRZZTarget(ctrlOp, rzzOp, rewriter))) {
+        return success();
+      }
+      if (isPhaseGate(unitary.getOperation())) {
+        trySwapControlAndTargetOfPhaseGate(ctrlOp, unitary, rewriter);
+        rewriter.setInsertionPointAfter(ctrlOp);
+      }
     }
 
     ValueRange controlsIn = ctrlOp.getControlsIn();
