@@ -62,6 +62,18 @@ void checkEquivalence(const qc::QuantumComputation& qc1,
   }
 }
 
+void checkExactUnitaryEquivalence(const qc::QuantumComputation& qc1,
+                                  const qc::QuantumComputation& qc2) {
+  ASSERT_EQ(qc1.getNqubits(), qc2.getNqubits());
+
+  dd::Package package(qc1.getNqubits());
+  const auto actual = dd::buildFunctionality(qc1, package);
+  const auto expected = dd::buildFunctionality(qc2, package);
+  EXPECT_EQ(actual, expected);
+  package.decRef(actual);
+  package.decRef(expected);
+}
+
 void addDirtyAncillaMcx(qc::QuantumComputation& circuit,
                         const std::vector<qc::Qubit>& controls,
                         const qc::Qubit target,
@@ -321,9 +333,9 @@ TEST_F(ZXFunctionalityTest, MCX) {
   qc = qc::QuantumComputation(4);
   qc.mcx({1, 2, 3}, 0);
 
-  auto qcPrime = qc::QuantumComputation(4);
-  qcPrime.mcx({3, 2, 1}, 0);
+  const auto qcPrime = makeReferenceMcx(3);
 
+  checkExactUnitaryEquivalence(qc, qcPrime);
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
@@ -365,17 +377,11 @@ TEST_F(ZXFunctionalityTest, LargeMCX) {
     std::vector<qc::Qubit> qubits(numQubits);
     std::iota(qubits.begin(), qubits.end(), 0U);
 
+    checkExactUnitaryEquivalence(qc, reference);
     checkEquivalence(qc, reference, qubits);
 
     const auto diag = FunctionalityConstruction::buildFunctionality(&qc);
     EXPECT_LT(diag.getNVertices(), 22U * numControls * numControls);
-
-    dd::Package package(numQubits);
-    const auto actual = dd::buildFunctionality(qc, package);
-    const auto expected = dd::buildFunctionality(reference, package);
-    EXPECT_EQ(actual.p, expected.p);
-    package.decRef(actual);
-    package.decRef(expected);
   }
 }
 
@@ -385,8 +391,9 @@ TEST_F(ZXFunctionalityTest, MCZ) {
   qc.mcz({1, 2, 3}, 0);
 
   auto qcPrime = qc::QuantumComputation(4);
-  qcPrime.mcz({1, 2, 3}, 0);
+  addReferenceMcphase(qcPrime, PI, {1, 2, 3}, 0);
 
+  checkExactUnitaryEquivalence(qc, qcPrime);
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
@@ -427,13 +434,17 @@ TEST_F(ZXFunctionalityTest, MCZ2) {
 
 TEST_F(ZXFunctionalityTest, MCRZ) {
 
+  const auto phase = PI / 4;
   qc = qc::QuantumComputation(4);
-  qc.mcrz(PI / 4, {1, 2, 3}, 0);
+  qc.mcrz(phase, {1, 2, 3}, 0);
 
   auto qcPrime = qc::QuantumComputation(4);
-  qcPrime.h(0);
-  qcPrime.mcrx(PI / 4, {1, 2, 3}, 0);
-  qcPrime.h(0);
+  qcPrime.crz(phase / 2, 3, 0);
+  qcPrime.mcx({1, 2}, 0);
+  qcPrime.crz(-phase / 2, 3, 0);
+  qcPrime.mcx({1, 2}, 0);
+
+  checkExactUnitaryEquivalence(qc, qcPrime);
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 

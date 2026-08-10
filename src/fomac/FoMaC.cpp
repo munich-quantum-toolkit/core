@@ -411,6 +411,15 @@ Job Device::submitJob(const std::span<const std::byte> program,
   return jobWrapper;
 }
 
+Job Device::retrieveJobById(const std::string_view jobId) const {
+  const std::string id{jobId};
+  QDMI_Job job = nullptr;
+  qdmi::throwIfError(
+      QDMI_session_retrieve_job_by_id(device_.get(), id.c_str(), &job),
+      "Retrieving job");
+  return Job{job, device_};
+}
+
 void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                const CustomJobParameter& value) {
   std::visit(
