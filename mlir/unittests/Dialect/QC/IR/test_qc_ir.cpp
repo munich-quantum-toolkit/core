@@ -552,6 +552,23 @@ TEST_F(QCTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
 }
 
+TEST_F(QCTest, PositiveIntegralPowUCanonicalizes) {
+  for (const double exponent : {2.0, 3.0, 17.0}) {
+    auto program = QCProgramBuilder::build(context.get(), [&](auto& builder) {
+      auto q = builder.allocQubitRegister(1);
+      builder.pow(exponent, q[0],
+                  [&](Value arg) { builder.u(0.1, 0.2, 0.3, arg); });
+      return builder.measure(q[0]);
+    });
+    ASSERT_TRUE(program);
+
+    ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+    std::size_t powCount = 0;
+    program->walk([&](PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, 0U);
+  }
+}
+
 TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
   auto program = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
