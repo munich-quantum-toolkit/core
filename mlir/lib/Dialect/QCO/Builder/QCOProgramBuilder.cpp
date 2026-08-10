@@ -112,7 +112,7 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::allocQubit() {
   ensureAllocationMode(AllocationMode::Dynamic);
 
   auto allocOp = AllocOp::create(*this);
-  Qubit qubit = allocOp.getResult();
+  auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
   validQubits.insert(qubit);
@@ -125,7 +125,7 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
   ensureAllocationMode(AllocationMode::Static);
 
   auto staticOp = StaticOp::create(*this, index);
-  Qubit qubit = staticOp.getQubit();
+  const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
   validQubits.insert(qubit);
