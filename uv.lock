@@ -17,6 +17,14 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+
+[[manifest.dependency-metadata]]
+name = "cudaq"
+version = "0.15.1"
+requires-dist = ["cuda-quantum-cu13==0.15.1"]
+requires-python = ">=3.11"
+
 [[package]]
 name = "accessible-pygments"
 version = "0.0.5"
