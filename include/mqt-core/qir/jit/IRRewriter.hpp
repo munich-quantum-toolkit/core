@@ -14,41 +14,30 @@
 
 #pragma once
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/IR/Module.h>
-
-#include <array>
-#include <cstddef>
+namespace llvm {
+class Function;
+}
 
 namespace qir {
 
-/// The set of call targets that @c stripMeasurementRelatedCalls erases.
-inline constexpr std::array<llvm::StringRef, 5> STRIP_TARGETS = {
-    "__quantum__qis__mz__body",
-    "__quantum__qis__m__body",
-    "__quantum__qis__measure__body",
-    "__quantum__rt__result_record_output",
-    "__quantum__rt__result_update_reference_count",
-};
-
 /**
- * @brief Strips QIR measurement-related calls from @p m in place.
- * @details Erases calls to the QIR measurement intrinsics, to the
- * result-recording intrinsic, and to the result reference-count update
- * intrinsic (whose Result operands would otherwise reference the null
- * pointers left by the stripped measurements).
- * Intended for QIR Base Profile programs only: in Adaptive Profile programs,
- * measurement results feed classical control flow, so removing them silently
- * changes observable behavior.
+ * @brief Prepares a QIR entry point for state extraction.
+ * @details Truncates @p entryPoint immediately before its first call to a
+ * function carrying the QIR @c irreversible attribute, then removes the
+ * unreachable measurement and output region. This uses the semantic boundary
+ * defined by the QIR Base Profile instead of relying on a fixed list of
+ * measurement and output function names.
  *
- * The typical use is to prepare a Base Profile module for state-vector
- * extraction: after this transform the JIT'd @c main can be run once and
- * the resulting state remains in the @ref qir::Runtime DD instead of being
- * collapsed by measurement.
+ * The transform requires an entry point marked with @c base_profile. Adaptive
+ * Profile measurements may feed classical control flow and cannot be removed
+ * without changing the program's meaning.
  *
- * @param m Module to rewrite in place.
- * @return Number of instructions erased.
+ * @param entryPoint QIR entry point to rewrite in place.
+ * @return Whether an irreversible boundary was found and truncated.
+ * @throws std::invalid_argument if the entry point is not Base Profile, does
+ * not use the QIR 2.x @c i64() signature, or has non-terminal irreversible
+ * operations.
  */
-std::size_t stripMeasurementRelatedCalls(llvm::Module& m);
+bool prepareForStateExtraction(llvm::Function& entryPoint);
 
 } // namespace qir

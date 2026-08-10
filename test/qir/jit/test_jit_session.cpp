@@ -62,6 +62,51 @@ TEST_F(JitSessionTest, StateExtractionLeavesNoRecordedOutputs) {
   EXPECT_TRUE(session.runtime().getMeasurements().empty());
 }
 
+TEST_F(JitSessionTest, StateExtractionRejectsAdaptiveProfile) {
+  constexpr std::string_view ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+  const qir::SessionOptions options{.execution =
+                                        qir::Execution::StateExtraction};
+  EXPECT_THROW(
+      {
+        try {
+          const qir::JitSession session(ir, "Adaptive.ll", options);
+        } catch (const std::invalid_argument& error) {
+          EXPECT_THAT(error.what(), ::testing::HasSubstr("Base Profile"));
+          throw;
+        }
+      },
+      std::invalid_argument);
+}
+
+TEST_F(JitSessionTest, StateExtractionRejectsNonTerminalMeasurement) {
+  constexpr std::string_view ir = R"(
+define i64 @main() #0 {
+  call void @measure()
+  call void @__quantum__qis__x__body(ptr null)
+  ret i64 0
+}
+declare void @measure() #1
+declare void @__quantum__qis__x__body(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+attributes #1 = { "irreversible" }
+)";
+  const qir::SessionOptions options{.execution =
+                                        qir::Execution::StateExtraction};
+  EXPECT_THROW(
+      {
+        try {
+          const qir::JitSession session(ir, "NonTerminal.ll", options);
+        } catch (const std::invalid_argument& error) {
+          EXPECT_THAT(error.what(), ::testing::HasSubstr("terminal region"));
+          throw;
+        }
+      },
+      std::invalid_argument);
+}
+
 TEST_F(JitSessionTest, OutputSchemaDefaultsToLabeledWhenAttributeAbsent) {
   constexpr std::string_view ir = R"(
 define i64 @main() #0 { ret i64 0 }

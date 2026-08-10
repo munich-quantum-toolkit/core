@@ -69,11 +69,11 @@ static auto isEntryPoint(const llvm::Function& function) -> bool {
          function.hasFnAttribute("EntryPoint");
 }
 
-static auto selectEntryPoint(const llvm::Module& module,
+static auto selectEntryPoint(llvm::Module& module,
                              const std::optional<std::string>& requested)
-    -> const llvm::Function& {
-  std::vector<const llvm::Function*> matches;
-  for (const auto& function : module) {
+    -> llvm::Function& {
+  std::vector<llvm::Function*> matches;
+  for (auto& function : module) {
     if (!function.isDeclaration() && isEntryPoint(function) &&
         (!requested || function.getName() == *requested)) {
       matches.emplace_back(&function);
@@ -94,7 +94,7 @@ static auto selectEntryPoint(const llvm::Module& module,
     }
     throw std::runtime_error(message.str());
   }
-  const auto& entryPoint = *matches.front();
+  auto& entryPoint = *matches.front();
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
@@ -447,8 +447,8 @@ void JitSession::initialize(
   runtime_ = std::make_unique<Runtime>();
 
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
-  module_.withModuleDo([&](const llvm::Module& module) {
-    const auto& entryPoint = selectEntryPoint(module, options.entryPoint);
+  module_.withModuleDo([&](llvm::Module& module) {
+    auto& entryPoint = selectEntryPoint(module, options.entryPoint);
     entryPointName_ = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));
     std::vector<std::pair<std::string, std::string>> metadata;
@@ -459,17 +459,13 @@ void JitSession::initialize(
       }
     }
     runtime_->setMetadata(std::move(metadata));
+    if (options.execution == Execution::StateExtraction) {
+      prepareForStateExtraction(entryPoint);
+    }
     runtimeSymbols = selectRuntimeSymbols(module);
   });
   if (options.seed) {
     runtime_->seed(*options.seed);
-  }
-
-  // In StateExtraction mode, strip QIR measurement and result-management calls
-  // so the runtime's quantum state remains intact after main returns.
-  if (options.execution == Execution::StateExtraction) {
-    module_.withModuleDo(
-        [](llvm::Module& m) { stripMeasurementRelatedCalls(m); });
   }
 
   initNativeTargets();

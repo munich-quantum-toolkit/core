@@ -16,6 +16,17 @@ select among multiple entry points, `--shots` for repeated execution, and
 Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
 Legacy qir-runner allocator and output overloads are no longer accepted.
 
+### DDSIM QDMI device
+
+DDSIM now isolates the runtime, simulator state, random-number generator, and
+output sink of every QIR job, so concurrently submitted jobs no longer share
+execution state or write QIR records to process stdout.
+
+QIR statevector extraction is supported only for Base-format jobs. The input
+must mark its first measurement boundary as `irreversible`, and no quantum work
+may follow that boundary. Adaptive-format statevector requests continue to
+return `QDMI_ERROR_NOTSUPPORTED`.
+
 ### Runtime-configurable SC QDMI device
 
 The built-in superconducting QDMI provider now parses its device description

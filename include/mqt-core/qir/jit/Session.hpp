@@ -33,10 +33,10 @@ class Runtime;
  * @brief Whether the JIT'd program runs to produce measurement samples or
  * to leave the final quantum state in @ref qir::Runtime for external
  * extraction.
- * @details In @c StateExtraction mode the session strips QIR measurement
- * and result-management calls from the IR before JIT-compiling, so the
- * runtime's quantum state remains intact after @c main returns. Intended
- * for QIR Base Profile programs only.
+ * @details In @c StateExtraction mode the session stops a Base Profile entry
+ * point at its first irreversible operation before JIT-compiling, so the
+ * runtime's quantum state remains intact without executing measurements or
+ * output recording. Adaptive Profile entry points are rejected.
  */
 enum class Execution { Sampling, StateExtraction };
 
@@ -123,7 +123,7 @@ private:
 
   /// Prepares the session to run the program:
   /// - Validates the loaded module.
-  /// - Optionally strips measurement and result management calls
+  /// - Optionally truncates the entry point at its first irreversible operation
   ///   (for @c Execution::StateExtraction).
   /// - Builds the @c LLJIT instance
   /// - Registers QIR runtime symbols
