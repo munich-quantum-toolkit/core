@@ -159,8 +159,8 @@ def test_quake_program_converts_through_qc() -> None:
 
     emitted = qc.to_quake(name="mqt_bell", copy=True)
     assert qc.is_valid
-    assert "@mqt_bell" in emitted.ir
-    assert 'mqt_bell = "mqt_bell_PyKernelEntryPointRewrite"' in emitted.ir
+    assert "@__nvqpp__mlirgen__mqt_bell" in emitted.ir
+    assert '__nvqpp__mlirgen__mqt_bell = "__nvqpp__mlirgen__mqt_bell_PyKernelEntryPointRewrite"' in emitted.ir
     assert "__nvqpp__mlirgen__bell" not in emitted.ir
 
 
