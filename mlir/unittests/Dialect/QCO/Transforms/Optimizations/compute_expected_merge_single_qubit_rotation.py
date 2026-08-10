@@ -28,13 +28,28 @@ def u2_gate(phi: float, lam: float) -> Quaternion:
 
 
 def normalize_angle(a: float) -> float:
-    """Normalize angle to [-pi, pi], matching the pass's normalizeAngle.
+    """Wrap an Euler angle to [-pi, pi), matching wrapToPi in the pass.
 
     Returns:
-        Angle in the range [-pi, pi].
+        Angle in the range [-pi, pi).
     """
     two_pi = 2 * math.pi
     return a - math.floor((a + math.pi) / two_pi) * two_pi
+
+
+def normalize_global_phase(a: float) -> float:
+    """Normalize to (-pi, pi], matching utils::normalizeAngle.
+
+    Returns:
+        Angle in the range (-pi, pi].
+    """
+    two_pi = 2 * math.pi
+    a = math.fmod(a, two_pi)
+    if a > math.pi:
+        a -= two_pi
+    if a <= -math.pi:
+        a += two_pi
+    return a
 
 
 def angles_from_quaternion(w: float, x: float, y: float, z: float) -> tuple[float, float, float, float]:
@@ -152,7 +167,7 @@ def compute_merge(chain: list[tuple]) -> tuple[float, float, float, float]:
     theta, phi, lam, euler_phase = angles_from_quaternion(w, x, y, z)
     corr = gphase_correction(total_input_phase, phi, lam, euler_phase)
 
-    return theta, phi, lam, float(N(corr))
+    return theta, phi, lam, normalize_global_phase(float(N(corr)))
 
 
 # ---- Build gates ----
