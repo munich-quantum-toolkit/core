@@ -152,12 +152,20 @@ def docs(session: nox.Session) -> None:
 
     env = {
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
-        "SKBUILD_CMAKE_BUILD_TYPE": "Release",
+        "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
-        # Header-set verification and IPO remain enabled by default elsewhere.
+        # The docs exercise only the DDSIM provider. Unity builds reduce the
+        # repeated parsing cost of the LLVM-heavy sources on constrained RTD
+        # workers. Header-set verification and IPO remain enabled elsewhere.
         "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;-DENABLE_IPO=OFF"
+            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;"
+            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
+            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
+            "-DCMAKE_UNITY_BUILD=ON;"
+            "-DCMAKE_UNITY_BUILD_BATCH_SIZE=4;"
+            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
+            "-DENABLE_IPO=OFF"
         ),
     }
     # install build and docs dependencies on top of the existing environment

@@ -14,6 +14,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
        ${MQT_CORE_INCLUDE_BUILD_DIR}/na/entities/*.hpp
        ${MQT_CORE_INCLUDE_BUILD_DIR}/na/operations/*.hpp)
   file(GLOB NA_SOURCES *.cpp entities/*.cpp operations/*.cpp)
+  set_source_files_properties(operations/LocalOp.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
   # create the library target (initially empty)
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-na ALIAS_NAME NA)
