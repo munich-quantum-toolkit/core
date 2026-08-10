@@ -715,6 +715,42 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
 }
 
 TEST_F(QCOReplaceClassicalControlsTest,
+       replaceMeasuredRZZTargetPreservesReversedYields) {
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target0 = programBuilder.h(programBuilder.allocQubit());
+  auto target1 = programBuilder.h(programBuilder.allocQubit());
+  Value measuredTargetOutcome;
+  std::tie(target0, measuredTargetOutcome) = programBuilder.measure(target0);
+  const Value measuredTarget = target0;
+  const auto [controls, targets] =
+      programBuilder.ctrl({control}, {target0, target1},
+                          [&](ValueRange args) -> SmallVector<Value> {
+                            auto [output0, output1] =
+                                programBuilder.rzz(0.789, args[0], args[1]);
+                            return {output1, output0};
+                          });
+  Value output0Outcome;
+  std::tie(target0, output0Outcome) = programBuilder.measure(targets[0]);
+  auto output0Measurement = cast<MeasureOp>(target0.getDefiningOp());
+  Value output1Outcome;
+  std::tie(target1, output1Outcome) = programBuilder.measure(targets[1]);
+  auto output1Measurement = cast<MeasureOp>(target1.getDefiningOp());
+  programBuilder.sink(controls[0]);
+  programBuilder.sink(target0);
+  programBuilder.sink(target1);
+  program = programBuilder.finalize(
+      {measuredTargetOutcome, output0Outcome, output1Outcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_NE(output0Measurement.getQubitIn(), measuredTarget);
+  EXPECT_EQ(output1Measurement.getQubitIn(), measuredTarget);
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
        doesNotReplaceMeasuredRZZTargetWithAdditionalTarget) {
   programBuilder.initialize({programBuilder.getI1Type()});
   auto control = programBuilder.h(programBuilder.allocQubit());

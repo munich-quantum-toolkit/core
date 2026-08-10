@@ -23,6 +23,7 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <tuple>
@@ -94,6 +95,32 @@ static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
 }
 
 /**
+ * @brief Map each control target result to the corresponding input target.
+ * @return The input-target index for every target result, or @c std::nullopt
+ * if the body does not directly yield all results of @p rzzOp.
+ */
+static std::optional<SmallVector<size_t>>
+getRZZTargetResultOrder(CtrlOp ctrlOp, RZZOp rzzOp) {
+  SmallVector<size_t> resultOrder;
+  resultOrder.reserve(ctrlOp.getNumTargets());
+  auto yieldOp = cast<YieldOp>(ctrlOp.getBody()->getTerminator());
+  for (const Value yielded : yieldOp.getOperands()) {
+    const auto result = dyn_cast<OpResult>(yielded);
+    if (!result || result.getOwner() != rzzOp.getOperation()) {
+      return std::nullopt;
+    }
+    const auto input = dyn_cast<BlockArgument>(
+        rzzOp.getInputTarget(result.getResultNumber()));
+    if (!input || input.getOwner() != ctrlOp.getBody() ||
+        input.getArgNumber() >= ctrlOp.getNumTargets()) {
+      return std::nullopt;
+    }
+    resultOrder.push_back(input.getArgNumber());
+  }
+  return resultOrder;
+}
+
+/**
  * @brief Rewrite controlled RZ into a symmetric controlled phase plus its
  * phase correction.
  *
@@ -159,6 +186,11 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
     return failure();
   }
 
+  const auto targetResultOrder = getRZZTargetResultOrder(op, rzzOp);
+  if (!targetResultOrder) {
+    return failure();
+  }
+
   std::optional<size_t> measuredTargetIndex;
   Value condition;
   for (auto [index, target] : llvm::enumerate(op.getTargetsIn())) {
@@ -213,9 +245,13 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
 
   SmallVector<Value> replacements(ifOp.getLinearResults().drop_back());
   replacements.resize(op.getNumQubits());
-  replacements[op.getNumControls() + *measuredTargetIndex] = measuredTarget;
-  replacements[op.getNumControls() + otherTargetIndex] =
-      ifOp.getLinearResults().back();
+  std::array<Value, 2> targetsByInput;
+  targetsByInput[*measuredTargetIndex] = measuredTarget;
+  targetsByInput[otherTargetIndex] = ifOp.getLinearResults().back();
+  for (auto [resultIndex, inputIndex] :
+       llvm::enumerate(*targetResultOrder)) {
+    replacements[op.getNumControls() + resultIndex] = targetsByInput[inputIndex];
+  }
   rewriter.replaceOp(op, replacements);
   return success();
 }
