@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -25,6 +26,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
@@ -37,6 +39,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 
@@ -81,6 +84,68 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(module);
+}
+
+TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  qco::QCOProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegister(2, "named_qubits");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+
+  memref::AllocOp allocation;
+  moduleOp->walk([&](memref::AllocOp op) {
+    if (isa<qc::QubitType>(op.getType().getElementType())) {
+      allocation = op;
+    }
+  });
+  ASSERT_TRUE(allocation);
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
+TEST(QCOToQCRegressionTest, RetainsDynamicQubitRegisterName) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
+    %reg = qtensor.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : tensor<?x!qco.qubit>
+    qtensor.dealloc %reg : tensor<?x!qco.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+
+  memref::AllocOp allocation;
+  moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  EXPECT_TRUE(allocation.getType().isDynamicDim(0));
+  ASSERT_EQ(allocation.getDynamicSizes().size(), 1);
+  EXPECT_EQ(allocation.getDynamicSizes().front(),
+            allocation->getBlock()->getArgument(0));
+  const auto name =
+      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
 static Value
