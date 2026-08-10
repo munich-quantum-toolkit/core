@@ -8,5 +8,6 @@
 
 add_subdirectory(helpers)
 add_subdirectory(jit)
+add_subdirectory(mqt-cc)
 add_subdirectory(runtime)
 add_subdirectory(runner)
