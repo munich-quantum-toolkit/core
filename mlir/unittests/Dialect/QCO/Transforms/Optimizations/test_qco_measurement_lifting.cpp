@@ -563,6 +563,55 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
 }
 
 /**
+ * @brief Test: A controlled diagonal gate is preserved when lifting a target
+ * measurement because it can kick phase back to the control.
+ */
+TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target = programBuilder.x(programBuilder.allocQubit());
+  std::tie(control, target) = programBuilder.cz(control, target);
+
+  Value targetOutcome;
+  std::tie(target, targetOutcome) = programBuilder.measure(target);
+  control = programBuilder.h(control);
+  Value controlOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  programBuilder.sink(control);
+  programBuilder.sink(target);
+  program = programBuilder.finalize({targetOutcome, controlOutcome});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget = referenceBuilder.allocQubit();
+  Value rawTargetOutcome;
+  std::tie(referenceTarget, rawTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  referenceTarget = referenceBuilder.x(referenceTarget);
+  std::tie(referenceControl, referenceTarget) =
+      referenceBuilder.cz(referenceControl, referenceTarget);
+  referenceControl = referenceBuilder.h(referenceControl);
+  Value referenceControlOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  const auto trueConstant = referenceBuilder.boolConstant(true);
+  auto referenceTargetOutcome =
+      arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
+                            rawTargetOutcome, trueConstant);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTarget);
+  reference = referenceBuilder.finalize(
+      {referenceTargetOutcome.getResult(), referenceControlOutcome});
+
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
  * @brief Test: Tests that a measurement is not lifted over a controlled
  * sequence gate if there are multiple gates inside the control block.
  */
