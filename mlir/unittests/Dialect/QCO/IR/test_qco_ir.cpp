@@ -1444,6 +1444,28 @@ static Value powRzxWithReorderedBody(QCOProgramBuilder& builder) {
   return measureRegister(builder, powOut);
 }
 
+static Value powBarrierWithReorderedBody(QCOProgramBuilder& builder) {
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  const auto powOut =
+      builder.pow(2.0, {q0, q1}, [&](ValueRange args) -> SmallVector<Value> {
+        const auto barrierOut = builder.barrier({args[1], args[0]});
+        return {barrierOut[1], barrierOut[0]};
+      });
+  return measureRegister(builder, powOut);
+}
+
+static Value powEvenSwapWithReorderedBody(QCOProgramBuilder& builder) {
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  const auto powOut =
+      builder.pow(2.0, {q0, q1}, [&](ValueRange args) -> SmallVector<Value> {
+        auto [out1, out0] = builder.swap(args[1], args[0]);
+        return {out1, out0};
+      });
+  return measureRegister(builder, powOut);
+}
+
 TEST_F(QCOTest, PowGateFoldPreservesReorderedBodyResults) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(powRzxWithReorderedBody));
@@ -1463,6 +1485,53 @@ TEST_F(QCOTest, PowGateFoldPreservesReorderedBodyResults) {
   ASSERT_EQ(measurements.size(), 2);
   EXPECT_EQ(measurements[0].getQubitIn(), gates[0].getOutputTarget(1));
   EXPECT_EQ(measurements[1].getQubitIn(), gates[0].getOutputTarget(0));
+}
+
+TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
+  auto program = ::mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(powBarrierWithReorderedBody));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  PassManager pm(context.get());
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(pm.run(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  SmallVector<AllocOp> allocations;
+  SmallVector<BarrierOp> barriers;
+  SmallVector<MeasureOp> measurements;
+  program->walk([&](AllocOp alloc) { allocations.push_back(alloc); });
+  program->walk([&](BarrierOp barrier) { barriers.push_back(barrier); });
+  program->walk([&](MeasureOp measure) { measurements.push_back(measure); });
+  ASSERT_EQ(allocations.size(), 2);
+  ASSERT_EQ(barriers.size(), 1);
+  ASSERT_EQ(measurements.size(), 2);
+  EXPECT_EQ(barriers[0].getQubitsIn()[0], allocations[1].getResult());
+  EXPECT_EQ(barriers[0].getQubitsIn()[1], allocations[0].getResult());
+  EXPECT_EQ(measurements[0].getQubitIn(), barriers[0].getOutputQubits()[1]);
+  EXPECT_EQ(measurements[1].getQubitIn(), barriers[0].getOutputQubits()[0]);
+}
+
+TEST_F(QCOTest, EvenPowFoldPreservesReorderedBodyResults) {
+  auto program = ::mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(powEvenSwapWithReorderedBody));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  PassManager pm(context.get());
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(pm.run(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  SmallVector<AllocOp> allocations;
+  SmallVector<MeasureOp> measurements;
+  program->walk([&](AllocOp alloc) { allocations.push_back(alloc); });
+  program->walk([&](MeasureOp measure) { measurements.push_back(measure); });
+  ASSERT_EQ(allocations.size(), 2);
+  ASSERT_EQ(measurements.size(), 2);
+  EXPECT_EQ(measurements[0].getQubitIn(), allocations[1].getResult());
+  EXPECT_EQ(measurements[1].getQubitIn(), allocations[0].getResult());
 }
 
 /// pow(-0.5) { h } cannot fold a negative fractional exponent

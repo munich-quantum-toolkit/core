@@ -44,11 +44,11 @@ using namespace mlir::qco;
 using namespace mlir::utils;
 
 static void replacePowResults(PowOp powOp, UnitaryOpInterface bodyUnitary,
-                              UnitaryOpInterface replacement,
+                              ValueRange replacementOutputs,
                               PatternRewriter& rewriter) {
   IRMapping mapping;
   mapping.map(powOp.getBody()->getArguments(), powOp.getQubitsIn());
-  mapping.map(bodyUnitary.getOutputQubits(), replacement.getOutputQubits());
+  mapping.map(bodyUnitary.getOutputQubits(), replacementOutputs);
   rewriter.replaceOp(
       powOp, llvm::map_to_vector(
                  powOp.getBody()->getTerminator()->getOperands(),
@@ -404,7 +404,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                   utils::getValueFromBlockArgument(gate.getInputTarget(1),
                                                    op.getQubitsIn()),
                   newParam);
-              replacePowResults(op, gate, replacement, rewriter);
+              replacePowResults(op, gate, replacement.getOutputQubits(),
+                                rewriter);
               return success();
             })
             // pow(r) { r(θ, φ) } => r(r*θ, φ)
@@ -427,7 +428,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                   utils::getValueFromBlockArgument(gate.getInputTarget(1),
                                                    op.getQubitsIn()),
                   mul, gate.getBeta());
-              replacePowResults(op, gate, replacement, rewriter);
+              replacePowResults(op, gate, replacement.getOutputQubits(),
+                                rewriter);
               return success();
             })
             // --- Pauli gates: decompose to rotation + global phase ---
@@ -609,21 +611,15 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- Hermitian gates (integer exponent): even => id, odd => gate
-            // --- pow(n) { h } => id (n even) | h (n odd)
-            .Case<HOp>([&](auto) {
+            // --- pow(n) { h/ecr/rccx/swap } => id (n even) | gate (n odd)
+            .Case<HOp, ECROp, RCCXOp, SWAPOp>([&](auto gate) {
               if (utils::isEvenExponent(r)) {
-                // pow(even) { h } => identity: thread inputs to results.
-                rewriter.replaceOp(op, op.getQubitsIn());
-              } else {
-                utils::inlineModifierBody(op, *op.getBody(),
-                                          op.getInputQubits(), rewriter);
-              }
-              return success();
-            })
-            // pow(n) { ecr/rccx/swap } => id (n even) | gate (n odd)
-            .Case<ECROp, RCCXOp, SWAPOp>([&](auto) {
-              if (utils::isEvenExponent(r)) {
-                rewriter.replaceOp(op, op.getQubitsIn());
+                const auto identityOutputs = llvm::map_to_vector(
+                    gate.getInputQubits(), [&](Value input) {
+                      return utils::getValueFromBlockArgument(input,
+                                                              op.getQubitsIn());
+                    });
+                replacePowResults(op, gate, identityOutputs, rewriter);
               } else {
                 utils::inlineModifierBody(op, *op.getBody(),
                                           op.getInputQubits(), rewriter);
@@ -644,7 +640,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                   utils::constantFromScalar(rewriter, op.getLoc(),
                                             r * (-std::numbers::pi)),
                   utils::constantFromScalar(rewriter, op.getLoc(), 0.0));
-              replacePowResults(op, gate, replacement, rewriter);
+              replacePowResults(op, gate, replacement.getOutputQubits(),
+                                rewriter);
               return success();
             })
             // --- Identity and barrier: pass through unchanged ---
@@ -656,8 +653,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { barrier } => barrier
-            .Case<BarrierOp>([&](auto) {
-              rewriter.replaceOpWithNewOp<BarrierOp>(op, op.getQubitsIn());
+            .Case<BarrierOp>([&](auto gate) {
+              const auto inputs =
+                  llvm::map_to_vector(gate.getInputQubits(), [&](Value input) {
+                    return utils::getValueFromBlockArgument(input,
+                                                            op.getQubitsIn());
+                  });
+              auto replacement =
+                  BarrierOp::create(rewriter, op.getLoc(), inputs);
+              replacePowResults(op, gate, replacement.getOutputQubits(),
+                                rewriter);
               return success();
             })
             .Default([](auto*) -> LogicalResult {
