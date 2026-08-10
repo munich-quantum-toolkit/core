@@ -121,6 +121,21 @@ getRZZTargetResultOrder(CtrlOp ctrlOp, RZZOp rzzOp) {
 }
 
 /**
+ * @brief Replace @p ctrlOp while preserving its body-yield target order.
+ */
+static void replaceRZZCtrlOp(CtrlOp ctrlOp, ArrayRef<size_t> targetResultOrder,
+                             ValueRange controlsByInput,
+                             ValueRange targetsByInput,
+                             PatternRewriter& rewriter) {
+  SmallVector<Value> replacements(controlsByInput);
+  replacements.reserve(ctrlOp.getNumQubits());
+  for (const size_t inputIndex : targetResultOrder) {
+    replacements.push_back(targetsByInput[inputIndex]);
+  }
+  rewriter.replaceOp(ctrlOp, replacements);
+}
+
+/**
  * @brief Rewrite controlled RZ into a symmetric controlled phase plus its
  * phase correction.
  *
@@ -171,6 +186,98 @@ rewriteRZForControlTargetSwap(CtrlOp ctrlOp, RZOp rzOp,
 }
 
 /**
+ * @brief Build the replacement for a controlled RZZ with measured targets.
+ * @return Updated quantum controls followed by targets in input order.
+ */
+static SmallVector<Value>
+buildMeasuredRZZReplacement(PatternRewriter& rewriter, Location loc,
+                            ValueRange controls, ValueRange targets,
+                            const std::array<Value, 2>& targetOutcomes,
+                            Value theta) {
+  const size_t numMeasuredTargets =
+      static_cast<size_t>(llvm::count_if(targetOutcomes, [](Value outcome) {
+        return static_cast<bool>(outcome);
+      }));
+  assert((numMeasuredTargets == 1 || numMeasuredTargets == 2) &&
+         "expected at least one measured RZZ target");
+
+  SmallVector<Value> updatedControls(controls);
+  SmallVector<Value> updatedTargets(targets);
+  if (numMeasuredTargets == 2) {
+    if (updatedControls.empty()) {
+      return updatedTargets;
+    }
+
+    const Value minusHalf = utils::constantFromScalar(rewriter, loc, -0.5);
+    const Value negativeHalfTheta =
+        arith::MulFOp::create(rewriter, loc, theta, minusHalf);
+    updatedControls = applyConjunctionPhase(rewriter, loc, updatedControls,
+                                            negativeHalfTheta);
+    const Value outcomesDiffer = arith::XOrIOp::create(
+        rewriter, loc, targetOutcomes[0], targetOutcomes[1]);
+    auto ifOp = IfOp::create(
+        rewriter, loc, outcomesDiffer, updatedControls,
+        [&](ValueRange qubits) -> SmallVector<Value> {
+          return applyConjunctionPhase(rewriter, loc, qubits, theta);
+        });
+    updatedControls.assign(ifOp.getLinearResults().begin(),
+                           ifOp.getLinearResults().end());
+  } else {
+    const size_t measuredTargetIndex = targetOutcomes[0] ? 0U : 1U;
+    const size_t otherTargetIndex = 1U - measuredTargetIndex;
+    const Value minusTwo = utils::constantFromScalar(rewriter, loc, -2.0);
+    const Value negativeDoubleTheta =
+        arith::MulFOp::create(rewriter, loc, theta, minusTwo);
+
+    if (updatedControls.empty()) {
+      updatedTargets[otherTargetIndex] =
+          RZOp::create(rewriter, loc, updatedTargets[otherTargetIndex], theta)
+              .getOutputQubit(0);
+      auto ifOp = IfOp::create(
+          rewriter, loc, targetOutcomes[measuredTargetIndex],
+          ValueRange{updatedTargets[otherTargetIndex]},
+          [&](ValueRange qubits) -> SmallVector<Value> {
+            return {RZOp::create(rewriter, loc, qubits.front(),
+                                 negativeDoubleTheta)
+                        .getOutputQubit(0)};
+          });
+      updatedTargets[otherTargetIndex] = ifOp.getLinearResults().front();
+    } else {
+      const Value minusHalf = utils::constantFromScalar(rewriter, loc, -0.5);
+      const Value negativeHalfTheta =
+          arith::MulFOp::create(rewriter, loc, theta, minusHalf);
+      updatedControls = applyConjunctionPhase(rewriter, loc, updatedControls,
+                                              negativeHalfTheta);
+      std::tie(updatedControls, updatedTargets[otherTargetIndex]) =
+          applyControlledPhase(rewriter, loc, updatedControls,
+                               updatedTargets[otherTargetIndex], theta);
+
+      SmallVector<Value> ifOperands(updatedControls);
+      ifOperands.push_back(updatedTargets[otherTargetIndex]);
+      auto ifOp = IfOp::create(
+          rewriter, loc, targetOutcomes[measuredTargetIndex], ifOperands,
+          [&](ValueRange qubits) -> SmallVector<Value> {
+            SmallVector<Value> conditionalControls(qubits.drop_back());
+            conditionalControls = applyConjunctionPhase(
+                rewriter, loc, conditionalControls, theta);
+            Value conditionalTarget;
+            std::tie(conditionalControls, conditionalTarget) =
+                applyControlledPhase(rewriter, loc, conditionalControls,
+                                     qubits.back(), negativeDoubleTheta);
+            conditionalControls.push_back(conditionalTarget);
+            return conditionalControls;
+          });
+      updatedControls.assign(ifOp.getLinearResults().drop_back().begin(),
+                             ifOp.getLinearResults().drop_back().end());
+      updatedTargets[otherTargetIndex] = ifOp.getLinearResults().back();
+    }
+  }
+
+  llvm::append_range(updatedControls, updatedTargets);
+  return updatedControls;
+}
+
+/**
  * @brief Replace a controlled RZZ with one measured target by classical
  * control flow.
  *
@@ -191,68 +298,86 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
     return failure();
   }
 
-  std::optional<size_t> measuredTargetIndex;
-  Value condition;
+  std::array<Value, 2> targetOutcomes;
   for (auto [index, target] : llvm::enumerate(op.getTargetsIn())) {
     if (Value outcome = getPredecessorMeasurementOutcome(target)) {
-      if (measuredTargetIndex) {
-        return failure();
-      }
-      measuredTargetIndex = index;
-      condition = outcome;
+      targetOutcomes[index] = outcome;
     }
   }
-  if (!measuredTargetIndex) {
+  const size_t numMeasuredTargets =
+      static_cast<size_t>(llvm::count_if(targetOutcomes, [](Value outcome) {
+        return static_cast<bool>(outcome);
+      }));
+  if (numMeasuredTargets == 0) {
     return failure();
   }
 
-  const size_t otherTargetIndex = 1U - *measuredTargetIndex;
-  const Value measuredTarget = op.getInputTarget(*measuredTargetIndex);
-  SmallVector<Value> controls(op.getControlsIn());
-  Value otherTarget = op.getInputTarget(otherTargetIndex);
+  SmallVector<Value> quantumControls;
+  SmallVector<size_t> quantumControlIndices;
+  SmallVector<Value> measuredControlOutcomes;
+  for (auto [index, control] : llvm::enumerate(op.getControlsIn())) {
+    if (Value outcome = getPredecessorMeasurementOutcome(control)) {
+      measuredControlOutcomes.push_back(outcome);
+    } else {
+      quantumControls.push_back(control);
+      quantumControlIndices.push_back(index);
+    }
+  }
+
+  if (numMeasuredTargets == 2 && quantumControls.empty()) {
+    replaceRZZCtrlOp(op, *targetResultOrder, op.getControlsIn(),
+                     op.getTargetsIn(), rewriter);
+    return success();
+  }
 
   utils::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter);
   const Value theta = rzzOp.getTheta();
   rewriter.setInsertionPoint(op);
-  const Value minusHalf =
-      utils::constantFromScalar(rewriter, op.getLoc(), -0.5);
-  const Value minusTwo = utils::constantFromScalar(rewriter, op.getLoc(), -2.0);
-  const Value negativeHalfTheta =
-      arith::MulFOp::create(rewriter, op.getLoc(), theta, minusHalf);
-  const Value negativeDoubleTheta =
-      arith::MulFOp::create(rewriter, op.getLoc(), theta, minusTwo);
 
-  controls =
-      applyConjunctionPhase(rewriter, op.getLoc(), controls, negativeHalfTheta);
-  std::tie(controls, otherTarget) =
-      applyControlledPhase(rewriter, op.getLoc(), controls, otherTarget, theta);
+  SmallVector<Value> transformedControls(op.getNumControls());
+  SmallVector<Value> transformedTargets;
+  if (measuredControlOutcomes.empty()) {
+    auto transformed = buildMeasuredRZZReplacement(
+        rewriter, op.getLoc(), quantumControls, op.getTargetsIn(),
+        targetOutcomes, theta);
+    transformedControls.assign(transformed.begin(),
+                               transformed.begin() + op.getNumControls());
+    transformedTargets.assign(transformed.begin() + op.getNumControls(),
+                              transformed.end());
+  } else {
+    Value condition = measuredControlOutcomes.front();
+    for (const Value outcome : llvm::drop_begin(measuredControlOutcomes)) {
+      condition =
+          arith::AndIOp::create(rewriter, op.getLoc(), condition, outcome);
+    }
+    SmallVector<Value> ifOperands(quantumControls);
+    llvm::append_range(ifOperands, op.getTargetsIn());
+    auto ifOp = IfOp::create(
+        rewriter, op.getLoc(), condition, ifOperands,
+        [&](ValueRange qubits) -> SmallVector<Value> {
+          return buildMeasuredRZZReplacement(
+              rewriter, op.getLoc(),
+              qubits.take_front(quantumControls.size()),
+              qubits.drop_front(quantumControls.size()), targetOutcomes, theta);
+        });
 
-  SmallVector<Value> ifOperands(controls);
-  ifOperands.push_back(otherTarget);
-  auto ifOp = IfOp::create(
-      rewriter, op.getLoc(), condition, ifOperands,
-      [&](ValueRange qubits) -> SmallVector<Value> {
-        SmallVector<Value> conditionalControls(qubits.drop_back());
-        conditionalControls = applyConjunctionPhase(rewriter, op.getLoc(),
-                                                    conditionalControls, theta);
-        Value conditionalTarget;
-        std::tie(conditionalControls, conditionalTarget) =
-            applyControlledPhase(rewriter, op.getLoc(), conditionalControls,
-                                 qubits.back(), negativeDoubleTheta);
-        conditionalControls.push_back(conditionalTarget);
-        return conditionalControls;
-      });
-
-  SmallVector<Value> replacements(ifOp.getLinearResults().drop_back());
-  replacements.resize(op.getNumQubits());
-  std::array<Value, 2> targetsByInput;
-  targetsByInput[*measuredTargetIndex] = measuredTarget;
-  targetsByInput[otherTargetIndex] = ifOp.getLinearResults().back();
-  for (auto [resultIndex, inputIndex] :
-       llvm::enumerate(*targetResultOrder)) {
-    replacements[op.getNumControls() + resultIndex] = targetsByInput[inputIndex];
+    size_t quantumIndex = 0;
+    for (const size_t controlIndex : llvm::seq<size_t>(op.getNumControls())) {
+      if (quantumIndex < quantumControlIndices.size() &&
+          quantumControlIndices[quantumIndex] == controlIndex) {
+        transformedControls[controlIndex] =
+            ifOp.getLinearResults()[quantumIndex++];
+      } else {
+        transformedControls[controlIndex] = op.getInputControl(controlIndex);
+      }
+    }
+    transformedTargets.assign(
+        ifOp.getLinearResults().drop_front(quantumControls.size()).begin(),
+        ifOp.getLinearResults().drop_front(quantumControls.size()).end());
   }
-  rewriter.replaceOp(op, replacements);
+
+  replaceRZZCtrlOp(op, *targetResultOrder, transformedControls,
+                   transformedTargets, rewriter);
   return success();
 }
 
