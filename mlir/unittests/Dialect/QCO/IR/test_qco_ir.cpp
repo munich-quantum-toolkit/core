@@ -317,6 +317,57 @@ buildInvalidModifierCapture(QCOProgramBuilder& builder,
   llvm_unreachable("unknown modifier");
 }
 
+static Operation*
+buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
+                               const VerifierModifierKind modifier) {
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  const auto control = builder.allocQubit();
+  const auto condition = builder.boolConstant(true);
+  const auto modifierBody = [&](const Value argument) -> Value {
+    auto ifOp = IfOp::create(
+        builder, condition, argument, [&](const Value nestedArgument) -> Value {
+          return MeasureOp::create(builder, nestedArgument).getQubitOut();
+        });
+    return ifOp.getResult(0);
+  };
+
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    return InvOp::create(builder, target, modifierBody).getOperation();
+  case VerifierModifierKind::Ctrl:
+    return CtrlOp::create(builder, control, target, modifierBody)
+        .getOperation();
+  case VerifierModifierKind::Pow:
+    return PowOp::create(builder, target, 2.0, modifierBody).getOperation();
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    QCOProgramBuilder builder(context.get());
+    auto* modifierOp = buildInvalidNestedModifierBody(builder, modifier);
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("body must not contain non-unitary quantum operations "
+                        "or modify a quantum register");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(modifierOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
 TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
   constexpr std::array modifiers{VerifierModifierKind::Inv,
                                  VerifierModifierKind::Ctrl,

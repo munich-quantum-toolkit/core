@@ -23,6 +23,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 #include <cstddef>
@@ -30,10 +31,15 @@
 namespace mlir::qco::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  if (llvm::any_of(body, [](Operation& operation) {
-        return isa<AllocOp, SinkOp, StaticOp, MeasureOp, ResetOp,
-                   qtensor::ExtractOp, qtensor::InsertOp>(operation);
-      })) {
+  const auto hasNonUnitaryOperation =
+      body.walk([](Operation* operation) {
+            return isa<AllocOp, SinkOp, StaticOp, MeasureOp, ResetOp,
+                       qtensor::ExtractOp, qtensor::InsertOp>(operation)
+                       ? WalkResult::interrupt()
+                       : WalkResult::advance();
+          })
+          .wasInterrupted();
+  if (hasNonUnitaryOperation) {
     return modifierOp->emitOpError(
         "body must not contain non-unitary quantum operations or modify a "
         "quantum register");
