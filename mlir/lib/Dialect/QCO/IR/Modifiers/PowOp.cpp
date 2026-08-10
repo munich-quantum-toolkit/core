@@ -24,6 +24,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -41,6 +42,18 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::utils;
+
+static void replacePowResults(PowOp powOp, UnitaryOpInterface bodyUnitary,
+                              UnitaryOpInterface replacement,
+                              PatternRewriter& rewriter) {
+  IRMapping mapping;
+  mapping.map(powOp.getBody()->getArguments(), powOp.getQubitsIn());
+  mapping.map(bodyUnitary.getOutputQubits(), replacement.getOutputQubits());
+  rewriter.replaceOp(
+      powOp,
+      llvm::map_to_vector(powOp.getBody()->getTerminator()->getOperands(),
+                          [&](Value yielded) { return mapping.lookup(yielded); }));
+}
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -384,13 +397,14 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { rxx/ryy/rzx/rzz(θ) } => rxx/ryy/rzx/rzz(r*θ)
             .Case<RXXOp, RYYOp, RZXOp, RZZOp>([&](auto gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
-              rewriter.replaceOpWithNewOp<decltype(gate)>(
-                  op,
+              auto replacement = decltype(gate)::create(
+                  rewriter, op.getLoc(),
                   utils::getValueFromBlockArgument(gate.getInputTarget(0),
                                                    op.getQubitsIn()),
                   utils::getValueFromBlockArgument(gate.getInputTarget(1),
                                                    op.getQubitsIn()),
                   newParam);
+              replacePowResults(op, gate, replacement, rewriter);
               return success();
             })
             // pow(r) { r(θ, φ) } => r(r*θ, φ)
@@ -406,13 +420,14 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { xx±yy(θ, β) } => xx±yy(r*θ, β)
             .Case<XXPlusYYOp, XXMinusYYOp>([&](auto gate) {
               auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
-              rewriter.replaceOpWithNewOp<decltype(gate)>(
-                  op,
+              auto replacement = decltype(gate)::create(
+                  rewriter, op.getLoc(),
                   utils::getValueFromBlockArgument(gate.getInputTarget(0),
                                                    op.getQubitsIn()),
                   utils::getValueFromBlockArgument(gate.getInputTarget(1),
                                                    op.getQubitsIn()),
                   mul, gate.getBeta());
+              replacePowResults(op, gate, replacement, rewriter);
               return success();
             })
             // --- Pauli gates: decompose to rotation + global phase ---
@@ -620,8 +635,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // β=0: axis is aligned with XX, matching the iSWAP interaction
             // plane
             .Case<iSWAPOp>([&](auto gate) {
-              rewriter.replaceOpWithNewOp<XXPlusYYOp>(
-                  op,
+              auto replacement = XXPlusYYOp::create(
+                  rewriter, op.getLoc(),
                   utils::getValueFromBlockArgument(gate.getInputTarget(0),
                                                    op.getQubitsIn()),
                   utils::getValueFromBlockArgument(gate.getInputTarget(1),
@@ -629,6 +644,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                   utils::constantFromScalar(rewriter, op.getLoc(),
                                             r * (-std::numbers::pi)),
                   utils::constantFromScalar(rewriter, op.getLoc(), 0.0));
+              replacePowResults(op, gate, replacement, rewriter);
               return success();
             })
             // --- Identity and barrier: pass through unchanged ---

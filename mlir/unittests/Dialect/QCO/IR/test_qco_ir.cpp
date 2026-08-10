@@ -44,6 +44,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <array>
 #include <cstddef>
@@ -1431,6 +1432,38 @@ TEST_F(QCOTest, PowRxxFold) {
   ASSERT_NE(parameterDef, nullptr);
   const DominanceInfo dominance(program.get());
   EXPECT_TRUE(dominance.properlyDominates(parameterDef, rxx.getOperation()));
+}
+
+static Value powRzxWithReorderedBody(QCOProgramBuilder& builder) {
+  auto qubits = builder.allocQubitRegister(2);
+  const auto powOut = builder.pow(
+      2.0, qubits.qubits,
+      [&](ValueRange args) -> SmallVector<Value> {
+        auto [out1, out0] = builder.rzx(0.123, args[1], args[0]);
+        return {out0, out1};
+      });
+  return measureRegister(builder, powOut);
+}
+
+TEST_F(QCOTest, PowGateFoldPreservesReorderedBodyResults) {
+  auto program = ::mqt::test::buildMLIRProgram(
+      context.get(), MQT_NAMED_BUILDER(powRzxWithReorderedBody));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  PassManager pm(context.get());
+  pm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(pm.run(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  SmallVector<RZXOp> gates;
+  SmallVector<MeasureOp> measurements;
+  program->walk([&](RZXOp gate) { gates.push_back(gate); });
+  program->walk([&](MeasureOp measure) { measurements.push_back(measure); });
+  ASSERT_EQ(gates.size(), 1);
+  ASSERT_EQ(measurements.size(), 2);
+  EXPECT_EQ(measurements[0].getQubitIn(), gates[0].getOutputTarget(1));
+  EXPECT_EQ(measurements[1].getQubitIn(), gates[0].getOutputTarget(0));
 }
 
 /// pow(-0.5) { h } cannot fold a negative fractional exponent
