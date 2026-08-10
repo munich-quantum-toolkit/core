@@ -714,6 +714,90 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
 }
 
+TEST_F(QCOReplaceClassicalControlsTest,
+       doesNotReplaceMeasuredRZZTargetWithAdditionalTarget) {
+  programBuilder.initialize({programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target0 = programBuilder.h(programBuilder.allocQubit());
+  auto target1 = programBuilder.h(programBuilder.allocQubit());
+  auto passthrough = programBuilder.h(programBuilder.allocQubit());
+  Value outcome;
+  std::tie(target0, outcome) = programBuilder.measure(target0);
+  const auto [controls, targets] =
+      programBuilder.ctrl({control}, {target0, target1, passthrough},
+                          [&](ValueRange args) -> SmallVector<Value> {
+                            auto [output0, output1] =
+                                programBuilder.rzz(0.789, args[0], args[1]);
+                            return {output0, output1, args[2]};
+                          });
+  programBuilder.sink(controls[0]);
+  programBuilder.sink(targets[0]);
+  programBuilder.sink(targets[1]);
+  programBuilder.sink(targets[2]);
+  program = programBuilder.finalize({outcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+  std::size_t ifCount = 0;
+  program->walk([&](IfOp) { ++ifCount; });
+  EXPECT_EQ(ifCount, 0U);
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       doesNotReplaceRZZWhenBothTargetsAreMeasured) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target0 = programBuilder.h(programBuilder.allocQubit());
+  auto target1 = programBuilder.h(programBuilder.allocQubit());
+  Value outcome0;
+  Value outcome1;
+  std::tie(target0, outcome0) = programBuilder.measure(target0);
+  std::tie(target1, outcome1) = programBuilder.measure(target1);
+  const auto [outputControl, outputTargets] =
+      programBuilder.crzz(0.789, control, target0, target1);
+  programBuilder.sink(outputControl);
+  programBuilder.sink(outputTargets.first);
+  programBuilder.sink(outputTargets.second);
+  program = programBuilder.finalize({outcome0, outcome1});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+  std::size_t ifCount = 0;
+  program->walk([&](IfOp) { ++ifCount; });
+  EXPECT_EQ(ifCount, 0U);
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       replacesMeasuredRZZControlWithoutMeasuredTargets) {
+  programBuilder.initialize({programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target0 = programBuilder.h(programBuilder.allocQubit());
+  auto target1 = programBuilder.h(programBuilder.allocQubit());
+  Value outcome;
+  std::tie(control, outcome) = programBuilder.measure(control);
+  const auto [outputControl, outputTargets] =
+      programBuilder.crzz(0.789, control, target0, target1);
+  programBuilder.sink(outputControl);
+  programBuilder.sink(outputTargets.first);
+  programBuilder.sink(outputTargets.second);
+  program = programBuilder.finalize({outcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_FALSE(program->getBody()
+                   ->walk([](CtrlOp ctrlOp) {
+                     return llvm::any_of(ctrlOp.getControlsIn(),
+                                         [](Value input) {
+                                           return isa_and_nonnull<MeasureOp>(
+                                               input.getDefiningOp());
+                                         })
+                                ? WalkResult::interrupt()
+                                : WalkResult::advance();
+                   })
+                   .wasInterrupted());
+}
+
 INSTANTIATE_TEST_SUITE_P(MeasuredTargetPositions,
                          QCOReplaceClassicalControlsRZZTest,
                          testing::Values(0U, 1U));
