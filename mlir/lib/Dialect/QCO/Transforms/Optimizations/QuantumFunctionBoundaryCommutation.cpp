@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
+#include <llvm/ADT/StringMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
@@ -22,10 +23,16 @@
 
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 
 namespace mlir::qco {
 
+/**
+ * @brief Create a copy of a function with a new name.
+ *
+ * @param funcOp The function to copy.
+ * @param newName The name for the new function.
+ * @return The new function operation.
+ */
 static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
   auto newFunc = funcOp.clone();
   newFunc.setName(newName.str());
@@ -33,9 +40,18 @@ static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
   return newFunc;
 }
 
+/**
+ * @brief Check if two single-qubit unitary operations cancel each other out
+ * because they are self-inverse.
+ *
+ * @param first The first unitary operation.
+ * @param second The second unitary operation.
+ * @return true if the operations cancel each other out, false otherwise.
+ */
 static bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
-  // For now, let's just consider self-inverses and single-qubit, non-controlled
-  // gates.
+  if (first.getNumQubits() != 1) {
+    return false;
+  }
   if (first.getOperation()->getName() != second.getOperation()->getName()) {
     return false;
   }
@@ -45,9 +61,33 @@ static bool doOpsCancel(UnitaryOpInterface first, UnitaryOpInterface second) {
   return false;
 }
 
-static void tryBoundaryCommutation(
-    func::CallOp call, SymbolTable& symbolTable, uint32_t parameter,
-    std::unordered_map<std::string, func::FuncOp>& previousSpecializations) {
+/// Caches the specialization created for a callee, per parameter index. The
+/// gate that is removed inside the callee belongs to one specific argument, so
+/// specializations must not be shared between parameters.
+using BoundarySpecializations =
+    llvm::StringMap<DenseMap<uint32_t, func::FuncOp>>;
+
+/**
+ * @brief Cancel a gate in front of a call against the same gate at the start of
+ * the callee.
+ *
+ * @details
+ * When the operation producing the argument at @p parameter and the first
+ * operation applied to that argument inside the callee are the same
+ * self-inverse gate, both can be dropped. The caller-side gate is erased and
+ * the call is redirected to a copy of the callee without the callee-side gate.
+ * Copies are cached per callee and parameter, so repeated call sites share one
+ * specialization while different parameters get their own.
+ *
+ * @param call The call to look at.
+ * @param symbolTable The symbol table of the surrounding module.
+ * @param parameter The index of the qubit argument to consider.
+ * @param previousSpecializations Cache of already-created specializations.
+ */
+static void
+tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
+                       uint32_t parameter,
+                       BoundarySpecializations& previousSpecializations) {
   auto calleeName = call.getCallee();
   auto funcOp = symbolTable.lookup<func::FuncOp>(calleeName);
 
@@ -78,13 +118,18 @@ static void tryBoundaryCommutation(
   argOutside.replaceAllUsesWith(lastOp.getInputQubit(0));
   lastOp.erase();
 
-  if (previousSpecializations.contains(funcOp.getName().str())) {
-    call.setCallee(previousSpecializations[funcOp.getName().str()].getName());
-    return;
+  if (const auto it = previousSpecializations.find(calleeName);
+      it != previousSpecializations.end()) {
+    if (const auto cached = it->second.find(parameter);
+        cached != it->second.end()) {
+      call.setCallee(cached->second.getName());
+      return;
+    }
   }
 
   auto newFunc = copyFunction(funcOp, funcOp.getName().str() +
-                                          "_spec_boundary_commutation");
+                                          "_spec_boundary_commutation_arg_" +
+                                          std::to_string(parameter));
   symbolTable.insert(newFunc);
 
   auto newParameter = newFunc.getArgument(parameter);
@@ -94,15 +139,27 @@ static void tryBoundaryCommutation(
     newUser.getOutputQubit(i).replaceAllUsesWith(newUser.getInputQubit(i));
   }
   newUser.erase();
-  previousSpecializations[funcOp.getName().str()] = newFunc;
+  previousSpecializations[calleeName][parameter] = newFunc;
 
   call.setCallee(newFunc.getName());
 }
 
-void runQuantumFunctionBoundaryCommutation(ModuleOp module,
+/**
+ * @brief Cancel gates across every call boundary in the module.
+ *
+ * @param moduleOp The module to transform.
+ * @param symbolTable The symbol table of @p moduleOp.
+ */
+void runQuantumFunctionBoundaryCommutation(ModuleOp moduleOp,
                                            SymbolTable& symbolTable) {
-  std::unordered_map<std::string, func::FuncOp> previousSpecializations;
-  module.walk([&](func::CallOp call) {
+  BoundarySpecializations previousSpecializations;
+
+  // Collect the calls first: the commutation erases the caller-side gate, which
+  // would invalidate a walk in progress.
+  SmallVector<func::CallOp> calls;
+  moduleOp.walk([&](func::CallOp call) { calls.emplace_back(call); });
+
+  for (auto call : calls) {
     for (uint32_t i = 0; i < call.getArgOperands().size(); ++i) {
       const auto arg = call.getArgOperands()[i];
       if (!isa<QubitType>(arg.getType())) {
@@ -110,7 +167,7 @@ void runQuantumFunctionBoundaryCommutation(ModuleOp module,
       }
       tryBoundaryCommutation(call, symbolTable, i, previousSpecializations);
     }
-  });
+  }
 }
 
 } // namespace mlir::qco

@@ -206,7 +206,7 @@ include "stdgates.inc";
 gate empty q0 {
   pow(0) @ x q0;
 }
-qubit[1] q;
+qubit q;
 pow(2) @ empty q;
 x q;
 )";

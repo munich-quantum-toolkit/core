@@ -37,6 +37,19 @@
 
 namespace mlir::qco {
 
+/**
+ * @brief Find the operation that releases the qubit produced by @p alloc.
+ *
+ * @details
+ * Follows the qubit forward along its linear use chain, through gates,
+ * measurements, resets and calls, and also while it is parked inside a qubit
+ * tensor. Returns a null op when the qubit escapes the function or when the
+ * chain cannot be followed, for example because a tensor index is not known at
+ * compile time.
+ *
+ * @param alloc The allocation whose release point is searched.
+ * @return The `qco.sink` releasing the qubit, or a null op if there is none.
+ */
 static SinkOp findDeallocForAlloc(AllocOp alloc) {
   Value currentValue = alloc.getResult();
   uint64_t currentIndexInTensor = 0;
@@ -138,25 +151,20 @@ static SinkOp findDeallocForAlloc(AllocOp alloc) {
   return nullptr;
 }
 
-static bool isRecursiveHelper(CallGraphNode* current, CallGraphNode* target,
-                              llvm::DenseSet<CallGraphNode*>& visited) {
-  if (!visited.insert(current).second) {
-    return false; // Already visited
-  }
-
-  for (const auto& edge : *current) {
-    CallGraphNode* callee = edge.getTarget();
-    if (callee == target) {
-      return true;
-    }
-    if (isRecursiveHelper(callee, target, visited)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
+/**
+ * @brief Check whether the given function takes part in a call cycle.
+ *
+ * @details
+ * Performs an iterative reachability search over the call graph, starting at
+ * the function's callees rather than at the function itself, so that a
+ * non-recursive function is not reported as recursive merely because the
+ * search begins at its own node. A worklist is used instead of recursion so
+ * that deep call chains cannot exhaust the stack.
+ *
+ * @param cg The call graph of the surrounding module.
+ * @param func The function to check.
+ * @return True if @p func can reach itself through a chain of calls.
+ */
 static bool isRecursive(CallGraph& cg, func::FuncOp func) {
   CallGraphNode* node = cg.lookupNode(func.getCallableRegion());
   if (node == nullptr) {
@@ -164,28 +172,60 @@ static bool isRecursive(CallGraph& cg, func::FuncOp func) {
   }
 
   llvm::DenseSet<CallGraphNode*> visited;
-  // Start from the function's callees to avoid immediately returning true
+  SmallVector<CallGraphNode*> worklist;
+
+  // Seed the search with the function's callees so that the function itself is
+  // only reported as recursive when a call chain leads back to it.
   for (const auto& edge : *node) {
-    if (isRecursiveHelper(edge.getTarget(), node, visited)) {
+    worklist.emplace_back(edge.getTarget());
+  }
+
+  while (!worklist.empty()) {
+    auto* current = worklist.pop_back_val();
+    if (current == node) {
       return true;
+    }
+    if (!visited.insert(current).second) {
+      continue;
+    }
+    for (const auto& edge : *current) {
+      worklist.emplace_back(edge.getTarget());
     }
   }
 
   return false;
 }
 
+/**
+ * @brief Turn every auxiliary qubit of the given function into an argument.
+ *
+ * @details
+ * An auxiliary qubit is one that the function allocates and releases itself.
+ * Hoisting it makes the caller own the allocation, which lets the caller reuse
+ * one qubit across several calls. The release point becomes a `qco.reset` that
+ * is handed back as an additional result, so the caller receives the qubit in a
+ * known state.
+ *
+ * @param funcOp The function to transform.
+ */
 static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
+  // Collect the allocations up front: the loop below erases operations, which
+  // would invalidate a walk in progress.
+  SmallVector<AllocOp> allocOps;
   funcOp.walk([&](AllocOp allocOp) {
     if (allocOp->getBlock()->getParentOp() != funcOp) {
       // Not directly in the function body, skip.
       return;
     }
+    allocOps.emplace_back(allocOp);
+  });
 
+  for (auto allocOp : allocOps) {
     auto dealloc = findDeallocForAlloc(allocOp);
 
     if (!dealloc) {
       // No matching dealloc found, skip.
-      return;
+      continue;
     }
 
     // Add a block argument for the auxiliary qubit.
@@ -204,7 +244,7 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
     // Replace the dealloc with a reset
     builder.setInsertionPoint(dealloc);
     auto resetOp =
-        builder.create<ResetOp>(dealloc.getLoc(), dealloc.getQubit());
+        ResetOp::create(builder, dealloc.getLoc(), dealloc.getQubit());
     dealloc.erase();
 
     // Add reset outcome to function results and alloc to function arguments
@@ -219,51 +259,66 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
         FunctionType::get(funcOp.getContext(), newArgTypes, newResultTypes);
     funcOp.setType(newFuncType);
 
-    // Also add reset outcome to return
+    // Also add the reset outcome to every return. The operands are updated in
+    // place so that the terminator stays valid for the ongoing walk.
     funcOp.walk([&](func::ReturnOp returnOp) {
-      OpBuilder returnBuilder(returnOp);
       SmallVector<Value> newReturnValues(returnOp.getOperands().begin(),
                                          returnOp.getOperands().end());
-      newReturnValues.push_back(resetOp.getResult());
-      returnBuilder.create<func::ReturnOp>(returnOp.getLoc(), newReturnValues);
-      returnOp.erase();
+      newReturnValues.emplace_back(resetOp.getResult());
+      returnOp->setOperands(newReturnValues);
     });
 
-    // Update all call sites to handle the new return value
-    // We use the SymbolTable to find all calls to this function
+    // Update all call sites to handle the new return value. The calls are
+    // collected first because the loop erases them.
+    SmallVector<func::CallOp> callOps;
     if (auto uses = SymbolTable::getSymbolUses(funcOp, funcOp->getParentOp())) {
       for (auto use : *uses) {
         if (auto callOp = dyn_cast<func::CallOp>(use.getUser())) {
-          builder.setInsertionPoint(callOp);
-
-          // A. Add new alloc
-          auto newAlloc = builder.create<AllocOp>(loc);
-
-          // B. Create New Call
-          SmallVector<Value> newCallOperands =
-              llvm::to_vector(callOp.getOperands());
-          newCallOperands.push_back(newAlloc);
-          auto newCall =
-              builder.create<func::CallOp>(loc, funcOp, newCallOperands);
-
-          // C. Add dealloc after call
-          builder.create<SinkOp>(
-              loc, newCall.getResult(newCall.getNumResults() - 1));
-          for (unsigned i = 0; i < callOp.getNumResults(); ++i) {
-            callOp.getResult(i).replaceAllUsesWith(newCall.getResult(i));
-          }
-          callOp.erase();
+          callOps.emplace_back(callOp);
         }
       }
     }
-  });
+
+    for (auto callOp : callOps) {
+      builder.setInsertionPoint(callOp);
+
+      // A. Add new alloc
+      auto newAlloc = AllocOp::create(builder, loc);
+
+      // B. Create New Call
+      SmallVector<Value> newCallOperands =
+          llvm::to_vector(callOp.getOperands());
+      newCallOperands.emplace_back(newAlloc);
+      auto newCall =
+          func::CallOp::create(builder, loc, funcOp, newCallOperands);
+
+      // C. Add dealloc after call
+      SinkOp::create(builder, loc,
+                     newCall.getResult(newCall.getNumResults() - 1));
+      for (unsigned i = 0; i < callOp.getNumResults(); ++i) {
+        callOp.getResult(i).replaceAllUsesWith(newCall.getResult(i));
+      }
+      callOp.erase();
+    }
+  }
 }
 
-void runAuxiliaryQubitHoisting(ModuleOp module) {
+/**
+ * @brief Hoist the auxiliary qubits of every eligible function in the module.
+ *
+ * @details
+ * Externally visible functions and declarations are skipped because their
+ * signature cannot be changed, and recursive functions are skipped because
+ * their allocation would have to be threaded through every level of the
+ * recursion.
+ *
+ * @param moduleOp The module to transform.
+ */
+void runAuxiliaryQubitHoisting(ModuleOp moduleOp) {
   SmallVector<func::FuncOp> hoistingCandidates;
-  CallGraph callGraph(module);
+  CallGraph callGraph(moduleOp);
 
-  module.walk([&](func::FuncOp func) {
+  moduleOp.walk([&](func::FuncOp func) {
     if (func.isPublic() || func.isDeclaration()) {
       return;
     }
@@ -275,12 +330,6 @@ void runAuxiliaryQubitHoisting(ModuleOp module) {
 
   for (auto& func : hoistingCandidates) {
     tryAuxiliaryQubitHoisting(func);
-
-    RewritePatternSet patterns(module.getContext());
-    if (!applyPatternsGreedily(module, std::move(patterns)).succeeded()) {
-      throw std::runtime_error("Failed to apply reuse qubits patterns after "
-                               "auxiliary qubit hoisting.");
-    }
   }
 }
 

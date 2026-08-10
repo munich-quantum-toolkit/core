@@ -41,7 +41,7 @@ protected:
   MLIRContext context;
   QCOProgramBuilder programBuilder;
   QCOProgramBuilder referenceBuilder;
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> moduleOp;
   OwningOpRef<ModuleOp> reference;
 
   QCOQuantumIPOTest() : programBuilder(&context), referenceBuilder(&context) {}
@@ -58,34 +58,34 @@ protected:
   /**
    * @brief Adds the quantum IPO pass to the current context and runs it.
    *
-   * @param module The module to run the pass on.
+   * @param moduleOp The moduleOp to run the pass on.
    */
-  static LogicalResult runQuantumIPOPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runQuantumIPOPass(ModuleOp moduleOp) {
+    PassManager pm(moduleOp.getContext());
     pm.addPass(createQuantumIPO());
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    return pm.run(moduleOp);
   }
 
   /**
    * @brief Adds the canonicalizerPass to the current context and runs it.
    */
-  static LogicalResult runCanonicalizerPass(ModuleOp module) {
-    PassManager pm(module.getContext());
+  static LogicalResult runCanonicalizerPass(ModuleOp moduleOp) {
+    PassManager pm(moduleOp.getContext());
     pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
+    return pm.run(moduleOp);
   }
 
   /**
-   * @brief Runs the pass on the constructed module and compares it against the
-   * constructed reference.
+   * @brief Runs the pass on the constructed moduleOp and compares it against
+   * the constructed reference.
    */
   void expectModuleMatchesReference() {
-    ASSERT_TRUE(runQuantumIPOPass(module.get()).succeeded());
+    ASSERT_TRUE(runQuantumIPOPass(moduleOp.get()).succeeded());
     ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
     EXPECT_TRUE(
-        areModulesEquivalentWithPermutations(module.get(), reference.get()));
+        areModulesEquivalentWithPermutations(moduleOp.get(), reference.get()));
   }
 };
 
@@ -108,7 +108,7 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsDiagonalGate) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   // The original callee is retained, ...
@@ -120,6 +120,38 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsDiagonalGate) {
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0", {referenceBuilder.getQubitType()},
       {referenceBuilder.getQubitType()});
+  referenceBuilder.endFunction({specArgs[0]});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("f_spec_zero_arg_0", {refQ});
+  referenceBuilder.sink(refResults[0]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief A reset applied to an argument that is already in the |0> state is
+ * dropped. A reset does not implement the unitary interface, so this exercises
+ * a different removal path than the gate case above.
+ */
+TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsReset) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {qubitType}, {qubitType});
+  programBuilder.endFunction({programBuilder.reset(args[0])});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("f", {q});
+  programBuilder.sink(results[0]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
+  referenceBuilder.endFunction({referenceBuilder.reset(refArgs[0])});
+  auto specArgs = referenceBuilder.startFunction("f_spec_zero_arg_0",
+                                                 {qubitType}, {qubitType});
   referenceBuilder.endFunction({specArgs[0]});
 
   auto refQ = referenceBuilder.allocQubit();
@@ -150,7 +182,7 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsControlledGate) {
   auto results = programBuilder.call("f", {q0, q1});
   programBuilder.sink(results[0]);
   programBuilder.sink(results[1]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
@@ -186,7 +218,7 @@ TEST_F(QCOQuantumIPOTest, noZeroSpecializationForNonTrivialGate) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -215,7 +247,7 @@ TEST_F(QCOQuantumIPOTest, noSpecializationForUnknownArgumentState) {
   auto q = programBuilder.y(programBuilder.allocQubit());
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -247,7 +279,7 @@ TEST_F(QCOQuantumIPOTest, reuseZeroSpecializationAcrossCallSites) {
   auto results1 = programBuilder.call("f", {q1});
   programBuilder.sink(results0[0]);
   programBuilder.sink(results1[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -288,7 +320,7 @@ TEST_F(QCOQuantumIPOTest, specializePlusArgumentDropsXGate) {
   auto q = programBuilder.h(programBuilder.allocQubit());
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -321,7 +353,7 @@ TEST_F(QCOQuantumIPOTest, noPlusSpecializationForNonXGate) {
   auto q = programBuilder.h(programBuilder.allocQubit());
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -358,7 +390,7 @@ TEST_F(QCOQuantumIPOTest, specializeConstantRotationAngle) {
   auto angle = programBuilder.floatConstant(std::numbers::pi);
   auto results = programBuilder.call("f", {q, angle});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -398,7 +430,7 @@ TEST_F(QCOQuantumIPOTest, specializeHalfPiRotationAngle) {
   auto angle = programBuilder.floatConstant(std::numbers::pi / 2);
   auto results = programBuilder.call("f", {q, angle});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -437,7 +469,7 @@ TEST_F(QCOQuantumIPOTest, noSpecializationForArbitraryRotationAngle) {
   auto angle = programBuilder.floatConstant(0.7);
   auto results = programBuilder.call("f", {q, angle});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -470,7 +502,7 @@ TEST_F(QCOQuantumIPOTest, reusePlusSpecializationAcrossCallSites) {
   auto results1 = programBuilder.call("f", {q1});
   programBuilder.sink(results0[0]);
   programBuilder.sink(results1[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
@@ -510,7 +542,7 @@ TEST_F(QCOQuantumIPOTest, reuseRotationSpecializationAcrossCallSites) {
   auto results1 = programBuilder.call("f", {q1, angle});
   programBuilder.sink(results0[0]);
   programBuilder.sink(results1[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -558,7 +590,7 @@ TEST_F(QCOQuantumIPOTest, promoteTensorArgumentToQubitArgument) {
   auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -576,6 +608,39 @@ TEST_F(QCOQuantumIPOTest, promoteTensorArgumentToQubitArgument) {
   auto refInserted =
       referenceBuilder.qtensorInsert(refResults[0], refTensorIn, 0);
   referenceBuilder.qtensorDealloc(refInserted);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief An element that is taken out and put straight back at the same index,
+ * without any gate in between, never reaches promotion.
+ *
+ * @details
+ * The folder collapses such an extract/insert pair back into the original
+ * tensor before the promotion runs, which leaves the callee as an identity
+ * function with nothing left to promote.
+ */
+TEST_F(QCOQuantumIPOTest, noPromotionForFoldedPassThrough) {
+  const auto tensorType = programBuilder.getQubitTensorType(2);
+
+  const auto buildProgram = [&tensorType](QCOProgramBuilder& b) {
+    b.initialize();
+    auto args = b.startFunction("f", {tensorType}, {tensorType});
+    auto [rest, inner] = b.qtensorExtract(args[0], 0);
+    b.endFunction({b.qtensorInsert(inner, rest, 0)});
+
+    auto q0 = b.allocQubit();
+    auto q1 = b.allocQubit();
+    auto tensor = b.qtensorFromElements({q0, q1});
+    auto results = b.call("f", {tensor});
+    b.qtensorDealloc(results[0]);
+  };
+
+  buildProgram(programBuilder);
+  moduleOp = programBuilder.finalize();
+  buildProgram(referenceBuilder);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
@@ -601,7 +666,7 @@ TEST_F(QCOQuantumIPOTest, promoteOnlyUsedTensorElements) {
   auto tensor = programBuilder.qtensorFromElements({q0, q1, q2});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -643,7 +708,7 @@ TEST_F(QCOQuantumIPOTest, promoteTensorElementIntoDifferentSlot) {
   auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -687,7 +752,7 @@ TEST_F(QCOQuantumIPOTest, noPromotionWithoutMatchingInsert) {
   auto results = programBuilder.call("f", {tensor});
   programBuilder.sink(results[1]);
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {tensorType},
@@ -724,7 +789,7 @@ TEST_F(QCOQuantumIPOTest, noPromotionWithoutElementAccess) {
   auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -762,7 +827,7 @@ TEST_F(QCOQuantumIPOTest, promoteMultipleTensorElements) {
   auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   const auto qubitType = referenceBuilder.getQubitType();
@@ -812,7 +877,7 @@ TEST_F(QCOQuantumIPOTest, promoteTensorElementWithMeasurement) {
   auto tensor = programBuilder.qtensorFromElements({q0, q1});
   auto results = programBuilder.call("f", {tensor});
   programBuilder.qtensorDealloc(results[0]);
-  module = programBuilder.finalize({results[1]});
+  moduleOp = programBuilder.finalize({results[1]});
 
   referenceBuilder.initialize({bitType});
   auto refArgs = referenceBuilder.startFunction(
@@ -859,7 +924,7 @@ TEST_F(QCOQuantumIPOTest, noPromotionWhenTensorIsNotFirstResult) {
     return results[0];
   };
 
-  module = programBuilder.finalize({buildProgram(programBuilder)});
+  moduleOp = programBuilder.finalize({buildProgram(programBuilder)});
   reference = referenceBuilder.finalize({buildProgram(referenceBuilder)});
 
   expectModuleMatchesReference();
@@ -887,7 +952,7 @@ TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitIntoCaller) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   // The auxiliary qubit becomes a trailing argument and is returned in a reset
@@ -927,7 +992,7 @@ TEST_F(QCOQuantumIPOTest, noHoistingForReturnedQubit) {
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
   programBuilder.sink(results[1]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -971,7 +1036,7 @@ TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughMeasureAndReset) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize({results[1]});
+  moduleOp = programBuilder.finalize({results[1]});
 
   referenceBuilder.initialize({bitType});
   auto refArgs = referenceBuilder.startFunction(
@@ -1018,7 +1083,7 @@ TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughTensor) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
@@ -1078,7 +1143,7 @@ TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughNestedCall) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   buildNestedCallee(referenceBuilder);
@@ -1122,7 +1187,7 @@ TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitWithMultipleCallSites) {
   auto results1 = programBuilder.call("f", {q1});
   programBuilder.sink(results0[0]);
   programBuilder.sink(results1[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
@@ -1178,7 +1243,7 @@ TEST_F(QCOQuantumIPOTest, noHoistingForRecursiveFunction) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("outer", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   // `inner` is recursive and therefore untouched, ...
@@ -1231,7 +1296,7 @@ TEST_F(QCOQuantumIPOTest, noHoistingForAllocInsideRegion) {
   };
 
   buildProgram(programBuilder);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   buildProgram(referenceBuilder);
   reference = referenceBuilder.finalize();
@@ -1273,7 +1338,7 @@ TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitParkedInTensor) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
@@ -1325,7 +1390,7 @@ TEST_F(QCOQuantumIPOTest, callConsumesAndProducesLinearValues) {
   };
 
   buildProgram(programBuilder);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
   buildProgram(referenceBuilder);
   reference = referenceBuilder.finalize();
 
@@ -1349,7 +1414,7 @@ TEST_F(QCOQuantumIPOTest, cancelSelfInverseGateAcrossCallBoundary) {
   auto q = programBuilder.x(programBuilder.allocQubit());
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -1360,13 +1425,13 @@ TEST_F(QCOQuantumIPOTest, cancelSelfInverseGateAcrossCallBoundary) {
 
   // Both the caller-side and the callee-side gate disappear.
   auto specArgs = referenceBuilder.startFunction(
-      "f_spec_boundary_commutation", {referenceBuilder.getQubitType()},
+      "f_spec_boundary_commutation_arg_0", {referenceBuilder.getQubitType()},
       {referenceBuilder.getQubitType()});
   referenceBuilder.endFunction({referenceBuilder.h(specArgs[0])});
 
   auto refQ = referenceBuilder.allocQubit();
   auto refResults =
-      referenceBuilder.call("f_spec_boundary_commutation", {refQ});
+      referenceBuilder.call("f_spec_boundary_commutation_arg_0", {refQ});
   referenceBuilder.sink(refResults[0]);
   reference = referenceBuilder.finalize();
 
@@ -1385,7 +1450,7 @@ TEST_F(QCOQuantumIPOTest, noCancellationForDifferentGates) {
   auto q = programBuilder.x(programBuilder.allocQubit());
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs =
@@ -1424,7 +1489,7 @@ TEST_F(QCOQuantumIPOTest, noCancellationForControlledGates) {
   auto results = programBuilder.call("f", {q0, q1});
   programBuilder.sink(results[0]);
   programBuilder.sink(results[1]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
@@ -1463,24 +1528,88 @@ TEST_F(QCOQuantumIPOTest, reuseBoundaryCommutationAcrossCallSites) {
   auto results1 = programBuilder.call("f", {q1});
   programBuilder.sink(results0[0]);
   programBuilder.sink(results1[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
   referenceBuilder.endFunction(
       {referenceBuilder.h(referenceBuilder.x(refArgs[0]))});
-  auto specArgs = referenceBuilder.startFunction("f_spec_boundary_commutation",
-                                                 {qubitType}, {qubitType});
+  auto specArgs = referenceBuilder.startFunction(
+      "f_spec_boundary_commutation_arg_0", {qubitType}, {qubitType});
   referenceBuilder.endFunction({referenceBuilder.h(specArgs[0])});
 
   auto refQ0 = referenceBuilder.allocQubit();
   auto refQ1 = referenceBuilder.allocQubit();
   auto refResults0 =
-      referenceBuilder.call("f_spec_boundary_commutation", {refQ0});
+      referenceBuilder.call("f_spec_boundary_commutation_arg_0", {refQ0});
   auto refResults1 =
-      referenceBuilder.call("f_spec_boundary_commutation", {refQ1});
+      referenceBuilder.call("f_spec_boundary_commutation_arg_0", {refQ1});
   referenceBuilder.sink(refResults0[0]);
   referenceBuilder.sink(refResults1[0]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief Two call sites that cancel a gate on different parameters of the same
+ * callee must get their own specialization, because the gate is removed from a
+ * specific argument.
+ */
+TEST_F(QCOQuantumIPOTest, separateCommutationSpecializationPerParameter) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  const auto buildCallee = [&qubitType](QCOProgramBuilder& b, StringRef name) {
+    auto args =
+        b.startFunction(name, {qubitType, qubitType}, {qubitType, qubitType});
+    b.endFunction({b.x(args[0]), b.x(args[1])});
+  };
+
+  programBuilder.initialize();
+  buildCallee(programBuilder, "f");
+
+  // The first call cancels the gate on parameter 0, ...
+  auto a0 = programBuilder.x(programBuilder.allocQubit());
+  auto a1 = programBuilder.allocQubit();
+  auto results0 = programBuilder.call("f", {a0, a1});
+  // ... the second one on parameter 1.
+  auto b0 = programBuilder.allocQubit();
+  auto b1 = programBuilder.x(programBuilder.allocQubit());
+  auto results1 = programBuilder.call("f", {b0, b1});
+  programBuilder.sink(results0[0]);
+  programBuilder.sink(results0[1]);
+  programBuilder.sink(results1[0]);
+  programBuilder.sink(results1[1]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  buildCallee(referenceBuilder, "f");
+
+  // One specialization without the gate on parameter 0, ...
+  auto spec0Args = referenceBuilder.startFunction(
+      "f_spec_boundary_commutation_arg_0", {qubitType, qubitType},
+      {qubitType, qubitType});
+  referenceBuilder.endFunction(
+      {spec0Args[0], referenceBuilder.x(spec0Args[1])});
+  // ... and one without the gate on parameter 1.
+  auto spec1Args = referenceBuilder.startFunction(
+      "f_spec_boundary_commutation_arg_1", {qubitType, qubitType},
+      {qubitType, qubitType});
+  referenceBuilder.endFunction(
+      {referenceBuilder.x(spec1Args[0]), spec1Args[1]});
+
+  auto refA0 = referenceBuilder.allocQubit();
+  auto refA1 = referenceBuilder.allocQubit();
+  auto refResults0 = referenceBuilder.call("f_spec_boundary_commutation_arg_0",
+                                           {refA0, refA1});
+  auto refB0 = referenceBuilder.allocQubit();
+  auto refB1 = referenceBuilder.allocQubit();
+  auto refResults1 = referenceBuilder.call("f_spec_boundary_commutation_arg_1",
+                                           {refB0, refB1});
+  referenceBuilder.sink(refResults0[0]);
+  referenceBuilder.sink(refResults0[1]);
+  referenceBuilder.sink(refResults1[0]);
+  referenceBuilder.sink(refResults1[1]);
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
@@ -1509,7 +1638,7 @@ TEST_F(QCOQuantumIPOTest, specializationAndHoistingCombined) {
   auto q = programBuilder.allocQubit();
   auto results = programBuilder.call("f", {q});
   programBuilder.sink(results[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   // The original keeps its `z` gate, but is hoisted as well.
@@ -1561,7 +1690,7 @@ TEST_F(QCOQuantumIPOTest, specializationAndBoundaryCommutationCombined) {
   auto results = programBuilder.call("f", {q0, q1});
   programBuilder.sink(results[0]);
   programBuilder.sink(results[1]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
@@ -1580,15 +1709,15 @@ TEST_F(QCOQuantumIPOTest, specializationAndBoundaryCommutationCombined) {
 
   // Boundary commutation then removes the `x` gates around the call.
   auto commutedArgs = referenceBuilder.startFunction(
-      "f_spec_zero_arg_0_spec_boundary_commutation", {qubitType, qubitType},
-      {qubitType, qubitType});
+      "f_spec_zero_arg_0_spec_boundary_commutation_arg_1",
+      {qubitType, qubitType}, {qubitType, qubitType});
   referenceBuilder.endFunction(
       {commutedArgs[0], referenceBuilder.h(commutedArgs[1])});
 
   auto refQ0 = referenceBuilder.allocQubit();
   auto refQ1 = referenceBuilder.allocQubit();
   auto refResults = referenceBuilder.call(
-      "f_spec_zero_arg_0_spec_boundary_commutation", {refQ0, refQ1});
+      "f_spec_zero_arg_0_spec_boundary_commutation_arg_1", {refQ0, refQ1});
   referenceBuilder.sink(refResults[0]);
   referenceBuilder.sink(refResults[1]);
   reference = referenceBuilder.finalize();
@@ -1629,7 +1758,7 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   programBuilder.sink(prepared[0]);
   programBuilder.sink(rotated[0]);
   programBuilder.sink(flipped[0]);
-  module = programBuilder.finalize();
+  moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
   auto refPrepareArgs =
@@ -1654,7 +1783,7 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   referenceBuilder.endFunction(
       {referenceBuilder.y(referenceBuilder.x(refFlipArgs[0]))});
   auto flipSpecArgs = referenceBuilder.startFunction(
-      "flip_spec_boundary_commutation", {qubitType}, {qubitType});
+      "flip_spec_boundary_commutation_arg_0", {qubitType}, {qubitType});
   referenceBuilder.endFunction({referenceBuilder.y(flipSpecArgs[0])});
 
   auto refQ0 = referenceBuilder.allocQubit();
@@ -1665,7 +1794,7 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   auto refRotated =
       referenceBuilder.call("rotate_spec_fixed_angle_1", {refQ1, refAngle});
   auto refFlipped =
-      referenceBuilder.call("flip_spec_boundary_commutation", {refQ2});
+      referenceBuilder.call("flip_spec_boundary_commutation_arg_0", {refQ2});
   referenceBuilder.sink(refPrepared[0]);
   referenceBuilder.sink(refRotated[0]);
   referenceBuilder.sink(refFlipped[0]);

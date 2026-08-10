@@ -166,6 +166,12 @@ void TypeCheckPass::visitAssignmentStatement(
     return;
   }
 
+  if (exprTy.isError) {
+    // The right-hand side could not be typed; it carries no usable type and
+    // the failure has already been reported.
+    return;
+  }
+
   if (!idTy->second.type->fits(*exprTy.type)) {
     std::stringstream ss;
     ss << "Type mismatch in assignment. Expected '";

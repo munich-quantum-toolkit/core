@@ -8,10 +8,6 @@
  * Licensed under the MIT License
  */
 
-//
-// Created by damian on 1/21/26.
-//
-
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -47,21 +43,33 @@
 
 namespace mlir::qco {
 
+/**
+ * @brief Redirect a call to a specialized copy of its callee.
+ *
+ * @param callOp The call to redirect.
+ * @param newCallee The specialization the call should target.
+ * @param rewriter The rewriter driving the pattern application.
+ */
 static void updateSpecializedCall(func::CallOp callOp, func::FuncOp newCallee,
                                   PatternRewriter& rewriter) {
   rewriter.modifyOpInPlace(callOp,
                            [&] { callOp.setCallee(newCallee.getName()); });
 }
 
-static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName,
-                                 PatternRewriter& rewriter) {
-  const OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPointAfter(funcOp);
-
+/**
+ * @brief Create a detached copy of a function under a new name.
+ *
+ * @details
+ * The copy is not inserted into the module; the caller is responsible for
+ * adding it to a symbol table.
+ *
+ * @param funcOp The function to copy.
+ * @param newName The name of the copy.
+ * @return The detached copy.
+ */
+static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
   auto newFunc = funcOp.clone();
-
-  rewriter.modifyOpInPlace(newFunc, [&] { newFunc.setName(newName.str()); });
-
+  newFunc.setName(newName.str());
   return newFunc;
 }
 
@@ -70,6 +78,8 @@ static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName,
 
 namespace {
 
+/// Caches the specializations already created for a callee, so that call sites
+/// sharing the same context reuse one copy instead of cloning it repeatedly.
 struct PreviousSpecializations {
   std::map<std::pair<std::string, uint32_t>, func::FuncOp> zeroSpecializations;
   std::map<std::pair<std::string, uint32_t>, func::FuncOp> plusSpecializations;
@@ -92,14 +102,26 @@ struct ContextSensitiveSpecializationPattern final
       std::array<double, 5>{0.0, std::numbers::pi, std::numbers::pi / 2,
                             1.5 * std::numbers::pi, 2 * std::numbers::pi};
 
+  /**
+   * @brief Check whether an operation leaves a qubit in the |0> state alone.
+   *
+   * @param op The operation applied to the argument.
+   * @param zeroArgument The argument known to be in the |0> state.
+   * @return True if @p op has no effect given that state.
+   */
   static bool operationIsNopOnZero(Operation* op, Value zeroArgument) {
     if (auto ctrl = dyn_cast<CtrlOp>(op)) {
-      return std::find(ctrl.getControlsIn().begin(), ctrl.getControlsIn().end(),
-                       zeroArgument) != ctrl.getControlsIn().end();
+      return llvm::is_contained(ctrl.getControlsIn(), zeroArgument);
     }
     return isa<ZOp>(op) || isa<SOp>(op) || isa<ResetOp>(op); // TODO more ops?
   }
 
+  /**
+   * @brief Check whether an operation leaves a qubit in the |+> state alone.
+   *
+   * @param op The operation applied to the argument.
+   * @return True if @p op has no effect given that state.
+   */
   static bool operationIsNopOnPlus(Operation* op) { return isa<XOp>(op); }
 
   explicit ContextSensitiveSpecializationPattern(MLIRContext* context,
@@ -119,6 +141,14 @@ struct ContextSensitiveSpecializationPattern final
     return LogicalResult::success(found);
   }
 
+  /**
+   * @brief Try to specialize the callee for what is known about one argument.
+   *
+   * @param callOp The call whose callee may be specialized.
+   * @param operand The index of the argument to reason about.
+   * @param rewriter The rewriter driving the pattern application.
+   * @return True if a specialization was applied.
+   */
   bool trySpecialize(func::CallOp callOp, unsigned operand,
                      PatternRewriter& rewriter) const {
     const auto argValue = callOp.getArgOperands()[operand];
@@ -163,6 +193,15 @@ struct ContextSensitiveSpecializationPattern final
     return false;
   }
 
+  /**
+   * @brief Specialize a callee for an argument known to be in the |0> state.
+   *
+   * @param callOp The call to redirect.
+   * @param funcOp The current callee.
+   * @param operand The index of the |0> argument.
+   * @param rewriter The rewriter driving the pattern application.
+   * @return True if a specialization was applied.
+   */
   bool trySpecializeZero(func::CallOp callOp, func::FuncOp funcOp,
                          unsigned operand, PatternRewriter& rewriter) const {
     auto parameter = funcOp.getArgument(operand);
@@ -181,33 +220,47 @@ struct ContextSensitiveSpecializationPattern final
       return true;
     }
 
-    auto newFunc = copyFunction(funcOp,
-                                funcOp.getName().str() + "_spec_zero_arg_" +
-                                    std::to_string(operand),
-                                rewriter);
+    auto newFunc =
+        copyFunction(funcOp, funcOp.getName().str() + "_spec_zero_arg_" +
+                                 std::to_string(operand));
     symbolTable.insert(newFunc);
     previousSpecializations.zeroSpecializations.insert({key, newFunc});
 
     auto newParameter = newFunc.getArgument(operand);
-    while (
-        newParameter.hasOneUse() &&
+    if (newParameter.hasOneUse() &&
         operationIsNopOnZero(*newParameter.getUsers().begin(), newParameter)) {
-      auto newUser =
-          dyn_cast<UnitaryOpInterface>(*newParameter.getUsers().begin());
-      for (auto i = 0U; i < newUser.getNumQubits(); ++i) {
-        // TODO-DAMIAN use getOutputQubit/Input again (at current version, this
-        // seems to use the output of the inner op)
-        rewriter.replaceAllUsesWith(newUser->getResult(i),
-                                    newUser->getOperand(i));
+      auto* newUser = *newParameter.getUsers().begin();
+
+      // A reset does not implement `UnitaryOpInterface`, so it has to be
+      // forwarded explicitly instead of going through the qubit accessors.
+      if (auto resetOp = dyn_cast<ResetOp>(newUser)) {
+        rewriter.replaceAllUsesWith(resetOp.getQubitOut(),
+                                    resetOp.getQubitIn());
+        rewriter.eraseOp(resetOp);
+      } else if (auto unitaryOp = dyn_cast<UnitaryOpInterface>(newUser)) {
+        for (auto i = 0U; i < unitaryOp.getNumQubits(); ++i) {
+          // TODO-DAMIAN use getOutputQubit/Input again (at current version,
+          // this seems to use the output of the inner op)
+          rewriter.replaceAllUsesWith(unitaryOp->getResult(i),
+                                      unitaryOp->getOperand(i));
+        }
+        rewriter.eraseOp(unitaryOp);
       }
-      rewriter.eraseOp(newUser);
-      break;
     }
 
     updateSpecializedCall(callOp, newFunc, rewriter);
     return true;
   }
 
+  /**
+   * @brief Specialize a callee for an argument known to be in the |+> state.
+   *
+   * @param callOp The call to redirect.
+   * @param funcOp The current callee.
+   * @param operand The index of the |+> argument.
+   * @param rewriter The rewriter driving the pattern application.
+   * @return True if a specialization was applied.
+   */
   bool trySpecializePlus(func::CallOp callOp, func::FuncOp funcOp,
                          unsigned operand, PatternRewriter& rewriter) const {
     auto parameter = funcOp.getArgument(operand);
@@ -226,10 +279,9 @@ struct ContextSensitiveSpecializationPattern final
       return true;
     }
 
-    auto newFunc = copyFunction(funcOp,
-                                funcOp.getName().str() + "_spec_plus_arg_" +
-                                    std::to_string(operand),
-                                rewriter);
+    auto newFunc =
+        copyFunction(funcOp, funcOp.getName().str() + "_spec_plus_arg_" +
+                                 std::to_string(operand));
     symbolTable.insert(newFunc);
     previousSpecializations.plusSpecializations.insert({key, newFunc});
 
@@ -249,6 +301,21 @@ struct ContextSensitiveSpecializationPattern final
     return true;
   }
 
+  /**
+   * @brief Specialize a callee for a rotation angle known at compile time.
+   *
+   * @details
+   * Only a small set of distinguished angles is specialized, because every
+   * specialization costs a copy of the callee. The parameter stays in the
+   * signature; only its uses inside the copy are replaced by a constant.
+   *
+   * @param callOp The call to redirect.
+   * @param funcOp The current callee.
+   * @param angle The constant angle passed at the call site.
+   * @param operand The index of the angle argument.
+   * @param rewriter The rewriter driving the pattern application.
+   * @return True if a specialization was applied.
+   */
   bool trySpecializeRotationArguments(func::CallOp callOp, func::FuncOp funcOp,
                                       double angle, unsigned operand,
                                       PatternRewriter& rewriter) const {
@@ -272,15 +339,15 @@ struct ContextSensitiveSpecializationPattern final
       return true;
     }
 
-    auto newFunc =
-        copyFunction(funcOp, funcOp.getName().str() + suffix, rewriter);
+    auto newFunc = copyFunction(funcOp, funcOp.getName().str() + suffix);
     symbolTable.insert(newFunc);
     previousSpecializations.rotationSpecializations.insert({key, newFunc});
 
     auto newParameter = newFunc.getArgument(operand);
+    const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointToStart(&*newFunc.getBody().getBlocks().begin());
-    auto constant = rewriter.create<arith::ConstantOp>(
-        newFunc.getBody().getLoc(),
+    auto constant = arith::ConstantOp::create(
+        rewriter, newFunc.getBody().getLoc(),
         rewriter.getFloatAttr(Float64Type::get(rewriter.getContext()), angle));
     rewriter.replaceAllUsesWith(newParameter, constant.getResult());
 
@@ -327,11 +394,11 @@ protected:
     // Apply patterns in an iterative and greedy manner.
     if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
+      return;
     }
 
     runQuantumArgumentPromotion(op);
     runAuxiliaryQubitHoisting(op);
-    runQuantumFunctionBoundaryCommutation(op, symbolTable);
     runQuantumFunctionBoundaryCommutation(op, symbolTable);
   }
 };

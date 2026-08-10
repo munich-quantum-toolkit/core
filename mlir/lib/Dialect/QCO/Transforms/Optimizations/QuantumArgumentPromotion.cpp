@@ -43,20 +43,37 @@ namespace mlir::qco {
 
 namespace {
 
-/// A tensor slot that crosses the call boundary as a scalar qubit: the qubit
-/// is taken out of the tensor at `extractIndex` and put back at `insertIndex`.
+/**
+ * @brief A tensor slot that crosses the call boundary as a scalar qubit.
+ *
+ * @details
+ * The qubit is taken out of the tensor at `extractIndex` and put back at
+ * `insertIndex`; the two indices need not agree.
+ */
 struct PromotedSlot {
+  /// The extraction taking the qubit out of the tensor.
   qtensor::ExtractOp extract;
+  /// The insertion putting the qubit back.
   qtensor::InsertOp insert;
+  /// The index the qubit is taken from.
   int64_t extractIndex;
+  /// The index the qubit is put back at.
   int64_t insertIndex;
 };
 
 } // namespace
 
-/// Follow the qubit produced by `extract` forward through gate-like operations
-/// until it is inserted back into a tensor at a compile-time constant index.
-/// Returns a null op if the qubit never comes back.
+/**
+ * @brief Find where an extracted qubit is put back into a tensor.
+ *
+ * @details
+ * Follows the qubit produced by @p extract forward through gate-like
+ * operations until it is inserted back into a tensor at a compile-time
+ * constant index.
+ *
+ * @param extract The extraction whose qubit is followed.
+ * @return The matching insertion, or a null op if the qubit never comes back.
+ */
 static qtensor::InsertOp findInsertForExtract(qtensor::ExtractOp extract) {
   Value currentValue = extract.getResult();
   while (currentValue) {
@@ -89,13 +106,19 @@ static qtensor::InsertOp findInsertForExtract(qtensor::ExtractOp extract) {
   return nullptr;
 }
 
-/// Determine whether the given tensor argument can be replaced by scalar qubit
-/// arguments, and if so, which slots have to cross the call boundary.
-///
-/// This requires that every operation on the argument's tensor chain is a
-/// `qtensor.extract` or `qtensor.insert` at a constant index, that every
-/// extracted qubit is inserted back into the same chain, and that the chain
-/// ends in the function's first result.
+/**
+ * @brief Determine whether a tensor argument can be replaced by scalar qubits.
+ *
+ * @details
+ * This requires that every operation on the argument's tensor chain is a
+ * `qtensor.extract` or `qtensor.insert` at a constant index, that every
+ * extracted qubit is inserted back into the same chain, and that the chain
+ * ends in the function's first result.
+ *
+ * @param arg The tensor argument to analyze.
+ * @return The slots that have to cross the call boundary, empty if the
+ * argument cannot be promoted.
+ */
 static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
   const auto tensorType = dyn_cast<RankedTensorType>(arg.getType());
   if (!tensorType || !isa<QubitType>(tensorType.getElementType())) {
@@ -172,9 +195,20 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
   return slots;
 }
 
-/// Replace the given tensor argument by one scalar qubit argument per slot in
-/// `slots`, and update every call site accordingly.
-static void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots) {
+/**
+ * @brief Replace a tensor argument by one scalar qubit argument per slot.
+ *
+ * @details
+ * Rewrites the function signature and body, and updates every call site so
+ * that the promoted elements are taken out of the tensor before the call and
+ * put back afterwards.
+ *
+ * @param arg The tensor argument to promote.
+ * @param slots The slots that cross the call boundary, as returned by
+ * `canPromoteArgument`.
+ */
+static void promoteArgument(BlockArgument arg,
+                            MutableArrayRef<PromotedSlot> slots) {
   Block* entryBlock = arg.getOwner();
   auto funcOp = cast<func::FuncOp>(entryBlock->getParentOp());
 
@@ -228,8 +262,12 @@ static void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots) {
   // The qubit reaching the insert is what the function returns for that slot.
   SmallVector<Value> returnedQubits;
   returnedQubits.reserve(numSlots);
-  for (auto slot : slots) {
-    returnedQubits.emplace_back(slot.insert.getScalar());
+  for (auto&& [i, slot] : llvm::enumerate(slots)) {
+    // A pass-through slot hands the new argument straight back.
+    returnedQubits.emplace_back(slot.insert.getScalar() ==
+                                        slot.extract.getResult()
+                                    ? newArgs[i]
+                                    : slot.insert.getScalar());
   }
 
   for (const auto& [i, constSlot] : llvm::enumerate(slots)) {
@@ -282,25 +320,25 @@ static void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots) {
     // Take the promoted qubits out of the tensor before the call, ...
     for (size_t i = 0; i < numSlots; ++i) {
       Value index =
-          builder.create<arith::ConstantIndexOp>(loc, slots[i].extractIndex);
+          arith::ConstantIndexOp::create(builder, loc, slots[i].extractIndex);
       auto extractOp =
-          builder.create<qtensor::ExtractOp>(loc, currentTensor, index);
+          qtensor::ExtractOp::create(builder, loc, currentTensor, index);
       currentTensor = extractOp.getOutTensor();
       newOperands.insert(
           std::next(newOperands.begin(), static_cast<ptrdiff_t>(argIndex + i)),
           extractOp.getResult());
     }
 
-    auto newCall = builder.create<func::CallOp>(loc, funcOp, newOperands);
+    auto newCall = func::CallOp::create(builder, loc, funcOp, newOperands);
 
     // ... and put them back afterwards.
     for (size_t i = 0; i < numSlots; ++i) {
       Value index =
-          builder.create<arith::ConstantIndexOp>(loc, slots[i].insertIndex);
-      currentTensor = builder
-                          .create<qtensor::InsertOp>(loc, newCall.getResult(i),
-                                                     currentTensor, index)
-                          .getResult();
+          arith::ConstantIndexOp::create(builder, loc, slots[i].insertIndex);
+      currentTensor =
+          qtensor::InsertOp::create(builder, loc, newCall.getResult(i),
+                                    currentTensor, index)
+              .getResult();
     }
 
     callOp.getResult(0).replaceAllUsesWith(currentTensor);
@@ -312,11 +350,21 @@ static void promoteArgument(BlockArgument arg, ArrayRef<PromotedSlot> slots) {
   }
 }
 
-void runQuantumArgumentPromotion(ModuleOp module) {
+/**
+ * @brief Promote tensor arguments to scalar qubits across the whole module.
+ *
+ * @details
+ * Externally visible functions and declarations are skipped because their
+ * signature cannot be changed. At most one argument per function is promoted
+ * per run, because promoting shifts the indices of the remaining arguments.
+ *
+ * @param moduleOp The module to transform.
+ */
+void runQuantumArgumentPromotion(ModuleOp moduleOp) {
   SmallVector<std::pair<BlockArgument, SmallVector<PromotedSlot>>>
       argsToPromote;
 
-  module.walk([&](func::FuncOp func) {
+  moduleOp.walk([&](func::FuncOp func) {
     if (func.isPublic() || func.isDeclaration()) {
       return;
     }

@@ -1383,6 +1383,9 @@ QCOProgramBuilder::scfCondition(Value reg,
 Type QCOProgramBuilder::getQubitType() { return QubitType::get(ctx); }
 
 Type QCOProgramBuilder::getQubitTensorType(const int64_t size) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
   return RankedTensorType::get({size}, getQubitType());
 }
 
@@ -1447,6 +1450,12 @@ void QCOProgramBuilder::endFunction(ValueRange returnValues) {
         "endFunction() called without a matching startFunction()");
   }
 
+  auto funcOp = cast<func::FuncOp>(getInsertionBlock()->getParentOp());
+  if (!llvm::equal(returnValues.getTypes(), funcOp.getResultTypes())) {
+    llvm::reportFatalUsageError(
+        "Return values do not match the declared function result types");
+  }
+
   for (const auto value : returnValues) {
     if (isa<QubitType>(value.getType())) {
       validateQubitValue(value);
@@ -1486,6 +1495,11 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
       SymbolTable::lookupSymbolIn(module, getStringAttr(callee)));
   if (!funcOp) {
     llvm::reportFatalUsageError("Callee not found in module");
+  }
+
+  if (!llvm::equal(operands.getTypes(), funcOp.getArgumentTypes())) {
+    llvm::reportFatalUsageError(
+        "Return values do not match the declared function result types");
   }
 
   SmallVector<Value> qubitOperands;

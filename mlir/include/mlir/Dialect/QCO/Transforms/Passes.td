@@ -308,7 +308,23 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
 def QuantumIPO : Pass<"quantum-ipo", "mlir::ModuleOp"> {
   let summary = "Quantum Interprocedural Optimization Pass";
   let description = [{
-        Performs interprocedural optimizations on quantum functions.
+        Performs interprocedural optimizations across `func.func` boundaries by
+        running, in order:
+
+        - Context-sensitive specialization of `func.call` sites for recognized
+          qubit states and constant angles.
+        - Quantum argument promotion, turning eligible qubit-tensor arguments into
+          scalar qubit arguments.
+        - Auxiliary-qubit hoisting, moving callee-internal allocations to the
+          caller.
+        - Quantum function-boundary commutation, removing matching self-inverse
+          gates across a call.
+
+        Limitations: public functions and declarations are not transformed;
+        recursive functions are skipped; the pass relies on the QCO calling
+        convention that the i-th qubit result of a call corresponds to its i-th
+        qubit operand; boundary commutation runs a fixed number of iterations
+        rather than to a fixed point.
     }];
 
   let dependentDialects = ["::mlir::func::FuncDialect",
