@@ -21,11 +21,17 @@
 
 namespace mlir::utils {
 
+/**
+ * @brief Parameters representing a powered U gate.
+ *
+ * All values are in radians. The phase satisfies
+ * `U(input)^exponent = exp(i * phase) * U(theta, phi, lambda)`.
+ */
 struct UPowerParameters {
-  double theta;
-  double phi;
-  double lambda;
-  double phase;
+  double theta;  ///< Resulting U rotation angle.
+  double phi;    ///< Resulting U phi angle.
+  double lambda; ///< Resulting U lambda angle.
+  double phase;  ///< Remaining global phase.
 };
 
 /**

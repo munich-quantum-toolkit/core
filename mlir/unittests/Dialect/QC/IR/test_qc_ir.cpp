@@ -564,7 +564,7 @@ TEST_F(QCTest, PositiveIntegralPowUCanonicalizes) {
     ASSERT_TRUE(program);
 
     ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
-    std::size_t powCount = 0;
+    size_t powCount = 0;
     program->walk([&](PowOp) { ++powCount; });
     EXPECT_EQ(powCount, 0U);
   }
@@ -586,9 +586,9 @@ TEST_F(QCTest, PowUWithDynamicParameterDoesNotCanonicalize) {
   uOp.getThetaMutable().assign(funcOp.getArgument(0));
 
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(program->getBody()
-                  ->walk([](PowOp) { return WalkResult::interrupt(); })
-                  .wasInterrupted());
+  size_t powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1U);
 }
 
 TEST_F(QCTest, FractionalPowUDoesNotCanonicalize) {
@@ -600,9 +600,9 @@ TEST_F(QCTest, FractionalPowUDoesNotCanonicalize) {
   ASSERT_TRUE(program);
 
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(program->getBody()
-                  ->walk([](PowOp) { return WalkResult::interrupt(); })
-                  .wasInterrupted());
+  size_t powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1U);
 }
 
 TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {

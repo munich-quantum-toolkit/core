@@ -590,7 +590,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
 
-    std::size_t powCount = 0;
+    size_t powCount = 0;
     moduleOp->walk([&](PowOp) { ++powCount; });
     EXPECT_EQ(powCount, 0U);
   }
