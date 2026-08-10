@@ -653,6 +653,10 @@ before conversion to QCO.)pb");
           "to_qiskit",
           [](const mlir::QCProgram& program) {
             requireValid(program);
+            // nanobind exposes CPython handles through its supported umbrella
+            // header; including CPython's internal object header directly is
+            // intentionally avoided.
+            // NOLINTNEXTLINE(misc-include-cleaner)
             return nb::steal<nb::object>(static_cast<PyObject*>(
                 bindings::qiskit::exportCircuit(program)));
           },

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 import qiskit
+from packaging import version
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.circuit import (
     AnnotatedOperation,
@@ -38,6 +39,12 @@ from mqt.core.plugins.qiskit import qiskit_to_mqt
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+if version.parse(qiskit.__version__) < version.parse("2.5"):
+    pytest.skip(
+        f"Qiskit compiler bridge tests require Qiskit 2.5 or newer (installed: {qiskit.__version__})",
+        allow_module_level=True,
+    )
 
 availability_name = "_" + "qiskit_compiler_bridge_available"
 requires_bridge = pytest.mark.skipif(
