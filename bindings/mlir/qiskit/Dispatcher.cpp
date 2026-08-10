@@ -10,20 +10,30 @@
 
 #include "Dispatcher.h"
 
+#include "QiskitAdapter.h" // NOLINT(misc-include-cleaner)
+
+// CPython's limited-API umbrella provides these declarations indirectly.
+// NOLINTBEGIN(misc-include-cleaner)
 #include <Python.h>
+// NOLINTEND(misc-include-cleaner)
 
 #include <charconv>
+#include <cstddef>
+#include <memory> // NOLINT(misc-include-cleaner)
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bindings::qiskit {
 namespace {
 
 [[nodiscard]] unsigned int parseComponent(std::string_view text,
                                           std::size_t& offset) {
-  const auto begin = text.data() + offset;
-  const auto end = text.data() + text.size();
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  const char* const begin = text.data() + offset;
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  const char* const end = text.data() + text.size();
   unsigned int value = 0;
   const auto result = std::from_chars(begin, end, value);
   if (result.ec != std::errc{} || result.ptr == begin) {
@@ -44,16 +54,29 @@ void requireSeparator(const std::string_view text, std::size_t& offset) {
 
 [[nodiscard]] std::string supportedVersionRanges() {
   std::string ranges;
-#define MQT_QISKIT_ADAPTER(major, minor, suffix, minimum, range)               \
-  ranges += ranges.empty() ? range : ", " range;
+#define MQT_QISKIT_ADAPTER(major, minor, suffix, minimumPatch, minimum, range) \
+  ranges += ranges.empty() ? (range) : ", " range;
 #include "SupportedAdapters.inc"
 #undef MQT_QISKIT_ADAPTER
   return ranges;
 }
 
+[[nodiscard]] constexpr bool matchesAdapterVersion(
+    const InstalledVersion& version, const unsigned int adapterMajor,
+    const unsigned int adapterMinor, const unsigned int minimumPatch) {
+  return version.major == adapterMajor && version.minor == adapterMinor &&
+         version.patch >= minimumPatch;
+}
+
+static_assert(matchesAdapterVersion(
+    {.major = 2U, .minor = 6U, .patch = 2U, .text = "2.6.2"}, 2U, 6U, 2U));
+static_assert(!matchesAdapterVersion(
+    {.major = 2U, .minor = 6U, .patch = 1U, .text = "2.6.1"}, 2U, 6U, 2U));
+
 } // namespace
 
 InstalledVersion inspectInstalledVersion() {
+  // NOLINTBEGIN(misc-include-cleaner)
   PyObject* module = PyImport_ImportModule("qiskit");
   if (module == nullptr) {
     PyErr_Clear();
@@ -100,7 +123,10 @@ InstalledVersion inspectInstalledVersion() {
         text + "'; supported versions: " + supportedVersionRanges() +
         " (final releases)");
   }
-  return {.major = major, .minor = minor, .patch = patch, .text = text};
+  const InstalledVersion result{
+      .major = major, .minor = minor, .patch = patch, .text = text};
+  // NOLINTEND(misc-include-cleaner)
+  return result;
 }
 
 bool hasSupportedAdapter(const InstalledVersion& version) {
@@ -109,13 +135,15 @@ bool hasSupportedAdapter(const InstalledVersion& version) {
     return true;
   }
 #endif
-#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimum, range) \
-  if (version.major == adapterMajor##U && version.minor == adapterMinor##U) {  \
-    return true;                                                               \
-  }
+  bool supported = false;
+#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimumPatch,   \
+                           minimum, range)                                     \
+  supported =                                                                  \
+      supported || matchesAdapterVersion(version, adapterMajor##U,             \
+                                         adapterMinor##U, minimumPatch##U);
 #include "SupportedAdapters.inc"
 #undef MQT_QISKIT_ADAPTER
-  return false;
+  return supported;
 }
 
 std::unique_ptr<Adapter> selectAdapter() {
@@ -126,8 +154,10 @@ std::unique_ptr<Adapter> selectAdapter() {
   }
 #endif
 #define MQT_QISKIT_CREATE_ADAPTER_IMPL(suffix) createAdapter##suffix()
-#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimum, range) \
-  if (version.major == adapterMajor##U && version.minor == adapterMinor##U) {  \
+#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimumPatch,   \
+                           minimum, range)                                     \
+  if (matchesAdapterVersion(version, adapterMajor##U, adapterMinor##U,         \
+                            minimumPatch##U)) {                                \
     return MQT_QISKIT_CREATE_ADAPTER_IMPL(suffix);                             \
   }
 #include "SupportedAdapters.inc"

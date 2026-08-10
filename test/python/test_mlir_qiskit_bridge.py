@@ -45,36 +45,34 @@ requires_bridge = pytest.mark.skipif(
     reason="installed Qiskit has no registered compiler bridge adapter",
 )
 
+STANDARD_GATES = (
+    library.GlobalPhaseGate(0.1),
+    library.HGate(),
+    library.SXdgGate(),
+    library.RGate(0.1, 0.2),
+    library.UGate(0.1, 0.2, 0.3),
+    library.U1Gate(0.1),
+    library.U3Gate(0.1, 0.2, 0.3),
+    library.CXGate(),
+    library.CPhaseGate(0.4),
+    library.CUGate(0.1, 0.2, 0.3, 0.4),
+    library.CU1Gate(0.1),
+    library.CU3Gate(0.1, 0.2, 0.3),
+    library.SwapGate(),
+    library.CSwapGate(),
+    library.RXXGate(0.5),
+    library.XXPlusYYGate(0.6, 0.7),
+    library.CCXGate(),
+    library.CCZGate(),
+    library.RCCXGate(),
+    library.C3XGate(),
+    library.C3SXGate(),
+    library.RC3XGate(),
+)
+
 
 @requires_bridge
-@pytest.mark.parametrize(
-    "gate",
-    [
-        library.GlobalPhaseGate(0.1),
-        library.HGate(),
-        library.SXdgGate(),
-        library.RGate(0.1, 0.2),
-        library.UGate(0.1, 0.2, 0.3),
-        library.U1Gate(0.1),
-        library.U3Gate(0.1, 0.2, 0.3),
-        library.CXGate(),
-        library.CPhaseGate(0.4),
-        library.CUGate(0.1, 0.2, 0.3, 0.4),
-        library.CU1Gate(0.1),
-        library.CU3Gate(0.1, 0.2, 0.3),
-        library.SwapGate(),
-        library.CSwapGate(),
-        library.RXXGate(0.5),
-        library.XXPlusYYGate(0.6, 0.7),
-        library.CCXGate(),
-        library.CCZGate(),
-        library.RCCXGate(),
-        library.C3XGate(),
-        library.C3SXGate(),
-        library.RC3XGate(),
-    ],
-    ids=lambda gate: gate.name,
-)
+@pytest.mark.parametrize("gate", STANDARD_GATES, ids=lambda gate: gate.name)
 def test_qiskit_bridge_standard_gate_round_trip(gate: Gate) -> None:
     """Round-trip representative entries from every standard-gate family."""
     circuit = QuantumCircuit(gate.num_qubits)
@@ -85,6 +83,33 @@ def test_qiskit_bridge_standard_gate_round_trip(gate: Gate) -> None:
 
     assert program.is_valid
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+@requires_bridge
+@pytest.mark.parametrize("gate", STANDARD_GATES, ids=lambda gate: gate.name)
+@pytest.mark.parametrize(
+    ("modifier", "expected_op"),
+    [
+        (InverseModifier(), "qc.inv"),
+        (PowerModifier(0.5), "qc.pow"),
+        (ControlModifier(1), "qc.ctrl"),
+    ],
+    ids=["inverse", "power", "control"],
+)
+def test_qiskit_bridge_modifiers_cover_standard_gates(
+    gate: Gate,
+    modifier: InverseModifier | PowerModifier | ControlModifier,
+    expected_op: str,
+) -> None:
+    """Apply every generic modifier path to each supported standard-gate family."""
+    operation = AnnotatedOperation(gate, modifier)
+    circuit = QuantumCircuit(operation.num_qubits)
+    circuit.append(operation, range(operation.num_qubits))
+
+    program = QCProgram.from_qiskit(circuit)
+
+    assert program.is_valid
+    assert expected_op in program.ir
 
 
 @requires_bridge
@@ -418,7 +443,7 @@ def test_qiskit_bridge_preserves_unsigned_control_flow_values() -> None:
 
 @requires_bridge
 def test_qiskit_bridge_rejects_mismatched_shift_widths() -> None:
-    """Reject shift amounts that cannot be represented without narrowing."""
+    """Reject shift and index amounts that require narrowing."""
     value = expr.Var.new("value", types.Uint(8))
     amount = expr.Var.new("amount", types.Uint(64))
     circuit = QuantumCircuit(1, inputs=[value, amount])
@@ -427,6 +452,13 @@ def test_qiskit_bridge_rejects_mismatched_shift_widths() -> None:
 
     with pytest.raises(RuntimeError, match="shift amount wider than its integer operand"):
         QCProgram.from_qiskit(circuit)
+
+    indexed = QuantumCircuit(1, inputs=[value, amount])
+    with indexed.if_test(expr.index(value, amount)):
+        indexed.x(0)
+
+    with pytest.raises(RuntimeError, match="index wider than its integer operand"):
+        QCProgram.from_qiskit(indexed)
 
 
 @requires_bridge

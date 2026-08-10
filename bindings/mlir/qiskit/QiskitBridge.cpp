@@ -217,17 +217,58 @@ using GateArity = std::pair<std::size_t, std::size_t>;
 
 [[nodiscard]] std::optional<GateArity> gateArity(const std::string_view name) {
   static const llvm::StringMap<GateArity> ARITIES = {
-      {"id", {1, 0}},    {"x", {1, 0}},          {"y", {1, 0}},
-      {"z", {1, 0}},     {"h", {1, 0}},          {"s", {1, 0}},
-      {"sdg", {1, 0}},   {"t", {1, 0}},          {"tdg", {1, 0}},
-      {"sx", {1, 0}},    {"sxdg", {1, 0}},       {"rx", {1, 1}},
-      {"ry", {1, 1}},    {"rz", {1, 1}},         {"p", {1, 1}},
-      {"u1", {1, 1}},    {"r", {1, 2}},          {"u2", {1, 2}},
-      {"u", {1, 3}},     {"u3", {1, 3}},         {"swap", {2, 0}},
-      {"iswap", {2, 0}}, {"dcx", {2, 0}},        {"ecr", {2, 0}},
-      {"rxx", {2, 1}},   {"ryy", {2, 1}},        {"rzx", {2, 1}},
-      {"rzz", {2, 1}},   {"xx_plus_yy", {2, 2}}, {"xx_minus_yy", {2, 2}},
+      {"global_phase", {0, 1}},
+      {"id", {1, 0}},
+      {"x", {1, 0}},
+      {"y", {1, 0}},
+      {"z", {1, 0}},
+      {"h", {1, 0}},
+      {"s", {1, 0}},
+      {"sdg", {1, 0}},
+      {"t", {1, 0}},
+      {"tdg", {1, 0}},
+      {"sx", {1, 0}},
+      {"sxdg", {1, 0}},
+      {"rx", {1, 1}},
+      {"ry", {1, 1}},
+      {"rz", {1, 1}},
+      {"p", {1, 1}},
+      {"u1", {1, 1}},
+      {"r", {1, 2}},
+      {"u2", {1, 2}},
+      {"u", {1, 3}},
+      {"u3", {1, 3}},
+      {"ch", {2, 0}},
+      {"cx", {2, 0}},
+      {"cy", {2, 0}},
+      {"cz", {2, 0}},
+      {"cs", {2, 0}},
+      {"csdg", {2, 0}},
+      {"csx", {2, 0}},
+      {"cp", {2, 1}},
+      {"crx", {2, 1}},
+      {"cry", {2, 1}},
+      {"crz", {2, 1}},
+      {"swap", {2, 0}},
+      {"iswap", {2, 0}},
+      {"dcx", {2, 0}},
+      {"ecr", {2, 0}},
+      {"cu", {2, 4}},
+      {"cu1", {2, 1}},
+      {"cu3", {2, 3}},
+      {"rxx", {2, 1}},
+      {"ryy", {2, 1}},
+      {"rzx", {2, 1}},
+      {"rzz", {2, 1}},
+      {"xx_plus_yy", {2, 2}},
+      {"xx_minus_yy", {2, 2}},
+      {"ccx", {3, 0}},
+      {"ccz", {3, 0}},
+      {"cswap", {3, 0}},
       {"rccx", {3, 0}},
+      {"mcx", {4, 0}},
+      {"c3sx", {4, 0}},
+      {"rcccx", {4, 0}},
   };
   const auto arity = ARITIES.find(name);
   return arity == ARITIES.end() ? std::nullopt
@@ -311,6 +352,10 @@ void emitControlledGate(mlir::qc::QCProgramBuilder& builder,
   });
 }
 
+void emitStandardGate(mlir::qc::QCProgramBuilder& builder,
+                      const Instruction& instruction, mlir::ValueRange qubits,
+                      llvm::ArrayRef<ParameterValue> parameters);
+
 void emitModifiedGate(mlir::qc::QCProgramBuilder& builder,
                       const Instruction& instruction,
                       const mlir::ValueRange qubits,
@@ -344,7 +389,7 @@ void emitModifiedGate(mlir::qc::QCProgramBuilder& builder,
       [&](auto&& self, const std::size_t count,
           const mlir::ValueRange targetArguments) -> void {
     if (count == 0U) {
-      emitBaseGate(builder, instruction.name, targetArguments, parameters);
+      emitStandardGate(builder, instruction, targetArguments, parameters);
       return;
     }
     const auto& modifier = instruction.modifiers[count - 1U];
@@ -404,6 +449,56 @@ void emitRC3X(mlir::qc::QCProgramBuilder& builder,
                       type, llvm::ArrayRef<std::complex<double>>(matrix)));
 }
 
+void emitStandardGate(mlir::qc::QCProgramBuilder& builder,
+                      const Instruction& instruction,
+                      const mlir::ValueRange qubits,
+                      const llvm::ArrayRef<ParameterValue> parameters) {
+  const auto& name = instruction.name;
+  const auto arity = gateArity(name);
+  if (!arity) {
+    throw std::runtime_error("unsupported Qiskit standard gate '" + name + "'");
+  }
+  if (qubits.size() != arity->first || parameters.size() != arity->second) {
+    throw std::runtime_error("Qiskit instruction '" + name +
+                             "' has an unsupported operand arity");
+  }
+  if (name == "global_phase") {
+    builder.gphase(parameters[0]);
+  } else if (name == "cx" || name == "cy" || name == "cz" || name == "ch" ||
+             name == "cs" || name == "csdg" || name == "csx") {
+    emitControlledGate(builder, name.substr(1), qubits.take_front(1),
+                       qubits.take_back(1), parameters);
+  } else if (name == "cp" || name == "crx" || name == "cry" || name == "crz") {
+    const auto base =
+        name == "cp" ? std::string_view{"p"} : std::string_view{name}.substr(1);
+    emitControlledGate(builder, base, qubits.take_front(1), qubits.take_back(1),
+                       parameters);
+  } else if (name == "ccx" || name == "ccz") {
+    emitControlledGate(builder, name.substr(2), qubits.take_front(2),
+                       qubits.take_back(1), parameters);
+  } else if (name == "cswap") {
+    emitControlledGate(builder, "swap", qubits.take_front(1),
+                       qubits.take_back(2), parameters);
+  } else if (name == "cu") {
+    builder.ctrl(qubits.take_front(1), qubits.take_back(1),
+                 [&](const mlir::ValueRange targetArguments) {
+                   builder.gphase(parameters[3]);
+                   builder.u(parameters[0], parameters[1], parameters[2],
+                             targetArguments[0]);
+                 });
+  } else if (name == "cu1" || name == "cu3") {
+    emitControlledGate(builder, name == "cu1" ? "p" : "u", qubits.take_front(1),
+                       qubits.take_back(1), parameters);
+  } else if (name == "mcx" || name == "c3sx") {
+    emitControlledGate(builder, name == "mcx" ? "x" : "sx",
+                       qubits.take_front(3), qubits.take_back(1), parameters);
+  } else if (name == "rcccx") {
+    emitRC3X(builder, qubits);
+  } else {
+    emitBaseGate(builder, name, qubits, parameters);
+  }
+}
+
 void emitGate(mlir::qc::QCProgramBuilder& builder,
               const Instruction& instruction,
               const llvm::ArrayRef<mlir::Value> allQubits,
@@ -427,81 +522,13 @@ void emitGate(mlir::qc::QCProgramBuilder& builder,
         parameterValue(parameter, symbols, arguments, localParameters));
   }
 
-  const auto& name = instruction.name;
   const llvm::ArrayRef<mlir::Value> qubitRange(qubits);
   if (!instruction.modifiers.empty()) {
     emitModifiedGate(builder, instruction, qubitRange, parameters, symbols,
                      arguments, localParameters);
     return;
   }
-  if (name == "global_phase") {
-    requireArity(instruction, 0, 1);
-    builder.gphase(parameters[0]);
-    return;
-  }
-  if (name == "cx" || name == "cy" || name == "cz" || name == "ch" ||
-      name == "cs" || name == "csdg" || name == "csx") {
-    requireArity(instruction, 2, 0);
-    emitControlledGate(builder, name.substr(1), qubitRange.take_front(1),
-                       qubitRange.take_back(1), parameters);
-    return;
-  }
-  if (name == "cp" || name == "crx" || name == "cry" || name == "crz") {
-    requireArity(instruction, 2, 1);
-    const auto base =
-        name == "cp" ? std::string_view{"p"} : std::string_view{name}.substr(1);
-    emitControlledGate(builder, base, qubitRange.take_front(1),
-                       qubitRange.take_back(1), parameters);
-    return;
-  }
-  if (name == "ccx" || name == "ccz") {
-    requireArity(instruction, 3, 0);
-    emitControlledGate(builder, name.substr(2), qubitRange.take_front(2),
-                       qubitRange.take_back(1), parameters);
-    return;
-  }
-  if (name == "cswap") {
-    requireArity(instruction, 3, 0);
-    emitControlledGate(builder, "swap", qubitRange.take_front(1),
-                       qubitRange.take_back(2), parameters);
-    return;
-  }
-  if (name == "cu") {
-    requireArity(instruction, 2, 4);
-    builder.ctrl(qubitRange.take_front(1), qubitRange.take_back(1),
-                 [&](const mlir::ValueRange targetArguments) {
-                   builder.gphase(parameters[3]);
-                   builder.u(parameters[0], parameters[1], parameters[2],
-                             targetArguments[0]);
-                 });
-    return;
-  }
-  if (name == "cu1" || name == "cu3") {
-    requireArity(instruction, 2, name == "cu1" ? 1U : 3U);
-    emitControlledGate(builder, name == "cu1" ? "p" : "u",
-                       qubitRange.take_front(1), qubitRange.take_back(1),
-                       parameters);
-    return;
-  }
-  if (name == "mcx" || name == "c3sx") {
-    requireArity(instruction, 4, 0);
-    emitControlledGate(builder, name == "mcx" ? "x" : "sx",
-                       qubitRange.take_front(3), qubitRange.take_back(1),
-                       parameters);
-    return;
-  }
-  if (name == "rcccx") {
-    requireArity(instruction, 4, 0);
-    emitRC3X(builder, qubitRange);
-    return;
-  }
-
-  const auto arity = gateArity(name);
-  if (!arity) {
-    throw std::runtime_error("unsupported Qiskit standard gate '" + name + "'");
-  }
-  requireArity(instruction, arity->first, arity->second);
-  emitBaseGate(builder, name, qubits, parameters);
+  emitStandardGate(builder, instruction, qubitRange, parameters);
 }
 
 [[nodiscard]] mlir::ArrayAttr registerAttributes(mlir::OpBuilder& builder,
@@ -841,6 +868,12 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     if (!targetType) {
       throw std::runtime_error(
           "Qiskit index expressions require a Uint target");
+    }
+    const auto indexType = llvm::dyn_cast<mlir::IntegerType>(index.getType());
+    if (!indexType || indexType.getWidth() > targetType.getWidth()) {
+      throw std::runtime_error(
+          "Qiskit compiler bridge does not support an index wider than its "
+          "integer operand");
     }
     index = castInteger(builder, index, targetType);
     const auto shifted =

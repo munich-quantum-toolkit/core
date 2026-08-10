@@ -53,9 +53,18 @@ if(BUILD_MQT_CORE_BINDINGS)
     add_compile_definitions(Py_GIL_DISABLED)
   endif()
 
+  # Development.SABIModule and Python::SABIModule require CMake 3.26. Keep the project's CMake 3.24
+  # minimum usable while compiling the Qiskit adapters against the limited API in either case.
+  set(MQT_CORE_PYTHON_SABI_TARGET Python::Module)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.26)
+    set(MQT_CORE_PYTHON_SABI_COMPONENT Development.SABIModule)
+    set(MQT_CORE_PYTHON_SABI_TARGET Python::SABIModule)
+  endif()
+
   # top-level call to find Python
-  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
-                                               Development.SABIModule ${SKBUILD_SABI_COMPONENT})
+  find_package(
+    Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+                                    ${MQT_CORE_PYTHON_SABI_COMPONENT} ${SKBUILD_SABI_COMPONENT})
 endif()
 
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})

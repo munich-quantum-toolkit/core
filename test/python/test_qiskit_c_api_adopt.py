@@ -111,6 +111,19 @@ def test_adapter_registration_is_idempotent_and_detects_conflicts(
         adopt.register_adapter(version)
 
 
+def test_adapter_registration_preserves_patch_minimum(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep later patch adoptions from widening support to earlier releases."""
+    adapter_dir = tmp_path / "bindings" / "mlir" / "qiskit"
+    adapter_dir.mkdir(parents=True)
+    template = adapter_dir / "AdapterMinor.cpp.in"
+    template.write_text("@ADAPTER_FACTORY@ @ADAPTER_MAJOR@ @ADAPTER_MINOR@\n")
+    monkeypatch.setattr(adopt, "ADAPTER_TEMPLATE", template)
+
+    _, _, registration = adopt.adapter_artifacts(Version("2.6.2"))
+
+    assert registration == 'MQT_QISKIT_ADAPTER(2, 6, 26, 2, 2.6.2, ">=2.6.2,<2.7.0")'
+
+
 def test_restartable_worktree_rejects_unrelated_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Permit exact interrupted-run artifacts but retain clean-worktree isolation."""
     root = tmp_path / "repository"

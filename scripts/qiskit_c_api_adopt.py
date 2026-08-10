@@ -345,11 +345,11 @@ def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: b
 
 def adapter_artifacts(version: Version) -> tuple[Path, str, str]:
     """Return the generated adapter path, contents, and registration line."""
-    major, minor, _ = version.release
+    major, minor, patch = version.release
     suffix = f"{major}{minor}"
     next_minor = minor + 1
     supported_range = f">={version},<{major}.{next_minor}.0"
-    registration = f'MQT_QISKIT_ADAPTER({major}, {minor}, {suffix}, {version}, "{supported_range}")'
+    registration = f'MQT_QISKIT_ADAPTER({major}, {minor}, {suffix}, {patch}, {version}, "{supported_range}")'
     source = (
         ADAPTER_TEMPLATE
         .read_text()

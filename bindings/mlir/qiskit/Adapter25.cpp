@@ -340,6 +340,14 @@ void normalizePythonGate(PyObject* operation, const ParameterNames& symbols,
     throwPythonError("Qiskit failed to inspect a controlled gate");
   }
   if (hasBaseGate != 0) {
+    const auto name = pythonStringAttribute(
+        operation, "name", "Qiskit controlled gate has an invalid name");
+    if (name == "cu") {
+      // CU's fourth parameter is a phase on its controlled U decomposition;
+      // flattening it to U plus a generic control would lose that parameter.
+      result.name = name;
+      return;
+    }
     const auto base = pythonAttribute(operation, "base_gate",
                                       "Qiskit controlled gate has no base");
     normalizePythonGate(base.get(), symbols, result);

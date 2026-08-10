@@ -8,5 +8,5 @@
  * Licensed under the MIT License
  */
 
-// major, minor, symbol suffix, vendored release, supported final-release range
-MQT_QISKIT_ADAPTER(2, 5, 25, 2.5.0, ">=2.5.0,<2.6.0")
+// major, minor, symbol suffix, minimum patch, vendored release, supported final-release range
+MQT_QISKIT_ADAPTER(2, 5, 25, 0, 2.5.0, ">=2.5.0,<2.6.0")

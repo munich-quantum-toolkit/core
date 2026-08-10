@@ -262,7 +262,8 @@ public:
 
 #define MQT_QISKIT_DECLARE_ADAPTER_IMPL(suffix)                                \
   [[nodiscard]] std::unique_ptr<Adapter> createAdapter##suffix();
-#define MQT_QISKIT_DECLARE_ADAPTER(major, minor, suffix, minimum, range)       \
+#define MQT_QISKIT_DECLARE_ADAPTER(major, minor, suffix, minimumPatch,         \
+                                   minimum, range)                             \
   MQT_QISKIT_DECLARE_ADAPTER_IMPL(suffix)
 #define MQT_QISKIT_ADAPTER MQT_QISKIT_DECLARE_ADAPTER
 #include "SupportedAdapters.inc"

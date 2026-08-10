@@ -156,9 +156,11 @@ Validation completed on Qiskit 2.5.1 with LLVM/MLIR 22.1.3 and Python 3.14:
   including execution of the new Qiskit compiler example. An initial retry was
   needed because the host Python did not discover a CA bundle for the external
   QDMI tag file; using the bundle installed in the nox environment resolved it.
-- All repository hooks, `git diff --check`, the eight-header count, every
-  per-header provenance hash, the candidate template, and the maintenance
-  API-surface extractor passed.
+- All repository hooks and `git diff --check` on the non-vendored diff passed.
+  The eight-header count, every per-header provenance hash, the candidate
+  template, and the maintenance API-surface extractor passed separately; the
+  provenance checks preserve the upstream headers byte-for-byte, including their
+  trailing whitespace.
 
 No commit, push, pull request, or remote mutation was performed. The resulting
 reviewable diff remains on `agent/qiskit-capi-bridge` in this worktree.
@@ -298,7 +300,9 @@ to pass, with only compiler-bridge tests skipped under unsupported Qiskit.
 Dialect tests must parse, print, verify, and convert dense unitary operations in
 both directions. The normal release build, affected C++ unit tests, Python MLIR
 suite, stub generation, changed-file formatting/static checks, repository lint,
-and `git diff --check` must pass or have a precisely recorded external blocker.
+and `git diff --check` on non-vendored files must pass or have a precisely
+recorded external blocker. Byte-identical vendored files are validated against
+their provenance hashes instead.
 
 ## Idempotence and Recovery
 
