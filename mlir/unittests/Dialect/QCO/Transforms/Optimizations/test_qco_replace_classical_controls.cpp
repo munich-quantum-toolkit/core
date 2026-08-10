@@ -115,8 +115,7 @@ TEST(QCOClassicalControlPhaseIdentityTest,
                      << ", basis=" << basis);
         const bool controlsActive = (basis & controlMask) == controlMask;
         const bool targetA = (basis & (uint64_t{1} << numControls)) != 0;
-        const bool targetB =
-            (basis & (uint64_t{1} << (numControls + 1U))) != 0;
+        const bool targetB = (basis & (uint64_t{1} << (numControls + 1U))) != 0;
 
         const double controlledRZExponent =
             controlsActive ? (targetA ? theta / 2.0 : -theta / 2.0) : 0.0;
@@ -151,9 +150,8 @@ TEST(QCOClassicalControlPhaseIdentityTest,
                         phaseFromExponent(controlledRZZExponent));
 
         const double twoMeasuredTargetsExponent =
-            controlsActive
-                ? -theta / 2.0 + (targetA != targetB ? theta : 0.0)
-                : 0.0;
+            controlsActive ? -theta / 2.0 + (targetA != targetB ? theta : 0.0)
+                           : 0.0;
         expectSamePhase(phaseFromExponent(twoMeasuredTargetsExponent),
                         phaseFromExponent(controlledRZZExponent));
       }
@@ -854,9 +852,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 TEST_F(QCOReplaceClassicalControlsTest,
        replacesMeasuredRZZTargetWhenAllControlsAreMeasured) {
   constexpr double theta = 0.789;
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type()});
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -875,15 +873,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
   program = programBuilder.finalize(
       {controlOutcome, targetOutcome, otherTargetOutcome});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type()});
-  auto referenceControl =
-      referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget0 =
-      referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget1 =
-      referenceBuilder.h(referenceBuilder.allocQubit());
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
@@ -891,8 +886,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(referenceTarget0, referenceTargetOutcome) =
       referenceBuilder.measure(referenceTarget0);
   auto referenceTargets = referenceBuilder.qcoIf(
-      referenceControlOutcome,
-      ValueRange{referenceTarget0, referenceTarget1},
+      referenceControlOutcome, ValueRange{referenceTarget0, referenceTarget1},
       [&](ValueRange targets) -> SmallVector<Value> {
         Value updatedTarget = referenceBuilder.rz(theta, targets[1]);
         updatedTarget = referenceBuilder.qcoIf(
@@ -916,12 +910,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
 }
 
-TEST_F(QCOReplaceClassicalControlsTest,
-       replacesRZZWhenBothTargetsAreMeasured) {
+TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
   constexpr double theta = 0.789;
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type(),
-       programBuilder.getI1Type()});
+  programBuilder.initialize({programBuilder.getI1Type(),
+                             programBuilder.getI1Type(),
+                             programBuilder.getI1Type()});
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -932,22 +925,18 @@ TEST_F(QCOReplaceClassicalControlsTest,
   const auto [outputControl, outputTargets] =
       programBuilder.crzz(theta, control, target0, target1);
   Value controlOutcome;
-  std::tie(control, controlOutcome) =
-      programBuilder.measure(outputControl);
+  std::tie(control, controlOutcome) = programBuilder.measure(outputControl);
   programBuilder.sink(control);
   programBuilder.sink(outputTargets.first);
   programBuilder.sink(outputTargets.second);
   program = programBuilder.finalize({outcome0, outcome1, controlOutcome});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
-       referenceBuilder.getI1Type()});
-  auto referenceControl =
-      referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget0 =
-      referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget1 =
-      referenceBuilder.h(referenceBuilder.allocQubit());
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
   Value referenceOutcome0;
   Value referenceOutcome1;
   std::tie(referenceTarget0, referenceOutcome0) =
@@ -955,13 +944,12 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(referenceTarget1, referenceOutcome1) =
       referenceBuilder.measure(referenceTarget1);
   referenceControl = referenceBuilder.p(-theta / 2.0, referenceControl);
-  const Value outcomesDiffer = arith::XOrIOp::create(
-      referenceBuilder, referenceBuilder.getLoc(), referenceOutcome0,
-      referenceOutcome1);
+  const Value outcomesDiffer =
+      arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
+                            referenceOutcome0, referenceOutcome1);
   referenceControl = referenceBuilder.qcoIf(
-      outcomesDiffer, referenceControl, [&](Value qubit) {
-        return referenceBuilder.p(theta, qubit);
-      });
+      outcomesDiffer, referenceControl,
+      [&](Value qubit) { return referenceBuilder.p(theta, qubit); });
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
@@ -976,14 +964,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
 }
 
-TEST_F(QCOReplaceClassicalControlsTest,
-       removesRZZWhenAllQubitsAreMeasured) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+TEST_F(QCOReplaceClassicalControlsTest, removesRZZWhenAllQubitsAreMeasured) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type(),
+       programBuilder.getI1Type(), programBuilder.getI1Type(),
+       programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
   auto target1 = programBuilder.h(programBuilder.allocQubit());
@@ -1011,18 +996,13 @@ TEST_F(QCOReplaceClassicalControlsTest,
       {controlOutcome, target0Outcome, target1Outcome, outputControlOutcome,
        outputTarget0Outcome, outputTarget1Outcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
-  auto referenceControl =
-      referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget0 =
-      referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget1 =
-      referenceBuilder.h(referenceBuilder.allocQubit());
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
+       referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
+       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget0 = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget1 = referenceBuilder.h(referenceBuilder.allocQubit());
   Value referenceControlOutcome;
   Value referenceTarget0Outcome;
   Value referenceTarget1Outcome;
@@ -1166,10 +1146,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredRZZTargetAndMeasuredControl) {
   constexpr double theta = 0.789;
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type(),
+       programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto q = programBuilder.allocQubitRegister(4);
   for (auto& qubit : q.qubits) {
     qubit = programBuilder.h(qubit);
@@ -1191,21 +1170,19 @@ TEST_F(QCOReplaceClassicalControlsTest,
   programBuilder.sink(quantumControl);
   programBuilder.sink(targets.first);
   programBuilder.sink(targets.second);
-  program = programBuilder.finalize(
-      {controlOutcome, targetOutcome, quantumControlOutcome,
-       otherTargetOutcome});
+  program =
+      programBuilder.finalize({controlOutcome, targetOutcome,
+                               quantumControlOutcome, otherTargetOutcome});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
+       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubitRegister(4);
   for (auto& qubit : r.qubits) {
     qubit = referenceBuilder.h(qubit);
   }
   Value referenceControlOutcome;
-  std::tie(r[0], referenceControlOutcome) =
-      referenceBuilder.measure(r[0]);
+  std::tie(r[0], referenceControlOutcome) = referenceBuilder.measure(r[0]);
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
   auto conditionalQubits = referenceBuilder.qcoIf(
@@ -1216,8 +1193,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
         std::tie(quantumControl, otherTarget) =
             referenceBuilder.cp(theta, quantumControl, otherTarget);
         auto targetConditionalQubits = referenceBuilder.qcoIf(
-            referenceTargetOutcome,
-            ValueRange{quantumControl, otherTarget},
+            referenceTargetOutcome, ValueRange{quantumControl, otherTarget},
             [&](ValueRange targetQubits) -> SmallVector<Value> {
               Value conditionalControl =
                   referenceBuilder.p(theta, targetQubits[0]);
@@ -1237,8 +1213,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(r[1], referenceQuantumControlOutcome) =
       referenceBuilder.measure(r[1]);
   Value referenceOtherTargetOutcome;
-  std::tie(r[3], referenceOtherTargetOutcome) =
-      referenceBuilder.measure(r[3]);
+  std::tie(r[3], referenceOtherTargetOutcome) = referenceBuilder.measure(r[3]);
   for (const Value qubit : r.qubits) {
     referenceBuilder.sink(qubit);
   }

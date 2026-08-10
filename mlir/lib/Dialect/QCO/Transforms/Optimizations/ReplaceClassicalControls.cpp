@@ -22,8 +22,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cassert>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <optional>
 #include <tuple>
@@ -100,8 +100,8 @@ static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
  * @return The input-target index for every target result, or @c std::nullopt
  * if the body does not directly yield all results of @p rzzOp.
  */
-static std::optional<SmallVector<size_t>>
-getRZZTargetResultOrder(CtrlOp ctrlOp, RZZOp rzzOp) {
+static std::optional<SmallVector<size_t>> getRZZTargetResultOrder(CtrlOp ctrlOp,
+                                                                  RZZOp rzzOp) {
   SmallVector<size_t> resultOrder;
   resultOrder.reserve(ctrlOp.getNumTargets());
   auto yieldOp = cast<YieldOp>(ctrlOp.getBody()->getTerminator());
@@ -110,8 +110,8 @@ getRZZTargetResultOrder(CtrlOp ctrlOp, RZZOp rzzOp) {
     if (!result || result.getOwner() != rzzOp.getOperation()) {
       return std::nullopt;
     }
-    const auto input = dyn_cast<BlockArgument>(
-        rzzOp.getInputTarget(result.getResultNumber()));
+    const auto input =
+        dyn_cast<BlockArgument>(rzzOp.getInputTarget(result.getResultNumber()));
     if (!input || input.getOwner() != ctrlOp.getBody() ||
         input.getArgNumber() >= ctrlOp.getNumTargets()) {
       return std::nullopt;
@@ -216,11 +216,11 @@ buildMeasuredRZZReplacement(PatternRewriter& rewriter, Location loc,
                                             negativeHalfTheta);
     const Value outcomesDiffer = arith::XOrIOp::create(
         rewriter, loc, targetOutcomes[0], targetOutcomes[1]);
-    auto ifOp = IfOp::create(
-        rewriter, loc, outcomesDiffer, updatedControls,
-        [&](ValueRange qubits) -> SmallVector<Value> {
-          return applyConjunctionPhase(rewriter, loc, qubits, theta);
-        });
+    auto ifOp = IfOp::create(rewriter, loc, outcomesDiffer, updatedControls,
+                             [&](ValueRange qubits) -> SmallVector<Value> {
+                               return applyConjunctionPhase(rewriter, loc,
+                                                            qubits, theta);
+                             });
     updatedControls.assign(ifOp.getLinearResults().begin(),
                            ifOp.getLinearResults().end());
   } else {
@@ -234,14 +234,14 @@ buildMeasuredRZZReplacement(PatternRewriter& rewriter, Location loc,
       updatedTargets[otherTargetIndex] =
           RZOp::create(rewriter, loc, updatedTargets[otherTargetIndex], theta)
               .getOutputQubit(0);
-      auto ifOp = IfOp::create(
-          rewriter, loc, targetOutcomes[measuredTargetIndex],
-          ValueRange{updatedTargets[otherTargetIndex]},
-          [&](ValueRange qubits) -> SmallVector<Value> {
-            return {RZOp::create(rewriter, loc, qubits.front(),
-                                 negativeDoubleTheta)
-                        .getOutputQubit(0)};
-          });
+      auto ifOp =
+          IfOp::create(rewriter, loc, targetOutcomes[measuredTargetIndex],
+                       ValueRange{updatedTargets[otherTargetIndex]},
+                       [&](ValueRange qubits) -> SmallVector<Value> {
+                         return {RZOp::create(rewriter, loc, qubits.front(),
+                                              negativeDoubleTheta)
+                                     .getOutputQubit(0)};
+                       });
       updatedTargets[otherTargetIndex] = ifOp.getLinearResults().front();
     } else {
       const Value minusHalf = utils::constantFromScalar(rewriter, loc, -0.5);
@@ -341,9 +341,9 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
   SmallVector<Value> transformedControls(op.getNumControls());
   SmallVector<Value> transformedTargets;
   if (measuredControlOutcomes.empty()) {
-    auto transformed = buildMeasuredRZZReplacement(
-        rewriter, op.getLoc(), quantumControls, op.getTargetsIn(),
-        targetOutcomes, theta);
+    auto transformed =
+        buildMeasuredRZZReplacement(rewriter, op.getLoc(), quantumControls,
+                                    op.getTargetsIn(), targetOutcomes, theta);
     transformedControls.assign(transformed.begin(),
                                transformed.begin() + op.getNumControls());
     transformedTargets.assign(transformed.begin() + op.getNumControls(),
@@ -360,8 +360,7 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
         rewriter, op.getLoc(), condition, ifOperands,
         [&](ValueRange qubits) -> SmallVector<Value> {
           return buildMeasuredRZZReplacement(
-              rewriter, op.getLoc(),
-              qubits.take_front(quantumControls.size()),
+              rewriter, op.getLoc(), qubits.take_front(quantumControls.size()),
               qubits.drop_front(quantumControls.size()), targetOutcomes, theta);
         });
 

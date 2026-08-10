@@ -110,8 +110,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
       if (predecessorUnitary.getNumControls() == 0 &&
           predecessorUnitary.getNumTargets() == 1 &&
           qubitVariable.hasOneUse()) {
-        rewriter.replaceOp(predecessor,
-                           predecessorUnitary.getInputQubits());
+        rewriter.replaceOp(predecessor, predecessorUnitary.getInputQubits());
         return mlir::success();
       }
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
