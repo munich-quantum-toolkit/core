@@ -579,8 +579,8 @@ TEST_F(QCTest, PowUWithDynamicParameterDoesNotCanonicalize) {
   ASSERT_TRUE(program);
 
   auto funcOp = cast<func::FuncOp>(program->getBody()->front());
-  funcOp.insertArgument(0, Float64Type::get(context.get()), {},
-                        funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(
+      0, Float64Type::get(context.get()), {}, funcOp.getLoc())));
   auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
   auto uOp = *powOp.getBody()->getOps<UOp>().begin();
   uOp.getThetaMutable().assign(funcOp.getArgument(0));
