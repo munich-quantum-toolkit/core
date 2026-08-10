@@ -13,6 +13,7 @@
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -31,6 +32,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -42,6 +44,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -55,6 +58,7 @@ struct JeffRoundTripTestCase {
   std::string name;
   mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
   mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  bool expectPowAfterCleanup = false;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);
@@ -93,9 +97,8 @@ static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
   return c;
 }
 
-// DCX and U are the only gates that `FoldPowIntoGate` leaves alone, so they are
-// the only way to get a power modifier past the QCO cleanup pipeline and into
-// the jeff conversion.
+// DCX and U gates with dynamic parameters survive `FoldPowIntoGate`, so they
+// exercise power modifiers that reach the jeff conversion.
 
 static Value powDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
@@ -157,6 +160,15 @@ static Value powU(qco::QCOProgramBuilder& b) {
   const auto powOut =
       b.pow(3.0, q[0], [&](Value qubit) { return b.u(0.1, 0.2, 0.3, qubit); });
   return b.measure(powOut).second;
+}
+
+static void makePowUParameterDynamic(ModuleOp program) {
+  auto funcOp = cast<func::FuncOp>(program.getBody()->front());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(
+      0, Float64Type::get(program.getContext()), {}, funcOp.getLoc())));
+  auto powOp = *funcOp.getBody().getOps<qco::PowOp>().begin();
+  auto uOp = *powOp.getBody()->getOps<qco::UOp>().begin();
+  uOp.getThetaMutable().assign(funcOp.getArgument(0));
 }
 
 static Value ifWithAngle(qco::QCOProgramBuilder& b) {
@@ -435,18 +447,27 @@ module {
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
-  const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
+  const auto& [nameStr, programBuilder, referenceBuilder,
+               expectPowAfterCleanup] = GetParam();
   const auto name = " (" + nameStr + ")";
   mqt::test::DeferredPrinter printer;
 
   auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
+  if (expectPowAfterCleanup) {
+    makePowUParameterDynamic(*program);
+  }
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+  if (expectPowAfterCleanup) {
+    size_t powCount = 0;
+    program->walk([&](qco::PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, 1U);
+  }
 
   EXPECT_TRUE(succeeded(convertQCOToJeff(program.get())));
   printer.record(program.get(), "Converted jeff IR" + name);
@@ -475,6 +496,9 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
 
   auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
+  if (expectPowAfterCleanup) {
+    makePowUParameterDynamic(*reference);
+  }
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -527,7 +551,7 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"CtrlPowInvDcx", MQT_NAMED_BUILDER(ctrlPowInvDcx),
                               MQT_NAMED_BUILDER(ctrlPowInvDcx)},
         JeffRoundTripTestCase{"PowU", MQT_NAMED_BUILDER(powU),
-                              MQT_NAMED_BUILDER(powU)}));
+                              MQT_NAMED_BUILDER(powU), true}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp
