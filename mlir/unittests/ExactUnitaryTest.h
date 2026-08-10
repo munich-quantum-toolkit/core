@@ -22,7 +22,7 @@
 #include <cstddef>
 #include <memory>
 
-namespace mlir::mqt::test {
+namespace mqt::test {
 
 /**
  * @brief Compare complete QCO function matrices, including global phase.
@@ -32,19 +32,19 @@ namespace mlir::mqt::test {
  * becomes observable here and when the rewritten function is put under an
  * additional control.
  */
-inline void expectFullUnitaryEqual(ModuleOp expectedModule,
-                                   ModuleOp actualModule,
+inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
+                                   mlir::ModuleOp actualModule,
                                    const std::size_t numQubits,
                                    const double tolerance = 1e-12) {
   const auto expectedFunc =
-      *expectedModule.getBody()->getOps<func::FuncOp>().begin();
+      *expectedModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   const auto actualFunc =
-      *actualModule.getBody()->getOps<func::FuncOp>().begin();
+      *actualModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   auto package = std::make_unique<dd::Package>(numQubits);
-  const auto expected = qco::buildFunctionality(expectedFunc, *package);
-  const auto actual = qco::buildFunctionality(actualFunc, *package);
-  ASSERT_TRUE(succeeded(expected));
-  ASSERT_TRUE(succeeded(actual));
+  const auto expected = mlir::qco::buildFunctionality(expectedFunc, *package);
+  const auto actual = mlir::qco::buildFunctionality(actualFunc, *package);
+  ASSERT_TRUE(mlir::succeeded(expected));
+  ASSERT_TRUE(mlir::succeeded(actual));
 
   const auto expectedMatrix = expected->getMatrix(numQubits);
   const auto actualMatrix = actual->getMatrix(numQubits);
@@ -64,4 +64,4 @@ inline void expectFullUnitaryEqual(ModuleOp expectedModule,
   package->decRef(*actual);
 }
 
-} // namespace mlir::mqt::test
+} // namespace mqt::test

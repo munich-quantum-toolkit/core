@@ -54,18 +54,18 @@ namespace {
 
 struct QCTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<QCProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCTestCase& info) {
-  return os << "QC{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QC{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCTest : public testing::TestWithParam<QCTestCase> {
@@ -98,9 +98,9 @@ static Value measureRegister(QCProgramBuilder& b, ValueRange qubits) {
 TEST_P(QCTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -109,7 +109,8 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference =
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -560,7 +561,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(QCTest, PowExponentIsUnitaryParameter) {
   auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
 
   auto funcOp = cast<func::FuncOp>(program->getBody()->front());
@@ -573,7 +574,7 @@ TEST_F(QCTest, PowExponentIsUnitaryParameter) {
 }
 
 TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
-  auto program = mqt::test::buildMLIRProgram(
+  auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
@@ -590,7 +591,7 @@ TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
 /// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCTest, NegPowHNoFold) {
   auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
@@ -605,7 +606,7 @@ TEST_F(QCTest, NegPowHNoFold) {
 /// pipeline. Verify the pow and both body unitaries survive.
 TEST_F(QCTest, PowTwoSurvives) {
   auto program =
-      mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powTwo));
+      ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powTwo));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());

@@ -73,8 +73,9 @@
 #include <variant>
 #include <vector>
 
-namespace mlir::mqt::test::compiler {
+namespace mqt::test::compiler {
 
+using namespace mlir;
 using namespace mlir::qc;
 using namespace mlir::qco;
 using namespace mlir::qir;
@@ -1914,4 +1915,4 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXOnIndividualQubits),
             false, true, "reuse-qubits,mqt-qco-default"}));
 
-} // namespace mlir::mqt::test::compiler
+} // namespace mqt::test::compiler

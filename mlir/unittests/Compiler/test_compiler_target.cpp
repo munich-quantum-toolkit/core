@@ -35,7 +35,7 @@
 #include <utility>
 #include <vector>
 
-namespace mlir::mqt::test::compiler {
+namespace mqt::test::compiler {
 namespace {
 
 using Target = mlir::CompilerTarget;
@@ -281,15 +281,15 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
 }
 
 TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
-  DialectRegistry registry;
-  registry.insert<qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
-                  func::FuncDialect>();
-  MLIRContext context;
+  mlir::DialectRegistry registry;
+  registry.insert<mlir::qco::QCODialect, mlir::qtensor::QTensorDialect,
+                  mlir::arith::ArithDialect, mlir::func::FuncDialect>();
+  mlir::MLIRContext context;
   context.appendDialectRegistry(registry);
   context.loadAllAvailableDialects();
 
-  auto moduleOp = qco::QCOProgramBuilder::build(
-      &context, [](qco::QCOProgramBuilder& builder) {
+  auto moduleOp = mlir::qco::QCOProgramBuilder::build(
+      &context, [](mlir::qco::QCOProgramBuilder& builder) {
         auto q0 = builder.staticQubit(0);
         auto q1 = builder.staticQubit(1);
         q0 = builder.x(q0);
@@ -314,17 +314,17 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   mlir::Operation* barrier = nullptr;
   mlir::Operation* gphase = nullptr;
   moduleOp->walk([&](mlir::Operation* operation) {
-    if (isa<qco::XOp>(operation) && x == nullptr) {
+    if (mlir::isa<mlir::qco::XOp>(operation) && x == nullptr) {
       x = operation;
-    } else if (isa<qco::CtrlOp>(operation)) {
+    } else if (mlir::isa<mlir::qco::CtrlOp>(operation)) {
       cx = operation;
-    } else if (isa<qco::MeasureOp>(operation)) {
+    } else if (mlir::isa<mlir::qco::MeasureOp>(operation)) {
       measure = operation;
-    } else if (isa<qco::ResetOp>(operation)) {
+    } else if (mlir::isa<mlir::qco::ResetOp>(operation)) {
       reset = operation;
-    } else if (isa<qco::BarrierOp>(operation)) {
+    } else if (mlir::isa<mlir::qco::BarrierOp>(operation)) {
       barrier = operation;
-    } else if (isa<qco::GPhaseOp>(operation)) {
+    } else if (mlir::isa<mlir::qco::GPhaseOp>(operation)) {
       gphase = operation;
     }
   });
@@ -358,4 +358,4 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
 }
 
 } // namespace
-} // namespace mlir::mqt::test::compiler
+} // namespace mqt::test::compiler

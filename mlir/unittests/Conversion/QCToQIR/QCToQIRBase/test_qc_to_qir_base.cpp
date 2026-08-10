@@ -51,8 +51,8 @@ namespace {
 
 struct QCToQIRBaseTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRBaseTestCase& info);
@@ -60,10 +60,10 @@ struct QCToQIRBaseTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCToQIRBaseTestCase& info) {
-  return os << "QCToQIRBase{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQIRBase{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQIRBaseTest : public testing::TestWithParam<QCToQIRBaseTestCase> {

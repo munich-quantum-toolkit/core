@@ -75,7 +75,7 @@ protected:
     OwningOpRef<ModuleOp> expected(cloned);
     ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
   }
 
   static void expectNormalizedQCUnitary(OwningOpRef<ModuleOp>& moduleOp,
@@ -90,7 +90,7 @@ protected:
       ASSERT_TRUE(pm.run(candidate).succeeded());
       ASSERT_TRUE(verify(candidate).succeeded());
     }
-    mlir::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
   }
 };
 
