@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ExactUnitaryTest.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -32,6 +33,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <numbers>
 #include <optional>
@@ -246,12 +248,18 @@ protected:
    * all rotations in the list.
    */
   LogicalResult testGateMerge(ArrayRef<RotationGate> rotations) {
-    auto q = builder.allocQubitRegister(1);
+    auto q = builder.staticQubit(0);
 
-    buildRotations(rotations, q[0]);
+    q = buildRotations(rotations, q);
+    builder.sink(q);
 
     module = builder.finalize();
-    return runMergePass(module.get());
+    OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+    const auto result = runMergePass(*module);
+    if (succeeded(result)) {
+      mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+    }
+    return result;
   }
 
   /**
@@ -263,6 +271,24 @@ protected:
     return pm.run(module);
   }
 };
+
+enum class FixedGateType : std::uint8_t {
+  X,
+  Y,
+  Z,
+  H,
+  S,
+  Sdg,
+  T,
+  Tdg,
+  SX,
+  SXdg,
+  Id
+};
+
+class MergeFixedSingleQubitGateTest
+    : public MergeSingleQubitRotationGatesTest,
+      public testing::WithParamInterface<FixedGateType> {};
 
 } // namespace
 
@@ -411,7 +437,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeUUGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
   expectUGateParams(2.03289042623884, 0.663830775701153, 0.849231441867857);
-  expectGPhaseParam(7.243468891215494);
+  expectGPhaseParam(-2.1813090695538833);
 }
 
 /**
@@ -522,7 +548,8 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePUGates) {
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
+  expectGPhaseParam(0.0);
 }
 
 /**
@@ -561,7 +588,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRRGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<ROp>(), 0);
   expectUGateParams(2.07770669385131, 1.36334275733332, 2.85969871348886);
-  expectGPhaseParam(-2.1115207354110845);
+  expectGPhaseParam(1.0300719181787086);
 }
 
 /**
@@ -588,7 +615,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeU2U2Gates) {
   EXPECT_EQ(countOps<U2Op>(), 0);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
   expectUGateParams(1.85840734641021, 1.42920367320511, 0.429203673205103);
-  expectGPhaseParam(4.070796326794897);
+  expectGPhaseParam(0.92920367320510344);
 }
 
 // ##################################################
@@ -644,21 +671,78 @@ TEST_F(MergeSingleQubitRotationGatesTest, dontMergeGatesFromDifferentQubits) {
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
+TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
+  auto q = builder.staticQubit(0);
+  switch (GetParam()) {
+  case FixedGateType::X:
+    q = builder.x(q);
+    break;
+  case FixedGateType::Y:
+    q = builder.y(q);
+    break;
+  case FixedGateType::Z:
+    q = builder.z(q);
+    break;
+  case FixedGateType::H:
+    q = builder.h(q);
+    break;
+  case FixedGateType::S:
+    q = builder.s(q);
+    break;
+  case FixedGateType::Sdg:
+    q = builder.sdg(q);
+    break;
+  case FixedGateType::T:
+    q = builder.t(q);
+    break;
+  case FixedGateType::Tdg:
+    q = builder.tdg(q);
+    break;
+  case FixedGateType::SX:
+    q = builder.sx(q);
+    break;
+  case FixedGateType::SXdg:
+    q = builder.sxdg(q);
+    break;
+  case FixedGateType::Id:
+    q = builder.id(q);
+    break;
+  }
+  q = builder.rx(0.37, q);
+  builder.sink(q);
+  module = builder.finalize();
+
+  OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+  ASSERT_TRUE(runMergePass(*module).succeeded());
+
+  mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(AllFixedGates, MergeFixedSingleQubitGateTest,
+                         testing::Values(FixedGateType::X, FixedGateType::Y,
+                                         FixedGateType::Z, FixedGateType::H,
+                                         FixedGateType::S, FixedGateType::Sdg,
+                                         FixedGateType::T, FixedGateType::Tdg,
+                                         FixedGateType::SX, FixedGateType::SXdg,
+                                         FixedGateType::Id));
+
 /**
- * @brief Test: Non-consecutive gates should not merge
+ * @brief Test: Gates separated by a barrier should not merge.
  */
-TEST_F(MergeSingleQubitRotationGatesTest, dontMergeNonConsecutiveGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, dontMergeAcrossBarrier) {
   auto q = builder.allocQubitRegister(1);
 
   auto q1 = builder.rx(1.0, q[0]);
-  auto q2 = builder.h(q1);
+  auto q2 = builder.barrier({q1})[0];
   builder.ry(1.0, q2);
 
   module = builder.finalize();
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
   EXPECT_EQ(countOps<RXOp>(), 1);
-  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<BarrierOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 1);
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
@@ -696,7 +780,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeManyWithUnmergeable) {
                       {.type = GateType::RY, .angles = {2.}},
                       {.type = GateType::RZ, .angles = {3.}}},
                      q);
-  q = builder.h(q);
+  q = builder.barrier({q})[0];
   q = buildRotations({{.type = GateType::RZ, .angles = {4.}},
                       {.type = GateType::RY, .angles = {5.}},
                       {.type = GateType::RX, .angles = {6.}},
@@ -707,7 +791,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeManyWithUnmergeable) {
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
   EXPECT_EQ(countOps<UOp>(), 2);
-  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<BarrierOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
@@ -744,6 +828,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeConsecutiveWithGateInBetween) {
 
 /**
  * @brief Test: RZ(PI)->RY(PI)->RX(PI) should merge into U(0, 0, 0)
+ * with a pi global phase.
  */
 TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {PI}},
@@ -753,9 +838,10 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 0);
+  EXPECT_EQ(countOps<GPhaseOp>(), 1);
   expectUGateParams(0., 0., 0.);
-  expectGPhaseParam(0.);
+  // In circuit order, RZ(pi);RY(pi);RX(pi) is -I rather than I.
+  expectGPhaseParam(PI);
 }
 
 /**
@@ -950,6 +1036,60 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   EXPECT_FALSE(std::isnan(*phi));
   EXPECT_FALSE(std::isnan(*lambda));
   EXPECT_FALSE(std::isnan(*phase));
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeFixedGateWithDynamicRotationPreservesMatrix) {
+  constexpr double angle = 0.37;
+  auto q = builder.staticQubit(0);
+  q = builder.h(q);
+  q = builder.rz(angle, q);
+  builder.sink(q);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+
+  RZOp rzOp = nullptr;
+  module->walk([&](RZOp op) { rzOp = op; });
+  ASSERT_TRUE(rzOp);
+  rzOp.getThetaMutable().assign(funcOp.getArgument(0));
+
+  ASSERT_TRUE(runMergePass(*module).succeeded());
+  EXPECT_EQ(countOps<HOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_EQ(countOps<UOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) { uOp = op; });
+  ASSERT_TRUE(uOp);
+  EXPECT_TRUE(valueDependsOn(uOp.getTheta(), funcOp.getArgument(0)) ||
+              valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)) ||
+              valueDependsOn(uOp.getLambda(), funcOp.getArgument(0)));
+
+  bindLeadingArgs(funcOp, {angle});
+  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
+  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  double globalPhase = 0.0;
+  module->walk([&](GPhaseOp op) {
+    const auto phase = utils::valueToConstantDouble(op.getParameter(0));
+    ASSERT_TRUE(phase.has_value());
+    globalPhase += *phase;
+  });
+  const auto actual =
+      UOp::unitaryMatrix(*theta, *phi, *lambda) * std::polar(1.0, globalPhase);
+  const auto halfAngle = angle / 2.0;
+  const std::complex<double> upperPhase = std::polar(1.0, -halfAngle);
+  const std::complex<double> lowerPhase = std::polar(1.0, halfAngle);
+  const double invSqrtTwo = 1.0 / std::numbers::sqrt2;
+  const Matrix2x2 expected{upperPhase * invSqrtTwo, upperPhase * invSqrtTwo,
+                           lowerPhase * invSqrtTwo, -lowerPhase * invSqrtTwo};
+  EXPECT_TRUE(actual.isApprox(expected, 1e-8));
 }
 
 /**
