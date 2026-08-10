@@ -139,6 +139,44 @@ def qiskit(session: nox.Session) -> None:
         session.run("uv", "pip", "show", "qiskit", env=env)
 
 
+@nox.session(python="3.12", reuse_venv=True)
+def cudaq(session: nox.Session) -> None:
+    """Exercise live CUDA-Q interoperability on supported platforms."""
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    session.run(
+        "uv",
+        "sync",
+        "--inexact",
+        "--only-group",
+        "build",
+        env=env,
+    )
+    session.run(
+        "uv",
+        "sync",
+        "--inexact",
+        "--no-dev",
+        "--extra",
+        "cudaq",
+        "--no-build-isolation-package",
+        "mqt-core",
+        "--reinstall-package",
+        "mqt-core",
+        env=env,
+    )
+    session.install("pytest>=9.0.1", "pytest-xdist>=3.8.0")
+    session.run(
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n",
+        "0",
+        "test/python/test_cudaq_interop.py",
+        env=env,
+    )
+
+
 @nox.session(python="3.14", reuse_venv=True)
 def docs(session: nox.Session) -> None:
     """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
@@ -152,7 +190,9 @@ def docs(session: nox.Session) -> None:
 
     env = {
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
-        "SKBUILD_CMAKE_BUILD_TYPE": "Release",
+        # The docs execute examples but do not benchmark the extension. A Debug
+        # build substantially reduces native compilation time on RTD workers.
+        "SKBUILD_CMAKE_BUILD_TYPE": "Debug",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
         # Header-set verification and IPO remain enabled by default elsewhere.
@@ -189,6 +229,8 @@ def docs(session: nox.Session) -> None:
         "--no-dev",  # do not auto-install dev dependencies
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
+        "--reinstall-package",
+        "mqt-core",  # honor the docs-specific CMake configuration on reused environments
         "sphinx-autobuild" if serve else "sphinx-build",
         *shared_args,
         env=env,

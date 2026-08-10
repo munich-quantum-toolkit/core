@@ -195,12 +195,17 @@ jobs:
       llvm-version: 22.1.7
 
   cudaq-smoke:
-    name: 🐍 CUDA-Q 0.15 smoke
+    name: 🐍 CUDA-Q smoke (${{ matrix.runs-on }})
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ubuntu-24.04, macos-26]
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Free up space
+        if: runner.os == 'Linux'
         run: |
           sudo rm -rf /opt/ghc || true
           sudo rm -rf /usr/local/lib/android/sdk || true
@@ -219,10 +224,8 @@ jobs:
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: "3.12"
-      - name: Install MQT Core and CUDA-Q
-        run: uv pip install --system . "cuda-quantum==0.15.0" pytest
       - name: Exercise both textual interoperability directions
-        run: pytest -q test/python/test_cudaq_interop.py
+        run: uvx nox --non-interactive -s cudaq
 
   python-coverage:
     name: 🐍 Coverage

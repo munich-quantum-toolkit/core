@@ -49,6 +49,9 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 
 [project.optional-dependencies]
+cudaq = [
+  "cudaq>=0.15.1; python_version >= '3.11' and python_version < '3.14' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64'))",
+]
 pennylane = [
   "pennylane>=0.45.1,<0.46; python_version >= '3.11'",
 ]

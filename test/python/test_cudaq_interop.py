@@ -15,9 +15,6 @@ import pytest
 from mqt.core.mlir import QuakeProgram
 
 cudaq = pytest.importorskip("cudaq", reason="CUDA-Q is an optional dependency")
-h = cudaq.h
-mz = cudaq.mz
-x = cudaq.x
 
 
 def test_live_cudaq_quake_round_trip() -> None:
@@ -26,9 +23,9 @@ def test_live_cudaq_quake_round_trip() -> None:
     @cudaq.kernel
     def bell() -> None:
         qubits = cudaq.qvector(2)
-        h(qubits[0])
-        x.ctrl(qubits[0], qubits[1])
-        mz(qubits)
+        h(qubits[0])  # ruff: ignore[undefined-name]  # ty: ignore[unresolved-reference]
+        x.ctrl(qubits[0], qubits[1])  # ruff: ignore[undefined-name]  # ty: ignore[unresolved-reference]
+        mz(qubits)  # ruff: ignore[undefined-name]  # ty: ignore[unresolved-reference]
 
     synthesized = str(cudaq.synthesize(bell))
     quake = QuakeProgram.from_mlir_str(synthesized)
@@ -40,6 +37,11 @@ def test_live_cudaq_quake_round_trip() -> None:
         pass
 
     merged = merge_anchor.merge_quake_source(emitted.ir)
+    # CUDA-Q 0.15.1 keeps the merge anchor's unique launch name even though it
+    # selects the newly merged entry point. Align the launch name with that
+    # selected kernel until CUDA-Q preserves it itself.
+    if merged.uniqName != merged.name:
+        merged.uniqName = merged.name
     counts = cudaq.sample(merged, shots_count=100)
 
     assert counts
