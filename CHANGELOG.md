@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add native CUDA-Q reference-form Quake interoperability to the compiler
+  collection without linking CUDA-Q ([#2032]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
@@ -725,6 +727,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2032]: https://github.com/munich-quantum-toolkit/core/pull/2032
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017

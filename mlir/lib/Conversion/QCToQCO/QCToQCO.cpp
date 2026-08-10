@@ -1074,6 +1074,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
     // Create qco.measure (returns both output qubit and bit result)
     auto qcoOp =
         qco::MeasureOp::create(rewriter, op.getLoc(), materialized.values[0]);
+    qcoOp->setAttrs(op->getAttrs());
 
     const SmallVector<Value, 1> qcoQubits{qcoOp.getQubitOut()};
     commitQubits(state, operation, qcQubits, qcoQubits, materialized, rewriter);

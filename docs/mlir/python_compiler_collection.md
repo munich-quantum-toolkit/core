@@ -9,11 +9,12 @@ mystnb:
 # Using the MQT Compiler Collection from Python
 
 The {py:mod}`mqt.core.mlir` module provides Python access to the MQT Compiler
-Collection. It accepts source strings, {code}`.qasm`, {code}`.mlir`, and
-{code}`.jeff` files, MQT {py:class}`~mqt.core.ir.QuantumComputation` objects,
-Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler
-programs. The requested output format determines where compilation stops and
-which program type is returned.
+Collection. It accepts source strings, {code}`.qasm`, {code}`.qke`,
+{code}`.mlir`, and {code}`.jeff` files, MQT
+{py:class}`~mqt.core.ir.QuantumComputation` objects, Qiskit
+{py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler programs.
+The requested output format determines where compilation stops and which program
+type is returned.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -73,6 +74,7 @@ Select an output format to stop the pipeline at a particular representation:
 | Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
 | Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`       |
 | Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Emit CUDA-Q reference-form Quake         | `OutputFormat.QUAKE`                                   | `QuakeProgram`    |
 | Serialize a compiler program             | `OutputFormat.JEFF`                                    | `JeffProgram`     |
 | Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 
@@ -126,12 +128,13 @@ See {doc}`OpenQASM` for the complete support table.
 
 ## Run passes explicitly
 
-{code}`QCProgram`, {code}`QCOProgram`, {code}`JeffProgram`, and
-{code}`QIRProgram` own their MLIR modules. Conversions between these MLIR-backed
-program objects consume their source by default, avoiding an implicit copy of a
-potentially large module. Pass {code}`copy=True` when the source must remain
-available. {code}`OpenQASMProgram` instead owns immutable source text and
-remains reusable when passed to {code}`compile_program`.
+{code}`QCProgram`, {code}`QCOProgram`, {code}`QuakeProgram`,
+{code}`JeffProgram`, and {code}`QIRProgram` own their MLIR modules. Conversions
+between these MLIR-backed program objects consume their source by default,
+avoiding an implicit copy of a potentially large module. Pass {code}`copy=True`
+when the source must remain available. {code}`OpenQASMProgram` instead owns
+immutable source text and remains reusable when passed to
+{code}`compile_program`.
 
 The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:
@@ -223,4 +226,4 @@ Use {py:meth}`~mqt.core.mlir.QIRProgram.to_bitcode` to obtain LLVM bitcode as
 
 The {doc}`QC <QC>`, {doc}`QCO <QCO>`, and {doc}`QTensor <QTensor>` references
 describe the underlying operations. See {doc}`Conversions` for the lowering
-steps between dialects.
+steps between dialects and {doc}`CUDAQuake` for CUDA-Q interoperability.

@@ -153,6 +153,9 @@ programFromPath(const std::filesystem::path& path) {
   if (extension == ".jeff") {
     return takeResult(mlir::JeffProgram::fromFile(path));
   }
+  if (extension == ".qke") {
+    return takeResult(mlir::QuakeProgram::fromMLIRFile(path));
+  }
   if (extension == ".mlir") {
     return takeResult(mlir::QCProgram::fromMLIRFile(path));
   }
@@ -170,6 +173,9 @@ programFromPath(const std::filesystem::path& path) {
   if (isSourceString(input)) {
     if (input.find("OPENQASM") != std::string::npos) {
       return takeResult(mlir::QCProgram::fromQASMString(input));
+    }
+    if (input.find("quake.") != std::string::npos) {
+      return takeResult(mlir::QuakeProgram::fromMLIRString(input));
     }
     return takeResult(mlir::QCProgram::fromMLIRString(input));
   }
@@ -203,6 +209,11 @@ programFromPath(const std::filesystem::path& path) {
   }
   if (nb::isinstance<mlir::QCOProgram>(program)) {
     auto& value = nb::cast<mlir::QCOProgram&>(program);
+    return inplace ? mlir::CompilerInput(std::move(value))
+                   : mlir::CompilerInput(value.copy());
+  }
+  if (nb::isinstance<mlir::QuakeProgram>(program)) {
+    auto& value = nb::cast<mlir::QuakeProgram&>(program);
     return inplace ? mlir::CompilerInput(std::move(value))
                    : mlir::CompilerInput(value.copy());
   }
@@ -275,7 +286,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .value("QIR_BASE", mlir::ProgramFormat::QIRBase,
              "QIR for the Base Profile.")
       .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
-             "QIR for the Adaptive Profile.");
+             "QIR for the Adaptive Profile.")
+      .value("QUAKE", mlir::ProgramFormat::Quake,
+             "CUDA-Q reference-form Quake after the optimized QCO round trip.");
 
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
       m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
@@ -534,6 +547,33 @@ Programs own their MLIR module. Conversions can consume a program; use
           },
           "Return the textual MLIR representation of this program.");
 
+  // NOLINTNEXTLINE(readability-isolate-declaration,readability-identifier-naming)
+  auto quakeProgram = nb::class_<mlir::QuakeProgram, mlir::Program>(
+      m, "QuakeProgram", R"pb(A CUDA-Q reference-form Quake program.
+
+The program contains textual-schema-compatible Quake without linking CUDA-Q.)pb");
+  quakeProgram
+      .def_static(
+          "from_mlir_str",
+          &OptionalFunctionAdapter<&mlir::QuakeProgram::fromMLIRString>::call,
+          "source"_a, "Parse a textual Quake MLIR source string.")
+      .def_static(
+          "from_mlir_file",
+          &OptionalFunctionAdapter<&mlir::QuakeProgram::fromMLIRFile>::call,
+          "path"_a, "Parse textual Quake MLIR from a file.")
+      .def("copy", &mlir::QuakeProgram::copy,
+           "Return an independent copy of this program.")
+      .def(
+          "to_qc",
+          [](mlir::QuakeProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            return takeResult(std::move(source).intoQC());
+          },
+          nb::kw_only(), "copy"_a = false,
+          R"pb(Translate this reference-form Quake program to QC.
+
+Set ``copy=True`` to preserve it.)pb");
+
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
 
@@ -595,6 +635,22 @@ before conversion to QCO.)pb");
           R"pb(Convert this program to QCO.
 
 Set ``copy=True`` to preserve it.)pb")
+      .def(
+          "to_quake",
+          [](mlir::QCProgram& value, const std::string& name,
+             const bool ignoreGlobalPhase, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            mlir::QuakeExportOptions options;
+            options.entryPointName = name;
+            options.ignoreGlobalPhase = ignoreGlobalPhase;
+            return takeResult(std::move(source).intoQuake(options));
+          },
+          nb::kw_only(), "name"_a = "mqt_kernel",
+          "ignore_global_phase"_a = false, "copy"_a = false,
+          R"pb(Translate this QC program to CUDA-Q reference-form Quake.
+
+Set ``ignore_global_phase=True`` to explicitly drop a nonzero global phase and
+``copy=True`` to preserve this program.)pb")
       .def(
           "to_qir",
           [](mlir::QCProgram& value, const mlir::QIRProfile profile,

@@ -194,6 +194,39 @@ jobs:
       setup-mlir: true
       llvm-version: 22.1.7
 
+  cudaq-smoke:
+    name: 🐍 CUDA-Q smoke (${{ matrix.runs-on }})
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ubuntu-24.04, macos-26]
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Free up space
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/lib/android/sdk || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/share/swift || true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up MLIR
+        uses: munich-quantum-software/setup-mlir@fc08baf0a172e98008e6528d465de3b5dd99bc68 # v1.4.1
+        with:
+          llvm-version: 22.1.7
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+      - name: Exercise both textual interoperability directions
+        run: uvx nox --non-interactive -s cudaq
+
   python-coverage:
     name: 🐍 Coverage
     needs: [change-detection, python-tests]
@@ -273,6 +306,7 @@ jobs:
       - cpp-coverage
       - cpp-linter
       - python-tests
+      - cudaq-smoke
       - python-tests-extensive
       - python-linter
       - build-sdist
@@ -301,7 +335,7 @@ jobs:
             }}
             ${{
               !fromJSON(needs.change-detection.outputs.run-python-tests)
-              && 'python-tests,python-coverage,' || ''
+              && 'python-tests,python-coverage,cudaq-smoke,' || ''
             }}
             ${{
               (!fromJSON(needs.change-detection.outputs.run-python-tests) || !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci') || github.event_name != 'pull_request')

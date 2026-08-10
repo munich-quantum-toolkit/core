@@ -5,10 +5,3 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
-
-add_subdirectory(QCO)
-add_subdirectory(QIR)
-add_subdirectory(QC)
-add_subdirectory(QTensor)
-add_subdirectory(CUDAQuake)
-add_subdirectory(Utils)
