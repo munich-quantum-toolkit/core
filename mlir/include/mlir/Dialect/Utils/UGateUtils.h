@@ -1,8 +1,11 @@
 /*
- * Copyright (c) 2026 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
  */
 
 #pragma once
@@ -46,9 +49,10 @@ powerUParameters(const double theta, const double phi, const double lambda,
   using Complex = std::complex<double>;
   using Matrix = std::array<Complex, 4>;
   const auto multiply = [](const Matrix& lhs, const Matrix& rhs) {
-    return Matrix{
-        (lhs[0] * rhs[0]) + (lhs[1] * rhs[2]), (lhs[0] * rhs[1]) + (lhs[1] * rhs[3]),
-        (lhs[2] * rhs[0]) + (lhs[3] * rhs[2]), (lhs[2] * rhs[1]) + (lhs[3] * rhs[3])};
+    return Matrix{(lhs[0] * rhs[0]) + (lhs[1] * rhs[2]),
+                  (lhs[0] * rhs[1]) + (lhs[1] * rhs[3]),
+                  (lhs[2] * rhs[0]) + (lhs[3] * rhs[2]),
+                  (lhs[2] * rhs[1]) + (lhs[3] * rhs[3])};
   };
 
   const double halfTheta = theta / 2.0;
