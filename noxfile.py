@@ -80,6 +80,10 @@ def _run_tests(
         "build",
         "--only-group",
         "test",
+        # Keep the external runner out of wheel smoke-test environments whose
+        # manylinux baseline predates the runner's available Linux wheels.
+        "--only-group",
+        "qirrunner",
         *install_args,
         env=env,
     )

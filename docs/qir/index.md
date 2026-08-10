@@ -50,6 +50,39 @@ runner also supports repeated, reproducible execution:
   --entry-point=bell_entry --shots=1024 --seed=7 bell.ll
 ```
 
+### Executing Generated QIR from Python
+
+The optional [qirrunner](https://github.com/qir-alliance/qir-runner) package can
+execute statically allocated Base Profile bitcode without an intermediate file.
+Install it separately with `python -m pip install qirrunner`, then pass the
+result of {py:meth}`~mqt.core.mlir.QIRProgram.to_bitcode` to `run_bytes`:
+
+```python
+from qirrunner import OutputHandler, run_bytes
+
+from mqt.core.mlir import OutputFormat, compile_program
+
+bell_qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+ctrl @ x q[0], q[1];
+bit[2] c = measure q;
+"""
+
+qir = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)
+output = OutputHandler()
+run_bytes(qir.to_bitcode(), shots=1024, rng_seed=7, output_fn=output.handle)
+print(output.get_output())
+```
+
+This path is tested for Base Profile programs with static qubit and result
+allocation, including dedicated one- and two-control QIS functions and the
+generic QIR controlled specialization used for three or more controls.
+`qirrunner` does not currently implement every QIR 2.1 dynamic resource
+management function supported by the MQT runner and DDSIM QDMI device; use those
+MQT runtimes for dynamically allocated programs.
+
 QIR entry points take no arguments and return an `i64` exit code. Runtime and
 QIS declarations are checked before JIT compilation; a mismatched or unsupported
 declaration is reported with its actual and accepted LLVM function types.

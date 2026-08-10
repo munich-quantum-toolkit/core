@@ -345,6 +345,9 @@ docs = [
   "sphinx>=9.0; python_version >= '3.11'",
   "mlir-pygments>=1.0.0",
 ]
+qirrunner = [
+  "qirrunner==0.9.6",
+]
 test = [
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
