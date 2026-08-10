@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseSet.h>
@@ -24,15 +25,11 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cstdint>
-#include <stdexcept>
 #include <utility>
 
 namespace mlir::qco {
@@ -48,9 +45,11 @@ namespace mlir::qco {
  * compile time.
  *
  * @param alloc The allocation whose release point is searched.
+ * @param callMapping Resolves how qubits flow across call boundaries.
  * @return The `qco.sink` releasing the qubit, or a null op if there is none.
  */
-static SinkOp findDeallocForAlloc(AllocOp alloc) {
+static SinkOp findDeallocForAlloc(AllocOp alloc,
+                                  CallQubitMapping& callMapping) {
   Value currentValue = alloc.getResult();
   uint64_t currentIndexInTensor = 0;
   bool isInTensor = false;
@@ -108,17 +107,14 @@ static SinkOp findDeallocForAlloc(AllocOp alloc) {
       currentValue = resetOp.getQubitOut();
       continue;
     }
-    if (isa<func::CallOp>(user)) {
-      // Relies on the QCO calling convention that the i-th qubit result of a
-      // call corresponds to its i-th qubit operand.
-      // TODO-Damian this only works if the indices are the same. Implement a
-      // helper function to get the index
-      for (auto i = 0ULL; i < user->getNumOperands(); i++) {
-        if (user->getOperand(i) == currentValue) {
-          currentValue = user->getResult(i);
-          break;
-        }
+    if (auto callOp = dyn_cast<func::CallOp>(user)) {
+      const auto threaded =
+          callMapping.getResultForOperand(callOp, currentValue);
+      if (!threaded) {
+        // The callee keeps the qubit, so it is never released here.
+        return nullptr;
       }
+      currentValue = threaded;
       continue;
     }
     if (auto fromElementsOp = dyn_cast<qtensor::FromElementsOp>(user)) {
@@ -207,8 +203,10 @@ static bool isRecursive(CallGraph& cg, func::FuncOp func) {
  * known state.
  *
  * @param funcOp The function to transform.
+ * @param callMapping Resolves how qubits flow across call boundaries.
  */
-static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
+static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
+                                      CallQubitMapping& callMapping) {
   // Collect the allocations up front: the loop below erases operations, which
   // would invalidate a walk in progress.
   SmallVector<AllocOp> allocOps;
@@ -221,7 +219,7 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
   });
 
   for (auto allocOp : allocOps) {
-    auto dealloc = findDeallocForAlloc(allocOp);
+    auto dealloc = findDeallocForAlloc(allocOp, callMapping);
 
     if (!dealloc) {
       // No matching dealloc found, skip.
@@ -317,6 +315,8 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp) {
 void runAuxiliaryQubitHoisting(ModuleOp moduleOp) {
   SmallVector<func::FuncOp> hoistingCandidates;
   CallGraph callGraph(moduleOp);
+  // One shared mapping so that each callee is threaded at most once.
+  CallQubitMapping callMapping;
 
   moduleOp.walk([&](func::FuncOp func) {
     if (func.isPublic() || func.isDeclaration()) {
@@ -329,7 +329,7 @@ void runAuxiliaryQubitHoisting(ModuleOp moduleOp) {
   });
 
   for (auto& func : hoistingCandidates) {
-    tryAuxiliaryQubitHoisting(func);
+    tryAuxiliaryQubitHoisting(func, callMapping);
   }
 }
 

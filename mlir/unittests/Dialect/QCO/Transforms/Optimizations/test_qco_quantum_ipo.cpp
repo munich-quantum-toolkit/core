@@ -303,6 +303,103 @@ TEST_F(QCOQuantumIPOTest, reuseZeroSpecializationAcrossCallSites) {
   expectModuleMatchesReference();
 }
 
+/**
+ * @brief A run of operations that all leave |0> alone is dropped in one go.
+ */
+TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsNoOpRun) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {qubitType}, {qubitType});
+  programBuilder.endFunction(
+      {programBuilder.t(programBuilder.s(programBuilder.z(args[0])))});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("f", {q});
+  programBuilder.sink(results[0]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
+  referenceBuilder.endFunction(
+      {referenceBuilder.t(referenceBuilder.s(referenceBuilder.z(refArgs[0])))});
+  auto specArgs = referenceBuilder.startFunction("f_spec_zero_arg_0",
+                                                 {qubitType}, {qubitType});
+  referenceBuilder.endFunction({specArgs[0]});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("f_spec_zero_arg_0", {refQ});
+  referenceBuilder.sink(refResults[0]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief A phase gate fixes |0> for any angle and is dropped even when the
+ * angle is only known at run time.
+ */
+TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsPhaseGate) {
+  const auto qubitType = programBuilder.getQubitType();
+  const auto floatType = programBuilder.getF64Type();
+
+  programBuilder.initialize();
+  auto args =
+      programBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
+  programBuilder.endFunction({programBuilder.p(args[1], args[0])});
+
+  auto q = programBuilder.allocQubit();
+  // An angle outside the specialized set, so only the |0> specialization fires.
+  auto angle = programBuilder.floatConstant(0.7);
+  auto results = programBuilder.call("f", {q, angle});
+  programBuilder.sink(results[0]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  auto refArgs =
+      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
+  referenceBuilder.endFunction({referenceBuilder.p(refArgs[1], refArgs[0])});
+  // The angle stays in the signature, it is simply no longer read.
+  auto specArgs = referenceBuilder.startFunction(
+      "f_spec_zero_arg_0", {qubitType, floatType}, {qubitType});
+  referenceBuilder.endFunction({specArgs[0]});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refAngle = referenceBuilder.floatConstant(0.7);
+  auto refResults =
+      referenceBuilder.call("f_spec_zero_arg_0", {refQ, refAngle});
+  referenceBuilder.sink(refResults[0]);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief A z-rotation must not be dropped: it maps |0> to a phase multiple of
+ * itself, so removing it would change the global phase of the program.
+ */
+TEST_F(QCOQuantumIPOTest, noZeroSpecializationForZRotation) {
+  const auto qubitType = programBuilder.getQubitType();
+  const auto floatType = programBuilder.getF64Type();
+
+  const auto buildProgram = [&](QCOProgramBuilder& b) {
+    b.initialize();
+    auto args = b.startFunction("f", {qubitType, floatType}, {qubitType});
+    b.endFunction({b.rz(args[1], args[0])});
+
+    auto q = b.allocQubit();
+    auto results = b.call("f", {q, b.floatConstant(0.7)});
+    b.sink(results[0]);
+  };
+
+  buildProgram(programBuilder);
+  moduleOp = programBuilder.finalize();
+  buildProgram(referenceBuilder);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
 // ==========================================================================
 // Context-sensitive specialization for arguments in the |+> state.
 // ==========================================================================
@@ -1442,6 +1539,89 @@ TEST_F(QCOQuantumIPOTest, callConsumesAndProducesLinearValues) {
     b.call("consume", {q, scratch});
     auto produced = b.call("produce", {});
     b.qtensorDealloc(produced[0]);
+  };
+
+  buildProgram(programBuilder);
+  moduleOp = programBuilder.finalize();
+  buildProgram(referenceBuilder);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief The auxiliary qubit is tracked across a call whose callee also returns
+ * a classical value ahead of the qubit.
+ */
+TEST_F(QCOQuantumIPOTest, hoistAuxiliaryQubitThroughCallWithClassicalResult) {
+  const auto qubitType = programBuilder.getQubitType();
+  const auto bitType = programBuilder.getI1Type();
+
+  const auto buildCallee = [&](QCOProgramBuilder& b) {
+    auto innerArgs = b.startFunction("g", {qubitType}, {bitType, qubitType});
+    auto [inner, bit] = b.measure(innerArgs[0]);
+    b.endFunction({bit, inner});
+  };
+
+  programBuilder.initialize({bitType});
+  buildCallee(programBuilder);
+
+  auto args =
+      programBuilder.startFunction("f", {qubitType}, {qubitType, bitType});
+  auto nested = programBuilder.call("g", {programBuilder.allocQubit()});
+  auto aux = nested[1];
+  auto target = args[0];
+  std::tie(aux, target) = programBuilder.cx(aux, target);
+  programBuilder.sink(aux);
+  programBuilder.endFunction({target, nested[0]});
+
+  auto q = programBuilder.allocQubit();
+  auto results = programBuilder.call("f", {q});
+  programBuilder.sink(results[0]);
+  moduleOp = programBuilder.finalize({results[1]});
+
+  referenceBuilder.initialize({bitType});
+  buildCallee(referenceBuilder);
+
+  auto refArgs = referenceBuilder.startFunction(
+      "f", {qubitType, qubitType}, {qubitType, bitType, qubitType});
+  auto refNested = referenceBuilder.call("g", {refArgs[1]});
+  auto refAux = refNested[1];
+  auto refTarget = refArgs[0];
+  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
+  refAux = referenceBuilder.reset(refAux);
+  referenceBuilder.endFunction({refTarget, refNested[0], refAux});
+
+  auto refQ = referenceBuilder.allocQubit();
+  auto refAuxAlloc = referenceBuilder.allocQubit();
+  auto refResults = referenceBuilder.call("f", {refQ, refAuxAlloc});
+  referenceBuilder.sink(refResults[0]);
+  referenceBuilder.sink(refResults[2]);
+  reference = referenceBuilder.finalize({refResults[1]});
+
+  expectModuleMatchesReference();
+}
+
+/**
+ * @brief A qubit handed to a callee that keeps it is not auxiliary, so it is
+ * left alone rather than indexed past the end of the call's results.
+ */
+TEST_F(QCOQuantumIPOTest, noHoistingWhenCalleeKeepsAuxiliaryQubit) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  const auto buildProgram = [&](QCOProgramBuilder& b) {
+    b.initialize();
+    auto consumeArgs = b.startFunction("consume", {qubitType}, {});
+    b.sink(consumeArgs[0]);
+    b.endFunction({});
+
+    auto args = b.startFunction("f", {qubitType}, {qubitType});
+    b.call("consume", {b.allocQubit()});
+    b.endFunction({b.h(args[0])});
+
+    auto q = b.allocQubit();
+    auto results = b.call("f", {q});
+    b.sink(results[0]);
   };
 
   buildProgram(programBuilder);

@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 // IWYU pragma: end_keep
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -192,6 +193,17 @@ struct ContextSensitiveSpecializationPattern final
   /**
    * @brief Check whether an operation leaves a qubit in the |0> state alone.
    *
+   * @details
+   * Only operations that fix |0> *exactly* qualify. That covers a controlled
+   * operation whose control is the |0> qubit, a reset, and the diagonal gates
+   * whose first diagonal entry is one: `id`, `z`, `s`, `sdg`, `t`, `tdg`, and
+   * `p` for any angle, since `p = diag(1, exp(i * theta))`.
+   *
+   * `rz` is deliberately excluded: `rz = diag(exp(-i * theta / 2),
+   * exp(i * theta / 2))` maps |0> to a phase multiple of itself, so removing it
+   * would silently change the global phase of the program. Admitting it would
+   * require emitting a compensating `qco.gphase`.
+   *
    * @param op The operation applied to the argument.
    * @param zeroArgument The argument known to be in the |0> state.
    * @return True if @p op has no effect given that state.
@@ -200,7 +212,7 @@ struct ContextSensitiveSpecializationPattern final
     if (auto ctrl = dyn_cast<CtrlOp>(op)) {
       return llvm::is_contained(ctrl.getControlsIn(), zeroArgument);
     }
-    return isa<ZOp>(op) || isa<SOp>(op) || isa<ResetOp>(op); // TODO more ops?
+    return isa<IdOp, ZOp, SOp, SdgOp, TOp, TdgOp, POp, ResetOp>(op);
   }
 
   /**
@@ -313,8 +325,11 @@ struct ContextSensitiveSpecializationPattern final
     symbolTable.insert(newFunc);
     previousSpecializations.zeroSpecializations.insert({key, newFunc});
 
+    // Drop the whole run of operations that leave the |0> state alone, not just
+    // the first one. Every iteration erases an operation, so this terminates.
     auto newParameter = newFunc.getArgument(operand);
-    if (newParameter.hasOneUse() &&
+    while (
+        newParameter.hasOneUse() &&
         operationIsNopOnZero(*newParameter.getUsers().begin(), newParameter)) {
       auto* newUser = *newParameter.getUsers().begin();
 
@@ -324,15 +339,23 @@ struct ContextSensitiveSpecializationPattern final
         rewriter.replaceAllUsesWith(resetOp.getQubitOut(),
                                     resetOp.getQubitIn());
         rewriter.eraseOp(resetOp);
-      } else if (auto unitaryOp = dyn_cast<UnitaryOpInterface>(newUser)) {
-        for (auto i = 0U; i < unitaryOp.getNumQubits(); ++i) {
-          // TODO-DAMIAN use getOutputQubit/Input again (at current version,
-          // this seems to use the output of the inner op)
-          rewriter.replaceAllUsesWith(unitaryOp->getResult(i),
-                                      unitaryOp->getOperand(i));
-        }
-        rewriter.eraseOp(unitaryOp);
+        continue;
       }
+
+      auto unitaryOp = dyn_cast<UnitaryOpInterface>(newUser);
+      if (!unitaryOp) {
+        break;
+      }
+      // Use the qubit accessors rather than raw operand and result indices.
+      // The gates currently accepted above happen to list their qubits first,
+      // but the modifier operations do not: `qco.pow` takes its exponent as
+      // operand 0, so raw indexing would forward that exponent into a qubit
+      // result. The accessors skip parameters wherever they sit.
+      for (auto i = 0U; i < unitaryOp.getNumQubits(); ++i) {
+        rewriter.replaceAllUsesWith(unitaryOp.getOutputQubit(i),
+                                    unitaryOp.getInputQubit(i));
+      }
+      rewriter.eraseOp(unitaryOp);
     }
 
     updateSpecializedCall(callOp, newFunc, rewriter);

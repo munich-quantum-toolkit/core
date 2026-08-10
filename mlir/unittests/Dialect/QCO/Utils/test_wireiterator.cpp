@@ -232,3 +232,180 @@ INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),
                          [](const ::testing::TestParamInfo<bool>& info) {
                            return info.param ? "Dynamic" : "Static";
                          });
+
+/**
+ * @brief A wire continues through a call that threads the qubit, even when the
+ * callee takes and returns classical values around it.
+ */
+TEST_F(WireIteratorTest, TraversalThroughThreadingCall) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto qubitType = builder.getQubitType();
+  const auto floatType = builder.getF64Type();
+  const auto bitType = builder.getI1Type();
+
+  // The qubit is operand 0 but result 1, so pairing by raw index would pick the
+  // classical result instead.
+  const auto args =
+      builder.startFunction("g", {qubitType, floatType}, {bitType, qubitType});
+  auto [inner, innerBit] = builder.measure(args[0]);
+  builder.endFunction({innerBit, inner});
+
+  const auto q0 = builder.allocQubit();
+  const auto q1 = builder.h(q0);
+  const auto results = builder.call("g", {q1, builder.floatConstant(0.5)});
+  const auto q2 = results[1];
+  builder.sink(q2);
+  [[maybe_unused]] auto module = builder.finalize({results[0]});
+
+  qco::WireIterator it(q0);
+  ASSERT_EQ(it.qubit(), q0); // qco.alloc
+  ASSERT_TRUE(it.atWireStart());
+
+  ++it;
+  ASSERT_EQ(it.operation(), q1.getDefiningOp()); // qco.h
+  ASSERT_EQ(it.qubit(), q1);
+
+  ++it;
+  ASSERT_EQ(it.operation(), q2.getDefiningOp()); // func.call
+  ASSERT_EQ(it.qubit(), q2);
+
+  // And back again.
+  --it;
+  ASSERT_EQ(it.operation(), q1.getDefiningOp());
+  ASSERT_EQ(it.qubit(), q1);
+
+  --it;
+  ASSERT_EQ(it.operation(), q0.getDefiningOp());
+  ASSERT_EQ(it.qubit(), q0);
+  ASSERT_TRUE(it.atWireStart());
+}
+
+/**
+ * @brief A wire ends at a call whose callee keeps the qubit.
+ */
+TEST_F(WireIteratorTest, TraversalIntoConsumingCall) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto qubitType = builder.getQubitType();
+  const auto args = builder.startFunction("consume", {qubitType}, {});
+  builder.sink(args[0]);
+  builder.endFunction({});
+
+  const auto q0 = builder.allocQubit();
+  const auto q1 = builder.h(q0);
+  builder.call("consume", {q1});
+  [[maybe_unused]] auto module = builder.finalize();
+
+  qco::WireIterator it(q0);
+  ++it;
+  ASSERT_EQ(it.qubit(), q1); // qco.h
+
+  ++it;
+  // The call is the last operation on the wire.
+  ASSERT_TRUE(isa<func::CallOp>(it.operation()));
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+}
+
+/**
+ * @brief A wire starts at a call whose callee creates the qubit, so backward
+ * traversal stops there instead of spinning.
+ */
+TEST_F(WireIteratorTest, TraversalFromProducingCall) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto qubitType = builder.getQubitType();
+  builder.startFunction("produce", {}, {qubitType});
+  builder.endFunction({builder.allocQubit()});
+
+  const auto results = builder.call("produce", {});
+  const auto q0 = results[0];
+  const auto q1 = builder.h(q0);
+  builder.sink(q1);
+  [[maybe_unused]] auto module = builder.finalize();
+
+  qco::WireIterator it(q1);
+  ASSERT_EQ(it.operation(), q1.getDefiningOp()); // qco.h
+  ASSERT_FALSE(it.atWireStart());
+
+  --it;
+  ASSERT_EQ(it.operation(), q0.getDefiningOp()); // func.call
+  ASSERT_EQ(it.qubit(), q0);
+  ASSERT_TRUE(it.atWireStart());
+
+  // Going further back must not move the iterator.
+  --it;
+  ASSERT_EQ(it.operation(), q0.getDefiningOp());
+  ASSERT_EQ(it.qubit(), q0);
+}
+
+/**
+ * @brief A callee may hand its qubits back in a different order than it takes
+ * them; the wire follows the qubit, not its position.
+ */
+TEST_F(WireIteratorTest, TraversalThroughReorderingCall) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto qubitType = builder.getQubitType();
+  // `@relabel` returns its arguments swapped, so argument 0 leaves through
+  // result 1. Pairing by position would follow the wrong wire here.
+  const auto args = builder.startFunction("relabel", {qubitType, qubitType},
+                                          {qubitType, qubitType});
+  builder.endFunction({args[1], args[0]});
+
+  const auto q0 = builder.allocQubit();
+  const auto q1 = builder.allocQubit();
+  const auto results = builder.call("relabel", {q0, q1});
+  builder.sink(results[0]);
+  builder.sink(results[1]);
+  [[maybe_unused]] auto module = builder.finalize();
+
+  qco::CallQubitMapping mapping;
+
+  qco::WireIterator it(q0, &mapping);
+  ++it;
+  ASSERT_TRUE(isa<func::CallOp>(it.operation()));
+  ASSERT_EQ(it.qubit(), results[1]); // not results[0]
+
+  --it;
+  ASSERT_EQ(it.qubit(), q0);
+
+  // The other argument leaves through the first result.
+  qco::WireIterator other(q1, &mapping);
+  ++other;
+  ASSERT_EQ(other.qubit(), results[0]);
+}
+
+/**
+ * @brief Threading a recursive callee terminates instead of descending into
+ * itself forever.
+ */
+TEST_F(WireIteratorTest, TraversalThroughRecursiveCall) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto qubitType = builder.getQubitType();
+  const auto args = builder.startFunction("rec", {qubitType}, {qubitType});
+  const auto inner = builder.h(args[0]);
+  builder.endFunction({builder.call("rec", {inner})[0]});
+
+  const auto q0 = builder.allocQubit();
+  const auto results = builder.call("rec", {q0});
+  builder.sink(results[0]);
+  [[maybe_unused]] auto module = builder.finalize();
+
+  qco::CallQubitMapping mapping;
+  qco::WireIterator it(q0, &mapping);
+  ++it;
+  ASSERT_TRUE(isa<func::CallOp>(it.operation()));
+  ASSERT_EQ(it.qubit(), results[0]);
+
+  ++it;
+  ASSERT_TRUE(isa<qco::SinkOp>(it.operation()));
+}
