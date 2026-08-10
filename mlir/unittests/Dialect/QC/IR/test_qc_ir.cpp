@@ -398,7 +398,7 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::Reset,
       ForbiddenModifierBodyOp::Load,    ForbiddenModifierBodyOp::Store};
 
-  for (const auto modifier : modifiers) {
+  for (auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
       SCOPED_TRACE(testing::Message()
                    << "modifier=" << modifierName(modifier).str()
@@ -1543,11 +1543,15 @@ static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
 static void
 expectUnrollsTo(MLIRContext* context,
                 const function_ref<Value(QCProgramBuilder&)> program,
-                const function_ref<Value(QCProgramBuilder&)> reference) {
+                const function_ref<Value(QCProgramBuilder&)> reference,
+                void (*checkStructure)(ModuleOp) = nullptr) {
   auto moduleOp = QCProgramBuilder::build(context, program);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(runUnrollModifiers(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  if (checkStructure != nullptr) {
+    checkStructure(*moduleOp);
+  }
   ASSERT_TRUE(succeeded(runQCCleanupPipeline(moduleOp.get())));
 
   auto referenceOp = QCProgramBuilder::build(context, reference);
@@ -1556,6 +1560,55 @@ expectUnrollsTo(MLIRContext* context,
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(moduleOp.get(), referenceOp.get()));
+}
+
+static void checkCtrlTwoStructure(ModuleOp moduleOp) {
+  SmallVector<CtrlOp> modifiers;
+  moduleOp.walk([&](CtrlOp op) { modifiers.push_back(op); });
+  ASSERT_EQ(modifiers.size(), 2);
+  EXPECT_EQ(modifiers[0].getNumTargets(), 1);
+  EXPECT_EQ(modifiers[1].getNumTargets(), 2);
+  EXPECT_EQ(modifiers[0].getNumBodyUnitaries(), 1);
+  EXPECT_EQ(modifiers[1].getNumBodyUnitaries(), 1);
+}
+
+static void checkCtrlThreeStructure(ModuleOp moduleOp) {
+  SmallVector<CtrlOp> modifiers;
+  moduleOp.walk([&](CtrlOp op) { modifiers.push_back(op); });
+  ASSERT_EQ(modifiers.size(), 3);
+  EXPECT_EQ(modifiers[0].getNumTargets(), 1);
+  EXPECT_EQ(modifiers[1].getNumTargets(), 2);
+  EXPECT_EQ(modifiers[2].getNumTargets(), 1);
+}
+
+static void checkInvStructure(ModuleOp moduleOp) {
+  SmallVector<InvOp> modifiers;
+  moduleOp.walk([&](InvOp op) { modifiers.push_back(op); });
+  ASSERT_EQ(modifiers.size(), 2);
+  ASSERT_EQ(modifiers[0].getNumBodyUnitaries(), 1);
+  ASSERT_EQ(modifiers[1].getNumBodyUnitaries(), 1);
+  EXPECT_TRUE(isa<RXXOp>(modifiers[0].getBodyUnitary(0).getOperation()));
+  EXPECT_TRUE(isa<XOp>(modifiers[1].getBodyUnitary(0).getOperation()));
+  EXPECT_EQ(modifiers[0].getNumQubits(), 2);
+  EXPECT_EQ(modifiers[1].getNumQubits(), 1);
+}
+
+static void checkSplitPowStructure(ModuleOp moduleOp) {
+  SmallVector<PowOp> modifiers;
+  moduleOp.walk([&](PowOp op) { modifiers.push_back(op); });
+  ASSERT_EQ(modifiers.size(), 2);
+  for (auto modifier : modifiers) {
+    EXPECT_EQ(modifier.getNumQubits(), 1);
+    EXPECT_EQ(modifier.getNumBodyUnitaries(), 1);
+  }
+}
+
+static void checkPreservedPowStructure(ModuleOp moduleOp) {
+  SmallVector<PowOp> modifiers;
+  moduleOp.walk([&](PowOp op) { modifiers.push_back(op); });
+  ASSERT_EQ(modifiers.size(), 1);
+  EXPECT_EQ(modifiers[0].getNumQubits(), 2);
+  EXPECT_EQ(modifiers[0].getNumBodyUnitaries(), 2);
 }
 
 /// Reference for `ctrlTwo` after unrolling.
@@ -1636,15 +1689,17 @@ static Value powTwoDisjointUnrolled(QCProgramBuilder& b) {
 }
 
 TEST_F(QCTest, UnrollModifiersSplitsCtrl) {
-  expectUnrollsTo(context.get(), ctrlTwo, ctrlTwoUnrolled);
+  expectUnrollsTo(context.get(), ctrlTwo, ctrlTwoUnrolled,
+                  checkCtrlTwoStructure);
 }
 
 TEST_F(QCTest, UnrollModifiersSplitsCtrlWithReorderedTargets) {
-  expectUnrollsTo(context.get(), ctrlThree, ctrlThreeUnrolled);
+  expectUnrollsTo(context.get(), ctrlThree, ctrlThreeUnrolled,
+                  checkCtrlThreeStructure);
 }
 
 TEST_F(QCTest, UnrollModifiersReversesInv) {
-  expectUnrollsTo(context.get(), invTwo, invTwoUnrolled);
+  expectUnrollsTo(context.get(), invTwo, invTwoUnrolled, checkInvStructure);
 }
 
 TEST_F(QCTest, UnrollModifiersUnrollsNestedModifiers) {
@@ -1656,14 +1711,16 @@ TEST_F(QCTest, UnrollModifiersUnrollsNestedModifiersAndTrailingOperation) {
 }
 
 TEST_F(QCTest, UnrollModifiersSplitsDisjointPow) {
-  expectUnrollsTo(context.get(), powTwoDisjoint, powTwoDisjointUnrolled);
+  expectUnrollsTo(context.get(), powTwoDisjoint, powTwoDisjointUnrolled,
+                  checkSplitPowStructure);
 }
 
 TEST_F(QCTest, UnrollModifiersLeavesOverlappingPowUntouched) {
-  expectUnrollsTo(context.get(), powTwo, powTwo);
+  expectUnrollsTo(context.get(), powTwo, powTwo, checkPreservedPowStructure);
 }
 
 TEST_F(QCTest, UnrollModifiersLeavesNonIntegerPowUntouched) {
-  expectUnrollsTo(context.get(), powHalfDisjoint, powHalfDisjoint);
+  expectUnrollsTo(context.get(), powHalfDisjoint, powHalfDisjoint,
+                  checkPreservedPowStructure);
 }
 /// @}
