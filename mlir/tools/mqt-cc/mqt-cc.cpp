@@ -17,7 +17,7 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompatOps.h"
+#include "mlir/Dialect/CUDAQuake/IR/CUDAQuakeCompat.h"
 #include "mlir/Dialect/CUDAQuake/Translation/QuakeQCTranslation.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
