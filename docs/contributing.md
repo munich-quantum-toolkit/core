@@ -593,36 +593,6 @@ The docs can then be found in the {code}`docs/_build` directory.
 
 :::
 
-## Adopting a Qiskit C-API minor
-
-The MLIR compiler bridge vendors Qiskit's experimental C-API headers per
-supported minor. Start an adoption from a clean worktree and name an exact final
-release:
-
-```console
-nox -s qiskit_c_api_adopt -- 2.6.0
-```
-
-The session selects and downloads the official wheel for its interpreter,
-verifies the PyPI SHA-256, installs it into the isolated nox environment, and
-copies only its C headers and Apache-2.0 license. It records the wheel URL,
-hash, version, and per-header hashes. A machine-readable API snapshot and a
-review report compare native declarations, extension-capsule slots and
-signatures, and public C types with the preceding vendored release.
-
-Before changing the shipping adapter registry, the session compiles a temporary
-exact-version candidate against the new headers and runs the focused bridge
-tests. Only after that succeeds does it generate the new minor's adapter
-translation unit, extend {code}`SupportedAdapters.inc`, rebuild the shipping
-binding, and rerun the tests. Every generated change remains in the worktree for
-human review. Any download, comparison, compilation, or test failure makes the
-session fail and must not be treated as a support declaration.
-
-The weekly {code}`qiskit` nox session follows the same non-shipping candidate
-path against Qiskit's main branch. It installs Qiskit before building MQT Core,
-obtains the include directory from {code}`qiskit.capi.get_include()`, and admits
-only that build's exact development version.
-
 ## Tips for Development
 
 If something goes wrong, the CI pipeline will notify you. Here are some tips for

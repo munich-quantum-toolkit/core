@@ -209,19 +209,21 @@ def surface_diff(previous: dict[str, Any], current: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_vendor_tree(version: str, wheel: Path, artifact: dict[str, Any]) -> Path:
-    """Copy the wheel's C headers and license and record exact provenance.
+def directory_contents(root: Path) -> dict[Path, bytes]:
+    """Read a directory as relative paths and exact file contents.
 
     Returns:
-        The new versioned vendor directory.
+        The directory's regular files, keyed by relative path.
+    """
+    return {path.relative_to(root): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+def populate_vendor_tree(target: Path, version: str, wheel: Path, artifact: dict[str, Any]) -> None:
+    """Populate a fresh directory from one exact wheel.
 
     Raises:
-        RuntimeError: If the target exists or the wheel lacks required files.
+        RuntimeError: If the wheel does not contain the required exact release files.
     """
-    target = VENDOR_ROOT / version
-    if target.exists():
-        msg = f"vendor directory already exists: {target}"
-        raise RuntimeError(msg)
     target.mkdir(parents=True)
     prefix = "qiskit/include/"
     hashes: dict[str, str] = {}
@@ -257,7 +259,7 @@ def write_vendor_tree(version: str, wheel: Path, artifact: dict[str, Any]) -> Pa
     surface = api_surface(target / "include")
     (target / "API_SURFACE.json").write_text(json.dumps(surface, indent=2, sort_keys=True) + "\n")
     previous_dirs = sorted(
-        (path for path in VENDOR_ROOT.iterdir() if path.is_dir() and path != target),
+        (path for path in VENDOR_ROOT.iterdir() if path.is_dir() and path.name != version),
         key=lambda path: Version(path.name),
     )
     if previous_dirs:
@@ -282,7 +284,29 @@ def write_vendor_tree(version: str, wheel: Path, artifact: dict[str, Any]) -> Pa
         "files": hashes,
     }
     (target / "PROVENANCE.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
-    return target
+
+
+def write_vendor_tree(version: str, wheel: Path, artifact: dict[str, Any]) -> Path:
+    """Create or verify the wheel's exact vendored C-API snapshot.
+
+    Returns:
+        The matching versioned vendor directory.
+
+    Raises:
+        RuntimeError: If an existing target differs or the wheel is incomplete.
+    """
+    target = VENDOR_ROOT / version
+    with tempfile.TemporaryDirectory(prefix="mqt-qiskit-vendor-") as temporary:
+        expected = Path(temporary) / version
+        populate_vendor_tree(expected, version, wheel, artifact)
+        if target.exists():
+            if directory_contents(target) != directory_contents(expected):
+                msg = f"existing vendor directory does not match the exact wheel: {target}"
+                raise RuntimeError(msg)
+            LOGGER.info("Reusing exact vendored Qiskit C-API snapshot: %s", target)
+            return target
+        shutil.copytree(expected, target)
+        return target
 
 
 def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: bool) -> None:
@@ -319,21 +343,13 @@ def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: b
     )
 
 
-def register_adapter(version: Version) -> None:
-    """Generate one reviewed-minor TU and extend the single adapter range.
-
-    Raises:
-        RuntimeError: If the minor or its translation unit already exists.
-    """
+def adapter_artifacts(version: Version) -> tuple[Path, str, str]:
+    """Return the generated adapter path, contents, and registration line."""
     major, minor, _ = version.release
     suffix = f"{major}{minor}"
     next_minor = minor + 1
     supported_range = f">={version},<{major}.{next_minor}.0"
     registration = f'MQT_QISKIT_ADAPTER({major}, {minor}, {suffix}, {version}, "{supported_range}")'
-    current = REGISTRY.read_text()
-    if re.search(rf"^MQT_QISKIT_ADAPTER\({major}, *{minor},", current, re.MULTILINE):
-        msg = f"Qiskit {major}.{minor} is already registered"
-        raise RuntimeError(msg)
     source = (
         ADAPTER_TEMPLATE
         .read_text()
@@ -344,12 +360,79 @@ def register_adapter(version: Version) -> None:
         .replace("@ADAPTER_EXACT_API@", "0")
         .replace("@ADAPTER_LABEL@", f"{major}.{minor}")
     )
-    destination = ADAPTER_TEMPLATE.with_name(f"Adapter{suffix}.cpp")
-    if destination.exists():
-        msg = f"adapter source already exists: {destination}"
+    return ADAPTER_TEMPLATE.with_name(f"Adapter{suffix}.cpp"), source, registration
+
+
+def register_adapter(version: Version) -> None:
+    """Create or verify one reviewed-minor TU and its registration.
+
+    Raises:
+        RuntimeError: If existing generated state is inconsistent.
+    """
+    major, minor, _ = version.release
+    destination, source, registration = adapter_artifacts(version)
+    current = REGISTRY.read_text()
+    existing = re.search(rf"^MQT_QISKIT_ADAPTER\({major}, *{minor},.*$", current, re.MULTILINE)
+    if existing is not None and existing.group(0) != registration:
+        msg = f"Qiskit {major}.{minor} has a conflicting adapter registration"
         raise RuntimeError(msg)
-    destination.write_text(source)
-    REGISTRY.write_text(current.rstrip() + "\n" + registration + "\n")
+    if destination.exists():
+        if destination.read_text() != source:
+            msg = f"existing adapter source is not the generated source: {destination}"
+            raise RuntimeError(msg)
+    else:
+        destination.write_text(source)
+    if existing is None:
+        REGISTRY.write_text(current.rstrip() + "\n" + registration + "\n")
+    else:
+        LOGGER.info("Reusing exact Qiskit %s.%s adapter registration", major, minor)
+
+
+def require_restartable_worktree(git: str, version: Version) -> None:
+    """Allow only exact artifacts from an interrupted run in the worktree.
+
+    Raises:
+        RuntimeError: If unrelated or inconsistent local changes are present.
+    """
+    status = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [git, "status", "--porcelain", "--untracked-files=all"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    dirty_paths = {line[3:] for line in status.stdout.splitlines() if len(line) > 3}
+    if not dirty_paths:
+        return
+
+    destination, source, registration = adapter_artifacts(version)
+    vendor_prefix = f"{(VENDOR_ROOT / str(version)).relative_to(ROOT).as_posix()}/"
+    exact_paths = {
+        destination.relative_to(ROOT).as_posix(),
+        REGISTRY.relative_to(ROOT).as_posix(),
+    }
+    unrelated = sorted(path for path in dirty_paths if path not in exact_paths and not path.startswith(vendor_prefix))
+    if unrelated:
+        msg = "Qiskit C-API adoption found unrelated worktree changes: " + ", ".join(unrelated)
+        raise RuntimeError(msg)
+    if destination.exists() and destination.read_text() != source:
+        msg = f"existing adapter source is not the generated source: {destination}"
+        raise RuntimeError(msg)
+    registry_path = REGISTRY.relative_to(ROOT).as_posix()
+    if registry_path not in dirty_paths:
+        return
+    head = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [git, "show", f"HEAD:{registry_path}"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    resumed = head.rstrip() + "\n" + registration + "\n"
+    if REGISTRY.read_text() not in {head, resumed}:
+        msg = "existing adapter registry contains changes unrelated to this adoption"
+        raise RuntimeError(msg)
+    LOGGER.info("Resuming Qiskit C-API adoption from exact generated artifacts")
 
 
 def main() -> None:
@@ -373,16 +456,7 @@ def main() -> None:
     if git is None:
         msg = "Qiskit C-API adoption requires Git on PATH"
         raise RuntimeError(msg)
-    status = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
-        [git, "status", "--porcelain"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if status.stdout:
-        msg = "Qiskit C-API adoption requires a clean worktree"
-        raise RuntimeError(msg)
+    require_restartable_worktree(git, parsed)
 
     with urllib.request.urlopen(f"https://pypi.org/pypi/qiskit/{parsed}/json") as response:
         release = json.load(response)
