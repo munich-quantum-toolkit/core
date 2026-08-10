@@ -50,8 +50,9 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
 }
 
 /**
- * @brief Checks if the given operation is a phase gate, i.e., it only
- * applies a phase to the target qubit(s) in the 1 state.
+ * @brief Checks if the given operation is an eligible single-target diagonal
+ * gate. RZ requires an additional phase correction when exchanging its target
+ * with a control.
  * @param op The operation to check
  * @return true if the operation is a phase gate, false otherwise
  */
@@ -278,14 +279,17 @@ buildMeasuredRZZReplacement(PatternRewriter& rewriter, Location loc,
 }
 
 /**
- * @brief Replace a controlled RZZ with one measured target by classical
- * control flow.
+ * @brief Replace a controlled RZZ with measured targets by classical control
+ * flow and phase corrections on the remaining quantum qubits.
  *
- * For the conjunction d of all controls, measured target a, and remaining
- * target b, the phase polynomial identity is
+ * For the conjunction d of the quantum controls, measured target a, and
+ * remaining target b, the phase polynomial identity is
  *
  * C^nRZZ(theta) = C^(n-1)P_d(-theta/2) C^nP_b(theta)
  *                   C_a[C^(n-1)P_d(theta) C^nP_b(-2 theta)].
+ * Measured controls guard the complete correction classically. If both targets
+ * are measured, only phase kickback on quantum controls remains; if there are
+ * no quantum controls, the operation can be removed.
  */
 static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
                                                  PatternRewriter& rewriter) {

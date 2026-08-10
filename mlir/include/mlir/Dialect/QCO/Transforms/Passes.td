@@ -288,15 +288,20 @@ def ReplaceClassicalControls
     replaces the `rz` with `p` and adds one (possibly controlled) phase
     correction; the other listed phase gates require no additional gate.
 
-    A controlled `rzz` with at least one control, exactly two targets, and
-    exactly one measured target is replaced by one `qco.if` and four `p` gates:
-    two before the conditional and two in its body. Thus, the rewrite replaces
-    one `rzz` with three additional gate operations. The specialized `rzz`
-    rewrite declines operations with no controls, a target count other than
-    two, or zero or multiple measured targets. A measured phase target is left
-    unchanged when no unmeasured control is available for the exchange. In all
-    such cases, the general measured-control rewrite may still apply when a
-    control itself has been measured.
+    A controlled `rzz` with exactly two targets and at least one measured target
+    is replaced by classical conditions and phase corrections. Measured
+    controls are combined into one outer condition, so only unmeasured controls
+    remain quantum. With one measured target, the other target receives the
+    corresponding phase correction; when no quantum controls remain, this
+    simplifies to `rz` and one conditional `rz`. With two measured targets,
+    only phase kickback on unmeasured controls remains. The operation is removed
+    entirely when all controls and both targets have been measured. The
+    specialized rewrite declines operations with no controls, a target count
+    other than two, or no measured target.
+
+    A measured phase target is left unchanged when no unmeasured control is
+    available for the exchange. In that case, the general measured-control
+    rewrite may still apply when a control itself has been measured.
 
     Replacing quantum controls with classical conditions reduces quantum
     interactions and can enable qubit reuse and subsequent optimizations.
