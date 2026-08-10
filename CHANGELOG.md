@@ -108,6 +108,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
+  terminal `irreversible` regions of Base-profile programs ([#2036])
+  ([**@burgholzer**])
 - 💥 Update the QIR runner for QIR 2.1 entry points and resource management,
   with entry-point selection and reproducible multi-shot execution ([#2035])
   ([**@burgholzer**])
@@ -732,6 +735,7 @@ for previous changelogs._
 
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036
 [#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
