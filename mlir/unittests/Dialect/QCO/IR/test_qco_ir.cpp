@@ -1136,6 +1136,60 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   EXPECT_TRUE(switchOp.verify().failed());
 }
 
+/// Checks which values a modifier forwards along its region edges.
+template <typename ModifierOp>
+static void checkModifierRegionEdges(ModifierOp op, ValueRange entryOperands,
+                                     ValueRange exitInputs) {
+  auto branch = cast<RegionBranchOpInterface>(op.getOperation());
+
+  SmallVector<RegionSuccessor> entrySuccessors;
+  branch.getSuccessorRegions(RegionBranchPoint::parent(), entrySuccessors);
+  ASSERT_EQ(entrySuccessors.size(), 1);
+  EXPECT_TRUE(
+      llvm::equal(branch.getEntrySuccessorOperands(entrySuccessors.front()),
+                  entryOperands));
+
+  SmallVector<RegionSuccessor> exitSuccessors;
+  branch.getSuccessorRegions(op.getRegion(), exitSuccessors);
+  ASSERT_EQ(exitSuccessors.size(), 1);
+  EXPECT_TRUE(exitSuccessors.front().isParent());
+  EXPECT_TRUE(
+      llvm::equal(exitSuccessors.front().getSuccessorInputs(), exitInputs));
+}
+
+TEST_F(QCOTest, ModifierRegionEdgesForwardTheirLinearValues) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto control = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  const auto [controlOut, ctrlTargetOut] = builder.ctrl(
+      control, target, [&](Value qubit) { return builder.x(qubit); });
+  const auto invOut =
+      builder.inv(ctrlTargetOut, [&](Value qubit) { return builder.s(qubit); });
+  const auto powOut =
+      builder.pow(2.0, invOut, [&](Value qubit) { return builder.x(qubit); });
+  builder.sink(controlOut);
+  builder.sink(powOut);
+
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  auto ctrlOp = ctrlTargetOut.getDefiningOp<CtrlOp>();
+  ASSERT_TRUE(ctrlOp);
+  auto invOp = invOut.getDefiningOp<InvOp>();
+  ASSERT_TRUE(invOp);
+  auto powOp = powOut.getDefiningOp<PowOp>();
+  ASSERT_TRUE(powOp);
+
+  // The controls bypass the body, so only the targets are threaded through it.
+  checkModifierRegionEdges(ctrlOp, ctrlOp.getTargetsIn(),
+                           ctrlOp.getTargetsOut());
+  checkModifierRegionEdges(invOp, invOp.getQubitsIn(), invOp.getQubitsOut());
+  checkModifierRegionEdges(powOp, powOp.getQubitsIn(), powOp.getQubitsOut());
+}
+
 /// \name QCO/SCF/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

@@ -16,6 +16,7 @@ include "mlir/Dialect/QC/IR/QCTypes.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/RegionKindInterface.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -916,7 +917,7 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOp<"yield", traits = [Terminator]> {
+def YieldOp : QCOp<"yield", traits = [Terminator, ReturnLike]> {
   let summary = "Yield from a modifier region";
   let description = [{
         Terminates a modifier region, yielding control back to the enclosing operation.
@@ -926,10 +927,14 @@ def YieldOp : QCOp<"yield", traits = [Terminator]> {
 }
 
 def CtrlOp
-    : QCOp<"ctrl",
-           traits = [UnitaryOpInterface, AttrSizedOperandSegments,
-                     SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
-                     RecursiveMemoryEffects]> {
+    : QCOp<
+          "ctrl",
+          traits = [UnitaryOpInterface, AttrSizedOperandSegments,
+                    DeclareOpInterfaceMethods<
+                        RegionBranchOpInterface, ["getEntrySuccessorOperands",
+                                                  "getRegionInvocationBounds"]>,
+                    SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                    RecursiveMemoryEffects]> {
   let summary = "Apply a control modifier to a collection of gates";
   let description = [{
         A modifier operation that adds control qubits to the gates defined in its body region.
@@ -992,10 +997,15 @@ def CtrlOp
   let hasVerifier = 1;
 }
 
-def InvOp : QCOp<"inv",
-                 traits = [UnitaryOpInterface,
-                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
-                           RecursiveMemoryEffects]> {
+def InvOp
+    : QCOp<
+          "inv",
+          traits = [UnitaryOpInterface,
+                    DeclareOpInterfaceMethods<
+                        RegionBranchOpInterface, ["getEntrySuccessorOperands",
+                                                  "getRegionInvocationBounds"]>,
+                    SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                    RecursiveMemoryEffects]> {
   let summary =
       "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
   let description = [{
@@ -1051,10 +1061,15 @@ def InvOp : QCOp<"inv",
   let hasVerifier = 1;
 }
 
-def PowOp : QCOp<"pow",
-                 traits = [UnitaryOpInterface,
-                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
-                           RecursiveMemoryEffects]> {
+def PowOp
+    : QCOp<
+          "pow",
+          traits = [UnitaryOpInterface,
+                    DeclareOpInterfaceMethods<
+                        RegionBranchOpInterface, ["getEntrySuccessorOperands",
+                                                  "getRegionInvocationBounds"]>,
+                    SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                    RecursiveMemoryEffects]> {
   let summary = "Apply a power modifier to a collection of gates";
   let description = [{
           A modifier operation that raises the gates defined in its body region to a given power.

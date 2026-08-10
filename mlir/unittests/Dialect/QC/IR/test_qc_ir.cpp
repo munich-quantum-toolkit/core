@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -35,6 +36,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
@@ -460,6 +462,51 @@ TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
   }
+}
+
+/// Checks which values a modifier forwards along its region edges.
+template <typename ModifierOp>
+static void checkModifierRegionEdges(ModifierOp op, ValueRange entryOperands) {
+  auto branch = cast<RegionBranchOpInterface>(op.getOperation());
+
+  SmallVector<RegionSuccessor> entrySuccessors;
+  branch.getSuccessorRegions(RegionBranchPoint::parent(), entrySuccessors);
+  ASSERT_EQ(entrySuccessors.size(), 1);
+  EXPECT_TRUE(
+      llvm::equal(branch.getEntrySuccessorOperands(entrySuccessors.front()),
+                  entryOperands));
+
+  // Requires `qc.yield` to be a region branch terminator; without that, the
+  // body would have no edge back to the operation at all.
+  SmallVector<RegionSuccessor> exitSuccessors;
+  branch.getSuccessorRegions(op.getRegion(), exitSuccessors);
+  ASSERT_EQ(exitSuccessors.size(), 1);
+  EXPECT_TRUE(exitSuccessors.front().isParent());
+  EXPECT_TRUE(exitSuccessors.front().getSuccessorInputs().empty());
+}
+
+TEST_F(QCTest, ModifierRegionEdgesForwardTheirQubits) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto control = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  auto ctrlOp = CtrlOp::create(builder, control, target, [&](Value qubit) {
+    XOp::create(builder, qubit);
+  });
+  auto invOp = InvOp::create(builder, target,
+                             [&](Value qubit) { SOp::create(builder, qubit); });
+  auto powOp = PowOp::create(builder, 2.0, target,
+                             [&](Value qubit) { XOp::create(builder, qubit); });
+
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  // The controls bypass the body, so only the targets are aliased into it.
+  checkModifierRegionEdges(ctrlOp, ctrlOp.getTargets());
+  checkModifierRegionEdges(invOp, invOp.getQubits());
+  checkModifierRegionEdges(powOp, powOp.getQubits());
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp
