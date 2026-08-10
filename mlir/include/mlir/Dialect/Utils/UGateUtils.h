@@ -16,10 +16,17 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
-#include <limits>
 #include <optional>
 
 namespace mlir::utils {
+
+/**
+ * Maximum exponent for numerically stable binary64 U-gate powering.
+ *
+ * The 2^10 cap keeps the O(n * epsilon) error accumulated by repeated
+ * squaring below the 1e-12 tolerance used by full-matrix equivalence tests.
+ */
+inline constexpr uint64_t MAX_SAFE_U_POWER_EXPONENT = 1024U;
 
 /**
  * @brief Parameters representing a powered U gate.
@@ -39,16 +46,15 @@ struct UPowerParameters {
  *
  * @return Parameters satisfying
  * `U(theta, phi, lambda)^exponent = exp(i*phase) * U(result)`, or
- * `std::nullopt` if @p exponent is not representable as a positive integer.
+ * `std::nullopt` if @p exponent is not a positive integer no greater than
+ * `MAX_SAFE_U_POWER_EXPONENT`.
  */
 [[nodiscard]] inline std::optional<UPowerParameters>
 powerUParameters(const double theta, const double phi, const double lambda,
                  const double exponent) {
-  // Above 2^53, binary64 can no longer represent every integer exactly.
-  if (const double maxExactInteger =
-          std::ldexp(1.0, std::numeric_limits<double>::digits);
-      !mlir::utils::isIntegerExponent(exponent) || exponent <= 0.0 ||
-      exponent > maxExactInteger) {
+  // Repeated squaring magnifies binary64 roundoff with every squared power.
+  if (!mlir::utils::isIntegerExponent(exponent) || exponent <= 0.0 ||
+      exponent > static_cast<double>(MAX_SAFE_U_POWER_EXPONENT)) {
     return std::nullopt;
   }
 

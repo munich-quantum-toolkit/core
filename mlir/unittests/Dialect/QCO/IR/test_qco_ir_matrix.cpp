@@ -23,6 +23,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/Utils/UGateUtils.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
@@ -571,7 +572,9 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
   for (const auto& [theta, phi, lambda, exponent] :
        {std::tuple{0.1, 0.2, 0.3, 2.0}, std::tuple{1.7, -2.1, 0.4, 3.0},
         std::tuple{std::numbers::pi, 0.7, -1.2, 8.0},
-        std::tuple{0.0, 0.3, 0.8, 17.0}}) {
+        std::tuple{0.0, 0.3, 0.8, 17.0},
+        std::tuple{0.1, 0.2, 0.3,
+                   static_cast<double>(utils::MAX_SAFE_U_POWER_EXPONENT)}}) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -594,6 +597,31 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
     moduleOp->walk([&](PowOp) { ++powCount; });
     EXPECT_EQ(powCount, 0U);
   }
+}
+
+TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
+  constexpr double exponent =
+      static_cast<double>(utils::MAX_SAFE_U_POWER_EXPONENT) + 1.0;
+  auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
+    auto controlIn = b.staticQubit(0);
+    auto targetIn = b.staticQubit(1);
+    const auto [control, target] =
+        b.ctrl(controlIn, targetIn, [&](Value targetArg) -> Value {
+          return b.pow(exponent, targetArg, [&](Value powArg) {
+            return b.u(0.1, 0.2, 0.3, powArg);
+          });
+        });
+    return SmallVector<Value>{control, target};
+  });
+  ASSERT_TRUE(moduleOp);
+  OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
+
+  ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+  size_t powCount = 0;
+  moduleOp->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1U);
 }
 
 TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
