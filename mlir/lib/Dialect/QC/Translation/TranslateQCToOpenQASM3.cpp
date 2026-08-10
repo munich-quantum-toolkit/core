@@ -206,6 +206,13 @@ private:
     return uniqueName("out", nextScalar);
   }
 
+  [[nodiscard]] std::string qubitRegisterName(const StringRef requested) {
+    if (isValidOutputName(requested) && usedNames.insert(requested).second) {
+      return requested.str();
+    }
+    return uniqueName("q", nextQubit);
+  }
+
   [[nodiscard]] LogicalResult preflight() {
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     if (functions.size() != 1) {
@@ -301,7 +308,12 @@ private:
         return fail(alloc, "only qubit and i1 memrefs are supported");
       }
       if (resource.kind == ResourceKind::Qubit) {
-        resource.name = uniqueName("q", nextQubit);
+        StringRef requested;
+        if (const auto attr = alloc->getAttrOfType<StringAttr>(
+                utils::QUBIT_REGISTER_NAME_ATTR)) {
+          requested = attr.getValue();
+        }
+        resource.name = qubitRegisterName(requested);
       } else {
         resource.output = returnedMemrefs.contains(alloc.getResult());
         StringRef requested;

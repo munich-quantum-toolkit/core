@@ -42,6 +42,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -126,6 +127,17 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         mixedDynamicRegisterThenStaticQubit(builder);
       },
       "Cannot mix dynamic and static qubit allocation modes");
+}
+
+TEST_F(QCTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        std::ignore = builder.allocQubitRegisterStorage(1, "q");
+        std::ignore = builder.allocQubitRegisterStorage(1, "q");
+      },
+      "Qubit register names must be unique");
 }
 
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
