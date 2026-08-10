@@ -91,10 +91,55 @@ static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   return pm.run(module);
 }
 
-static LogicalResult runQCToQIRBaseConversionSimple(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQIRBaseConversionSimple(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRBase());
-  return pm.run(module);
+  return pm.run(moduleOp);
+}
+
+static void expectFollowingXIsUncontrolled(
+    const function_ref<void(qc::QCProgramBuilder&, Value, Value)>
+        buildModifier) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto control = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  buildModifier(builder, control, target);
+  builder.x(target);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t xCalls = 0;
+  size_t controlledXCalls = 0;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    xCalls += call.getCallee() == qir::QIR_X;
+    controlledXCalls += call.getCallee() == qir::QIR_CX;
+  });
+  EXPECT_EQ(xCalls, 1);
+  EXPECT_EQ(controlledXCalls, 0);
+}
+
+TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
+  expectFollowingXIsUncontrolled(
+      [](qc::QCProgramBuilder& builder, const Value control,
+         const Value target) {
+        builder.ctrl(control, target, [](Value) {});
+      });
+}
+
+TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
+  expectFollowingXIsUncontrolled(
+      [](qc::QCProgramBuilder& builder, const Value control,
+         const Value target) {
+        builder.ctrl(control, target,
+                     [&](const Value bodyTarget) { builder.barrier(bodyTarget); });
+      });
 }
 
 TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
