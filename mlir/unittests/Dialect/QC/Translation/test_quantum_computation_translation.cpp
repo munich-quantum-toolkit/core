@@ -80,8 +80,9 @@ protected:
   }
 };
 
-mlir::SmallVector<mlir::Value>
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+} // namespace
+
+static mlir::SmallVector<mlir::Value>
 partiallyMeasuredRegisterControlReference(mlir::qc::QCProgramBuilder& builder) {
   auto q = builder.allocQubitRegister(1);
   auto prefix = builder.allocClassicalBitRegister(2, "prefix");
@@ -108,8 +109,6 @@ partiallyMeasuredRegisterControlReference(mlir::qc::QCProgramBuilder& builder) {
   builder.scfIf(comparison.getResult(), [&] { builder.x(q[0]); });
   return {prefix, condition};
 }
-
-} // namespace
 
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
