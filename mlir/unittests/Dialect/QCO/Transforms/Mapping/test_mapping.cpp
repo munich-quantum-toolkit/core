@@ -61,13 +61,10 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::utils;
 
-namespace {
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-SmallVector<Value> getQubitValues(ValueRange values) {
+static SmallVector<Value> getQubitValues(ValueRange values) {
   return to_vector(llvm::make_filter_range(
       values, [](Value value) { return isa<QubitType>(value.getType()); }));
 }
-} // namespace
 
 /// Return true, if the operations within a region fulfill the given coupling
 /// constraints.
