@@ -37,7 +37,7 @@ namespace qco::detail {
  * @details Qubits are threaded through the body, so a qubit that the body only
  * yields back is not acted upon and can be dropped from the modifier.
  */
-[[nodiscard]] SmallVector<size_t> getUsedQubits(Block& body);
+[[nodiscard]] SmallVector<size_t> getUsedQubitIndices(Block& body);
 
 /**
  * @brief Inline @p body into the modifier currently being built, dropping the
@@ -50,6 +50,11 @@ namespace qco::detail {
 [[nodiscard]] SmallVector<Value>
 inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
                    ValueRange args, RewriterBase& rewriter);
+
+/** @brief Replace used positions in @p inputs with @p narrowedResults. */
+[[nodiscard]] SmallVector<Value>
+restoreUnusedQubits(ValueRange inputs, ArrayRef<size_t> used,
+                    ValueRange narrowedResults);
 
 } // namespace qco::detail
 

@@ -218,7 +218,7 @@ struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto used = qco::detail::getUsedQubits(*body);
+    const auto used = qco::detail::getUsedQubitIndices(*body);
     if (used.size() == op.getNumTargets()) {
       return failure();
     }
@@ -232,12 +232,10 @@ struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
                              *body, op.getTargetsIn(), used, args, rewriter);
                        });
 
-    // The dropped qubits are handed back unchanged.
     SmallVector<Value> results(newOp.getControlsOut());
-    llvm::append_range(results, op.getTargetsIn());
-    for (auto [index, qubit] : llvm::zip_equal(used, newOp.getTargetsOut())) {
-      results[op.getNumControls() + index] = qubit;
-    }
+    llvm::append_range(results, qco::detail::restoreUnusedQubits(
+                                    op.getTargetsIn(), used,
+                                    newOp.getTargetsOut()));
     rewriter.replaceOp(op, results);
     return success();
   }

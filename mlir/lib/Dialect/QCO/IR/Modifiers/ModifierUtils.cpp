@@ -52,7 +52,7 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   return success();
 }
 
-SmallVector<size_t> getUsedQubits(Block& body) {
+SmallVector<size_t> getUsedQubitIndices(Block& body) {
   SmallVector<size_t> used;
   for (auto [index, arg, yielded] : llvm::enumerate(
            body.getArguments(), body.getTerminator()->getOperands())) {
@@ -62,6 +62,16 @@ SmallVector<size_t> getUsedQubits(Block& body) {
     }
   }
   return used;
+}
+
+SmallVector<Value> restoreUnusedQubits(ValueRange inputs,
+                                       ArrayRef<size_t> used,
+                                       ValueRange narrowedResults) {
+  SmallVector<Value> results(inputs);
+  for (auto [index, result] : llvm::zip_equal(used, narrowedResults)) {
+    results[index] = result;
+  }
+  return results;
 }
 
 SmallVector<Value> inlineNarrowedBody(Block& body, ValueRange qubits,

@@ -43,9 +43,9 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     For `inv`, the order of the operations is reversed. Classical operations of
     the body are moved in front of the new modifiers.
 
-    The new modifiers keep all qubits of the original one, and canonicalization
-    drops the qubits that their body does not use. A canonicalization therefore
-    has to run before a conversion that reads the qubits of a modifier.
+    Each new modifier only receives the qubits its body operation uses. Generic
+    canonicalization may independently narrow a modifier further if later
+    rewrites make one of its body qubits unused.
 
     A `pow` modifier is only unrolled if its exponent is a compile-time known
     integer and its operations act on disjoint qubits. Otherwise, `pow(r) { a;

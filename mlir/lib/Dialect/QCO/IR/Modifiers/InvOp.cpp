@@ -409,7 +409,7 @@ struct DropUnusedQubits final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto used = qco::detail::getUsedQubits(*body);
+    const auto used = qco::detail::getUsedQubitIndices(*body);
     if (used.size() == op.getNumQubits()) {
       return failure();
     }
@@ -423,12 +423,8 @@ struct DropUnusedQubits final : OpRewritePattern<InvOp> {
                             *body, op.getQubitsIn(), used, args, rewriter);
                       });
 
-    // The dropped qubits are handed back unchanged.
-    SmallVector<Value> results(op.getQubitsIn());
-    for (auto [index, qubit] : llvm::zip_equal(used, newOp.getResults())) {
-      results[index] = qubit;
-    }
-    rewriter.replaceOp(op, results);
+    rewriter.replaceOp(op, qco::detail::restoreUnusedQubits(
+                               op.getQubitsIn(), used, newOp.getResults()));
     return success();
   }
 };

@@ -43,19 +43,6 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mlir/Dialect/Utils/Transforms/Passes.h.inc"
 
-/// Return the distinct qubit operands of @p op in operand order.
-template <typename QubitType>
-static SmallVector<Value> getQubitOperands(Operation* op) {
-  SmallVector<Value> qubits;
-  for (auto operand : op->getOperands()) {
-    if (isa<QubitType>(operand.getType()) &&
-        !llvm::is_contained(qubits, operand)) {
-      qubits.push_back(operand);
-    }
-  }
-  return qubits;
-}
-
 /**
  *@brief Move the classical operations of @p body in front of @p modifier.
  *
@@ -95,13 +82,13 @@ template <typename PowOp> static bool hasIntegerExponent(PowOp op) {
 // QC
 //===----------------------------------------------------------------------===//
 
-/// Clone @p unitary into the body of a new `qc` modifier, replacing the qubits
-/// of the original body @p qubits with the block arguments @p args.
-static void cloneIntoBody(Operation* unitary, ValueRange qubits,
-                          ValueRange args, RewriterBase& rewriter) {
+/// Clone @p unitary into the body of a new `qc` modifier, replacing its qubits
+/// with the block arguments @p args.
+static void cloneIntoBody(qc::UnitaryOpInterface unitary, ValueRange args,
+                          RewriterBase& rewriter) {
   IRMapping mapping;
-  mapping.map(qubits, args);
-  rewriter.clone(*unitary, mapping);
+  mapping.map(unitary.getQubits(), args);
+  rewriter.clone(*unitary.getOperation(), mapping);
 }
 
 /// Unroll a `qc.ctrl` modifier with more than one body unitary,
@@ -117,10 +104,12 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
 
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
-    qc::CtrlOp::create(rewriter, op.getLoc(), op.getControls(), op.getTargets(),
+    const auto targets = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
+      return utils::getValueFromBlockArgument(q, op.getTargets());
+    });
+    qc::CtrlOp::create(rewriter, op.getLoc(), op.getControls(), targets,
                        [&](ValueRange args) {
-                         cloneIntoBody(unitary, body->getArguments(), args,
-                                       rewriter);
+                         cloneIntoBody(unitary, args, rewriter);
                        });
   }
   rewriter.eraseOp(op);
@@ -141,10 +130,12 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
   rewriter.setInsertionPoint(op);
   // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
   for (auto unitary : llvm::reverse(body->getOps<qc::UnitaryOpInterface>())) {
-    qc::InvOp::create(
-        rewriter, op.getLoc(), op.getQubits(), [&](ValueRange args) {
-          cloneIntoBody(unitary, body->getArguments(), args, rewriter);
-        });
+    const auto qubits = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
+      return utils::getValueFromBlockArgument(q, op.getQubits());
+    });
+    qc::InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange args) {
+      cloneIntoBody(unitary, args, rewriter);
+    });
   }
   rewriter.eraseOp(op);
   return success();
@@ -154,7 +145,7 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
 static bool hasDisjointBodyQubits(Block& body) {
   DenseSet<Value> qubits;
   for (auto unitary : body.getOps<qc::UnitaryOpInterface>()) {
-    for (auto qubit : getQubitOperands<qc::QubitType>(unitary)) {
+    for (auto qubit : unitary.getQubits()) {
       if (!qubits.insert(qubit).second) {
         return false;
       }
@@ -179,10 +170,12 @@ static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
 
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
-    qc::PowOp::create(rewriter, op.getLoc(), op.getExponent(), op.getQubits(),
+    const auto qubits = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
+      return utils::getValueFromBlockArgument(q, op.getQubits());
+    });
+    qc::PowOp::create(rewriter, op.getLoc(), op.getExponent(), qubits,
                       [&](ValueRange args) {
-                        cloneIntoBody(unitary, body->getArguments(), args,
-                                      rewriter);
+                        cloneIntoBody(unitary, args, rewriter);
                       });
   }
   rewriter.eraseOp(op);
@@ -193,24 +186,17 @@ static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
 // QCO
 //===----------------------------------------------------------------------===//
 
-/// Clone @p unitary into the body of a new `qco` modifier, replacing the qubits
-/// it acts on with the block arguments @p args of the wires @p wires, and
-/// return the qubits that the new body yields.
-static SmallVector<Value> cloneIntoBody(Operation* unitary,
-                                        ArrayRef<size_t> wires, ValueRange args,
+/// Clone @p unitary into the body of a new `qco` modifier, replacing its input
+/// qubits with the block arguments @p args, and return its output qubits.
+static SmallVector<Value> cloneIntoBody(qco::UnitaryOpInterface unitary,
+                                        ValueRange args,
                                         RewriterBase& rewriter) {
   IRMapping mapping;
-  for (auto [qubit, wire] :
-       llvm::zip_equal(getQubitOperands<qco::QubitType>(unitary), wires)) {
-    mapping.map(qubit, args[wire]);
-  }
-
-  SmallVector<Value> yielded(args);
-  auto* clone = rewriter.clone(*unitary, mapping);
-  for (auto [result, wire] : llvm::zip_equal(clone->getResults(), wires)) {
-    yielded[wire] = result;
-  }
-  return yielded;
+  mapping.map(unitary.getInputQubits(), args);
+  auto clone = cast<qco::UnitaryOpInterface>(
+      rewriter.clone(*unitary.getOperation(), mapping));
+  return llvm::map_to_vector(clone.getOutputQubits(),
+                             [](OpResult result) -> Value { return result; });
 }
 
 /// Unroll a `qco.ctrl` modifier with more than one body unitary,
@@ -224,38 +210,28 @@ static LogicalResult unrollModifier(qco::CtrlOp op, RewriterBase& rewriter) {
     return failure();
   }
 
-  // Maps the qubits of the body to the wires they belong to. The inputs of the
-  // modifier enter the body at its block arguments.
-  DenseMap<Value, size_t> wires;
-  for (auto [index, arg] : llvm::enumerate(body->getArguments())) {
-    wires.try_emplace(arg, index);
-  }
+  // Thread the body's linear qubit values through the new modifiers.
+  IRMapping qubits;
+  qubits.map(body->getArguments(), op.getTargetsIn());
 
   rewriter.setInsertionPoint(op);
   SmallVector<Value> controls(op.getControlsIn());
-  SmallVector<Value> targets(op.getTargetsIn());
   for (auto unitary : body->getOps<qco::UnitaryOpInterface>()) {
-    const auto operands = getQubitOperands<qco::QubitType>(unitary);
-    const auto indices = llvm::map_to_vector(
-        operands, [&](Value qubit) { return wires.at(qubit); });
+    const auto targets = llvm::map_to_vector(
+        unitary.getInputQubits(), [&](Value q) { return qubits.lookup(q); });
     auto ctrlOp = qco::CtrlOp::create(
         rewriter, op.getLoc(), controls, targets,
         [&](ValueRange args) -> SmallVector<Value> {
-          return cloneIntoBody(unitary, indices, args, rewriter);
+          return cloneIntoBody(unitary, args, rewriter);
         });
     controls.assign(ctrlOp.getControlsOut().begin(),
                     ctrlOp.getControlsOut().end());
-    targets.assign(ctrlOp.getTargetsOut().begin(),
-                   ctrlOp.getTargetsOut().end());
-    for (auto [result, index] :
-         llvm::zip_equal(unitary->getResults(), indices)) {
-      wires[result] = index;
-    }
+    qubits.map(unitary.getOutputQubits(), ctrlOp.getTargetsOut());
   }
 
   SmallVector<Value> results(controls);
   for (auto yielded : body->getTerminator()->getOperands()) {
-    results.push_back(targets[wires.at(yielded)]);
+    results.push_back(qubits.lookup(yielded));
   }
   rewriter.replaceOp(op, results);
   return success();
@@ -272,37 +248,27 @@ static LogicalResult unrollModifier(qco::InvOp op, RewriterBase& rewriter) {
     return failure();
   }
 
-  // Maps the qubits of the body to the wires they belong to. (a b)^-1 =
-  // b^-1 a^-1, so the operations are inverted in reverse order and the inputs
-  // of the modifier enter the body at the qubits it yields.
-  DenseMap<Value, size_t> wires;
-  for (auto [index, yielded] :
-       llvm::enumerate(body->getTerminator()->getOperands())) {
-    wires.try_emplace(yielded, index);
-  }
+  // Inverting the body reverses its data flow: the modifier inputs enter at the
+  // yielded values and leave at the block arguments.
+  IRMapping qubits;
+  qubits.map(body->getTerminator()->getOperands(), op.getQubitsIn());
 
   rewriter.setInsertionPoint(op);
-  SmallVector<Value> qubits(op.getQubitsIn());
   auto unitaries = llvm::to_vector(body->getOps<qco::UnitaryOpInterface>());
   for (auto unitary : llvm::reverse(unitaries)) {
-    const auto indices = llvm::map_to_vector(
-        unitary->getResults(), [&](Value qubit) { return wires.at(qubit); });
-    auto invOp = qco::InvOp::create(rewriter, op.getLoc(), qubits,
+    const auto inputs = llvm::map_to_vector(
+        unitary.getOutputQubits(), [&](Value q) { return qubits.lookup(q); });
+    auto invOp = qco::InvOp::create(rewriter, op.getLoc(), inputs,
                                     [&](ValueRange args) -> SmallVector<Value> {
-                                      return cloneIntoBody(unitary, indices,
-                                                           args, rewriter);
+                                      return cloneIntoBody(unitary, args,
+                                                           rewriter);
                                     });
-    qubits.assign(invOp.getResults().begin(), invOp.getResults().end());
-    for (auto [operand, index] :
-         llvm::zip_equal(getQubitOperands<qco::QubitType>(unitary), indices)) {
-      wires[operand] = index;
-    }
+    qubits.map(unitary.getInputQubits(), invOp.getResults());
   }
 
-  rewriter.replaceOp(op,
-                     llvm::map_to_vector(body->getArguments(), [&](Value arg) {
-                       return qubits[wires.at(arg)];
-                     }));
+  rewriter.replaceOp(
+      op, llvm::map_to_vector(body->getArguments(),
+                              [&](Value arg) { return qubits.lookup(arg); }));
   return success();
 }
 
@@ -315,9 +281,8 @@ static bool hasDisjointBodyWires(Block& body) {
 
   DenseSet<size_t> used;
   for (auto unitary : body.getOps<qco::UnitaryOpInterface>()) {
-    const auto qubits = getQubitOperands<qco::QubitType>(unitary);
     for (auto [qubit, result] :
-         llvm::zip_equal(qubits, unitary->getResults())) {
+         llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
       const auto it = wires.find(qubit);
       if (it == wires.end()) {
         return false;
@@ -346,35 +311,25 @@ static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
     return failure();
   }
 
-  // Maps the qubits of the body to the wires they belong to. The inputs of the
-  // modifier enter the body at its block arguments.
-  DenseMap<Value, size_t> wires;
-  for (auto [index, arg] : llvm::enumerate(body->getArguments())) {
-    wires.try_emplace(arg, index);
-  }
+  IRMapping qubits;
+  qubits.map(body->getArguments(), op.getQubitsIn());
 
   rewriter.setInsertionPoint(op);
-  SmallVector<Value> qubits(op.getQubitsIn());
   for (auto unitary : body->getOps<qco::UnitaryOpInterface>()) {
-    const auto operands = getQubitOperands<qco::QubitType>(unitary);
-    const auto indices = llvm::map_to_vector(
-        operands, [&](Value qubit) { return wires.at(qubit); });
+    const auto inputs = llvm::map_to_vector(
+        unitary.getInputQubits(), [&](Value q) { return qubits.lookup(q); });
     auto powOp = qco::PowOp::create(
-        rewriter, op.getLoc(), qubits, op.getExponent(),
+        rewriter, op.getLoc(), inputs, op.getExponent(),
         [&](ValueRange args) -> SmallVector<Value> {
-          return cloneIntoBody(unitary, indices, args, rewriter);
+          return cloneIntoBody(unitary, args, rewriter);
         });
-    qubits.assign(powOp.getResults().begin(), powOp.getResults().end());
-    for (auto [result, index] :
-         llvm::zip_equal(unitary->getResults(), indices)) {
-      wires[result] = index;
-    }
+    qubits.map(unitary.getOutputQubits(), powOp.getResults());
   }
 
   rewriter.replaceOp(op,
                      llvm::map_to_vector(body->getTerminator()->getOperands(),
                                          [&](Value yielded) {
-                                           return qubits[wires.at(yielded)];
+                                           return qubits.lookup(yielded);
                                          }));
   return success();
 }

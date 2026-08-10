@@ -15,6 +15,8 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
+
 namespace mlir {
 
 class Block;
@@ -28,6 +30,9 @@ namespace qc::detail {
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
                                                Block& body);
 
+/** @brief Return the positions of modifier qubits used by @p body. */
+[[nodiscard]] SmallVector<size_t> getUsedQubitIndices(Block& body);
+
 /**
  * @brief Inline @p body into the modifier currently being built, dropping the
  * qubits that the body does not use.
@@ -35,8 +40,8 @@ namespace qc::detail {
  * @details The block arguments of unused qubits have no uses, so they are
  * replaced with the corresponding qubit of the original modifier.
  */
-void inlineNarrowedBody(Block& body, ValueRange qubits, ValueRange args,
-                        RewriterBase& rewriter);
+void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
+                        ValueRange args, RewriterBase& rewriter);
 
 } // namespace qc::detail
 

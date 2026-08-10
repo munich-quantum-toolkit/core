@@ -626,20 +626,17 @@ struct DropUnusedQubits final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    SmallVector<Value> qubits;
-    for (auto [arg, qubit] :
-         llvm::zip_equal(body->getArguments(), op.getQubits())) {
-      if (!arg.use_empty()) {
-        qubits.push_back(qubit);
-      }
-    }
-    if (qubits.size() == op.getNumQubits()) {
+    const auto used = qc::detail::getUsedQubitIndices(*body);
+    if (used.size() == op.getNumQubits()) {
       return failure();
     }
 
+    const auto qubits = llvm::map_to_vector(
+        used, [&](const size_t index) { return op.getQubits()[index]; });
     PowOp::create(
         rewriter, op.getLoc(), op.getExponent(), qubits, [&](ValueRange args) {
-          qc::detail::inlineNarrowedBody(*body, op.getQubits(), args, rewriter);
+          qc::detail::inlineNarrowedBody(*body, op.getQubits(), used, args,
+                                        rewriter);
         });
     rewriter.eraseOp(op);
     return success();

@@ -55,15 +55,21 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   return success();
 }
 
-void inlineNarrowedBody(Block& body, ValueRange qubits, ValueRange args,
-                        RewriterBase& rewriter) {
-  SmallVector<Value> replacements(qubits);
-  auto next = args.begin();
-  for (auto [arg, replacement] :
-       llvm::zip_equal(body.getArguments(), replacements)) {
+SmallVector<size_t> getUsedQubitIndices(Block& body) {
+  SmallVector<size_t> used;
+  for (auto [index, arg] : llvm::enumerate(body.getArguments())) {
     if (!arg.use_empty()) {
-      replacement = *next++;
+      used.push_back(index);
     }
+  }
+  return used;
+}
+
+void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
+                        ValueRange args, RewriterBase& rewriter) {
+  SmallVector<Value> replacements(qubits);
+  for (auto [index, arg] : llvm::zip_equal(used, args)) {
+    replacements[index] = arg;
   }
   utils::inlineBodyReturningYields(body, replacements, rewriter);
 }
