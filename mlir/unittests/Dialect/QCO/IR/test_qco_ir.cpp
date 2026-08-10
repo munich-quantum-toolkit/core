@@ -204,7 +204,7 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
 
 namespace {
 
-enum class VerifierModifierKind : std::uint8_t { Inv, Ctrl, Pow };
+enum class VerifierModifierKind : uint8_t { Inv, Ctrl, Pow };
 
 } // namespace
 
