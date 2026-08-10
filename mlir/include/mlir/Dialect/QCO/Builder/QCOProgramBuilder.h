@@ -171,30 +171,20 @@ public:
     Value regIndex;
 
     /**
-     * @brief Construct a tracked qubit from an SSA value.
+     * @brief Implicitly construct a tracked qubit from an SSA value.
      * @param value The underlying qubit SSA value
      * @param regId ID of the register containing the qubit, or `-1`
      * @param regIndex Index of the qubit within its register, if applicable
      */
-    explicit Qubit(Value value, int64_t regId = -1, Value regIndex = {})
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    Qubit(Value value, int64_t regId = -1, Value regIndex = {})
         : value(value), regId(regId), regIndex(regIndex) {}
-
-    /**
-     * @brief Replace the underlying SSA value and discard register metadata.
-     * @param newValue The replacement qubit SSA value
-     * @return This tracked qubit
-     */
-    Qubit& operator=(Value newValue) {
-      value = newValue;
-      regId = -1;
-      regIndex = {};
-      return *this;
-    }
 
     /**
      * @brief Implicitly convert this tracked qubit to its underlying SSA value.
      * @return The underlying `Value`
      */
+    // NOLINTNEXTLINE(google-explicit-constructor)
     operator Value() const { return value; }
 
     /**
@@ -230,10 +220,11 @@ public:
     int64_t regId = -1;
 
     /**
-     * @brief Construct a tracked tensor from an SSA value.
+     * @brief Implicitly construct a tracked tensor from an SSA value.
      * @param value The underlying tensor SSA value
      * @param regId ID of the corresponding register, or `-1`
      */
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Tensor(Value value, int64_t regId = -1) : value(value), regId(regId) {}
 
     /**
@@ -241,6 +232,7 @@ public:
      * value.
      * @return The underlying `Value`
      */
+    // NOLINTNEXTLINE(google-explicit-constructor)
     operator Value() const { return value; }
 
     /**

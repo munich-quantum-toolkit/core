@@ -135,10 +135,12 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
 }
 
 TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
-  static_assert(!std::is_convertible_v<Value, QCOProgramBuilder::Qubit>);
+  static_assert(std::is_convertible_v<Value, QCOProgramBuilder::Qubit>);
   static_assert(std::is_constructible_v<QCOProgramBuilder::Qubit, Value>);
   static_assert(std::is_assignable_v<QCOProgramBuilder::Qubit&, Value>);
   static_assert(std::is_convertible_v<QCOProgramBuilder::Qubit, Value>);
+  static_assert(std::is_convertible_v<Value, QCOProgramBuilder::Tensor>);
+  static_assert(std::is_convertible_v<QCOProgramBuilder::Tensor, Value>);
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();

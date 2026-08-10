@@ -112,12 +112,12 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::allocQubit() {
   ensureAllocationMode(AllocationMode::Dynamic);
 
   auto allocOp = AllocOp::create(*this);
-  auto qubit = allocOp.getResult();
+  Qubit qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.insert(Qubit{qubit});
+  validQubits.insert(qubit);
 
-  return Qubit{qubit};
+  return qubit;
 }
 
 QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
@@ -125,12 +125,12 @@ QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
   ensureAllocationMode(AllocationMode::Static);
 
   auto staticOp = StaticOp::create(*this, index);
-  const auto qubit = staticOp.getQubit();
+  Qubit qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.insert(Qubit{qubit});
+  validQubits.insert(qubit);
 
-  return Qubit{qubit};
+  return qubit;
 }
 
 QCOProgramBuilder::QubitRegister
@@ -175,7 +175,7 @@ Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {
-  if (!validQubits.contains(Qubit{qubit})) {
+  if (!validQubits.contains(qubit)) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -189,7 +189,7 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
-  auto it = validQubits.find(Qubit{inputQubit});
+  auto it = validQubits.find(inputQubit);
   auto trackedQubit = *it;
 
   // Remove the input (consumed) value from tracking
@@ -240,7 +240,7 @@ Value QCOProgramBuilder::prepareInitArg(Value initArg,
   }
 
   validateTensorValue(initArg);
-  const auto regId = validTensors.find(Tensor{initArg})->regId;
+  const auto regId = validTensors.find(initArg)->regId;
   auto currentTensor = initArg;
   for (auto it = validQubits.begin(); it != validQubits.end();) {
     const auto& qubit = *it;
@@ -347,7 +347,7 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
       llvm::reportFatalUsageError("Elements must be QubitType!");
     }
     validateQubitValue(element);
-    validQubits.erase(Qubit{element});
+    validQubits.erase(element);
   }
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
@@ -386,7 +386,7 @@ Value QCOProgramBuilder::qtensorInsert(
   auto outTensor = insertOp.getResult();
 
   validateQubitValue(scalar);
-  validQubits.erase(Qubit{scalar});
+  validQubits.erase(scalar);
   updateTensorTracking(tensor, outTensor);
 
   return outTensor;
@@ -1054,7 +1054,7 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
   checkFinalized();
 
   validateQubitValue(qubit);
-  validQubits.erase(Qubit{qubit});
+  validQubits.erase(qubit);
 
   SinkOp::create(*this, qubit);
 
