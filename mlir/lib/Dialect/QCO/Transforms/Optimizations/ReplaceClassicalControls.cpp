@@ -25,6 +25,7 @@
 #include <cassert>
 #include <cstddef>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace mlir::qco {
