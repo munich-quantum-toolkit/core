@@ -221,6 +221,18 @@ Use {py:meth}`~mqt.core.mlir.QIRProgram.to_bitcode` to obtain LLVM bitcode as
 {code}`bytes`, or {py:meth}`~mqt.core.mlir.QIRProgram.write_bitcode` to write a
 {code}`.bc` file directly.
 
+The {code}`mqt-cc` compiler driver selects the QIR serialization from the output
+filename. Use {code}`.ll` for textual LLVM IR and {code}`.bc` for LLVM bitcode:
+
+```console
+mqt-cc input.qasm --emit=qir-base -o output.ll
+mqt-cc input.qasm --emit=qir-adaptive -o output.bc
+```
+
+Writing QIR to standard output also produces textual LLVM IR. All other output
+filenames, including filenames without an extension, retain the bitcode output
+used by earlier versions.
+
 The {doc}`QC <QC>`, {doc}`QCO <QCO>`, and {doc}`QTensor <QTensor>` references
 describe the underlying operations. See {doc}`Conversions` for the lowering
 steps between dialects.
