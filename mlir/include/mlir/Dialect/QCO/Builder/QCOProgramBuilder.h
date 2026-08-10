@@ -1293,18 +1293,21 @@ public:
    * @brief Apply a PPRotationOp.
    *
    * @param qubits Input qubits (must be valid/unconsumed)
-   * @param piFraction Denotes the fraction of pi for the rotation angle. Valid
-   * values are ±1 (±π), ±2 (±π/2), ±4 (±π/4).
-   * @param pauliProduct Denotes the Pauli product for the rotation. Valid
-   * values are "I", "X", "Y", "Z".
+   * @param theta The rotation angle in radians.
+   * @param pauliProduct Denotes the Pauli product for the rotation.
    * @return Output qubits
    *
    * @par Example:
    * ```c++
-   * builder.ppr({q0, q1}, -2, {"X", "Y"}); // -pi/2 rotation
+   * auto [q0_out, q1_out] = builder.ppr({q0_in, q1_in}, theta, {Pauli::X,
+   * Pauli::Y});
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = qco.ppr(%theta) [2 : i32, 3 : i32] %q0_in, %q1_in :
+   * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
    * ```
    */
-  ValueRange ppr(ValueRange qubits, std::int8_t piFraction,
+  ValueRange ppr(ValueRange qubits, const std::variant<double, Value>& theta,
                  ArrayRef<Pauli> pauliProduct);
 
   //===--------------------------------------------------------------------===//

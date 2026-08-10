@@ -1094,17 +1094,6 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let hasCanonicalizer = 1;
 }
 
-// Constraint for Pauli rotation angles: must be one of ±1, ±2, ±4.
-def PauliRotationConstraint
-    : AttrConstraint<
-          CPred<"[&]() {"
-                "  auto val = "
-                "::llvm::cast<::mlir::IntegerAttr>($_self).getSInt();"
-                "  auto absVal = val < 0 ? -val : val;"
-                "  return absVal == 1 || absVal == 2 || absVal == 4;"
-                "}()">,
-          "whose value is ±1, ±2, or ±4">;
-
 def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface, Pure]> {
   let summary = "Apply a Pauli Product Rotation (PPR) gate to a set of qubits";
   let description = [{
@@ -1113,23 +1102,18 @@ def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface, Pure]> {
         P is a tensor product of Pauli operators (I,X,Y,Z) and θ is the rotation
         angle.
 
-        `%rotation` is the rotation in fractions of π, e.g. a value of 2 corresponds
-        to a rotation of π/2 radians. Possible values are ±1, ±2 (Clifford), or
-        ±4 (non-Clifford).
-
         Example:
         ```mlir
-        %q0_out, %q1_out = qco.ppr(2) ["X", "Y", "Z"] %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q0_out, %q1_out = qco.ppr(%theta) ["X", "Y", "Z"] %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
         ```
     }];
 
   let arguments =
       (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in,
-          ConfinedAttr<SI8Attr, [PauliRotationConstraint]>:$rotation,
-          TypedArrayAttrBase<ArrayAttr,
-                             "A product of Pauli operators.">:$pauli_product);
+          Arg<F64, "the rotation angle theta in radians">:$theta,
+          PauliWord:$pauli_product);
   let results = (outs Variadic<QubitType>:$qubits_out);
-  let assemblyFormat = "`(` $rotation `)` $pauli_product $qubits_in attr-dict "
+  let assemblyFormat = "`(` $theta `)` $pauli_product $qubits_in attr-dict "
                        "`:` type($qubits_in) `->` type($qubits_out)";
 
   let extraClassDeclaration = [{
@@ -1150,17 +1134,17 @@ def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface, Pure]> {
         ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        static size_t getNumParams() { return 0; }
-        static Value getParameter(size_t i) { llvm::reportFatalUsageError("PPRotationOp has no parameters"); }
-        static OperandRange getParameters() { return {nullptr, 0}; }
+        static size_t getNumParams() { return 1; }
+        Value getParameter(size_t i);
+        OperandRange getParameters();
         [[nodiscard]] static StringRef getBaseSymbol() { return "ppr"; }
-        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() const { return false; }
-        [[nodiscard]] DynamicMatrix getUnitaryMatrix();
-        bool isClifford();
-        bool isNonClifford();
+        [[nodiscard]] DynamicMatrix unitaryMatrix(double theta);
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$qubits, "int8_t":$rotation,
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+                      "const std::variant<double, Value>&":$theta,
                       "ArrayRef<Pauli>":$pauli_product)>,
   ];
 

@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -22,11 +23,15 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 
+#include <bit>
+#include <cmath>
 #include <cstddef>
 #include <tuple>
+#include <variant>
 
 using namespace mlir;
 using namespace mlir::qco;
+using namespace mlir::utils;
 
 Value PPRotationOp::getInputTarget(const size_t i) {
   if (i < getNumTargets()) {
@@ -60,15 +65,9 @@ Value PPRotationOp::getOutputForInput(Value input) {
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
-bool PPRotationOp::isNonClifford() {
-  auto piFraction = getRotation();
-  return piFraction == 4 || piFraction == -4;
-}
-
-bool PPRotationOp::isClifford() { return !isNonClifford(); }
-
 void PPRotationOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                         ValueRange qubitsIn, std::int8_t rotation,
+                         ValueRange qubitsIn,
+                         const std::variant<double, Value>& theta,
                          ArrayRef<Pauli> pauliProduct) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubitsIn.size());
@@ -82,8 +81,9 @@ void PPRotationOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     pauliAttrs.push_back(PauliAttr::get(odsBuilder.getContext(), pauli));
   }
   auto pauliWord = odsBuilder.getArrayAttr(pauliAttrs);
-  build(odsBuilder, odsState, resultTypes, qubitsIn,
-        odsBuilder.getIntegerAttr(si8Type, rotation), pauliWord);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  build(odsBuilder, odsState, resultTypes, qubitsIn, thetaOperand, pauliWord);
 }
 
 LogicalResult PPRotationOp::verify() {
@@ -96,6 +96,17 @@ LogicalResult PPRotationOp::verify() {
                        "number of input qubits");
   }
   return success();
+}
+
+Value PPRotationOp::getParameter(const size_t i) {
+  if (i >= 1) {
+    llvm::reportFatalUsageError("Parameter index out of bounds");
+  }
+  return getTheta();
+}
+
+OperandRange PPRotationOp::getParameters() {
+  return getOperation()->getOperands().take_front(1);
 }
 
 static void setBitOn(uint64_t& bits, size_t index) { bits |= (1ULL << index); }
@@ -136,36 +147,7 @@ static std::tuple<uint64_t, uint64_t> getPauliXZBits(ArrayAttr pauliProduct) {
   return {xBits, zBits};
 }
 
-/**
- * @brief Computes sin(angle / 2) and cos(angle / 2) for a given rotation value
- * which represents multiples of pi/2.
- *
- * @param rotation the rotation value in multiples of pi/2
- * @return std::tuple<double, double> the sine and cosine of half the angle
- */
-static std::tuple<double, double> halfAngleSinCos(int8_t rotation) {
-  double invSqrt2 = 1.0 / std::numbers::sqrt2;
-  switch (rotation) {
-  case -4:
-  case 4:
-    return {0.0, -1.0};
-  case -2:
-    return {-1.0, 0.0};
-  case -1:
-    return {-invSqrt2, invSqrt2};
-  case 1:
-    return {invSqrt2, invSqrt2};
-  case 2:
-    return {1.0, 0.0};
-  default:
-    llvm_unreachable("Invalid rotation value. Must be in the range [-4, 4].");
-  }
-}
-
-// https://github.com/Qiskit/qiskit/blob/stable/2.5/qiskit/circuit/library/generalized_gates/pauli_product_rotation.py#L179-L195
-// https://github.com/Qiskit/qiskit/blob/stable/2.5/qiskit/quantum_info/operators/symplectic/pauli.py#L422-L432
-// https://github.com/Qiskit/qiskit/blob/main/qiskit/quantum_info/operators/symplectic/base_pauli.py#L41
-DynamicMatrix PPRotationOp::getUnitaryMatrix() {
+DynamicMatrix PPRotationOp::unitaryMatrix(const double theta) {
   const auto numQubits = getQubitsIn().size();
   const auto dim = 1ULL << numQubits;
   auto matrix = DynamicMatrix(dim);
@@ -175,7 +157,8 @@ DynamicMatrix PPRotationOp::getUnitaryMatrix() {
   auto yBits = xBits & zBits;
   auto phase = std::popcount(yBits) % 4; // Phase contribution from Y terms
 
-  auto [sinAngle, cosAngle] = halfAngleSinCos(getRotation());
+  auto sinAngle = std::sin(theta / 2.0);
+  auto cosAngle = std::cos(theta / 2.0);
 
   for (uint64_t i = 0; i < dim; ++i) {
     // Get sign (Z contributions on this state, parity)
@@ -214,4 +197,15 @@ DynamicMatrix PPRotationOp::getUnitaryMatrix() {
   }
 
   return matrix;
+}
+
+std::optional<DynamicMatrix> PPRotationOp::getUnitaryMatrix() {
+  if (const auto theta = valueToDouble(getTheta())) {
+    return unitaryMatrix(*theta);
+  }
+  return std::nullopt;
+}
+
+bool PPRotationOp::hasCompileTimeKnownUnitaryMatrix() {
+  return valueToDouble(getTheta()).has_value();
 }

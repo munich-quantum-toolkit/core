@@ -866,11 +866,12 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 
 // PPRotationOp
 
-ValueRange QCOProgramBuilder::ppr(ValueRange qubits, std::int8_t piFraction,
+ValueRange QCOProgramBuilder::ppr(ValueRange qubits,
+                                  const std::variant<double, Value>& theta,
                                   ArrayRef<Pauli> pauliProduct) {
   checkFinalized();
 
-  auto op = PPRotationOp::create(*this, qubits, piFraction, pauliProduct);
+  auto op = PPRotationOp::create(*this, qubits, theta, pauliProduct);
   auto qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
     updateQubitTracking(inputQubit, outputQubit);
