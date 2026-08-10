@@ -1500,7 +1500,6 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
       OpenQASMProgram{.name = "checked-integer-state",
                       .source = checkedIntegerState},
       OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
-      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
       OpenQASMProgram{.name = "bit-vector-builtins",
                       .source = bitVectorBuiltins},
   };

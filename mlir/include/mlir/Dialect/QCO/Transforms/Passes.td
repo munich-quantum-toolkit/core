@@ -56,8 +56,10 @@ def MergeSingleQubitRotationGates
     restores exact matrix equality (including global phase). This applies even
     to chains of purely $\mathrm{SU}(2)$ gates (`rx`, `ry`, `rz`, `r`).
     On the host (static) path, a near-zero correction may be omitted; on the
-    SSA (dynamic) path a `GPhaseOp` is always emitted and may later be removed
-    by global-phase normalization when it folds to near zero.
+    SSA (dynamic) path a `GPhaseOp` is always emitted. After greedy merging,
+    the implementation directly invokes the shared global-phase normalization
+    utility to combine, normalize, and remove trivial corrections in their
+    respective scopes.
   }];
 }
 

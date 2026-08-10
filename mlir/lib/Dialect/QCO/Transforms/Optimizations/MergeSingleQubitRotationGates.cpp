@@ -730,15 +730,13 @@ struct MergeSingleQubitRotationGatesPattern final
         anglesFromQuaternion(*qAccum, consts);
     const auto correction =
         phaseAccum - ((phi + lambda) / consts.two) + eulerPhase;
-    const double correctionHost = utils::normalizeAngle(correction.v);
 
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
-    if (std::abs(correctionHost) > utils::TOLERANCE) {
-      GPhaseOp::create(
-          rewriter, loc,
-          utils::constantFromScalar(rewriter, loc, correctionHost));
+    if (std::abs(correction.v) > utils::TOLERANCE) {
+      GPhaseOp::create(rewriter, loc,
+                       utils::constantFromScalar(rewriter, loc, correction.v));
     }
     rewriter.replaceOpWithNewOp<UOp>(
         chain.front(), chain.front().getInputQubit(0),
@@ -755,7 +753,8 @@ struct MergeSingleQubitRotationGatesPattern final
    * correction:
    *   outPhase = (phi + lambda) / 2
    *   correction = totalInputPhase - outPhase
-   * Foldable corrections are normalized into the practical gphase range.
+   * The pass-level global-phase normalization subsequently combines and
+   * normalizes the emitted correction.
    *
    * Converts every gate before rewriting so a missing conversion Case cannot
    * leave partially rewired ops.
@@ -790,11 +789,7 @@ struct MergeSingleQubitRotationGatesPattern final
     const auto [theta, phi, lambda, eulerPhase] =
         anglesFromQuaternion(qAccum, consts);
     const auto outPhase = (phi + lambda) / consts.two;
-    Val<Value> phaseCorrection = phaseAccum - outPhase + eulerPhase;
-    if (const auto constant = utils::valueToConstantDouble(phaseCorrection.v)) {
-      phaseCorrection =
-          Val<Value>::constant(rewriter, loc, utils::normalizeAngle(*constant));
-    }
+    const Val<Value> phaseCorrection = phaseAccum - outPhase + eulerPhase;
 
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
