@@ -49,7 +49,7 @@ def MergeSingleQubitRotationGates
     parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
-    Normalizing either extracted Z angle into $(-\pi, \pi]$ by $\pm 2\pi$ flips
+    Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
     the $\mathrm{SU}(2)$ representative; half of each removed angle is returned
     as an Euler-wrap phase correction. Each merge therefore computes
     $\mathrm{inputPhase} - (\phi + \lambda) / 2 + \mathrm{eulerPhase}$, which

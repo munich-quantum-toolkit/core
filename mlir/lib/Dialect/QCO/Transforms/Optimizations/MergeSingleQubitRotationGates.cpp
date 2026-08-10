@@ -415,44 +415,44 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
     return axisQuaternion(Val<T>::constant(rewriter, loc, angle), axis, c);
   };
 
-  if (isa<XOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::X, std::numbers::pi);
-  }
-  if (isa<YOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::Y, std::numbers::pi);
-  }
-  if (isa<ZOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::Z, std::numbers::pi);
-  }
-  if (isa<SOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 2.0);
-  }
-  if (isa<SdgOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 2.0);
-  }
-  if (isa<TOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 4.0);
-  }
-  if (isa<TdgOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 4.0);
-  }
-  if (isa<SXOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::X, std::numbers::pi / 2.0);
-  }
-  if (isa<SXdgOp>(op.getOperation())) {
-    return fixedAxisRotation(RotationAxis::X, -std::numbers::pi / 2.0);
-  }
-  if (isa<HOp>(op.getOperation())) {
-    const auto invSqrtTwo =
-        Val<T>::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
-    return Quat<T>{.w = c.zero, .x = invSqrtTwo, .y = c.zero, .z = invSqrtTwo};
-  }
-  if (isa<IdOp>(op.getOperation())) {
-    return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
-  }
-
-  // Multi-parameter gates each need their own conversion
+  // Fixed and multi-parameter gates each need their own conversion.
   return TypeSwitch<Operation*, std::optional<Quat<T>>>(op.getOperation())
+      .template Case<XOp>([&](XOp) {
+        return fixedAxisRotation(RotationAxis::X, std::numbers::pi);
+      })
+      .template Case<YOp>([&](YOp) {
+        return fixedAxisRotation(RotationAxis::Y, std::numbers::pi);
+      })
+      .template Case<ZOp>([&](ZOp) {
+        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi);
+      })
+      .template Case<SOp>([&](SOp) {
+        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 2.0);
+      })
+      .template Case<SdgOp>([&](SdgOp) {
+        return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 2.0);
+      })
+      .template Case<TOp>([&](TOp) {
+        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 4.0);
+      })
+      .template Case<TdgOp>([&](TdgOp) {
+        return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 4.0);
+      })
+      .template Case<SXOp>([&](SXOp) {
+        return fixedAxisRotation(RotationAxis::X, std::numbers::pi / 2.0);
+      })
+      .template Case<SXdgOp>([&](SXdgOp) {
+        return fixedAxisRotation(RotationAxis::X, -std::numbers::pi / 2.0);
+      })
+      .template Case<HOp>([&](HOp) -> std::optional<Quat<T>> {
+        const auto invSqrtTwo =
+            Val<T>::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
+        return Quat<T>{
+            .w = c.zero, .x = invSqrtTwo, .y = c.zero, .z = invSqrtTwo};
+      })
+      .template Case<IdOp>([&](IdOp) -> std::optional<Quat<T>> {
+        return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
+      })
       .template Case<ROp>([&](ROp) -> std::optional<Quat<T>> {
         const auto theta = param(0);
         const auto phi = param(1);
@@ -518,15 +518,17 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
           [&](auto) -> FailureOr<Val<T>> { return c.zero; })
       .template Case<XOp, YOp, ZOp, HOp>(
           [&](auto) -> FailureOr<Val<T>> { return c.pi / c.two; })
-      .template Case<SOp, SXOp>(
-          [&](auto) -> FailureOr<Val<T>> { return c.pi / (c.two * c.two); })
-      .template Case<SdgOp, SXdgOp>(
-          [&](auto) -> FailureOr<Val<T>> { return -c.pi / (c.two * c.two); })
+      .template Case<SOp, SXOp>([&](auto) -> FailureOr<Val<T>> {
+        return Val<T>::constant(rewriter, loc, std::numbers::pi / 4.0);
+      })
+      .template Case<SdgOp, SXdgOp>([&](auto) -> FailureOr<Val<T>> {
+        return Val<T>::constant(rewriter, loc, -std::numbers::pi / 4.0);
+      })
       .template Case<TOp>([&](auto) -> FailureOr<Val<T>> {
-        return c.pi / (c.two * c.two * c.two);
+        return Val<T>::constant(rewriter, loc, std::numbers::pi / 8.0);
       })
       .template Case<TdgOp>([&](auto) -> FailureOr<Val<T>> {
-        return -c.pi / (c.two * c.two * c.two);
+        return Val<T>::constant(rewriter, loc, -std::numbers::pi / 8.0);
       })
       .template Case<IdOp>([&](auto) -> FailureOr<Val<T>> { return c.zero; })
       .template Case<POp>([&](auto) -> FailureOr<Val<T>> {
