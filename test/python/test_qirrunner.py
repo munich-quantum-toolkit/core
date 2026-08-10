@@ -46,7 +46,7 @@ def _recorded_bitstrings(output: str, *, width: int) -> list[str]:
 
 
 def test_qirrunner_executes_compiled_bell_program() -> None:
-    """Execute a compiler-generated Base Profile program through qirrunner."""
+    """Execute a compiler-generated Base Profile program through QIR-Runner."""
     qir, output = _compile_and_run(
         """OPENQASM 3.0;
 include "stdgates.inc";
@@ -72,7 +72,7 @@ bit[2] c = measure q;
     ],
 )
 def test_qirrunner_executes_native_two_control_qis(inactive_control: int | None, expected: str) -> None:
-    """Execute the dedicated two-control X instruction through qirrunner."""
+    """Execute the dedicated two-control X instruction through QIR-Runner."""
     initialization = "\n".join(f"x q[{control}];" for control in range(2) if control != inactive_control)
     qir, output = _compile_and_run(
         f"""OPENQASM 3.0;
@@ -98,7 +98,7 @@ bit[3] c = measure q;
     ],
 )
 def test_qirrunner_executes_generic_multi_control_qis(inactive_control: int | None, expected: str) -> None:
-    """Execute a three-control X specialization through qirrunner."""
+    """Execute a three-control X specialization through QIR-Runner."""
     initialization = "\n".join(f"x q[{control}];" for control in range(3) if control != inactive_control)
     qir, output = _compile_and_run(
         f"""OPENQASM 3.0;
