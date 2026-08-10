@@ -250,11 +250,12 @@ def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
     Here, U is any (controlled) unitary gate.
 
     ```text
-    ┌───┐┌──────┐    ┌──────┐┌───┐
-    ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
-    └───┘└──────┘    └──────┘└───┘
+    ┌───┐┌──────┐    ┌──────┐
+    ┤ P ├┤ Meas ├ => ┤ Meas ├
+    └───┘└──────┘    └──────┘
     ```
-    Here, P is any diagonal gate, for example `z` or `s`.
+    Here, P is any uncontrolled single-qubit diagonal gate, for example `z`, `s`, or `rz`. Controlled diagonal gates
+    are instead commuted with measurements of their controls because they may still affect other qubits.
 
     ```text
     ┌───┐┌──────┐    ┌───────┐┌───┐

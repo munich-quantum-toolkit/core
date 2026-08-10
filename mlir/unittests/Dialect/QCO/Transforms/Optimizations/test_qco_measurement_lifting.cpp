@@ -417,6 +417,41 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
 }
 
 /**
+ * @brief Test: An RZ immediately before a measurement is removed even when the
+ * measured qubit remains observable afterward.
+ */
+TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto q = programBuilder.h(programBuilder.allocQubit());
+  q = programBuilder.rz(0.789, q);
+  Value firstOutcome;
+  std::tie(q, firstOutcome) = programBuilder.measure(q);
+  q = programBuilder.h(q);
+  Value secondOutcome;
+  std::tie(q, secondOutcome) = programBuilder.measure(q);
+  programBuilder.sink(q);
+  program = programBuilder.finalize({firstOutcome, secondOutcome});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto r = referenceBuilder.h(referenceBuilder.allocQubit());
+  Value referenceFirstOutcome;
+  std::tie(r, referenceFirstOutcome) = referenceBuilder.measure(r);
+  r = referenceBuilder.h(r);
+  Value referenceSecondOutcome;
+  std::tie(r, referenceSecondOutcome) = referenceBuilder.measure(r);
+  referenceBuilder.sink(r);
+  reference = referenceBuilder.finalize(
+      {referenceFirstOutcome, referenceSecondOutcome});
+
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
  * @brief Test: Tests lifting a measurement over multiple anti-diagonal gates.
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
