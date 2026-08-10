@@ -18,6 +18,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallVector.h>
@@ -61,6 +62,20 @@ struct ImportState {
   SmallVector<Value> allocatedQubits;
   SmallVector<Value> measurementResults;
 };
+
+void remapQubits(ImportState& state,
+                 const DenseMap<Value, Value>& replacements) {
+  const auto replace = [&](Value& qubit) {
+    if (const auto replacement = replacements.find(qubit);
+        replacement != replacements.end()) {
+      qubit = replacement->second;
+    }
+  };
+  for (auto& mapping : state.qubits) {
+    llvm::for_each(mapping.second, replace);
+  }
+  llvm::for_each(state.allocatedQubits, replace);
+}
 
 [[nodiscard]] SmallVector<Value> lookupQubits(const ImportState& state,
                                               const Value value) {
@@ -226,10 +241,54 @@ public:
   }
 
 private:
+  [[nodiscard]] LogicalResult
+  translateAdjointBlock(Block& source, OpBuilder& builder, ImportState& state,
+                        const ValueRange inheritedControls) {
+    SmallVector<Value> qubits;
+    llvm::SmallDenseSet<Value> seen;
+    for (const auto qubit : state.allocatedQubits) {
+      if (seen.insert(qubit).second) {
+        qubits.push_back(qubit);
+      }
+    }
+    for (const auto control : inheritedControls) {
+      if (seen.insert(control).second) {
+        qubits.push_back(control);
+      }
+    }
+
+    LogicalResult bodyResult = success();
+    auto inverse = qc::InvOp::create(
+        builder, source.getParentOp()->getLoc(), qubits,
+        [&](const ValueRange aliases) {
+          DenseMap<Value, Value> toAliases;
+          DenseMap<Value, Value> fromAliases;
+          for (const auto [qubit, alias] : llvm::zip(qubits, aliases)) {
+            toAliases[qubit] = alias;
+            fromAliases[alias] = qubit;
+          }
+          remapQubits(state, toAliases);
+          SmallVector<Value> controls;
+          controls.reserve(inheritedControls.size());
+          for (const auto control : inheritedControls) {
+            controls.push_back(toAliases.lookup(control));
+          }
+          bodyResult = translateBlock(source, builder, state, controls, false);
+          remapQubits(state, fromAliases);
+        });
+    if (failed(bodyResult)) {
+      return failure();
+    }
+    return inverse.verify();
+  }
+
   [[nodiscard]] LogicalResult translateBlock(Block& source, OpBuilder& builder,
                                              ImportState& state,
                                              const ValueRange inheritedControls,
                                              const bool inheritedAdjoint) {
+    if (inheritedAdjoint) {
+      return translateAdjointBlock(source, builder, state, inheritedControls);
+    }
     for (Operation& operation : source.without_terminator()) {
       if (failed(translateOperation(operation, builder, state,
                                     inheritedControls, inheritedAdjoint))) {

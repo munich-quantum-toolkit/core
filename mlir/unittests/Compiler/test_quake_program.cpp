@@ -150,6 +150,34 @@ module {
   EXPECT_NE(text.find("memref<1xi1>"), std::string::npos);
 }
 
+TEST(QuakeProgramTest, ImportsAdjointApplicationAsOneInverseRegion) {
+  constexpr auto source = R"mlir(
+module {
+  func.func @callee(%q: !quake.ref) attributes {"cudaq-kernel"} {
+    quake.h %q : (!quake.ref) -> ()
+    quake.s %q : (!quake.ref) -> ()
+    return
+  }
+  func.func @entry() attributes {"cudaq-entrypoint", "cudaq-kernel"} {
+    %q = quake.alloca !quake.ref
+    quake.apply<adj> @callee %q : (!quake.ref) -> ()
+    return
+  }
+})mlir";
+  auto quake = mlir::QuakeProgram::fromMLIRString(source);
+  ASSERT_TRUE(quake);
+  auto qc = std::move(*quake).intoQC();
+  ASSERT_TRUE(qc);
+  const auto text = qc->str();
+  const auto inverse = text.find("qc.inv");
+  ASSERT_NE(inverse, std::string::npos);
+  EXPECT_EQ(text.find("qc.inv", inverse + 1), std::string::npos);
+  const auto hadamard = text.find("qc.h", inverse);
+  ASSERT_NE(hadamard, std::string::npos);
+  const auto phase = text.find("qc.s", hadamard);
+  EXPECT_NE(phase, std::string::npos);
+}
+
 TEST(QuakeProgramTest, ImportsComputeActionLambdas) {
   constexpr auto source = R"mlir(
 module {
