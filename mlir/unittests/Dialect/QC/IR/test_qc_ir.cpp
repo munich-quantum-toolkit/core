@@ -569,6 +569,41 @@ TEST_F(QCTest, PositiveIntegralPowUCanonicalizes) {
   }
 }
 
+TEST_F(QCTest, PowUWithDynamicParameterDoesNotCanonicalize) {
+  auto program = QCProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto q = builder.allocQubitRegister(1);
+    builder.pow(2.0, q[0], [&](Value arg) { builder.u(0.1, 0.2, 0.3, arg); });
+    return builder.measure(q[0]);
+  });
+  ASSERT_TRUE(program);
+
+  auto funcOp = cast<func::FuncOp>(program->getBody()->front());
+  funcOp.insertArgument(0, Float64Type::get(context.get()), {},
+                        funcOp.getLoc());
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto uOp = *powOp.getBody()->getOps<UOp>().begin();
+  uOp.getThetaMutable().assign(funcOp.getArgument(0));
+
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(program->getBody()
+                  ->walk([](PowOp) { return WalkResult::interrupt(); })
+                  .wasInterrupted());
+}
+
+TEST_F(QCTest, FractionalPowUDoesNotCanonicalize) {
+  auto program = QCProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto q = builder.allocQubitRegister(1);
+    builder.pow(0.5, q[0], [&](Value arg) { builder.u(0.1, 0.2, 0.3, arg); });
+    return builder.measure(q[0]);
+  });
+  ASSERT_TRUE(program);
+
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(program->getBody()
+                  ->walk([](PowOp) { return WalkResult::interrupt(); })
+                  .wasInterrupted());
+}
+
 TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
   auto program = mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));

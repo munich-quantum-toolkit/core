@@ -79,12 +79,8 @@ powerUParameters(const double theta, const double phi, const double lambda,
   const double resultTheta =
       2.0 * std::atan2(std::abs(result[2]), std::abs(result[0]));
   const double angle1 = std::arg(result[3]);
-  double angle2 = 0.0;
-  if (std::abs(result[2]) > TOLERANCE) {
-    angle2 = std::arg(result[2]);
-  } else if (std::abs(result[1]) > TOLERANCE) {
-    angle2 = std::arg(result[1]);
-  }
+  const double angle2 =
+      std::abs(result[2]) > TOLERANCE ? std::arg(result[2]) : 0.0;
   const double resultPhi = angle1 + angle2 - determinantArgument;
   const double resultLambda = angle1 - angle2;
   const double resultPhase =
