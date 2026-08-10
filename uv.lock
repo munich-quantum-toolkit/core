@@ -1873,7 +1873,7 @@ docs = [
     { name = "sphinx-autoapi", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
     { name = "sphinx-design", specifier = ">=0.6.1" },
-    { name = "sphinx-llm" },
+    { name = "sphinx-llm", specifier = ">=0.4.1" },
     { name = "sphinxcontrib-bibtex", specifier = ">=2.6.5" },
     { name = "sphinxext-opengraph", specifier = ">=0.13.0" },
 ]
