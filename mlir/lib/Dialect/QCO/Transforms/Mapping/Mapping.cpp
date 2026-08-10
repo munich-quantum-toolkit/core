@@ -178,15 +178,15 @@ private:
       std::optional<Wires> wires;
     };
 
-    void applyPatch(const Patch& patch) {
+    void applyPatch(Patch&& patch) {
       if (patch.layout) {
-        layout = *patch.layout;
+        layout = std::move(*patch.layout);
       }
       if (patch.infos) {
-        infos = *patch.infos;
+        infos = std::move(*patch.infos);
       }
       if (patch.wires) {
-        wires = *patch.wires;
+        wires = std::move(*patch.wires);
       }
     }
   };
@@ -1250,8 +1250,9 @@ private:
       return it.operation() == composite.op;
     }));
 
-    return RoutingBundle::Patch{
-        .layout = std::nullopt, .infos = std::nullopt, .wires = wires};
+    return RoutingBundle::Patch{.layout = std::nullopt,
+                                .infos = std::nullopt,
+                                .wires = std::move(wires)};
   }
 
   /// Return `values` with only the qubit entries realigned according to the
@@ -1442,7 +1443,7 @@ private:
     // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
     // and restore (IndexSwitchOp) strategies.
 
-    const Layout exit =
+    Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
               const auto swaps = restore(children[0].layout, parent.layout);
@@ -1520,15 +1521,16 @@ private:
       return std::make_pair(RoutingBundle::Patch{}, totalStats);
     }
 
-    RoutingBundle::Patch patch{.layout = exit, .infos = WireInfos{}};
+    RoutingBundle::Patch patch{.layout = std::nullopt, .infos = WireInfos{}};
     for (size_t i = 0; i < parent.wires.size(); ++i) {
       const auto oldProg = parent.infos.lookupProgram(i);
       const auto oldHw = parent.layout.getHardwareIndex(oldProg);
       const auto newProg = exit.getProgramIndex(oldHw);
       patch.infos->insertOrUpdate(i, newProg);
     }
+    patch.layout = std::move(exit);
 
-    return std::make_pair(patch, totalStats);
+    return std::make_pair(std::move(patch), totalStats);
   }
 
   /// Iterates over a dynamically computed window of layers and uses A* search
@@ -1554,17 +1556,16 @@ private:
 
         for (auto& composite : composites) {
           if constexpr (Mode == RoutingMode::Hot) {
-            const auto patch = place(composite, bundle, *rewriter);
-            bundle.applyPatch(patch);
+            auto patch = place(composite, bundle, *rewriter);
+            bundle.applyPatch(std::move(patch));
           }
 
-          const auto res =
-              dispatch<Direction, Mode>(composite, bundle, rewriter);
+          auto res = dispatch<Direction, Mode>(composite, bundle, rewriter);
           if (failed(res)) {
             return failure();
           }
 
-          bundle.applyPatch(res->first);
+          bundle.applyPatch(std::move(res->first));
           stats.merge(res->second);
 
           // Once the composite is mapped, move past this op by incrementing the
