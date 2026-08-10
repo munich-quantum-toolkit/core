@@ -624,6 +624,35 @@ TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
   EXPECT_EQ(powCount, 1U);
 }
 
+TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
+  for (const auto& [theta, phi, lambda, exponent] :
+       {std::tuple{-4.7851911486806245, -18.3028077007916, -18.79029150092365,
+                   1017.0},
+        std::tuple{1123.1619760536523, -8607.999542206799, -9908.553022954226,
+                   2.0}}) {
+    auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
+      auto controlIn = b.staticQubit(0);
+      auto targetIn = b.staticQubit(1);
+      const auto [control, target] =
+          b.ctrl(controlIn, targetIn, [&](Value targetArg) -> Value {
+            return b.pow(exponent, targetArg, [&](Value powArg) {
+              return b.u(theta, phi, lambda, powArg);
+            });
+          });
+      return SmallVector<Value>{control, target};
+    });
+    ASSERT_TRUE(moduleOp);
+    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
+
+    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(verify(*moduleOp).succeeded());
+    mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    size_t powCount = 0;
+    moduleOp->walk([&](PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, 1U);
+  }
+}
+
 TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), [](auto& b) {
     auto q = b.staticQubit(0);
