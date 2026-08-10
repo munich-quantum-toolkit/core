@@ -45,14 +45,12 @@
 /// @note this struct is purposefully not called ResultImpl to leave the Result
 /// pointer opaque such that it cannot be dereferenced
 struct ResultStruct {
-  int32_t refcount;
-  bool r;
+  bool r{};
 };
 struct ArrayImpl {
-  int32_t refcount;
-  int32_t aliasCount;
-  std::vector<int8_t> data;
-  int64_t elementSize;
+  int32_t refcount{};
+  std::vector<int8_t> data{};
+  int64_t elementSize{};
 };
 
 namespace qir {
@@ -192,16 +190,8 @@ public:
   }
 };
 
-/**
- * @note This class is implemented following the design pattern Singleton in
- * order to access an instance of this class from the C function without having
- * a handle to it.
- */
 class Runtime {
 public:
-  static constexpr uintptr_t RESULT_ZERO_ADDRESS = 0x10000;
-  static constexpr uintptr_t RESULT_ONE_ADDRESS = 0x10001;
-
   /// The quantum state held by the runtime:
   /// - a DD package,
   /// - the root edge into that package, and
@@ -236,14 +226,17 @@ public:
   enum class OutputSchema : uint8_t { Labeled, Ordered };
 
 private:
-  static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
-  enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
+  friend class JitSession;
 
-  AddressMode addressMode;
+  static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
+  enum class ResourceMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
+
+  ResourceMode qubitMode;
   std::unordered_map<const Qubit*, qc::Qubit> qRegister;
   // swap gates are not executed, they are tracked here
   std::vector<qc::Qubit> qubitPermutation;
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
+  ResourceMode resultMode;
   std::unordered_map<Result*, ResultStruct> rRegister;
   std::string measurements;
   uintptr_t currentMaxQubitAddress;
@@ -255,11 +248,10 @@ private:
   // The QIR spec does not define a default output schema.
   // The runtime picks @c Labeled when a program doesn't declare one.
   OutputSchema outputSchema = OutputSchema::Labeled;
-
-  Runtime();
-  explicit Runtime(uint64_t randomSeed);
+  std::vector<std::pair<std::string, std::string>> metadata;
 
   auto enlargeState(std::uint64_t maxQubit) -> void;
+  static auto bind(Runtime* runtime) noexcept -> Runtime*;
   auto translateAddresses(std::span<Qubit* const> qubits)
       -> std::vector<qc::Qubit>;
 
@@ -314,7 +306,12 @@ private:
                   const char* label) const;
 
 public:
+  Runtime();
+  explicit Runtime(uint64_t randomSeed);
+
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
+  /// Return the runtime bound to this thread. When no session is executing, a
+  /// thread-local fallback keeps direct calls to the public C ABI convenient.
   static Runtime& getInstance();
 
   Runtime(const Runtime&) = delete;
@@ -323,6 +320,7 @@ public:
   Runtime& operator=(Runtime&&) = delete;
 
   auto reset() -> void;
+  auto seed(uint64_t randomSeed) -> void;
   template <qc::OpType Op, typename... Args>
   auto apply(Args&&... args) -> void {
     if constexpr (Op == qc::SWAP && sizeof...(Args) == 2) {
@@ -336,7 +334,8 @@ public:
   auto applyGlobalPhase(qc::fp phase) -> void {
     qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
   }
-  /// Apply a gate with a runtime-sized control set.
+  /// Apply a gate with a runtime-sized control set, as required by generic
+  /// controlled QIS specializations.
   auto apply(qc::OpType op, std::span<const qc::fp> params,
              std::span<Qubit* const> controls, std::span<Qubit* const> targets)
       -> void;
@@ -385,8 +384,8 @@ public:
       -> std::array<qc::Qubit, SIZE> {
     // extract addresses from opaque qubit pointers
     std::array<qc::Qubit, SIZE> qubitIds{};
-    if (addressMode != AddressMode::STATIC) {
-      // addressMode == AddressMode::DYNAMIC or AddressMode::UNKNOWN
+    if (qubitMode != ResourceMode::STATIC) {
+      // qubitMode == ResourceMode::DYNAMIC or ResourceMode::UNKNOWN
       try {
         Utils::transform(
             [&](const auto q) {
@@ -401,15 +400,15 @@ public:
             },
             qubits, qubitIds);
       } catch (std::out_of_range&) {
-        if (addressMode == AddressMode::DYNAMIC) {
+        if (qubitMode == ResourceMode::DYNAMIC) {
           throw; // rethrow
         }
-        // addressMode == AddressMode::UNKNOWN
-        addressMode = AddressMode::STATIC;
+        // qubitMode == ResourceMode::UNKNOWN
+        qubitMode = ResourceMode::STATIC;
       }
     }
-    // addressMode might have changed to STATIC
-    if (addressMode == AddressMode::STATIC) {
+    // qubitMode might have changed to STATIC
+    if (qubitMode == ResourceMode::STATIC) {
       Utils::transform(
           [](const auto q) {
             return static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(q));
@@ -424,7 +423,6 @@ public:
   auto rAlloc() -> Result*;
   auto deref(Result* result) -> ResultStruct&;
   auto rFree(Result* result) -> void;
-  auto equal(Result* result1, Result* result2) -> bool;
 
   /// Append a measurement bit to the measurement string.
   auto appendMeasurementBit(bool result) -> void;
@@ -445,6 +443,10 @@ public:
 
   /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
   auto outputResult(bool value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tRESULT_ARRAY\t<bits>[\tlabel]\n` in memory order.
+  auto outputResultArray(std::string_view values, const char* label) const
+      -> void;
 
   /// Emit `OUTPUT\tBOOL\t<true|false>[\tlabel]\n` to the output stream.
   auto outputBool(bool value, const char* label) const -> void;
@@ -470,12 +472,14 @@ public:
   /// `METADATA\toutput_labeling_schema\t<labeled|ordered>\n` (one per shot).
   auto outputShotStart() const -> void;
 
-  /// Emit `END\t0\n` (one per shot).
-  /// The trailing `0` is a spec literal, not a runtime exit code.
-  auto outputShotEnd() const -> void;
+  /// Emit `END\t<exitCode>\n` (one per shot).
+  auto outputShotEnd(int64_t exitCode = 0) const -> void;
 
   [[nodiscard]] auto getOutputSchema() const -> OutputSchema;
   auto setOutputSchema(OutputSchema schema) -> void;
+  auto setMetadata(
+      std::vector<std::pair<std::string, std::string>> entryPointMetadata)
+      -> void;
 };
 
 /// Write the schema's spec-mandated literal (`labeled` or `ordered`).

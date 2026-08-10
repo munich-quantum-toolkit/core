@@ -41,6 +41,35 @@ The `mqt-core-qir-runner` can be used to execute a QIR file (typically with a
 ./build/bin/mqt-core-qir-runner bell.ll
 ```
 
+The entry-point function may have any valid LLVM name. If a module contains more
+than one function with the `entry_point` attribute, select one explicitly. The
+runner also supports repeated, reproducible execution:
+
+```bash
+./build/bin/mqt-core-qir-runner \
+  --entry-point=bell_entry --shots=1024 --seed=7 bell.ll
+```
+
+QIR entry points take no arguments and return an `i64` exit code. Runtime and
+QIS declarations are checked before JIT compilation; a mismatched or unsupported
+declaration is reported with its actual and accepted LLVM function types.
+
+MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT
+accepts one exact LLVM type for each runtime declaration, so unsupported or
+outdated overloads fail before execution.
+
+MQT Core provides dedicated QIS functions for variants with one or two control
+qubits, using the `c<gate>` and `cc<gate>` names. Operations with three or more
+controls use generic `__ctl` and `__ctladj` specializations. The control qubits
+are passed in an Array; parameterized and multi-target gates pass their original
+arguments in a Tuple, following the qir-runner calling convention. MQT accepts
+these functions as implementation-specific extensions to the QIR 2.1 Base and
+Adaptive profiles, so the entry point keeps its `base_profile` or
+`adaptive_profile` attribute.
+
+MQT's two-angle phased-X rotation gate uses the `prx` QIS stem. The incompatible
+qir-runner Pauli-axis operation named `r` is not part of MQT's QIS.
+
 The runner prints the program's outputs to the console in one of the two
 [QIR Output Schemas][output-schemas] (Labeled or Ordered): the two `HEADER`
 records announce the schema, and each shot is wrapped in `START` and `END`

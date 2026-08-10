@@ -14,17 +14,20 @@
 
 #pragma once
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace qir {
+
+class Runtime;
 
 /**
  * @brief Whether the JIT'd program runs to produce measurement samples or
@@ -37,6 +40,12 @@ namespace qir {
  */
 enum class Execution { Sampling, StateExtraction };
 
+struct SessionOptions {
+  Execution execution = Execution::Sampling;
+  std::optional<std::string> entryPoint;
+  std::optional<uint64_t> seed;
+};
+
 /**
  * @brief In-process JIT executor for QIR programs.
  * @details The session does the following, in order:
@@ -44,14 +53,14 @@ enum class Execution { Sampling, StateExtraction };
  *   an in-memory buffer,
  * - JIT-compiles it via LLVM's OrcJIT with lazy compilation.
  * - wires up the QIR runtime symbols, and
- * - runs the module's @c main function.
+ * - runs the module function marked as its QIR entry point.
  * A session owns a single LLJIT instance and is not meant to be reused across
  * modules; create a new @ref JitSession for each program.
  */
 class JitSession {
 public:
-  /// Signature of the @c main function produced by QIR-compiled modules.
-  using MainFn = int(int, char**);
+  /// QIR 2.1 Base and Adaptive Profile entry-point signature.
+  using EntryPointFn = int64_t();
 
   /**
    * @brief Build a session by loading IR from a file on disk.
@@ -61,7 +70,7 @@ public:
    * to initialize.
    */
   explicit JitSession(llvm::StringRef inputFile,
-                      Execution mode = Execution::Sampling);
+                      const SessionOptions& options = {});
 
   /**
    * @brief Build a session by loading IR from a memory buffer.
@@ -74,30 +83,30 @@ public:
    * to initialize.
    */
   JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
-             Execution mode = Execution::Sampling);
+             const SessionOptions& options = {});
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
 
   /**
-   * @brief Executes the JIT'd @c main function.
-   * @param args Argument strings passed as @c argv (excluding @c argv[0]).
-   * @param progName Value used as @c argv[0].
-   * @return The integer returned by the JIT'd @c main.
+   * @brief Execute the selected QIR entry point.
+   * @return The 64-bit QIR exit code.
    */
-  int run(llvm::ArrayRef<std::string> args = {},
-          llvm::StringRef progName = "") const;
+  int64_t run();
+
+  [[nodiscard]] auto runtime() -> Runtime&;
+  [[nodiscard]] auto runtime() const -> const Runtime&;
+  [[nodiscard]] auto entryPointName() const -> const std::string& {
+    return entryPointName_;
+  }
 
 private:
   llvm::orc::ThreadSafeContext tsCtx_{std::make_unique<llvm::LLVMContext>()};
   llvm::orc::ThreadSafeModule module_;
+  std::unique_ptr<Runtime> runtime_;
   std::unique_ptr<llvm::orc::LLJIT> jit_;
-  MainFn* mainFn_ = nullptr;
-
-  /// Registers the QIR runtime symbols with @c llvm::sys::DynamicLibrary so the
-  /// JIT can resolve them at link time.
-  /// Safe to call multiple times; the work runs only on the first call.
-  static void registerRuntimeSymbols();
+  EntryPointFn* entryPointFn_ = nullptr;
+  std::string entryPointName_;
 
   /// Initializes the native target, asm printer and asm parser.
   /// Safe to call multiple times; the work runs only on the first call.
@@ -118,10 +127,10 @@ private:
   ///   (for @c Execution::StateExtraction).
   /// - Builds the @c LLJIT instance
   /// - Registers QIR runtime symbols
-  /// - Resolves @c main.
+  /// - Resolves the selected QIR entry point.
   /// @throws std::runtime_error if loading failed or the JIT cannot start.
   void initialize(llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-                  Execution mode);
+                  const SessionOptions& options);
 
   /// Tears down the @c LLJIT.
   void deinitialize() const;
