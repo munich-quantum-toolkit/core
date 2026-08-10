@@ -943,6 +943,71 @@ TEST_P(MappingPassTest, MapParallelLoops) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
+TEST_P(MappingPassTest, MapParallelLoopsWithClassicalDependencies) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %q3 = qco.alloc : !qco.qubit
+        %q4 = qco.alloc : !qco.qubit
+        %q5 = qco.alloc : !qco.qubit
+        %q6 = qco.alloc : !qco.qubit
+        %q7 = qco.alloc : !qco.qubit
+        %a0, %a1, %s1 = scf.for %i = %c0 to %c1 step %c1
+            iter_args(%x = %q0, %y = %q1, %s = %c1)
+            -> (!qco.qubit, !qco.qubit, index) {
+          %nx, %ny = qco.swap %x, %y
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.yield %nx, %ny, %s : !qco.qubit, !qco.qubit, index
+        }
+        %b0, %b1, %s2 = scf.for %i = %c0 to %s1 step %c1
+            iter_args(%x = %q2, %y = %q3, %s = %s1)
+            -> (!qco.qubit, !qco.qubit, index) {
+          %nx, %ny = qco.swap %x, %y
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.yield %nx, %ny, %s : !qco.qubit, !qco.qubit, index
+        }
+        %d0, %d1, %s3 = scf.for %i = %c0 to %s2 step %c1
+            iter_args(%x = %q4, %y = %q5, %s = %s2)
+            -> (!qco.qubit, !qco.qubit, index) {
+          %nx, %ny = qco.swap %x, %y
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.yield %nx, %ny, %s : !qco.qubit, !qco.qubit, index
+        }
+        %e0, %e1, %s4 = scf.for %i = %c0 to %s3 step %c1
+            iter_args(%x = %q6, %y = %q7, %s = %s3)
+            -> (!qco.qubit, !qco.qubit, index) {
+          %nx, %ny = qco.swap %x, %y
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          scf.yield %nx, %ny, %s : !qco.qubit, !qco.qubit, index
+        }
+        qco.sink %a0 : !qco.qubit
+        qco.sink %a1 : !qco.qubit
+        qco.sink %b0 : !qco.qubit
+        qco.sink %b1 : !qco.qubit
+        qco.sink %d0 : !qco.qubit
+        qco.sink %d1 : !qco.qubit
+        qco.sink %e0 : !qco.qubit
+        qco.sink %e1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  EXPECT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
 TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(

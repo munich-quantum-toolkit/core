@@ -1178,6 +1178,16 @@ private:
       return WalkResult::advance();
     });
 
+    // Preserve the block order when multiple independent composite operations
+    // become ready at once. Hot routing threads every qubit through each
+    // composite, so processing a later operation first could introduce a
+    // use-before-definition for an earlier operation.
+    llvm::sort(composites,
+               [](const CompositeUnitary& lhs, const CompositeUnitary& rhs) {
+                 assert(lhs.op->getBlock() == rhs.op->getBlock());
+                 return lhs.op->isBeforeInBlock(rhs.op);
+               });
+
     return composites;
   }
 
