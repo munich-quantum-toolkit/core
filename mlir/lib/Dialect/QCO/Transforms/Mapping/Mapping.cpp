@@ -983,13 +983,14 @@ private:
   /// Return the "average" layout by computing the borda count, where each
   /// layout is a voter and each hardware index counts as a candidate. One vote
   /// is the order (the permutation) of program-to-hardware indices.
-  template <typename Range> Layout vote(Range layouts) {
+  template <typename Range>
+  Layout vote(Range layouts, const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
 
     FGraph f(*target);
     Layout curr(*(layouts.begin()));
 
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < niterations; ++i) {
       for (const auto& layout : llvm::drop_begin(layouts)) {
         f.reset();
         f.construct(curr, layout);
