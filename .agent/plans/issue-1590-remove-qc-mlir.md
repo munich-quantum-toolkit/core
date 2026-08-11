@@ -42,13 +42,12 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
 
 ## Surprises & Discoveries
 
-- Observation: the bridge is one-way despite its broad dependency footprint.
-  The only production conversion is
-  `translateQuantumComputationToQC`; there is no MLIR-to-`QuantumComputation`
-  exporter. Evidence: the complete repository search finds the public factory
-  in `mlir/include/mlir/Compiler/Programs.h`, its implementation in
-  `mlir/lib/Compiler/Programs.cpp`, and the translator under
-  `mlir/lib/Dialect/QC/Translation`, but no inverse API.
+- Observation: the bridge is one-way despite its broad dependency footprint. The
+  only production conversion is `translateQuantumComputationToQC`; there is no
+  MLIR-to-`QuantumComputation` exporter. Evidence: the complete repository
+  search finds the public factory in `mlir/include/mlir/Compiler/Programs.h`,
+  its implementation in `mlir/lib/Compiler/Programs.cpp`, and the translator
+  under `mlir/lib/Dialect/QC/Translation`, but no inverse API.
 - Observation: the preceding stack layer replaces the former indirect Qiskit
   route with a direct, version-gated C-API bridge. It neither constructs a
   `QuantumComputation` nor links `MQT::CoreIR`, so it can remain while the
@@ -65,9 +64,9 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
 
 - Decision: Remove `QuantumComputation` inputs while retaining the direct Qiskit
   C-API inputs introduced by the preceding pull request. Rationale: the direct
-  bridge imports and exports QC MLIR without using the legacy representation,
-  so removing it would add an unrelated regression rather than reduce the
-  coupling targeted here. Date/Author: 2026-08-11, Codex.
+  bridge imports and exports QC MLIR without using the legacy representation, so
+  removing it would add an unrelated regression rather than reduce the coupling
+  targeted here. Date/Author: 2026-08-11, Codex.
 - Decision: Preserve the MLIR QC dialect and its OpenQASM translation library.
   Rationale: `QC` is the compiler's frontend dialect and is distinct from the
   legacy C++ `qc::QuantumComputation` class. OpenQASM and textual QC MLIR remain
@@ -80,8 +79,8 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
 
 ## Outcomes & Retrospective
 
-The implementation removes the legacy translator, factory, fixtures, and Core
-IR links while retaining the direct Qiskit integration and DD functionality.
+The implementation removes the legacy translator, factory, fixtures, and Core IR
+links while retaining the direct Qiskit integration and DD functionality.
 Validation and publication must be refreshed after the stack rebase.
 
 ## Context and Orientation
@@ -97,9 +96,8 @@ dialect and must remain.
 `mlir/include/mlir/Compiler/Programs.h` exposes typed compiler program classes.
 `QCProgram::fromQuantumComputation` wraps the translator, while the direct
 Qiskit C-API adapter reaches QC MLIR independently. The dedicated translator
-tests and the large
-`mlir/unittests/programs/quantum_computation_programs.*` fixture set exist only
-for this bridge.
+tests and the large `mlir/unittests/programs/quantum_computation_programs.*`
+fixture set exist only for this bridge.
 
 The DD boundary lives in `mlir/include/mlir/Dialect/QCO/Utils/DDFunctionality.h`
 and `mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp`. It maps static QCO
