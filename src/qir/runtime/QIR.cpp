@@ -10,55 +10,127 @@
 
 #include "qir/runtime/QIR.h"
 
+#include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "qir/runtime/Runtime.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <new>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-extern "C" {
+namespace {
 
-// *** MEASUREMENT RESULTS ***
-Result* __quantum__rt__result_get_zero() {
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  return reinterpret_cast<Result*>(qir::Runtime::RESULT_ZERO_ADDRESS);
+struct alignas(std::max_align_t) TupleHeader {
+  int32_t referenceCount = 1;
+  int64_t size = 0;
+};
+
+} // namespace
+
+static auto getTupleHeader(Tuple* tuple) -> TupleHeader* {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  return reinterpret_cast<TupleHeader*>(tuple) - 1;
 }
 
-Result* __quantum__rt__result_get_one() {
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  return reinterpret_cast<Result*>(qir::Runtime::RESULT_ONE_ADDRESS);
-}
-
-bool __quantum__rt__result_equal(Result* result1, Result* result2) {
-  auto& runtime = qir::Runtime::getInstance();
-  return runtime.equal(result1, result2);
-}
-
-void __quantum__rt__result_update_reference_count(Result* result,
-                                                  const int32_t k) {
-  auto& runtime = qir::Runtime::getInstance();
-  // NOLINTBEGIN(performance-no-int-to-ptr)
-  if (result != nullptr &&
-      result != reinterpret_cast<Result*>(qir::Runtime::RESULT_ZERO_ADDRESS) &&
-      result != reinterpret_cast<Result*>(qir::Runtime::RESULT_ONE_ADDRESS)) {
-    // NOLINTEND(performance-no-int-to-ptr)
-    auto& refcount = runtime.deref(result).refcount;
-    refcount += k;
-    if (refcount == 0) {
-      runtime.rFree(result);
+static auto controlsFromArray(Array* array) -> std::vector<Qubit*> {
+  if (array == nullptr) {
+    throw std::invalid_argument("QIR control array must not be null");
+  }
+  if (std::cmp_not_equal(array->elementSize, sizeof(Qubit*))) {
+    throw std::invalid_argument(
+        "QIR control array elements must contain qubit pointers");
+  }
+  const auto size = __quantum__rt__array_get_size_1d(array);
+  std::vector<Qubit*> controls(static_cast<std::size_t>(size));
+  for (int64_t i = 0; i < size; ++i) {
+    const auto* element = __quantum__rt__array_get_element_ptr_1d(array, i);
+    if (element == nullptr) {
+      throw std::out_of_range("QIR control array index out of range");
     }
+    std::memcpy(static_cast<void*>(&controls[static_cast<std::size_t>(i)]),
+                element, sizeof(Qubit*));
+  }
+  return controls;
+}
+
+static auto applyControlled(const qc::OpType op, Array* controlArray,
+                            Qubit* target, const std::span<const qc::fp> params)
+    -> void {
+  const auto controls = controlsFromArray(controlArray);
+  const std::array targets{target};
+  qir::Runtime::getInstance().apply(op, params, controls, targets);
+}
+
+template <std::size_t NumParams, std::size_t NumTargets>
+static auto applyControlledTuple(const qc::OpType op, Array* controls,
+                                 Tuple* tuple) -> void {
+  if (tuple == nullptr) {
+    throw std::invalid_argument(
+        "QIR generic controlled argument tuple must not be null");
+  }
+  const auto validateSize = [&](const std::size_t expected) {
+    if (std::cmp_not_equal(getTupleHeader(tuple)->size, expected)) {
+      throw std::invalid_argument(
+          "QIR generic controlled argument tuple has an invalid size");
+    }
+  };
+
+  if constexpr (NumParams == 0) {
+    struct Args {
+      std::array<Qubit*, NumTargets> targets{};
+    };
+    static_assert(std::is_standard_layout_v<Args>);
+    validateSize(sizeof(Args));
+    Args args;
+    std::memcpy(&args, tuple, sizeof(Args));
+    const auto controlList = controlsFromArray(controls);
+    qir::Runtime::getInstance().apply(op, {}, controlList, args.targets);
+  } else {
+    struct Args {
+      std::array<qc::fp, NumParams> parameters{};
+      std::array<Qubit*, NumTargets> targets{};
+    };
+    static_assert(std::is_standard_layout_v<Args>);
+    validateSize(sizeof(Args));
+    Args args;
+    std::memcpy(&args, tuple, sizeof(Args));
+    const auto controlList = controlsFromArray(controls);
+    qir::Runtime::getInstance().apply(op, args.parameters, controlList,
+                                      args.targets);
   }
 }
 
+extern "C" {
+
 // *** ARRAYS ***
 Array* __quantum__rt__array_create_1d(const int32_t size, const int64_t n) {
+  if (size <= 0 || n < 0) {
+    throw std::invalid_argument(
+        "QIR array element size must be positive and length nonnegative");
+  }
+  const auto elementSize = static_cast<std::size_t>(size);
+  const auto length = static_cast<std::size_t>(n);
+  constexpr auto maxObjectSize =
+      static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max());
+  if (length > maxObjectSize / elementSize) {
+    throw std::length_error("QIR array allocation size overflow");
+  }
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto* array = new Array;
   array->refcount = 1;
-  array->aliasCount = 0;
-  array->data =
-      std::vector(static_cast<size_t>(size * n), static_cast<int8_t>(0));
+  array->data = std::vector(length * elementSize, static_cast<int8_t>(0));
   array->elementSize = size;
   return array;
 }
@@ -86,20 +158,110 @@ void __quantum__rt__array_update_reference_count(Array* array,
   }
 }
 
+Tuple* __quantum__rt__tuple_create(const int64_t size) {
+  if (size < 0) {
+    throw std::invalid_argument("QIR tuple size must not be negative");
+  }
+  const auto payloadSize = static_cast<std::size_t>(size);
+  constexpr auto maxObjectSize =
+      static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max());
+  if (payloadSize > maxObjectSize - sizeof(TupleHeader)) {
+    throw std::length_error("QIR tuple allocation size overflow");
+  }
+  const auto bytes = sizeof(TupleHeader) + payloadSize;
+  auto* storage = static_cast<std::byte*>(
+      ::operator new(bytes, std::align_val_t{alignof(TupleHeader)}));
+  auto* header = std::construct_at(reinterpret_cast<TupleHeader*>(storage));
+  header->size = size;
+  auto* payload =
+      std::next(storage, static_cast<std::ptrdiff_t>(sizeof(TupleHeader)));
+  std::ranges::fill_n(payload, size, std::byte{0});
+  return reinterpret_cast<Tuple*>(payload);
+}
+
+void __quantum__rt__tuple_update_reference_count(Tuple* tuple,
+                                                 const int32_t k) {
+  if (tuple == nullptr) {
+    return;
+  }
+  auto* header = getTupleHeader(tuple);
+  header->referenceCount += k;
+  if (header->referenceCount == 0) {
+    std::destroy_at(header);
+    ::operator delete(header, std::align_val_t{alignof(TupleHeader)});
+  }
+}
+
 // *** QUANTUM INSTRUCTION SET AND RUNTIME ***
-Qubit* __quantum__rt__qubit_allocate() {
+Qubit* __quantum__rt__qubit_allocate(bool* outError) {
+  if (outError != nullptr) {
+    *outError = false;
+  }
   auto& runtime = qir::Runtime::getInstance();
   return runtime.qAlloc();
 }
 
-Array* __quantum__rt__qubit_allocate_array(const int64_t n) {
-  auto* array = __quantum__rt__array_create_1d(sizeof(Qubit*), n);
-  for (int64_t i = 0; i < n; ++i) {
-    auto* const q = reinterpret_cast<Qubit**>(
-        __quantum__rt__array_get_element_ptr_1d(array, i));
-    *q = __quantum__rt__qubit_allocate();
+void __quantum__rt__qubit_array_allocate(const int64_t size, Qubit** array,
+                                         bool* outError) {
+  if (outError != nullptr) {
+    *outError = false;
   }
-  return array;
+  if (size < 0 || (size > 0 && array == nullptr)) {
+    if (outError != nullptr) {
+      *outError = true;
+      return;
+    }
+    throw std::invalid_argument("Invalid QIR qubit array allocation");
+  }
+  for (auto*& qubit : std::span(array, static_cast<std::size_t>(size))) {
+    qubit = qir::Runtime::getInstance().qAlloc();
+  }
+}
+
+void __quantum__rt__qubit_array_release(const int64_t size, Qubit** array) {
+  if (size < 0 || (size > 0 && array == nullptr)) {
+    throw std::invalid_argument("Invalid QIR qubit array release");
+  }
+  for (Qubit* qubit : std::span(array, static_cast<std::size_t>(size))) {
+    qir::Runtime::getInstance().qFree(qubit);
+  }
+}
+
+Result* __quantum__rt__result_allocate(bool* outError) {
+  if (outError != nullptr) {
+    *outError = false;
+  }
+  return qir::Runtime::getInstance().rAlloc();
+}
+
+void __quantum__rt__result_release(Result* result) {
+  qir::Runtime::getInstance().rFree(result);
+}
+
+void __quantum__rt__result_array_allocate(const int64_t size, Result** array,
+                                          bool* outError) {
+  if (outError != nullptr) {
+    *outError = false;
+  }
+  if (size < 0 || (size > 0 && array == nullptr)) {
+    if (outError != nullptr) {
+      *outError = true;
+      return;
+    }
+    throw std::invalid_argument("Invalid QIR result array allocation");
+  }
+  for (auto*& result : std::span(array, static_cast<std::size_t>(size))) {
+    result = qir::Runtime::getInstance().rAlloc();
+  }
+}
+
+void __quantum__rt__result_array_release(const int64_t size, Result** array) {
+  if (size < 0 || (size > 0 && array == nullptr)) {
+    throw std::invalid_argument("Invalid QIR result array release");
+  }
+  for (Result* result : std::span(array, static_cast<std::size_t>(size))) {
+    qir::Runtime::getInstance().rFree(result);
+  }
 }
 
 void __quantum__rt__qubit_release(Qubit* qubit) {
@@ -107,262 +269,186 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
   runtime.qFree(qubit);
 }
 
-void __quantum__rt__qubit_release_array(Array* array) {
-  const auto size = __quantum__rt__array_get_size_1d(array);
-  // deallocate every qubit
-  for (int64_t i = 0; i < size; ++i) {
-    auto* const q = reinterpret_cast<Qubit**>(
-        __quantum__rt__array_get_element_ptr_1d(array, i));
-    __quantum__rt__qubit_release(*q);
-  }
-  // deallocate array
-  __quantum__rt__array_update_reference_count(array, -1);
-}
-
 // QUANTUM INSTRUCTION SET
-void __quantum__qis__x__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::X>(qubit);
-}
+#define MQT_QIR_DEFINE_1_0(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit* target) {                     \
+    qir::Runtime::getInstance().apply<qc::OP>(target);                         \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit* control, Qubit* target) {    \
+    qir::Runtime::getInstance().apply<qc::OP>(control, target);                \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit* control0, Qubit* control1,  \
+                                            Qubit* target) {                   \
+    qir::Runtime::getInstance().apply<qc::OP>(control0, control1, target);     \
+  }
+#define MQT_QIR_DEFINE_1_1(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(double p0, Qubit* target) {          \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, target);                     \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(double p0, Qubit* control,          \
+                                           Qubit* target) {                    \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, control, target);            \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double p0, Qubit* control0,        \
+                                            Qubit* control1, Qubit* target) {  \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, control0, control1, target); \
+  }
+#define MQT_QIR_DEFINE_1_2(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1,                \
+                                          Qubit* target) {                     \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, target);                 \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(double p0, double p1,               \
+                                           Qubit* control, Qubit* target) {    \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control, target);        \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(                                   \
+      double p0, double p1, Qubit* control0, Qubit* control1, Qubit* target) { \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control0, control1,      \
+                                              target);                         \
+  }
+#define MQT_QIR_DEFINE_1_3(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1, double p2,     \
+                                          Qubit* target) {                     \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, p2, target);             \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(double p0, double p1, double p2,    \
+                                           Qubit* control, Qubit* target) {    \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, p2, control, target);    \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double p0, double p1, double p2,   \
+                                            Qubit* control0, Qubit* control1,  \
+                                            Qubit* target) {                   \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, p2, control0, control1,  \
+                                              target);                         \
+  }
+#define MQT_QIR_DEFINE_2_0(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit* target0, Qubit* target1) {    \
+    qir::Runtime::getInstance().apply<qc::OP>(target0, target1);               \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit* control, Qubit* target0,     \
+                                           Qubit* target1) {                   \
+    qir::Runtime::getInstance().apply<qc::OP>(control, target0, target1);      \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit* control0, Qubit* control1,  \
+                                            Qubit* target0, Qubit* target1) {  \
+    qir::Runtime::getInstance().apply<qc::OP>(control0, control1, target0,     \
+                                              target1);                        \
+  }
+#define MQT_QIR_DEFINE_2_1(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(double p0, Qubit* target0,           \
+                                          Qubit* target1) {                    \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, target0, target1);           \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(double p0, Qubit* control,          \
+                                           Qubit* target0, Qubit* target1) {   \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, control, target0, target1);  \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double p0, Qubit* control0,        \
+                                            Qubit* control1, Qubit* target0,   \
+                                            Qubit* target1) {                  \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, control0, control1, target0, \
+                                              target1);                        \
+  }
+#define MQT_QIR_DEFINE_2_2(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1,                \
+                                          Qubit* target0, Qubit* target1) {    \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, target0, target1);       \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(                                    \
+      double p0, double p1, Qubit* control, Qubit* target0, Qubit* target1) {  \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control, target0,        \
+                                              target1);                        \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double p0, double p1,              \
+                                            Qubit* control0, Qubit* control1,  \
+                                            Qubit* target0, Qubit* target1) {  \
+    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control0, control1,      \
+                                              target0, target1);               \
+  }
+#define MQT_QIR_DEFINE_3_0(NAME, OP, SUFFIX)                                   \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit* target0, Qubit* target1,      \
+                                          Qubit* target2) {                    \
+    qir::Runtime::getInstance().apply<qc::OP>(target0, target1, target2);      \
+  }                                                                            \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit* control, Qubit* target0,     \
+                                           Qubit* target1, Qubit* target2) {   \
+    qir::Runtime::getInstance().apply<qc::OP>(control, target0, target1,       \
+                                              target2);                        \
+  }                                                                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit* control0, Qubit* control1,  \
+                                            Qubit* target0, Qubit* target1,    \
+                                            Qubit* target2) {                  \
+    qir::Runtime::getInstance().apply<qc::OP>(control0, control1, target0,     \
+                                              target1, target2);               \
+  }
+#define MQT_QIR_DEFINE_CTL_1_0(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls,                 \
+                                              Qubit* target) {                 \
+    applyControlled(qc::OP, controls, target, {});                             \
+  }
+#define MQT_QIR_DEFINE_CTL_1_1(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<1, 1>(qc::OP, controls, args);                        \
+  }
+#define MQT_QIR_DEFINE_CTL_1_2(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<2, 1>(qc::OP, controls, args);                        \
+  }
+#define MQT_QIR_DEFINE_CTL_1_3(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<3, 1>(qc::OP, controls, args);                        \
+  }
+#define MQT_QIR_DEFINE_CTL_2_0(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<0, 2>(qc::OP, controls, args);                        \
+  }
+#define MQT_QIR_DEFINE_CTL_2_1(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<1, 2>(qc::OP, controls, args);                        \
+  }
+#define MQT_QIR_DEFINE_CTL_2_2(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<2, 2>(qc::OP, controls, args);                        \
+  }
+#define MQT_QIR_DEFINE_CTL_3_0(NAME, OP, CTL_SUFFIX)                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
+    applyControlledTuple<0, 3>(qc::OP, controls, args);                        \
+  }
 
-void __quantum__qis__y__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Y>(qubit);
-}
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  MQT_QIR_DEFINE_##TARGETS##_##PARAMS(NAME, OP, SUFFIX)                        \
+      MQT_QIR_DEFINE_CTL_##TARGETS##_##PARAMS(NAME, OP, CTL_SUFFIX)
+#include "mlir/Conversion/GateTable.def"
 
-void __quantum__qis__z__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Z>(qubit);
-}
+#undef MQT_QIR_DEFINE_1_0
+#undef MQT_QIR_DEFINE_1_1
+#undef MQT_QIR_DEFINE_1_2
+#undef MQT_QIR_DEFINE_1_3
+#undef MQT_QIR_DEFINE_2_0
+#undef MQT_QIR_DEFINE_2_1
+#undef MQT_QIR_DEFINE_2_2
+#undef MQT_QIR_DEFINE_3_0
+#undef MQT_QIR_DEFINE_CTL_1_0
+#undef MQT_QIR_DEFINE_CTL_1_1
+#undef MQT_QIR_DEFINE_CTL_1_2
+#undef MQT_QIR_DEFINE_CTL_1_3
+#undef MQT_QIR_DEFINE_CTL_2_0
+#undef MQT_QIR_DEFINE_CTL_2_1
+#undef MQT_QIR_DEFINE_CTL_2_2
+#undef MQT_QIR_DEFINE_CTL_3_0
 
-void __quantum__qis__h__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::H>(qubit);
-}
-
-void __quantum__qis__s__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::S>(qubit);
-}
-
-void __quantum__qis__s__adj(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Sdg>(qubit);
-}
-
-void __quantum__qis__sx__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::SX>(qubit);
-}
-
-void __quantum__qis__sx__adj(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::SXdg>(qubit);
-}
-
-void __quantum__qis__sqrtx__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::SX>(qubit);
-}
-
-void __quantum__qis__sqrtx__adj(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::SXdg>(qubit);
-}
-
-void __quantum__qis__t__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::T>(qubit);
-}
-
-void __quantum__qis__t__adj(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Tdg>(qubit);
-}
-
-void __quantum__qis__r__body(Qubit* qubit, const double theta,
-                             const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::R>(theta, phi, qubit);
-}
-
-// prx is an alias for the R gate
-void __quantum__qis__prx__body(Qubit* qubit, const double theta,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::R>(theta, phi, qubit);
-}
-
-void __quantum__qis__rx__body(Qubit* qubit, const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RX>(phi, qubit);
-}
-
-void __quantum__qis__ry__body(Qubit* qubit, const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RY>(phi, qubit);
-}
-
-void __quantum__qis__rz__body(Qubit* qubit, const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RZ>(phi, qubit);
-}
-
-void __quantum__qis__p__body(Qubit* qubit, const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::P>(phi, qubit);
-}
-
-void __quantum__qis__rxx__body(Qubit* target1, Qubit* target2,
-                               const double theta) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RXX>(theta, target1, target2);
-}
-
-void __quantum__qis__ryy__body(Qubit* target1, Qubit* target2,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RYY>(phi, target1, target2);
-}
-
-void __quantum__qis__rzz__body(Qubit* target1, Qubit* target2,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RZZ>(phi, target1, target2);
-}
-
-void __quantum__qis__rzx__body(Qubit* target1, Qubit* target2,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RZX>(phi, target1, target2);
-}
-
-void __quantum__qis__u__body(Qubit* qubit, const double theta, const double phi,
-                             const double lambda) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::U>(theta, phi, lambda, qubit);
-}
-
-void __quantum__qis__u3__body(Qubit* qubit, const double theta,
-                              const double phi, const double lambda) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::U>(theta, phi, lambda, qubit);
-}
-
-void __quantum__qis__u2__body(Qubit* qubit, const double theta,
-                              const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::U2>(theta, phi, qubit);
-}
-
-void __quantum__qis__u1__body(Qubit* qubit, const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::P>(phi, qubit);
-}
-
-void __quantum__qis__cu1__body(Qubit* control, Qubit* target,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::P>(phi, control, target);
-}
-
-void __quantum__qis__cu3__body(Qubit* control, Qubit* target,
-                               const double theta, const double phi,
-                               const double lambda) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::U>(theta, phi, lambda, control, target);
+void __quantum__qis__gphase__body(const double phase) {
+  qir::Runtime::getInstance().applyGlobalPhase(phase);
 }
 
 void __quantum__qis__cnot__body(Qubit* control, Qubit* target) {
   __quantum__qis__cx__body(control, target);
 }
 
-void __quantum__qis__cx__body(Qubit* control, Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::X>(control, target);
-}
-
-void __quantum__qis__cy__body(Qubit* control, Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Y>(control, target);
-}
-
-void __quantum__qis__cz__body(Qubit* control, Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Z>(control, target);
-}
-
-void __quantum__qis__ch__body(Qubit* control, Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::H>(control, target);
-}
-
-void __quantum__qis__swap__body(Qubit* target1, Qubit* target2) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.swap(target1, target2);
-}
-
-void __quantum__qis__cswap__body(Qubit* control, Qubit* target1,
-                                 Qubit* target2) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::SWAP>(control, target1, target2);
-}
-
-void __quantum__qis__crz__body(Qubit* control, Qubit* target,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RZ>(phi, control, target);
-}
-
-void __quantum__qis__cry__body(Qubit* control, Qubit* target,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RY>(phi, control, target);
-}
-
-void __quantum__qis__crx__body(Qubit* control, Qubit* target,
-                               const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RX>(phi, control, target);
-}
-
-void __quantum__qis__cp__body(Qubit* control, Qubit* target, const double phi) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::P>(phi, control, target);
-}
-
-void __quantum__qis__ccx__body(Qubit* control1, Qubit* control2,
-                               Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::X>(control1, control2, target);
-}
-
-void __quantum__qis__ccy__body(Qubit* control1, Qubit* control2,
-                               Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Y>(control1, control2, target);
-}
-
-void __quantum__qis__ccz__body(Qubit* control1, Qubit* control2,
-                               Qubit* target) {
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::Z>(control1, control2, target);
-}
-
 void __quantum__qis__mz__body(Qubit* qubit, Result* result) {
   auto& runtime = qir::Runtime::getInstance();
   runtime.measure(qubit, result);
-}
-
-Result* __quantum__qis__m__body(Qubit* qubit) {
-  auto& runtime = qir::Runtime::getInstance();
-  auto* result = runtime.rAlloc();
-  __quantum__qis__mz__body(qubit, result);
-  return result;
-}
-
-Result* __quantum__qis__measure__body(Qubit* qubit) {
-  return __quantum__qis__m__body(qubit);
 }
 
 void __quantum__qis__reset__body(Qubit* qubit) {
@@ -395,7 +481,7 @@ void __quantum__rt__int_record_output(int64_t value, const char* label) {
   qir::Runtime::getInstance().outputInt(value, label);
 }
 
-void __quantum__rt__float_record_output(double value, const char* label) {
+void __quantum__rt__double_record_output(double value, const char* label) {
   qir::Runtime::getInstance().outputFloat(value, label);
 }
 
@@ -406,6 +492,23 @@ void __quantum__rt__tuple_record_output(int64_t elementCount,
 
 void __quantum__rt__array_record_output(int64_t size, const char* label) {
   qir::Runtime::getInstance().outputArray(size, label);
+}
+
+void __quantum__rt__result_array_record_output(const int64_t size,
+                                               Result** results,
+                                               const char* label) {
+  if (size < 0 || (size > 0 && results == nullptr)) {
+    throw std::invalid_argument("Invalid QIR result array output");
+  }
+  auto& runtime = qir::Runtime::getInstance();
+  std::string values;
+  values.reserve(static_cast<std::size_t>(size));
+  for (Result* result : std::span(results, static_cast<std::size_t>(size))) {
+    const auto value = runtime.deref(result).r;
+    values.push_back(value ? '1' : '0');
+    runtime.appendMeasurementBit(value);
+  }
+  runtime.outputResultArray(values, label);
 }
 
 } // extern "C"

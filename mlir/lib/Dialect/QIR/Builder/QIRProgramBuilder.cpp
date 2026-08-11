@@ -487,37 +487,8 @@ void QIRProgramBuilder::createCallOp(
   // Restore insertion point
   restoreInsertionPoint(insertionPoint);
 
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(parameters.size() + controls.size() + targets.size());
-  const auto floatType = Float64Type::get(getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  for (size_t i = 0; i < targets.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add parameter types
-  for (size_t i = 0; i < parameters.size(); ++i) {
-    argumentTypes.push_back(floatType);
-  }
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(voidType, argumentTypes);
-
-  // Declare QIR function
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(*this, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(parameters.size() + controls.size() + targets.size());
-  operands.append(controls.begin(), controls.end());
-  operands.append(targets.begin(), targets.end());
-  operands.append(parameterOperands.begin(), parameterOperands.end());
-
-  LLVM::CallOp::create(*this, fnDecl, operands);
+  emitQISCall(*this, module, getLoc(), parameterOperands, controls, targets,
+              fnName);
 }
 
 // GPhaseOp
