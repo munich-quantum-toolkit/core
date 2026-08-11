@@ -966,6 +966,47 @@ Returns:
 Raises:
     ValueError: When the program is unsupported for simulation.)pb");
 
+  m.def(
+      "make_density_matrix",
+      [](const dd::VectorDD& state, const size_t numQubits,
+         dd::Package& ddPackage) {
+        return mlir::qco::makeDensityMatrix(state, numQubits, ddPackage);
+      },
+      "state"_a, "num_qubits"_a, "dd_package"_a, nb::keep_alive<0, 3>(),
+      R"pb(Construct ``|psi><psi|`` from a pure DD state.
+
+The input vector reference remains owned by the caller. The returned matrix DD
+is referenced and must be released with ``DDPackage.dec_ref_mat``.)pb");
+
+  m.def(
+      "simulate_density",
+      [](const mlir::QCOProgram& program, const dd::MatrixDD& initialState,
+         dd::Package& ddPackage, const std::optional<uint64_t> seed,
+         const QCODDBindingMap& pythonBindings) {
+        auto func = entryFunc(program);
+        auto bindings = makeQCODDBindings(func, pythonBindings);
+        if (!seed.has_value()) {
+          return takeFailureOr(func.getContext(),
+                               "cannot density-simulate this QCO program", [&] {
+                                 return mlir::qco::simulateDensity(
+                                     func, initialState, ddPackage, bindings);
+                               });
+        }
+        auto rng = makeRng(*seed);
+        return takeFailureOr(
+            func.getContext(), "cannot density-simulate this QCO program", [&] {
+              return mlir::qco::simulateDensity(func, initialState, ddPackage,
+                                                rng, bindings);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      nb::kw_only(), "bindings"_a = QCODDBindingMap{}, nb::keep_alive<0, 3>(),
+      R"pb(Simulate a QCO program on a density-matrix DD.
+
+Unitary gates evolve ``rho`` as ``U rho U*`` and deallocation performs a
+partial trace, including for entangled qubits. The input matrix reference is
+consumed. Supply ``seed`` for programs containing measurement or reset.)pb");
+
   // Sampling uses a caller-provided ``dd::Package`` for the call only; the
   // binding does not share that package across threads. Release the GIL only
   // around the C++ sample (not entryFunc / exception translation).
@@ -1008,6 +1049,29 @@ Returns:
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");
+
+  m.def(
+      "sample_density",
+      [](const mlir::QCOProgram& program, const dd::MatrixDD& initialState,
+         dd::Package& ddPackage, const size_t shots,
+         const std::optional<uint64_t> seed,
+         const QCODDBindingMap& pythonBindings) {
+        auto func = entryFunc(program);
+        auto bindings = makeQCODDBindings(func, pythonBindings);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot density-sample this QCO program", [&] {
+              const nb::gil_scoped_release release;
+              return mlir::qco::sampleDensity(func, initialState, ddPackage,
+                                              shots, rng, bindings);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "shots"_a = 1024U,
+      "seed"_a = nb::none(), nb::kw_only(), "bindings"_a = QCODDBindingMap{},
+      R"pb(Sample a QCO program from a density-matrix DD.
+
+The input matrix reference is consumed. Mixed states and entangled qubit
+deallocation are supported.)pb");
 
   m.def(
       "sample_with_classics",

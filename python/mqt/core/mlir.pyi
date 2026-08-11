@@ -559,6 +559,30 @@ def simulate(
         ValueError: When the program is unsupported for simulation.
     """
 
+def make_density_matrix(
+    state: mqt.core.dd.VectorDD, num_qubits: int, dd_package: mqt.core.dd.DDPackage
+) -> mqt.core.dd.MatrixDD:
+    """Construct ``|psi><psi|`` from a pure DD state.
+
+    The input vector reference remains owned by the caller. The returned matrix DD
+    is referenced and must be released with ``DDPackage.dec_ref_mat``.
+    """
+
+def simulate_density(
+    program: QCOProgram,
+    initial_state: mqt.core.dd.MatrixDD,
+    dd_package: mqt.core.dd.DDPackage,
+    seed: int | None = None,
+    *,
+    bindings: Mapping[int, bool | int | float] = {},
+) -> mqt.core.dd.MatrixDD:
+    """Simulate a QCO program on a density-matrix DD.
+
+    Unitary gates evolve ``rho`` as ``U rho U*`` and deallocation performs a
+    partial trace, including for entangled qubits. The input matrix reference is
+    consumed. Supply ``seed`` for programs containing measurement or reset.
+    """
+
 def sample(
     program: QCOProgram,
     dd_package: mqt.core.dd.DDPackage,
@@ -585,6 +609,21 @@ def sample(
 
     Raises:
         ValueError: When the program is unsupported for sampling.
+    """
+
+def sample_density(
+    program: QCOProgram,
+    initial_state: mqt.core.dd.MatrixDD,
+    dd_package: mqt.core.dd.DDPackage,
+    shots: int = 1024,
+    seed: int | None = None,
+    *,
+    bindings: Mapping[int, bool | int | float] = {},
+) -> dict[str, int]:
+    """Sample a QCO program from a density-matrix DD.
+
+    The input matrix reference is consumed. Mixed states and entangled qubit
+    deallocation are supported.
     """
 
 def sample_with_classics(

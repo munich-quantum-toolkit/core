@@ -1217,6 +1217,95 @@ TEST_F(QCODDFunctionalityTest, RejectsEntangledQTensorDeallocation) {
   EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
 }
 
+TEST_F(QCODDFunctionalityTest, DensitySimulationTracesOutEntangledQubit) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.ry(std::numbers::pi / 3.0, b.staticQubit(0));
+    auto q1 = b.staticQubit(1);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    b.qtensorDealloc(b.qtensorFromElements({q1}));
+    q0 = b.x(q0);
+    b.sink(q0);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto zero = dd::makeZeroState(2, *dd);
+  auto density = makeDensityMatrix(zero, 2, *dd);
+  dd->decRef(zero);
+  const auto result = simulateDensity(mainFunc(*mod), density, *dd);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  EXPECT_NEAR(matrix[0][0].real(), 0.25, 1e-12);
+  EXPECT_NEAR(matrix[0][1].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][0].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][1].real(), 0.75, 1e-12);
+  dd->decRef(*result);
+
+  zero = dd::makeZeroState(2, *dd);
+  density = makeDensityMatrix(zero, 2, *dd);
+  dd->decRef(zero);
+  std::mt19937_64 rng(7);
+  const auto histogram = sampleDensity(mainFunc(*mod), density, *dd, 1000, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  ASSERT_EQ(histogram->size(), 2U);
+  EXPECT_NEAR(histogram->at("0"), 250, 75);
+  EXPECT_NEAR(histogram->at("1"), 750, 75);
+}
+
+TEST_F(QCODDFunctionalityTest, DensityResetAfterEntangledDeallocation) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.h(b.staticQubit(0));
+    auto q1 = b.staticQubit(1);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    b.qtensorDealloc(b.qtensorFromElements({q1}));
+    q0 = b.reset(q0);
+    b.sink(q0);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto zero = dd::makeZeroState(2, *dd);
+  auto density = makeDensityMatrix(zero, 2, *dd);
+  dd->decRef(zero);
+  std::mt19937_64 rng(3);
+  const auto result = simulateDensity(mainFunc(*mod), density, *dd, rng);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  EXPECT_NEAR(matrix[0][0].real(), 1.0, 1e-12);
+  EXPECT_NEAR(matrix[0][1].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][0].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][1].real(), 0.0, 1e-12);
+  dd->decRef(*result);
+}
+
+TEST_F(QCODDFunctionalityTest, DensityMeasurementFeedsClassicalControl) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.h(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto zero = dd::makeZeroState(1, *dd);
+  auto density = makeDensityMatrix(zero, 1, *dd);
+  dd->decRef(zero);
+  std::mt19937_64 rng(11);
+  const auto result = simulateDensity(mainFunc(*mod), density, *dd, rng);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  EXPECT_NEAR(matrix[0][0].real(), 1.0, 1e-12);
+  EXPECT_NEAR(matrix[1][1].real(), 0.0, 1e-12);
+  dd->decRef(*result);
+}
+
 TEST_F(QCODDFunctionalityTest, QTensorFromElementsSupportsMatrixAndSimulation) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);

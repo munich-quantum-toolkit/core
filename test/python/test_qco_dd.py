@@ -181,3 +181,21 @@ def test_sample_from_supplied_initial_state() -> None:
     result = mlir.sample_with_classics(program, package, shots=16, seed=7, initial_state=one)
     assert result.shots == {"0": 16}
     assert result.classical == {}
+
+
+def test_density_simulation_and_sampling() -> None:
+    """Python exposes pure-density construction, simulation, and sampling."""
+    program = _x_program()
+    package = dd.DDPackage(1)
+
+    zero = package.zero_state(1)
+    density = mlir.make_density_matrix(zero, 1, package)
+    package.dec_ref_vec(zero)
+    out = mlir.simulate_density(program, density, package)
+    assert np.allclose(out.get_matrix(1), np.asarray([[0.0, 0.0], [0.0, 1.0]]))
+    package.dec_ref_mat(out)
+
+    zero = package.zero_state(1)
+    density = mlir.make_density_matrix(zero, 1, package)
+    package.dec_ref_vec(zero)
+    assert mlir.sample_density(program, density, package, shots=16, seed=8) == {"1": 16}

@@ -48,10 +48,11 @@ releases may include breaking changes.
   [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of QCO functions,
   including static unitaries, mid-circuit `measure`/`reset`, concrete structured
-  and multi-block control flow, wider classical SSA and `memref` values,
-  symbolic argument bindings, dynamic qubit and qtensor allocation, qtensor
-  ownership and deallocation, direct local-matrix DD embedding, multi-shot
-  `sample` / `sampleWithClassics`, and Python wrappers ([#1915], [#1973])
+  and multi-block control flow, wider classical SSA, math operations, and
+  aliased `memref` values across calls, symbolic argument bindings, dynamic
+  qubit and qtensor allocation, DD-native pure-state deallocation, mixed-state
+  density simulation with partial trace, direct local-matrix DD embedding,
+  multi-shot sampling, and Python wrappers ([#1915], [#1973])
   ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],

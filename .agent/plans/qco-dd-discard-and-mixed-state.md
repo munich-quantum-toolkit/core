@@ -25,9 +25,13 @@ than a statevector.
 - [x] (2026-08-11 10:45Z) Replaced dense statevector deallocation and added a
       compact 41-qubit regression test; focused separable and entangled tests
       pass.
-- [ ] Determine a public mixed-state representation compatible with current DDs.
-- [ ] Implement entangled discard if a sound representation can be integrated.
-- [ ] Document the supported contract and validate.
+- [x] (2026-08-11 11:20Z) Added an explicit density-simulation path backed by
+      `MatrixDD`, without changing the existing functionality-matrix semantics.
+- [x] (2026-08-11 11:42Z) Implemented density evolution, physical partial trace,
+      measurement, reset, sampling, and Python bindings with mixed-state tests.
+- [x] (2026-08-11 12:05Z) Regenerated Python stubs, passed all 148 QCO utility
+      tests and all 8 Python DD tests, and passed the full repository lint
+      session.
 
 ## Surprises & Discoveries
 
@@ -57,13 +61,20 @@ than a statevector.
   intentionally combines measurement magnitudes and retains the garbage DD
   level, whereas deallocation must prove separability, preserve the remaining
   pure state, and renumber higher wires. Date/Author: 2026-08-11, Codex.
+- Decision: Expose density simulation through additive `simulateDensity` and
+  `sampleDensity` APIs while retaining `MatrixDD` as the storage type.
+  Rationale: the existing `buildFunctionality` matrix evolves by left
+  multiplication, whereas density matrices require `U rho U†`; an internal
+  wrapper keeps those identical storage types semantically distinct.
+  Date/Author: 2026-08-11, Codex.
 
 ## Outcomes & Retrospective
 
-Implementation is pending. If the current package cannot represent a mixed state
-with correct subsequent gates, measurements, and sampling, the plan must record
-that evidence and leave entangled deallocation as an explicit failure; adding a
-misleading partial implementation is not an acceptable outcome.
+DD-native pure-state deallocation and additive density simulation are complete.
+The density tests cover a partially entangled state, physical partial trace,
+subsequent unitary evolution, statistical sampling, reset, and measurement-fed
+classical control. The release build, generated Python stubs, 148 native QCO
+utility tests, 8 Python DD tests, and repository lint all pass.
 
 ## Context and Orientation
 
@@ -144,3 +155,6 @@ code wholesale or add a dependency without maintainer-level design evidence.
 
 Revision note: Initial plan created for graph-native separable disposal and a
 proof-driven mixed-state feasibility assessment.
+
+Revision note (2026-08-11): Recorded the completed additive density API and
+final native, Python, stub-generation, build, and lint validation.
