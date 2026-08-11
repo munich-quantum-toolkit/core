@@ -106,18 +106,17 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
       return mlir::failure();
     }
 
-    if (isDiagonal(predecessor)) {
-      if (predecessorUnitary.getNumControls() == 0 &&
-          predecessorUnitary.getNumTargets() == 1 &&
-          qubitVariable.hasOneUse()) {
-        rewriter.replaceOp(predecessor, predecessorUnitary.getInputQubits());
-        return mlir::success();
-      }
-      swapGateWithMeasurement(predecessorUnitary, op, rewriter);
+    if (!isDiagonal(predecessor)) {
+      return mlir::failure();
+    }
+
+    if (predecessorUnitary.isSingleQubit()) {
+      rewriter.replaceOp(predecessor, predecessorUnitary.getInputQubits());
       return mlir::success();
     }
 
-    return mlir::failure();
+    swapGateWithMeasurement(predecessorUnitary, op, rewriter);
+    return mlir::success();
   }
 };
 
