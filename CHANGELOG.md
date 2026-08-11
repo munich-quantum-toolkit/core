@@ -108,6 +108,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Update the QIR runner for QIR 2.1 entry points and resource management,
+  with entry-point selection and reproducible multi-shot execution ([#2035])
+  ([**@burgholzer**])
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
@@ -729,6 +732,7 @@ for previous changelogs._
 
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017

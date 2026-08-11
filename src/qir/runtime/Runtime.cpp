@@ -42,6 +42,10 @@
 
 namespace qir {
 
+namespace {
+thread_local Runtime* ActiveRuntime = nullptr;
+} // namespace
+
 auto Runtime::generateRandomSeed() -> uint64_t {
   std::array<std::random_device::result_type, std::mt19937_64::state_size>
       randomData{};
@@ -52,41 +56,40 @@ auto Runtime::generateRandomSeed() -> uint64_t {
   return rng();
 }
 Runtime& Runtime::getInstance() {
-  static Runtime instance;
-  return instance;
+  if (ActiveRuntime != nullptr) {
+    return *ActiveRuntime;
+  }
+  static thread_local Runtime fallback;
+  return fallback;
 }
+
+auto Runtime::bind(Runtime* runtime) noexcept -> Runtime* {
+  return std::exchange(ActiveRuntime, runtime);
+}
+
 auto Runtime::reset() -> void {
-  addressMode = AddressMode::UNKNOWN;
+  qubitMode = ResourceMode::UNKNOWN;
+  resultMode = ResourceMode::UNKNOWN;
   qRegister.clear();
+  qubitPermutation.clear();
   rRegister.clear();
-  // NOLINTBEGIN(performance-no-int-to-ptr)
-  rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
-                    ResultStruct{.refcount = 0, .r = false});
-  rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
-                    ResultStruct{.refcount = 0, .r = true});
-  // NOLINTEND(performance-no-int-to-ptr)
   measurements.clear();
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
   currentMaxQubitId = 0;
   currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
   qState.reset();
-  mt.seed(generateRandomSeed());
 }
+
+auto Runtime::seed(const uint64_t randomSeed) -> void { mt.seed(randomSeed); }
 
 Runtime::Runtime() : Runtime(generateRandomSeed()) {}
 
 Runtime::Runtime(const uint64_t randomSeed)
-    : addressMode(AddressMode::UNKNOWN),
+    : qubitMode(ResourceMode::UNKNOWN), resultMode(ResourceMode::UNKNOWN),
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
       currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), mt(randomSeed) {
   qRegister = std::unordered_map<const Qubit*, qc::Qubit>();
   rRegister = std::unordered_map<Result*, ResultStruct>();
-  // NOLINTBEGIN(performance-no-int-to-ptr)
-  rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
-                    ResultStruct{.refcount = 0, .r = false});
-  rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
-                    ResultStruct{.refcount = 0, .r = true});
-  // NOLINTEND(performance-no-int-to-ptr)
 }
 
 auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
@@ -124,7 +127,7 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
 auto Runtime::translateAddresses(const std::span<Qubit* const> qubits)
     -> std::vector<qc::Qubit> {
   std::vector<qc::Qubit> qubitIds(qubits.size());
-  if (addressMode != AddressMode::STATIC) {
+  if (qubitMode != ResourceMode::STATIC) {
     try {
       std::ranges::transform(qubits, qubitIds.begin(), [&](const auto* q) {
         try {
@@ -137,13 +140,13 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits)
         }
       });
     } catch (std::out_of_range&) {
-      if (addressMode == AddressMode::DYNAMIC) {
+      if (qubitMode == ResourceMode::DYNAMIC) {
         throw;
       }
-      addressMode = AddressMode::STATIC;
+      qubitMode = ResourceMode::STATIC;
     }
   }
-  if (addressMode == AddressMode::STATIC) {
+  if (qubitMode == ResourceMode::STATIC) {
     std::ranges::transform(qubits, qubitIds.begin(), [](const auto* q) {
       return static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(q));
     });
@@ -166,6 +169,11 @@ auto Runtime::apply(const qc::OpType op, const std::span<const qc::fp> params,
     return qubitPermutation[address];
   });
 
+  if (op == qc::SWAP && controls.empty() && targets.size() == 2) {
+    swap(targets[0], targets[1]);
+    return;
+  }
+
   const auto controlEnd =
       addresses.cbegin() + static_cast<std::ptrdiff_t>(controls.size());
   const qc::Controls mappedControls(addresses.cbegin(), controlEnd);
@@ -184,6 +192,11 @@ auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> void {
 }
 
 auto Runtime::qAlloc() -> Qubit* {
+  if (qubitMode == ResourceMode::STATIC) {
+    throw std::logic_error(
+        "Cannot dynamically allocate qubits after using static qubit IDs");
+  }
+  qubitMode = ResourceMode::DYNAMIC;
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto* qubit = reinterpret_cast<Qubit*>(currentMaxQubitAddress++);
   qRegister.emplace(qubit, currentMaxQubitId++);
@@ -191,39 +204,44 @@ auto Runtime::qAlloc() -> Qubit* {
 }
 
 auto Runtime::qFree(Qubit* qubit) -> void {
+  if (qubitMode != ResourceMode::DYNAMIC || !qRegister.contains(qubit)) {
+    throw std::out_of_range("QIR qubit was not dynamically allocated");
+  }
   reset<1>({{qubit}});
   qRegister.erase(qubit);
 }
 
 auto Runtime::rAlloc() -> Result* {
+  if (resultMode == ResourceMode::STATIC) {
+    throw std::logic_error(
+        "Cannot dynamically allocate results after using static result IDs");
+  }
+  resultMode = ResourceMode::DYNAMIC;
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto* result = reinterpret_cast<Result*>(currentMaxResultAddress++);
-  rRegister.emplace(result, ResultStruct{.refcount = 1, .r = false});
+  rRegister.emplace(result, ResultStruct{.r = false});
   return result;
 }
 
-auto Runtime::rFree(Result* result) -> void { rRegister.erase(result); }
+auto Runtime::rFree(Result* result) -> void {
+  if (resultMode != ResourceMode::DYNAMIC || rRegister.erase(result) == 0) {
+    throw std::out_of_range("QIR result was not dynamically allocated");
+  }
+}
 
 auto Runtime::deref(Result* result) -> ResultStruct& {
   auto it = rRegister.find(result);
   if (it == rRegister.end()) {
-    if (addressMode != AddressMode::UNKNOWN) {
-      addressMode = AddressMode::STATIC;
-    }
-    if (addressMode == AddressMode::DYNAMIC) {
+    if (resultMode == ResourceMode::DYNAMIC) {
       std::stringstream ss;
       ss << __FILE__ << ":" << __LINE__
          << ": Result not allocated (not found): " << result;
       throw std::out_of_range(ss.str());
     }
-    it = rRegister.emplace(result, ResultStruct{.refcount = 0, .r = false})
-             .first;
+    resultMode = ResourceMode::STATIC;
+    it = rRegister.emplace(result, ResultStruct{.r = false}).first;
   }
   return it->second;
-}
-
-auto Runtime::equal(Result* result1, Result* result2) -> bool {
-  return deref(result1).r == deref(result2).r;
 }
 
 auto Runtime::appendMeasurementBit(bool result) -> void {
@@ -257,6 +275,11 @@ void Runtime::outputType(const char* type, std::string_view value,
 
 auto Runtime::outputResult(bool value, const char* label) const -> void {
   outputType("RESULT", value ? "1" : "0", label);
+}
+
+auto Runtime::outputResultArray(const std::string_view values,
+                                const char* label) const -> void {
+  outputType("RESULT_ARRAY", values, label);
 }
 
 auto Runtime::outputBool(bool value, const char* label) const -> void {
@@ -295,15 +318,33 @@ auto Runtime::outputProgramHeader() const -> void {
 
 auto Runtime::outputShotStart() const -> void {
   *os << "START\n";
-  *os << "METADATA\toutput_labeling_schema\t" << outputSchema << "\n";
+  if (metadata.empty()) {
+    *os << "METADATA\toutput_labeling_schema\t" << outputSchema << "\n";
+    return;
+  }
+  for (const auto& [name, value] : metadata) {
+    *os << "METADATA\t" << name;
+    if (!value.empty()) {
+      *os << "\t" << value;
+    }
+    *os << "\n";
+  }
 }
 
-auto Runtime::outputShotEnd() const -> void { *os << "END\t0\n"; }
+auto Runtime::outputShotEnd(const int64_t exitCode) const -> void {
+  *os << "END\t" << exitCode << "\n";
+}
 
 auto Runtime::getOutputSchema() const -> OutputSchema { return outputSchema; }
 
 auto Runtime::setOutputSchema(OutputSchema schema) -> void {
   outputSchema = schema;
+}
+
+auto Runtime::setMetadata(
+    std::vector<std::pair<std::string, std::string>> entryPointMetadata)
+    -> void {
+  metadata = std::move(entryPointMetadata);
 }
 
 auto operator<<(std::ostream& os, const Runtime::OutputSchema schema)

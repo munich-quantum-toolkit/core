@@ -34,10 +34,10 @@ INSTANTIATE_TEST_SUITE_P(
       return filename;
     });
 
-TEST_P(QIRRunnerTest, QIRFile) {
+TEST_P(QIRRunnerTest, ExecutesRepeatedlyWithDeterministicSampling) {
   const auto& file = GetParam();
   std::ostringstream command;
-  command << EXECUTABLE_PATH << " " << file;
+  command << EXECUTABLE_PATH << " --shots=2 --seed=7 " << file;
   const auto result = std::system(command.str().c_str());
   EXPECT_EQ(result, 0);
 }

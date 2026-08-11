@@ -6,6 +6,16 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QIR runner
+
+The QIR runner now invokes a selected QIR entry point as a parameterless `i64`
+function instead of assuming an `int main(int, char**)`. Use `--entry-point` to
+select among multiple entry points, `--shots` for repeated execution, and
+`--seed` for deterministic sampling.
+
+Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
+Legacy qir-runner allocator and output overloads are no longer accepted.
+
 ### Runtime-configurable SC QDMI device
 
 The built-in superconducting QDMI provider now parses its device description

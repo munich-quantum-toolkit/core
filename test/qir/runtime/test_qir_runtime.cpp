@@ -23,7 +23,9 @@
 #include <cstring>
 #include <filesystem>
 #include <ios>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -44,6 +46,50 @@ protected:
     Runtime::getInstance().setOutputSchema(Runtime::OutputSchema::Labeled);
   }
 };
+
+TEST(QIRRuntimeArgumentsTest, RejectsInvalidArrayDimensions) {
+  EXPECT_THROW(__quantum__rt__array_create_1d(0, 1), std::invalid_argument);
+  EXPECT_THROW(__quantum__rt__array_create_1d(sizeof(Qubit*), -1),
+               std::invalid_argument);
+  EXPECT_THROW(
+      __quantum__rt__array_create_1d(2, std::numeric_limits<int64_t>::max()),
+      std::length_error);
+}
+
+TEST(QIRRuntimeArgumentsTest, RejectsInvalidTupleSizes) {
+  EXPECT_THROW(__quantum__rt__tuple_create(-1), std::invalid_argument);
+  EXPECT_THROW(__quantum__rt__tuple_create(std::numeric_limits<int64_t>::max()),
+               std::length_error);
+
+  auto* controls = __quantum__rt__array_create_1d(sizeof(Qubit*), 0);
+  auto* tuple = __quantum__rt__tuple_create(1);
+  EXPECT_THROW(__quantum__qis__rx__ctl(controls, tuple), std::invalid_argument);
+  __quantum__rt__tuple_update_reference_count(tuple, -1);
+  __quantum__rt__array_update_reference_count(controls, -1);
+}
+
+TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
+  __quantum__rt__initialize(nullptr);
+  auto* qubit = __quantum__rt__qubit_allocate(nullptr);
+  auto* result = __quantum__rt__result_allocate(nullptr);
+  __quantum__rt__qubit_release(qubit);
+  __quantum__rt__result_release(result);
+
+  EXPECT_THROW(__quantum__qis__x__body(qubit), std::out_of_range);
+  EXPECT_THROW(__quantum__rt__read_result(result), std::out_of_range);
+  EXPECT_THROW(__quantum__rt__qubit_release(qubit), std::out_of_range);
+  EXPECT_THROW(__quantum__rt__result_release(result), std::out_of_range);
+}
+
+TEST_F(QIRRuntimeTest, RejectsMixedStaticAndDynamicResourceManagement) {
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__x__body(nullptr);
+  EXPECT_THROW(__quantum__rt__qubit_allocate(nullptr), std::logic_error);
+
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__mz__body(nullptr, nullptr);
+  EXPECT_THROW(__quantum__rt__result_allocate(nullptr), std::logic_error);
+}
 
 } // namespace
 
@@ -193,7 +239,7 @@ TEST_F(QIRRuntimeTest, GlobalPhase) {
   EXPECT_NO_THROW(__quantum__qis__gphase__body(qc::PI_2));
 }
 
-TEST_F(QIRRuntimeTest, RGate) {
+TEST_F(QIRRuntimeTest, PRXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__prx__body(qc::PI_2, 0, q0);
@@ -481,18 +527,6 @@ TEST_F(QIRRuntimeTest, RCCXGate) {
   EXPECT_NO_THROW(__quantum__qis__rccx__body(q0, q1, q2));
 }
 
-TEST_F(QIRRuntimeTest, MGate) {
-  auto* q0 = reinterpret_cast<Qubit*>(0UL);
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__m__body(q0);
-}
-
-TEST_F(QIRRuntimeTest, MeasureGate) {
-  auto* q0 = reinterpret_cast<Qubit*>(0UL);
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__measure__body(q0);
-}
-
 TEST_F(QIRRuntimeTest, MzGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
@@ -504,6 +538,30 @@ TEST_F(QIRRuntimeTest, ResetGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__reset__body(q0);
+}
+
+TEST_F(QIRRuntimeTest, Qir21BulkResourceManagement) {
+  __quantum__rt__initialize(nullptr);
+  std::array<Qubit*, 2> qubits{};
+  std::array<Result*, 2> results{};
+  bool error = true;
+  __quantum__rt__qubit_array_allocate(qubits.size(), qubits.data(), &error);
+  EXPECT_FALSE(error);
+  __quantum__rt__result_array_allocate(results.size(), results.data(), &error);
+  EXPECT_FALSE(error);
+
+  __quantum__qis__x__body(qubits[0]);
+  __quantum__qis__mz__body(qubits[0], results[0]);
+  __quantum__qis__mz__body(qubits[1], results[1]);
+  EXPECT_TRUE(__quantum__rt__read_result(results[0]));
+  EXPECT_FALSE(__quantum__rt__read_result(results[1]));
+  __quantum__rt__result_array_record_output(results.size(), results.data(),
+                                            "results");
+  EXPECT_THAT(sink.str(),
+              ::testing::HasSubstr("OUTPUT\tRESULT_ARRAY\t10\tresults\n"));
+
+  __quantum__rt__result_array_release(results.size(), results.data());
+  __quantum__rt__qubit_array_release(qubits.size(), qubits.data());
 }
 
 TEST_F(QIRRuntimeTest, BellPairStatic) {
@@ -534,12 +592,14 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
   Runtime::getInstance().outputProgramHeader();
   Runtime::getInstance().outputShotStart();
-  auto* q0 = __quantum__rt__qubit_allocate();
-  auto* q1 = __quantum__rt__qubit_allocate();
+  auto* q0 = __quantum__rt__qubit_allocate(nullptr);
+  auto* q1 = __quantum__rt__qubit_allocate(nullptr);
+  auto* r0 = __quantum__rt__result_allocate(nullptr);
+  auto* r1 = __quantum__rt__result_allocate(nullptr);
   __quantum__qis__h__body(q0);
   __quantum__qis__cx__body(q0, q1);
-  auto* r0 = __quantum__qis__m__body(q0);
-  auto* r1 = __quantum__qis__m__body(q1);
+  __quantum__qis__mz__body(q0, r0);
+  __quantum__qis__mz__body(q1, r1);
   __quantum__rt__qubit_release(q0);
   __quantum__rt__qubit_release(q1);
   const auto m1 = __quantum__rt__read_result(r0);
@@ -552,8 +612,8 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
-  __quantum__rt__result_update_reference_count(r0, -1);
-  __quantum__rt__result_update_reference_count(r1, -1);
+  __quantum__rt__result_release(r0);
+  __quantum__rt__result_release(r1);
 }
 
 TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
@@ -584,12 +644,14 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   __quantum__rt__initialize(nullptr);
   Runtime::getInstance().outputProgramHeader();
   Runtime::getInstance().outputShotStart();
-  auto* q0 = __quantum__rt__qubit_allocate();
-  auto* q1 = __quantum__rt__qubit_allocate();
+  auto* q0 = __quantum__rt__qubit_allocate(nullptr);
+  auto* q1 = __quantum__rt__qubit_allocate(nullptr);
+  auto* r0 = __quantum__rt__result_allocate(nullptr);
+  auto* r1 = __quantum__rt__result_allocate(nullptr);
   __quantum__qis__h__body(q1);
   __quantum__qis__cx__body(q1, q0);
-  auto* r0 = __quantum__qis__m__body(q0);
-  auto* r1 = __quantum__qis__m__body(q1);
+  __quantum__qis__mz__body(q0, r0);
+  __quantum__qis__mz__body(q1, r1);
   __quantum__rt__qubit_release(q0);
   __quantum__rt__qubit_release(q1);
   const auto m1 = __quantum__rt__read_result(r0);
@@ -602,8 +664,8 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
            << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
-  __quantum__rt__result_update_reference_count(r0, -1);
-  __quantum__rt__result_update_reference_count(r1, -1);
+  __quantum__rt__result_release(r0);
+  __quantum__rt__result_release(r1);
 }
 
 TEST_F(QIRRuntimeTest, GHZ4Static) {
@@ -637,36 +699,18 @@ TEST_F(QIRRuntimeTest, GHZ4Static) {
 
 TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__initialize(nullptr);
-  auto* qArr = __quantum__rt__qubit_allocate_array(4);
-  const std::array q = {*reinterpret_cast<Qubit**>(
-                            __quantum__rt__array_get_element_ptr_1d(qArr, 0)),
-                        *reinterpret_cast<Qubit**>(
-                            __quantum__rt__array_get_element_ptr_1d(qArr, 1)),
-                        *reinterpret_cast<Qubit**>(
-                            __quantum__rt__array_get_element_ptr_1d(qArr, 2)),
-                        *reinterpret_cast<Qubit**>(
-                            __quantum__rt__array_get_element_ptr_1d(qArr, 3))};
+  std::array<Qubit*, 4> q{};
+  std::array<Result*, 4> r{};
+  __quantum__rt__qubit_array_allocate(q.size(), q.data(), nullptr);
+  __quantum__rt__result_array_allocate(r.size(), r.data(), nullptr);
   __quantum__qis__h__body(q[0]);
   __quantum__qis__cx__body(q[0], q[1]);
   __quantum__qis__cx__body(q[1], q[2]);
   __quantum__qis__cx__body(q[2], q[3]);
-  auto* rArr = __quantum__rt__array_create_1d(sizeof(Result*), 4);
-  std::array r = {*reinterpret_cast<Result**>(
-                      __quantum__rt__array_get_element_ptr_1d(rArr, 0)),
-                  *reinterpret_cast<Result**>(
-                      __quantum__rt__array_get_element_ptr_1d(rArr, 1)),
-                  *reinterpret_cast<Result**>(
-                      __quantum__rt__array_get_element_ptr_1d(rArr, 2)),
-                  *reinterpret_cast<Result**>(
-                      __quantum__rt__array_get_element_ptr_1d(rArr, 3))};
-  r[0] = __quantum__qis__m__body(q[0]);
-  r[1] = __quantum__qis__m__body(q[1]);
-  r[2] = __quantum__qis__m__body(q[2]);
-  r[3] = __quantum__qis__m__body(q[3]);
-  __quantum__rt__qubit_release_array(qArr);
-  EXPECT_TRUE(__quantum__rt__result_equal(r[0], r[1]));
-  EXPECT_TRUE(__quantum__rt__result_equal(r[1], r[2]));
-  EXPECT_TRUE(__quantum__rt__result_equal(r[2], r[3]));
+  __quantum__qis__mz__body(q[0], r[0]);
+  __quantum__qis__mz__body(q[1], r[1]);
+  __quantum__qis__mz__body(q[2], r[2]);
+  __quantum__qis__mz__body(q[3], r[3]);
   const std::array m = {
       __quantum__rt__read_result(r[0]), __quantum__rt__read_result(r[1]),
       __quantum__rt__read_result(r[2]), __quantum__rt__read_result(r[3])};
@@ -677,11 +721,8 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__result_record_output(r[1], "r1");
   __quantum__rt__result_record_output(r[2], "r2");
   __quantum__rt__result_record_output(r[3], "r3");
-  __quantum__rt__result_update_reference_count(r[0], -1);
-  __quantum__rt__result_update_reference_count(r[1], -1);
-  __quantum__rt__result_update_reference_count(r[2], -1);
-  __quantum__rt__result_update_reference_count(r[3], -1);
-  __quantum__rt__array_update_reference_count(rArr, -1);
+  __quantum__rt__result_array_release(r.size(), r.data());
+  __quantum__rt__qubit_array_release(q.size(), q.data());
 }
 
 TEST_F(QIRRuntimeTest, PackageResizeWhenEnlargingState) {
@@ -712,15 +753,18 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__initialize(nullptr);
   Runtime::getInstance().outputProgramHeader();
   Runtime::getInstance().outputShotStart();
-  auto* q0 = __quantum__rt__qubit_allocate();
-  auto* q1 = __quantum__rt__qubit_allocate();
-  auto* q2 = __quantum__rt__qubit_allocate();
+  auto* q0 = __quantum__rt__qubit_allocate(nullptr);
+  auto* q1 = __quantum__rt__qubit_allocate(nullptr);
+  auto* q2 = __quantum__rt__qubit_allocate(nullptr);
+  auto* r0 = __quantum__rt__result_allocate(nullptr);
+  auto* r1 = __quantum__rt__result_allocate(nullptr);
+  auto* r2 = __quantum__rt__result_allocate(nullptr);
   __quantum__qis__h__body(q0);
   __quantum__qis__h__body(q1);
   __quantum__qis__h__body(q2);
-  auto* r0 = __quantum__qis__m__body(q0);
-  auto* r1 = __quantum__qis__m__body(q1);
-  auto* r2 = __quantum__qis__m__body(q2);
+  __quantum__qis__mz__body(q0, r0);
+  __quantum__qis__mz__body(q1, r1);
+  __quantum__qis__mz__body(q2, r2);
   const auto b0 = __quantum__rt__read_result(r0);
   const auto b1 = __quantum__rt__read_result(r1);
   const auto b2 = __quantum__rt__read_result(r2);
@@ -740,7 +784,7 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__bool_record_output(b1, "m1");
   __quantum__rt__bool_record_output(b2, "m2");
   __quantum__rt__int_record_output(weight, "hamming_weight");
-  __quantum__rt__float_record_output(mean, "mean");
+  __quantum__rt__double_record_output(mean, "mean");
   Runtime::getInstance().outputShotEnd();
 
   std::ostringstream expected;
@@ -754,9 +798,9 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
            << "OUTPUT\tDOUBLE\t" << mean << "\tmean\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
 
-  __quantum__rt__result_update_reference_count(r0, -1);
-  __quantum__rt__result_update_reference_count(r1, -1);
-  __quantum__rt__result_update_reference_count(r2, -1);
+  __quantum__rt__result_release(r0);
+  __quantum__rt__result_release(r1);
+  __quantum__rt__result_release(r2);
 }
 
 namespace {
