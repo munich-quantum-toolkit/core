@@ -149,9 +149,8 @@ makeQCODDBindings(mlir::func::FuncOp func,
         const auto width = llvm::isa<mlir::IndexType>(type)
                                ? 64U
                                : llvm::cast<mlir::IntegerType>(type).getWidth();
-        if (width >= 64U ||
-            llvm::APInt(64, static_cast<uint64_t>(*value), true)
-                .isSignedIntN(width)) {
+        if (width >= 64U || llvm::APInt(64, static_cast<uint64_t>(*value), true)
+                                .isSignedIntN(width)) {
           attribute = mlir::IntegerAttr::get(type, *value);
         }
       }
