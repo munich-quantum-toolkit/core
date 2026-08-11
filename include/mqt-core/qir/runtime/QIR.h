@@ -82,6 +82,13 @@ int8_t* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t);
 /// undefined if the reference count becomes negative.
 void __quantum__rt__array_update_reference_count(Array*, int32_t);
 
+// *** TUPLES ***
+typedef struct TupleImpl Tuple;
+
+/// Allocate a zero-initialized, suitably aligned tuple payload.
+Tuple* __quantum__rt__tuple_create(int64_t size);
+void __quantum__rt__tuple_update_reference_count(Tuple*, int32_t);
+
 // *** QUANTUM INSTRUCTIONSET AND RUNTIME ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/4_Quantum_Runtime.md
@@ -103,53 +110,79 @@ void __quantum__rt__qubit_release(Qubit*);
 void __quantum__rt__qubit_release_array(Array*);
 
 // QUANTUM INSTRUCTION SET
-// cf.
-// https://github.com/qir-alliance/qir-spec/blob/main/specification/under_development/profiles/Base_Profile.md#base-profile
-// WARNING: This refers to the unstable version of the specification under
-// developments.
+//
+// Dedicated body, adjoint, c*, and cc* functions take parameters first,
+// followed by control and target qubits. Generic controlled specializations
+// use an Array of controls and the original gate arguments:
+// a single target directly, otherwise a Tuple of parameters then targets.
 
-void __quantum__qis__x__body(Qubit*);
-void __quantum__qis__y__body(Qubit*);
-void __quantum__qis__z__body(Qubit*);
-void __quantum__qis__h__body(Qubit*);
-void __quantum__qis__s__body(Qubit*);
-void __quantum__qis__s__adj(Qubit*);
-void __quantum__qis__sx__body(Qubit*);
-void __quantum__qis__sx__adj(Qubit*);
-void __quantum__qis__sqrtx__body(Qubit*);
-void __quantum__qis__sqrtx__adj(Qubit*);
-void __quantum__qis__t__body(Qubit*);
-void __quantum__qis__t__adj(Qubit*);
-void __quantum__qis__r__body(Qubit*, double, double);
-void __quantum__qis__prx__body(Qubit*, double, double);
-void __quantum__qis__rx__body(Qubit*, double);
-void __quantum__qis__ry__body(Qubit*, double);
-void __quantum__qis__rz__body(Qubit*, double);
-void __quantum__qis__p__body(Qubit*, double);
-void __quantum__qis__rxx__body(Qubit*, Qubit*, double);
-void __quantum__qis__ryy__body(Qubit*, Qubit*, double);
-void __quantum__qis__rzz__body(Qubit*, Qubit*, double);
-void __quantum__qis__rzx__body(Qubit*, Qubit*, double);
-void __quantum__qis__u__body(Qubit*, double, double, double);
-void __quantum__qis__u3__body(Qubit*, double, double, double);
-void __quantum__qis__u2__body(Qubit*, double, double);
-void __quantum__qis__u1__body(Qubit*, double);
-void __quantum__qis__cu1__body(Qubit*, Qubit*, double);
-void __quantum__qis__cu3__body(Qubit*, Qubit*, double, double, double);
+#define MQT_QIR_DECLARE_1_0(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit*);                             \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*);                    \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Qubit*);
+#define MQT_QIR_DECLARE_1_1(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(double, Qubit*);                     \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, Qubit*, Qubit*);            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*);   \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_1_2(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, Qubit*);             \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, double, Qubit*, Qubit*);    \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,    \
+                                            Qubit*);                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_1_3(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, double, Qubit*);     \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, double, double, Qubit*,     \
+                                           Qubit*);                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, double, double, Qubit*,    \
+                                            Qubit*, Qubit*);                   \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_2_0(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*);                     \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*);   \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_2_1(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(double, Qubit*, Qubit*);             \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*);    \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, Qubit*, Qubit*, Qubit*,    \
+                                            Qubit*);                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_2_2(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(double, double, Qubit*, Qubit*);     \
+  void __quantum__qis__c##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,     \
+                                           Qubit*);                            \
+  void __quantum__qis__cc##NAME##__##SUFFIX(double, double, Qubit*, Qubit*,    \
+                                            Qubit*, Qubit*);                   \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+#define MQT_QIR_DECLARE_3_0(NAME, SUFFIX, CTL_SUFFIX)                          \
+  void __quantum__qis__##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*);             \
+  void __quantum__qis__c##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*);    \
+  void __quantum__qis__cc##NAME##__##SUFFIX(Qubit*, Qubit*, Qubit*, Qubit*,    \
+                                            Qubit*);                           \
+  void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
+
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  MQT_QIR_DECLARE_##TARGETS##_##PARAMS(NAME, SUFFIX, CTL_SUFFIX)
+#include "mlir/Conversion/GateTable.def"
+
+#undef MQT_QIR_DECLARE_1_0
+#undef MQT_QIR_DECLARE_1_1
+#undef MQT_QIR_DECLARE_1_2
+#undef MQT_QIR_DECLARE_1_3
+#undef MQT_QIR_DECLARE_2_0
+#undef MQT_QIR_DECLARE_2_1
+#undef MQT_QIR_DECLARE_2_2
+#undef MQT_QIR_DECLARE_3_0
+
+/// Apply an arbitrary global phase.
+void __quantum__qis__gphase__body(double);
+
+/// Common QIS spelling for controlled X.
 void __quantum__qis__cnot__body(Qubit*, Qubit*);
-void __quantum__qis__cx__body(Qubit*, Qubit*);
-void __quantum__qis__cy__body(Qubit*, Qubit*);
-void __quantum__qis__cz__body(Qubit*, Qubit*);
-void __quantum__qis__ch__body(Qubit*, Qubit*);
-void __quantum__qis__swap__body(Qubit*, Qubit*);
-void __quantum__qis__cswap__body(Qubit*, Qubit*, Qubit*);
-void __quantum__qis__crx__body(Qubit*, Qubit*, double);
-void __quantum__qis__cry__body(Qubit*, Qubit*, double);
-void __quantum__qis__crz__body(Qubit*, Qubit*, double);
-void __quantum__qis__cp__body(Qubit*, Qubit*, double);
-void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
-void __quantum__qis__ccy__body(Qubit*, Qubit*, Qubit*);
-void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
+
 Result* __quantum__qis__m__body(Qubit*);
 Result* __quantum__qis__measure__body(Qubit*);
 void __quantum__qis__mz__body(Qubit*, Result*);

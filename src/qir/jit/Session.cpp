@@ -179,52 +179,24 @@ void JitSession::registerRuntimeSymbols() {
     REGISTER_SYMBOL(__quantum__rt__array_get_size_1d);
     REGISTER_SYMBOL(__quantum__rt__array_get_element_ptr_1d);
     REGISTER_SYMBOL(__quantum__rt__array_update_reference_count);
+    REGISTER_SYMBOL(__quantum__rt__tuple_create);
+    REGISTER_SYMBOL(__quantum__rt__tuple_update_reference_count);
     REGISTER_SYMBOL(__quantum__rt__qubit_allocate);
     REGISTER_SYMBOL(__quantum__rt__qubit_allocate_array);
     REGISTER_SYMBOL(__quantum__rt__qubit_release);
     REGISTER_SYMBOL(__quantum__rt__qubit_release_array);
-    REGISTER_SYMBOL(__quantum__qis__x__body);
-    REGISTER_SYMBOL(__quantum__qis__y__body);
-    REGISTER_SYMBOL(__quantum__qis__z__body);
-    REGISTER_SYMBOL(__quantum__qis__h__body);
-    REGISTER_SYMBOL(__quantum__qis__s__body);
-    REGISTER_SYMBOL(__quantum__qis__s__adj);
-    REGISTER_SYMBOL(__quantum__qis__sx__body);
-    REGISTER_SYMBOL(__quantum__qis__sx__adj);
-    REGISTER_SYMBOL(__quantum__qis__sqrtx__body);
-    REGISTER_SYMBOL(__quantum__qis__sqrtx__adj);
-    REGISTER_SYMBOL(__quantum__qis__t__body);
-    REGISTER_SYMBOL(__quantum__qis__t__adj);
-    REGISTER_SYMBOL(__quantum__qis__r__body);
-    REGISTER_SYMBOL(__quantum__qis__prx__body);
-    REGISTER_SYMBOL(__quantum__qis__rx__body);
-    REGISTER_SYMBOL(__quantum__qis__ry__body);
-    REGISTER_SYMBOL(__quantum__qis__rz__body);
-    REGISTER_SYMBOL(__quantum__qis__p__body);
-    REGISTER_SYMBOL(__quantum__qis__rxx__body);
-    REGISTER_SYMBOL(__quantum__qis__ryy__body);
-    REGISTER_SYMBOL(__quantum__qis__rzz__body);
-    REGISTER_SYMBOL(__quantum__qis__rzx__body);
-    REGISTER_SYMBOL(__quantum__qis__u__body);
-    REGISTER_SYMBOL(__quantum__qis__u3__body);
-    REGISTER_SYMBOL(__quantum__qis__u2__body);
-    REGISTER_SYMBOL(__quantum__qis__u1__body);
-    REGISTER_SYMBOL(__quantum__qis__cu1__body);
-    REGISTER_SYMBOL(__quantum__qis__cu3__body);
+#define MQT_QIR_REGISTER_GATE(NAME, SUFFIX, CTL_SUFFIX)                        \
+  REGISTER_SYMBOL(__quantum__qis__##NAME##__##SUFFIX);                         \
+  REGISTER_SYMBOL(__quantum__qis__c##NAME##__##SUFFIX);                        \
+  REGISTER_SYMBOL(__quantum__qis__cc##NAME##__##SUFFIX);                       \
+  REGISTER_SYMBOL(__quantum__qis__##NAME##__##CTL_SUFFIX);
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  MQT_QIR_REGISTER_GATE(NAME, SUFFIX, CTL_SUFFIX)
+#include "mlir/Conversion/GateTable.def"
+#undef MQT_QIR_REGISTER_GATE
+
+    REGISTER_SYMBOL(__quantum__qis__gphase__body);
     REGISTER_SYMBOL(__quantum__qis__cnot__body);
-    REGISTER_SYMBOL(__quantum__qis__cx__body);
-    REGISTER_SYMBOL(__quantum__qis__cy__body);
-    REGISTER_SYMBOL(__quantum__qis__cz__body);
-    REGISTER_SYMBOL(__quantum__qis__ch__body);
-    REGISTER_SYMBOL(__quantum__qis__swap__body);
-    REGISTER_SYMBOL(__quantum__qis__cswap__body);
-    REGISTER_SYMBOL(__quantum__qis__crz__body);
-    REGISTER_SYMBOL(__quantum__qis__cry__body);
-    REGISTER_SYMBOL(__quantum__qis__crx__body);
-    REGISTER_SYMBOL(__quantum__qis__cp__body);
-    REGISTER_SYMBOL(__quantum__qis__ccx__body);
-    REGISTER_SYMBOL(__quantum__qis__ccy__body);
-    REGISTER_SYMBOL(__quantum__qis__ccz__body);
     REGISTER_SYMBOL(__quantum__qis__m__body);
     REGISTER_SYMBOL(__quantum__qis__measure__body);
     REGISTER_SYMBOL(__quantum__qis__mz__body);

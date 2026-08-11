@@ -12,13 +12,18 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
+#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "qir/runtime/QIR.h"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -26,6 +31,7 @@
 #include <numeric>
 #include <ostream>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -113,6 +119,61 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
       qState.dd->decRef(old);
     }
   }
+}
+
+auto Runtime::translateAddresses(const std::span<Qubit* const> qubits)
+    -> std::vector<qc::Qubit> {
+  std::vector<qc::Qubit> qubitIds(qubits.size());
+  if (addressMode != AddressMode::STATIC) {
+    try {
+      std::ranges::transform(qubits, qubitIds.begin(), [&](const auto* q) {
+        try {
+          return qRegister.at(q);
+        } catch (const std::out_of_range&) {
+          std::ostringstream ss;
+          ss << __FILE__ << ":" << __LINE__
+             << ": Qubit not allocated (not found): " << q;
+          throw std::out_of_range(ss.str());
+        }
+      });
+    } catch (std::out_of_range&) {
+      if (addressMode == AddressMode::DYNAMIC) {
+        throw;
+      }
+      addressMode = AddressMode::STATIC;
+    }
+  }
+  if (addressMode == AddressMode::STATIC) {
+    std::ranges::transform(qubits, qubitIds.begin(), [](const auto* q) {
+      return static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(q));
+    });
+  }
+  if (!qubitIds.empty()) {
+    enlargeState(*std::ranges::max_element(qubitIds));
+  }
+  return qubitIds;
+}
+
+auto Runtime::apply(const qc::OpType op, const std::span<const qc::fp> params,
+                    const std::span<Qubit* const> controls,
+                    const std::span<Qubit* const> targets) -> void {
+  std::vector<Qubit*> qubits;
+  qubits.reserve(controls.size() + targets.size());
+  qubits.insert(qubits.end(), controls.begin(), controls.end());
+  qubits.insert(qubits.end(), targets.begin(), targets.end());
+  auto addresses = translateAddresses(qubits);
+  std::ranges::transform(addresses, addresses.begin(), [&](const auto address) {
+    return qubitPermutation[address];
+  });
+
+  const auto controlEnd =
+      addresses.cbegin() + static_cast<std::ptrdiff_t>(controls.size());
+  const qc::Controls mappedControls(addresses.cbegin(), controlEnd);
+  const qc::Targets mappedTargets(controlEnd, addresses.cend());
+  const qc::StandardOperation operation(
+      mappedControls, mappedTargets, op,
+      std::vector<qc::fp>(params.begin(), params.end()));
+  qState.edge = applyUnitaryOperation(operation, qState.edge, *qState.dd);
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape)

@@ -31,6 +31,7 @@
 #include <memory>
 #include <ostream>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -259,11 +260,14 @@ private:
   explicit Runtime(uint64_t randomSeed);
 
   auto enlargeState(std::uint64_t maxQubit) -> void;
+  auto translateAddresses(std::span<Qubit* const> qubits)
+      -> std::vector<qc::Qubit>;
 
   template <qc::OpType Op, typename... Args>
   auto createOperation(Args&... args) -> qc::StandardOperation {
-    static_assert(qc::isSingleQubitGate(Op) || qc::isTwoQubitGate(Op),
-                  "Op must be a single or two qubit gate.");
+    static_assert(qc::isSingleQubitGate(Op) || qc::isTwoQubitGate(Op) ||
+                      qc::isThreeQubitGate(Op),
+                  "Op must be a one-, two-, or three-qubit gate.");
     const auto& params = Utils::packOfType<qc::fp>(args...);
     const auto& qubits = Utils::packOfType<Qubit*>(args...);
     static_assert(
@@ -281,7 +285,10 @@ private:
     const std::vector<qc::fp> paramVec(params.data(),
                                        params.data() + params.size());
     // split addresses into control and target; also see static_assert above
-    constexpr uint8_t t = isSingleQubitGate(Op) ? 1 : 2;
+    constexpr uint8_t t = qc::isSingleQubitGate(Op)  ? 1
+                          : qc::isTwoQubitGate(Op)   ? 2
+                          : qc::isThreeQubitGate(Op) ? 3
+                                                     : 0;
     static_assert(
         std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >= t,
         "Not enough qubits provided for the operation.");
@@ -318,10 +325,21 @@ public:
   auto reset() -> void;
   template <qc::OpType Op, typename... Args>
   auto apply(Args&&... args) -> void {
-    const qc::StandardOperation& operation =
-        createOperation<Op>(std::forward<Args>(args)...);
-    qState.edge = applyUnitaryOperation(operation, qState.edge, *qState.dd);
+    if constexpr (Op == qc::SWAP && sizeof...(Args) == 2) {
+      swap(std::forward<Args>(args)...);
+    } else {
+      const qc::StandardOperation& operation =
+          createOperation<Op>(std::forward<Args>(args)...);
+      qState.edge = applyUnitaryOperation(operation, qState.edge, *qState.dd);
+    }
   }
+  auto applyGlobalPhase(qc::fp phase) -> void {
+    qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
+  }
+  /// Apply a gate with a runtime-sized control set.
+  auto apply(qc::OpType op, std::span<const qc::fp> params,
+             std::span<Qubit* const> controls, std::span<Qubit* const> targets)
+      -> void;
   template <typename... Args> auto measure(Args... args) -> void {
     const auto& qubits = Utils::packOfType<Qubit*>(args...);
     const auto& results = Utils::packOfType<Result*>(args...);

@@ -22,12 +22,153 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstdint>
+#include <iterator>
+#include <limits>
 #include <string>
 
 namespace mlir::qir {
+
+void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
+                 const ValueRange parameters, const ValueRange controls,
+                 const ValueRange targets, const StringRef fnName) {
+  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  const auto voidType = LLVM::LLVMVoidType::get(builder.getContext());
+  const auto isGenericControlled =
+      fnName.ends_with("__ctl") || fnName.ends_with("__ctladj");
+
+  if (!isGenericControlled) {
+    SmallVector<Value> operands;
+    operands.reserve(parameters.size() + controls.size() + targets.size());
+    operands.append(parameters.begin(), parameters.end());
+    operands.append(controls.begin(), controls.end());
+    operands.append(targets.begin(), targets.end());
+
+    SmallVector<Type> argumentTypes;
+    argumentTypes.reserve(operands.size());
+    llvm::transform(operands, std::back_inserter(argumentTypes),
+                    [](const Value value) { return value.getType(); });
+    const auto signature = LLVM::LLVMFunctionType::get(voidType, argumentTypes);
+    const auto declaration =
+        getOrCreateFunctionDeclaration(builder, anchor, fnName, signature);
+    LLVM::CallOp::create(builder, loc, declaration, operands);
+    return;
+  }
+  assert(!controls.empty() &&
+         "generic controlled specialization requires controls");
+
+  const auto i32Type = builder.getI32Type();
+  const auto i64Type = builder.getI64Type();
+  const auto layout = DataLayout::closest(anchor);
+  const auto pointerSize = layout.getTypeSize(ptrType);
+  assert(!pointerSize.isScalable() && "pointer size must be fixed");
+  const auto pointerBytes = pointerSize.getFixedValue();
+  assert(pointerBytes <= std::numeric_limits<std::uint32_t>::max());
+
+  const auto arrayCreateType =
+      LLVM::LLVMFunctionType::get(ptrType, {i32Type, i64Type});
+  const auto arrayCreate = getOrCreateFunctionDeclaration(
+      builder, anchor, QIR_ARRAY_CREATE, arrayCreateType);
+  const auto elementSize =
+      LLVM::ConstantOp::create(
+          builder, loc,
+          builder.getI32IntegerAttr(static_cast<std::int32_t>(pointerBytes)))
+          .getResult();
+  const auto controlCount =
+      LLVM::ConstantOp::create(
+          builder, loc,
+          builder.getI64IntegerAttr(static_cast<std::int64_t>(controls.size())))
+          .getResult();
+  const auto controlArray =
+      LLVM::CallOp::create(builder, loc, arrayCreate,
+                           ValueRange{elementSize, controlCount})
+          .getResult();
+
+  const auto arrayElementType =
+      LLVM::LLVMFunctionType::get(ptrType, {ptrType, i64Type});
+  const auto arrayElement = getOrCreateFunctionDeclaration(
+      builder, anchor, QIR_ARRAY_ELEMENT, arrayElementType);
+  for (const auto& [index, control] : llvm::enumerate(controls)) {
+    const auto indexValue =
+        LLVM::ConstantOp::create(
+            builder, loc,
+            builder.getI64IntegerAttr(static_cast<std::int64_t>(index)))
+            .getResult();
+    const auto element =
+        LLVM::CallOp::create(builder, loc, arrayElement,
+                             ValueRange{controlArray, indexValue})
+            .getResult();
+    LLVM::StoreOp::create(builder, loc, control, element);
+  }
+
+  const bool usesTuple = !parameters.empty() || targets.size() != 1;
+  Value gateArgs;
+  if (!usesTuple) {
+    gateArgs = targets.front();
+  } else {
+    SmallVector<Value> payload;
+    payload.reserve(parameters.size() + targets.size());
+    payload.append(parameters.begin(), parameters.end());
+    payload.append(targets.begin(), targets.end());
+
+    SmallVector<Type> payloadTypes;
+    payloadTypes.reserve(payload.size());
+    llvm::transform(payload, std::back_inserter(payloadTypes),
+                    [](const Value value) { return value.getType(); });
+    const auto tupleType =
+        LLVM::LLVMStructType::getLiteral(builder.getContext(), payloadTypes);
+    const auto tupleSize = layout.getTypeSize(tupleType);
+    assert(!tupleSize.isScalable() && "QIR tuple size must be fixed");
+
+    const auto tupleCreateType = LLVM::LLVMFunctionType::get(ptrType, i64Type);
+    const auto tupleCreate = getOrCreateFunctionDeclaration(
+        builder, anchor, QIR_TUPLE_CREATE, tupleCreateType);
+    const auto sizeValue =
+        LLVM::ConstantOp::create(
+            builder, loc,
+            builder.getI64IntegerAttr(
+                static_cast<std::int64_t>(tupleSize.getFixedValue())))
+            .getResult();
+    gateArgs =
+        LLVM::CallOp::create(builder, loc, tupleCreate, sizeValue).getResult();
+
+    for (const auto& [index, value] : llvm::enumerate(payload)) {
+      const SmallVector<LLVM::GEPArg> indices{0,
+                                              static_cast<std::int32_t>(index)};
+      const auto element = LLVM::GEPOp::create(builder, loc, ptrType, tupleType,
+                                               gateArgs, indices)
+                               .getResult();
+      LLVM::StoreOp::create(builder, loc, value, element);
+    }
+  }
+
+  const auto controlledType =
+      LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+  const auto controlled =
+      getOrCreateFunctionDeclaration(builder, anchor, fnName, controlledType);
+  LLVM::CallOp::create(builder, loc, controlled,
+                       ValueRange{controlArray, gateArgs});
+
+  const auto releaseType =
+      LLVM::LLVMFunctionType::get(voidType, {ptrType, i32Type});
+  const auto decrement =
+      LLVM::ConstantOp::create(builder, loc, builder.getI32IntegerAttr(-1))
+          .getResult();
+  if (usesTuple) {
+    const auto tupleRelease = getOrCreateFunctionDeclaration(
+        builder, anchor, QIR_TUPLE_RELEASE, releaseType);
+    LLVM::CallOp::create(builder, loc, tupleRelease,
+                         ValueRange{gateArgs, decrement});
+  }
+  const auto arrayRelease = getOrCreateFunctionDeclaration(
+      builder, anchor, QIR_ARRAY_RELEASE, releaseType);
+  LLVM::CallOp::create(builder, loc, arrayRelease,
+                       ValueRange{controlArray, decrement});
+}
 
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   auto module = dyn_cast<ModuleOp>(op);

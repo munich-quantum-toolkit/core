@@ -26,6 +26,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -140,6 +141,31 @@ TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
   });
   EXPECT_FALSE(retainsMathPopulationCount);
   EXPECT_TRUE(hasLLVMPopulationCount);
+}
+
+TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto control0 = builder.allocQubit();
+  const auto control1 = builder.allocQubit();
+  const auto control2 = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  builder.crx(0.25, control0, target);
+  builder.mcrx(0.5, {control0, control1}, target);
+  builder.mcrx(0.75, {control0, control1, control2}, target);
+  auto module = builder.finalize();
+
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_CRX));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_CCRX));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RX_CTL));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_ARRAY_CREATE));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_TUPLE_CREATE));
 }
 
 TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
