@@ -199,3 +199,12 @@ def test_density_simulation_and_sampling() -> None:
     density = mlir.make_density_matrix(zero, 1, package)
     package.dec_ref_vec(zero)
     assert mlir.sample_density(program, density, package, shots=16, seed=8) == {"1": 16}
+
+
+def test_make_density_matrix_rejects_oversized_qubit_count() -> None:
+    """The requested density-matrix size must fit the DD package."""
+    package = dd.DDPackage(1)
+    zero = package.zero_state(1)
+    with pytest.raises(ValueError, match="exceeds the capacity"):
+        mlir.make_density_matrix(zero, 2, package)
+    package.dec_ref_vec(zero)

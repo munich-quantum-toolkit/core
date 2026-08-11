@@ -566,6 +566,9 @@ def make_density_matrix(
 
     The input vector reference remains owned by the caller. The returned matrix DD
     is referenced and must be released with ``DDPackage.dec_ref_mat``.
+
+    Raises:
+        ValueError: When ``num_qubits`` exceeds the DD package capacity.
     """
 
 def simulate_density(
@@ -593,6 +596,8 @@ def sample(
     bindings: Mapping[int, bool | int | float] = {},
 ) -> dict[str, int]:
     """Sample final computational-basis outcomes from a QCO program.
+
+    The same ``QCOProgram`` must not be sampled concurrently from multiple threads.
 
     Args:
         program: A QCO program whose entry ``func.func`` is sampled.
@@ -623,7 +628,9 @@ def sample_density(
     """Sample a QCO program from a density-matrix DD.
 
     The input matrix reference is consumed. Mixed states and entangled qubit
-    deallocation are supported.
+    deallocation are supported. The DD package is not thread-safe and must not be
+    shared across threads while sampling. The same ``QCOProgram`` must not be
+    sampled concurrently from multiple threads.
     """
 
 def sample_with_classics(
@@ -636,6 +643,8 @@ def sample_with_classics(
     bindings: Mapping[int, bool | int | float] = {},
 ) -> SampleResult:
     """Sample final and mid-circuit classical outcomes from a QCO program.
+
+    The same ``QCOProgram`` must not be sampled concurrently from multiple threads.
 
     Args:
         program: A QCO program whose entry ``func.func`` is sampled.

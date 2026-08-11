@@ -970,13 +970,20 @@ Raises:
       "make_density_matrix",
       [](const dd::VectorDD& state, const size_t numQubits,
          dd::Package& ddPackage) {
+        if (numQubits > ddPackage.qubits()) {
+          throw nb::value_error(
+              "num_qubits exceeds the capacity of the DD package");
+        }
         return mlir::qco::makeDensityMatrix(state, numQubits, ddPackage);
       },
       "state"_a, "num_qubits"_a, "dd_package"_a, nb::keep_alive<0, 3>(),
       R"pb(Construct ``|psi><psi|`` from a pure DD state.
 
 The input vector reference remains owned by the caller. The returned matrix DD
-is referenced and must be released with ``DDPackage.dec_ref_mat``.)pb");
+is referenced and must be released with ``DDPackage.dec_ref_mat``.
+
+Raises:
+    ValueError: When ``num_qubits`` exceeds the DD package capacity.)pb");
 
   m.def(
       "simulate_density",
@@ -1034,6 +1041,8 @@ consumed. Supply ``seed`` for programs containing measurement or reset.)pb");
       "bindings"_a = QCODDBindingMap{},
       R"pb(Sample final computational-basis outcomes from a QCO program.
 
+The same ``QCOProgram`` must not be sampled concurrently from multiple threads.
+
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
     dd_package: DD package with enough qubits for the program. Not thread-safe;
@@ -1071,7 +1080,9 @@ Raises:
       R"pb(Sample a QCO program from a density-matrix DD.
 
 The input matrix reference is consumed. Mixed states and entangled qubit
-deallocation are supported.)pb");
+deallocation are supported. The DD package is not thread-safe and must not be
+shared across threads while sampling. The same ``QCOProgram`` must not be
+sampled concurrently from multiple threads.)pb");
 
   m.def(
       "sample_with_classics",
@@ -1097,6 +1108,8 @@ deallocation are supported.)pb");
       nb::kw_only(), "initial_state"_a = nb::none(),
       "bindings"_a = QCODDBindingMap{},
       R"pb(Sample final and mid-circuit classical outcomes from a QCO program.
+
+The same ``QCOProgram`` must not be sampled concurrently from multiple threads.
 
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
