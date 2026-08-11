@@ -30,12 +30,14 @@ it and must remain independently buildable and testable.
       and review threads.
 - [x] (2026-08-11 00:11Z) Chose the stack boundaries and allocated a clean
   worktree for the first layer at the exact #2040 head.
-- [x] (2026-08-11 01:03Z) Replace throwing compiler-target construction and
+- [x] (2026-08-11 00:43Z) Replace throwing compiler-target construction and
       adapter validation with explicit `llvm::Expected` results, preserve Python
       exceptions in nanobind, update callers, and validate the first layer. The
       binding build, generated stubs, five focused Python tests, full release
       build, all 4,629 CTests, and repository lint pass. Upgrade guidance
       records the C++ source migration.
+- [x] (2026-08-11 00:52Z) Publish the first layer as draft pull request #2049,
+  based on #2040 at its unchanged exact head.
 - [ ] Replace non-local OpenQASM semantic exceptions with explicit diagnostic
   propagation and validate all semantic error paths in the second layer.
 - [ ] Introduce the CMake no-exception contract, isolate or omit integrations
@@ -129,10 +131,8 @@ translation, compiler programs, and tools that do not require those adapters
 must compile without exceptions.
 
 Pull requests #1701 and #1845 add exception syntax in MLIR code and therefore
-must be updated to the explicit-error contract before merging. Pull request
-
-## 1973 expands the decision-diagram bridge and must preserve its compatibility
-
+must be updated to the explicit-error contract before merging. Pull request 1973
+expands the decision-diagram bridge and must preserve its compatibility
 boundary. Pull requests #1901, #2025, #2042, and #2043 disagree about the future
 of FoMaC; this plan does not resolve that separate architecture decision and
 keeps the optional adapter thin. Pull request #2031's direct Qiskit C bridge is
@@ -141,7 +141,7 @@ translation path. Pull request #1955 supplies an appropriate benchmark harness
 for later performance measurements but no performance claim is required for
 acceptance here.
 
-### Plan of Work
+## Plan of Work
 
 In the first layer, add named `create` factories to `CompilerTarget` and its
 nested metadata value types. Move all validation into helpers that return
@@ -179,7 +179,7 @@ against the supported LLVM 22 toolchain. Document which optional integrations
 are unavailable in strict mode, add upgrade guidance for the target factories,
 and add a changelog entry.
 
-### Concrete Steps
+## Concrete Steps
 
 All commands run from the repository root through `.agent/run.sh` when they
 produce caches or build artifacts.
@@ -213,7 +213,7 @@ requests with the immediately preceding stack branch as their base, then link
 the existing #2040 pull request and the new pull requests bottom-to-top with
 GitHub's stack command. Do not merge any pull request.
 
-### Validation and Acceptance
+## Validation and Acceptance
 
 The first layer is accepted when invalid C++ target metadata returns an
 `llvm::Error` with the established message, valid targets behave identically,
@@ -233,7 +233,7 @@ compatibility where configured, and full lint passes. CI on each exact stack
 head must be inspected; pending or failing checks remain explicitly reported and
 prevent readiness.
 
-### Idempotence and Recovery
+## Idempotence and Recovery
 
 Configuration, build, test, lint, and stub-generation commands are repeatable
 inside their layer's worktree. Each layer uses its own build and cache trees. If
@@ -249,19 +249,24 @@ Then rebase each descendant in order and rerun focused tests. A conflict in the
 semantic analyzer must be resolved against the current behavior and tests, not
 by mechanically choosing one side.
 
-### Artifacts and Notes
+## Artifacts and Notes
 
 The initial live audit recorded #2040 at commit
 `7068c29077e2bf24281ee016cf49771f7f262733`, based on an older `main`, with no
 reviews or review threads. This commit is evidence for the initial dependency
 only; refresh it before publication because remote state can change.
 
+The first implementation layer is draft pull request #2049 at signed commit
+`86508b872c902569966532ee5a965d50f0b8eb54`. Its base branch is
+`agent/issue-1128-angle-precision`; the local and remote bases were exact when
+the pull request was created.
+
 The local LLVM 22 configuration advertises exception handling as disabled. The
 current project flag reverses that setting for MQT targets, so deleting the
 override without first removing explicit exception paths would fail the build.
 The stack order exists to keep each intermediate revision buildable.
 
-### Interfaces and Dependencies
+## Interfaces and Dependencies
 
 At the end of the first layer, `mlir/Compiler/Target.h` provides static factory
 functions returning `llvm::Expected<DurationUnit>`, `llvm::Expected<Site>`,
