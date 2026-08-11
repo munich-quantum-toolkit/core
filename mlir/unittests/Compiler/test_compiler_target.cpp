@@ -172,6 +172,8 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                 "Compiler target site name must not be empty when present");
   expectInvalid(Site::create(0, std::nullopt, 0),
                 "Compiler target site T1 must be positive");
+  expectInvalid(Site::create(0, std::nullopt, std::nullopt, 0),
+                "Compiler target site T2 must be positive");
   expectInvalid(DurationUnit::create("", 1.),
                 "Compiler target duration unit must not be empty");
   expectInvalid(
@@ -182,6 +184,8 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
       "Compiler target duration scale factor must be positive and finite");
   expectInvalid(SiteTuple::create({0, 0}),
                 "Compiler target site tuple contains a duplicate site");
+  expectInvalid(SiteTuple::create({-1}),
+                "Compiler target site tuple contains a negative site ID");
   expectInvalid(
       SiteTuple::create({0}, std::nullopt, -0.1),
       "Compiler target site-tuple fidelity must be finite and in [0, 1]");
@@ -203,6 +207,10 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
       "Compiler target operation fidelity must be finite and in [0, 1]");
 
   expectInvalid(Target::create(std::vector<Site>{}),
+                "Compiler target must contain at least one site");
+  expectInvalid(Target::create("", 1),
+                "Compiler target name must not be empty when present");
+  expectInvalid(Target::create("invalid", 0),
                 "Compiler target must contain at least one site");
   expectInvalid(Target::create(std::vector{valid(Site::create(1)),
                                            valid(Site::create(1))}),
