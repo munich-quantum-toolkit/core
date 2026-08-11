@@ -174,6 +174,9 @@ struct ClassicalEnv {
   DenseMap<Value, APInt> integers;
   DenseMap<Value, double> floats;
   using Scalar = std::variant<bool, int64_t, APInt, double>;
+  // libstdc++'s variant move implementation triggers a false positive through
+  // SmallVector's implicitly generated move operations.
+  // NOLINTNEXTLINE(bugprone-exception-escape)
   struct MemRefStorage {
     SmallVector<Scalar> values;
     bool live = true;
@@ -670,7 +673,7 @@ static LogicalResult applyBindings(func::FuncOp func,
             integer.getValue().sextOrTrunc(integerType.getWidth());
         continue;
       }
-    } else if (isa<FloatType>(type)) {
+    } else if (type.isIntOrFloat()) {
       if (auto floating = dyn_cast<FloatAttr>(attr)) {
         classical.floats[value] = floating.getValue().convertToDouble();
         continue;

@@ -144,7 +144,7 @@ makeQCODDBindings(mlir::func::FuncOp func,
       if (const auto* value = std::get_if<bool>(&binding)) {
         attribute = mlir::BoolAttr::get(func.getContext(), *value);
       }
-    } else if (mlir::isa<mlir::IndexType, mlir::IntegerType>(type)) {
+    } else if (llvm::isa<mlir::IndexType, mlir::IntegerType>(type)) {
       if (const auto* value = std::get_if<int64_t>(&binding)) {
         attribute = mlir::IntegerAttr::get(type, *value);
       }
@@ -153,10 +153,10 @@ makeQCODDBindings(mlir::func::FuncOp func,
         attribute = mlir::FloatAttr::get(type, *value);
       }
     } else if (const auto tensorType =
-                   mlir::dyn_cast<mlir::RankedTensorType>(type);
+                   llvm::dyn_cast<mlir::RankedTensorType>(type);
                tensorType && tensorType.getRank() == 1 &&
                tensorType.isDynamicDim(0) &&
-               mlir::isa<mlir::qco::QubitType>(tensorType.getElementType())) {
+               llvm::isa<mlir::qco::QubitType>(tensorType.getElementType())) {
       if (const auto* value = std::get_if<int64_t>(&binding);
           value != nullptr && *value >= 0) {
         attribute = mlir::IntegerAttr::get(
