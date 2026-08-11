@@ -12,7 +12,10 @@
 
 #include "dd/Package_fwd.hpp"
 
+#include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
@@ -21,6 +24,15 @@
 #include <string>
 
 namespace mlir::qco {
+
+/**
+ * @brief Concrete values for symbolic QCO DD inputs.
+ *
+ * Integer and floating-point attributes bind scalar SSA values. Bindings are
+ * primarily intended for function arguments; unbound symbolic values still
+ * cause functionality construction or simulation to fail.
+ */
+using DDBindings = DenseMap<Value, Attribute>;
 
 /**
  * @brief Sequentially build a matrix DD for a static unitary QCO `func.func`.
@@ -51,13 +63,17 @@ namespace mlir::qco {
  * gates. Larger compile-time unitaries (including partial wire subsets) use a
  * dense embed into the full register, rewritten from QCO/MSB to DD/LSB, limited
  * to 12 qubits (`2^n × 2^n` storage). Quantum allocations, measurements,
- * resets, symbolic parameters, and non-concrete control flow are not supported.
+ * resets, unbound symbolic parameters, and non-concrete control flow are not
+ * supported.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
+ * @param bindings Concrete values for symbolic scalar function arguments
  * @return The matrix DD on success, or failure for unsupported programs
  */
-FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
+FailureOr<dd::MatrixDD>
+buildFunctionality(func::FuncOp func, dd::Package& dd,
+                   const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Simulate a QCO `func.func` on a given input state without stochastic
@@ -84,11 +100,13 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * @param in The input state, represented as a vector DD; one reference is
  * consumed
  * @param dd The DD package to use (must hold at least the function's qubits)
+ * @param bindings Concrete values for symbolic scalar function arguments
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
  */
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd);
+                                 dd::Package& dd,
+                                 const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Simulate a QCO `func.func` that may contain measurements, resets, and
@@ -115,11 +133,13 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @param in The input state; one reference is consumed
  * @param dd The DD package to use
  * @param rng RNG used for collapsing measurements and resets
+ * @param bindings Concrete values for symbolic scalar function arguments
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
  */
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd, std::mt19937_64& rng);
+                                 dd::Package& dd, std::mt19937_64& rng,
+                                 const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func`.
@@ -137,13 +157,13 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @param dd The DD package to use
  * @param shots Number of shots
  * @param rng RNG for collapsing measurements and non-collapsing sampling
+ * @param bindings Concrete values for symbolic scalar function arguments
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>> sample(func::FuncOp func,
-                                                     dd::Package& dd,
-                                                     std::size_t shots,
-                                                     std::mt19937_64& rng);
+FailureOr<std::map<std::string, std::size_t>>
+sample(func::FuncOp func, dd::Package& dd, std::size_t shots,
+       std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func` on a given input.
@@ -157,12 +177,14 @@ FailureOr<std::map<std::string, std::size_t>> sample(func::FuncOp func,
  * @param dd The DD package to use
  * @param shots Number of shots
  * @param rng RNG for collapsing measurements and non-collapsing sampling
+ * @param bindings Concrete values for symbolic scalar function arguments
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
 FailureOr<std::map<std::string, std::size_t>>
 sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-       std::size_t shots, std::mt19937_64& rng);
+       std::size_t shots, std::mt19937_64& rng,
+       const DDBindings& bindings = DDBindings());
 
 /// Histograms produced by @ref sampleWithClassics.
 struct SampleResult {
@@ -180,15 +202,17 @@ struct SampleResult {
  * measurement bits in encounter order into @c SampleResult::classical.
  * Programs without mid-circuit measures leave @c classical empty.
  */
-FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
-                                           size_t shots, std::mt19937_64& rng);
+FailureOr<SampleResult>
+sampleWithClassics(func::FuncOp func, dd::Package& dd, size_t shots,
+                   std::mt19937_64& rng,
+                   const DDBindings& bindings = DDBindings());
 
 /// @copydoc sampleWithClassics(func::FuncOp, dd::Package&, size_t,
 /// std::mt19937_64&)
 /// Starts from @p in; one reference is consumed.
-FailureOr<SampleResult> sampleWithClassics(func::FuncOp func,
-                                           const dd::VectorDD& in,
-                                           dd::Package& dd, size_t shots,
-                                           std::mt19937_64& rng);
+FailureOr<SampleResult>
+sampleWithClassics(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
+                   size_t shots, std::mt19937_64& rng,
+                   const DDBindings& bindings = DDBindings());
 
 } // namespace mlir::qco

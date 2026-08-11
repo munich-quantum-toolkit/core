@@ -502,6 +502,61 @@ TEST_F(QCODDFunctionalityTest, FuncArgs) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
+  auto symbolic = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64, %phase: f64) {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %twice = arith.addf %theta, %theta : f64
+        %q0_rotated = qco.rx(%twice) %q0 : !qco.qubit -> !qco.qubit
+        %c_out, %t_out = qco.ctrl(%q0_rotated) targets(%t = %q1) {
+          %t1 = qco.rz(%theta) %t : !qco.qubit -> !qco.qubit
+          qco.yield %t1 : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        qco.gphase(%phase)
+        qco.sink %c_out : !qco.qubit
+        qco.sink %t_out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  auto concrete = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.rx(0.5, b.staticQubit(0));
+    auto q1 = b.staticQubit(1);
+    std::tie(q0, q1) =
+        b.ctrl(q0, q1, [&](Value target) { return b.rz(0.25, target); });
+    b.gphase(-0.2);
+    b.sink(q0);
+    b.sink(q1);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(symbolic);
+  ASSERT_TRUE(concrete);
+
+  auto func = mainFunc(*symbolic);
+  DDBindings bindings;
+  bindings[func.getArgument(0)] =
+      FloatAttr::get(cast<FloatType>(func.getArgument(0).getType()), 0.25);
+  bindings[func.getArgument(1)] =
+      FloatAttr::get(cast<FloatType>(func.getArgument(1).getType()), -0.2);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto actual = buildFunctionality(func, *dd, bindings);
+  auto expected = buildFunctionality(mainFunc(*concrete), *dd);
+  ASSERT_TRUE(succeeded(actual));
+  ASSERT_TRUE(succeeded(expected));
+  EXPECT_EQ(actual->getMatrix(2), expected->getMatrix(2));
+  dd->decRef(*actual);
+  dd->decRef(*expected);
+
+  std::mt19937_64 rng(5);
+  auto histogram = sample(func, *dd, 4, rng, bindings);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("00"), 4U);
+}
+
 TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
   auto canonical = parseSourceString<ModuleOp>(R"mlir(
     module {

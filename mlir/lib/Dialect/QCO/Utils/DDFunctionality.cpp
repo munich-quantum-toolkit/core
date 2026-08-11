@@ -223,10 +223,23 @@ struct ActiveCallGuard {
 
 } // namespace
 
+static FailureOr<double>
+resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
+  if (const auto it = classical.floats.find(value);
+      it != classical.floats.end()) {
+    return it->second;
+  }
+  if (const auto constant = utils::valueToDouble(value)) {
+    return *constant;
+  }
+  return op->emitError()
+         << "floating-point SSA value has no concrete QCO DD binding";
+}
+
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
-/// matrix is not known at compile time.
+/// parameters are not concrete.
 static FailureOr<std::optional<DecodedGate>>
-decodeStandardGate(UnitaryOpInterface unitary) {
+decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
   const qc::OpType type =
       TypeSwitch<Operation*, qc::OpType>(op)
@@ -263,14 +276,13 @@ decodeStandardGate(UnitaryOpInterface unitary) {
   if (type == qc::OpType::None) {
     return std::optional<DecodedGate>{std::nullopt};
   }
-  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
-    return unitary.emitError()
-           << "unitary must have a compile-time constant matrix";
-  }
-
   DecodedGate decoded{.type = type, .params = {}};
   for (Value param : unitary.getParameters()) {
-    decoded.params.push_back(static_cast<dd::fp>(*utils::valueToDouble(param)));
+    auto concrete = resolveDouble(param, classical, op);
+    if (failed(concrete)) {
+      return failure();
+    }
+    decoded.params.push_back(static_cast<dd::fp>(*concrete));
   }
   return std::optional{std::move(decoded)};
 }
@@ -345,19 +357,22 @@ template <typename StateDD>
 static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
                                         WalkState& walk, StateDD& state) {
   Operation* op = unitary.getOperation();
-  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
-    return unitary.emitError()
-           << "unitary must have a compile-time constant matrix";
-  }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = *utils::valueToDouble(gphase.getTheta());
+    auto theta = resolveDouble(gphase.getTheta(), walk.classical, op);
+    if (failed(theta)) {
+      return failure();
+    }
     auto id = dd::Package::makeIdent();
-    id.w = walk.dd.cn.lookup(std::cos(theta), std::sin(theta));
+    id.w = walk.dd.cn.lookup(std::cos(*theta), std::sin(*theta));
     state = walk.dd.applyOperation(id, state);
     return success();
   }
   if (isa<BarrierOp>(op)) {
     return walk.qubits.remapUnitary(unitary);
+  }
+  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
+    return unitary.emitError()
+           << "unitary must have a compile-time constant matrix";
   }
 
   DynamicMatrix local;
@@ -518,6 +533,48 @@ static LogicalResult recordConstant(arith::ConstantOp constant,
     classical.indices[constant.getResult()] = attr.getInt();
   } else if (isa<IntegerType>(constant.getType())) {
     classical.integers[constant.getResult()] = attr.getValue();
+  }
+  return success();
+}
+
+static LogicalResult applyBindings(func::FuncOp func,
+                                   const DDBindings& bindings,
+                                   ClassicalEnv& classical) {
+  for (const auto& [value, attr] : bindings) {
+    const auto argument = dyn_cast<BlockArgument>(value);
+    if (!argument || argument.getOwner() != &func.getBody().front()) {
+      return func.emitError()
+             << "QCO DD bindings must target entry-block arguments";
+    }
+    Type type = value.getType();
+    if (type.isInteger(1)) {
+      if (auto boolean = dyn_cast<BoolAttr>(attr)) {
+        classical.bools[value] = boolean.getValue();
+        continue;
+      }
+      if (auto integer = dyn_cast<IntegerAttr>(attr)) {
+        classical.bools[value] = integer.getValue() != 0;
+        continue;
+      }
+    } else if (isa<IndexType>(type)) {
+      if (auto integer = dyn_cast<IntegerAttr>(attr)) {
+        classical.indices[value] = integer.getInt();
+        continue;
+      }
+    } else if (auto integerType = dyn_cast<IntegerType>(type)) {
+      if (auto integer = dyn_cast<IntegerAttr>(attr)) {
+        classical.integers[value] =
+            integer.getValue().sextOrTrunc(integerType.getWidth());
+        continue;
+      }
+    } else if (isa<FloatType>(type)) {
+      if (auto floating = dyn_cast<FloatAttr>(attr)) {
+        classical.floats[value] = floating.getValue().convertToDouble();
+        continue;
+      }
+    }
+    return func.emitError() << "QCO DD binding attribute " << attr
+                            << " does not match argument type " << type;
   }
   return success();
 }
@@ -1977,7 +2034,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
         if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {
-          auto decoded = decodeStandardGate(inner);
+          auto decoded = decodeStandardGate(inner, walk.classical);
           if (failed(decoded)) {
             return failure();
           }
@@ -1999,7 +2056,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface unitary) -> LogicalResult {
-            auto decoded = decodeStandardGate(unitary);
+            auto decoded = decodeStandardGate(unitary, walk.classical);
             if (failed(decoded)) {
               return failure();
             }
@@ -2077,7 +2134,8 @@ static FailureOr<PreparedState> prepare(func::FuncOp func,
   return prepared;
 }
 
-FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
+FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd,
+                                           const DDBindings& bindings) {
   auto preparedOr = prepare(func, dd);
   if (failed(preparedOr)) {
     return failure();
@@ -2085,6 +2143,9 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
   QubitMap qubits = std::move(preparedOr->qubits);
   TensorMap tensors = std::move(preparedOr->tensors);
   ClassicalEnv classical;
+  if (failed(applyBindings(func, bindings, classical))) {
+    return failure();
+  }
   DenseSet<Operation*> activeCalls;
   WalkState walkState{.qubits = qubits,
                       .tensors = tensors,
@@ -2109,7 +2170,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
 
 static FailureOr<dd::VectorDD>
 simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-             std::mt19937_64* rng, std::string* classicalBits) {
+             std::mt19937_64* rng, std::string* classicalBits,
+             const DDBindings& bindings) {
   auto preparedOr = prepare(func, dd);
   if (failed(preparedOr)) {
     dd.decRef(in);
@@ -2118,6 +2180,10 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   QubitMap qubits = std::move(preparedOr->qubits);
   TensorMap tensors = std::move(preparedOr->tensors);
   ClassicalEnv classical;
+  if (failed(applyBindings(func, bindings, classical))) {
+    dd.decRef(in);
+    return failure();
+  }
   DenseSet<Operation*> activeCalls;
   WalkState walkState{.qubits = qubits,
                       .tensors = tensors,
@@ -2136,13 +2202,14 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 }
 
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd) {
-  return simulateImpl(func, in, dd, nullptr, nullptr);
+                                 dd::Package& dd, const DDBindings& bindings) {
+  return simulateImpl(func, in, dd, nullptr, nullptr, bindings);
 }
 
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd, std::mt19937_64& rng) {
-  return simulateImpl(func, in, dd, &rng, nullptr);
+                                 dd::Package& dd, std::mt19937_64& rng,
+                                 const DDBindings& bindings) {
+  return simulateImpl(func, in, dd, &rng, nullptr, bindings);
 }
 
 [[nodiscard]] static bool
@@ -2184,11 +2251,10 @@ requiresDynamicSampling(func::FuncOp func,
   return dynamic;
 }
 
-static FailureOr<SampleResult> sampleImpl(func::FuncOp func,
-                                          const dd::VectorDD& in,
-                                          dd::Package& dd, const size_t shots,
-                                          std::mt19937_64& rng,
-                                          const bool recordClassics) {
+static FailureOr<SampleResult>
+sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
+           const size_t shots, std::mt19937_64& rng, const bool recordClassics,
+           const DDBindings& bindings) {
   SampleResult result;
   if (shots == 0) {
     dd.decRef(in);
@@ -2196,7 +2262,7 @@ static FailureOr<SampleResult> sampleImpl(func::FuncOp func,
   }
 
   if (!requiresDynamicSampling(func)) {
-    auto stateOr = simulateImpl(func, in, dd, nullptr, nullptr);
+    auto stateOr = simulateImpl(func, in, dd, nullptr, nullptr, bindings);
     if (failed(stateOr)) {
       return failure();
     }
@@ -2211,8 +2277,8 @@ static FailureOr<SampleResult> sampleImpl(func::FuncOp func,
   for (size_t i = 0; i < shots; ++i) {
     dd.incRef(in);
     std::string classical;
-    auto stateOr =
-        simulateImpl(func, in, dd, &rng, recordClassics ? &classical : nullptr);
+    auto stateOr = simulateImpl(
+        func, in, dd, &rng, recordClassics ? &classical : nullptr, bindings);
     if (failed(stateOr)) {
       dd.decRef(in);
       return failure();
@@ -2230,8 +2296,9 @@ static FailureOr<SampleResult> sampleImpl(func::FuncOp func,
 
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-       const size_t shots, std::mt19937_64& rng) {
-  auto result = sampleImpl(func, in, dd, shots, rng, /*recordClassics=*/false);
+       const size_t shots, std::mt19937_64& rng, const DDBindings& bindings) {
+  auto result =
+      sampleImpl(func, in, dd, shots, rng, /*recordClassics=*/false, bindings);
   if (failed(result)) {
     return failure();
   }
@@ -2241,31 +2308,34 @@ sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func,
                                            const dd::VectorDD& in,
                                            dd::Package& dd, const size_t shots,
-                                           std::mt19937_64& rng) {
-  return sampleImpl(func, in, dd, shots, rng, /*recordClassics=*/true);
+                                           std::mt19937_64& rng,
+                                           const DDBindings& bindings) {
+  return sampleImpl(func, in, dd, shots, rng, /*recordClassics=*/true,
+                    bindings);
 }
 
-FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
-                                                dd::Package& dd,
-                                                const size_t shots,
-                                                std::mt19937_64& rng) {
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, dd::Package& dd, const size_t shots,
+       std::mt19937_64& rng, const DDBindings& bindings) {
   auto preparedOr = prepare(func, dd);
   if (failed(preparedOr)) {
     return failure();
   }
   const size_t n = preparedOr->qubits.numQubits;
-  return sample(func, dd::makeZeroState(n, dd), dd, shots, rng);
+  return sample(func, dd::makeZeroState(n, dd), dd, shots, rng, bindings);
 }
 
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
                                            const size_t shots,
-                                           std::mt19937_64& rng) {
+                                           std::mt19937_64& rng,
+                                           const DDBindings& bindings) {
   auto preparedOr = prepare(func, dd);
   if (failed(preparedOr)) {
     return failure();
   }
   const size_t n = preparedOr->qubits.numQubits;
-  return sampleWithClassics(func, dd::makeZeroState(n, dd), dd, shots, rng);
+  return sampleWithClassics(func, dd::makeZeroState(n, dd), dd, shots, rng,
+                            bindings);
 }
 
 } // namespace mlir::qco
