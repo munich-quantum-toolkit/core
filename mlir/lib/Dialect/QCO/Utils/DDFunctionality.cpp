@@ -34,6 +34,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/MathExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -1512,8 +1513,8 @@ template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state);
 
 template <typename StateDD>
-static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
-                                  StateDD& state);
+static FailureOr<func::ReturnOp>
+walkFunctionBody(func::FuncOp func, WalkState& walkState, StateDD& state);
 
 template <typename StateDD>
 static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
@@ -1996,9 +1997,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return call.emitError()
                  << "func.call callee not found: " << call.getCallee();
         }
-        if (!callee.getBody().hasOneBlock()) {
-          return call.emitError()
-                 << "func.call callee must have a single-block body";
+        if (callee.isDeclaration()) {
+          return call.emitError() << "func.call callee must have a body";
         }
         if (walk.activeCalls == nullptr) {
           return call.emitError()
@@ -2021,23 +2021,17 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
 
-        // Walk the callee body without its terminator so entry-function-only
-        // `validateReturn` (canonical wire order) is not applied to callees.
-        if (failed(walkBlock(callee.getBody().front(), walk, state))) {
+        auto returnOp = walkFunctionBody(callee, walk, state);
+        if (failed(returnOp)) {
           return failure();
         }
 
         // Map callee return operands onto call results via the return op.
-        auto returnOp =
-            dyn_cast<func::ReturnOp>(callee.getBody().front().getTerminator());
-        if (!returnOp) {
-          return call.emitError() << "callee missing func.return";
-        }
-        if (returnOp.getNumOperands() != call.getNumResults()) {
+        if (returnOp->getNumOperands() != call.getNumResults()) {
           return call.emitError()
                  << "func.call result count does not match callee return";
         }
-        return bindValuePairs(returnOp.getOperands(), call.getResults(), walk,
+        return bindValuePairs(returnOp->getOperands(), call.getResults(), walk,
                               call);
       })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
@@ -2082,16 +2076,63 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 }
 
 template <typename StateDD>
-static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
-                                  StateDD& state) {
-  // Function bodies include `func.return` as terminator; region walks skip
-  // `qco.yield` and bind it separately.
-  for (Operation& op : func.getBody().front()) {
-    if (failed(applyOp(op, walkState, state))) {
+static FailureOr<func::ReturnOp>
+walkFunctionBody(func::FuncOp func, WalkState& walk, StateDD& state) {
+  Block* block = &func.getBody().front();
+  int64_t transitions = 0;
+  while (true) {
+    if (failed(walkBlock(*block, walk, state))) {
       return failure();
     }
+    Operation* terminator = block->getTerminator();
+    if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
+      return returnOp;
+    }
+
+    Block* successor = nullptr;
+    ValueRange successorOperands;
+    if (auto branch = dyn_cast<cf::BranchOp>(terminator)) {
+      successor = branch.getDest();
+      successorOperands = branch.getDestOperands();
+    } else if (auto branch = dyn_cast<cf::CondBranchOp>(terminator)) {
+      auto condition =
+          lookupBool(branch.getCondition(), walk.classical, branch);
+      if (failed(condition)) {
+        return failure();
+      }
+      successor = *condition ? branch.getTrueDest() : branch.getFalseDest();
+      successorOperands = *condition ? branch.getTrueDestOperands()
+                                     : branch.getFalseDestOperands();
+    } else {
+      return terminator->emitError()
+             << "unsupported function CFG terminator for QCO DD simulation";
+    }
+    if (successorOperands.size() != successor->getNumArguments()) {
+      return terminator->emitError()
+             << "CFG successor operand count does not match block arguments";
+    }
+    if (failed(bindValuePairs(successorOperands, successor->getArguments(),
+                              walk, terminator))) {
+      return failure();
+    }
+    if (transitions++ == MAX_CONTROL_FLOW_TRIPS) {
+      return terminator->emitError()
+             << "function CFG transition count exceeds QCO DD simulation "
+                "limit of "
+             << MAX_CONTROL_FLOW_TRIPS;
+    }
+    block = successor;
   }
-  return success();
+}
+
+template <typename StateDD>
+static LogicalResult walkFunction(func::FuncOp func, WalkState& walk,
+                                  StateDD& state) {
+  auto returnOp = walkFunctionBody(func, walk, state);
+  if (failed(returnOp)) {
+    return failure();
+  }
+  return validateReturn(*returnOp, walk.qubits, walk.tensors);
 }
 
 struct PreparedState {
@@ -2101,17 +2142,17 @@ struct PreparedState {
 
 static FailureOr<PreparedState>
 prepare(func::FuncOp func, const dd::Package& dd, const DDBindings& bindings) {
-  if (!func.getBody().hasOneBlock()) {
-    return func.emitError()
-           << "QCO DD construction expects a single-block function body";
+  if (func.isDeclaration()) {
+    return func.emitError() << "QCO DD construction requires a function body";
   }
-
   PreparedState prepared;
   QubitMap& qubits = prepared.qubits;
-  for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
-    const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
-    qubits.bind(staticOp.getQubit(), q);
-    qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
+  for (Block& block : func.getBody()) {
+    for (StaticOp staticOp : block.getOps<StaticOp>()) {
+      const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
+      qubits.bind(staticOp.getQubit(), q);
+      qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
+    }
   }
   // No `qco.static`: treat qubit-typed block arguments as wires `0..n-1`.
   if (qubits.numQubits == 0) {
@@ -2258,8 +2299,7 @@ requiresDynamicSampling(func::FuncOp func,
         return WalkResult::interrupt();
       }
       auto callee = module.lookupSymbol<func::FuncOp>(call.getCallee());
-      if (!callee || !callee.getBody().hasOneBlock() ||
-          requiresDynamicSampling(callee, &active)) {
+      if (!callee || requiresDynamicSampling(callee, &active)) {
         dynamic = true;
         return WalkResult::interrupt();
       }

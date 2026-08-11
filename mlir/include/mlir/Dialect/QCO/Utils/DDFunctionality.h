@@ -53,7 +53,8 @@ using DDBindings = DenseMap<Value, Attribute>;
  *   bookkeeping over existing input wires
  * - Concrete `qco.if` / `qco.index_switch`, bounded `scf.for` / `scf.while`,
  *   standard `scf.if` / `scf.index_switch` / single-block
- *   `scf.execute_region`, and non-recursive single-block `func.call`
+ *   `scf.execute_region`, concrete `cf.br` / `cf.cond_br` function CFGs, and
+ *   non-recursive `func.call`
  * - Concrete integer, index, and floating-point `arith` operations and
  *   one-dimensional `memref` storage over those scalar types
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
@@ -90,10 +91,10 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * ownership. QTensor sizes and indices must be concrete classical values;
  * dynamic qtensor function arguments require an extent in @p bindings.
  * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
- * bound `scf.for` loops, concrete `scf.while` loops, and non-recursive
- * single-block `func.call` are supported independently of RNG. Loops are
- * limited to 10000 trips. Qubits and one-dimensional qtensors can be carried
- * through nested regions; multi-block function bodies remain unsupported.
+ * bound `scf.for` loops, concrete `scf.while` loops, concrete multi-block
+ * function CFGs, and non-recursive `func.call` are supported independently of
+ * RNG. Loops and function CFGs are limited to 10000 transitions. Qubits and
+ * one-dimensional qtensors can be carried through nested regions and blocks.
  * Dynamically allocated wires remain in the returned state after deallocation.
  * Consumes one reference to @p in regardless of whether simulation succeeds
  * or fails.
@@ -126,10 +127,10 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * Deterministic control-flow without measure/reset also works on the non-RNG
  * overload. Only one-dimensional qtensors of qubits are supported. Nested
  * regions are walked; `scf.for` with concrete positive step, concrete
- * `scf.while`, and
- * non-recursive single-block `func.call` are supported. Loops are limited to
- * 10000 trips; multi-block function bodies remain unsupported. Consumes one
- * reference to @p in regardless of whether simulation succeeds or fails.
+ * `scf.while`, concrete `cf.br` / `cf.cond_br` function CFGs, and non-recursive
+ * `func.call` are supported. Loops and function CFGs are limited to 10000
+ * transitions. Consumes one reference to @p in regardless of whether
+ * simulation succeeds or fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state; one reference is consumed

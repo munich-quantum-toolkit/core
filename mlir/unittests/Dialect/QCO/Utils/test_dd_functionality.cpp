@@ -25,6 +25,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -61,9 +62,9 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
-                func::FuncDialect, scf::SCFDialect, memref::MemRefDialect>();
+    registry.insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
+                    cf::ControlFlowDialect, func::FuncDialect, scf::SCFDialect,
+                    memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -1724,19 +1725,68 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       }
     }
   )mlir");
+}
 
-  OwningOpRef<ModuleOp> multi =
-      ModuleOp::create(UnknownLoc::get(context.get()));
-  OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(multi->getBody());
-  auto func = func::FuncOp::create(builder, multi->getLoc(), "main",
-                                   builder.getFunctionType({}, {}));
-  auto* entry = func.addEntryBlock();
-  func.addBlock();
-  builder.setInsertionPointToStart(entry);
-  func::ReturnOp::create(builder, func.getLoc());
-  auto dd = std::make_unique<dd::Package>(0);
-  EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
+TEST_F(QCODDFunctionalityTest, InterpretsMultiBlockFunctionCFG) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c3 = arith.constant 3 : index
+        cf.br ^loop(%q, %c0 : !qco.qubit, index)
+      ^loop(%carried: !qco.qubit, %i: index):
+        %continue = arith.cmpi slt, %i, %c3 : index
+        cf.cond_br %continue, ^body(%carried, %i : !qco.qubit, index),
+                    ^exit(%carried : !qco.qubit)
+      ^body(%bodyQubit: !qco.qubit, %bodyIndex: index):
+        %flipped = qco.x %bodyQubit : !qco.qubit -> !qco.qubit
+        %next = arith.addi %bodyIndex, %c1 : index
+        cf.br ^loop(%flipped, %next : !qco.qubit, index)
+      ^exit(%result: !qco.qubit):
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+  qc.x(0);
+  qc.x(0);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
+TEST_F(QCODDFunctionalityTest, InterpretsMultiBlockCalleeCFG) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @flip(%q: !qco.qubit, %condition: i1) -> !qco.qubit {
+        cf.cond_br %condition, ^then(%q : !qco.qubit),
+                    ^else(%q : !qco.qubit)
+      ^then(%thenQubit: !qco.qubit):
+        %flipped = qco.x %thenQubit : !qco.qubit -> !qco.qubit
+        cf.br ^merge(%flipped : !qco.qubit)
+      ^else(%elseQubit: !qco.qubit):
+        cf.br ^merge(%elseQubit : !qco.qubit)
+      ^merge(%result: !qco.qubit):
+        return %result : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %true = arith.constant true
+        %result = func.call @flip(%q, %true)
+            : (!qco.qubit, i1) -> !qco.qubit
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
 }
 
 TEST_F(QCODDFunctionalityTest, ClassicalCmpSelectAndIndexBitwise) {
