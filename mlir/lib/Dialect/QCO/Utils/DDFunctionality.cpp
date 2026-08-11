@@ -174,9 +174,6 @@ struct ClassicalEnv {
   DenseMap<Value, APInt> integers;
   DenseMap<Value, double> floats;
   using Scalar = std::variant<bool, int64_t, APInt, double>;
-  // libstdc++'s variant move implementation triggers a false positive through
-  // SmallVector's implicitly generated move operations.
-  // NOLINTNEXTLINE(bugprone-exception-escape)
   struct MemRefStorage {
     SmallVector<Scalar> values;
     bool live = true;
@@ -1054,10 +1051,9 @@ static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
   } else {
     zero = 0.0;
   }
-  classical.memrefs[alloc.getResult()] =
-      std::make_shared<ClassicalEnv::MemRefStorage>(ClassicalEnv::MemRefStorage{
-          .values = SmallVector<ClassicalEnv::Scalar>(static_cast<size_t>(size),
-                                                      zero)});
+  auto storage = std::make_shared<ClassicalEnv::MemRefStorage>();
+  storage->values.assign(static_cast<size_t>(size), zero);
+  classical.memrefs[alloc.getResult()] = std::move(storage);
   return success();
 }
 
