@@ -1889,6 +1889,66 @@ TEST_F(QCODDFunctionalityTest, InterpretsMultiBlockFunctionCFG) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, InterpretsCfSwitch) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %selected = arith.constant 2 : i32
+        %missing = arith.constant 7 : i32
+        cf.switch %selected : i32, [
+          default: ^unexpected(%q : !qco.qubit),
+          2: ^matched(%q : !qco.qubit)
+        ]
+      ^unexpected(%unexpected_arg: !qco.qubit):
+        qco.sink %unexpected_arg : !qco.qubit
+        return
+      ^matched(%matched_arg: !qco.qubit):
+        %x = qco.x %matched_arg : !qco.qubit -> !qco.qubit
+        cf.switch %missing : i32, [
+          default: ^done(%x : !qco.qubit),
+          1: ^unexpected(%x : !qco.qubit)
+        ]
+      ^done(%done_arg: !qco.qubit):
+        qco.sink %done_arg : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
+}
+
+TEST_F(QCODDFunctionalityTest, InterpretsMultiBlockScfExecuteRegion) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %result = scf.execute_region -> !qco.qubit {
+          cf.br ^next(%q : !qco.qubit)
+        ^next(%next_arg: !qco.qubit):
+          %x = qco.x %next_arg : !qco.qubit -> !qco.qubit
+          %condition = arith.constant true
+          cf.cond_br %condition, ^done(%x : !qco.qubit),
+                                     ^other(%next_arg : !qco.qubit)
+        ^done(%done_arg: !qco.qubit):
+          scf.yield %done_arg : !qco.qubit
+        ^other(%other_arg: !qco.qubit):
+          scf.yield %other_arg : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
+}
+
 TEST_F(QCODDFunctionalityTest, InterpretsMultiBlockCalleeCFG) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {

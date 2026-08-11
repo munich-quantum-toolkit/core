@@ -1599,6 +1599,76 @@ static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
 }
 
 template <typename StateDD>
+static FailureOr<Operation*>
+walkConcreteCFG(Block& entry, WalkState& walk, StateDD& state,
+                function_ref<bool(Operation*)> isExit, StringRef scope) {
+  Block* block = &entry;
+  int64_t transitions = 0;
+  while (true) {
+    if (failed(walkBlock(*block, walk, state))) {
+      return failure();
+    }
+    Operation* terminator = block->getTerminator();
+    if (isExit(terminator)) {
+      return terminator;
+    }
+
+    Block* successor = nullptr;
+    ValueRange successorOperands;
+    if (auto branch = dyn_cast<cf::BranchOp>(terminator)) {
+      successor = branch.getDest();
+      successorOperands = branch.getDestOperands();
+    } else if (auto branch = dyn_cast<cf::CondBranchOp>(terminator)) {
+      auto condition =
+          lookupBool(branch.getCondition(), walk.classical, branch);
+      if (failed(condition)) {
+        return failure();
+      }
+      successor = *condition ? branch.getTrueDest() : branch.getFalseDest();
+      successorOperands = *condition ? branch.getTrueDestOperands()
+                                     : branch.getFalseDestOperands();
+    } else if (auto switchOp = dyn_cast<cf::SwitchOp>(terminator)) {
+      auto flag =
+          lookupIntegerLike(switchOp.getFlag(), walk.classical, switchOp);
+      if (failed(flag)) {
+        return failure();
+      }
+      successor = switchOp.getDefaultDestination();
+      successorOperands = switchOp.getDefaultOperands();
+      if (const auto caseValues = switchOp.getCaseValues()) {
+        for (auto [caseValue, destination, operands] : llvm::zip_equal(
+                 caseValues->getValues<APInt>(), switchOp.getCaseDestinations(),
+                 switchOp.getCaseOperands())) {
+          if (*flag == caseValue) {
+            successor = destination;
+            successorOperands = operands;
+            break;
+          }
+        }
+      }
+    } else {
+      return terminator->emitError() << "unsupported " << scope
+                                     << " CFG terminator for QCO DD simulation";
+    }
+    if (successorOperands.size() != successor->getNumArguments()) {
+      return terminator->emitError()
+             << scope
+             << " CFG successor operand count does not match block arguments";
+    }
+    if (failed(bindValuePairs(successorOperands, successor->getArguments(),
+                              walk, terminator))) {
+      return failure();
+    }
+    if (transitions++ == MAX_CONTROL_FLOW_TRIPS) {
+      return terminator->emitError()
+             << scope << " CFG transition count exceeds QCO DD simulation "
+             << "limit of " << MAX_CONTROL_FLOW_TRIPS;
+    }
+    block = successor;
+  }
+}
+
+template <typename StateDD>
 static LogicalResult
 applyRegionBranch(ValueRange linearOperands, Block& block, YieldOp yield,
                   ValueRange classicalResults, ValueRange linearResults,
@@ -1616,16 +1686,16 @@ template <typename StateDD>
 static LogicalResult applyScfRegion(Region& region, ValueRange results,
                                     WalkState& walk, StateDD& state,
                                     Operation* parent) {
-  if (!region.hasOneBlock()) {
-    return parent->emitError()
-           << "SCF region must contain exactly one block for QCO DD "
-              "interpretation";
+  if (region.empty()) {
+    return parent->emitError() << "SCF region is empty";
   }
-  Block& block = region.front();
-  if (failed(walkBlock(block, walk, state))) {
+  auto terminator = walkConcreteCFG(
+      region.front(), walk, state,
+      [](Operation* op) { return isa<scf::YieldOp>(op); }, "SCF region");
+  if (failed(terminator)) {
     return failure();
   }
-  auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
+  auto yield = dyn_cast<scf::YieldOp>(*terminator);
   if (!yield) {
     return parent->emitError() << "SCF region missing scf.yield";
   }
@@ -2175,51 +2245,13 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 template <typename StateDD>
 static FailureOr<func::ReturnOp>
 walkFunctionBody(func::FuncOp func, WalkState& walk, StateDD& state) {
-  Block* block = &func.getBody().front();
-  int64_t transitions = 0;
-  while (true) {
-    if (failed(walkBlock(*block, walk, state))) {
-      return failure();
-    }
-    Operation* terminator = block->getTerminator();
-    if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
-      return returnOp;
-    }
-
-    Block* successor = nullptr;
-    ValueRange successorOperands;
-    if (auto branch = dyn_cast<cf::BranchOp>(terminator)) {
-      successor = branch.getDest();
-      successorOperands = branch.getDestOperands();
-    } else if (auto branch = dyn_cast<cf::CondBranchOp>(terminator)) {
-      auto condition =
-          lookupBool(branch.getCondition(), walk.classical, branch);
-      if (failed(condition)) {
-        return failure();
-      }
-      successor = *condition ? branch.getTrueDest() : branch.getFalseDest();
-      successorOperands = *condition ? branch.getTrueDestOperands()
-                                     : branch.getFalseDestOperands();
-    } else {
-      return terminator->emitError()
-             << "unsupported function CFG terminator for QCO DD simulation";
-    }
-    if (successorOperands.size() != successor->getNumArguments()) {
-      return terminator->emitError()
-             << "CFG successor operand count does not match block arguments";
-    }
-    if (failed(bindValuePairs(successorOperands, successor->getArguments(),
-                              walk, terminator))) {
-      return failure();
-    }
-    if (transitions++ == MAX_CONTROL_FLOW_TRIPS) {
-      return terminator->emitError()
-             << "function CFG transition count exceeds QCO DD simulation "
-                "limit of "
-             << MAX_CONTROL_FLOW_TRIPS;
-    }
-    block = successor;
+  auto terminator = walkConcreteCFG(
+      func.getBody().front(), walk, state,
+      [](Operation* op) { return isa<func::ReturnOp>(op); }, "function");
+  if (failed(terminator)) {
+    return failure();
   }
+  return cast<func::ReturnOp>(*terminator);
 }
 
 template <typename StateDD>

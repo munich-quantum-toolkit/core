@@ -20,7 +20,9 @@ concrete programs executable without requiring prior canonicalization.
 - [x] (2026-08-11 09:30Z) Audited the current interpreter and tests.
 - [x] (2026-08-11 09:45Z) Preserved memref identity across function arguments
   and results with shared backing storage and alias-wide deallocation.
-- [ ] Interpret `cf.switch` and multi-block `scf.execute_region`.
+- [x] (2026-08-11 09:49Z) Interpreted matching and default `cf.switch`
+  successors and multi-block `scf.execute_region` through one concrete CFG
+  walker.
 - [ ] Add common integer and floating-point min/max and math operations.
 - [ ] Add semantic and failure-path tests.
 - [ ] Update documentation and validate.
@@ -34,6 +36,9 @@ concrete programs executable without requiring prior canonicalization.
 - Observation: Deallocation must invalidate every SSA alias, not only the value
   passed to `memref.dealloc`. Evidence: the new alias use-after-free test fails
   through the original caller value after the returned alias is deallocated.
+- Observation: MLIR textual SSA names are scoped to the entire region, including
+  block arguments. Evidence: the first multi-block tests were rejected for
+  reusing `%arg`; unique block-argument names fixed the test input.
 
 ## Decision Log
 
