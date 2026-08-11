@@ -10,6 +10,7 @@
 
 #include <qdmi/device.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstring>
@@ -18,6 +19,12 @@
 #include <unordered_map>
 
 struct QDMI_Child_Device_impl_d {};
+
+struct QDMI_Operation_impl_d {
+  const char* name;
+  size_t qubitsNum;
+  size_t parametersNum;
+};
 
 struct QDMI_Device_Session_impl_d {
   std::unordered_map<int, std::string> parameters;
@@ -51,6 +58,27 @@ namespace {
   return &child;
 }
 
+[[nodiscard]] auto customOperationHandles()
+    -> const std::array<QDMI_Operation, 2>& {
+  static QDMI_Operation_impl_d rotate{
+      .name = "custom-rx", .qubitsNum = 1, .parametersNum = 1};
+  static QDMI_Operation_impl_d controlledNot{
+      .name = "custom-cx", .qubitsNum = 2, .parametersNum = 0};
+  static const std::array<QDMI_Operation, 2> OPERATIONS{&rotate,
+                                                        &controlledNot};
+  return OPERATIONS;
+}
+
+[[nodiscard]] auto findCustomOperation(QDMI_Operation operation)
+    -> const QDMI_Operation_impl_d* {
+  for (auto* const handle : customOperationHandles()) {
+    if (operation == handle) {
+      return handle;
+    }
+  }
+  return nullptr;
+}
+
 auto queryString(const std::string& result, const size_t size, void* value,
                  size_t* sizeRet) -> int {
   const auto required = result.size() + 1;
@@ -64,6 +92,22 @@ auto queryString(const std::string& result, const size_t size, void* value,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   std::memcpy(value, result.c_str(), required);
+  return QDMI_SUCCESS;
+}
+
+template <typename T>
+auto queryValue(const T& result, const size_t size, void* value,
+                size_t* sizeRet) -> int {
+  if (sizeRet != nullptr) {
+    *sizeRet = sizeof(T);
+  }
+  if (value == nullptr) {
+    return QDMI_SUCCESS;
+  }
+  if (size < sizeof(T)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  std::memcpy(value, &result, sizeof(T));
   return QDMI_SUCCESS;
 }
 } // namespace
@@ -166,6 +210,33 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
                 sizeof(QDMI_Child_Device));
     return QDMI_SUCCESS;
   }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM1) {
+    const auto& operations = customOperationHandles();
+    const auto required = operations.size() * sizeof(QDMI_Operation);
+    if (sizeRet != nullptr) {
+      *sizeRet = required;
+    }
+    if (value == nullptr) {
+      return QDMI_SUCCESS;
+    }
+    if (size < required) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    std::memcpy(value, static_cast<const void*>(operations.data()), required);
+    return QDMI_SUCCESS;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM2) {
+    if (sizeRet != nullptr) {
+      *sizeRet = 0;
+    }
+    return QDMI_SUCCESS;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM3) {
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(QDMI_Operation) + 1;
+    }
+    return value == nullptr ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
+  }
   if (prop != QDMI_DEVICE_PROPERTY_NAME) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -191,10 +262,26 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_site_property(
 }
 
 extern "C" int TEST_SESSION_QDMI_device_session_query_operation_property(
-    QDMI_Device_Session /*session*/, QDMI_Operation /*operation*/,
-    size_t /*numSites*/, const QDMI_Site* /*sites*/, size_t /*numParams*/,
-    const double* /*params*/, QDMI_Operation_Property /*property*/,
-    size_t /*size*/, void* /*value*/, size_t* /*sizeRet*/) {
+    QDMI_Device_Session session, QDMI_Operation operation, size_t /*numSites*/,
+    const QDMI_Site* /*sites*/, size_t /*numParams*/, const double* /*params*/,
+    const QDMI_Operation_Property property, const size_t size, void* value,
+    size_t* sizeRet) {
+  if (session == nullptr || !session->initialized) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  const auto* const customOperation = findCustomOperation(operation);
+  if (customOperation == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (property == QDMI_OPERATION_PROPERTY_NAME) {
+    return queryString(customOperation->name, size, value, sizeRet);
+  }
+  if (property == QDMI_OPERATION_PROPERTY_QUBITSNUM) {
+    return queryValue(customOperation->qubitsNum, size, value, sizeRet);
+  }
+  if (property == QDMI_OPERATION_PROPERTY_PARAMETERSNUM) {
+    return queryValue(customOperation->parametersNum, size, value, sizeRet);
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

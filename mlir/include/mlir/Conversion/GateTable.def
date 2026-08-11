@@ -1,0 +1,59 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+/**
+ * @file GateTable.def
+ * @brief Central gate registry for QC, QCO, and QIR conversions.
+ *
+ * Define
+ * `MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)`
+ * before including this file. `KEY` names the MLIR QC/QCO operation, `NAME` is
+ * the QIR symbol stem, `OP` is the `qc::OpType` enumerator, `GETTER` identifies
+ * the QIR function-name selector, `TARGETS` and `PARAMS` describe the body
+ * signature, and `SUFFIX`/`CTL_SUFFIX` select the uncontrolled and controlled
+ * QIR specializations.
+ */
+
+#ifndef MQT_GATE
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX,           \
+                     CTL_SUFFIX)
+#endif
+
+MQT_GATE(Id, i, I, I, 1, 0, body, ctl)
+MQT_GATE(X, x, X, X, 1, 0, body, ctl)
+MQT_GATE(Y, y, Y, Y, 1, 0, body, ctl)
+MQT_GATE(Z, z, Z, Z, 1, 0, body, ctl)
+MQT_GATE(H, h, H, H, 1, 0, body, ctl)
+MQT_GATE(S, s, S, S, 1, 0, body, ctl)
+MQT_GATE(Sdg, s, Sdg, SDG, 1, 0, adj, ctladj)
+MQT_GATE(T, t, T, T, 1, 0, body, ctl)
+MQT_GATE(Tdg, t, Tdg, TDG, 1, 0, adj, ctladj)
+MQT_GATE(SX, sx, SX, SX, 1, 0, body, ctl)
+MQT_GATE(SXdg, sx, SXdg, SXDG, 1, 0, adj, ctladj)
+MQT_GATE(RX, rx, RX, RX, 1, 1, body, ctl)
+MQT_GATE(RY, ry, RY, RY, 1, 1, body, ctl)
+MQT_GATE(RZ, rz, RZ, RZ, 1, 1, body, ctl)
+MQT_GATE(P, p, P, P, 1, 1, body, ctl)
+MQT_GATE(R, prx, R, R, 1, 2, body, ctl)
+MQT_GATE(U2, u2, U2, U2, 1, 2, body, ctl)
+MQT_GATE(U, u3, U, U, 1, 3, body, ctl)
+MQT_GATE(SWAP, swap, SWAP, SWAP, 2, 0, body, ctl)
+MQT_GATE(iSWAP, iswap, iSWAP, ISWAP, 2, 0, body, ctl)
+MQT_GATE(DCX, dcx, DCX, DCX, 2, 0, body, ctl)
+MQT_GATE(ECR, ecr, ECR, ECR, 2, 0, body, ctl)
+MQT_GATE(RXX, rxx, RXX, RXX, 2, 1, body, ctl)
+MQT_GATE(RYY, ryy, RYY, RYY, 2, 1, body, ctl)
+MQT_GATE(RZX, rzx, RZX, RZX, 2, 1, body, ctl)
+MQT_GATE(RZZ, rzz, RZZ, RZZ, 2, 1, body, ctl)
+MQT_GATE(XXPlusYY, xx_plus_yy, XXplusYY, XXPLUSYY, 2, 2, body, ctl)
+MQT_GATE(XXMinusYY, xx_minus_yy, XXminusYY, XXMINUSYY, 2, 2, body, ctl)
+MQT_GATE(RCCX, rccx, RCCX, RCCX, 3, 0, body, ctl)
+
+#undef MQT_GATE

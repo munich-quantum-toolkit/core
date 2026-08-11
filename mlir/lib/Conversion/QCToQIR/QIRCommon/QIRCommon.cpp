@@ -10,7 +10,6 @@
 
 #include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 
-#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -85,7 +84,6 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
  * @param op The QC operation instance to convert
  * @param adaptor The OpAdaptor of the QC operation
  * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
  * @param state The lowering state
  * @param fnName The name of the QIR function to call
  * @param numTargets The number of targets
@@ -95,44 +93,16 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
 template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
+                       ConversionPatternRewriter& rewriter,
                        LoweringState& state, StringRef fnName,
-                       size_t numTargets, size_t numParams) {
+                       const size_t numTargets, const size_t numParams) {
   // Query state for modifier information
   const SmallVector<Value> controls =
       state.inCtrlOp ? state.controls : SmallVector<Value>{};
-  const size_t numCtrls = controls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numParams + numCtrls + numTargets);
-  auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  auto floatType = Float64Type::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  for (size_t i = 0; i < numTargets; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add parameter types
-  for (size_t i = 0; i < numParams; ++i) {
-    argumentTypes.push_back(floatType);
-  }
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numParams + numCtrls + numTargets);
-  operands.append(controls.begin(), controls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+  const auto convertedOperands = adaptor.getOperands();
+  const auto targets = convertedOperands.take_front(numTargets);
+  const auto parameters = convertedOperands.drop_front(numTargets);
+  assert(parameters.size() == numParams && "unexpected gate parameter count");
 
   // Clean up modifier information
   if (state.inCtrlOp) {
@@ -140,8 +110,9 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
     state.controls.clear();
   }
 
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+  qir::emitQISCall(rewriter, op, op.getLoc(), parameters, controls, targets,
+                   fnName);
+  rewriter.eraseOp(op);
   return success();
 }
 
@@ -157,7 +128,8 @@ namespace {
  *
  * @par Examples
  * The examples below illustrate the lowering shapes for unitary gates that
- * are registered through `MQT_GATE_TABLE` in `populateQCToQIRPatterns`.
+ * are registered through the shared QIR gate table in
+ * `populateQCToQIRPatterns`.
  *
  * @par One target, zero parameters
  * ```mlir
@@ -174,7 +146,7 @@ namespace {
  * ```
  * is converted to
  * ```mlir
- * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+ * llvm.call @__quantum__qis__rx__body(%theta, %q) : (f64, !llvm.ptr) -> ()
  * ```
  *
  * @par One target, two parameters
@@ -183,8 +155,8 @@ namespace {
  * ```
  * is converted to
  * ```mlir
- * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64, f64)
- * -> ()
+ * llvm.call @__quantum__qis__prx__body(%theta, %phi, %q)
+ *     : (f64, f64, !llvm.ptr) -> ()
  * ```
  *
  * @par One target, three parameters
@@ -193,8 +165,8 @@ namespace {
  * ```
  * is converted to
  * ```mlir
- * llvm.call @__quantum__qis__u3__body(%q, %theta, %phi, %lambda)
- *     : (!llvm.ptr, f64, f64, f64) -> ()
+ * llvm.call @__quantum__qis__u3__body(%theta, %phi, %lambda, %q)
+ *     : (f64, f64, f64, !llvm.ptr) -> ()
  * ```
  *
  * @par Two targets, zero parameters
@@ -213,8 +185,8 @@ namespace {
  * ```
  * is converted to
  * ```mlir
- * llvm.call @__quantum__qis__rxx__body(%q0, %q1, %theta)
- *     : (!llvm.ptr, !llvm.ptr, f64) -> ()
+ * llvm.call @__quantum__qis__rxx__body(%theta, %q0, %q1)
+ *     : (f64, !llvm.ptr, !llvm.ptr) -> ()
  * ```
  *
  * @par Two targets, two parameters
@@ -223,8 +195,8 @@ namespace {
  * ```
  * is converted to
  * ```mlir
- * llvm.call @__quantum__qis__xx_plus_yy__body(%q0, %q1, %theta, %beta)
- *     : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+ * llvm.call @__quantum__qis__xx_plus_yy__body(%theta, %beta, %q0, %q1)
+ *     : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
  * ```
  *
  * @tparam OpType The QC operation type to convert
@@ -243,8 +215,8 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
     auto& state = this->getState();
     const size_t numCtrls = state.inCtrlOp ? state.controls.size() : 0;
     const auto fnName = GetFnName(numCtrls);
-    return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
-                                  state, fnName, NumTargets, NumParams);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, state, fnName,
+                                  NumTargets, NumParams);
   }
 };
 
@@ -326,8 +298,8 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
     if (state.inCtrlOp) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
-    return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(), state,
-                                  QIR_GPHASE, 0, 1);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, state, QIR_GPHASE, 0,
+                                  1);
   }
 };
 
@@ -434,12 +406,11 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-  // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
-#define MQT_ADD_QC_TO_QIR_UNITARY(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN) \
-  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
-      typeConverter, ctx, &state);
-  MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
-#undef MQT_ADD_QC_TO_QIR_UNITARY
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  patterns.add<ConvertQCUnitaryOpQIR<qc::KEY##Op, (TARGETS), (PARAMS),         \
+                                     &getFnName##GETTER>>(typeConverter, ctx,  \
+                                                          &state);
+#include "mlir/Conversion/GateTable.def"
 
   patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp,
                ConvertQCStaticOp, ConvertQCGPhaseOp>(typeConverter, ctx,

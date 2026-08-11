@@ -101,6 +101,24 @@ inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
   return arith::ConstantOp::create(builder, loc, builder.getBoolAttr(v));
 }
 
+/// Populate a modifier region with @p numBlockArgs qubits and invoke @p
+/// emitBody.
+template <typename QubitType>
+inline void
+buildModifierBody(OpBuilder& builder, OperationState& state,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = state.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(builder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, state.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&block);
+  emitBody(builder, block);
+}
+
 /**
  * @brief Convert a variant parameter (T or Value) to a Value.
  *

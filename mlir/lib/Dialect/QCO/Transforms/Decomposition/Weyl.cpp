@@ -69,8 +69,8 @@ struct ChamberState {
 
 } // namespace
 
-static constexpr double PI = std::numbers::pi;
-static constexpr double PI_OVER_4 = PI / 4.0;
+static constexpr double WEYL_PI = std::numbers::pi;
+static constexpr double WEYL_PI_OVER_4 = WEYL_PI / 4.0;
 static constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
     Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
                             0.0, 1.0, 0.0, 0.0,  // row 1
@@ -296,8 +296,8 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   if (isClose(0., 0., 0.)) {
     return Specialization::IdEquiv;
   }
-  if (isClose(PI_OVER_4, PI_OVER_4, PI_OVER_4) ||
-      isClose(PI_OVER_4, PI_OVER_4, -PI_OVER_4)) {
+  if (isClose(WEYL_PI_OVER_4, WEYL_PI_OVER_4, WEYL_PI_OVER_4) ||
+      isClose(WEYL_PI_OVER_4, WEYL_PI_OVER_4, -WEYL_PI_OVER_4)) {
     return Specialization::SWAPEquiv;
   }
   if (const auto closestAbc = closestPartialSwap(
@@ -313,7 +313,7 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   if (isClose(decomposition.a(), 0., 0.)) {
     return Specialization::ControlledEquiv;
   }
-  if (isClose(PI_OVER_4, PI_OVER_4, decomposition.c())) {
+  if (isClose(WEYL_PI_OVER_4, WEYL_PI_OVER_4, decomposition.c())) {
     return Specialization::MirrorControlledEquiv;
   }
   if (isClose((decomposition.a() + decomposition.b()) / 2.,
@@ -354,14 +354,14 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
 
   std::array<double, 3> cs{};
   for (std::size_t i = 0; i < cs.size(); ++i) {
-    cs[i] = remEuclid((dReal[i] + dReal[3]) / 2.0, 2.0 * PI);
+    cs[i] = remEuclid((dReal[i] + dReal[3]) / 2.0, 2.0 * WEYL_PI);
   }
 
   // Sort coordinates by min(x mod pi/2, pi/2 - x mod pi/2).
   std::array<double, 3> cstemp{};
   for (std::size_t i = 0; i < cs.size(); ++i) {
-    const auto tmp = remEuclid(cs[i], PI / 2.0);
-    cstemp[i] = std::min(tmp, (PI / 2.0) - tmp);
+    const auto tmp = remEuclid(cs[i], WEYL_PI / 2.0);
+    cstemp[i] = std::min(tmp, (WEYL_PI / 2.0) - tmp);
   }
   std::array<std::size_t, 3> order{0, 1, 2};
   std::ranges::stable_sort(
@@ -425,56 +425,56 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   assert(Matrix4x4::kron(k2l, k2r).isApprox(k2, WEYL_TOLERANCE));
   globalPhase += phaseL + phaseR;
 
-  if (cs[0] > (PI / 2.0)) {
-    cs[0] -= 3.0 * (PI / 2.0);
+  if (cs[0] > (WEYL_PI / 2.0)) {
+    cs[0] -= 3.0 * (WEYL_PI / 2.0);
     k1l = k1l * I_PAULI_Y;
     k1r = k1r * I_PAULI_Y;
-    globalPhase += (PI / 2.0);
+    globalPhase += (WEYL_PI / 2.0);
   }
-  if (cs[1] > (PI / 2.0)) {
-    cs[1] -= 3.0 * (PI / 2.0);
+  if (cs[1] > (WEYL_PI / 2.0)) {
+    cs[1] -= 3.0 * (WEYL_PI / 2.0);
     k1l = k1l * I_PAULI_X;
     k1r = k1r * I_PAULI_X;
-    globalPhase += (PI / 2.0);
+    globalPhase += (WEYL_PI / 2.0);
   }
   auto conjs = 0;
-  if (cs[0] > PI_OVER_4) {
-    cs[0] = (PI / 2.0) - cs[0];
+  if (cs[0] > WEYL_PI_OVER_4) {
+    cs[0] = (WEYL_PI / 2.0) - cs[0];
     k1l = k1l * I_PAULI_Y;
     k2r = I_PAULI_Y * k2r;
     conjs += 1;
-    globalPhase -= (PI / 2.0);
+    globalPhase -= (WEYL_PI / 2.0);
   }
-  if (cs[1] > PI_OVER_4) {
-    cs[1] = (PI / 2.0) - cs[1];
+  if (cs[1] > WEYL_PI_OVER_4) {
+    cs[1] = (WEYL_PI / 2.0) - cs[1];
     k1l = k1l * I_PAULI_X;
     k2r = I_PAULI_X * k2r;
     conjs += 1;
-    globalPhase += (PI / 2.0);
+    globalPhase += (WEYL_PI / 2.0);
     if (conjs == 1) {
-      globalPhase -= PI;
+      globalPhase -= WEYL_PI;
     }
   }
-  if (cs[2] > (PI / 2.0)) {
-    cs[2] -= 3.0 * (PI / 2.0);
+  if (cs[2] > (WEYL_PI / 2.0)) {
+    cs[2] -= 3.0 * (WEYL_PI / 2.0);
     k1l = k1l * I_PAULI_Z;
     k1r = k1r * I_PAULI_Z;
-    globalPhase += (PI / 2.0);
+    globalPhase += (WEYL_PI / 2.0);
     if (conjs == 1) {
-      globalPhase -= PI;
+      globalPhase -= WEYL_PI;
     }
   }
   if (conjs == 1) {
-    cs[2] = (PI / 2.0) - cs[2];
+    cs[2] = (WEYL_PI / 2.0) - cs[2];
     k1l = k1l * I_PAULI_Z;
     k2r = I_PAULI_Z * k2r;
-    globalPhase += (PI / 2.0);
+    globalPhase += (WEYL_PI / 2.0);
   }
-  if (cs[2] > PI_OVER_4) {
-    cs[2] -= (PI / 2.0);
+  if (cs[2] > WEYL_PI_OVER_4) {
+    cs[2] -= (WEYL_PI / 2.0);
     k1l = k1l * I_PAULI_Z;
     k1r = k1r * I_PAULI_Z;
-    globalPhase -= (PI / 2.0);
+    globalPhase -= (WEYL_PI / 2.0);
   }
 
   ChamberState chamber;
@@ -500,7 +500,7 @@ void TwoQubitWeylDecomposition::finalizeSpecializationPhase(
     const std::optional<double>& fidelity) {
   const auto trace =
       flippedFromOriginal
-          ? getTrace((PI / 2.0) - preSpecializationA, preSpecializationB,
+          ? getTrace((WEYL_PI / 2.0) - preSpecializationA, preSpecializationB,
                      -preSpecializationC, a_, b_, c_)
           : getTrace(preSpecializationA, preSpecializationB, preSpecializationC,
                      a_, b_, c_);
@@ -621,15 +621,15 @@ bool TwoQubitWeylDecomposition::applySpecialization(
       k2r_ = Matrix2x2::identity();
     } else {
       flippedFromOriginal = true;
-      globalPhase_ += (PI / 2.0);
+      globalPhase_ += (WEYL_PI / 2.0);
       k1l_ = k1l_ * I_PAULI_Z * k2r_;
       k1r_ = k1r_ * I_PAULI_Z * k2l_;
       k2l_ = Matrix2x2::identity();
       k2r_ = Matrix2x2::identity();
     }
-    a_ = PI_OVER_4;
-    b_ = PI_OVER_4;
-    c_ = PI_OVER_4;
+    a_ = WEYL_PI_OVER_4;
+    b_ = WEYL_PI_OVER_4;
+    c_ = WEYL_PI_OVER_4;
     break;
   case Specialization::PartialSWAPEquiv: {
     const auto closest = closestPartialSwap(a_, b_, c_);
@@ -674,8 +674,8 @@ bool TwoQubitWeylDecomposition::applySpecialization(
         anglesFromUnitary(k2l_, SingleQubitBasis::ZYZ);
     const auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
         anglesFromUnitary(k2r_, SingleQubitBasis::ZYZ);
-    a_ = PI_OVER_4;
-    b_ = PI_OVER_4;
+    a_ = WEYL_PI_OVER_4;
+    b_ = WEYL_PI_OVER_4;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
     k1l_ = k1l_ * RZOp::unitaryMatrix(k2rphi);
     k2l_ = RYOp::unitaryMatrix(k2ltheta) * RZOp::unitaryMatrix(k2llambda);
@@ -772,25 +772,25 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   };
   const auto emitEntangler = [&]() {
     if (basis.entangler == CompilerTarget::GateKind::RXX) {
-      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rxxOp.getOutputQubit(0);
       wire1 = rxxOp.getOutputQubit(1);
       return;
     }
     if (basis.entangler == CompilerTarget::GateKind::RYY) {
-      auto ryyOp = RYYOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      auto ryyOp = RYYOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = ryyOp.getOutputQubit(0);
       wire1 = ryyOp.getOutputQubit(1);
       return;
     }
     if (basis.entangler == CompilerTarget::GateKind::RZX) {
-      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      auto rzxOp = RZXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rzxOp.getOutputQubit(0);
       wire1 = rzxOp.getOutputQubit(1);
       return;
     }
     if (basis.entangler == CompilerTarget::GateKind::RZZ) {
-      auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, PI / 2.0);
+      auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rzzOp.getOutputQubit(0);
       wire1 = rzzOp.getOutputQubit(1);
       return;

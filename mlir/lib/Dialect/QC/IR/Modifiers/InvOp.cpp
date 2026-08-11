@@ -40,7 +40,7 @@ namespace {
  * @brief Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
  * ctrl(inv(x))`.
  */
-struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
+struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InvOp op,
@@ -374,21 +374,6 @@ struct DropUnusedQubits final : OpRewritePattern<InvOp> {
 
 } // namespace
 
-static void
-buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
-                  const size_t numBlockArgs,
-                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
-  auto& block = odsState.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < numBlockArgs; ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  emitBody(odsBuilder, block);
-}
-
 size_t InvOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -401,22 +386,23 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   ValueRange qubits,
                   const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, qubits);
-  buildModifierBody(odsBuilder, odsState, qubits.size(),
-                    [&](OpBuilder& builder, Block& block) {
-                      body(block.getArguments());
-                      YieldOp::create(builder, odsState.location);
-                    });
+  utils::buildModifierBody<QubitType>(odsBuilder, odsState, qubits.size(),
+                                      [&](OpBuilder& builder, Block& block) {
+                                        body(block.getArguments());
+                                        YieldOp::create(builder,
+                                                        odsState.location);
+                                      });
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   const function_ref<void(Value)>& bodyBuilder) {
   odsState.addOperands(qubit);
   odsState.addRegion();
-  buildModifierBody(odsBuilder, odsState, 1,
-                    [&](OpBuilder& builder, Block& block) {
-                      bodyBuilder(block.getArgument(0));
-                      YieldOp::create(builder, odsState.location);
-                    });
+  utils::buildModifierBody<QubitType>(
+      odsBuilder, odsState, 1, [&](OpBuilder& builder, Block& block) {
+        bodyBuilder(block.getArgument(0));
+        YieldOp::create(builder, odsState.location);
+      });
 }
 
 LogicalResult InvOp::verify() {
@@ -425,7 +411,7 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results
-      .add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow, InlineSelfAdjoint,
-           ReplaceWithKnownGates, EraseEmptyInv, DropUnusedQubits>(context);
+  results.add<CancelNestedInv, MoveCtrlOutsideInv, InvPowToNegPow,
+              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv,
+              DropUnusedQubits>(context);
 }
