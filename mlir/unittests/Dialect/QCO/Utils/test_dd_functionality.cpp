@@ -744,6 +744,52 @@ TEST_F(QCODDFunctionalityTest, BuildFunctionalityConcreteScfWhile) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, StandardScfRegionsCarryQubits) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %q1 = scf.execute_region -> !qco.qubit {
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          scf.yield %out : !qco.qubit
+        }
+        %true = arith.constant true
+        %q2 = scf.if %true -> !qco.qubit {
+          %out = qco.h %q1 : !qco.qubit -> !qco.qubit
+          scf.yield %out : !qco.qubit
+        } else {
+          %out = qco.y %q1 : !qco.qubit -> !qco.qubit
+          scf.yield %out : !qco.qubit
+        }
+        %c1 = arith.constant 1 : index
+        %q3 = scf.index_switch %c1 -> !qco.qubit
+        case 0 {
+          %out = qco.y %q2 : !qco.qubit -> !qco.qubit
+          scf.yield %out : !qco.qubit
+        }
+        case 1 {
+          %out = qco.z %q2 : !qco.qubit -> !qco.qubit
+          scf.yield %out : !qco.qubit
+        }
+        default {
+          %out = qco.s %q2 : !qco.qubit -> !qco.qubit
+          scf.yield %out : !qco.qubit
+        }
+        qco.sink %q3 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+  qc.h(0);
+  qc.z(0);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   // |1> measure is deterministic; then-branch identity keeps |1>.
   auto mod = buildModule([](QCOProgramBuilder& b) {

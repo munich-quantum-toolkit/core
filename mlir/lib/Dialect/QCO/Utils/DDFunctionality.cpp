@@ -1066,6 +1066,30 @@ applyRegionBranch(ValueRange linearOperands, Block& block, YieldOp yield,
 }
 
 template <typename StateDD>
+static LogicalResult applyScfRegion(Region& region, ValueRange results,
+                                    WalkState& walk, StateDD& state,
+                                    Operation* parent) {
+  if (!region.hasOneBlock()) {
+    return parent->emitError()
+           << "SCF region must contain exactly one block for QCO DD "
+              "interpretation";
+  }
+  Block& block = region.front();
+  if (failed(walkBlock(block, walk, state))) {
+    return failure();
+  }
+  auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
+  if (!yield) {
+    return parent->emitError() << "SCF region missing scf.yield";
+  }
+  if (yield.getNumOperands() != results.size()) {
+    return parent->emitError()
+           << "SCF yield operand count does not match operation results";
+  }
+  return bindValuePairs(yield.getOperands(), results, walk, parent);
+}
+
+template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .template Case<StaticOp, SinkOp>([](auto) { return success(); })
@@ -1302,6 +1326,44 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                                      switchOp.getClassicalResults(),
                                      switchOp.getLinearResults(), walk, state,
                                      switchOp);
+          })
+      .template Case<scf::IfOp>([&](scf::IfOp ifOp) -> LogicalResult {
+        auto condition = lookupBool(ifOp.getCondition(), walk.classical, ifOp);
+        if (failed(condition)) {
+          return failure();
+        }
+        Region& selected =
+            *condition ? ifOp.getThenRegion() : ifOp.getElseRegion();
+        if (selected.empty()) {
+          if (ifOp.getNumResults() != 0) {
+            return ifOp.emitError()
+                   << "selected empty scf.if region cannot produce results";
+          }
+          return success();
+        }
+        return applyScfRegion(selected, ifOp.getResults(), walk, state, ifOp);
+      })
+      .template Case<scf::IndexSwitchOp>(
+          [&](scf::IndexSwitchOp switchOp) -> LogicalResult {
+            auto selector =
+                lookupIndex(switchOp.getArg(), walk.classical, switchOp);
+            if (failed(selector)) {
+              return failure();
+            }
+            Region* selected = &switchOp.getDefaultRegion();
+            for (auto [i, caseValue] : llvm::enumerate(switchOp.getCases())) {
+              if (caseValue == *selector) {
+                selected = &switchOp.getCaseRegions()[i];
+                break;
+              }
+            }
+            return applyScfRegion(*selected, switchOp.getResults(), walk, state,
+                                  switchOp);
+          })
+      .template Case<scf::ExecuteRegionOp>(
+          [&](scf::ExecuteRegionOp execute) -> LogicalResult {
+            return applyScfRegion(execute.getRegion(), execute.getResults(),
+                                  walk, state, execute);
           })
       .template Case<scf::ForOp>([&](scf::ForOp forOp) -> LogicalResult {
         auto lb = lookupIndex(forOp.getLowerBound(), walk.classical, forOp);

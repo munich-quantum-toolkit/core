@@ -39,7 +39,8 @@ namespace mlir::qco {
  * - `qtensor.from_elements` / `extract` / `insert` / `dealloc` as linear
  *   bookkeeping over existing input wires
  * - Concrete `qco.if` / `qco.index_switch`, bounded `scf.for` / `scf.while`,
- *   and non-recursive single-block `func.call`
+ *   standard `scf.if` / `scf.index_switch` / single-block
+ *   `scf.execute_region`, and non-recursive single-block `func.call`
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
  *   `sink` is ignored; `arith.constant` is ignored for matrix construction;
  *   `func.return` accepts qubit results only in canonical wire order
@@ -61,8 +62,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * collapse.
  *
  * @details Same supported unitary op set as @ref buildFunctionality, plus
- * concrete classical control-flow (`qco.if` / `qco.index_switch` with
- * compile-time or previously recorded classical selectors) and static-shape
+ * concrete classical control-flow (`qco.if`, `qco.index_switch`, `scf.if`,
+ * `scf.index_switch`, and single-block `scf.execute_region`) and static-shape
  * 1-D `memref<Nxi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
  * `qco.alloc` and `qtensor.alloc` append zero-state wires, while
  * `qtensor.from_elements` / `extract` / `insert` / `dealloc` track their linear
