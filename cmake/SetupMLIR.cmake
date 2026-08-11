@@ -49,9 +49,19 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
-set(LLVM_ENABLE_RTTI ON)
+set(LLVM_ENABLE_RTTI OFF)
 set(LLVM_ENABLE_EH OFF)
 include(HandleLLVMOptions)
+
+# Keep MQT's LLVM consumers ABI-compatible with the RTTI-free toolchain, independently of whether a
+# target requires exception handling.
+function(mqt_llvm_target_disable_rtti target_name)
+  if(NOT TARGET ${target_name})
+    message(FATAL_ERROR "Cannot configure RTTI for missing target ${target_name}.")
+  endif()
+  target_compile_options(${target_name}
+                         PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_RTTI_DISABLE}>)
+endfunction()
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
 include_directories(${MQT_MLIR_SOURCE_INCLUDE_DIR})

@@ -282,10 +282,10 @@ test-skip = [
 [tool.cibuildwheel.linux]
 before-all = """
 uv tool install sccache>=0.10.0
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.1/setup-mlir.sh | bash -s -- -v 22.1.7 -p /opt/llvm-22.1.7
+curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.1/setup-mlir.sh | bash -s -- -v 22.1.8 -p /opt/llvm-22.1.8
 """
 before-test = "uvx sccache --show-stats"
-environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-22.1.7/lib/cmake/mlir" }
+environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-22.1.8/lib/cmake/mlir" }
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = ["test-base"]

@@ -108,11 +108,10 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2051],
-  [#2054], [#2058])
-  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
-  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@J4MMlE**])
+  [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2048],
+  [#2051], [#2054], [#2058]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -745,6 +744,7 @@ for previous changelogs._
 [#2054]: https://github.com/munich-quantum-toolkit/core/pull/2054
 [#2051]: https://github.com/munich-quantum-toolkit/core/pull/2051
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
+[#2048]: https://github.com/munich-quantum-toolkit/core/pull/2048
 [#2040]: https://github.com/munich-quantum-toolkit/core/pull/2040
 [#2031]: https://github.com/munich-quantum-toolkit/core/pull/2031
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030

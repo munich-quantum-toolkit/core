@@ -12,7 +12,15 @@ endif()
 
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
-  llvm_update_compile_flags(${target_name})
+  if(LLVM_REQUIRES_EH)
+    # LLVM's helper assumes that exceptions imply RTTI. These boundaries need only exceptions.
+    target_compile_options(
+      ${target_name} PRIVATE ${LLVM_COMPILE_FLAGS}
+                             $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_EH_ENABLE}>)
+  else()
+    llvm_update_compile_flags(${target_name})
+  endif()
+  mqt_llvm_target_disable_rtti(${target_name})
 
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-Wno-cast-qual" COMPILER_SUPPORTS_WNO_CAST_QUAL)

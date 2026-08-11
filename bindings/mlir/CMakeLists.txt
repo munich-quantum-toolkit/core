@@ -28,6 +28,7 @@ if(NOT TARGET ${TARGET_NAME})
     target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
                                                  ${MQT_CORE_PYTHON_SABI_TARGET})
     set_target_properties(${target_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    mqt_llvm_target_disable_rtti(${target_name})
   endfunction()
 
   foreach(registration IN LISTS qiskit_adapter_registrations)

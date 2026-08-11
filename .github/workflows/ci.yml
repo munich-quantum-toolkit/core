@@ -37,7 +37,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
 
   cpp-tests-macos:
@@ -59,7 +59,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
 
   cpp-tests-windows:
@@ -81,7 +81,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
 
@@ -101,7 +101,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
@@ -120,7 +120,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
@@ -139,7 +139,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
 
@@ -150,7 +150,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@579203ef22082fa5d5483412f442e50d0c5ff4a7 # v2.2.2
     with:
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
     permissions:
       contents: read
       id-token: write
@@ -171,7 +171,7 @@ jobs:
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
 
   python-tests:
     name: 🐍 Test
@@ -192,7 +192,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
 
   python-coverage:
     name: 🐍 Coverage
@@ -216,7 +216,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
 
   python-linter:
     name: 🐍 Lint
@@ -228,7 +228,7 @@ jobs:
       enable-ty: true
       enable-mypy: false
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
 
   build-sdist:
     name: 🚀 CD
@@ -256,7 +256,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.7
+      llvm-version: 22.1.8
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:

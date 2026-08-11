@@ -1,4 +1,4 @@
-# Build the MQT MLIR compiler without C++ exceptions by default
+# Build the MQT MLIR compiler without C++ exceptions or RTTI by default
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -7,16 +7,15 @@ be kept up to date as work proceeds. It is maintained in accordance with
 
 ## Purpose / Big Picture
 
-MQT's MLIR libraries and `mqt-cc` should follow the supported LLVM/MLIR
-toolchain's exception-disabled default without making the compiler collection
-conditional. The few targets that compile exception-using FoMaC, DD, or Core QIR
-interfaces remain explicit exception boundaries. Failures entering the compiler
-through FoMaC are translated to `llvm::Error` before they reach the
-exception-disabled driver.
+MQT's LLVM and MLIR consumers should match the supported portable toolchain's
+exception-disabled and RTTI-disabled ABI without making the compiler collection
+conditional. Targets that compile exception-using FoMaC, DD, Core QIR, or Python
+APIs retain exception handling, but that does not grant them RTTI.
 
 The direct Qiskit bridge introduced by pull request #2031 is intentionally not
 part of the legacy `QuantumComputation` to MLIR surface removed by #2054. Its
-Python binding is an independent exception-using boundary and remains available.
+Python extension remains exception-enabled and retains RTTI because nanobind
+uses `typeid`; the MLIR libraries it links remain RTTI-free.
 
 ## Progress
 
@@ -26,70 +25,84 @@ Python binding is an independent exception-using boundary and remains available.
 - [x] (2026-08-11) Insert #2031 above #2050 and preserve its direct Qiskit C API
       bridge while linearizing its history.
 - [x] (2026-08-11) Rework #2054 above #2031 so it removes only the legacy
-      `QuantumComputation` to MLIR conversions, translations, program inputs,
-      Python entry points, and fixtures. Independent DD and direct Qiskit
+      `QuantumComputation` to MLIR interaction. Independent DD and direct Qiskit
       functionality remain.
-- [x] (2026-08-11) Keep the complete compiler graph and use LLVM's normal
-      `llvm_update_compile_flags` policy instead of a user option, directory
-      generator expression, or custom exception target property.
-- [x] (2026-08-11) Keep only three production exception boundaries: the FoMaC
-      adapter, DD functionality, and the standalone QIR runner.
-- [x] (2026-08-11) Prove that seven test executables also require exceptions
-      because the Core IR and DD headers compiled into their translation units
-      contain throwing inline code. Scope those exceptions to the test targets.
-- [x] (2026-08-11) Build the affected graph from a fresh LLVM/MLIR 22.1.3 cache
-      and pass all 990 MLIR unit tests in that build.
-- [ ] Commit and publish the simplified #2051 revision above #2054.
-- [ ] Rebuild and simplify #2048 above #2051, then validate the combined
-      exception-disabled and RTTI-disabled graph with the portable toolchain.
-- [ ] Inspect replacement CI at every exact published head and resolve only
-      outdated or source-addressed review conversations.
+- [x] (2026-08-11) Simplify #2051 to LLVM's normal `llvm_update_compile_flags`
+      policy, with exception handling limited to three production boundaries and
+      seven proven test-only boundaries.
+- [x] (2026-08-11) Build #2051 from a fresh LLVM/MLIR 22.1.3 cache and pass all
+      990 MLIR unit tests.
+- [x] (2026-08-11) Rebase #2048 above the final local #2051 revision and remove
+      its directory-wide RTTI options and per-boundary RTTI requests.
+- [x] (2026-08-11) Validate the complete #2048 graph from a fresh cache against
+      the published portable LLVM/MLIR 22.1.8 RTTI-off artifact, including the
+      native graph, CTests, direct Qiskit bridge, compiler driver, and effective
+      compile flags.
+- [ ] Commit and publish the signed revisions, inspect exact-head CI, and
+      resolve only outdated or source-addressed review conversations.
 
 ## Surprises & Discoveries
 
-- Observation: LLVM already provides the required target policy through
-  `llvm_update_compile_flags`. The earlier directory-wide generator expression,
-  custom `MQT_MLIR_REQUIRES_EXCEPTIONS` property, and manual `-fexceptions`
-  flags duplicated that policy and made generated object targets and Visual
-  Studio generators harder to handle.
-- Observation: moving FoMaC device opening and exception translation into
-  `MQTCompilerFoMaCAdapter` lets `mqt-cc` remain exception-disabled while
-  preserving contextual LLVM errors.
-- Observation: the seven affected test executables are not merely tests of the
-  exception boundaries. Their own translation units instantiate throwing code
-  from `IfElseOperation.hpp`, `StandardOperation.hpp`, and DD root-management
-  headers, so removing their exception requirement produces compile errors.
-- Observation: `add_llvm_tool` also applies LLVM's exception policy outside the
-  MLIR subtree. The QIR runner compiles existing exception-based Core IR and DD
-  interfaces and must declare `LLVM_REQUIRES_EH` around its target creation.
-- Observation: the direct Qiskit bridge's nanobind translation unit uses
-  exceptions independently of the removed legacy circuit bridge. It remains a
-  narrow binding boundary rather than becoming part of the MLIR library or
-  driver policy.
+- Observation: LLVM's `llvm_update_compile_flags` already gives ordinary MLIR
+  targets the correct exception and RTTI policy. The earlier directory-wide
+  generator expressions and custom exception target property duplicated that
+  behavior and complicated generated object targets and Visual Studio builds.
+- Observation: LLVM's helper couples `LLVM_REQUIRES_EH` to RTTI internally,
+  although MQT's exception boundaries compile and link against the portable
+  RTTI-off toolchain without language RTTI. A final target-scoped RTTI-disable
+  option keeps those two policies independent.
+- Observation: the FoMaC adapter, DD functionality, and QIR runner are the only
+  production exception boundaries in the compiler graph. Seven test translation
+  units also require exceptions because they instantiate throwing inline Core IR
+  or DD header code.
+- Observation: `mqt-cc` can remain exception-disabled after FoMaC device opening
+  and exception translation move into `MQTCompilerFoMaCAdapter`.
+- Observation: QIR JIT and the DD QDMI device consume LLVM without being created
+  through AddLLVM/AddMLIR. They therefore need the same explicit RTTI ABI policy
+  as the exception-enabled MLIR targets.
+- Observation: the direct Qiskit bridge is part of a nanobind extension.
+  nanobind's public headers use `typeid`, so that extension is the one proven
+  LLVM/MLIR consumer that must retain language RTTI. Its linked MLIR libraries
+  remain RTTI-free.
+- Observation: the four unit-test program fixture libraries bypassed both
+  AddMLIR and the unit-test target helper. Applying the same central MLIR target
+  options to those ordinary, exception-free fixtures closes the final RTTI gap
+  without granting another exception boundary.
+- Observation: locally loading the new MLIR extension beside an unrelated
+  installed FoMaC nanobind module produced a false exception-translation
+  failure. Loading the matching IR, FoMaC, and MLIR extensions from one build
+  restores the normal translator and passes every direct Qiskit bridge test.
 
 ## Decision Log
 
 - Decision: retain the one-way stack #2040, #2049, #2050, #2031, #2054, #2051,
   #2048. Rationale: each layer has a separately reviewable contract, while
-  placing #2031 before #2054 allows the cleanup to preserve the sustainable
-  direct Qiskit path. Date/Author: 2026-08-11, Codex.
-- Decision: set `LLVM_ENABLE_EH` to `OFF` and run
-  `llvm_update_compile_flags(target)` from the existing MLIR target-options
-  helper. Rationale: this is LLVM's supported target-scoped mechanism and covers
-  both MLIR libraries and generated object targets without a parallel MQT
-  property system. Date/Author: 2026-08-11, Codex.
-- Decision: set `LLVM_REQUIRES_EH` only while creating
-  `MQTCompilerFoMaCAdapter`, `MLIRQCODDFunctionality`, and
-  `mqt-core-qir-runner`. Rationale: these production targets compile APIs whose
-  contracts still use exceptions; broadening this refactor into FoMaC, DD, or
-  Core IR is outside issue #1590. Date/Author: 2026-08-11, Codex.
-- Decision: let the unit-test configuration helper accept `REQUIRES_EH` and use
-  it for exactly the seven proven targets. Rationale: function scope prevents
-  the LLVM variable from leaking to siblings, and the named argument makes each
-  test-only boundary visible at its declaration. Date/Author: 2026-08-11, Codex.
-- Decision: do not request RTTI in #2051. Rationale: exception support and RTTI
-  are distinct contracts; #2048 owns the final RTTI-disabled policy and must
-  prove that these exception boundaries do not acquire RTTI. Date/Author:
+  placing #2031 before #2054 lets the cleanup preserve the sustainable direct
+  Qiskit path. Date/Author: 2026-08-11, Codex.
+- Decision: set both `LLVM_ENABLE_EH` and `LLVM_ENABLE_RTTI` to `OFF` without a
+  user option. Rationale: this matches the portable toolchain and keeps the
+  complete compiler graph as the default build. Date/Author: 2026-08-11, Codex.
+- Decision: use `llvm_update_compile_flags` for every MQT MLIR target and a
+  single `mqt_llvm_target_disable_rtti` helper for the final ABI override.
+  Rationale: ordinary targets receive LLVM's policy directly, while exception
+  boundaries remain RTTI-free without a second target-property framework.
+  Date/Author: 2026-08-11, Codex.
+- Decision: call the RTTI helper only from the central MLIR target-options
+  function and the two direct non-AddMLIR consumers: QIR JIT and the DD QDMI
+  device. The AddLLVM QIR runner also receives the final override because its
+  exception request otherwise suppresses LLVM's RTTI-disable flag. Rationale:
+  these are the exact RTTI-free ABI boundaries; applying the flag through
+  `MQT::ProjectOptions` would unnecessarily change unrelated Core targets.
+  Date/Author: 2026-08-11, Codex.
+- Decision: retain RTTI only for the MLIR Python extension. Rationale: nanobind
+  directly instantiates `typeid`, while no compiler library, driver, QIR tool,
+  DD device, or MLIR test requires language RTTI. Date/Author: 2026-08-11,
+  Codex.
+- Decision: set `LLVM_REQUIRES_RTTI` only while AddLLVM/AddMLIR create the three
+  production exception targets, then unset it and append the RTTI-disable flag.
+  The seven test targets use the central exception-only path and never request
+  RTTI. Rationale: this suppresses LLVM's incorrect developer warning without
+  leaking the variable or changing any target's final ABI. Date/Author:
   2026-08-11, Codex.
 - Decision: do not add a feature option, preset, partial compiler graph, extra
   CI matrix entry, or generated installation-document edit. Rationale: the
@@ -98,122 +111,135 @@ Python binding is an independent exception-using boundary and remains available.
 
 ## Outcomes & Retrospective
 
-The current local revision preserves every compiler target and replaces the
-bespoke exception framework with LLVM's standard per-target policy. A fresh
-RTTI-enabled LLVM/MLIR 22.1.3 build produced `mqt-cc`, the QIR runner, both
-production boundary libraries, and the six initially identified test targets;
-all 990 then-discovered MLIR unit tests passed. The later complete RTTI-off
-build identified and scoped the optimization executable as the seventh test-only
-boundary. Generated commands show `-fno-exceptions` on ordinary MLIR targets and
-`mqt-cc`, while the documented boundaries use the compiler's normal
-exception-enabled mode.
+The current local series preserves every compiler target and replaces the old
+exception/RTTI framework with LLVM's standard per-target flags plus one narrow
+RTTI ABI helper. There is no custom exception property, manual exception-enable
+flag, directory-wide generator expression, or RTTI request.
 
-The remaining acceptance work is the aggregate RTTI-off build owned by #2048,
-signed publication, exact-head CI, and review-thread hygiene. No pull request is
+The simplified #2051 layer built `mqt-cc`, the QIR runner, both production MLIR
+boundaries, and the six initially identified test targets; all 990
+then-discovered MLIR unit tests passed. The complete #2048 build identified and
+scoped the optimization executable as the seventh test-only boundary.
+
+The final combined tree then configured and built all 598 native targets against
+the published portable LLVM/MLIR 22.1.8 no-RTTI release. All 4,264 discovered
+CTests passed, with only the two live job-ID tests skipped by design. The direct
+Qiskit bridge passed all 118 tests against matching IR, FoMaC, and MLIR Python
+extensions. `mqt-cc` listed the configured devices and compiled the Bell program
+for `mqt.ddsim.default`. The compile-command audit found RTTI disabled for all
+163 repository MLIR translation units; only the four nanobind extension sources
+retain RTTI and exceptions. Publication remains pending. No pull request is
 merged by this plan.
 
 ## Context and Orientation
 
-`cmake/SetupMLIR.cmake` imports LLVM and MLIR's CMake helpers and sets
-`LLVM_ENABLE_EH OFF`. `mlir/CMakeLists.txt` owns
-`mqt_mlir_apply_target_options`, which links `MQT::ProjectOptions` and invokes
-`llvm_update_compile_flags` for each MQT MLIR target.
+`cmake/SetupMLIR.cmake` imports LLVM and MLIR's CMake helpers, sets
+`LLVM_ENABLE_EH OFF` and `LLVM_ENABLE_RTTI OFF`, and defines the internal
+`mqt_llvm_target_disable_rtti` helper.
 
-`mlir/lib/Compiler/FoMaCAdapter.cpp` snapshots a FoMaC device into an immutable
-`CompilerTarget`. It opens devices and catches failures inside its
-exception-enabled library, exposing `llvm::Expected` to callers.
-`mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp` is the corresponding DD
-boundary. `src/qir/runner/Runner.cpp` is a standalone LLVM tool that compiles
-the existing exception-based Core IR and DD interfaces.
+`mlir/CMakeLists.txt` owns `mqt_mlir_apply_target_options`. It links
+`MQT::ProjectOptions`, invokes `llvm_update_compile_flags`, and then enforces
+the RTTI-off ABI. `mqt_mlir_target_use_project_options` applies this to both a
+public MLIR library and its generated `obj.*` target when present.
 
-`mlir/unittests/CMakeLists.txt` applies common target options. Its `REQUIRES_EH`
-argument is used only where the test translation unit itself requires exception
-syntax. It is not an installed interface or user option.
+`mlir/lib/Compiler/FoMaCAdapter.cpp` snapshots a FoMaC device and returns
+`llvm::Expected` errors to the exception-disabled driver.
+`mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp` is the DD boundary.
+`src/qir/runner/Runner.cpp` compiles existing exception-based Core IR and DD
+interfaces. Their target-creation scopes satisfy AddLLVM/AddMLIR's coupled
+exception/RTTI assumption, immediately unset both variables, and finish with
+RTTI disabled.
 
-Pull request #2031 provides the direct `QCProgram.from_qiskit`, `to_qiskit`, and
-`compile_program(QuantumCircuit)` path. Pull request #2054 follows it and
-removes only the older `QuantumComputation` to MLIR interaction. The exception
-policy belongs to pull request #2051, and pull request #2048 follows it and owns
-the RTTI-disabled policy.
+`src/qir/jit` and `src/qdmi/devices/dd` are direct LLVM consumers not governed
+completely by the AddLLVM/AddMLIR target helpers. The MLIR binding includes the
+direct Qiskit bridge from #2031 and remains an exception-enabled, RTTI-enabled
+nanobind boundary.
+
+Pull request #2054 removes only the older `QuantumComputation` to MLIR
+interaction. Pull request #2051 owns exception handling, and #2048 owns the
+final RTTI policy.
 
 ## Plan of Work
 
-Keep `LLVM_ENABLE_EH OFF`. Apply `llvm_update_compile_flags` from the central
-MQT MLIR target helper. Around creation of each production boundary, set
-`LLVM_REQUIRES_EH ON` and unset it immediately afterwards. Do the equivalent in
-function scope for the seven test executables. Do not introduce manual compiler
-flags or target properties.
+Keep the complete compiler graph and the direct Qiskit bridge unconditional. Let
+LLVM configure ordinary targets. Retain `LLVM_REQUIRES_EH` only around the three
+production exception targets and in function scope for the seven proven test
+targets. Do not leave RTTI enabled for any exception boundary.
 
-Keep all compiler libraries, tools, translations, QIR tests, DD functionality,
-and the #2031 Qiskit bridge unconditional. Keep FoMaC device opening in the
-adapter and return failures as LLVM errors to the exception-disabled driver.
-
-After #2051 is committed, rebase #2048 onto it. The combined revision must keep
-the exception boundaries above while disabling RTTI across every LLVM/MLIR
-consumer, including those boundaries and the Qiskit binding.
+Apply the RTTI-off ABI centrally to all MLIR targets after LLVM's flags. Apply
+the same helper only to direct LLVM/MLIR consumers that bypass or override the
+ordinary LLVM target policy. Keep the nanobind extension RTTI-enabled, and do
+not add either policy to project-wide options.
 
 ## Concrete Steps
 
-Run cache-producing commands through `.agent/run.sh`. Configure from a fresh
-cache with supported LLVM/MLIR 22, build the affected targets, and run the MLIR
-unit-test label:
+Run cache-producing commands through `.agent/run.sh`. Configure a fresh Release
+cache against the published portable LLVM/MLIR 22.1.8 RTTI-off toolchain and
+build the complete graph:
 
-    ./.agent/run.sh env MLIR_DIR=/path/to/llvm/lib/cmake/mlir \
-      cmake --preset release -B build/eh-review
-    ./.agent/run.sh cmake --build build/eh-review --target \
-      mqt-cc mqt-core-qir-runner mqt-core-mlir-unittests -j4
-    ./.agent/run.sh ctest --test-dir build/eh-review -L mqt-mlir-unittests \
+    ./.agent/run.sh env \
+      MLIR_DIR=/path/to/portable/lib/cmake/mlir \
+      cmake --preset release -B build/rtti-off-review
+    ./.agent/run.sh cmake --build build/rtti-off-review -j4
+    ./.agent/run.sh ctest --test-dir build/rtti-off-review \
       --output-on-failure
 
-Audit `compile_commands.json`. `mqt-cc` and ordinary MQT MLIR sources must be
-exception-disabled. Only the documented production and test boundaries may be
-exception-enabled. A boundary may use the compiler default instead of carrying
-an explicit `-fexceptions`; acceptance is based on effective mode, not the
-presence of a particular spelling.
+Run the Qiskit bridge tests in the configured Python environment and exercise
+`mqt-cc` device listing and compilation for `mqt.ddsim.default`.
 
-Finish with targeted lint, `git diff --check`, and a clean status. Repeat the
-aggregate build from a fresh cache against the portable RTTI-off toolchain after
-pull request #2048 is rebased.
+Audit `compile_commands.json`. Every repository target that consumes LLVM or
+MLIR must be RTTI-disabled. `mqt-cc` and ordinary MLIR sources must also be
+exception-disabled. Only the documented production and test boundaries may be
+exception-enabled. Acceptance is based on effective compiler mode, not the
+presence of a particular enable-flag spelling.
+
+Finish with targeted lint, `git diff --check`, and a clean worktree.
 
 ## Validation and Acceptance
 
-The complete compiler collection must configure and build without a new option.
-All focused tests must pass. `mqt-cc` must be exception-disabled, and the Qiskit
-bridge from #2031 must remain present and tested. There must be no
-`MQT_MLIR_ENABLE_EXCEPTIONS`, custom exception target property, directory-wide
-exception generator expression, no-exceptions preset, sentinel, or conditional
-subdirectory.
+The complete compiler collection must configure and build against the portable
+LLVM/MLIR 22 toolchain without a new option. All discovered tests and the direct
+Qiskit bridge tests must pass, apart from explicitly documented live tests.
+`mqt-cc` must remain exception-disabled and compile a Bell input for the
+configured DDSIM device.
 
-The combined #2048 revision must additionally build against the compatible
-portable LLVM/MLIR toolchain with RTTI disabled, without enabling RTTI on an
-exception boundary. Replacement GitHub checks are evaluated at the exact signed
-published heads; pending or external failures are reported rather than treated
-as success.
+Only the three AddLLVM/AddMLIR production target-creation scopes may temporarily
+set `LLVM_REQUIRES_RTTI`, and the variable must be unset immediately. Every
+LLVM/MLIR consumer except the nanobind extension must use the RTTI-off ABI; the
+extension retains RTTI because nanobind requires it. There must be no custom
+exception target property, directory-wide exception/RTTI generator expression,
+strict preset, sentinel, or conditional compiler subdirectory.
+
+Replacement GitHub checks are evaluated at the exact signed published heads;
+pending or external failures are reported rather than treated as success.
 
 ## Idempotence and Recovery
 
-Use fresh build directories for flag validation so cached LLVM settings cannot
+Use a fresh build directory for flag validation so cached LLVM settings cannot
 hide a failure. Never reuse another worktree's mutable build directory. If a
-target fails with exception syntax, first confirm whether its own translation
-unit compiles an exception-based public API. Add the smallest target-scoped
-`LLVM_REQUIRES_EH` declaration only when evidence requires it.
+target fails with exception syntax, first establish that its translation unit
+compiles an exception-based API before adding the smallest target-scoped
+`LLVM_REQUIRES_EH` declaration. If a link fails with missing LLVM typeinfo,
+inspect the final compile command and apply the RTTI helper only to the direct
+LLVM consumer that escaped the existing policy.
 
 If a lower pull request changes, fetch its exact revision, verify ancestry,
-rebase one layer at a time, rerun the affected validation, and push only with
-the frozen previous remote commit as `--force-with-lease`. Resolve a review
+rebase one layer at a time, rerun affected validation, and push only with the
+frozen previous remote commit as `--force-with-lease`. Resolve a review
 conversation only after its source is removed, its request is implemented, or
 GitHub marks it outdated.
 
 ## Interfaces and Dependencies
 
-`mlir/Compiler/FoMaCAdapter.h` exposes both
+`mlir/Compiler/FoMaCAdapter.h` exposes
 `compilerTargetFromDevice(const fomac::Device&)` and
 `compilerTargetFromDeviceId(std::string_view)` as
 `llvm::Expected<CompilerTarget>`. The latter keeps device opening and exception
 translation out of `mqt-cc`.
 
-LLVM and MLIR remain version 22 or newer, C++ remains C++20, and no new runtime
-dependency or installed CMake interface is introduced.
+`mqt_llvm_target_disable_rtti` is an internal CMake helper, not an installed
+option or library interface. LLVM and MLIR remain version 22 or newer, C++
+remains C++20, and no new runtime dependency is introduced.
 
-Revision note (2026-08-11): rewritten after inserting #2031 and simplifying
-exception handling to LLVM's standard target-scoped mechanism.
+Revision note (2026-08-11): rewritten after inserting #2031 and simplifying the
+exception and RTTI policies to target-scoped LLVM mechanisms.
