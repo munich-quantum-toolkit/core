@@ -45,6 +45,10 @@ namespace mlir::utils {
 inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
     "mqt.classical_register_name";
 
+/// Attribute used to retain a source-level qubit-register name.
+inline constexpr llvm::StringLiteral QUBIT_REGISTER_NAME_ATTR =
+    "mqt.qubit_register_name";
+
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
   return r == std::floor(r) && std::isfinite(r);
@@ -94,6 +98,24 @@ inline Value constantFromScalar(OpBuilder& builder, Location loc, int64_t v) {
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
   return arith::ConstantOp::create(builder, loc, builder.getBoolAttr(v));
+}
+
+/// Populate a modifier region with @p numBlockArgs qubits and invoke @p
+/// emitBody.
+template <typename QubitType>
+inline void
+buildModifierBody(OpBuilder& builder, OperationState& state,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = state.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(builder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, state.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&block);
+  emitBody(builder, block);
 }
 
 /**

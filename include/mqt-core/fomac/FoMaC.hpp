@@ -69,6 +69,15 @@ concept custom_property_value =
     std::same_as<T, std::vector<std::byte>>;
 
 namespace detail {
+[[nodiscard]] inline std::optional<size_t>
+queuePositionFromResult(const int result, const size_t queuePosition) {
+  if (result == QDMI_ERROR_NOTSUPPORTED || result == QDMI_ERROR_BADSTATE) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(result, "Querying job queue position");
+  return queuePosition;
+}
+
 template <custom_property_value T, typename Query>
 [[nodiscard]] std::optional<T>
 queryCustomValue(Query query, const std::string_view description) {
@@ -106,6 +115,31 @@ queryCustomValue(Query query, const std::string_view description) {
     std::memcpy(&value, bytes.data(), sizeof(T));
     return value;
   }
+}
+
+template <typename Handle, typename Query>
+[[nodiscard]] std::optional<std::vector<Handle>>
+queryHandleArray(Query query, const std::string_view description) {
+  size_t size = 0;
+  const auto sizeResult = query(0, nullptr, &size);
+  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(sizeResult,
+                     "Querying " + std::string(description) + " size");
+  if (size % sizeof(Handle) != 0) {
+    throw std::invalid_argument(
+        "Cannot decode " + std::string(description) + ": the device reported " +
+        std::to_string(size) + " bytes, which is not a multiple of " +
+        std::to_string(sizeof(Handle)));
+  }
+
+  std::vector<Handle> handles(size / sizeof(Handle));
+  if (size != 0) {
+    qdmi::throwIfError(query(size, static_cast<void*>(handles.data()), nullptr),
+                       "Querying " + std::string(description));
+  }
+  return handles;
 }
 
 [[nodiscard]] constexpr QDMI_Device_Property
@@ -470,6 +504,9 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
   [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
 
+  /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
+  [[nodiscard]] std::optional<size_t> getQueueLength() const;
+
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
   [[nodiscard]] std::optional<std::string> getLengthUnit() const;
 
@@ -519,6 +556,17 @@ public:
   }
 
   /**
+   * @brief Queries a custom device property containing operation handles.
+   * @param property Custom property slot to query.
+   * @return Normal FoMaC operation wrappers, or `std::nullopt` if the slot is
+   * unsupported. A supported empty list is returned as an engaged optional.
+   * @throws std::invalid_argument If the returned byte count is not a multiple
+   * of `sizeof(QDMI_Operation)`.
+   */
+  [[nodiscard]] std::optional<std::vector<Operation>>
+  queryCustomOperations(CustomProperty property) const;
+
+  /**
    * @brief Submits a textual program.
    * @details The terminating null byte required by QDMI text formats is
    * included in the submitted payload.
@@ -551,6 +599,16 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
+  /**
+   * @brief Retrieves an existing job by its device-provided ID.
+   * @details Opening a job does not submit, clone, or modify the remote job.
+   * The returned handle can be used to query its state and retrieve results.
+   * @param jobId The nonempty opaque ID returned by @ref Job::getId.
+   * @throws std::runtime_error If the driver or device cannot retrieve the job.
+   * @see QDMI_session_retrieve_job_by_id
+   */
+  [[nodiscard]] Job retrieveJobById(std::string_view jobId) const;
+
   auto operator<=>(const Device&) const noexcept = default;
 
 private:
@@ -567,6 +625,10 @@ private:
    */
   explicit Device(std::shared_ptr<QDMI_Device_impl_d> device)
       : device_(std::move(device)) {}
+
+  /// Wrap operation handles while retaining their owning device session.
+  [[nodiscard]] std::vector<Operation>
+  wrapOperations(std::span<const QDMI_Operation> operations) const;
 
   /// Query a device property.
   template <maybe_optional_value_or_string_or_vector T>
@@ -688,6 +750,16 @@ public:
 
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;
+
+  /**
+   * @brief Gets the current number of jobs ahead of this job in its queue.
+   * @return The queue position, or `std::nullopt` if it is unavailable or not
+   * applicable in the job's current state.
+   * @throws std::runtime_error If the provider status refresh or property query
+   * fails for another reason.
+   * @see QDMI_JOB_PROPERTY_QUEUEPOSITION
+   */
+  [[nodiscard]] std::optional<size_t> getQueuePosition() const;
 
   /**
    * @brief Queries an implementation-defined custom job property.

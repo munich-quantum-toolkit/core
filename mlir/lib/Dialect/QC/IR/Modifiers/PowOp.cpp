@@ -213,7 +213,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
 };
 
 /// pow(p) { ctrl(q) { U } }  =>  ctrl(q) { pow(p) { U } }
-struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
+struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(PowOp op,
@@ -600,5 +600,5 @@ LogicalResult PowOp::verify() {
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-              MoveCtrlOutside, NegPowToInvPow, EraseEmptyPow>(context);
+              MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow>(context);
 }

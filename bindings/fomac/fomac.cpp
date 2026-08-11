@@ -295,6 +295,11 @@ when the custom slot is unsupported.)pb");
   job.def_prop_ro("num_shots", &fomac::Job::getNumShots,
                   "The number of shots.");
 
+  job.def_prop_ro(
+      "queue_position", &fomac::Job::getQueuePosition,
+      "The number of jobs ahead in the queue, or None if unavailable or not "
+      "applicable in the current state.");
+
   job.def(nb::self == nb::self,
           nb::sig("def __eq__(self, arg: object, /) -> bool"));
   job.def(nb::self != nb::self,
@@ -389,6 +394,9 @@ when the custom slot is unsupported.)pb");
   device.def("needs_calibration", &fomac::Device::getNeedsCalibration,
              "Returns whether the device needs calibration.");
 
+  device.def("queue_length", &fomac::Device::getQueueLength,
+             "Returns the current queue length, or None if unavailable.");
+
   device.def("length_unit", &fomac::Device::getLengthUnit,
              "Returns the unit of length used by the device.");
 
@@ -410,6 +418,14 @@ when the custom slot is unsupported.)pb");
 
   device.def("child_devices", &fomac::Device::getChildDevices,
              "Returns the direct child devices managed by this device.");
+
+  device.def(
+      "query_custom_operations", &fomac::Device::queryCustomOperations,
+      "custom_property"_a,
+      R"pb(Query a custom device property that contains operation handles.
+
+Returns normal :class:`Device.Operation` objects, or ``None`` when the custom
+slot is unsupported. A supported empty list is returned as an empty list.)pb");
 
   device.def(
       "query_custom_property",
@@ -469,6 +485,14 @@ when the custom slot is unsupported.)pb");
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits an exact byte payload to the device.");
+
+  device.def(
+      "retrieve_job_by_id",
+      [](const fomac::Device& self, const std::string& jobId) {
+        return self.retrieveJobById(jobId);
+      },
+      "job_id"_a, nb::rv_policy::reference_internal,
+      "Retrieves an existing job by its device-provided ID.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";

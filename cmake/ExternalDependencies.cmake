@@ -33,6 +33,11 @@ FetchContent_Declare(
 function(_mqt_core_make_jeff_available)
   set(BUILD_TESTING OFF)
   FetchContent_MakeAvailable(jeff-mlir)
+  # Cap'n Proto combines translation units with conflicting internal helper names. Keep only this
+  # transitive dependency out of unity builds while Jeff and MQT targets remain eligible.
+  if(TARGET capnp)
+    set_target_properties(capnp PROPERTIES UNITY_BUILD OFF)
+  endif()
 endfunction()
 _mqt_core_make_jeff_available()
 
@@ -89,11 +94,11 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_MINIMUM_VERSION 1.3.2
+set(QDMI_MINIMUM_VERSION 1.3.3
         CACHE STRING "Minimum QDMI version")
-set(QDMI_VERSION 1.3.2
+set(QDMI_VERSION 1.3.3
         CACHE STRING "QDMI version")
-set(QDMI_REV "d05a0b418f42e54e9585d2e00af8ce23e745fd83" # v1.3.2
+set(QDMI_REV "e80020f7ace5c0a716142378c812f30f86263c4e" # QDMI develop
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")

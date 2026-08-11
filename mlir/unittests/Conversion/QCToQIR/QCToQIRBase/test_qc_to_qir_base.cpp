@@ -222,6 +222,52 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
+TEST(QCToQIRBaseNativeTest, AcceptsZeroInitializedClassicalRegister) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto c = builder.allocClassicalBitRegister(1);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(false), c,
+                          zero.getResult());
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+
+  EXPECT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsZeroStoreAfterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto q = builder.allocQubit();
+  const auto c = builder.allocClassicalBitRegister(1);
+  builder.measure(q, c, 0);
+  auto zero = arith::ConstantIndexOp::create(builder, 0);
+  memref::StoreOp::create(builder, builder.boolConstant(false), c,
+                          zero.getResult());
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |=
+        StringRef(message).contains("leading zero initialization");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
 TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

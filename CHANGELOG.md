@@ -12,6 +12,12 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add generic C++ and Python FoMaC support for custom device properties that
+  contain operation handles ([#2042]) ([**@burgholzer**])
+- ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
+  and Python FoMaC APIs, and expose optional device queue length and job queue
+  position ([#2008], [#2010]) ([**@burgholzer**])
+- 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
@@ -37,8 +43,9 @@ releases may include breaking changes.
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
-  [#1979], [#2007]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
-  [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
+  [#1979], [#2007], [#2026], [#2030]) ([**@burgholzer**], [**@denialhaag**],
+  [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
+  [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of QCO functions,
   including static unitaries, mid-circuit `measure`/`reset`, concrete
   `if`/`index_switch`/`scf.for`/`func.call`, richer classical SSA, dense `k>3`
@@ -54,7 +61,7 @@ releases may include breaking changes.
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   structured control flow, and alias-safe qubit-register access ([#1910],
-  [#1987], [#1994]) ([**@burgholzer**], [**@denialhaag**])
+  [#1987], [#1994], [#2026]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -84,7 +91,7 @@ releases may include breaking changes.
   circuits to compiler-target topologies while preserving target site IDs and
   materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
   [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
-  [#1870], [#1904], [#1911], [#1951], [#1997]) ([**@MatthiasReumann**],
+  [#1870], [#1904], [#1911], [#1951], [#1997], [#2016]) ([**@MatthiasReumann**],
   [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
@@ -98,9 +105,9 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@J4MMlE**])
+  [#1976], [#2006], [#2014], [#2017], [#2026], [#2028]) ([**@burgholzer**],
+  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
@@ -541,7 +548,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
 
 ### Added
 
-- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
+- 🐍 Start building CPython 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
@@ -723,6 +730,16 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
+[#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
+[#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
+[#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
+[#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
+[#2014]: https://github.com/munich-quantum-toolkit/core/pull/2014
+[#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
+[#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
+[#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005

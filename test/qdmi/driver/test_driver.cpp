@@ -523,6 +523,10 @@ TEST_P(DriverJobTest, JobQueryProperty) {
     EXPECT_EQ(numShots, 1);
   }
 
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_QUEUEPOSITION, 0,
+                                    nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+
   constexpr std::array customProperties{
       QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
       QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
@@ -775,6 +779,21 @@ TEST_P(DriverTest, QueryOperations) {
 
 TEST_P(DriverTest, SessionAlloc) {
   EXPECT_EQ(QDMI_session_alloc(nullptr), QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverTest, RetrieveJobById) {
+  QDMI_Job job = nullptr;
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(nullptr, "job-id", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, nullptr, &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "job-id", nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "job-id", &job),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(job, nullptr);
 }
 
 TEST_P(DriverTest, SessionInit) {
@@ -1110,6 +1129,74 @@ TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   EXPECT_NE(first, second);
 }
 
+TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndFoMaCQueries) {
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+
+  size_t size = 0;
+  ASSERT_EQ(QDMI_device_query_device_property(
+                device, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, &size),
+            QDMI_SUCCESS);
+  ASSERT_EQ(size, 2 * sizeof(QDMI_Operation));
+  std::vector<QDMI_Operation> rawOperations(size / sizeof(QDMI_Operation));
+  EXPECT_EQ(QDMI_device_query_device_property(
+                device, QDMI_DEVICE_PROPERTY_CUSTOM1,
+                size - sizeof(QDMI_Operation),
+                static_cast<void*>(rawOperations.data()), nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(QDMI_device_query_device_property(
+                device, QDMI_DEVICE_PROPERTY_CUSTOM1, size,
+                static_cast<void*>(rawOperations.data()), nullptr),
+            QDMI_SUCCESS);
+
+  const auto operations =
+      device.queryCustomOperations(fomac::CustomProperty::Custom1);
+  ASSERT_TRUE(operations.has_value());
+  ASSERT_EQ(operations->size(), rawOperations.size());
+  EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(0)),
+            rawOperations.at(0));
+  EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(1)),
+            rawOperations.at(1));
+  EXPECT_EQ(operations->at(0).getName(), "custom-rx");
+  EXPECT_EQ(operations->at(0).getQubitsNum(), 1);
+  EXPECT_EQ(operations->at(0).getParametersNum(), 1);
+  EXPECT_EQ(operations->at(1).getName(), "custom-cx");
+  EXPECT_EQ(operations->at(1).getQubitsNum(), 2);
+  EXPECT_EQ(operations->at(1).getParametersNum(), 0);
+}
+
+TEST(DeviceRegistrationTest,
+     CustomOperationListDistinguishesUnsupportedEmptyAndMalformed) {
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+
+  EXPECT_EQ(device.queryCustomOperations(fomac::CustomProperty::Custom4),
+            std::nullopt);
+  const auto empty =
+      device.queryCustomOperations(fomac::CustomProperty::Custom2);
+  ASSERT_TRUE(empty.has_value());
+  EXPECT_TRUE(empty->empty());
+  EXPECT_THROW(static_cast<void>(device.queryCustomOperations(
+                   fomac::CustomProperty::Custom3)),
+               std::invalid_argument);
+}
+
+TEST(DeviceRegistrationTest, CustomOperationRetainsOwningDeviceSession) {
+  registerSessionTestDevice();
+  const auto operation = [] {
+    const auto operations =
+        fomac::Session::openDevice("test.session-overrides")
+            .queryCustomOperations(fomac::CustomProperty::Custom1);
+    if (!operations.has_value() || operations->empty()) {
+      throw std::runtime_error("Test provider returned no custom operations");
+    }
+    return operations->front();
+  }();
+
+  EXPECT_EQ(operation.getName(), "custom-rx");
+  EXPECT_EQ(operation.getQubitsNum(), 1);
+}
+
 TEST(DeviceRegistrationTest,
      ScRuntimeConfigurationSeparatesModelsUsingOneProviderLibrary) {
   auto& driver = qdmi::Driver::get();
@@ -1199,6 +1286,35 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
 
   const auto probe = fomac::Session::openDevice("test.session-overrides");
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
+}
+
+TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+
+  QDMI_Job job = nullptr;
+  ASSERT_EQ(QDMI_session_retrieve_job_by_id(device, "session-job", &job),
+            QDMI_SUCCESS);
+  ASSERT_NE(job, nullptr);
+
+  std::array<char, 12> id{};
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, id.size(),
+                                    id.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_STREQ(id.data(), "session-job");
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                   sizeof(size_t), nullptr),
+            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_BADSTATE);
+  QDMI_job_free(job);
+
+  job = nullptr;
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "missing", &job),
+            QDMI_ERROR_NOTFOUND);
+  EXPECT_EQ(job, nullptr);
+
+  const auto retrievedJob = device.retrieveJobById("session-job");
+  EXPECT_EQ(retrievedJob.getId(), "session-job");
 }
 
 TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {

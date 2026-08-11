@@ -10,6 +10,7 @@
 
 #include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
@@ -135,8 +136,14 @@ protected:
   }
 
   [[nodiscard]] OwningOpRef<ModuleOp>
-  buildQCReference(const QCProgramBuilderFn builder) const {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
+  buildQCReference(const QCProgramBuilderFn builder,
+                   const bool zeroInitializeClassicalRegisters) const {
+    const auto initialization =
+        zeroInitializeClassicalRegisters
+            ? QCProgramBuilder::ClassicalRegisterInitialization::Zero
+            : QCProgramBuilder::ClassicalRegisterInitialization::Uninitialized;
+    auto module =
+        mqt::test::buildMLIRProgram(context.get(), builder, initialization);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
@@ -247,12 +254,38 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
     expected = buildQIRReference(testCase.qirReferenceBuilder);
   } else {
     ASSERT_TRUE(testCase.qcReferenceBuilder);
-    expected = buildQCReference(testCase.qcReferenceBuilder);
+    expected = buildQCReference(testCase.qcReferenceBuilder,
+                                testCase.startFromQuantumComputation);
   }
   ASSERT_TRUE(expected);
   const auto actualIR =
       std::visit([](const auto& value) { return value.str(); }, *compiled);
   expectEquivalent("Final output", actualIR, expected.get());
+}
+
+TEST(CompilerPipelineRegressionTest,
+     ZeroInitializedRegisterConditionsReachAdaptiveQIR) {
+  MLIRContext context;
+  context.loadDialect<QCDialect, arith::ArithDialect, func::FuncDialect,
+                      memref::MemRefDialect, scf::SCFDialect>();
+  ::qc::QuantumComputation comp;
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(2, "c");
+  comp.if_(::qc::X, q[0], c, 0U);
+
+  auto module = translateQuantumComputationToQC(&context, comp);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(verify(*module).succeeded());
+
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  module->print(sourceStream);
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto compiled = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                     ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<QIRProgram>(*compiled));
 }
 
 /** @brief Raw QCO stops before the registered default optimization pipeline. */
@@ -337,8 +370,9 @@ struct EntryInfo {
   std::vector<std::string> outputRecordings;
 };
 
-[[nodiscard]] std::string
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+} // namespace
+
+[[nodiscard]] static std::string
 openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   std::string name = info.param.name.str();
   for (auto& character : name) {
@@ -349,16 +383,15 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   return name;
 }
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-[[nodiscard]] std::string printType(const Type type) {
+[[nodiscard]] static std::string printType(const Type type) {
   std::string text;
   llvm::raw_string_ostream stream(text);
   type.print(stream);
   return text;
 }
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-[[nodiscard]] std::optional<EntryInfo> inspectEntry(const llvm::StringRef ir) {
+[[nodiscard]] static std::optional<EntryInfo>
+inspectEntry(const llvm::StringRef ir) {
   DialectRegistry registry;
   registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, cf::ControlFlowDialect,
@@ -399,8 +432,7 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
   return info;
 }
 
-[[nodiscard]] testing::AssertionResult
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+[[nodiscard]] static testing::AssertionResult
 throughOptimizedQCO(const qasm::OpenQASMProgram& source,
                     std::optional<QCProgram>& restored,
                     std::vector<std::string>& resultTypes) {
@@ -434,8 +466,7 @@ throughOptimizedQCO(const qasm::OpenQASMProgram& source,
   return testing::AssertionSuccess();
 }
 
-[[nodiscard]] testing::AssertionResult
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+[[nodiscard]] static testing::AssertionResult
 roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
                               std::optional<QCProgram>& restored,
                               std::vector<std::string>& resultTypes) {
@@ -528,6 +559,8 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
   return matchesEntry(*restored, "restored QC");
 }
 
+namespace {
+
 TEST(OpenQASMCompilerOutputTest,
      CanonicalizesMixedScalarAndRegisterResultsThroughQCO) {
   constexpr llvm::StringLiteral source = R"qasm(
@@ -601,10 +634,12 @@ if (flag) {
 
 enum class OutputRecordingShape : std::uint8_t { AdaptiveArrays, BaseArrays };
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
-                        const ArrayRef<std::string> sourceResultTypes,
-                        const OutputRecordingShape outputShape) {
+} // namespace
+
+static void expectQIRArtifacts(const QIRProgram& program,
+                               const llvm::StringRef name,
+                               const ArrayRef<std::string> sourceResultTypes,
+                               const OutputRecordingShape outputShape) {
   const auto entry = inspectEntry(program.str());
   ASSERT_TRUE(entry) << name.str() << ": QIR entry inspection";
   ASSERT_EQ(entry->resultTypes.size(), 1) << name.str() << ": QIR main result";
@@ -637,6 +672,8 @@ void expectQIRArtifacts(const QIRProgram& program, const llvm::StringRef name,
   EXPECT_EQ(std::to_integer<std::uint8_t>((*bitcode)[2]), 0xC0U);
   EXPECT_EQ(std::to_integer<std::uint8_t>((*bitcode)[3]), 0xDEU);
 }
+
+namespace {
 
 TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitStandardPipeline) {
   const auto& source = GetParam();
