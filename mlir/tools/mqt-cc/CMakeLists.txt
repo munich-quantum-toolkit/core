@@ -6,8 +6,10 @@
 #
 # Licensed under the MIT License
 
-# Build the compiler driver executable
-add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline MQTCompilerFoMaCAdapter SUPPORT_PLUGINS)
+# Keep mqt-cc's statically linked LLVM/MLIR symbols private. The driver has no dynamic pass-plugin
+# API, and exporting its symbols lets loaded QDMI devices interpose LLVM's process-global
+# registries.
+add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline MQTCompilerFoMaCAdapter)
 if(BUILD_MQT_CORE_TESTS)
   # add_mlir_tool excludes tools when LLVM_BUILD_TOOLS is disabled. The driver tests require mqt-cc
   # in test-enabled default builds.
@@ -40,4 +42,3 @@ endif()
 
 llvm_update_compile_flags(mqt-cc)
 mlir_check_all_link_libraries(mqt-cc)
-export_executable_symbols_for_plugins(mqt-cc)

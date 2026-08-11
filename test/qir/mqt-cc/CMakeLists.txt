@@ -13,3 +13,12 @@ add_test(
     "-DLLVM_DIS=$<TARGET_FILE:llvm-dis>" "-DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
     "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/output-$<CONFIG>" -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_qir_output.cmake")
+
+add_test(
+  NAME mqt-core-mqt-cc-rejects-noncircuit-device-test
+  COMMAND $<TARGET_FILE:mqt-cc> "${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm" --emit=qir-base
+          --qdmi-device=mqt.na.default -o "${CMAKE_CURRENT_BINARY_DIR}/invalid-device-$<CONFIG>.ll")
+set_tests_properties(
+  mqt-core-mqt-cc-rejects-noncircuit-device-test
+  PROPERTIES PASS_REGULAR_EXPRESSION
+             "Failed to create compiler target.*only circuit-model devices.*zone sites")

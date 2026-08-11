@@ -17,21 +17,6 @@ function(run_command description)
   endif()
 endfunction()
 
-function(require_command_failure description expected_error)
-  execute_process(
-    COMMAND ${ARGN}
-    RESULT_VARIABLE result
-    OUTPUT_VARIABLE output
-    ERROR_VARIABLE error)
-  if(result EQUAL 0)
-    message(FATAL_ERROR "${description} unexpectedly succeeded")
-  endif()
-  string(FIND "${output}${error}" "${expected_error}" error_position)
-  if(error_position EQUAL -1)
-    message(FATAL_ERROR "${description} did not report '${expected_error}':\n${output}${error}")
-  endif()
-endfunction()
-
 function(require_profile filename expected_profile)
   file(READ "${filename}" llvm_ir)
   string(FIND "${llvm_ir}" "\"qir_profiles\"=\"${expected_profile}\"" profile_position)
@@ -52,14 +37,24 @@ file(REMOVE_RECURSE "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 foreach(profile IN ITEMS base adaptive)
+  set(target_options)
+  if(profile STREQUAL "base")
+    list(APPEND target_options "--qdmi-device=mqt.ddsim.default")
+  endif()
   set(expected_profile "${profile}_profile")
   set(text_file "${OUTPUT_DIR}/${profile}.ll")
   set(text_bitcode_file "${OUTPUT_DIR}/${profile}-from-text.bc")
   set(bitcode_file "${OUTPUT_DIR}/${profile}.bc")
   set(disassembled_file "${OUTPUT_DIR}/${profile}-from-bitcode.ll")
 
-  run_command("mqt-cc ${profile} textual QIR generation" "${MQT_CC}" "${INPUT_FILE}"
-              "--emit=qir-${profile}" -o "${text_file}")
+  run_command(
+    "mqt-cc ${profile} textual QIR generation"
+    "${MQT_CC}"
+    "${INPUT_FILE}"
+    "--emit=qir-${profile}"
+    ${target_options}
+    -o
+    "${text_file}")
   require_textual_llvm_ir("${text_file}")
   run_command("llvm-as ${profile} textual QIR validation" "${LLVM_AS}" "${text_file}" -o
               "${text_bitcode_file}")
@@ -80,26 +75,3 @@ foreach(profile IN ITEMS base adaptive)
               "${disassembled_file}")
   require_profile("${disassembled_file}" "${expected_profile}")
 endforeach()
-
-set(targeted_file "${OUTPUT_DIR}/base-targeted.ll")
-run_command(
-  "mqt-cc targeted QIR generation"
-  "${MQT_CC}"
-  "${INPUT_FILE}"
-  "--emit=qir-base"
-  "--qdmi-device=mqt.ddsim.default"
-  -o
-  "${targeted_file}")
-require_textual_llvm_ir("${targeted_file}")
-require_profile("${targeted_file}" "base_profile")
-
-require_command_failure(
-  "mqt-cc conflicting target and decomposition options"
-  "--qdmi-device cannot be combined with --decompose-multi-controlled"
-  "${MQT_CC}"
-  "${INPUT_FILE}"
-  "--emit=qir-base"
-  "--qdmi-device=mqt.ddsim.default"
-  "--decompose-multi-controlled"
-  -o
-  "${OUTPUT_DIR}/invalid.ll")

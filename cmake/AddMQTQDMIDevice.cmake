@@ -35,6 +35,7 @@ function(mqt_configure_qdmi_device target)
                          RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   target_compile_definitions(${target} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
                                                ${ARG_PREFIX}_QDMI_device_EXPORTS)
+
   _mqt_qdmi_json_escape(device_id "${ARG_ID}")
   _mqt_qdmi_json_escape(device_prefix "${ARG_PREFIX}")
 
