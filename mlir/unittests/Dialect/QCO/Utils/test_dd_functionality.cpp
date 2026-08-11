@@ -816,6 +816,105 @@ TEST_F(QCODDFunctionalityTest, RejectsScfForTripCountLimit) {
   expectBuildAndSimFail(mainFunc(*mod), 1);
 }
 
+TEST_F(QCODDFunctionalityTest, SimulateScfWhileAppliesBodyTrips) {
+  // Three X applications: |0> → |1>. The index is loop-carried alongside the
+  // qubit and exercises concrete classical values across both regions.
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c0 = arith.constant 0 : index
+        %result:2 = scf.while (%arg0 = %q, %arg1 = %c0)
+            : (!qco.qubit, index) -> (!qco.qubit, index) {
+          %c3 = arith.constant 3 : index
+          %cond = arith.cmpi slt, %arg1, %c3 : index
+          scf.condition(%cond) %arg0, %arg1 : !qco.qubit, index
+        } do {
+        ^bb0(%arg0: !qco.qubit, %arg1: index):
+          %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %c1 = arith.constant 1 : index
+          %next = arith.addi %arg1, %c1 : index
+          scf.yield %q1, %next : !qco.qubit, index
+        }
+        qco.sink %result#0 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateScfWhileZeroTrips) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %result = scf.while (%arg0 = %q)
+            : (!qco.qubit) -> !qco.qubit {
+          %false = arith.constant false
+          scf.condition(%false) %arg0 : !qco.qubit
+        } do {
+        ^bb0(%arg0: !qco.qubit):
+          %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q1 : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {false});
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateMeasurementControlledScfWhile) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.x(b.staticQubit(0));
+    auto results = b.scfWhile(
+        ValueRange{q},
+        [&](ValueRange args) {
+          auto [measured, bit] = b.measure(args[0]);
+          b.scfCondition(bit, measured);
+          return SmallVector<Value>{measured};
+        },
+        [&](ValueRange args) { return SmallVector<Value>{b.x(args[0])}; });
+    b.sink(results[0]);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {false}, 3);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsScfWhileTripCountLimit) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %result = scf.while (%arg0 = %q)
+            : (!qco.qubit) -> !qco.qubit {
+          %true = arith.constant true
+          scf.condition(%true) %arg0 : !qco.qubit
+        } do {
+        ^bb0(%arg0: !qco.qubit):
+          scf.yield %arg0 : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectBuildAndSimFail(mainFunc(*mod), 1);
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
   // idx = (1+2)*3 >> 1 = 4; select(true, idx, 0)=4; cmpi eq 4 → if applies X.
   // Also round-trip i1 via extui/trunci.

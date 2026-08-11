@@ -59,6 +59,8 @@
 namespace mlir::qco {
 namespace {
 
+constexpr int64_t MAX_CONTROL_FLOW_TRIPS = 10000;
+
 struct QubitMap {
   DenseMap<Value, qc::Qubit> qubits;
   size_t numQubits = 0;
@@ -1096,7 +1098,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return forOp.emitError()
                    << "scf.for step must be positive for QCO DD simulation";
           }
-          constexpr int64_t maxTrips = 10000;
           int64_t trips = 0;
           if (*ub > *lb) {
             // Use unsigned arithmetic to avoid signed-overflow UB when
@@ -1105,10 +1106,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                 static_cast<uint64_t>(*ub) - static_cast<uint64_t>(*lb);
             const uint64_t tripsU =
                 ((span - 1) / static_cast<uint64_t>(*step)) + 1;
-            if (tripsU > static_cast<uint64_t>(maxTrips)) {
+            if (tripsU > static_cast<uint64_t>(MAX_CONTROL_FLOW_TRIPS)) {
               return forOp.emitError()
                      << "scf.for trip count exceeds QCO DD simulation limit of "
-                     << maxTrips;
+                     << MAX_CONTROL_FLOW_TRIPS;
             }
             trips = static_cast<int64_t>(tripsU);
           }
@@ -1153,6 +1154,85 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                    << "scf.for result size mismatch during simulation";
           }
           return bindValuePairs(carried, forOp.getResults(), walk, forOp);
+        }
+      })
+      .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) -> LogicalResult {
+        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+          return whileOp.emitError()
+                 << "scf.while is not supported for QCO DD functionality "
+                    "construction";
+        } else {
+          if (!whileOp.getBefore().hasOneBlock() ||
+              !whileOp.getAfter().hasOneBlock()) {
+            return whileOp.emitError()
+                   << "scf.while regions must contain exactly one block for "
+                      "QCO DD simulation";
+          }
+
+          Block& before = whileOp.getBefore().front();
+          Block& after = whileOp.getAfter().front();
+          SmallVector<Value> carried(whileOp.getInits().begin(),
+                                     whileOp.getInits().end());
+          int64_t trips = 0;
+
+          while (true) {
+            if (carried.size() != before.getNumArguments()) {
+              return whileOp.emitError()
+                     << "scf.while before-region argument size mismatch "
+                        "during simulation";
+            }
+            if (failed(bindValuePairs(carried, before.getArguments(), walk,
+                                      whileOp))) {
+              return failure();
+            }
+            if (failed(walkBlock(before, walk, state))) {
+              return failure();
+            }
+            auto condition = dyn_cast<scf::ConditionOp>(before.getTerminator());
+            if (!condition) {
+              return whileOp.emitError()
+                     << "scf.while before region missing scf.condition";
+            }
+            auto conditionValue =
+                lookupBool(condition.getCondition(), walk.classical, whileOp);
+            if (failed(conditionValue)) {
+              return failure();
+            }
+            if (!*conditionValue) {
+              if (condition.getArgs().size() != whileOp.getNumResults()) {
+                return whileOp.emitError()
+                       << "scf.while result size mismatch during simulation";
+              }
+              return bindValuePairs(condition.getArgs(), whileOp.getResults(),
+                                    walk, whileOp);
+            }
+            if (trips == MAX_CONTROL_FLOW_TRIPS) {
+              return whileOp.emitError()
+                     << "scf.while trip count exceeds QCO DD simulation limit "
+                        "of "
+                     << MAX_CONTROL_FLOW_TRIPS;
+            }
+            if (condition.getArgs().size() != after.getNumArguments()) {
+              return whileOp.emitError()
+                     << "scf.while after-region argument size mismatch during "
+                        "simulation";
+            }
+            if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
+                                      walk, whileOp))) {
+              return failure();
+            }
+            if (failed(walkBlock(after, walk, state))) {
+              return failure();
+            }
+            auto yield = dyn_cast<scf::YieldOp>(after.getTerminator());
+            if (!yield) {
+              return whileOp.emitError()
+                     << "scf.while after region missing scf.yield";
+            }
+            carried.assign(yield.getOperands().begin(),
+                           yield.getOperands().end());
+            ++trips;
+          }
         }
       })
       .template Case<func::CallOp>([&](func::CallOp call) -> LogicalResult {
