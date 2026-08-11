@@ -475,11 +475,11 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
 }
 
 std::optional<func::FuncOp> QCOProgram::entryFunc() const {
-  ModuleOp module = mod();
-  if (auto main = module.lookupSymbol<func::FuncOp>("main")) {
+  ModuleOp moduleOp = mod();
+  if (auto main = moduleOp.lookupSymbol<func::FuncOp>("main")) {
     return main;
   }
-  auto funcs = module.getBody()->getOps<func::FuncOp>();
+  auto funcs = moduleOp.getBody()->getOps<func::FuncOp>();
   if (funcs.empty()) {
     return std::nullopt;
   }
