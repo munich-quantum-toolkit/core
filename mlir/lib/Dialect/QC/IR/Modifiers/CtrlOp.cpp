@@ -168,21 +168,6 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
-static void
-buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
-                  const size_t numBlockArgs,
-                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
-  auto& block = odsState.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < numBlockArgs; ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  emitBody(odsBuilder, block);
-}
-
 size_t CtrlOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -195,11 +180,12 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, controls, targets);
-  buildModifierBody(odsBuilder, odsState, targets.size(),
-                    [&](OpBuilder& builder, Block& block) {
-                      body(block.getArguments());
-                      YieldOp::create(builder, odsState.location);
-                    });
+  utils::buildModifierBody<QubitType>(odsBuilder, odsState, targets.size(),
+                                      [&](OpBuilder& builder, Block& block) {
+                                        body(block.getArguments());
+                                        YieldOp::create(builder,
+                                                        odsState.location);
+                                      });
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -212,11 +198,11 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
       odsState.getOrAddProperties<CtrlOp::Properties>()
           .operandSegmentSizes.begin());
   odsState.addRegion();
-  buildModifierBody(odsBuilder, odsState, 1,
-                    [&](OpBuilder& builder, Block& block) {
-                      bodyBuilder(block.getArgument(0));
-                      YieldOp::create(builder, odsState.location);
-                    });
+  utils::buildModifierBody<QubitType>(
+      odsBuilder, odsState, 1, [&](OpBuilder& builder, Block& block) {
+        bodyBuilder(block.getArgument(0));
+        YieldOp::create(builder, odsState.location);
+      });
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,

@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/BitVector.h>
 #include <llvm/ADT/STLExtras.h>
@@ -35,15 +35,6 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-
-static bool isLinearType(Type type) {
-  if (isa<QubitType>(type)) {
-    return true;
-  }
-  const auto tensorType = dyn_cast<RankedTensorType>(type);
-  return tensorType && tensorType.getRank() == 1 &&
-         isa<QubitType>(tensorType.getElementType());
-}
 
 void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  Value condition, ValueRange qubits,
@@ -404,7 +395,7 @@ LogicalResult IfOp::verify() {
                        "number of input qubits.");
   }
   for (Type type : getClassicalResults().getTypes()) {
-    if (isLinearType(type)) {
+    if (isLinearQubitType(type)) {
       return emitOpError("classical results must not use QCO linear types");
     }
   }
