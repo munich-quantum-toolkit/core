@@ -15,7 +15,6 @@
 #include "mlir/Dialect/Utils/UGateUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>

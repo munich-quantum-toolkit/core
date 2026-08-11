@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
