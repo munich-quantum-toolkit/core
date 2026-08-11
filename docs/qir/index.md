@@ -1,3 +1,11 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+mystnb:
+  number_source_lines: true
+---
+
 # QIR Support in the MQT
 
 The [_Quantum Intermediate Representation_ (QIR)](https://www.qir-alliance.org)
@@ -50,6 +58,42 @@ runner also supports repeated, reproducible execution:
   --entry-point=bell_entry --shots=1024 --seed=7 bell.ll
 ```
 
+### Executing Generated QIR from Python
+
+The [QIR-Runner](https://github.com/qir-alliance/qir-runner) project provides
+the `qir-runner` command-line executable and the `qirrunner` Python package. The
+Python package can execute statically allocated Base Profile bitcode without an
+intermediate file. Install it with `uv pip install qirrunner`, then pass the
+result of {py:meth}`~mqt.core.mlir.QIRProgram.to_bitcode` to `run_bytes`:
+
+```{code-cell} ipython3
+from qirrunner import OutputHandler, run_bytes
+
+from mqt.core.mlir import OutputFormat, compile_program
+
+bell_qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+ctrl @ x q[0], q[1];
+bit[2] c = measure q;
+"""
+
+qir = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)
+output = OutputHandler()
+run_bytes(qir.to_bitcode(), shots=4, rng_seed=7, output_fn=output.handle)
+
+# Display the records produced for the first shot.
+print(output.get_output().split("END", maxsplit=1)[0] + "END")
+```
+
+This path is tested for Base Profile programs with static qubit and result
+allocation, including dedicated one- and two-control QIS functions and the
+generic QIR controlled specialization used for three or more controls.
+QIR-Runner does not currently implement every QIR 2.1 dynamic resource
+management function supported by the MQT runner and DDSIM QDMI device; use those
+MQT runtimes for dynamically allocated programs.
+
 QIR entry points take no arguments and return an `i64` exit code. Runtime and
 QIS declarations are checked before JIT compilation; a mismatched or unsupported
 declaration is reported with its actual and accepted LLVM function types.
@@ -62,13 +106,13 @@ MQT Core provides dedicated QIS functions for variants with one or two control
 qubits, using the `c<gate>` and `cc<gate>` names. Operations with three or more
 controls use generic `__ctl` and `__ctladj` specializations. The control qubits
 are passed in an Array; parameterized and multi-target gates pass their original
-arguments in a Tuple, following the qir-runner calling convention. MQT accepts
+arguments in a Tuple, following the QIR-Runner calling convention. MQT accepts
 these functions as implementation-specific extensions to the QIR 2.1 Base and
 Adaptive profiles, so the entry point keeps its `base_profile` or
 `adaptive_profile` attribute.
 
 MQT's two-angle phased-X rotation gate uses the `prx` QIS stem. The incompatible
-qir-runner Pauli-axis operation named `r` is not part of MQT's QIS.
+QIR-Runner Pauli-axis operation named `r` is not part of MQT's QIS.
 
 The runner prints the program's outputs to the console in one of the two
 [QIR Output Schemas][output-schemas] (Labeled or Ordered): the two `HEADER`
