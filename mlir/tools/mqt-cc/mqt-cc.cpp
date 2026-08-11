@@ -36,6 +36,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/Path.h>
@@ -449,7 +450,14 @@ static int runCompiler(int argc, char** argv) {
       return 1;
     }
     const auto device = fomac::Session::openDevice(qdmiDevice);
-    compilerTarget.emplace(compilerTargetFromDevice(device));
+    auto target = compilerTargetFromDevice(device);
+    if (!target) {
+      llvm::errs() << "Failed to create compiler target from QDMI device '"
+                   << qdmiDevice << "': " << llvm::toString(target.takeError())
+                   << '\n';
+      return 1;
+    }
+    compilerTarget.emplace(std::move(*target));
   }
 
   // Set up MLIR context with all required dialects
