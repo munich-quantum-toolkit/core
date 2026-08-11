@@ -26,6 +26,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -550,6 +551,58 @@ TEST_F(QCTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameter(0), powOp.getExponent());
   ASSERT_EQ(unitary.getParameters().size(), 1);
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
+}
+
+TEST_F(QCTest, PositiveIntegralPowUCanonicalizes) {
+  for (const double exponent : {2.0, 3.0, 17.0}) {
+    auto program = QCProgramBuilder::build(context.get(), [&](auto& builder) {
+      auto q = builder.allocQubitRegister(1);
+      builder.pow(exponent, q[0],
+                  [&](Value arg) { builder.u(0.1, 0.2, 0.3, arg); });
+      return builder.measure(q[0]);
+    });
+    ASSERT_TRUE(program);
+
+    ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+    size_t powCount = 0;
+    program->walk([&](PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, 0U);
+  }
+}
+
+TEST_F(QCTest, PowUWithDynamicParameterDoesNotCanonicalize) {
+  auto program = QCProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto q = builder.allocQubitRegister(1);
+    builder.pow(2.0, q[0], [&](Value arg) { builder.u(0.1, 0.2, 0.3, arg); });
+    return builder.measure(q[0]);
+  });
+  ASSERT_TRUE(program);
+
+  auto funcOp = cast<func::FuncOp>(program->getBody()->front());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(
+      0, Float64Type::get(context.get()), {}, funcOp.getLoc())));
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto uOp = *powOp.getBody()->getOps<UOp>().begin();
+  uOp.getThetaMutable().assign(funcOp.getArgument(0));
+
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  size_t powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1U);
+}
+
+TEST_F(QCTest, FractionalPowUDoesNotCanonicalize) {
+  auto program = QCProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto q = builder.allocQubitRegister(1);
+    builder.pow(0.5, q[0], [&](Value arg) { builder.u(0.1, 0.2, 0.3, arg); });
+    return builder.measure(q[0]);
+  });
+  ASSERT_TRUE(program);
+
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  size_t powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1U);
 }
 
 TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {

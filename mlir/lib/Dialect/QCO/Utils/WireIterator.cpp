@@ -17,6 +17,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
@@ -28,8 +29,8 @@
 namespace mlir::qco {
 
 bool WireIterator::isSinkLikeOperation(Operation* op) {
-  return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::ConditionOp,
-             scf::YieldOp>(op);
+  return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::ConditionOp, scf::YieldOp,
+             func::ReturnOp>(op);
 }
 
 bool WireIterator::isSourceLikeOperation(Operation* op) {
