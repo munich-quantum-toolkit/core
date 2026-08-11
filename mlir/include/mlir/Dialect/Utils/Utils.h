@@ -13,6 +13,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -447,7 +448,12 @@ inline void inlineModifierBody(Operation* op, Block& body,
                                ValueRange blockArgReplacements,
                                RewriterBase& rewriter) {
   auto* terminator = body.getTerminator();
-  const SmallVector<Value> results(terminator->getOperands());
+  // Yielded block arguments are substituted when the body is inlined, so
+  // resolve them to their replacements before they are erased.
+  const auto results =
+      llvm::map_to_vector(terminator->getOperands(), [&](Value yielded) {
+        return getValueFromBlockArgument(yielded, blockArgReplacements);
+      });
   rewriter.inlineBlockBefore(&body, op, blockArgReplacements);
   rewriter.eraseOp(terminator);
   rewriter.replaceOp(op, results);
