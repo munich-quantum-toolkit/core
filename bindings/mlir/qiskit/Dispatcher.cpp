@@ -73,6 +73,27 @@ static_assert(matchesAdapterVersion(
 static_assert(!matchesAdapterVersion(
     {.major = 2U, .minor = 6U, .patch = 1U, .text = "2.6.1"}, 2U, 6U, 2U));
 
+using AdapterFactory = std::unique_ptr<Adapter> (*)();
+
+[[nodiscard]] AdapterFactory adapterFactory(const InstalledVersion& version) {
+#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
+  if (version.text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
+    return createCandidateAdapter;
+  }
+#endif
+#define MQT_QISKIT_FACTORY_IMPL(suffix) createAdapter##suffix
+#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimumPatch,   \
+                           minimum, range)                                     \
+  if (matchesAdapterVersion(version, adapterMajor##U, adapterMinor##U,         \
+                            minimumPatch##U)) {                                \
+    return MQT_QISKIT_FACTORY_IMPL(suffix);                                    \
+  }
+#include "SupportedAdapters.inc"
+#undef MQT_QISKIT_ADAPTER
+#undef MQT_QISKIT_FACTORY_IMPL
+  return nullptr;
+}
+
 } // namespace
 
 InstalledVersion inspectInstalledVersion() {
@@ -130,47 +151,18 @@ InstalledVersion inspectInstalledVersion() {
 }
 
 bool hasSupportedAdapter(const InstalledVersion& version) {
-#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
-  if (version.text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
-    return true;
-  }
-#endif
-  bool supported = false;
-#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimumPatch,   \
-                           minimum, range)                                     \
-  supported =                                                                  \
-      supported || matchesAdapterVersion(version, adapterMajor##U,             \
-                                         adapterMinor##U, minimumPatch##U);
-#include "SupportedAdapters.inc"
-#undef MQT_QISKIT_ADAPTER
-  return supported;
+  return adapterFactory(version) != nullptr;
 }
 
 std::unique_ptr<Adapter> selectAdapter() {
   const auto version = inspectInstalledVersion();
-#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
-  if (version.text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
-    return createCandidateAdapter();
-  }
-#endif
-#define MQT_QISKIT_CREATE_ADAPTER_IMPL(suffix) createAdapter##suffix()
-#define MQT_QISKIT_ADAPTER(adapterMajor, adapterMinor, suffix, minimumPatch,   \
-                           minimum, range)                                     \
-  if (matchesAdapterVersion(version, adapterMajor##U, adapterMinor##U,         \
-                            minimumPatch##U)) {                                \
-    return MQT_QISKIT_CREATE_ADAPTER_IMPL(suffix);                             \
-  }
-#include "SupportedAdapters.inc"
-#undef MQT_QISKIT_ADAPTER
-#undef MQT_QISKIT_CREATE_ADAPTER_IMPL
-  if (!hasSupportedAdapter(version)) {
-    throw std::runtime_error(
-        "Qiskit compiler bridge unavailable for installed version '" +
-        version.text + "'; supported versions: " + supportedVersionRanges() +
-        " (final releases)");
+  if (const auto factory = adapterFactory(version); factory != nullptr) {
+    return factory();
   }
   throw std::runtime_error(
-      "Qiskit compiler bridge adapter registry is inconsistent");
+      "Qiskit compiler bridge unavailable for installed version '" +
+      version.text + "'; supported versions: " + supportedVersionRanges() +
+      " (final releases)");
 }
 
 } // namespace mqt::bindings::qiskit

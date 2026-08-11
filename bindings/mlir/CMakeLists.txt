@@ -18,6 +18,18 @@ if(NOT TARGET ${TARGET_NAME})
   file(STRINGS qiskit/SupportedAdapters.inc qiskit_adapter_registrations
        REGEX "^MQT_QISKIT_ADAPTER\\(")
   set(qiskit_adapter_objects)
+
+  function(mqt_add_qiskit_adapter target_name source_file include_directory)
+    add_library(${target_name} OBJECT ${source_file})
+    target_compile_features(${target_name} PRIVATE cxx_std_20)
+    target_compile_definitions(${target_name} PRIVATE QISKIT_PYTHON_EXTENSION
+                                                      Py_LIMITED_API=0x030C0000)
+    target_include_directories(${target_name} SYSTEM PRIVATE ${include_directory})
+    target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
+                                                 ${MQT_CORE_PYTHON_SABI_TARGET})
+    set_target_properties(${target_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endfunction()
+
   foreach(registration IN LISTS qiskit_adapter_registrations)
     string(
       REGEX
@@ -31,16 +43,8 @@ if(NOT TARGET ${TARGET_NAME})
     set(adapter_suffix "${CMAKE_MATCH_3}")
     set(adapter_release "${CMAKE_MATCH_5}")
     set(adapter_target "${TARGET_NAME}-qiskit-${adapter_suffix}")
-    add_library(${adapter_target} OBJECT qiskit/Adapter${adapter_suffix}.cpp)
-    target_compile_features(${adapter_target} PRIVATE cxx_std_20)
-    target_compile_definitions(${adapter_target} PRIVATE QISKIT_PYTHON_EXTENSION
-                                                         Py_LIMITED_API=0x030C0000)
-    target_include_directories(
-      ${adapter_target} SYSTEM
-      PRIVATE ${PROJECT_SOURCE_DIR}/vendor/qiskit-c-api/${adapter_release}/include)
-    target_link_libraries(${adapter_target} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
-                                                    ${MQT_CORE_PYTHON_SABI_TARGET})
-    set_target_properties(${adapter_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    mqt_add_qiskit_adapter(${adapter_target} qiskit/Adapter${adapter_suffix}.cpp
+                           ${PROJECT_SOURCE_DIR}/vendor/qiskit-c-api/${adapter_release}/include)
     list(APPEND qiskit_adapter_objects $<TARGET_OBJECTS:${adapter_target}>)
   endforeach()
 
@@ -66,16 +70,9 @@ if(NOT TARGET ${TARGET_NAME})
     configure_file(qiskit/AdapterMinor.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/AdapterCandidate.cpp
                    @ONLY)
     set(candidate_target "${TARGET_NAME}-qiskit-candidate")
-    add_library(${candidate_target} OBJECT ${CMAKE_CURRENT_BINARY_DIR}/AdapterCandidate.cpp)
-    target_compile_features(${candidate_target} PRIVATE cxx_std_20)
-    target_compile_definitions(${candidate_target} PRIVATE QISKIT_PYTHON_EXTENSION
-                                                           Py_LIMITED_API=0x030C0000)
-    target_include_directories(${candidate_target} SYSTEM
-                               PRIVATE ${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE})
+    mqt_add_qiskit_adapter(${candidate_target} ${CMAKE_CURRENT_BINARY_DIR}/AdapterCandidate.cpp
+                           ${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE})
     target_include_directories(${candidate_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/qiskit)
-    target_link_libraries(${candidate_target} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
-                                                      ${MQT_CORE_PYTHON_SABI_TARGET})
-    set_target_properties(${candidate_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
     list(APPEND qiskit_adapter_objects $<TARGET_OBJECTS:${candidate_target}>)
   endif()
 
