@@ -31,9 +31,6 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
 
   LogicalResult matchAndRewrite(SinkOp op,
                                 PatternRewriter& rewriter) const override {
-    if (!op.getQubit().hasOneUse()) {
-      return failure();
-    }
     auto* defOp = op.getQubit().getDefiningOp();
     if (!isa_and_nonnull<AllocOp, StaticOp>(defOp)) {
       return failure();

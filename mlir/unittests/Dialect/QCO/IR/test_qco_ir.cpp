@@ -167,13 +167,41 @@ TEST_F(QCOTest, CleanupPreservesReturnedStaticQubit) {
       context.get(), [&](auto& builder) { return builder.staticQubit(0); });
   ASSERT_TRUE(module);
 
+  auto mainFunc = *module->getOps<func::FuncOp>().begin();
+  auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  ASSERT_EQ(returnOp.getNumOperands(), 1U);
+  const auto returnedQubit = returnOp.getOperand(0);
+  EXPECT_TRUE(returnedQubit.getDefiningOp<StaticOp>());
+  EXPECT_TRUE(returnedQubit.hasOneUse());
+  EXPECT_EQ(*returnedQubit.user_begin(), returnOp.getOperation());
+  EXPECT_TRUE(mainFunc.getBody().getOps<SinkOp>().empty());
+
   ASSERT_TRUE(runQCOCleanupPipeline(*module).succeeded());
   EXPECT_TRUE(verify(*module).succeeded());
+
+  returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<StaticOp>());
+}
+
+TEST_F(QCOTest, CleanupPreservesReturnedQubitTensor) {
+  auto module = QCOProgramBuilder::build(
+      context.get(), [&](auto& builder) { return builder.qtensorAlloc(2); });
+  ASSERT_TRUE(module);
 
   auto mainFunc = *module->getOps<func::FuncOp>().begin();
   auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
   ASSERT_EQ(returnOp.getNumOperands(), 1U);
-  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<StaticOp>());
+  const auto returnedTensor = returnOp.getOperand(0);
+  EXPECT_TRUE(returnedTensor.getDefiningOp<qtensor::AllocOp>());
+  EXPECT_TRUE(returnedTensor.hasOneUse());
+  EXPECT_EQ(*returnedTensor.user_begin(), returnOp.getOperation());
+  EXPECT_TRUE(mainFunc.getBody().getOps<qtensor::DeallocOp>().empty());
+
+  ASSERT_TRUE(runQCOCleanupPipeline(*module).succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+
+  returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<qtensor::AllocOp>());
 }
 
 TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
