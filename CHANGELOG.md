@@ -47,11 +47,12 @@ releases may include breaking changes.
   [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
   [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of QCO functions,
-  including static unitaries, mid-circuit `measure`/`reset`, concrete
-  `if`/`index_switch`/`scf.for`/`scf.while`/`func.call`, richer classical SSA,
-  dynamic qubit and qtensor allocation, qtensor linear ownership, dense `k>3`
-  wire embedding, multi-shot `sample` / `sampleWithClassics`, `memref` classical
-  registers, and Python wrappers ([#1915], [#1973]) ([**@simon1hofmann**])
+  including static unitaries, mid-circuit `measure`/`reset`, concrete structured
+  and multi-block control flow, wider classical SSA and `memref` values,
+  symbolic argument bindings, dynamic qubit and qtensor allocation, qtensor
+  ownership and deallocation, direct local-matrix DD embedding, multi-shot
+  `sample` / `sampleWithClassics`, and Python wrappers ([#1915], [#1973])
+  ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])

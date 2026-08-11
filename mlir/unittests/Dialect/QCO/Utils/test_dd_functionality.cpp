@@ -2266,7 +2266,7 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
   ASSERT_TRUE(badSwitch);
   expectSimulateFail(mainFunc(*badSwitch), 1);
 
-  // Declaration without a body (covers callee lookup / single-block checks).
+  // Declaration without a body covers callee lookup and body validation.
   auto missingBody = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func private @missing(%q: !qco.qubit) -> !qco.qubit

@@ -211,7 +211,7 @@ sampleWithClassics(func::FuncOp func, dd::Package& dd, size_t shots,
                    const DDBindings& bindings = DDBindings());
 
 /// @copydoc sampleWithClassics(func::FuncOp, dd::Package&, size_t,
-/// std::mt19937_64&)
+/// std::mt19937_64&, const DDBindings&)
 /// Starts from @p in; one reference is consumed.
 FailureOr<SampleResult>
 sampleWithClassics(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
