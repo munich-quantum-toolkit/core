@@ -83,27 +83,35 @@ protected:
     pm.addPass(createCanonicalizerPass());
     return pm.run(program);
   }
+
+  static Value outcomeScaledAngle(QCOProgramBuilder& builder, Value outcome,
+                                  const double theta, const double trueScale,
+                                  const double falseScale) {
+    const Value thetaValue = builder.floatConstant(theta);
+    const Value trueValue = builder.floatConstant(trueScale);
+    const Value falseValue = builder.floatConstant(falseScale);
+    const Value scale = arith::SelectOp::create(builder, builder.getLoc(),
+                                                outcome, trueValue, falseValue);
+    return arith::MulFOp::create(builder, builder.getLoc(), thetaValue, scale);
+  }
 };
 
 class QCOReplaceClassicalControlsRZZTest
     : public QCOReplaceClassicalControlsTest,
       public testing::WithParamInterface<size_t> {};
 
-[[nodiscard]] static std::complex<double>
-phaseFromExponent(const double exponent) {
-  return std::polar(1.0, exponent);
-}
-
-static void expectSamePhase(const std::complex<double>& actual,
-                            const std::complex<double>& expected) {
-  EXPECT_NEAR(actual.real(), expected.real(), 1e-12);
-  EXPECT_NEAR(actual.imag(), expected.imag(), 1e-12);
-}
-
 } // namespace
 
 TEST(QCOClassicalControlPhaseIdentityTest,
      controlledRZAndRZZRewritesPreserveBasisPhases) {
+  const auto expectSamePhase = [](const double actualExponent,
+                                  const double expectedExponent) {
+    const auto actual = std::polar(1.0, actualExponent);
+    const auto expected = std::polar(1.0, expectedExponent);
+    EXPECT_NEAR(actual.real(), expected.real(), 1e-12);
+    EXPECT_NEAR(actual.imag(), expected.imag(), 1e-12);
+  };
+
   constexpr std::array angles{0.125, -0.789, 2.3};
   for (const size_t numControls : {1U, 2U, 3U, 5U}) {
     const uint64_t controlMask = (uint64_t{1} << numControls) - 1U;
@@ -117,43 +125,31 @@ TEST(QCOClassicalControlPhaseIdentityTest,
         const bool targetA = (basis & (uint64_t{1} << numControls)) != 0;
         const bool targetB = (basis & (uint64_t{1} << (numControls + 1U))) != 0;
 
-        const double controlledRZExponent =
-            controlsActive ? (targetA ? theta / 2.0 : -theta / 2.0) : 0.0;
+        double controlledRZExponent = 0.0;
         double rewrittenRZExponent = 0.0;
         if (controlsActive) {
-          rewrittenRZExponent -= theta / 2.0;
-          if (targetA) {
-            rewrittenRZExponent += theta;
-          }
+          controlledRZExponent = targetA ? theta / 2.0 : -theta / 2.0;
+          rewrittenRZExponent = targetA ? theta / 2.0 : -theta / 2.0;
         }
-        expectSamePhase(phaseFromExponent(rewrittenRZExponent),
-                        phaseFromExponent(controlledRZExponent));
+        expectSamePhase(rewrittenRZExponent, controlledRZExponent);
 
         const double zA = targetA ? -1.0 : 1.0;
         const double zB = targetB ? -1.0 : 1.0;
         const double controlledRZZExponent =
-            controlsActive ? -theta * zA * zB / 2.0 : 0.0;
-        double rewrittenRZZExponent = 0.0;
+            controlsActive ? (-theta * zA * zB / 2.0) : 0.0;
+        double oneMeasuredTargetExponent = 0.0;
         if (controlsActive) {
-          rewrittenRZZExponent -= theta / 2.0;
-          if (targetA) {
-            rewrittenRZZExponent += theta;
-          }
-          if (targetB) {
-            rewrittenRZZExponent += theta;
-          }
-          if (targetA && targetB) {
-            rewrittenRZZExponent -= 2.0 * theta;
-          }
+          const double selectedAngle = targetA ? -theta : theta;
+          oneMeasuredTargetExponent = -selectedAngle * zB / 2.0;
         }
-        expectSamePhase(phaseFromExponent(rewrittenRZZExponent),
-                        phaseFromExponent(controlledRZZExponent));
+        expectSamePhase(oneMeasuredTargetExponent, controlledRZZExponent);
 
-        const double twoMeasuredTargetsExponent =
-            controlsActive ? -theta / 2.0 + (targetA != targetB ? theta : 0.0)
-                           : 0.0;
-        expectSamePhase(phaseFromExponent(twoMeasuredTargetsExponent),
-                        phaseFromExponent(controlledRZZExponent));
+        double twoMeasuredTargetsExponent = 0.0;
+        if (controlsActive) {
+          twoMeasuredTargetsExponent =
+              targetA != targetB ? theta / 2.0 : -theta / 2.0;
+        }
+        expectSamePhase(twoMeasuredTargetsExponent, controlledRZZExponent);
       }
     }
   }
@@ -606,7 +602,7 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapPhase) {
 }
 
 TEST_F(QCOReplaceClassicalControlsTest,
-       replaceClassicalControlsSwapRZWithCorrection) {
+       replaceMeasuredRZTargetWithSelectedPhase) {
   constexpr double theta = 0.789;
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -630,10 +626,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceInitialTargetOutcome;
   std::tie(referenceTarget, referenceInitialTargetOutcome) =
       referenceBuilder.measure(referenceTarget);
-  referenceControl = referenceBuilder.p(-theta / 2.0, referenceControl);
-  referenceControl = referenceBuilder.qcoIf(
-      referenceInitialTargetOutcome, referenceControl,
-      [&](Value qubit) -> Value { return referenceBuilder.p(theta, qubit); });
+  const Value selectedPhase = outcomeScaledAngle(
+      referenceBuilder, referenceInitialTargetOutcome, theta, 0.5, -0.5);
+  referenceControl = referenceBuilder.p(selectedPhase, referenceControl);
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
@@ -648,7 +643,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
 }
 
 TEST_F(QCOReplaceClassicalControlsTest,
-       replaceClassicalControlsSwapMultiControlledRZWithCorrection) {
+       replaceMeasuredRZTargetWithMultiControlPhase) {
   constexpr double theta = 0.789;
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
@@ -681,18 +676,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   }
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
-  std::tie(r[1], r[0]) = referenceBuilder.cp(-theta / 2.0, r[1], r[0]);
-  auto conditionalControls =
-      referenceBuilder.qcoIf(referenceTargetOutcome, ValueRange{r[1], r[0]},
-                             [&](ValueRange qubits) -> SmallVector<Value> {
-                               Value c1 = qubits[0];
-                               Value c0 = qubits[1];
-                               std::tie(c1, c0) =
-                                   referenceBuilder.cp(theta, c1, c0);
-                               return {c1, c0};
-                             });
-  r[1] = conditionalControls[0];
-  r[0] = conditionalControls[1];
+  const Value selectedPhase = outcomeScaledAngle(
+      referenceBuilder, referenceTargetOutcome, theta, 0.5, -0.5);
+  std::tie(r[0], r[1]) = referenceBuilder.cp(selectedPhase, r[0], r[1]);
   Value referenceControl0Outcome;
   std::tie(r[0], referenceControl0Outcome) = referenceBuilder.measure(r[0]);
   Value referenceControl1Outcome;
@@ -709,8 +695,58 @@ TEST_F(QCOReplaceClassicalControlsTest,
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
 }
 
+TEST_F(QCOReplaceClassicalControlsTest,
+       removesRZWhenControlAndTargetAreMeasured) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type(),
+       programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target = programBuilder.h(programBuilder.allocQubit());
+  Value controlOutcome;
+  Value targetOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  std::tie(target, targetOutcome) = programBuilder.measure(target);
+  std::tie(control, target) = programBuilder.crz(0.789, control, target);
+  Value outputControlOutcome;
+  Value outputTargetOutcome;
+  std::tie(control, outputControlOutcome) = programBuilder.measure(control);
+  std::tie(target, outputTargetOutcome) = programBuilder.measure(target);
+  programBuilder.sink(control);
+  programBuilder.sink(target);
+  program =
+      programBuilder.finalize({controlOutcome, targetOutcome,
+                               outputControlOutcome, outputTargetOutcome});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type(),
+       referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget = referenceBuilder.h(referenceBuilder.allocQubit());
+  Value referenceControlOutcome;
+  Value referenceTargetOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  std::tie(referenceTarget, referenceTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  Value referenceOutputControlOutcome;
+  Value referenceOutputTargetOutcome;
+  std::tie(referenceControl, referenceOutputControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  std::tie(referenceTarget, referenceOutputTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTarget);
+  reference = referenceBuilder.finalize(
+      {referenceControlOutcome, referenceTargetOutcome,
+       referenceOutputControlOutcome, referenceOutputTargetOutcome});
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(*reference).succeeded());
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
+}
+
 TEST_P(QCOReplaceClassicalControlsRZZTest,
-       replaceMeasuredRZZTargetWithCorrection) {
+       replaceMeasuredRZZTargetWithSelectedAngle) {
   constexpr double theta = 0.789;
   const size_t measuredTargetIndex = GetParam();
   const size_t otherTargetIndex = 1U - measuredTargetIndex;
@@ -750,22 +786,11 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
   std::tie(referenceTargets[measuredTargetIndex],
            referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(referenceTargets[measuredTargetIndex]);
-  referenceControl = referenceBuilder.p(-theta / 2.0, referenceControl);
+  const Value selectedAngle = outcomeScaledAngle(
+      referenceBuilder, referenceMeasuredTargetOutcome, theta, -1.0, 1.0);
   std::tie(referenceControl, referenceTargets[otherTargetIndex]) =
-      referenceBuilder.cp(theta, referenceControl,
-                          referenceTargets[otherTargetIndex]);
-  auto conditionalQubits = referenceBuilder.qcoIf(
-      referenceMeasuredTargetOutcome,
-      ValueRange{referenceControl, referenceTargets[otherTargetIndex]},
-      [&](ValueRange qubits) -> SmallVector<Value> {
-        Value conditionalControl = referenceBuilder.p(theta, qubits[0]);
-        Value conditionalTarget = qubits[1];
-        std::tie(conditionalControl, conditionalTarget) = referenceBuilder.cp(
-            -2.0 * theta, conditionalControl, conditionalTarget);
-        return {conditionalControl, conditionalTarget};
-      });
-  referenceControl = conditionalQubits[0];
-  referenceTargets[otherTargetIndex] = conditionalQubits[1];
+      referenceBuilder.crz(selectedAngle, referenceControl,
+                           referenceTargets[otherTargetIndex]);
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
@@ -885,21 +910,16 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceTargetOutcome;
   std::tie(referenceTarget0, referenceTargetOutcome) =
       referenceBuilder.measure(referenceTarget0);
-  auto referenceTargets = referenceBuilder.qcoIf(
-      referenceControlOutcome, ValueRange{referenceTarget0, referenceTarget1},
-      [&](ValueRange targets) -> SmallVector<Value> {
-        Value updatedTarget = referenceBuilder.rz(theta, targets[1]);
-        updatedTarget = referenceBuilder.qcoIf(
-            referenceTargetOutcome, updatedTarget, [&](Value target) {
-              return referenceBuilder.rz(-2.0 * theta, target);
-            });
-        return {targets[0], updatedTarget};
-      });
+  const Value selectedAngle = outcomeScaledAngle(
+      referenceBuilder, referenceTargetOutcome, theta, -1.0, 1.0);
+  referenceTarget1 = referenceBuilder.qcoIf(
+      referenceControlOutcome, referenceTarget1,
+      [&](Value target) { return referenceBuilder.rz(selectedAngle, target); });
   Value referenceOtherTargetOutcome;
   std::tie(referenceTarget1, referenceOtherTargetOutcome) =
-      referenceBuilder.measure(referenceTargets[1]);
+      referenceBuilder.measure(referenceTarget1);
   referenceBuilder.sink(referenceControl);
-  referenceBuilder.sink(referenceTargets[0]);
+  referenceBuilder.sink(referenceTarget0);
   referenceBuilder.sink(referenceTarget1);
   reference = referenceBuilder.finalize({referenceControlOutcome,
                                          referenceTargetOutcome,
@@ -943,13 +963,12 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
       referenceBuilder.measure(referenceTarget0);
   std::tie(referenceTarget1, referenceOutcome1) =
       referenceBuilder.measure(referenceTarget1);
-  referenceControl = referenceBuilder.p(-theta / 2.0, referenceControl);
   const Value outcomesDiffer =
       arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
                             referenceOutcome0, referenceOutcome1);
-  referenceControl = referenceBuilder.qcoIf(
-      outcomesDiffer, referenceControl,
-      [&](Value qubit) { return referenceBuilder.p(theta, qubit); });
+  const Value selectedPhase =
+      outcomeScaledAngle(referenceBuilder, outcomesDiffer, theta, 0.5, -0.5);
+  referenceControl = referenceBuilder.p(selectedPhase, referenceControl);
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
@@ -1106,27 +1125,13 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceMeasuredTargetOutcome;
   std::tie(r[2], referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(r[2]);
-  std::tie(r[0], r[1]) = referenceBuilder.cp(-theta / 2.0, r[0], r[1]);
-  SmallVector<Value> referenceControls;
+  const Value selectedAngle = outcomeScaledAngle(
+      referenceBuilder, referenceMeasuredTargetOutcome, theta, -1.0, 1.0);
+  ValueRange referenceControls;
   std::tie(referenceControls, r[3]) =
-      referenceBuilder.mcp(theta, {r[0], r[1]}, r[3]);
+      referenceBuilder.mcrz(selectedAngle, {r[0], r[1]}, r[3]);
   r[0] = referenceControls[0];
   r[1] = referenceControls[1];
-  auto conditionalQubits = referenceBuilder.qcoIf(
-      referenceMeasuredTargetOutcome, ValueRange{r[0], r[1], r[3]},
-      [&](ValueRange qubits) -> SmallVector<Value> {
-        Value c0 = qubits[0];
-        Value c1 = qubits[1];
-        std::tie(c0, c1) = referenceBuilder.cp(theta, c0, c1);
-        Value target = qubits[2];
-        SmallVector<Value> conditionalControls;
-        std::tie(conditionalControls, target) =
-            referenceBuilder.mcp(-2.0 * theta, {c0, c1}, target);
-        return {conditionalControls[0], conditionalControls[1], target};
-      });
-  r[0] = conditionalQubits[0];
-  r[1] = conditionalQubits[1];
-  r[3] = conditionalQubits[2];
   Value referenceControlOutcome;
   std::tie(r[0], referenceControlOutcome) = referenceBuilder.measure(r[0]);
   Value referenceOtherTargetOutcome;
@@ -1185,30 +1190,19 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(r[0], referenceControlOutcome) = referenceBuilder.measure(r[0]);
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
+  const Value selectedAngle = outcomeScaledAngle(
+      referenceBuilder, referenceTargetOutcome, theta, -1.0, 1.0);
   auto conditionalQubits = referenceBuilder.qcoIf(
-      referenceControlOutcome, ValueRange{r[1], r[2], r[3]},
+      referenceControlOutcome, ValueRange{r[1], r[3]},
       [&](ValueRange qubits) -> SmallVector<Value> {
-        Value quantumControl = referenceBuilder.p(-theta / 2.0, qubits[0]);
-        Value otherTarget = qubits[2];
+        Value quantumControl = qubits[0];
+        Value otherTarget = qubits[1];
         std::tie(quantumControl, otherTarget) =
-            referenceBuilder.cp(theta, quantumControl, otherTarget);
-        auto targetConditionalQubits = referenceBuilder.qcoIf(
-            referenceTargetOutcome, ValueRange{quantumControl, otherTarget},
-            [&](ValueRange targetQubits) -> SmallVector<Value> {
-              Value conditionalControl =
-                  referenceBuilder.p(theta, targetQubits[0]);
-              Value conditionalTarget = targetQubits[1];
-              std::tie(conditionalControl, conditionalTarget) =
-                  referenceBuilder.cp(-2.0 * theta, conditionalControl,
-                                      conditionalTarget);
-              return {conditionalControl, conditionalTarget};
-            });
-        return {targetConditionalQubits[0], qubits[1],
-                targetConditionalQubits[1]};
+            referenceBuilder.crz(selectedAngle, quantumControl, otherTarget);
+        return {quantumControl, otherTarget};
       });
   r[1] = conditionalQubits[0];
-  r[2] = conditionalQubits[1];
-  r[3] = conditionalQubits[2];
+  r[3] = conditionalQubits[1];
   Value referenceQuantumControlOutcome;
   std::tie(r[1], referenceQuantumControlOutcome) =
       referenceBuilder.measure(r[1]);
