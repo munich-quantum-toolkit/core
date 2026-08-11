@@ -228,6 +228,42 @@ TEST_P(WireIteratorTest, Traversal) {
   ASSERT_EQ(recIt.qubit(), iterQ00);
 }
 
+TEST_P(WireIteratorTest, FunctionReturnTerminatesTraversal) {
+  const bool isDynamic = GetParam();
+  Value source;
+  Value output;
+  auto module =
+      qco::QCOProgramBuilder::build(context.get(), [&](auto& builder) -> Value {
+        source = isDynamic ? builder.allocQubit() : builder.staticQubit(0);
+        output = builder.h(source);
+        return output;
+      });
+  ASSERT_TRUE(module);
+
+  qco::WireIterator it(source);
+  ASSERT_EQ(it.operation(), source.getDefiningOp());
+  ASSERT_EQ(it.qubit(), source);
+
+  ++it;
+  ASSERT_EQ(it.operation(), output.getDefiningOp());
+  ASSERT_EQ(it.qubit(), output);
+
+  ++it;
+  ASSERT_TRUE(isa<func::ReturnOp>(it.operation()));
+  ASSERT_EQ(it.qubit(), nullptr);
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+
+  --it;
+  ASSERT_TRUE(isa<func::ReturnOp>(it.operation()));
+  ASSERT_EQ(it.qubit(), nullptr);
+
+  --it;
+  ASSERT_EQ(it.operation(), output.getDefiningOp());
+  ASSERT_EQ(it.qubit(), output);
+}
+
 INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),
                          [](const ::testing::TestParamInfo<bool>& info) {
                            return info.param ? "Dynamic" : "Static";

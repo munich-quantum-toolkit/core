@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -1445,6 +1446,19 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
       insertionBlock != &mainFunc.getBody().front()) {
     llvm::reportFatalUsageError(
         "Insertion point is not in entry block of main function");
+  }
+
+  // Returning a linear value is its final consumption. Remove such values from
+  // the live sets before automatically disposing of everything left over.
+  for (const auto returnValue : returnValues) {
+    const auto type = returnValue.getType();
+    if (isa<QubitType>(type)) {
+      validateQubitValue(returnValue);
+      validQubits.erase(returnValue);
+    } else if (isLinearQubitType(type)) {
+      validateTensorValue(returnValue);
+      validTensors.erase(returnValue);
+    }
   }
 
   DenseSet<int64_t> validTensorIds;
