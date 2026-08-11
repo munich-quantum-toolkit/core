@@ -28,14 +28,15 @@ import nox
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
-nox.needs_version = ">=2025.10.16"
+
+nox.needs_version = ">=2026.08.10"
 nox.options.default_venv_backend = "uv"
-
-
-PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+nox.options.parallel = 5
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
+
+PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 
 @contextlib.contextmanager
@@ -108,13 +109,13 @@ def _run_tests(
     )
 
 
-@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True, allow_parallel=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
 
 
-@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True, allow_parallel=True)
 def minimums(session: nox.Session) -> None:
     """Test the minimum versions of dependencies."""
     with preserve_lockfile():
