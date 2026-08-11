@@ -38,6 +38,8 @@ namespace mlir::qco {
  *   compound `ctrl`, ...), including `gphase` and `barrier`
  * - `qtensor.from_elements` / `extract` / `insert` / `dealloc` as linear
  *   bookkeeping over existing input wires
+ * - Concrete `qco.if` / `qco.index_switch`, bounded `scf.for` / `scf.while`,
+ *   and non-recursive single-block `func.call`
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
  *   `sink` is ignored; `arith.constant` is ignored for matrix construction;
  *   `func.return` accepts qubit results only in canonical wire order
@@ -46,7 +48,7 @@ namespace mlir::qco {
  * gates. Larger compile-time unitaries (including partial wire subsets) use a
  * dense embed into the full register, rewritten from QCO/MSB to DD/LSB, limited
  * to 12 qubits (`2^n × 2^n` storage). Quantum allocations, measurements,
- * resets, symbolic parameters, and control-flow ops are not supported.
+ * resets, symbolic parameters, and non-concrete control flow are not supported.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)

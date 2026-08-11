@@ -1258,214 +1258,189 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
       })
       .template Case<IfOp>([&](IfOp ifOp) -> LogicalResult {
-        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+        const auto condIt = walk.classical.bools.find(ifOp.getCondition());
+        if (condIt == walk.classical.bools.end()) {
           return ifOp.emitError()
-                 << "control-flow is not supported for QCO DD functionality "
-                    "construction";
-        } else {
-          const auto condIt = walk.classical.bools.find(ifOp.getCondition());
-          if (condIt == walk.classical.bools.end()) {
-            return ifOp.emitError()
-                   << "if condition is not a concrete classical value";
-          }
-          Block* block = condIt->second ? ifOp.thenBlock() : ifOp.elseBlock();
-          if (block == nullptr) {
-            return ifOp.emitError() << "if region block is missing";
-          }
-          YieldOp yield = condIt->second ? ifOp.thenYield() : ifOp.elseYield();
-          return applyRegionBranch(ifOp.getQubits(), *block, yield,
-                                   ifOp.getClassicalResults(),
-                                   ifOp.getLinearResults(), walk, state, ifOp);
+                 << "if condition is not a concrete classical value";
         }
+        Block* block = condIt->second ? ifOp.thenBlock() : ifOp.elseBlock();
+        if (block == nullptr) {
+          return ifOp.emitError() << "if region block is missing";
+        }
+        YieldOp yield = condIt->second ? ifOp.thenYield() : ifOp.elseYield();
+        return applyRegionBranch(ifOp.getQubits(), *block, yield,
+                                 ifOp.getClassicalResults(),
+                                 ifOp.getLinearResults(), walk, state, ifOp);
       })
       .template Case<IndexSwitchOp>(
           [&](IndexSwitchOp switchOp) -> LogicalResult {
-            if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+            const auto idxIt = walk.classical.indices.find(switchOp.getArg());
+            if (idxIt == walk.classical.indices.end()) {
               return switchOp.emitError()
-                     << "control-flow is not supported for QCO DD "
-                        "functionality construction";
-            } else {
-              const auto idxIt = walk.classical.indices.find(switchOp.getArg());
-              if (idxIt == walk.classical.indices.end()) {
-                return switchOp.emitError()
-                       << "index_switch argument is not a concrete index";
-              }
-              const int64_t selector = idxIt->second;
-              const auto cases = switchOp.getCases();
-              if (switchOp.getDefaultRegion().empty()) {
-                return switchOp.emitError()
-                       << "index_switch default region is missing or empty";
-              }
-              Block* block = switchOp.getDefaultBlock();
-              YieldOp yield = switchOp.getDefaultYield();
-              if (block == nullptr) {
-                return switchOp.emitError()
-                       << "index_switch default region is missing or empty";
-              }
-              for (auto [i, caseValue] : llvm::enumerate(cases)) {
-                if (caseValue == selector) {
-                  block = switchOp.getCaseBlock(i);
-                  yield = switchOp.getCaseYield(i);
-                  break;
-                }
-              }
-              return applyRegionBranch(switchOp.getTargets(), *block, yield,
-                                       switchOp.getClassicalResults(),
-                                       switchOp.getLinearResults(), walk, state,
-                                       switchOp);
+                     << "index_switch argument is not a concrete index";
             }
+            const int64_t selector = idxIt->second;
+            const auto cases = switchOp.getCases();
+            if (switchOp.getDefaultRegion().empty()) {
+              return switchOp.emitError()
+                     << "index_switch default region is missing or empty";
+            }
+            Block* block = switchOp.getDefaultBlock();
+            YieldOp yield = switchOp.getDefaultYield();
+            if (block == nullptr) {
+              return switchOp.emitError()
+                     << "index_switch default region is missing or empty";
+            }
+            for (auto [i, caseValue] : llvm::enumerate(cases)) {
+              if (caseValue == selector) {
+                block = switchOp.getCaseBlock(i);
+                yield = switchOp.getCaseYield(i);
+                break;
+              }
+            }
+            return applyRegionBranch(switchOp.getTargets(), *block, yield,
+                                     switchOp.getClassicalResults(),
+                                     switchOp.getLinearResults(), walk, state,
+                                     switchOp);
           })
       .template Case<scf::ForOp>([&](scf::ForOp forOp) -> LogicalResult {
-        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+        auto lb = lookupIndex(forOp.getLowerBound(), walk.classical, forOp);
+        auto ub = lookupIndex(forOp.getUpperBound(), walk.classical, forOp);
+        auto step = lookupIndex(forOp.getStep(), walk.classical, forOp);
+        if (failed(lb) || failed(ub) || failed(step)) {
+          return failure();
+        }
+        if (*step <= 0) {
           return forOp.emitError()
-                 << "scf.for is not supported for QCO DD functionality "
-                    "construction";
-        } else {
-          auto lb = lookupIndex(forOp.getLowerBound(), walk.classical, forOp);
-          auto ub = lookupIndex(forOp.getUpperBound(), walk.classical, forOp);
-          auto step = lookupIndex(forOp.getStep(), walk.classical, forOp);
-          if (failed(lb) || failed(ub) || failed(step)) {
-            return failure();
-          }
-          if (*step <= 0) {
+                 << "scf.for step must be positive for QCO DD simulation";
+        }
+        int64_t trips = 0;
+        if (*ub > *lb) {
+          // Use unsigned arithmetic to avoid signed-overflow UB when
+          // classical bounds are extreme (e.g. INT64_MIN / INT64_MAX).
+          const auto span =
+              static_cast<uint64_t>(*ub) - static_cast<uint64_t>(*lb);
+          const uint64_t tripsU =
+              ((span - 1) / static_cast<uint64_t>(*step)) + 1;
+          if (tripsU > static_cast<uint64_t>(MAX_CONTROL_FLOW_TRIPS)) {
             return forOp.emitError()
-                   << "scf.for step must be positive for QCO DD simulation";
+                   << "scf.for trip count exceeds QCO DD simulation limit of "
+                   << MAX_CONTROL_FLOW_TRIPS;
           }
-          int64_t trips = 0;
-          if (*ub > *lb) {
-            // Use unsigned arithmetic to avoid signed-overflow UB when
-            // classical bounds are extreme (e.g. INT64_MIN / INT64_MAX).
-            const auto span =
-                static_cast<uint64_t>(*ub) - static_cast<uint64_t>(*lb);
-            const uint64_t tripsU =
-                ((span - 1) / static_cast<uint64_t>(*step)) + 1;
-            if (tripsU > static_cast<uint64_t>(MAX_CONTROL_FLOW_TRIPS)) {
-              return forOp.emitError()
-                     << "scf.for trip count exceeds QCO DD simulation limit of "
-                     << MAX_CONTROL_FLOW_TRIPS;
-            }
-            trips = static_cast<int64_t>(tripsU);
-          }
+          trips = static_cast<int64_t>(tripsU);
+        }
 
-          Block& body = *forOp.getBody();
-          SmallVector<Value> carried(forOp.getInits().begin(),
-                                     forOp.getInits().end());
+        Block& body = *forOp.getBody();
+        SmallVector<Value> carried(forOp.getInits().begin(),
+                                   forOp.getInits().end());
 
-          if (trips == 0) {
-            if (carried.size() != forOp.getNumResults()) {
-              return forOp.emitError()
-                     << "scf.for result size mismatch during simulation";
-            }
-            return bindValuePairs(carried, forOp.getResults(), walk, forOp);
-          }
-
-          for (int64_t t = 0; t < trips; ++t) {
-            const auto offset =
-                static_cast<uint64_t>(t) * static_cast<uint64_t>(*step);
-            walk.classical.indices[body.getArgument(0)] =
-                static_cast<int64_t>(static_cast<uint64_t>(*lb) + offset);
-            auto iterArgs = body.getArguments().drop_front();
-            if (carried.size() != iterArgs.size()) {
-              return forOp.emitError()
-                     << "scf.for iter_args size mismatch during simulation";
-            }
-            if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
-              return failure();
-            }
-            if (failed(walkBlock(body, walk, state))) {
-              return failure();
-            }
-            auto yield = dyn_cast<scf::YieldOp>(body.getTerminator());
-            if (!yield) {
-              return forOp.emitError() << "scf.for body missing scf.yield";
-            }
-            carried.assign(yield.getOperands().begin(),
-                           yield.getOperands().end());
-          }
+        if (trips == 0) {
           if (carried.size() != forOp.getNumResults()) {
             return forOp.emitError()
                    << "scf.for result size mismatch during simulation";
           }
           return bindValuePairs(carried, forOp.getResults(), walk, forOp);
         }
+
+        for (int64_t t = 0; t < trips; ++t) {
+          const auto offset =
+              static_cast<uint64_t>(t) * static_cast<uint64_t>(*step);
+          walk.classical.indices[body.getArgument(0)] =
+              static_cast<int64_t>(static_cast<uint64_t>(*lb) + offset);
+          auto iterArgs = body.getArguments().drop_front();
+          if (carried.size() != iterArgs.size()) {
+            return forOp.emitError()
+                   << "scf.for iter_args size mismatch during simulation";
+          }
+          if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
+            return failure();
+          }
+          if (failed(walkBlock(body, walk, state))) {
+            return failure();
+          }
+          auto yield = dyn_cast<scf::YieldOp>(body.getTerminator());
+          if (!yield) {
+            return forOp.emitError() << "scf.for body missing scf.yield";
+          }
+          carried.assign(yield.getOperands().begin(),
+                         yield.getOperands().end());
+        }
+        if (carried.size() != forOp.getNumResults()) {
+          return forOp.emitError()
+                 << "scf.for result size mismatch during simulation";
+        }
+        return bindValuePairs(carried, forOp.getResults(), walk, forOp);
       })
       .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) -> LogicalResult {
-        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+        if (!whileOp.getBefore().hasOneBlock() ||
+            !whileOp.getAfter().hasOneBlock()) {
           return whileOp.emitError()
-                 << "scf.while is not supported for QCO DD functionality "
-                    "construction";
-        } else {
-          if (!whileOp.getBefore().hasOneBlock() ||
-              !whileOp.getAfter().hasOneBlock()) {
+                 << "scf.while regions must contain exactly one block for "
+                    "QCO DD simulation";
+        }
+
+        Block& before = whileOp.getBefore().front();
+        Block& after = whileOp.getAfter().front();
+        SmallVector<Value> carried(whileOp.getInits().begin(),
+                                   whileOp.getInits().end());
+        int64_t trips = 0;
+
+        while (true) {
+          if (carried.size() != before.getNumArguments()) {
             return whileOp.emitError()
-                   << "scf.while regions must contain exactly one block for "
-                      "QCO DD simulation";
+                   << "scf.while before-region argument size mismatch "
+                      "during simulation";
           }
-
-          Block& before = whileOp.getBefore().front();
-          Block& after = whileOp.getAfter().front();
-          SmallVector<Value> carried(whileOp.getInits().begin(),
-                                     whileOp.getInits().end());
-          int64_t trips = 0;
-
-          while (true) {
-            if (carried.size() != before.getNumArguments()) {
-              return whileOp.emitError()
-                     << "scf.while before-region argument size mismatch "
-                        "during simulation";
-            }
-            if (failed(bindValuePairs(carried, before.getArguments(), walk,
-                                      whileOp))) {
-              return failure();
-            }
-            if (failed(walkBlock(before, walk, state))) {
-              return failure();
-            }
-            auto condition = dyn_cast<scf::ConditionOp>(before.getTerminator());
-            if (!condition) {
-              return whileOp.emitError()
-                     << "scf.while before region missing scf.condition";
-            }
-            auto conditionValue =
-                lookupBool(condition.getCondition(), walk.classical, whileOp);
-            if (failed(conditionValue)) {
-              return failure();
-            }
-            if (!*conditionValue) {
-              if (condition.getArgs().size() != whileOp.getNumResults()) {
-                return whileOp.emitError()
-                       << "scf.while result size mismatch during simulation";
-              }
-              return bindValuePairs(condition.getArgs(), whileOp.getResults(),
-                                    walk, whileOp);
-            }
-            if (trips == MAX_CONTROL_FLOW_TRIPS) {
-              return whileOp.emitError()
-                     << "scf.while trip count exceeds QCO DD simulation limit "
-                        "of "
-                     << MAX_CONTROL_FLOW_TRIPS;
-            }
-            if (condition.getArgs().size() != after.getNumArguments()) {
-              return whileOp.emitError()
-                     << "scf.while after-region argument size mismatch during "
-                        "simulation";
-            }
-            if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
-                                      walk, whileOp))) {
-              return failure();
-            }
-            if (failed(walkBlock(after, walk, state))) {
-              return failure();
-            }
-            auto yield = dyn_cast<scf::YieldOp>(after.getTerminator());
-            if (!yield) {
-              return whileOp.emitError()
-                     << "scf.while after region missing scf.yield";
-            }
-            carried.assign(yield.getOperands().begin(),
-                           yield.getOperands().end());
-            ++trips;
+          if (failed(bindValuePairs(carried, before.getArguments(), walk,
+                                    whileOp))) {
+            return failure();
           }
+          if (failed(walkBlock(before, walk, state))) {
+            return failure();
+          }
+          auto condition = dyn_cast<scf::ConditionOp>(before.getTerminator());
+          if (!condition) {
+            return whileOp.emitError()
+                   << "scf.while before region missing scf.condition";
+          }
+          auto conditionValue =
+              lookupBool(condition.getCondition(), walk.classical, whileOp);
+          if (failed(conditionValue)) {
+            return failure();
+          }
+          if (!*conditionValue) {
+            if (condition.getArgs().size() != whileOp.getNumResults()) {
+              return whileOp.emitError()
+                     << "scf.while result size mismatch during simulation";
+            }
+            return bindValuePairs(condition.getArgs(), whileOp.getResults(),
+                                  walk, whileOp);
+          }
+          if (trips == MAX_CONTROL_FLOW_TRIPS) {
+            return whileOp.emitError()
+                   << "scf.while trip count exceeds QCO DD simulation limit of "
+                   << MAX_CONTROL_FLOW_TRIPS;
+          }
+          if (condition.getArgs().size() != after.getNumArguments()) {
+            return whileOp.emitError()
+                   << "scf.while after-region argument size mismatch during "
+                      "simulation";
+          }
+          if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
+                                    walk, whileOp))) {
+            return failure();
+          }
+          if (failed(walkBlock(after, walk, state))) {
+            return failure();
+          }
+          auto yield = dyn_cast<scf::YieldOp>(after.getTerminator());
+          if (!yield) {
+            return whileOp.emitError()
+                   << "scf.while after region missing scf.yield";
+          }
+          carried.assign(yield.getOperands().begin(),
+                         yield.getOperands().end());
+          ++trips;
         }
       })
       .template Case<func::CallOp>([&](func::CallOp call) -> LogicalResult {

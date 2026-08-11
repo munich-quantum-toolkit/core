@@ -683,6 +683,67 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
   expectSimulatesFromZero(mainFunc(*defaultMod), 1, {false});
 }
 
+TEST_F(QCODDFunctionalityTest, BuildFunctionalityConcreteControlFlow) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        true, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    q = b.qcoIndexSwitch(1, q, ArrayRef<int64_t>{0, 1},
+                         SmallVector<function_ref<Value(Value)>>{
+                             [&](Value arg) { return b.h(arg); },
+                             [&](Value arg) { return b.z(arg); }},
+                         [&](Value arg) { return arg; });
+    q = b.scfFor(0, 2, 1, ValueRange{q.value},
+                 [&](Value /*index*/, ValueRange args) -> SmallVector<Value> {
+                   return {b.h(args[0])};
+                 })[0];
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+  qc.z(0);
+  qc.h(0);
+  qc.h(0);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
+TEST_F(QCODDFunctionalityTest, BuildFunctionalityConcreteScfWhile) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c0 = arith.constant 0 : index
+        %result:2 = scf.while (%arg0 = %q, %arg1 = %c0)
+            : (!qco.qubit, index) -> (!qco.qubit, index) {
+          %c3 = arith.constant 3 : index
+          %cond = arith.cmpi slt, %arg1, %c3 : index
+          scf.condition(%cond) %arg0, %arg1 : !qco.qubit, index
+        } do {
+        ^bb0(%arg0: !qco.qubit, %arg1: index):
+          %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %c1 = arith.constant 1 : index
+          %next = arith.addi %arg1, %c1 : index
+          scf.yield %q1, %next : !qco.qubit, index
+        }
+        qco.sink %result#0 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+  qc.x(0);
+  qc.x(0);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   // |1> measure is deterministic; then-branch identity keeps |1>.
   auto mod = buildModule([](QCOProgramBuilder& b) {
