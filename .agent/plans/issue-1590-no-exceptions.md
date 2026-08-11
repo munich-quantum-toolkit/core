@@ -26,15 +26,16 @@ it and must remain independently buildable and testable.
 ## Progress
 
 - [x] (2026-08-11 00:11Z) Revalidated issue #1590, every currently open pull
-  request, current `main`, and exact pull request #2040 metadata, checks, and
-  review threads.
+      request, current `main`, and exact pull request #2040 metadata, checks,
+      and review threads.
 - [x] (2026-08-11 00:11Z) Chose the stack boundaries and allocated a clean
   worktree for the first layer at the exact #2040 head.
-- [x] (2026-08-11 01:03Z) Replace throwing compiler-target construction and adapter validation with
-  explicit `llvm::Expected` results, preserve Python exceptions in nanobind,
-  update callers, and validate the first layer. The binding build, generated
-  stubs, five focused Python tests, full release build, all 4,629 CTests, and
-  repository lint pass. Upgrade guidance records the C++ source migration.
+- [x] (2026-08-11 01:03Z) Replace throwing compiler-target construction and
+      adapter validation with explicit `llvm::Expected` results, preserve Python
+      exceptions in nanobind, update callers, and validate the first layer. The
+      binding build, generated stubs, five focused Python tests, full release
+      build, all 4,629 CTests, and repository lint pass. Upgrade guidance
+      records the C++ source migration.
 - [ ] Replace non-local OpenQASM semantic exceptions with explicit diagnostic
   propagation and validate all semantic error paths in the second layer.
 - [ ] Introduce the CMake no-exception contract, isolate or omit integrations
@@ -49,10 +50,10 @@ it and must remain independently buildable and testable.
   the project-options interface on every non-MSVC build, overriding the
   `-fno-exceptions` contract supplied by a typical LLVM build. Evidence:
   `enable_project_options` unconditionally appends the option.
-- Observation: the exact #2040 head is currently conflicting with `main` and
-  has failing C++ lint, documentation, and C++ patch-coverage checks, although
-  most platform tests pass and there are no reviews or review threads. The new
-  layers can be developed at that immutable head, but the stack cannot become
+- Observation: the exact #2040 head is currently conflicting with `main` and has
+  failing C++ lint, documentation, and C++ patch-coverage checks, although most
+  platform tests pass and there are no reviews or review threads. The new layers
+  can be developed at that immutable head, but the stack cannot become
   merge-ready until its root is repaired.
 - Observation: `mlir/lib/Compiler/Target.cpp` owns all exception syntax in the
   standalone target model, while `bindings/mlir/register_mlir.cpp` is already a
@@ -78,11 +79,11 @@ it and must remain independently buildable and testable.
   `llvm::Error` for validation helpers. Rationale: these LLVM-native types carry
   explanatory errors through exception-disabled code and integrate with the
   compiler's existing LLVM dependency. Date/Author: 2026-08-11, Codex.
-- Decision: Keep exception translation in the nanobind extension and in
-  optional compatibility adapters that call exception-based upstream APIs.
-  Rationale: no-exception consumers need an exception-free compiler core, while
-  Python and legacy Core integrations still require their established error
-  behavior. Date/Author: 2026-08-11, Codex.
+- Decision: Keep exception translation in the nanobind extension and in optional
+  compatibility adapters that call exception-based upstream APIs. Rationale:
+  no-exception consumers need an exception-free compiler core, while Python and
+  legacy Core integrations still require their established error behavior.
+  Date/Author: 2026-08-11, Codex.
 
 ## Outcomes & Retrospective
 
@@ -100,46 +101,47 @@ libraries through `mqt_mlir_target_use_project_options`. The unconditional
 exception flag currently prevents a downstream LLVM no-exception configuration
 from remaining consistent.
 
-`mlir/include/mlir/Compiler/Target.h` and
-`mlir/lib/Compiler/Target.cpp` define the immutable compiler-target model used
-by mapping, target-native synthesis, target conformance checks, Python bindings,
-and the FoMaC device snapshot adapter. The current constructors throw
-`std::invalid_argument` and several routing accessors throw
-`std::out_of_range`. The first layer replaces fallible public constructors with
-named factories returning `llvm::Expected`, and documents valid routing vertices
-as preconditions for fast query methods. The nanobind code in
-`bindings/mlir/register_mlir.cpp` consumes each expected result and raises
-`ValueError`, preserving the Python-facing contract.
+`mlir/include/mlir/Compiler/Target.h` and `mlir/lib/Compiler/Target.cpp` define
+the immutable compiler-target model used by mapping, target-native synthesis,
+target conformance checks, Python bindings, and the FoMaC device snapshot
+adapter. The current constructors throw `std::invalid_argument` and several
+routing accessors throw `std::out_of_range`. The first layer replaces fallible
+public constructors with named factories returning `llvm::Expected`, and
+documents valid routing vertices as preconditions for fast query methods. The
+nanobind code in `bindings/mlir/register_mlir.cpp` consumes each expected result
+and raises `ValueError`, preserving the Python-facing contract.
 
 `mlir/lib/Target/OpenQASM/OpenQASMSemantics.cpp` converts parsed OpenQASM syntax
 into a typed program. Its `SemanticAnalyzer::fail` helper currently throws a
-private exception from many nested semantic routines and `run` catches it at
-the top. The second layer changes those routines to return success, failure, or
-an expected value explicitly, storing no partially successful program after a
+private exception from many nested semantic routines and `run` catches it at the
+top. The second layer changes those routines to return success, failure, or an
+expected value explicitly, storing no partially successful program after a
 diagnostic. Existing parser and frontend result types in
 `mlir/include/mlir/Target/OpenQASM` remain the public boundary.
 
-The compiler pipeline links optional external surfaces. `MLIRQCTranslation`
-uses the exception-based `QuantumComputation` model,
-`MQTCompilerFoMaCAdapter` calls FoMaC APIs, and `MLIRQCODDFunctionality` calls
-the decision-diagram package. The final layer keeps those integrations in
-clearly named compatibility targets that may enable exception handling in a
-normal build and omits them from the strict no-exception target set. Core MLIR
-dialects, conversions, OpenQASM-native translation, compiler programs, and
-tools that do not require those adapters must compile without exceptions.
+The compiler pipeline links optional external surfaces. `MLIRQCTranslation` uses
+the exception-based `QuantumComputation` model, `MQTCompilerFoMaCAdapter` calls
+FoMaC APIs, and `MLIRQCODDFunctionality` calls the decision-diagram package. The
+final layer keeps those integrations in clearly named compatibility targets that
+may enable exception handling in a normal build and omits them from the strict
+no-exception target set. Core MLIR dialects, conversions, OpenQASM-native
+translation, compiler programs, and tools that do not require those adapters
+must compile without exceptions.
 
 Pull requests #1701 and #1845 add exception syntax in MLIR code and therefore
 must be updated to the explicit-error contract before merging. Pull request
-#1973 expands the decision-diagram bridge and must preserve its compatibility
+
+## 1973 expands the decision-diagram bridge and must preserve its compatibility
+
 boundary. Pull requests #1901, #2025, #2042, and #2043 disagree about the future
 of FoMaC; this plan does not resolve that separate architecture decision and
 keeps the optional adapter thin. Pull request #2031's direct Qiskit C bridge is
-compatible with reducing reliance on the exception-based
-`QuantumComputation` translation path. Pull request #1955 supplies an appropriate
-benchmark harness for later performance measurements but no performance claim
-is required for acceptance here.
+compatible with reducing reliance on the exception-based `QuantumComputation`
+translation path. Pull request #1955 supplies an appropriate benchmark harness
+for later performance measurements but no performance claim is required for
+acceptance here.
 
-## Plan of Work
+### Plan of Work
 
 In the first layer, add named `create` factories to `CompilerTarget` and its
 nested metadata value types. Move all validation into helpers that return
@@ -155,15 +157,14 @@ through the repository's stub session.
 
 In the second layer, introduce a small semantic result vocabulary in
 `OpenQASMSemantics.cpp`: routines that only validate return
-`mlir::LogicalResult`, routines that compute a value return
-`mlir::FailureOr<T>` or a local expected result that also retains the first
-`Diagnostic`, and callers immediately propagate failure. Replace every
-`SemanticError`, `throw`, and `catch` path, including unsigned-to-signed
-overflow, recursive gate detection, depth limits, and output initialization.
-`SemanticAnalyzer::run` returns the accumulated diagnostic on failure and a
-typed program only after all stages succeed. Extend focused frontend tests so
-representative failures at shallow and deeply nested call sites preserve their
-location and message.
+`mlir::LogicalResult`, routines that compute a value return `mlir::FailureOr<T>`
+or a local expected result that also retains the first `Diagnostic`, and callers
+immediately propagate failure. Replace every `SemanticError`, `throw`, and
+`catch` path, including unsigned-to-signed overflow, recursive gate detection,
+depth limits, and output initialization. `SemanticAnalyzer::run` returns the
+accumulated diagnostic on failure and a typed program only after all stages
+succeed. Extend focused frontend tests so representative failures at shallow and
+deeply nested call sites preserve their location and message.
 
 In the final layer, stop forcing exceptions globally. Add a documented CMake
 option for the supported strict MLIR build and a helper that applies the
@@ -178,7 +179,7 @@ against the supported LLVM 22 toolchain. Document which optional integrations
 are unavailable in strict mode, add upgrade guidance for the target factories,
 and add a changelog entry.
 
-## Concrete Steps
+### Concrete Steps
 
 All commands run from the repository root through `.agent/run.sh` when they
 produce caches or build artifacts.
@@ -212,13 +213,13 @@ requests with the immediately preceding stack branch as their base, then link
 the existing #2040 pull request and the new pull requests bottom-to-top with
 GitHub's stack command. Do not merge any pull request.
 
-## Validation and Acceptance
+### Validation and Acceptance
 
 The first layer is accepted when invalid C++ target metadata returns an
 `llvm::Error` with the established message, valid targets behave identically,
-invalid Python construction still raises `ValueError`, and neither
-`Target.cpp` nor its public header contains `throw`, `catch`, or a standard
-exception dependency.
+invalid Python construction still raises `ValueError`, and neither `Target.cpp`
+nor its public header contains `throw`, `catch`, or a standard exception
+dependency.
 
 The second layer is accepted when all existing valid and invalid OpenQASM tests
 pass, representative nested failures retain their source location and message,
@@ -229,18 +230,18 @@ The final layer is accepted when a clean strict configuration compiles and tests
 the documented MLIR target set without an exception flag override, an ordinary
 release build still includes and tests Python, QuantumComputation, FoMaC, and DD
 compatibility where configured, and full lint passes. CI on each exact stack
-head must be inspected; pending or failing checks remain explicitly reported
-and prevent readiness.
+head must be inspected; pending or failing checks remain explicitly reported and
+prevent readiness.
 
-## Idempotence and Recovery
+### Idempotence and Recovery
 
 Configuration, build, test, lint, and stub-generation commands are repeatable
-inside their layer's worktree. Each layer uses its own build and cache trees.
-If a downstream layer discovers an API correction, amend it on the owning
-upstream branch, validate that branch, and then rebase descendants in order;
-never rewrite another task's worktree. Push rewritten stack commits only with
-revision-scoped force-with-lease after verifying the remote head, and prefer
-new follow-up commits when a rewrite is unnecessary.
+inside their layer's worktree. Each layer uses its own build and cache trees. If
+a downstream layer discovers an API correction, amend it on the owning upstream
+branch, validate that branch, and then rebase descendants in order; never
+rewrite another task's worktree. Push rewritten stack commits only with
+revision-scoped force-with-lease after verifying the remote head, and prefer new
+follow-up commits when a rewrite is unnecessary.
 
 If #2040 changes, fetch its new exact head, inspect the changed OpenQASM
 surfaces, and rebase the first layer only after preserving all local commits.
@@ -248,7 +249,7 @@ Then rebase each descendant in order and rerun focused tests. A conflict in the
 semantic analyzer must be resolved against the current behavior and tests, not
 by mechanically choosing one side.
 
-## Artifacts and Notes
+### Artifacts and Notes
 
 The initial live audit recorded #2040 at commit
 `7068c29077e2bf24281ee016cf49771f7f262733`, based on an older `main`, with no
@@ -260,7 +261,7 @@ current project flag reverses that setting for MQT targets, so deleting the
 override without first removing explicit exception paths would fail the build.
 The stack order exists to keep each intermediate revision buildable.
 
-## Interfaces and Dependencies
+### Interfaces and Dependencies
 
 At the end of the first layer, `mlir/Compiler/Target.h` provides static factory
 functions returning `llvm::Expected<DurationUnit>`, `llvm::Expected<Site>`,
