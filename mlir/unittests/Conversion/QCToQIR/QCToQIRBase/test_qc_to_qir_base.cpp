@@ -88,15 +88,8 @@ protected:
 static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
-  pm.addPass(createCanonicalizerPass());
   pm.addPass(createQCToQIRBase());
   return pm.run(module);
-}
-
-static LogicalResult runQCToQIRBaseConversionSimple(ModuleOp moduleOp) {
-  PassManager pm(moduleOp.getContext());
-  pm.addPass(createQCToQIRBase());
-  return pm.run(moduleOp);
 }
 
 static void expectFollowingXIsUncontrolled(
@@ -114,7 +107,7 @@ static void expectFollowingXIsUncontrolled(
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCToQIRBaseConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   size_t xCalls = 0;
@@ -183,7 +176,7 @@ TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
   auto module = builder.finalize();
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRBaseConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
   bool retainsMathPopulationCount = false;
@@ -233,7 +226,7 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
   builder.retype(result.getType());
   auto module = builder.finalize(result);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQCToQIRBaseConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(
       module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_ARRAY_RECORD_OUTPUT));
@@ -297,7 +290,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
         "only supports storing direct measurement results");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversionSimple(*module)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
@@ -343,7 +336,7 @@ TEST(QCToQIRBaseNativeTest, RejectsZeroStoreAfterMeasurement) {
         StringRef(message).contains("leading zero initialization");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversionSimple(*module)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
@@ -397,7 +390,7 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
         "requires constant classical-register measurement indices");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversionSimple(*module)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
@@ -425,7 +418,7 @@ TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsClassicalRegisterIndex) {
         "classical-register measurement index is out of bounds");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversionSimple(*module)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 

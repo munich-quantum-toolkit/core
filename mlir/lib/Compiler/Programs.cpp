@@ -336,7 +336,6 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
           mod(),
           [profile](OpPassManager& pm) {
             pm.addPass(mqt::createUnrollModifiers());
-            pm.addPass(createCanonicalizerPass());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
             } else {
@@ -474,7 +473,6 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
           mod(),
           [](OpPassManager& pm) {
             pm.addPass(mqt::createUnrollModifiers());
-            pm.addPass(createCanonicalizerPass());
             pm.addPass(createQCOToJeff());
           },
           "failed to convert QCO to jeff"))) {

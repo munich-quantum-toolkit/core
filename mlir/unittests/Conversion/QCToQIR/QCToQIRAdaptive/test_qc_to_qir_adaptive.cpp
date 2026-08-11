@@ -88,7 +88,6 @@ protected:
 static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
-  pm.addPass(createCanonicalizerPass());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
 }
