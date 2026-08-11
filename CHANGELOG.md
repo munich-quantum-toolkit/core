@@ -30,7 +30,7 @@ releases may include breaking changes.
   compiler APIs and `mqt-cc` ([#2003]) ([**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
-  conformance ([#1993], [#1999], [#2049]) ([**@simon1hofmann**],
+  conformance ([#1993], [#1999], [#2049], [#2054]) ([**@simon1hofmann**],
   [**@burgholzer**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
@@ -741,6 +741,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
+[#2054]: https://github.com/munich-quantum-toolkit/core/pull/2054
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
 [#2040]: https://github.com/munich-quantum-toolkit/core/pull/2040
 [#2031]: https://github.com/munich-quantum-toolkit/core/pull/2031

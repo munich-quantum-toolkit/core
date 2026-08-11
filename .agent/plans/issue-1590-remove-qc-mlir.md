@@ -33,13 +33,12 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
       directly to the native OpenQASM-to-QC translation library and prove that
       non-DD MLIR code no longer depends on `QuantumComputation` or
       `MQT::CoreIR`.
-- [ ] Regenerate Python stubs, update the generic compiler-collection changelog
-      entry with the new pull request number, and validate C++, Python, DD, and
-      repository lint. The stubs, focused C++/Python/DD tests, targeted
-      clang-tidy, and full repository lint are complete; only the changelog
-      number remains.
-- [ ] Publish the signed branch as the new middle pull request in the issue
-  #1590 stack without merging it.
+- [x] (2026-08-11 10:04Z) Regenerate Python stubs, update the generic
+      compiler-collection changelog entry with the new pull request number, and
+      validate C++, Python, DD, and repository lint. The assigned pull request
+      number is #2054.
+- [x] (2026-08-11 10:04Z) Publish the signed branch as draft pull request #2054
+  in the issue #1590 stack without merging it.
 
 ## Surprises & Discoveries
 
