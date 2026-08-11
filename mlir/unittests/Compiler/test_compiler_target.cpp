@@ -36,17 +36,6 @@
 #include <vector>
 
 namespace mqt::test::compiler {
-namespace {
-
-using Target = mlir::CompilerTarget;
-using Coupling = Target::Coupling;
-using DurationUnit = Target::DurationUnit;
-using GateKind = Target::GateKind;
-using Operation = Target::Operation;
-using Site = Target::Site;
-using SiteId = Target::SiteId;
-using SiteTuple = Target::SiteTuple;
-
 template <class T> [[nodiscard]] static T valid(llvm::Expected<T> value) {
   return llvm::cantFail(std::move(value));
 }
@@ -57,6 +46,17 @@ static void expectInvalid(llvm::Expected<T> value,
   ASSERT_FALSE(value);
   EXPECT_EQ(llvm::toString(value.takeError()), expectedMessage);
 }
+
+namespace {
+
+using Target = mlir::CompilerTarget;
+using Coupling = Target::Coupling;
+using DurationUnit = Target::DurationUnit;
+using GateKind = Target::GateKind;
+using Operation = Target::Operation;
+using Site = Target::Site;
+using SiteId = Target::SiteId;
+using SiteTuple = Target::SiteTuple;
 
 TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   std::vector<Site> sites;

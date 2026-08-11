@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -172,7 +173,7 @@ CompilerTarget::DurationUnit::create(std::string unit,
 
 CompilerTarget::DurationUnit::DurationUnit(std::string unit,
                                            const double scaleFactor,
-                                           ValidatedTag)
+                                           ValidatedTag /*validated*/)
     : unit_(std::move(unit)), scaleFactor_(scaleFactor) {}
 
 StringRef CompilerTarget::DurationUnit::unit() const noexcept { return unit_; }
@@ -205,7 +206,8 @@ CompilerTarget::Site::create(const SiteId id, std::optional<std::string> name,
 
 CompilerTarget::Site::Site(const SiteId id, std::optional<std::string> name,
                            const std::optional<uint64_t> t1,
-                           const std::optional<uint64_t> t2, ValidatedTag)
+                           const std::optional<uint64_t> t2,
+                           ValidatedTag /*validated*/)
     : id_(id), name_(std::move(name)), t1_(t1), t2_(t2) {}
 
 CompilerTarget::SiteId CompilerTarget::Site::id() const noexcept { return id_; }
@@ -250,7 +252,7 @@ CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
 CompilerTarget::SiteTuple::SiteTuple(std::vector<SiteId> sites,
                                      const std::optional<uint64_t> duration,
                                      const std::optional<double> fidelity,
-                                     ValidatedTag)
+                                     ValidatedTag /*validated*/)
     : sites_(std::move(sites)), duration_(duration), fidelity_(fidelity) {}
 
 ArrayRef<SiteId> CompilerTarget::SiteTuple::sites() const noexcept {
@@ -304,7 +306,7 @@ CompilerTarget::Operation::Operation(
     std::string name, std::string canonicalName, const size_t numQubits,
     const size_t numParameters, std::vector<SiteTuple> siteTuples,
     const std::optional<uint64_t> duration,
-    const std::optional<double> fidelity, ValidatedTag)
+    const std::optional<double> fidelity, ValidatedTag /*validated*/)
     : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
       numQubits_(numQubits), numParameters_(numParameters),
       siteTuples_(std::move(siteTuples)), duration_(duration),
@@ -386,6 +388,9 @@ CompilerTarget::Storage::create(
     std::optional<std::vector<Coupling>> targetCouplings,
     std::optional<std::vector<Operation>> targetOperations,
     std::optional<DurationUnit> targetDurationUnit) {
+  // The constructor is deliberately private, so std::make_shared cannot invoke
+  // it through its implementation context.
+  // NOLINTNEXTLINE(modernize-make-shared)
   auto storage = std::shared_ptr<Storage>(new Storage(
       std::move(targetName), std::move(targetSites), std::move(targetCouplings),
       std::move(targetOperations), std::move(targetDurationUnit)));
