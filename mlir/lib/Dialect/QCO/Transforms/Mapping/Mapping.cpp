@@ -989,12 +989,24 @@ private:
     FGraph f(*target);
     Layout curr(*(layouts.begin()));
 
-    for (const auto& layout : llvm::drop_begin(layouts)) {
-      f.reset();
-      f.construct(curr, layout);
-      if (const auto happy = f.findHappySWAPChain()) {
-        for (const auto& swap : *happy) {
-          curr.swap(swap.first, swap.second);
+    for (size_t i = 0; i < 2; ++i) {
+      for (const auto& layout : llvm::drop_begin(layouts)) {
+        f.reset();
+        f.construct(curr, layout);
+        if (const auto happy = f.findHappySWAPChain()) {
+          for (const auto& swap : *happy) {
+            curr.swap(swap.first, swap.second);
+          }
+        }
+      }
+
+      for (const auto& layout : llvm::drop_begin(llvm::reverse(layouts))) {
+        f.reset();
+        f.construct(curr, layout);
+        if (const auto happy = f.findHappySWAPChain()) {
+          for (const auto& swap : *happy) {
+            curr.swap(swap.first, swap.second);
+          }
         }
       }
     }
@@ -1471,7 +1483,6 @@ private:
                   }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, winner);
-                llvm::dbgs() << "swaps: " << swaps.size() << '\n';
                 insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
               }
               return winner;
