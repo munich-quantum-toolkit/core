@@ -36,6 +36,8 @@ namespace mlir::qco {
  * - `ctrl` with a sole standard-gate body (same sparse path)
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
  *   compound `ctrl`, ...), including `gphase` and `barrier`
+ * - `qtensor.from_elements` / `extract` / `insert` / `dealloc` as linear
+ *   bookkeeping over existing input wires
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
  *   `sink` is ignored; `arith.constant` is ignored for matrix construction;
  *   `func.return` accepts qubit results only in canonical wire order
@@ -43,8 +45,8 @@ namespace mlir::qco {
  * Known one-, two-, and three-qubit matrices are constructed directly as DD
  * gates. Larger compile-time unitaries (including partial wire subsets) use a
  * dense embed into the full register, rewritten from QCO/MSB to DD/LSB, limited
- * to 12 qubits (`2^n × 2^n` storage). Measurements, resets, symbolic
- * parameters, and control-flow ops are not supported.
+ * to 12 qubits (`2^n × 2^n` storage). Quantum allocations, measurements,
+ * resets, symbolic parameters, and control-flow ops are not supported.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
@@ -60,13 +62,17 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * concrete classical control-flow (`qco.if` / `qco.index_switch` with
  * compile-time or previously recorded classical selectors) and static-shape
  * 1-D `memref<Nxi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
+ * `qco.alloc` and `qtensor.alloc` append zero-state wires, while
+ * `qtensor.from_elements` / `extract` / `insert` / `dealloc` track their linear
+ * ownership. QTensor sizes and indices must be concrete classical values.
  * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
  * bound `scf.for` loops, concrete `scf.while` loops, and non-recursive
  * single-block `func.call` are supported independently of RNG. Loops are
- * limited to 10000 trips. Only qubit-typed linear values are supported (no
- * qtensors). Nested regions are walked; multi-block function bodies remain
- * unsupported. Consumes one reference to @p in regardless of whether
- * simulation succeeds or fails.
+ * limited to 10000 trips. Qubits and one-dimensional qtensors can be carried
+ * through nested regions; multi-block function bodies remain unsupported.
+ * Dynamically allocated wires remain in the returned state after deallocation.
+ * Consumes one reference to @p in regardless of whether simulation succeeds
+ * or fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state, represented as a vector DD; one reference is
@@ -90,10 +96,12 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * `arith.select`, `arith.addi`/`subi`/`muli`,
  * `andi`/`ori`/`xori`/`shli`/`shrui` on those values). Classical registers as
  * static-shape 1-D `memref<Nxi1>` with `memref.alloc` / `store` / `load` /
- * `dealloc` are supported. Deterministic
- * control-flow without measure/reset also works on the non-RNG overload. Only
- * qubit-typed linear values are supported (no qtensors). Nested regions are
- * walked; `scf.for` with concrete positive step, concrete `scf.while`, and
+ * `dealloc` are supported. Dynamic qubit and qtensor allocation and qtensor
+ * ownership operations are supported as described by the non-RNG overload.
+ * Deterministic control-flow without measure/reset also works on the non-RNG
+ * overload. Only one-dimensional qtensors of qubits are supported. Nested
+ * regions are walked; `scf.for` with concrete positive step, concrete
+ * `scf.while`, and
  * non-recursive single-block `func.call` are supported. Loops are limited to
  * 10000 trips; multi-block function bodies remain unsupported. Consumes one
  * reference to @p in regardless of whether simulation succeeds or fails.
@@ -116,7 +124,9 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * without `measure` / `reset` are simulated once and sampled without
  * collapsing (including deterministic control-flow). Programs with mid-circuit
  * `measure` / `reset` are re-simulated per shot with @p rng. Histograms are
- * final computational-basis bitstrings, not classical mid-circuit records.
+ * final computational-basis bitstrings, not classical mid-circuit records;
+ * they include dynamically allocated wires even after those wires are
+ * deallocated.
  *
  * @param func The QCO function to sample
  * @param dd The DD package to use

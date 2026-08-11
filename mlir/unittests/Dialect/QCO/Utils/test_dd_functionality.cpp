@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -60,8 +61,9 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    scf::SCFDialect, memref::MemRefDialect>();
+    registry
+        .insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
+                func::FuncDialect, scf::SCFDialect, memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -913,6 +915,236 @@ TEST_F(QCODDFunctionalityTest, RejectsScfWhileTripCountLimit) {
   ASSERT_TRUE(mod);
 
   expectBuildAndSimFail(mainFunc(*mod), 1);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorAllocationAndElementUpdates) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    tensor = b.qtensorInsert(b.x(q0), tensor, 0);
+    tensor = b.qtensorInsert(b.x(q1), tensor, 1);
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 2, 8, 3, "11");
+}
+
+TEST_F(QCODDFunctionalityTest, QTensorAllocationExtendsInputWithZeroWires) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c1 = arith.constant 1 : index
+        %tensor = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        qtensor.dealloc %tensor : tensor<1x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto expected = basisState(2, {true, false}, *dd);
+  const auto result = simulate(mainFunc(*mod), oneQubitState(*dd), *dd);
+  ASSERT_TRUE(succeeded(result));
+  EXPECT_EQ(result->getVector(), expected.getVector());
+  dd->decRef(*result);
+  dd->decRef(expected);
+
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+}
+
+TEST_F(QCODDFunctionalityTest, QTensorFromElementsSupportsMatrixAndSimulation) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.staticQubit(0);
+    auto q1 = b.staticQubit(1);
+    auto tensor = b.qtensorFromElements({q0, q1});
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    tensor = b.qtensorInsert(b.x(q1), tensor, 1);
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(2);
+  qc.x(1);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorFromDynamicallyAllocatedQubits) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto q1 = b.allocQubit();
+    auto tensor = b.qtensorFromElements({b.x(q0), q1});
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 2, 8, 3, "01");
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorWithConcreteDynamicSize) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+    auto size = arith::AddIOp::create(b, one, one).getResult();
+    b.qtensorDealloc(b.qtensorAlloc(size));
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 2, 8, 3, "00");
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughScfFor) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    tensor = b.scfFor(0, 2, 1, tensor,
+                      [&](Value index, ValueRange args) -> SmallVector<Value> {
+                        auto [remaining, qubit] =
+                            b.qtensorExtract(args[0], index);
+                        return {b.qtensorInsert(b.x(qubit), remaining, index)};
+                      })[0];
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 2, 8, 3, "11");
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughIf) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(1);
+    tensor = b.qcoIf(b.boolConstant(true), tensor, [&](Value arg) {
+      auto [remaining, qubit] = b.qtensorExtract(arg, 0);
+      return b.qtensorInsert(b.x(qubit), remaining, 0);
+    });
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 1, 8, 3, "1");
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughScfWhile) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(1);
+    auto [remaining, qubit] = b.qtensorExtract(tensor, 0);
+    tensor = b.qtensorInsert(b.x(qubit), remaining, 0);
+    tensor = b.scfWhile(
+        tensor,
+        [&](ValueRange args) {
+          auto [rest, q] = b.qtensorExtract(args[0], 0);
+          auto [measured, bit] = b.measure(q);
+          auto result = b.qtensorInsert(measured, rest, 0);
+          b.scfCondition(bit, result);
+          return SmallVector<Value>{result};
+        },
+        [&](ValueRange args) {
+          auto [rest, q] = b.qtensorExtract(args[0], 0);
+          return SmallVector<Value>{b.qtensorInsert(b.x(q), rest, 0)};
+        })[0];
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 1, 8, 3, "0");
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughFuncCall) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @flip(%arg0: tensor<1x!qco.qubit>)
+          -> tensor<1x!qco.qubit> {
+        %c0 = arith.constant 0 : index
+        %remaining, %q = qtensor.extract %arg0[%c0]
+            : tensor<1x!qco.qubit>
+        %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+        %result = qtensor.insert %q1 into %remaining[%c0]
+            : tensor<1x!qco.qubit>
+        return %result : tensor<1x!qco.qubit>
+      }
+      func.func @main() {
+        %c1 = arith.constant 1 : index
+        %tensor = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %result = func.call @flip(%tensor)
+            : (tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit>
+        qtensor.dealloc %result : tensor<1x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 1, 8, 3, "1");
+}
+
+TEST_F(QCODDFunctionalityTest, QTensorFunctionArgumentMapsInputWires) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%arg0: tensor<2x!qco.qubit>)
+          -> tensor<2x!qco.qubit> {
+        %c0 = arith.constant 0 : index
+        %remaining, %q = qtensor.extract %arg0[%c0]
+            : tensor<2x!qco.qubit>
+        %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+        %result = qtensor.insert %q1 into %remaining[%c0]
+            : tensor<2x!qco.qubit>
+        return %result : tensor<2x!qco.qubit>
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(2);
+  qc.x(0);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsQTensorAllocationBeyondPackage) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    b.qtensorDealloc(b.qtensorAlloc(2));
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(3);
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsInvalidQTensorRuntimeIndex) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %c2 = arith.constant 2 : index
+        %tensor = qtensor.alloc(%c2) : tensor<?x!qco.qubit>
+        %remaining, %q = qtensor.extract %tensor[%c2]
+            : tensor<?x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        qtensor.dealloc %remaining : tensor<?x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(3);
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {

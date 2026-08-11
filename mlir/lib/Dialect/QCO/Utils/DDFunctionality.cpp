@@ -22,6 +22,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseMap.h>
@@ -104,6 +105,30 @@ struct QubitMap {
   }
 };
 
+/// Physical wires stored at each tensor index; extracted positions are empty.
+using TensorSlots = SmallVector<std::optional<qc::Qubit>>;
+
+struct TensorMap {
+  DenseMap<Value, TensorSlots> tensors;
+
+  void bind(Value value, TensorSlots slots) {
+    tensors[value] = std::move(slots);
+  }
+
+  [[nodiscard]] const TensorSlots* lookup(Value value) const {
+    const auto it = tensors.find(value);
+    return it == tensors.end() ? nullptr : &it->second;
+  }
+
+  void erase(Value value) { tensors.erase(value); }
+};
+
+[[nodiscard]] static bool isQTensorType(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
+
 struct ClassicalEnv {
   DenseMap<Value, bool> bools;
   DenseMap<Value, int64_t> indices;
@@ -143,6 +168,8 @@ struct DecodedGate {
 struct WalkState {
   // Non-owning handles into the active simulation frame.
   QubitMap& qubits; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  TensorMap&
+      tensors; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   ClassicalEnv&
       classical;   // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   dd::Package& dd; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -394,26 +421,50 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
 }
 
 static LogicalResult validateReturn(func::ReturnOp returnOp,
-                                    const QubitMap& qubits) {
+                                    const QubitMap& qubits,
+                                    const TensorMap& tensors) {
   qc::Qubit expected = 0;
   for (Value value : returnOp.getOperands()) {
-    if (!isa<QubitType>(value.getType())) {
+    if (isa<QubitType>(value.getType())) {
+      const auto mapped = qubits.lookup(value);
+      if (!mapped) {
+        return returnOp.emitError()
+               << "returned qubit SSA value is not mapped for QCO DD "
+                  "construction";
+      }
+      if (*mapped != expected) {
+        return returnOp.emitError()
+               << "returned qubits must preserve canonical wire order; qubit "
+                  "result "
+               << static_cast<size_t>(expected) << " maps to wire "
+               << static_cast<size_t>(*mapped);
+      }
+      ++expected;
       continue;
     }
-    const auto mapped = qubits.lookup(value);
-    if (!mapped) {
-      return returnOp.emitError()
-             << "returned qubit SSA value is not mapped for QCO DD "
-                "construction";
+    if (!isQTensorType(value.getType())) {
+      continue;
     }
-    if (*mapped != expected) {
+    const auto* slots = tensors.lookup(value);
+    if (slots == nullptr) {
       return returnOp.emitError()
-             << "returned qubits must preserve canonical wire order; qubit "
-                "result "
-             << static_cast<size_t>(expected) << " maps to wire "
-             << static_cast<size_t>(*mapped);
+             << "returned qtensor SSA value is not mapped for QCO DD "
+                "simulation";
     }
-    ++expected;
+    for (const auto wire : *slots) {
+      if (!wire) {
+        return returnOp.emitError()
+               << "returned qtensor contains an extracted element";
+      }
+      if (*wire != expected) {
+        return returnOp.emitError()
+               << "returned qubits must preserve canonical wire order; qubit "
+                  "result "
+               << static_cast<size_t>(expected) << " maps to wire "
+               << static_cast<size_t>(*wire);
+      }
+      ++expected;
+    }
   }
   return success();
 }
@@ -455,6 +506,38 @@ static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
            << "classical index SSA value is not mapped for QCO DD simulation";
   }
   return it->second;
+}
+
+static FailureOr<TensorSlots> allocateZeroQubits(const size_t count,
+                                                 WalkState& walk,
+                                                 dd::VectorDD& state,
+                                                 Operation* op) {
+  if (count == 0) {
+    return op->emitError()
+           << "quantum allocation size must be positive for QCO DD simulation";
+  }
+  if (walk.qubits.numQubits > walk.dd.qubits() ||
+      count > walk.dd.qubits() - walk.qubits.numQubits) {
+    return op->emitError() << "DD package has " << walk.dd.qubits()
+                           << " qubits but allocation requires "
+                           << walk.qubits.numQubits + count;
+  }
+
+  const size_t first = walk.qubits.numQubits;
+  auto zeros = dd::makeZeroState(count, walk.dd, first);
+  auto extended = walk.dd.kronecker(zeros, state, first, /*incIdx=*/false);
+  walk.dd.incRef(extended);
+  walk.dd.decRef(zeros);
+  walk.dd.decRef(state);
+  state = extended;
+
+  TensorSlots slots;
+  slots.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    slots.emplace_back(static_cast<qc::Qubit>(first + i));
+  }
+  walk.qubits.numQubits += count;
+  return slots;
 }
 
 /// Cast a concrete `i1` SSA value to `index` (shared by `extui` /
@@ -847,23 +930,33 @@ static LogicalResult bindLinearArgs(ValueRange operands, Block& block,
            << "region argument count does not match linear operands";
   }
   for (auto [operand, arg] : llvm::zip_equal(operands, block.getArguments())) {
-    if (!isa<QubitType>(arg.getType())) {
-      return op->emitError()
-             << "QCO DD simulation does not support qtensor linear region "
-                "args (qubits only)";
+    if (isa<QubitType>(arg.getType())) {
+      const auto q = walk.qubits.lookup(operand);
+      if (!q) {
+        return op->emitError()
+               << "qubit SSA value is not mapped for QCO DD construction";
+      }
+      walk.qubits.bind(arg, *q);
+      continue;
     }
-    const auto q = walk.qubits.lookup(operand);
-    if (!q) {
-      return op->emitError()
-             << "qubit SSA value is not mapped for QCO DD construction";
+    if (isQTensorType(arg.getType())) {
+      const auto* slots = walk.tensors.lookup(operand);
+      if (slots == nullptr) {
+        return op->emitError()
+               << "qtensor SSA value is not mapped for QCO DD simulation";
+      }
+      walk.tensors.bind(arg, *slots);
+      continue;
     }
-    walk.qubits.bind(arg, *q);
+    return op->emitError()
+           << "unsupported linear region argument type for QCO DD simulation: "
+           << arg.getType();
   }
   return success();
 }
 
-/// Bind each source SSA onto the corresponding dest (qubits via `QubitMap`,
-/// classical via `ClassicalEnv::bindFrom`). Callers must ensure equal sizes.
+/// Bind each source SSA onto the corresponding destination via its concrete
+/// qubit, qtensor, or classical environment. Callers must ensure equal sizes.
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                                     WalkState& walk, Operation* op) {
   for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
@@ -878,6 +971,17 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                << "qubit SSA value is not mapped for QCO DD construction";
       }
       walk.qubits.bind(dest, *q);
+    } else if (isQTensorType(dest.getType())) {
+      if (!isQTensorType(src.getType())) {
+        return op->emitError()
+               << "qtensor/classical SSA type mismatch for QCO DD simulation";
+      }
+      const auto* slots = walk.tensors.lookup(src);
+      if (slots == nullptr) {
+        return op->emitError()
+               << "qtensor SSA value is not mapped for QCO DD simulation";
+      }
+      walk.tensors.bind(dest, *slots);
     } else if (failed(walk.classical.bindFrom(src, dest, op))) {
       return failure();
     }
@@ -902,17 +1006,30 @@ static LogicalResult bindYieldResults(YieldOp yield,
     }
   }
   for (Value result : linearResults) {
-    if (!isa<QubitType>(result.getType())) {
-      return yield.emitError()
-             << "QCO DD simulation does not support qtensor linear results "
-                "(qubits only)";
+    Value yielded = yield.getOperand(idx++);
+    if (isa<QubitType>(result.getType())) {
+      const auto q = walk.qubits.lookup(yielded);
+      if (!q) {
+        return yield.emitError()
+               << "yielded qubit SSA value is not mapped for QCO DD "
+                  "construction";
+      }
+      walk.qubits.bind(result, *q);
+      continue;
     }
-    const auto q = walk.qubits.lookup(yield.getOperand(idx++));
-    if (!q) {
-      return yield.emitError()
-             << "yielded qubit SSA value is not mapped for QCO DD construction";
+    if (isQTensorType(result.getType())) {
+      const auto* slots = walk.tensors.lookup(yielded);
+      if (slots == nullptr) {
+        return yield.emitError()
+               << "yielded qtensor SSA value is not mapped for QCO DD "
+                  "simulation";
+      }
+      walk.tensors.bind(result, *slots);
+      continue;
     }
-    walk.qubits.bind(result, *q);
+    return yield.emitError()
+           << "unsupported linear result type for QCO DD simulation: "
+           << result.getType();
   }
   return success();
 }
@@ -955,6 +1072,122 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
         return recordConstant(constant, walk.classical);
       })
+      .template Case<AllocOp>([&](AllocOp alloc) -> LogicalResult {
+        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+          return alloc.emitError()
+                 << "dynamic qubit allocation is not supported for QCO DD "
+                    "functionality construction";
+        } else {
+          auto slots = allocateZeroQubits(1, walk, state, alloc);
+          if (failed(slots)) {
+            return failure();
+          }
+          walk.qubits.bind(alloc.getResult(), *slots->front());
+          return success();
+        }
+      })
+      .template Case<qtensor::AllocOp>(
+          [&](qtensor::AllocOp alloc) -> LogicalResult {
+            if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+              return alloc.emitError()
+                     << "qtensor allocation is not supported for QCO DD "
+                        "functionality construction";
+            } else {
+              auto size = lookupIndex(alloc.getSize(), walk.classical, alloc);
+              if (failed(size)) {
+                return failure();
+              }
+              if (*size <= 0) {
+                return alloc.emitError()
+                       << "qtensor allocation size must be positive for QCO "
+                          "DD simulation";
+              }
+              auto slots = allocateZeroQubits(static_cast<size_t>(*size), walk,
+                                              state, alloc);
+              if (failed(slots)) {
+                return failure();
+              }
+              walk.tensors.bind(alloc.getResult(), std::move(*slots));
+              return success();
+            }
+          })
+      .template Case<qtensor::FromElementsOp>(
+          [&](qtensor::FromElementsOp fromElements) -> LogicalResult {
+            auto wires = walk.qubits.lookupRange(fromElements.getElements(),
+                                                 fromElements);
+            if (failed(wires)) {
+              return failure();
+            }
+            TensorSlots slots;
+            slots.reserve(wires->size());
+            for (qc::Qubit wire : *wires) {
+              slots.emplace_back(wire);
+            }
+            walk.tensors.bind(fromElements.getResult(), std::move(slots));
+            return success();
+          })
+      .template Case<qtensor::ExtractOp>([&](qtensor::ExtractOp extract)
+                                             -> LogicalResult {
+        const auto* inputSlots = walk.tensors.lookup(extract.getTensor());
+        if (inputSlots == nullptr) {
+          return extract.emitError()
+                 << "qtensor SSA value is not mapped for QCO DD simulation";
+        }
+        auto index = lookupIndex(extract.getIndex(), walk.classical, extract);
+        if (failed(index)) {
+          return failure();
+        }
+        if (*index < 0 || static_cast<size_t>(*index) >= inputSlots->size()) {
+          return extract.emitError()
+                 << "qtensor index out of range for QCO DD simulation";
+        }
+        TensorSlots outputSlots = *inputSlots;
+        auto& slot = outputSlots[static_cast<size_t>(*index)];
+        if (!slot) {
+          return extract.emitError()
+                 << "qtensor element has already been extracted";
+        }
+        walk.qubits.bind(extract.getResult(), *slot);
+        slot.reset();
+        walk.tensors.bind(extract.getOutTensor(), std::move(outputSlots));
+        return success();
+      })
+      .template Case<qtensor::InsertOp>(
+          [&](qtensor::InsertOp insert) -> LogicalResult {
+            const auto* inputSlots = walk.tensors.lookup(insert.getDest());
+            if (inputSlots == nullptr) {
+              return insert.emitError()
+                     << "qtensor SSA value is not mapped for QCO DD simulation";
+            }
+            const auto wire = walk.qubits.lookup(insert.getScalar());
+            if (!wire) {
+              return insert.emitError()
+                     << "inserted qubit SSA value is not mapped for QCO DD "
+                        "simulation";
+            }
+            auto index = lookupIndex(insert.getIndex(), walk.classical, insert);
+            if (failed(index)) {
+              return failure();
+            }
+            if (*index < 0 ||
+                static_cast<size_t>(*index) >= inputSlots->size()) {
+              return insert.emitError()
+                     << "qtensor index out of range for QCO DD simulation";
+            }
+            TensorSlots outputSlots = *inputSlots;
+            outputSlots[static_cast<size_t>(*index)] = *wire;
+            walk.tensors.bind(insert.getResult(), std::move(outputSlots));
+            return success();
+          })
+      .template Case<qtensor::DeallocOp>(
+          [&](qtensor::DeallocOp dealloc) -> LogicalResult {
+            if (walk.tensors.lookup(dealloc.getTensor()) == nullptr) {
+              return dealloc.emitError()
+                     << "qtensor SSA value is not mapped for QCO DD simulation";
+            }
+            walk.tensors.erase(dealloc.getTensor());
+            return success();
+          })
       .template Case<memref::AllocOp>([&](memref::AllocOp alloc) {
         return applyMemRefAlloc(alloc, walk.classical);
       })
@@ -973,7 +1206,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return applyClassicalOp(*classicalOp, walk.classical);
           })
       .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
-        return validateReturn(returnOp, walk.qubits);
+        return validateReturn(returnOp, walk.qubits, walk.tensors);
       })
       .template Case<MeasureOp>([&](MeasureOp measureOp) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
@@ -1345,13 +1578,20 @@ static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
   return success();
 }
 
-static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
+struct PreparedState {
+  QubitMap qubits;
+  TensorMap tensors;
+};
+
+static FailureOr<PreparedState> prepare(func::FuncOp func,
+                                        const dd::Package& dd) {
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
   }
 
-  QubitMap qubits;
+  PreparedState prepared;
+  QubitMap& qubits = prepared.qubits;
   for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
     const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
     qubits.bind(staticOp.getQubit(), q);
@@ -1361,31 +1601,43 @@ static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
   if (qubits.numQubits == 0) {
     qc::Qubit next = 0;
     for (Value arg : func.getArguments()) {
-      if (!isa<QubitType>(arg.getType())) {
-        continue;
+      if (isa<QubitType>(arg.getType())) {
+        qubits.bind(arg, next++);
+      } else if (isQTensorType(arg.getType())) {
+        const auto tensorType = cast<RankedTensorType>(arg.getType());
+        if (tensorType.isDynamicDim(0)) {
+          return func.emitError()
+                 << "dynamic qtensor function arguments are not supported for "
+                    "QCO DD simulation";
+        }
+        TensorSlots slots;
+        slots.reserve(static_cast<size_t>(tensorType.getDimSize(0)));
+        for (int64_t i = 0; i < tensorType.getDimSize(0); ++i) {
+          slots.emplace_back(next++);
+        }
+        prepared.tensors.bind(arg, std::move(slots));
       }
-      qubits.bind(arg, next);
-      qubits.numQubits =
-          std::max(qubits.numQubits, static_cast<size_t>(next) + 1);
-      ++next;
     }
+    qubits.numQubits = static_cast<size_t>(next);
   }
   if (dd.qubits() < qubits.numQubits) {
     return func.emitError() << "DD package has " << dd.qubits()
                             << " qubits but function uses " << qubits.numQubits;
   }
-  return qubits;
+  return prepared;
 }
 
 FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
-  auto qubitsOr = prepare(func, dd);
-  if (failed(qubitsOr)) {
+  auto preparedOr = prepare(func, dd);
+  if (failed(preparedOr)) {
     return failure();
   }
-  QubitMap qubits = std::move(*qubitsOr);
+  QubitMap qubits = std::move(preparedOr->qubits);
+  TensorMap tensors = std::move(preparedOr->tensors);
   ClassicalEnv classical;
   DenseSet<Operation*> activeCalls;
   WalkState walkState{.qubits = qubits,
+                      .tensors = tensors,
                       .classical = classical,
                       .dd = dd,
                       .rng = nullptr,
@@ -1408,15 +1660,17 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
 static FailureOr<dd::VectorDD>
 simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              std::mt19937_64* rng, std::string* classicalBits) {
-  auto qubitsOr = prepare(func, dd);
-  if (failed(qubitsOr)) {
+  auto preparedOr = prepare(func, dd);
+  if (failed(preparedOr)) {
     dd.decRef(in);
     return failure();
   }
-  QubitMap qubits = std::move(*qubitsOr);
+  QubitMap qubits = std::move(preparedOr->qubits);
+  TensorMap tensors = std::move(preparedOr->tensors);
   ClassicalEnv classical;
   DenseSet<Operation*> activeCalls;
   WalkState walkState{.qubits = qubits,
+                      .tensors = tensors,
                       .classical = classical,
                       .dd = dd,
                       .rng = rng,
@@ -1545,22 +1799,22 @@ FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
                                                 dd::Package& dd,
                                                 const size_t shots,
                                                 std::mt19937_64& rng) {
-  auto qubitsOr = prepare(func, dd);
-  if (failed(qubitsOr)) {
+  auto preparedOr = prepare(func, dd);
+  if (failed(preparedOr)) {
     return failure();
   }
-  const size_t n = qubitsOr->numQubits;
+  const size_t n = preparedOr->qubits.numQubits;
   return sample(func, dd::makeZeroState(n, dd), dd, shots, rng);
 }
 
 FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
                                            const size_t shots,
                                            std::mt19937_64& rng) {
-  auto qubitsOr = prepare(func, dd);
-  if (failed(qubitsOr)) {
+  auto preparedOr = prepare(func, dd);
+  if (failed(preparedOr)) {
     return failure();
   }
-  const size_t n = qubitsOr->numQubits;
+  const size_t n = preparedOr->qubits.numQubits;
   return sampleWithClassics(func, dd::makeZeroState(n, dd), dd, shots, rng);
 }
 
