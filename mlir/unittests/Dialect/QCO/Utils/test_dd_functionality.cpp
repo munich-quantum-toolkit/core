@@ -947,6 +947,26 @@ TEST_F(QCODDFunctionalityTest, SimulateScfForAppliesBodyTrips) {
   ASSERT_TRUE(mod);
 
   expectSimulatesFromZero(mainFunc(*mod), 1, {true});
+
+  auto deallocatedAlias = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @identity(%arg: memref<1xi1>) -> memref<1xi1> {
+        return %arg : memref<1xi1>
+      }
+      func.func @main() {
+        %register = memref.alloc() : memref<1xi1>
+        %alias = func.call @identity(%register)
+            : (memref<1xi1>) -> memref<1xi1>
+        %c0 = arith.constant 0 : index
+        memref.dealloc %alias : memref<1xi1>
+        %invalid = memref.load %register[%c0] : memref<1xi1>
+        return
+      }
+    }
+  )mlir",
+                                                      context.get());
+  ASSERT_TRUE(deallocatedAlias);
+  expectSimulateFail(mainFunc(*deallocatedAlias), 0);
 }
 
 TEST_F(QCODDFunctionalityTest, AcceptsScfForAtTripCountLimit) {
@@ -1547,6 +1567,43 @@ TEST_F(QCODDFunctionalityTest, SimulateClassicalMemRefRegister) {
 
   expectSampleHistogram(mainFunc(*mod), 1, 16, 11, "0",
                         SampleApi::SampleWithClassics, "1");
+}
+
+TEST_F(QCODDFunctionalityTest, CarriesClassicalMemRefsThroughFuncCall) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @set(%arg: memref<1xi1>) -> memref<1xi1> {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        memref.store %true, %arg[%c0] : memref<1xi1>
+        return %arg : memref<1xi1>
+      }
+
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %register = memref.alloc() : memref<1xi1>
+        %returned = func.call @set(%register)
+            : (memref<1xi1>) -> memref<1xi1>
+        %c0 = arith.constant 0 : index
+        %from_original = memref.load %register[%c0] : memref<1xi1>
+        %from_return = memref.load %returned[%c0] : memref<1xi1>
+        %both = arith.andi %from_original, %from_return : i1
+        %q1 = qco.if %both args(%qin = %q) -> (!qco.qubit) {
+          %x = qco.x %qin : !qco.qubit -> !qco.qubit
+          qco.yield %x : !qco.qubit
+        } else args(%qin = %q) {
+          qco.yield %qin : !qco.qubit
+        }
+        memref.dealloc %returned : memref<1xi1>
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
 }
 
 TEST_F(QCODDFunctionalityTest, SampleCombinedForMeasureIfIndexSwitch) {

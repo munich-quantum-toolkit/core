@@ -53,6 +53,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -170,8 +171,12 @@ struct ClassicalEnv {
   DenseMap<Value, APInt> integers;
   DenseMap<Value, double> floats;
   using Scalar = std::variant<bool, int64_t, APInt, double>;
+  struct MemRefStorage {
+    SmallVector<Scalar> values;
+    bool live = true;
+  };
   /// Backing storage for one-dimensional classical registers.
-  DenseMap<Value, SmallVector<Scalar>> memrefs;
+  DenseMap<Value, std::shared_ptr<MemRefStorage>> memrefs;
 
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
     if (dest.getType().isInteger(1)) {
@@ -210,6 +215,15 @@ struct ClassicalEnv {
                   "DD simulation";
       }
       floats[dest] = it->second;
+      return success();
+    }
+    if (isa<MemRefType>(dest.getType())) {
+      const auto it = memrefs.find(source);
+      if (it == memrefs.end() || !it->second->live) {
+        return op->emitError()
+               << "classical memref is not mapped for QCO DD simulation";
+      }
+      memrefs[dest] = it->second;
       return success();
     }
     return op->emitError()
@@ -788,15 +802,15 @@ lookupMemRefSlot(Value memref, Value index, ClassicalEnv& classical,
     return failure();
   }
   auto it = classical.memrefs.find(memref);
-  if (it == classical.memrefs.end()) {
+  if (it == classical.memrefs.end() || !it->second->live) {
     return op->emitError()
            << "classical memref is not mapped for QCO DD simulation";
   }
-  if (*idx < 0 || static_cast<size_t>(*idx) >= it->second.size()) {
+  if (*idx < 0 || static_cast<size_t>(*idx) >= it->second->values.size()) {
     return op->emitError()
            << "classical memref index out of range for QCO DD simulation";
   }
-  return &it->second[static_cast<size_t>(*idx)];
+  return &it->second->values[static_cast<size_t>(*idx)];
 }
 
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
@@ -839,8 +853,10 @@ static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
   } else {
     zero = 0.0;
   }
-  classical.memrefs[alloc.getResult()] = SmallVector<ClassicalEnv::Scalar>(
-      static_cast<size_t>(size), std::move(zero));
+  classical.memrefs[alloc.getResult()] =
+      std::make_shared<ClassicalEnv::MemRefStorage>(ClassicalEnv::MemRefStorage{
+          .values = SmallVector<ClassicalEnv::Scalar>(static_cast<size_t>(size),
+                                                      std::move(zero))});
   return success();
 }
 
@@ -1770,11 +1786,12 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<memref::DeallocOp>(
           [&](memref::DeallocOp dealloc) -> LogicalResult {
-            if (!walk.classical.memrefs.contains(dealloc.getMemref())) {
+            const auto it = walk.classical.memrefs.find(dealloc.getMemref());
+            if (it == walk.classical.memrefs.end() || !it->second->live) {
               return dealloc.emitError()
                      << "classical memref is not mapped for QCO DD simulation";
             }
-            walk.classical.memrefs.erase(dealloc.getMemref());
+            it->second->live = false;
             return success();
           })
       .template Case<
