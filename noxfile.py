@@ -43,11 +43,11 @@ PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 def preserve_lockfile() -> Generator[None]:
     """Preserve the lockfile by moving it to a temporary directory."""
     with tempfile.TemporaryDirectory() as temp_dir_name:
-        shutil.copy("uv.lock", f"{temp_dir_name}/uv.lock")
+        shutil.move("uv.lock", f"{temp_dir_name}/uv.lock")
         try:
             yield
         finally:
-            shutil.copy(f"{temp_dir_name}/uv.lock", "uv.lock")
+            shutil.move(f"{temp_dir_name}/uv.lock", "uv.lock")
 
 
 @nox.session(reuse_venv=True, default=True)
