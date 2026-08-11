@@ -146,7 +146,14 @@ makeQCODDBindings(mlir::func::FuncOp func,
       }
     } else if (llvm::isa<mlir::IndexType, mlir::IntegerType>(type)) {
       if (const auto* value = std::get_if<int64_t>(&binding)) {
-        attribute = mlir::IntegerAttr::get(type, *value);
+        const auto width = llvm::isa<mlir::IndexType>(type)
+                               ? 64U
+                               : llvm::cast<mlir::IntegerType>(type).getWidth();
+        if (width >= 64U ||
+            llvm::APInt(64, static_cast<uint64_t>(*value), true)
+                .isSignedIntN(width)) {
+          attribute = mlir::IntegerAttr::get(type, *value);
+        }
       }
     } else if (type.isIntOrFloat()) {
       if (const auto* value = std::get_if<double>(&binding)) {
