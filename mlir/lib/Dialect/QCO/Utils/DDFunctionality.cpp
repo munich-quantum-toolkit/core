@@ -678,55 +678,68 @@ static FailureOr<TensorSlots> allocateZeroQubits(const size_t count,
   return slots;
 }
 
+/**
+ * @brief Project @p wire onto one basis state and remove its DD level.
+ *
+ * Nodes above the removed wire are rebuilt with decremented variable indices.
+ * A skipped vector-DD level denotes a qubit fixed to zero.
+ */
+static dd::VectorDD projectAndRemoveWire(const dd::VectorDD& root,
+                                         const qc::Qubit wire,
+                                         const bool projectOne,
+                                         dd::Package& dd) {
+  DenseMap<dd::vNode*, dd::VectorDD> projectedNodes;
+  const auto project = [&](const auto& self,
+                           const dd::VectorDD& edge) -> dd::VectorDD {
+    if (edge.isZeroTerminal()) {
+      return edge;
+    }
+    if (edge.isTerminal() || edge.p->v < wire) {
+      return projectOne ? dd::VectorDD::zero() : edge;
+    }
+
+    dd::VectorDD projected;
+    if (const auto cached = projectedNodes.find(edge.p);
+        cached != projectedNodes.end()) {
+      projected = cached->second;
+    } else if (edge.p->v == wire) {
+      projected = edge.p->e[projectOne ? 1U : 0U];
+    } else {
+      std::array<dd::VectorDD, dd::RADIX> edges{self(self, edge.p->e[0]),
+                                                self(self, edge.p->e[1])};
+      projected = dd.makeDDNode<dd::vNode, dd::Edge>(
+          static_cast<qc::Qubit>(edge.p->v - 1U), edges);
+    }
+    projectedNodes.try_emplace(edge.p, projected);
+    projected.w = dd.cn.lookup(projected.w * edge.w);
+    return projected;
+  };
+  return project(project, root);
+}
+
 static LogicalResult deallocateWire(const qc::Qubit wire, WalkState& walk,
                                     dd::VectorDD& state, Operation* op) {
   if (wire >= walk.qubits.numQubits) {
     return op->emitError()
            << "deallocated wire is outside the simulated register";
   }
-  const auto amplitudes = state.getVector();
-  const size_t remainingSize = amplitudes.size() / 2;
-  const size_t lowMask = (size_t{1} << wire) - 1;
-  const size_t wireMask = size_t{1} << wire;
-  auto inputIndex = [&](const size_t outputIndex) {
-    return (outputIndex & lowMask) | ((outputIndex & ~lowMask) << 1);
-  };
-
-  constexpr double tolerance = 1e-12;
-  std::complex<double> targetZero;
-  std::complex<double> targetOne;
-  bool foundPivot = false;
-  for (size_t i = 0; i < remainingSize; ++i) {
-    const size_t zeroIndex = inputIndex(i);
-    const auto zero = amplitudes[zeroIndex];
-    const auto one = amplitudes[zeroIndex | wireMask];
-    const double norm = std::sqrt(std::norm(zero) + std::norm(one));
-    if (norm > tolerance) {
-      targetZero = zero / norm;
-      targetOne = one / norm;
-      foundPivot = true;
-      break;
-    }
-  }
-  if (!foundPivot) {
+  const auto zero = projectAndRemoveWire(state, wire, false, walk.dd);
+  const auto one = projectAndRemoveWire(state, wire, true, walk.dd);
+  if (zero.isZeroTerminal() && one.isZeroTerminal()) {
     return op->emitError() << "cannot deallocate a zero-norm quantum state";
   }
-
-  dd::CVec remaining(remainingSize);
-  for (size_t i = 0; i < remainingSize; ++i) {
-    const size_t zeroIndex = inputIndex(i);
-    const auto zero = amplitudes[zeroIndex];
-    const auto one = amplitudes[zeroIndex | wireMask];
-    if (std::abs((zero * targetOne) - (one * targetZero)) > tolerance) {
-      return op->emitError()
-             << "deallocating an entangled qubit is not supported by "
-                "statevector QCO DD simulation";
-    }
-    remaining[i] =
-        (std::conj(targetZero) * zero) + (std::conj(targetOne) * one);
+  if (!zero.isZeroTerminal() && !one.isZeroTerminal() && zero.p != one.p) {
+    return op->emitError()
+           << "deallocating an entangled qubit is not supported by "
+              "statevector QCO DD simulation";
   }
 
-  auto reduced = dd::makeStateFromVector(remaining, walk.dd);
+  const auto zeroWeight = static_cast<dd::ComplexValue>(zero.w);
+  const auto oneWeight = static_cast<dd::ComplexValue>(one.w);
+  const auto norm = std::sqrt(zeroWeight.mag2() + oneWeight.mag2());
+  auto reduced = dd::VectorDD{.p = zero.isZeroTerminal() ? one.p : zero.p,
+                              .w = walk.dd.cn.lookup(norm)};
+  walk.dd.incRef(reduced);
   walk.dd.decRef(state);
   state = reduced;
   walk.qubits.releaseWire(wire);

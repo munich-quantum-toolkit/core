@@ -1176,6 +1176,26 @@ TEST_F(QCODDFunctionalityTest, DeallocationRemovesSeparableWires) {
   expectSampleHistogram(mainFunc(*mod), 3, 8, 3, "1");
 }
 
+TEST_F(QCODDFunctionalityTest, DeallocationStaysCompactForManyQubits) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%live: !qco.qubit) -> !qco.qubit {
+        %c40 = arith.constant 40 : index
+        %tensor = qtensor.alloc(%c40) : tensor<40x!qco.qubit>
+        qtensor.dealloc %tensor : tensor<40x!qco.qubit>
+        %result = qco.x %live : !qco.qubit -> !qco.qubit
+        return %result : !qco.qubit
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  // Expanding the 41-qubit statevector would require 2^41 amplitudes. The DD
+  // representation remains linear because all released qubits are separable.
+  expectSampleHistogram(mainFunc(*mod), 41, 1, 3, "1");
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsEntangledQTensorDeallocation) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(2);
