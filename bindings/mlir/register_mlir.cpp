@@ -171,21 +171,12 @@ makeQCODDBindings(mlir::func::FuncOp func,
   return bindings;
 }
 
-[[nodiscard]] std::mt19937_64 makeRng(const std::uint64_t seed) {
-  if (seed == 0) {
+[[nodiscard]] std::mt19937_64 makeRng(const std::optional<uint64_t>& seed) {
+  if (!seed.has_value() || *seed == 0) {
     std::random_device rd;
     return std::mt19937_64(rd());
   }
-  return std::mt19937_64(seed);
-}
-
-[[nodiscard]] std::mt19937_64
-makeRng(const std::optional<std::uint64_t>& seed) {
-  if (!seed.has_value()) {
-    std::random_device rd;
-    return std::mt19937_64(rd());
-  }
-  return makeRng(*seed);
+  return std::mt19937_64(*seed);
 }
 
 /// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
@@ -939,7 +930,7 @@ Raises:
                                      func, initialState, ddPackage, bindings);
                                });
         }
-        auto rng = makeRng(*seed);
+        auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot simulate this QCO program", [&] {
               return mlir::qco::simulate(func, initialState, ddPackage, rng,
@@ -992,7 +983,7 @@ is referenced and must be released with ``DDPackage.dec_ref_mat``.)pb");
                                      func, initialState, ddPackage, bindings);
                                });
         }
-        auto rng = makeRng(*seed);
+        auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot density-simulate this QCO program", [&] {
               return mlir::qco::simulateDensity(func, initialState, ddPackage,

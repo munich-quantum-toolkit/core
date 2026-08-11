@@ -130,7 +130,7 @@ protected:
   static void
   expectSimulatesFromZero(func::FuncOp func, size_t nQubits,
                           llvm::ArrayRef<bool> expectedBits,
-                          std::optional<std::uint64_t> seed = std::nullopt) {
+                          std::optional<uint64_t> seed = std::nullopt) {
     auto dd = std::make_unique<dd::Package>(nQubits);
     auto expected = basisState(nQubits, expectedBits, *dd);
     if (seed) {
@@ -149,10 +149,10 @@ protected:
     dd->decRef(expected);
   }
 
-  enum class SampleApi : std::uint8_t { Sample, SampleWithClassics };
+  enum class SampleApi : uint8_t { Sample, SampleWithClassics };
 
   static void expectSampleHistogram(
-      func::FuncOp func, size_t nQubits, std::size_t shots, std::uint64_t seed,
+      func::FuncOp func, size_t nQubits, size_t shots, uint64_t seed,
       StringRef expectedShotKey, SampleApi api = SampleApi::Sample,
       std::optional<StringRef> expectedClassicalKey = std::nullopt) {
     auto dd = std::make_unique<dd::Package>(nQubits);
@@ -471,8 +471,8 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
   const auto phase = std::polar(1.0, 0.25);
   const auto m0 = u0->getMatrix(1);
   const auto m1 = u1->getMatrix(1);
-  for (std::size_t r = 0; r < 2; ++r) {
-    for (std::size_t c = 0; c < 2; ++c) {
+  for (size_t r = 0; r < 2; ++r) {
+    for (size_t c = 0; c < 2; ++c) {
       EXPECT_TRUE(std::abs(m1[r][c] - (m0[r][c] * phase)) < 1e-10);
     }
   }
@@ -648,7 +648,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
   });
   ASSERT_TRUE(mod);
 
-  constexpr std::uint64_t seed = 42;
+  constexpr uint64_t seed = 42;
   auto dd = std::make_unique<dd::Package>(1);
 
   std::mt19937_64 refRng(seed);
@@ -1819,7 +1819,7 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
 
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(42);
-  constexpr std::size_t shots = 2000;
+  constexpr size_t shots = 2000;
   const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 2U);

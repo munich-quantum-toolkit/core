@@ -251,7 +251,8 @@ struct WalkState {
   dd::Package& dd; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   std::mt19937_64* rng = nullptr;
   std::string* classicalBits = nullptr;
-  DenseSet<Operation*>* activeCalls = nullptr;
+  DenseSet<Operation*>&
+      activeCalls; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 };
 
 /// Distinguishes a density operator from the matrix used for functionality
@@ -262,16 +263,13 @@ struct DensityState {
 
 /// Erases @p op from @p set on destruction (used around `func.call`).
 struct ActiveCallGuard {
-  DenseSet<Operation*>* set = nullptr;
-  Operation* op = nullptr;
+  DenseSet<Operation*>&
+      set; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  Operation* op;
 
-  ActiveCallGuard(DenseSet<Operation*>* activeSet, Operation* callee)
+  ActiveCallGuard(DenseSet<Operation*>& activeSet, Operation* callee)
       : set(activeSet), op(callee) {}
-  ~ActiveCallGuard() {
-    if (set != nullptr && op != nullptr) {
-      set->erase(op);
-    }
-  }
+  ~ActiveCallGuard() { set.erase(op); }
   ActiveCallGuard(const ActiveCallGuard&) = delete;
   ActiveCallGuard& operator=(const ActiveCallGuard&) = delete;
 };
@@ -1778,38 +1776,6 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
       });
 }
 
-static LogicalResult bindLinearArgs(ValueRange operands, Block& block,
-                                    WalkState& walk, Operation* op) {
-  if (operands.size() != block.getNumArguments()) {
-    return op->emitError()
-           << "region argument count does not match linear operands";
-  }
-  for (auto [operand, arg] : llvm::zip_equal(operands, block.getArguments())) {
-    if (isa<QubitType>(arg.getType())) {
-      const auto q = walk.qubits.lookup(operand);
-      if (!q) {
-        return op->emitError()
-               << "qubit SSA value is not mapped for QCO DD construction";
-      }
-      walk.qubits.bind(arg, *q);
-      continue;
-    }
-    if (isQTensorType(arg.getType())) {
-      const auto* slots = walk.tensors.lookup(operand);
-      if (slots == nullptr) {
-        return op->emitError()
-               << "qtensor SSA value is not mapped for QCO DD simulation";
-      }
-      walk.tensors.bind(arg, *slots);
-      continue;
-    }
-    return op->emitError()
-           << "unsupported linear region argument type for QCO DD simulation: "
-           << arg.getType();
-  }
-  return success();
-}
-
 /// Bind each source SSA onto the corresponding destination via its concrete
 /// qubit, qtensor, or classical environment. Callers must ensure equal sizes.
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
@@ -1840,51 +1806,6 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
     } else if (failed(walk.classical.bindFrom(src, dest, op))) {
       return failure();
     }
-  }
-  return success();
-}
-
-static LogicalResult bindYieldResults(YieldOp yield,
-                                      ValueRange classicalResults,
-                                      ValueRange linearResults,
-                                      WalkState& walk) {
-  const size_t expected = classicalResults.size() + linearResults.size();
-  if (yield.getNumOperands() != expected) {
-    return yield.emitError()
-           << "yield operand count does not match result segments";
-  }
-  size_t idx = 0;
-  for (Value result : classicalResults) {
-    if (failed(
-            walk.classical.bindFrom(yield.getOperand(idx++), result, yield))) {
-      return failure();
-    }
-  }
-  for (Value result : linearResults) {
-    Value yielded = yield.getOperand(idx++);
-    if (isa<QubitType>(result.getType())) {
-      const auto q = walk.qubits.lookup(yielded);
-      if (!q) {
-        return yield.emitError()
-               << "yielded qubit SSA value is not mapped for QCO DD "
-                  "construction";
-      }
-      walk.qubits.bind(result, *q);
-      continue;
-    }
-    if (isQTensorType(result.getType())) {
-      const auto* slots = walk.tensors.lookup(yielded);
-      if (slots == nullptr) {
-        return yield.emitError()
-               << "yielded qtensor SSA value is not mapped for QCO DD "
-                  "simulation";
-      }
-      walk.tensors.bind(result, *slots);
-      continue;
-    }
-    return yield.emitError()
-           << "unsupported linear result type for QCO DD simulation: "
-           << result.getType();
   }
   return success();
 }
@@ -1981,13 +1902,28 @@ static LogicalResult
 applyRegionBranch(ValueRange linearOperands, Block& block, YieldOp yield,
                   ValueRange classicalResults, ValueRange linearResults,
                   WalkState& walk, StateDD& state, Operation* parent) {
-  if (failed(bindLinearArgs(linearOperands, block, walk, parent))) {
+  if (linearOperands.size() != block.getNumArguments()) {
+    return parent->emitError()
+           << "region argument count does not match linear operands";
+  }
+  if (failed(
+          bindValuePairs(linearOperands, block.getArguments(), walk, parent))) {
     return failure();
   }
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
-  return bindYieldResults(yield, classicalResults, linearResults, walk);
+  const size_t numClassical = classicalResults.size();
+  if (yield.getNumOperands() != numClassical + linearResults.size()) {
+    return yield.emitError()
+           << "yield operand count does not match result segments";
+  }
+  if (failed(bindValuePairs(yield.getOperands().take_front(numClassical),
+                            classicalResults, walk, yield))) {
+    return failure();
+  }
+  return bindValuePairs(yield.getOperands().drop_front(numClassical),
+                        linearResults, walk, yield);
 }
 
 template <typename StateDD>
@@ -2491,12 +2427,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         if (callee.isDeclaration()) {
           return call.emitError() << "func.call callee must have a body";
         }
-        if (walk.activeCalls == nullptr) {
-          return call.emitError()
-                 << "internal error: missing active call set for QCO DD";
-        }
         Operation* calleeOp = callee.getOperation();
-        if (!walk.activeCalls->insert(calleeOp).second) {
+        if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
                  << "recursive func.call is not supported for QCO DD "
                     "simulation";
@@ -2666,7 +2598,7 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd,
                       .dd = dd,
                       .rng = nullptr,
                       .classicalBits = nullptr,
-                      .activeCalls = &activeCalls};
+                      .activeCalls = activeCalls};
 
   dd::MatrixDD state =
       qubits.numQubits == 0
@@ -2704,7 +2636,7 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
                       .dd = dd,
                       .rng = rng,
                       .classicalBits = classicalBits,
-                      .activeCalls = &activeCalls};
+                      .activeCalls = activeCalls};
 
   dd::VectorDD state = in;
   if (failed(walkFunction(func, walkState, state))) {
@@ -2742,8 +2674,7 @@ struct DensitySimulationResult {
 
 static FailureOr<DensitySimulationResult>
 simulateDensityImpl(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
-                    std::mt19937_64* rng, std::string* classicalBits,
-                    const DDBindings& bindings) {
+                    std::mt19937_64* rng, const DDBindings& bindings) {
   auto preparedOr = prepare(func, dd, bindings);
   if (failed(preparedOr)) {
     dd.decRef(in);
@@ -2762,8 +2693,8 @@ simulateDensityImpl(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
                       .classical = classical,
                       .dd = dd,
                       .rng = rng,
-                      .classicalBits = classicalBits,
-                      .activeCalls = &activeCalls};
+                      .classicalBits = nullptr,
+                      .activeCalls = activeCalls};
   DensityState state{in};
   if (failed(walkFunction(func, walkState, state))) {
     dd.decRef(state.matrix);
@@ -2776,7 +2707,7 @@ simulateDensityImpl(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
 FailureOr<dd::MatrixDD> simulateDensity(func::FuncOp func,
                                         const dd::MatrixDD& in, dd::Package& dd,
                                         const DDBindings& bindings) {
-  auto result = simulateDensityImpl(func, in, dd, nullptr, nullptr, bindings);
+  auto result = simulateDensityImpl(func, in, dd, nullptr, bindings);
   if (failed(result)) {
     return failure();
   }
@@ -2787,7 +2718,7 @@ FailureOr<dd::MatrixDD> simulateDensity(func::FuncOp func,
                                         const dd::MatrixDD& in, dd::Package& dd,
                                         std::mt19937_64& rng,
                                         const DDBindings& bindings) {
-  auto result = simulateDensityImpl(func, in, dd, &rng, nullptr, bindings);
+  auto result = simulateDensityImpl(func, in, dd, &rng, bindings);
   if (failed(result)) {
     return failure();
   }
@@ -2886,8 +2817,7 @@ sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
   }
 
   if (!requiresDynamicSampling(func)) {
-    auto simulated =
-        simulateDensityImpl(func, in, dd, nullptr, nullptr, bindings);
+    auto simulated = simulateDensityImpl(func, in, dd, nullptr, bindings);
     if (failed(simulated)) {
       return failure();
     }
@@ -2904,7 +2834,7 @@ sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
 
   for (size_t i = 0; i < shots; ++i) {
     dd.incRef(in);
-    auto simulated = simulateDensityImpl(func, in, dd, &rng, nullptr, bindings);
+    auto simulated = simulateDensityImpl(func, in, dd, &rng, bindings);
     if (failed(simulated)) {
       dd.decRef(in);
       return failure();

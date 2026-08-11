@@ -32,6 +32,8 @@ than a statevector.
 - [x] (2026-08-11 12:05Z) Regenerated Python stubs, passed all 148 QCO utility
       tests and all 8 Python DD tests, and passed the full repository lint
       session.
+- [x] (2026-08-11 13:15Z) Removed the unused density classical-bit plumbing;
+      density simulation never exposes a classical-history sampling API.
 
 ## Surprises & Discoveries
 
@@ -158,3 +160,6 @@ proof-driven mixed-state feasibility assessment.
 
 Revision note (2026-08-11): Recorded the completed additive density API and
 final native, Python, stub-generation, build, and lint validation.
+
+Revision note (2026-08-11): Recorded removal of an unused internal density
+parameter found during the final branch audit.

@@ -203,9 +203,9 @@ simulateDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>>
-sample(func::FuncOp func, dd::Package& dd, std::size_t shots,
-       std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+       const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func` on a given input.
@@ -223,10 +223,9 @@ sample(func::FuncOp func, dd::Package& dd, std::size_t shots,
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>>
-sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-       std::size_t shots, std::mt19937_64& rng,
-       const DDBindings& bindings = DDBindings());
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd, size_t shots,
+       std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample a QCO function from an input density-matrix DD.

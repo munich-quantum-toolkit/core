@@ -31,6 +31,9 @@ concrete programs executable without requiring prior canonicalization.
 - [x] (2026-08-11 10:30Z) Ran all 144 QCO utility tests successfully.
 - [x] (2026-08-11 12:05Z) Passed the final 148-test QCO utility suite and the
       full repository lint session after all DD slices were integrated.
+- [x] (2026-08-11 13:15Z) Re-audited the complete branch, removed the obsolete
+      QCO-only region argument/yield binders in favor of `bindValuePairs`, and
+      made recursive-call tracking a required interpreter invariant.
 
 ## Surprises & Discoveries
 
@@ -58,13 +61,18 @@ concrete programs executable without requiring prior canonicalization.
   multi-block `scf.execute_region`. Rationale: both carry SSA block arguments
   through concrete branch terminators and should share transition limits and
   diagnostics. Date/Author: 2026-08-11, Codex.
+- Decision: Use `bindValuePairs` for QCO modifier-region arguments and split
+  yield segments as well as standard CFG/call values. Rationale: the general
+  binder now covers every linear and classical value category, making the two
+  older specialized binders redundant. Date/Author: 2026-08-11, Codex.
 
 ## Outcomes & Retrospective
 
 The interpreter now carries memref aliases across calls, traverses concrete CFG
 switches and multi-block execute regions, and evaluates the selected common
 arith/math operations. The final 148-test QCO utility suite and repository lint
-session pass.
+session pass. A final branch audit removed obsolete incremental helpers and an
+unreachable nullable recursion-state path without changing behavior.
 
 ## Context and Orientation
 
@@ -145,3 +153,6 @@ their focused semantic tests; only aggregate validation remains.
 
 Revision note (2026-08-11): Recorded successful aggregate native and lint
 validation.
+
+Revision note (2026-08-11): Recorded the post-integration deletion audit and
+consolidation onto the general value binder.
