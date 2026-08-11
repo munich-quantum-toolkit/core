@@ -547,6 +547,15 @@ static LogicalResult applyBindings(func::FuncOp func,
              << "QCO DD bindings must target entry-block arguments";
     }
     Type type = value.getType();
+    if (isQTensorType(type)) {
+      if (cast<RankedTensorType>(type).isDynamicDim(0) &&
+          isa<IntegerAttr>(attr)) {
+        continue;
+      }
+      return func.emitError()
+             << "QCO DD qtensor bindings require a dynamic qtensor argument "
+                "and an integer extent";
+    }
     if (type.isInteger(1)) {
       if (auto boolean = dyn_cast<BoolAttr>(attr)) {
         classical.bools[value] = boolean.getValue();
@@ -2090,8 +2099,8 @@ struct PreparedState {
   TensorMap tensors;
 };
 
-static FailureOr<PreparedState> prepare(func::FuncOp func,
-                                        const dd::Package& dd) {
+static FailureOr<PreparedState>
+prepare(func::FuncOp func, const dd::Package& dd, const DDBindings& bindings) {
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
@@ -2112,14 +2121,24 @@ static FailureOr<PreparedState> prepare(func::FuncOp func,
         qubits.bind(arg, next++);
       } else if (isQTensorType(arg.getType())) {
         const auto tensorType = cast<RankedTensorType>(arg.getType());
+        int64_t size = tensorType.getDimSize(0);
         if (tensorType.isDynamicDim(0)) {
-          return func.emitError()
-                 << "dynamic qtensor function arguments are not supported for "
-                    "QCO DD simulation";
+          const auto binding = bindings.find(arg);
+          if (binding == bindings.end() || !isa<IntegerAttr>(binding->second)) {
+            return func.emitError()
+                   << "dynamic qtensor function arguments require an integer "
+                      "extent in the QCO DD bindings";
+          }
+          size = cast<IntegerAttr>(binding->second).getInt();
+          if (size < 0) {
+            return func.emitError()
+                   << "dynamic qtensor function argument extent must be "
+                      "non-negative";
+          }
         }
         TensorSlots slots;
-        slots.reserve(static_cast<size_t>(tensorType.getDimSize(0)));
-        for (int64_t i = 0; i < tensorType.getDimSize(0); ++i) {
+        slots.reserve(static_cast<size_t>(size));
+        for (int64_t i = 0; i < size; ++i) {
           slots.emplace_back(next++);
         }
         prepared.tensors.bind(arg, std::move(slots));
@@ -2136,7 +2155,7 @@ static FailureOr<PreparedState> prepare(func::FuncOp func,
 
 FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd,
                                            const DDBindings& bindings) {
-  auto preparedOr = prepare(func, dd);
+  auto preparedOr = prepare(func, dd, bindings);
   if (failed(preparedOr)) {
     return failure();
   }
@@ -2172,7 +2191,7 @@ static FailureOr<dd::VectorDD>
 simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              std::mt19937_64* rng, std::string* classicalBits,
              const DDBindings& bindings) {
-  auto preparedOr = prepare(func, dd);
+  auto preparedOr = prepare(func, dd, bindings);
   if (failed(preparedOr)) {
     dd.decRef(in);
     return failure();
@@ -2317,7 +2336,7 @@ FailureOr<SampleResult> sampleWithClassics(func::FuncOp func,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, dd::Package& dd, const size_t shots,
        std::mt19937_64& rng, const DDBindings& bindings) {
-  auto preparedOr = prepare(func, dd);
+  auto preparedOr = prepare(func, dd, bindings);
   if (failed(preparedOr)) {
     return failure();
   }
@@ -2329,7 +2348,7 @@ FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
                                            const size_t shots,
                                            std::mt19937_64& rng,
                                            const DDBindings& bindings) {
-  auto preparedOr = prepare(func, dd);
+  auto preparedOr = prepare(func, dd, bindings);
   if (failed(preparedOr)) {
     return failure();
   }

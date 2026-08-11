@@ -28,9 +28,10 @@ namespace mlir::qco {
 /**
  * @brief Concrete values for symbolic QCO DD inputs.
  *
- * Integer and floating-point attributes bind scalar SSA values. Bindings are
- * primarily intended for function arguments; unbound symbolic values still
- * cause functionality construction or simulation to fail.
+ * Integer and floating-point attributes bind scalar SSA values. An integer
+ * attribute bound to a dynamic one-dimensional qtensor argument supplies its
+ * runtime extent. Bindings must target function arguments; unbound symbolic
+ * values still cause functionality construction or simulation to fail.
  */
 using DDBindings = DenseMap<Value, Attribute>;
 
@@ -43,7 +44,7 @@ using DDBindings = DenseMap<Value, Attribute>;
  * multiplication.
  *
  * Supported programs:
- * - Standard single-, two-, and three-qubit gates with compile-time constant
+ * - Standard single-, two-, and three-qubit gates with constant or bound
  *   parameters (sparse DD path)
  * - `ctrl` with a sole standard-gate body (same sparse path)
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
@@ -86,7 +87,8 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * floating-point values (`alloc`/`store`/`load`/`dealloc`).
  * `qco.alloc` and `qtensor.alloc` append zero-state wires, while
  * `qtensor.from_elements` / `extract` / `insert` / `dealloc` track their linear
- * ownership. QTensor sizes and indices must be concrete classical values.
+ * ownership. QTensor sizes and indices must be concrete classical values;
+ * dynamic qtensor function arguments require an extent in @p bindings.
  * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
  * bound `scf.for` loops, concrete `scf.while` loops, and non-recursive
  * single-block `func.call` are supported independently of RNG. Loops are

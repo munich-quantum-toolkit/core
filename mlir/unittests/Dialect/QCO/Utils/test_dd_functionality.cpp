@@ -1275,6 +1275,49 @@ TEST_F(QCODDFunctionalityTest, QTensorFunctionArgumentMapsInputWires) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%arg0: tensor<?x!qco.qubit>)
+          -> tensor<?x!qco.qubit> {
+        %c1 = arith.constant 1 : index
+        %remaining, %q = qtensor.extract %arg0[%c1]
+            : tensor<?x!qco.qubit>
+        %q1 = qco.x %q : !qco.qubit -> !qco.qubit
+        %result = qtensor.insert %q1 into %remaining[%c1]
+            : tensor<?x!qco.qubit>
+        return %result : tensor<?x!qco.qubit>
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto func = mainFunc(*mod);
+  DDBindings bindings;
+  bindings[func.getArgument(0)] =
+      IntegerAttr::get(IndexType::get(context.get()), 2);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto actual = buildFunctionality(func, *dd, bindings);
+  qc::QuantumComputation qc(2);
+  qc.x(1);
+  auto expected = dd::buildFunctionality(qc, *dd);
+  ASSERT_TRUE(succeeded(actual));
+  EXPECT_EQ(actual->getMatrix(2), expected.getMatrix(2));
+  dd->decRef(*actual);
+  dd->decRef(expected);
+
+  std::mt19937_64 rng(3);
+  auto histogram = sample(func, *dd, 4, rng, bindings);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("10"), 4U);
+
+  EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
+  bindings[func.getArgument(0)] =
+      IntegerAttr::get(IndexType::get(context.get()), -1);
+  EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsQTensorAllocationBeyondPackage) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     b.qtensorDealloc(b.qtensorAlloc(2));
