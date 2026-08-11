@@ -178,6 +178,48 @@ TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
   EXPECT_NO_FATAL_FAILURE(builder.x(output));
 }
 
+TEST_F(QCOTest, CleanupPreservesReturnedStaticQubit) {
+  auto module = QCOProgramBuilder::build(
+      context.get(), [&](auto& builder) { return builder.staticQubit(0); });
+  ASSERT_TRUE(module);
+
+  auto mainFunc = *module->getOps<func::FuncOp>().begin();
+  auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  ASSERT_EQ(returnOp.getNumOperands(), 1U);
+  const auto returnedQubit = returnOp.getOperand(0);
+  EXPECT_TRUE(returnedQubit.getDefiningOp<StaticOp>());
+  EXPECT_TRUE(returnedQubit.hasOneUse());
+  EXPECT_EQ(*returnedQubit.user_begin(), returnOp.getOperation());
+  EXPECT_TRUE(mainFunc.getBody().getOps<SinkOp>().empty());
+
+  ASSERT_TRUE(runQCOCleanupPipeline(*module).succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+
+  returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<StaticOp>());
+}
+
+TEST_F(QCOTest, CleanupPreservesReturnedQubitTensor) {
+  auto module = QCOProgramBuilder::build(
+      context.get(), [&](auto& builder) { return builder.qtensorAlloc(2); });
+  ASSERT_TRUE(module);
+
+  auto mainFunc = *module->getOps<func::FuncOp>().begin();
+  auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  ASSERT_EQ(returnOp.getNumOperands(), 1U);
+  const auto returnedTensor = returnOp.getOperand(0);
+  EXPECT_TRUE(returnedTensor.getDefiningOp<qtensor::AllocOp>());
+  EXPECT_TRUE(returnedTensor.hasOneUse());
+  EXPECT_EQ(*returnedTensor.user_begin(), returnOp.getOperation());
+  EXPECT_TRUE(mainFunc.getBody().getOps<qtensor::DeallocOp>().empty());
+
+  ASSERT_TRUE(runQCOCleanupPipeline(*module).succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+
+  returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<qtensor::AllocOp>());
+}
+
 TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
   EXPECT_DEATH(
       {
@@ -1575,6 +1617,30 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
   EXPECT_EQ(gphaseCount, 0) << "controlled GPhase must be extracted";
   EXPECT_EQ(pCount, 1) << "controlled GPhase must become P on the control";
   EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
+}
+
+TEST_F(QCOTest, CtrlGPhasePassesTargetsThrough) {
+  auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto controlIn = builder.staticQubit(0);
+    auto targetIn = builder.staticQubit(1);
+    const auto [control, target] =
+        builder.ctrl(controlIn, targetIn, [&](Value targetArg) {
+          builder.gphase(0.123);
+          return targetArg;
+        });
+    return SmallVector<Value>{control, target};
+  });
+  ASSERT_TRUE(program);
+
+  ASSERT_TRUE(runQCOCleanupPipeline(*program).succeeded());
+  ASSERT_TRUE(verify(*program).succeeded());
+
+  auto mainFunc = *program->getOps<func::FuncOp>().begin();
+  auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
+  ASSERT_EQ(returnOp.getNumOperands(), 2U);
+  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<POp>());
+  EXPECT_TRUE(returnOp.getOperand(1).getDefiningOp<StaticOp>());
+  EXPECT_TRUE(mainFunc.getBody().getOps<CtrlOp>().empty());
 }
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp

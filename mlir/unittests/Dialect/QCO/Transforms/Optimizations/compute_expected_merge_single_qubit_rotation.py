@@ -28,20 +28,35 @@ def u2_gate(phi: float, lam: float) -> Quaternion:
 
 
 def normalize_angle(a: float) -> float:
-    """Normalize angle to [-pi, pi], matching the pass's normalizeAngle.
+    """Wrap an Euler angle to [-pi, pi), matching wrapToPi in the pass.
 
     Returns:
-        Angle in the range [-pi, pi].
+        Angle in the range [-pi, pi).
     """
     two_pi = 2 * math.pi
     return a - math.floor((a + math.pi) / two_pi) * two_pi
 
 
-def angles_from_quaternion(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
+def normalize_global_phase(a: float) -> float:
+    """Normalize to (-pi, pi], matching utils::normalizeAngle.
+
+    Returns:
+        Angle in the range (-pi, pi].
+    """
+    two_pi = 2 * math.pi
+    a = math.fmod(a, two_pi)
+    if a > math.pi:
+        a -= two_pi
+    if a <= -math.pi:
+        a += two_pi
+    return a
+
+
+def angles_from_quaternion(w: float, x: float, y: float, z: float) -> tuple[float, float, float, float]:
     """ZYZ Euler angles from quaternion, matching anglesFromQuaternion in the pass.
 
     Returns:
-        Tuple (theta, phi, lambda) in ZYZ convention.
+        Tuple (theta, phi, lambda, phase correction) in ZYZ convention.
     """
     eps = 1e-12
 
@@ -72,11 +87,12 @@ def angles_from_quaternion(w: float, x: float, y: float, z: float) -> tuple[floa
         alpha = 2 * theta_minus
         gamma = 0.0
 
-    alpha = normalize_angle(alpha)
-    gamma = normalize_angle(gamma)
+    normalized_alpha = normalize_angle(alpha)
+    normalized_gamma = normalize_angle(gamma)
+    phase_correction = ((alpha - normalized_alpha) + (gamma - normalized_gamma)) / 2
 
     # U gate convention: theta=beta, phi=alpha, lambda=gamma
-    return beta, alpha, gamma
+    return beta, normalized_alpha, normalized_gamma, phase_correction
 
 
 def global_phase(gate_type: str, *angles: float) -> float:
@@ -115,13 +131,13 @@ def output_phase(phi: float, lam: float) -> float:
     return (phi + lam) / 2
 
 
-def gphase_correction(input_phase: float, phi: float, lam: float) -> float:
-    """Return the GPhaseOp correction = total_input_phase - output_UOp_phase.
+def gphase_correction(input_phase: float, phi: float, lam: float, euler_phase: float) -> float:
+    """Return the GPhaseOp correction, including Euler normalization phase.
 
     Returns:
         Phase correction in radians.
     """
-    return input_phase - output_phase(phi, lam)
+    return input_phase - output_phase(phi, lam) + euler_phase
 
 
 # ---- Helper to compute merge + gphase for a chain ----
@@ -130,9 +146,9 @@ def compute_merge(chain: list[tuple]) -> tuple[float, float, float, float]:
 
     chain: list of (gate_type, quaternion, *angles).
 
-    Uses our own Euler extraction that matches the C++ pass exactly:
-    no quaternion sign normalization, same atan2/acos/clamp logic,
-    same gimbal-lock handling, same angle normalization.
+    Uses our own Euler extraction that matches the C++ pass exactly: same
+    atan2/acos/clamp logic, gimbal-lock handling, angle normalization, and
+    global-phase correction induced by normalizing the Euler angles.
 
     Returns:
         Tuple (theta, phi, lambda, gphase) all as floats.
@@ -146,13 +162,12 @@ def compute_merge(chain: list[tuple]) -> tuple[float, float, float, float]:
         q = qi.mul(q)  # Hamilton product in circuit order
         total_input_phase += global_phase(gt, *ai)
 
-    # Extract Euler angles matching the pass (no sign normalization)
+    # Extract Euler angles matching the pass.
     w, x, y, z = float(N(q.a)), float(N(q.b)), float(N(q.c)), float(N(q.d))
-    theta, phi, lam = angles_from_quaternion(w, x, y, z)
+    theta, phi, lam, euler_phase = angles_from_quaternion(w, x, y, z)
+    corr = gphase_correction(total_input_phase, phi, lam, euler_phase)
 
-    corr = gphase_correction(total_input_phase, phi, lam)
-
-    return theta, phi, lam, float(N(corr))
+    return theta, phi, lam, normalize_global_phase(float(N(corr)))
 
 
 # ---- Build gates ----

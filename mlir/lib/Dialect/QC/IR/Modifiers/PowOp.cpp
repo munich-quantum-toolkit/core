@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/UGateUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -265,6 +266,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
  * - Phase/diagonal gates: named gate if angle matches, else `P` gate,
  *   e.g., `pow(r) { s } => s/sdg/t/tdg/z` or `p(r*π/2)`
  * - Hermitian gates (integer exponent): even => erase, odd => gate
+ * - Constant U gates (positive integer exponent): synthesize as a U gate and
+ *   phase
  * - Identity/barrier: pass through unchanged
  */
 struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
@@ -284,6 +287,20 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     const double r = *exponent;
     auto loc = op.getLoc();
 
+    std::optional<UPowerParameters> uPower;
+    if (auto uOp = dyn_cast<UOp>(innerOp)) {
+      const auto theta = valueToDouble(uOp.getTheta());
+      const auto phi = valueToDouble(uOp.getPhi());
+      const auto lambda = valueToDouble(uOp.getLambda());
+      if (!theta || !phi || !lambda) {
+        return failure();
+      }
+      uPower = powerUParameters(*theta, *phi, *lambda, r);
+      if (!uPower) {
+        return failure();
+      }
+    }
+
     // Scaling a gate parameter represents a principal matrix power only for an
     // integral exponent unless the parameter is known to remain within the
     // principal branch. Keep arbitrary parameters inside fractional powers.
@@ -300,8 +317,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     }
     if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
              ECROp, RCCXOp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp,
-             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, IdOp, BarrierOp>(
-            innerOp)) {
+             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, UOp, IdOp,
+             BarrierOp>(innerOp)) {
       return failure();
     }
 
@@ -359,6 +376,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               utils::getValueFromBlockArgument(gate.getTarget(1),
                                                op.getQubits()),
               mul, gate.getBeta());
+          return success();
+        })
+        // pow(n) { u(theta, phi, lambda) } =>
+        // gphase(delta); u(theta', phi', lambda')
+        .Case<UOp>([&](auto) {
+          if (std::abs(normalizeAngle(uPower->phase)) > TOLERANCE) {
+            GPhaseOp::create(rewriter, loc, uPower->phase);
+          }
+          rewriter.replaceOpWithNewOp<UOp>(op, op.getTarget(0), uPower->theta,
+                                           uPower->phi, uPower->lambda);
           return success();
         })
         // --- Pauli gates: decompose to rotation + global phase ---
