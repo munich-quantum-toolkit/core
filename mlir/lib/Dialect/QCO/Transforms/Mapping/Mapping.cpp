@@ -27,6 +27,7 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -982,25 +983,23 @@ private:
   /// Return the "average" layout by computing the borda count, where each
   /// layout is a voter and each hardware index counts as a candidate. One vote
   /// is the order (the permutation) of program-to-hardware indices.
-  template <typename Range> static Layout vote(Range layouts) {
+  template <typename Range> Layout vote(Range layouts) {
     assert(!layouts.empty() && "expected at least one layout");
-    const auto ncandidates = (*layouts.begin()).nqubits();
 
-    SmallVector<size_t> scores(ncandidates, 0);
-    for (const Layout& layout : layouts) {
-      for (const auto [rank, hw] : enumerate(layout.getProgramToHardware())) {
-        scores[hw] += ncandidates - rank - 1;
+    FGraph f(*target);
+    Layout curr(*(layouts.begin()));
+
+    for (const auto& layout : llvm::drop_begin(layouts)) {
+      f.reset();
+      f.construct(curr, layout);
+      if (const auto happy = f.findHappySWAPChain()) {
+        for (const auto& swap : *happy) {
+          curr.swap(swap.first, swap.second);
+        }
       }
     }
 
-    auto mapping = llvm::to_vector(llvm::seq(ncandidates));
-    llvm::sort(mapping, [&](const size_t lhs, const size_t rhs) {
-      return scores[lhs] != scores[rhs]
-                 ? scores[lhs] > scores[rhs]
-                 : lhs < rhs; // Ensure order on borda equality.
-    });
-
-    return Layout::fromMapping(mapping);
+    return curr;
   }
 
   /// Skip to the end of the two-qubit block for both wire iterators, where
@@ -1472,6 +1471,7 @@ private:
                   }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, winner);
+                llvm::dbgs() << "swaps: " << swaps.size() << '\n';
                 insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
               }
               return winner;
