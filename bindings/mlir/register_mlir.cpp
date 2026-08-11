@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
@@ -208,11 +207,6 @@ programFromPath(const std::filesystem::path& path) {
   if (nb::hasattr(program, "__fspath__")) {
     return programFromPath(nb::cast<std::filesystem::path>(program));
   }
-  if (nb::isinstance<qc::QuantumComputation>(program)) {
-    return takeResult(mlir::QCProgram::fromQuantumComputation(
-        nb::cast<const qc::QuantumComputation&>(program)));
-  }
-
   if (nb::isinstance<mlir::QCProgram>(program)) {
     auto& value = nb::cast<mlir::QCProgram&>(program);
     return inplace ? mlir::CompilerInput(std::move(value))
@@ -243,7 +237,6 @@ programFromPath(const std::filesystem::path& path) {
       return bindings::qiskit::importCircuit(program);
     }
   }
-
   throw std::runtime_error("Program type " + programType +
                            " is not supported.");
 }
@@ -267,7 +260,6 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
 
   nb::module_::import_("typing");
-  nb::module_::import_("mqt.core.ir");
   nb::module_::import_("mqt.core.qdmi");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
@@ -675,12 +667,6 @@ before conversion to QCO.)pb");
           &OptionalFunctionAdapter<&mlir::QCProgram::fromQASMFile>::call,
           "path"_a, "Translate an OpenQASM 3 file to QC MLIR.")
       .def_static(
-          "from_quantum_computation",
-          &OptionalFunctionAdapter<
-              &mlir::QCProgram::fromQuantumComputation>::call,
-          "computation"_a,
-          R"pb(Translate an MQT {py:class}`~mqt.core.ir.QuantumComputation` to QC MLIR.)pb")
-      .def_static(
           "from_qiskit",
           [](const nb::object& circuit) {
             return bindings::qiskit::importCircuit(circuit);
@@ -902,14 +888,14 @@ LLVM bitcode.)pb");
         R"pb(
 Run the coordinated default MQT compiler pipeline.
 
-Input source strings, files, MQT {py:class}`~mqt.core.ir.QuantumComputation`
-objects, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed
-compiler programs can be combined with any supported output format. Typed
-program inputs are copied by default; set ``inplace=True`` to consume them.
-Use the typed programs directly to construct a custom pipeline stage by stage.
+Input source strings, files, Qiskit
+{py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler programs
+can be combined with any supported output format. Typed program inputs are
+copied by default; set ``inplace=True`` to consume them. Use the typed programs
+directly to construct a custom pipeline stage by stage.
 
 Args:
-    program: Source text, a file path, a circuit, or a typed compiler program.
+    program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
     output: The requested output stage of the compiler pipeline.
     inplace: Whether a typed input program may be consumed.
     target: An optional compiler target for decomposition, mapping, and native
