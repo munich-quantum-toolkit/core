@@ -95,7 +95,9 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * function CFGs, and non-recursive `func.call` are supported independently of
  * RNG. Loops and function CFGs are limited to 10000 transitions. Qubits and
  * one-dimensional qtensors can be carried through nested regions and blocks.
- * Dynamically allocated wires remain in the returned state after deallocation.
+ * Deallocating a separable qtensor removes its wires from the returned state;
+ * deallocating an entangled qtensor is rejected because a statevector cannot
+ * represent the resulting mixed state.
  * Consumes one reference to @p in regardless of whether simulation succeeds
  * or fails.
  *
@@ -152,9 +154,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * without `measure` / `reset` are simulated once and sampled without
  * collapsing (including deterministic control-flow). Programs with mid-circuit
  * `measure` / `reset` are re-simulated per shot with @p rng. Histograms are
- * final computational-basis bitstrings, not classical mid-circuit records;
- * they include dynamically allocated wires even after those wires are
- * deallocated.
+ * final computational-basis bitstrings over the wires that remain live, not
+ * classical mid-circuit records.
  *
  * @param func The QCO function to sample
  * @param dd The DD package to use

@@ -108,6 +108,21 @@ struct QubitMap {
     }
     return out;
   }
+
+  void releaseWire(const qc::Qubit released) {
+    SmallVector<Value> aliases;
+    for (auto& [value, wire] : qubits) {
+      if (wire == released) {
+        aliases.push_back(value);
+      } else if (wire > released) {
+        --wire;
+      }
+    }
+    for (Value alias : aliases) {
+      qubits.erase(alias);
+    }
+    --numQubits;
+  }
 };
 
 /// Physical wires stored at each tensor index; extracted positions are empty.
@@ -126,6 +141,22 @@ struct TensorMap {
   }
 
   void erase(Value value) { tensors.erase(value); }
+
+  void releaseWire(const qc::Qubit released) {
+    for (auto& [value, slots] : tensors) {
+      (void)value;
+      for (auto& wire : slots) {
+        if (!wire) {
+          continue;
+        }
+        if (*wire == released) {
+          wire = std::nullopt;
+        } else if (*wire > released) {
+          --*wire;
+        }
+      }
+    }
+  }
 };
 
 [[nodiscard]] static bool isQTensorType(Type type) {
@@ -660,6 +691,62 @@ static FailureOr<TensorSlots> allocateZeroQubits(const size_t count,
   }
   walk.qubits.numQubits += count;
   return slots;
+}
+
+static LogicalResult deallocateWire(const qc::Qubit wire, WalkState& walk,
+                                    dd::VectorDD& state, Operation* op) {
+  if (wire >= walk.qubits.numQubits) {
+    return op->emitError()
+           << "deallocated wire is outside the simulated register";
+  }
+  const auto amplitudes = state.getVector();
+  const size_t remainingSize = amplitudes.size() / 2;
+  const size_t lowMask = (size_t{1} << wire) - 1;
+  const size_t wireMask = size_t{1} << wire;
+  auto inputIndex = [&](const size_t outputIndex) {
+    return (outputIndex & lowMask) | ((outputIndex & ~lowMask) << 1);
+  };
+
+  constexpr double tolerance = 1e-12;
+  std::complex<double> targetZero;
+  std::complex<double> targetOne;
+  bool foundPivot = false;
+  for (size_t i = 0; i < remainingSize; ++i) {
+    const size_t zeroIndex = inputIndex(i);
+    const auto zero = amplitudes[zeroIndex];
+    const auto one = amplitudes[zeroIndex | wireMask];
+    const double norm = std::sqrt(std::norm(zero) + std::norm(one));
+    if (norm > tolerance) {
+      targetZero = zero / norm;
+      targetOne = one / norm;
+      foundPivot = true;
+      break;
+    }
+  }
+  if (!foundPivot) {
+    return op->emitError() << "cannot deallocate a zero-norm quantum state";
+  }
+
+  dd::CVec remaining(remainingSize);
+  for (size_t i = 0; i < remainingSize; ++i) {
+    const size_t zeroIndex = inputIndex(i);
+    const auto zero = amplitudes[zeroIndex];
+    const auto one = amplitudes[zeroIndex | wireMask];
+    if (std::abs((zero * targetOne) - (one * targetZero)) > tolerance) {
+      return op->emitError()
+             << "deallocating an entangled qubit is not supported by "
+                "statevector QCO DD simulation";
+    }
+    remaining[i] =
+        (std::conj(targetZero) * zero) + (std::conj(targetOne) * one);
+  }
+
+  auto reduced = dd::makeStateFromVector(remaining, walk.dd);
+  walk.dd.decRef(state);
+  state = reduced;
+  walk.qubits.releaseWire(wire);
+  walk.tensors.releaseWire(wire);
+  return success();
 }
 
 static FailureOr<APInt> lookupIntegerLike(Value value, ClassicalEnv& classical,
@@ -1680,11 +1767,27 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           })
       .template Case<qtensor::DeallocOp>(
           [&](qtensor::DeallocOp dealloc) -> LogicalResult {
-            if (walk.tensors.lookup(dealloc.getTensor()) == nullptr) {
+            const auto* tracked = walk.tensors.lookup(dealloc.getTensor());
+            if (tracked == nullptr) {
               return dealloc.emitError()
                      << "qtensor SSA value is not mapped for QCO DD simulation";
             }
+            TensorSlots slots = *tracked;
             walk.tensors.erase(dealloc.getTensor());
+            if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
+              SmallVector<qc::Qubit> wires;
+              for (const auto wire : slots) {
+                if (wire) {
+                  wires.push_back(*wire);
+                }
+              }
+              llvm::sort(wires, [](qc::Qubit a, qc::Qubit b) { return a > b; });
+              for (const qc::Qubit wire : wires) {
+                if (failed(deallocateWire(wire, walk, state, dealloc))) {
+                  return failure();
+                }
+              }
+            }
             return success();
           })
       .template Case<memref::AllocOp>([&](memref::AllocOp alloc) {
@@ -1696,7 +1799,15 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<memref::LoadOp>([&](memref::LoadOp load) {
         return applyMemRefLoad(load, walk.classical);
       })
-      .template Case<memref::DeallocOp>([](auto) { return success(); })
+      .template Case<memref::DeallocOp>(
+          [&](memref::DeallocOp dealloc) -> LogicalResult {
+            if (!walk.classical.memrefs.contains(dealloc.getMemref())) {
+              return dealloc.emitError()
+                     << "classical memref is not mapped for QCO DD simulation";
+            }
+            walk.classical.memrefs.erase(dealloc.getMemref());
+            return success();
+          })
       .template Case<
           arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
           arith::SubIOp, arith::MulIOp, arith::DivUIOp, arith::DivSIOp,

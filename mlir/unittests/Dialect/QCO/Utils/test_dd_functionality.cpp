@@ -1089,7 +1089,10 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorAllocationAndElementUpdates) {
     std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
     tensor = b.qtensorInsert(b.x(q0), tensor, 0);
     tensor = b.qtensorInsert(b.x(q1), tensor, 1);
-    b.qtensorDealloc(tensor);
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    b.sink(q0);
+    b.sink(q1);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1100,13 +1103,11 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorAllocationAndElementUpdates) {
 TEST_F(QCODDFunctionalityTest, QTensorAllocationExtendsInputWithZeroWires) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @main() {
+      func.func @main() -> (!qco.qubit, tensor<1x!qco.qubit>) {
         %q = qco.static 0 : !qco.qubit
         %c1 = arith.constant 1 : index
         %tensor = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
-        qco.sink %q : !qco.qubit
-        qtensor.dealloc %tensor : tensor<1x!qco.qubit>
-        return
+        return %q, %tensor : !qco.qubit, tensor<1x!qco.qubit>
       }
     }
   )mlir",
@@ -1124,6 +1125,57 @@ TEST_F(QCODDFunctionalityTest, QTensorAllocationExtendsInputWithZeroWires) {
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
 }
 
+TEST_F(QCODDFunctionalityTest, DeallocationRemovesSeparableWires) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%live: !qco.qubit) -> !qco.qubit {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %remaining0, %released0 = qtensor.extract %tensor[%c0]
+            : tensor<2x!qco.qubit>
+        %remaining1, %released1 = qtensor.extract %remaining0[%c1]
+            : tensor<2x!qco.qubit>
+        %superposition = qco.h %released0 : !qco.qubit -> !qco.qubit
+        %one = qco.x %released1 : !qco.qubit -> !qco.qubit
+        %restored0 = qtensor.insert %superposition into %remaining1[%c0]
+            : tensor<2x!qco.qubit>
+        %restored1 = qtensor.insert %one into %restored0[%c1]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %restored1 : tensor<2x!qco.qubit>
+        %result = qco.x %live : !qco.qubit -> !qco.qubit
+        return %result : !qco.qubit
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  expectSampleHistogram(mainFunc(*mod), 3, 8, 3, "1");
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsEntangledQTensorDeallocation) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    q0 = b.h(q0);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    tensor = b.qtensorInsert(q0, tensor, 0);
+    tensor = b.qtensorInsert(q1, tensor, 1);
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(3);
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
+}
+
 TEST_F(QCODDFunctionalityTest, QTensorFromElementsSupportsMatrixAndSimulation) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.staticQubit(0);
@@ -1131,7 +1183,10 @@ TEST_F(QCODDFunctionalityTest, QTensorFromElementsSupportsMatrixAndSimulation) {
     auto tensor = b.qtensorFromElements({q0, q1});
     std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
     tensor = b.qtensorInsert(b.x(q1), tensor, 1);
-    b.qtensorDealloc(tensor);
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    b.sink(q0);
+    b.sink(q1);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1146,7 +1201,10 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorFromDynamicallyAllocatedQubits) {
     auto q0 = b.allocQubit();
     auto q1 = b.allocQubit();
     auto tensor = b.qtensorFromElements({b.x(q0), q1});
-    b.qtensorDealloc(tensor);
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    b.sink(q0);
+    b.sink(q1);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1158,7 +1216,13 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorWithConcreteDynamicSize) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto one = arith::ConstantIndexOp::create(b, 1).getResult();
     auto size = arith::AddIOp::create(b, one, one).getResult();
-    b.qtensorDealloc(b.qtensorAlloc(size));
+    auto tensor = b.qtensorAlloc(size);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    b.sink(q0);
+    b.sink(q1);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1175,7 +1239,12 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughScfFor) {
                             b.qtensorExtract(args[0], index);
                         return {b.qtensorInsert(b.x(qubit), remaining, index)};
                       })[0];
-    b.qtensorDealloc(tensor);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    b.sink(q0);
+    b.sink(q1);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1190,7 +1259,9 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughIf) {
       auto [remaining, qubit] = b.qtensorExtract(arg, 0);
       return b.qtensorInsert(b.x(qubit), remaining, 0);
     });
-    b.qtensorDealloc(tensor);
+    Value qubit;
+    std::tie(tensor, qubit) = b.qtensorExtract(tensor, 0);
+    b.sink(qubit);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1216,7 +1287,9 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughScfWhile) {
           auto [rest, q] = b.qtensorExtract(args[0], 0);
           return SmallVector<Value>{b.qtensorInsert(b.x(q), rest, 0)};
         })[0];
-    b.qtensorDealloc(tensor);
+    Value result;
+    std::tie(tensor, result) = b.qtensorExtract(tensor, 0);
+    b.sink(result);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -1237,13 +1310,12 @@ TEST_F(QCODDFunctionalityTest, SimulateQTensorThroughFuncCall) {
             : tensor<1x!qco.qubit>
         return %result : tensor<1x!qco.qubit>
       }
-      func.func @main() {
+      func.func @main() -> tensor<1x!qco.qubit> {
         %c1 = arith.constant 1 : index
         %tensor = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
         %result = func.call @flip(%tensor)
             : (tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit>
-        qtensor.dealloc %result : tensor<1x!qco.qubit>
-        return
+        return %result : tensor<1x!qco.qubit>
       }
     }
   )mlir",
@@ -2140,6 +2212,21 @@ TEST_F(QCODDFunctionalityTest, ClassicalMemRefErrorsAndDealloc) {
                                                   context.get());
   ASSERT_TRUE(badStoreRank);
   expectSimulateFail(mainFunc(*badStoreRank), 0);
+
+  auto useAfterFree = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %c = memref.alloc() : memref<1xi1>
+        %i0 = arith.constant 0 : index
+        memref.dealloc %c : memref<1xi1>
+        %value = memref.load %c[%i0] : memref<1xi1>
+        return
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(useAfterFree);
+  expectSimulateFail(mainFunc(*useAfterFree), 0);
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
