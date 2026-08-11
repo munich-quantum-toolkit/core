@@ -30,7 +30,7 @@ releases may include breaking changes.
   compiler APIs and `mqt-cc` ([#2003]) ([**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
-  conformance ([#1993], [#1999], [#2049], [#2054]) ([**@simon1hofmann**],
+  conformance ([#1993], [#1999], [#2049]) ([**@simon1hofmann**],
   [**@burgholzer**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
@@ -108,7 +108,8 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2058])
+  [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2054],
+  [#2058])
   ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
   [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
