@@ -202,7 +202,7 @@ protected:
     EXPECT_NEAR(*param, expected, tolerance);
   }
 
-  Value buildRotations(ArrayRef<RotationGate> rotations, Value& q) {
+  Value buildRotations(ArrayRef<RotationGate> rotations, Value q) {
     auto qubit = q;
 
     for (const auto& gate : rotations) {

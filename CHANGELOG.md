@@ -78,7 +78,7 @@ releases may include breaking changes.
   containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
   ([#1605]) ([**@lirem101**], [**@burgholzer**])
-- ✨ Extend the `merge-single-qubit-rotation-gates` pass to merge consecutive
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
   fixed and parameterized single-qubit gates using quaternions with global-phase
   correction ([#1407], [#1674], [#2002], [#2038]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])

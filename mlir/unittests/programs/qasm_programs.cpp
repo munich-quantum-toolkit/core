@@ -1461,6 +1461,7 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       OpenQASMProgram{.name = "controlled-inverse-pow-s",
                       .source = controlledInversePowS},
       OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
+      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
       OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
       OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
   };
@@ -1481,6 +1482,7 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
       OpenQASMProgram{.name = "controlled-inverse-pow-s",
                       .source = controlledInversePowS},
       OpenQASMProgram{.name = "nested-pow-x", .source = nestedPowX},
+      OpenQASMProgram{.name = "custom-pow-hs", .source = customPowHS},
       OpenQASMProgram{.name = "broadcast-pow-x", .source = broadcastPowX},
       OpenQASMProgram{.name = "floating-pow-x", .source = floatingPowX},
       OpenQASMProgram{.name = "runtime-scalar-rounding",
