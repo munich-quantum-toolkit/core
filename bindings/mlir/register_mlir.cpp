@@ -14,6 +14,7 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
 
+#include <llvm/Support/Error.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
@@ -47,6 +48,14 @@ template <class T> [[nodiscard]] T takeResult(std::optional<T>&& result) {
   if (!result) {
     throw std::runtime_error(
         "MLIR operation failed; see diagnostics for details.");
+  }
+  return *std::move(result);
+}
+
+template <class T> [[nodiscard]] T takeResult(llvm::Expected<T>&& result) {
+  if (!result) {
+    const auto message = llvm::toString(result.takeError());
+    throw nb::value_error(message.c_str());
   }
   return *std::move(result);
 }
@@ -285,7 +294,12 @@ means every operation is native.)pb");
 
   auto durationUnit = nb::class_<mlir::CompilerTarget::DurationUnit>(
       compilerTarget, "DurationUnit", "Unit for raw target timing metadata.");
-  durationUnit.def(nb::init<std::string, double>(), "unit"_a, "scale_factor"_a)
+  durationUnit
+      .def(nb::new_([](std::string unit, const double scaleFactor) {
+             return takeResult(mlir::CompilerTarget::DurationUnit::create(
+                 std::move(unit), scaleFactor));
+           }),
+           "unit"_a, "scale_factor"_a)
       .def_prop_ro(
           "unit",
           [](const mlir::CompilerTarget::DurationUnit& value) {
@@ -299,8 +313,13 @@ means every operation is native.)pb");
   auto targetSite = nb::class_<mlir::CompilerTarget::Site>(
       compilerTarget, "Site", "A hardware site and its optional metadata.");
   targetSite
-      .def(nb::init<mlir::CompilerTarget::SiteId, std::optional<std::string>,
-                    std::optional<uint64_t>, std::optional<uint64_t>>(),
+      .def(nb::new_([](const mlir::CompilerTarget::SiteId siteId,
+                       std::optional<std::string> name,
+                       const std::optional<uint64_t> t1,
+                       const std::optional<uint64_t> t2) {
+             return takeResult(mlir::CompilerTarget::Site::create(
+                 siteId, std::move(name), t1, t2));
+           }),
            "site_id"_a, "name"_a = nb::none(), "t1"_a = nb::none(),
            "t2"_a = nb::none())
       .def_prop_ro("id", &mlir::CompilerTarget::Site::id,
@@ -322,8 +341,12 @@ means every operation is native.)pb");
       compilerTarget, "SiteTuple",
       "Calibration data for an ordered tuple of target sites.");
   siteTuple
-      .def(nb::init<std::vector<mlir::CompilerTarget::SiteId>,
-                    std::optional<uint64_t>, std::optional<double>>(),
+      .def(nb::new_([](std::vector<mlir::CompilerTarget::SiteId> sites,
+                       const std::optional<uint64_t> duration,
+                       const std::optional<double> fidelity) {
+             return takeResult(mlir::CompilerTarget::SiteTuple::create(
+                 std::move(sites), duration, fidelity));
+           }),
            "sites"_a, "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def_prop_ro(
           "sites",
@@ -348,12 +371,12 @@ means every operation is native.)pb");
                       siteTuples,
                   const std::optional<uint64_t> duration,
                   const std::optional<double> fidelity) {
-                 return mlir::CompilerTarget::Operation(
+                 return takeResult(mlir::CompilerTarget::Operation::create(
                      std::move(name), numQubits, numParameters,
                      std::move(siteTuples)
                          .value_or(
                              std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                     duration, fidelity);
+                     duration, fidelity));
                }),
            "name"_a, "num_qubits"_a, "num_parameters"_a,
            "site_tuples"_a = nb::none(), "duration"_a = nb::none(),
@@ -427,32 +450,77 @@ means every operation is native.)pb");
               "The two-qubit entangler.");
 
   compilerTarget
-      .def(nb::init<size_t,
-                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
-                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
-                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+      .def(nb::new_([](
+                        const size_t numQubits,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Coupling>>
+                            couplings,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Operation>>
+                            operations,
+                        std::optional<mlir::CompilerTarget::DurationUnit>
+                            durationUnit) {
+             return takeResult(mlir::CompilerTarget::create(
+                 numQubits, std::move(couplings), std::move(operations),
+                 std::move(durationUnit)));
+           }),
            "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
            "operations"_a = nb::none(), "duration_unit"_a = nb::none())
-      .def(nb::init<std::string, size_t,
-                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
-                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
-                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+      .def(nb::new_([](
+                        std::string name, const size_t numQubits,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Coupling>>
+                            couplings,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Operation>>
+                            operations,
+                        std::optional<mlir::CompilerTarget::DurationUnit>
+                            durationUnit) {
+             return takeResult(mlir::CompilerTarget::create(
+                 std::move(name), numQubits, std::move(couplings),
+                 std::move(operations), std::move(durationUnit)));
+           }),
            "name"_a, "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
            "operations"_a = nb::none(), "duration_unit"_a = nb::none())
-      .def(nb::init<std::vector<mlir::CompilerTarget::Site>,
-                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
-                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
-                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+      .def(nb::new_([](
+                        std::vector<mlir::CompilerTarget::Site> sites,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Coupling>>
+                            couplings,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Operation>>
+                            operations,
+                        std::optional<mlir::CompilerTarget::DurationUnit>
+                            durationUnit) {
+             return takeResult(mlir::CompilerTarget::create(
+                 std::move(sites), std::move(couplings), std::move(operations),
+                 std::move(durationUnit)));
+           }),
            "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
            "operations"_a = nb::none(), "duration_unit"_a = nb::none())
-      .def(nb::init<std::string, std::vector<mlir::CompilerTarget::Site>,
-                    std::optional<std::vector<mlir::CompilerTarget::Coupling>>,
-                    std::optional<std::vector<mlir::CompilerTarget::Operation>>,
-                    std::optional<mlir::CompilerTarget::DurationUnit>>(),
+      .def(nb::new_([](
+                        std::string name,
+                        std::vector<mlir::CompilerTarget::Site> sites,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Coupling>>
+                            couplings,
+                        std::optional<
+                            std::vector<mlir::CompilerTarget::Operation>>
+                            operations,
+                        std::optional<mlir::CompilerTarget::DurationUnit>
+                            durationUnit) {
+             return takeResult(mlir::CompilerTarget::create(
+                 std::move(name), std::move(sites), std::move(couplings),
+                 std::move(operations), std::move(durationUnit)));
+           }),
            "name"_a, "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
            "operations"_a = nb::none(), "duration_unit"_a = nb::none())
-      .def_static("from_device", &mlir::compilerTargetFromDevice, "device"_a,
-                  "Snapshot a circuit-model QDMI device.")
+      .def_static(
+          "from_device",
+          [](const fomac::Device& device) {
+            return takeResult(mlir::compilerTargetFromDevice(device));
+          },
+          "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

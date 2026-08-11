@@ -413,6 +413,18 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     assert qco.ir.count("qco.measure") == 2
 
 
+def test_compiler_target_construction_preserves_validation_errors() -> None:
+    """Translate explicit C++ construction errors to Python ``ValueError``."""
+    with pytest.raises(ValueError, match="must contain at least one site"):
+        CompilerTarget(0)
+    with pytest.raises(ValueError, match="site ID must be nonnegative"):
+        CompilerTarget.Site(-1)
+    with pytest.raises(ValueError, match="duration unit must not be empty"):
+        CompilerTarget.DurationUnit("", 1.0)
+    with pytest.raises(ValueError, match="operation qubit count must be positive"):
+        CompilerTarget.Operation("x", 0, 0)
+
+
 def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:
     """Retain IQM topology and calibration independently of the live device."""
     target = garnet_target

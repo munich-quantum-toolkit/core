@@ -13,6 +13,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Error.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -50,7 +51,11 @@ public:
    */
   class DurationUnit {
   public:
-    DurationUnit(std::string unit, double scaleFactor);
+    /**
+     * @brief Create a validated duration unit.
+     */
+    [[nodiscard]] static llvm::Expected<DurationUnit>
+    create(std::string unit, double scaleFactor);
 
     /// Return the target's duration unit.
     [[nodiscard]] llvm::StringRef unit() const noexcept;
@@ -59,6 +64,10 @@ public:
     [[nodiscard]] double scaleFactor() const noexcept;
 
   private:
+    struct ValidatedTag {};
+
+    DurationUnit(std::string unit, double scaleFactor, ValidatedTag);
+
     std::string unit_;
     double scaleFactor_;
   };
@@ -68,9 +77,13 @@ public:
    */
   class Site {
   public:
-    explicit Site(SiteId id, std::optional<std::string> name = std::nullopt,
-                  std::optional<uint64_t> t1 = std::nullopt,
-                  std::optional<uint64_t> t2 = std::nullopt);
+    /**
+     * @brief Create validated hardware-site metadata.
+     */
+    [[nodiscard]] static llvm::Expected<Site>
+    create(SiteId id, std::optional<std::string> name = std::nullopt,
+           std::optional<uint64_t> t1 = std::nullopt,
+           std::optional<uint64_t> t2 = std::nullopt);
 
     /// Return the target-defined nonnegative site identifier.
     [[nodiscard]] SiteId id() const noexcept;
@@ -85,6 +98,11 @@ public:
     [[nodiscard]] std::optional<uint64_t> t2() const noexcept;
 
   private:
+    struct ValidatedTag {};
+
+    Site(SiteId id, std::optional<std::string> name, std::optional<uint64_t> t1,
+         std::optional<uint64_t> t2, ValidatedTag);
+
     SiteId id_;
     std::optional<std::string> name_;
     std::optional<uint64_t> t1_;
@@ -96,9 +114,13 @@ public:
    */
   class SiteTuple {
   public:
-    explicit SiteTuple(std::vector<SiteId> sites,
-                       std::optional<uint64_t> duration = std::nullopt,
-                       std::optional<double> fidelity = std::nullopt);
+    /**
+     * @brief Create validated calibration data for a site tuple.
+     */
+    [[nodiscard]] static llvm::Expected<SiteTuple>
+    create(std::vector<SiteId> sites,
+           std::optional<uint64_t> duration = std::nullopt,
+           std::optional<double> fidelity = std::nullopt);
 
     /// Return the ordered target site identifiers.
     [[nodiscard]] llvm::ArrayRef<SiteId> sites() const noexcept;
@@ -110,6 +132,11 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
+    struct ValidatedTag {};
+
+    SiteTuple(std::vector<SiteId> sites, std::optional<uint64_t> duration,
+              std::optional<double> fidelity, ValidatedTag);
+
     std::vector<SiteId> sites_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
@@ -125,10 +152,14 @@ public:
    */
   class Operation {
   public:
-    Operation(std::string name, size_t numQubits, size_t numParameters,
-              std::vector<SiteTuple> siteTuples = {},
-              std::optional<uint64_t> duration = std::nullopt,
-              std::optional<double> fidelity = std::nullopt);
+    /**
+     * @brief Create a validated operation capability.
+     */
+    [[nodiscard]] static llvm::Expected<Operation>
+    create(std::string name, size_t numQubits, size_t numParameters,
+           std::vector<SiteTuple> siteTuples = {},
+           std::optional<uint64_t> duration = std::nullopt,
+           std::optional<double> fidelity = std::nullopt);
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
@@ -152,6 +183,13 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
+    struct ValidatedTag {};
+
+    Operation(std::string name, std::string canonicalName, size_t numQubits,
+              size_t numParameters, std::vector<SiteTuple> siteTuples,
+              std::optional<uint64_t> duration, std::optional<double> fidelity,
+              ValidatedTag);
+
     std::string name_;
     std::string canonicalName_;
     size_t numQubits_;
@@ -207,40 +245,40 @@ public:
   };
 
   /**
-   * @brief Construct an unnamed target with dense site IDs `0..numQubits-1`.
+   * @brief Create an unnamed target with dense site IDs `0..numQubits-1`.
    */
-  explicit CompilerTarget(
-      size_t numQubits,
-      std::optional<std::vector<Coupling>> couplings = std::nullopt,
-      std::optional<std::vector<Operation>> operations = std::nullopt,
-      std::optional<DurationUnit> durationUnit = std::nullopt);
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(size_t numQubits,
+         std::optional<std::vector<Coupling>> couplings = std::nullopt,
+         std::optional<std::vector<Operation>> operations = std::nullopt,
+         std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
-   * @brief Construct a named target with dense site IDs `0..numQubits-1`.
+   * @brief Create a named target with dense site IDs `0..numQubits-1`.
    */
-  CompilerTarget(
-      std::string name, size_t numQubits,
-      std::optional<std::vector<Coupling>> couplings = std::nullopt,
-      std::optional<std::vector<Operation>> operations = std::nullopt,
-      std::optional<DurationUnit> durationUnit = std::nullopt);
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::string name, size_t numQubits,
+         std::optional<std::vector<Coupling>> couplings = std::nullopt,
+         std::optional<std::vector<Operation>> operations = std::nullopt,
+         std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
-   * @brief Construct an unnamed target from detailed sites.
+   * @brief Create an unnamed target from detailed sites.
    */
-  explicit CompilerTarget(
-      std::vector<Site> sites,
-      std::optional<std::vector<Coupling>> couplings = std::nullopt,
-      std::optional<std::vector<Operation>> operations = std::nullopt,
-      std::optional<DurationUnit> durationUnit = std::nullopt);
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings = std::nullopt,
+         std::optional<std::vector<Operation>> operations = std::nullopt,
+         std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
-   * @brief Construct a named target from detailed sites.
+   * @brief Create a named target from detailed sites.
    */
-  CompilerTarget(
-      std::string name, std::vector<Site> sites,
-      std::optional<std::vector<Coupling>> couplings = std::nullopt,
-      std::optional<std::vector<Operation>> operations = std::nullopt,
-      std::optional<DurationUnit> durationUnit = std::nullopt);
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::string name, std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings = std::nullopt,
+         std::optional<std::vector<Operation>> operations = std::nullopt,
+         std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
@@ -266,7 +304,7 @@ public:
   /// Return the dense compiler vertex for a target site identifier.
   [[nodiscard]] std::optional<size_t> vertexForSite(SiteId site) const noexcept;
 
-  /// Return the target site identifier for a dense compiler vertex.
+  /// Return the target site identifier for a valid dense compiler vertex.
   [[nodiscard]] SiteId siteForVertex(size_t vertex) const;
 
   /// Return whether the target contains an explicit coupling topology.
@@ -277,16 +315,16 @@ public:
    */
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
-  /// Return whether two dense compiler vertices are adjacent.
+  /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
   /**
-   * @brief Return the cached shortest-path distance between dense vertices.
+   * @brief Return the cached shortest-path distance between valid vertices.
    */
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
 
   /**
-   * @brief Invoke @p callback for every neighbour of a dense compiler vertex.
+   * @brief Invoke @p callback for every neighbour of a valid dense vertex.
    */
   void forEachNeighbour(size_t vertex,
                         llvm::function_ref<void(size_t)> callback) const;
@@ -323,13 +361,16 @@ private:
   struct Storage;
   struct StorageConstructorTag {};
 
-  CompilerTarget(std::optional<std::string> name, std::vector<Site> sites,
-                 std::optional<std::vector<Coupling>> couplings,
-                 std::optional<std::vector<Operation>> operations,
-                 std::optional<DurationUnit> durationUnit,
+  CompilerTarget(std::shared_ptr<const Storage> storage,
                  StorageConstructorTag storageConstructorTag);
 
-  [[noreturn]] static void throwVertexOutOfRange();
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::optional<std::string> name, std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         StorageConstructorTag storageConstructorTag);
+
   [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;
 
   std::shared_ptr<const Storage> storage_;

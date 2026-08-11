@@ -19,6 +19,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Error.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
@@ -31,8 +32,8 @@
 #include <memory>
 #include <optional>
 #include <set>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -108,55 +109,71 @@ constexpr std::array GATE_SPECIFICATIONS{
   return canonical;
 }
 
-static void validatePositiveCoherenceTime(const std::optional<uint64_t> time,
-                                          const StringRef description) {
-  if (time && *time == 0) {
-    throw std::invalid_argument((description + " must be positive").str());
-  }
+[[nodiscard]] static llvm::Error invalidTarget(const Twine& message) {
+  return llvm::createStringError(
+      std::make_error_code(std::errc::invalid_argument), message);
 }
 
-static void validateFidelity(const std::optional<double> fidelity,
-                             const StringRef description) {
+[[nodiscard]] static llvm::Error
+validatePositiveCoherenceTime(const std::optional<uint64_t> time,
+                              const StringRef description) {
+  if (time && *time == 0) {
+    return invalidTarget(description + " must be positive");
+  }
+  return llvm::Error::success();
+}
+
+[[nodiscard]] static llvm::Error
+validateFidelity(const std::optional<double> fidelity,
+                 const StringRef description) {
   if (fidelity &&
       (!std::isfinite(*fidelity) || *fidelity < 0. || *fidelity > 1.)) {
-    throw std::invalid_argument(
-        (description + " must be finite and in [0, 1]").str());
+    return invalidTarget(description + " must be finite and in [0, 1]");
   }
+  return llvm::Error::success();
 }
 
-[[nodiscard]] static std::vector<CompilerTarget::Site>
+[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Site>>
 makeDenseSites(const size_t numQubits) {
   if (numQubits == 0) {
-    throw std::invalid_argument(
-        "Compiler target must contain at least one site");
+    return invalidTarget("Compiler target must contain at least one site");
   }
   constexpr auto maxNumSites =
       static_cast<uintmax_t>(std::numeric_limits<int64_t>::max()) + 1;
   if (static_cast<uintmax_t>(numQubits) > maxNumSites) {
-    throw std::invalid_argument(
+    return invalidTarget(
         "Compiler target qubit count exceeds the nonnegative i64 site domain");
   }
 
   std::vector<CompilerTarget::Site> sites;
   sites.reserve(numQubits);
   for (size_t id = 0; id < numQubits; ++id) {
-    sites.emplace_back(static_cast<SiteId>(id));
+    auto site = CompilerTarget::Site::create(static_cast<SiteId>(id));
+    if (!site) {
+      return site.takeError();
+    }
+    sites.emplace_back(std::move(*site));
   }
   return sites;
 }
 
-CompilerTarget::DurationUnit::DurationUnit(std::string unit,
-                                           const double scaleFactor)
-    : unit_(std::move(unit)), scaleFactor_(scaleFactor) {
-  if (StringRef(unit_).trim().empty()) {
-    throw std::invalid_argument(
-        "Compiler target duration unit must not be empty");
+llvm::Expected<CompilerTarget::DurationUnit>
+CompilerTarget::DurationUnit::create(std::string unit,
+                                     const double scaleFactor) {
+  if (StringRef(unit).trim().empty()) {
+    return invalidTarget("Compiler target duration unit must not be empty");
   }
-  if (!std::isfinite(scaleFactor_) || scaleFactor_ <= 0.) {
-    throw std::invalid_argument(
+  if (!std::isfinite(scaleFactor) || scaleFactor <= 0.) {
+    return invalidTarget(
         "Compiler target duration scale factor must be positive and finite");
   }
+  return DurationUnit(std::move(unit), scaleFactor, ValidatedTag{});
 }
+
+CompilerTarget::DurationUnit::DurationUnit(std::string unit,
+                                           const double scaleFactor,
+                                           ValidatedTag)
+    : unit_(std::move(unit)), scaleFactor_(scaleFactor) {}
 
 StringRef CompilerTarget::DurationUnit::unit() const noexcept { return unit_; }
 
@@ -164,20 +181,32 @@ double CompilerTarget::DurationUnit::scaleFactor() const noexcept {
   return scaleFactor_;
 }
 
-CompilerTarget::Site::Site(const SiteId id, std::optional<std::string> name,
-                           const std::optional<uint64_t> t1,
-                           const std::optional<uint64_t> t2)
-    : id_(id), name_(std::move(name)), t1_(t1), t2_(t2) {
-  if (id_ < 0) {
-    throw std::invalid_argument("Compiler target site ID must be nonnegative");
+llvm::Expected<CompilerTarget::Site>
+CompilerTarget::Site::create(const SiteId id, std::optional<std::string> name,
+                             const std::optional<uint64_t> t1,
+                             const std::optional<uint64_t> t2) {
+  if (id < 0) {
+    return invalidTarget("Compiler target site ID must be nonnegative");
   }
-  if (name_ && name_->empty()) {
-    throw std::invalid_argument(
+  if (name && name->empty()) {
+    return invalidTarget(
         "Compiler target site name must not be empty when present");
   }
-  validatePositiveCoherenceTime(t1_, "Compiler target site T1");
-  validatePositiveCoherenceTime(t2_, "Compiler target site T2");
+  if (auto error =
+          validatePositiveCoherenceTime(t1, "Compiler target site T1")) {
+    return std::move(error);
+  }
+  if (auto error =
+          validatePositiveCoherenceTime(t2, "Compiler target site T2")) {
+    return std::move(error);
+  }
+  return Site(id, std::move(name), t1, t2, ValidatedTag{});
 }
+
+CompilerTarget::Site::Site(const SiteId id, std::optional<std::string> name,
+                           const std::optional<uint64_t> t1,
+                           const std::optional<uint64_t> t2, ValidatedTag)
+    : id_(id), name_(std::move(name)), t1_(t1), t2_(t2) {}
 
 CompilerTarget::SiteId CompilerTarget::Site::id() const noexcept { return id_; }
 
@@ -196,23 +225,33 @@ std::optional<uint64_t> CompilerTarget::Site::t2() const noexcept {
   return t2_;
 }
 
-CompilerTarget::SiteTuple::SiteTuple(std::vector<SiteId> sites,
-                                     const std::optional<uint64_t> duration,
-                                     const std::optional<double> fidelity)
-    : sites_(std::move(sites)), duration_(duration), fidelity_(fidelity) {
+llvm::Expected<CompilerTarget::SiteTuple>
+CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
+                                  const std::optional<uint64_t> duration,
+                                  const std::optional<double> fidelity) {
   std::set<SiteId> uniqueSites;
-  for (const auto site : sites_) {
+  for (const auto site : sites) {
     if (site < 0) {
-      throw std::invalid_argument(
+      return invalidTarget(
           "Compiler target site tuple contains a negative site ID");
     }
     if (!uniqueSites.insert(site).second) {
-      throw std::invalid_argument(
+      return invalidTarget(
           "Compiler target site tuple contains a duplicate site");
     }
   }
-  validateFidelity(fidelity_, "Compiler target site-tuple fidelity");
+  if (auto error =
+          validateFidelity(fidelity, "Compiler target site-tuple fidelity")) {
+    return std::move(error);
+  }
+  return SiteTuple(std::move(sites), duration, fidelity, ValidatedTag{});
 }
+
+CompilerTarget::SiteTuple::SiteTuple(std::vector<SiteId> sites,
+                                     const std::optional<uint64_t> duration,
+                                     const std::optional<double> fidelity,
+                                     ValidatedTag)
+    : sites_(std::move(sites)), duration_(duration), fidelity_(fidelity) {}
 
 ArrayRef<SiteId> CompilerTarget::SiteTuple::sites() const noexcept {
   return sites_;
@@ -226,39 +265,50 @@ std::optional<double> CompilerTarget::SiteTuple::fidelity() const noexcept {
   return fidelity_;
 }
 
-CompilerTarget::Operation::Operation(std::string name, const size_t numQubits,
-                                     const size_t numParameters,
-                                     std::vector<SiteTuple> siteTuples,
-                                     const std::optional<uint64_t> duration,
-                                     const std::optional<double> fidelity)
-    : name_(std::move(name)), canonicalName_(canonicalOperationName(name_)),
-      numQubits_(numQubits), numParameters_(numParameters),
-      siteTuples_(std::move(siteTuples)), duration_(duration),
-      fidelity_(fidelity) {
-  if (canonicalName_.empty()) {
-    throw std::invalid_argument(
-        "Compiler target operation name must not be empty");
+llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
+    std::string name, const size_t numQubits, const size_t numParameters,
+    std::vector<SiteTuple> siteTuples, const std::optional<uint64_t> duration,
+    const std::optional<double> fidelity) {
+  auto canonicalName = canonicalOperationName(name);
+  if (canonicalName.empty()) {
+    return invalidTarget("Compiler target operation name must not be empty");
   }
-  if (numQubits_ == 0) {
-    throw std::invalid_argument(
+  if (numQubits == 0) {
+    return invalidTarget(
         "Compiler target operation qubit count must be positive");
   }
-  validateFidelity(fidelity_, "Compiler target operation fidelity");
+  if (auto error =
+          validateFidelity(fidelity, "Compiler target operation fidelity")) {
+    return std::move(error);
+  }
 
   std::set<std::vector<SiteId>> uniqueSiteCombinations;
-  for (const auto& siteTuple : siteTuples_) {
-    if (siteTuple.sites().size() != numQubits_) {
-      throw std::invalid_argument(
+  for (const auto& siteTuple : siteTuples) {
+    if (siteTuple.sites().size() != numQubits) {
+      return invalidTarget(
           "Compiler target operation site tuple does not match its arity");
     }
     if (!uniqueSiteCombinations
              .emplace(siteTuple.sites().begin(), siteTuple.sites().end())
              .second) {
-      throw std::invalid_argument(
+      return invalidTarget(
           "Compiler target operation contains a duplicate site tuple");
     }
   }
+  return Operation(std::move(name), std::move(canonicalName), numQubits,
+                   numParameters, std::move(siteTuples), duration, fidelity,
+                   ValidatedTag{});
 }
+
+CompilerTarget::Operation::Operation(
+    std::string name, std::string canonicalName, const size_t numQubits,
+    const size_t numParameters, std::vector<SiteTuple> siteTuples,
+    const std::optional<uint64_t> duration,
+    const std::optional<double> fidelity, ValidatedTag)
+    : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
+      numQubits_(numQubits), numParameters_(numParameters),
+      siteTuples_(std::move(siteTuples)), duration_(duration),
+      fidelity_(fidelity) {}
 
 StringRef CompilerTarget::Operation::name() const noexcept { return name_; }
 
@@ -293,6 +343,14 @@ struct CompilerTarget::Storage {
           std::optional<std::vector<Operation>> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
+  [[nodiscard]] static llvm::Expected<std::shared_ptr<const Storage>>
+  create(std::optional<std::string> targetName, std::vector<Site> targetSites,
+         std::optional<std::vector<Coupling>> targetCouplings,
+         std::optional<std::vector<Operation>> targetOperations,
+         std::optional<DurationUnit> targetDurationUnit);
+
+  [[nodiscard]] llvm::Error initialize();
+
   [[nodiscard]] bool
   supportsOperation(StringRef name, size_t numQubits,
                     std::optional<size_t> numParameters) const;
@@ -320,22 +378,36 @@ CompilerTarget::Storage::Storage(
     std::optional<DurationUnit> targetDurationUnit)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
       sites(std::move(targetSites)), couplings(std::move(targetCouplings)),
-      operations(std::move(targetOperations)) {
+      operations(std::move(targetOperations)) {}
+
+llvm::Expected<std::shared_ptr<const CompilerTarget::Storage>>
+CompilerTarget::Storage::create(
+    std::optional<std::string> targetName, std::vector<Site> targetSites,
+    std::optional<std::vector<Coupling>> targetCouplings,
+    std::optional<std::vector<Operation>> targetOperations,
+    std::optional<DurationUnit> targetDurationUnit) {
+  auto storage = std::shared_ptr<Storage>(new Storage(
+      std::move(targetName), std::move(targetSites), std::move(targetCouplings),
+      std::move(targetOperations), std::move(targetDurationUnit)));
+  if (auto error = storage->initialize()) {
+    return std::move(error);
+  }
+  return std::shared_ptr<const Storage>(std::move(storage));
+}
+
+llvm::Error CompilerTarget::Storage::initialize() {
   if (name && name->empty()) {
-    throw std::invalid_argument(
-        "Compiler target name must not be empty when present");
+    return invalidTarget("Compiler target name must not be empty when present");
   }
   if (sites.empty()) {
-    throw std::invalid_argument(
-        "Compiler target must contain at least one site");
+    return invalidTarget("Compiler target must contain at least one site");
   }
 
   siteIds.reserve(sites.size());
   siteToVertex.reserve(sites.size());
   for (const auto [vertex, site] : llvm::enumerate(sites)) {
     if (!siteToVertex.try_emplace(site.id(), vertex).second) {
-      throw std::invalid_argument(
-          "Compiler target contains duplicate site IDs");
+      return invalidTarget("Compiler target contains duplicate site IDs");
     }
     siteIds.emplace_back(site.id());
   }
@@ -344,11 +416,11 @@ CompilerTarget::Storage::Storage(
     std::set<Coupling> canonicalCouplings;
     for (auto [source, target] : *couplings) {
       if (!siteToVertex.contains(source) || !siteToVertex.contains(target)) {
-        throw std::invalid_argument(
+        return invalidTarget(
             "Compiler target topology references an unknown site");
       }
       if (source == target) {
-        throw std::invalid_argument(
+        return invalidTarget(
             "Compiler target topology contains a self-coupling");
       }
       if (target < source) {
@@ -371,7 +443,7 @@ CompilerTarget::Storage::Storage(
     }
 
     if (sites.size() > std::numeric_limits<size_t>::max() / sites.size()) {
-      throw std::invalid_argument(
+      return invalidTarget(
           "Compiler target topology distance matrix is too large");
     }
     constexpr auto unreachable = std::numeric_limits<size_t>::max();
@@ -394,8 +466,7 @@ CompilerTarget::Storage::Storage(
       if (llvm::is_contained(
               ArrayRef<size_t>(distances).slice(rowOffset, sites.size()),
               unreachable)) {
-        throw std::invalid_argument(
-            "Compiler target topology must be connected");
+        return invalidTarget("Compiler target topology must be connected");
       }
     }
   } else {
@@ -405,15 +476,15 @@ CompilerTarget::Storage::Storage(
   if (operations) {
     for (const auto [index, operation] : llvm::enumerate(*operations)) {
       if (operation.numQubits() > sites.size()) {
-        throw std::invalid_argument(
+        return invalidTarget(
             "Compiler target operation arity exceeds its site count");
       }
       for (const auto& siteTuple : operation.siteTuples()) {
         if (llvm::any_of(siteTuple.sites(), [&](const auto site) {
               return !siteToVertex.contains(site);
             })) {
-          throw std::invalid_argument("Compiler target operation site tuple "
-                                      "references an unknown site");
+          return invalidTarget("Compiler target operation site tuple "
+                               "references an unknown site");
         }
       }
       capabilities[operation.canonicalName()].emplace_back(index);
@@ -431,7 +502,7 @@ CompilerTarget::Storage::Storage(
                });
       });
   if ((hasSiteTiming || hasOperationTiming) && !durationUnit) {
-    throw std::invalid_argument(
+    return invalidTarget(
         "Compiler target timing metadata requires a duration unit");
   }
 
@@ -442,6 +513,7 @@ CompilerTarget::Storage::Storage(
     }
   }
   basis = resolveSynthesisBasis();
+  return llvm::Error::success();
 }
 
 bool CompilerTarget::Storage::supportsOperation(
@@ -501,49 +573,73 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   return SynthesisBasis{.singleQubit = *singleQubit, .entangler = *entangler};
 }
 
-CompilerTarget::CompilerTarget(const size_t numQubits,
-                               std::optional<std::vector<Coupling>> couplings,
-                               std::optional<std::vector<Operation>> operations,
-                               std::optional<DurationUnit> durationUnit)
-    : CompilerTarget(std::nullopt, makeDenseSites(numQubits),
-                     std::move(couplings), std::move(operations),
-                     std::move(durationUnit), StorageConstructorTag{}) {}
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(const size_t numQubits,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit) {
+  auto sites = makeDenseSites(numQubits);
+  if (!sites) {
+    return sites.takeError();
+  }
+  return create(std::nullopt, std::move(*sites), std::move(couplings),
+                std::move(operations), std::move(durationUnit),
+                StorageConstructorTag{});
+}
 
-CompilerTarget::CompilerTarget(std::string name, const size_t numQubits,
-                               std::optional<std::vector<Coupling>> couplings,
-                               std::optional<std::vector<Operation>> operations,
-                               std::optional<DurationUnit> durationUnit)
-    : CompilerTarget(std::optional<std::string>(std::move(name)),
-                     makeDenseSites(numQubits), std::move(couplings),
-                     std::move(operations), std::move(durationUnit),
-                     StorageConstructorTag{}) {}
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(std::string name, const size_t numQubits,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit) {
+  auto sites = makeDenseSites(numQubits);
+  if (!sites) {
+    return sites.takeError();
+  }
+  return create(std::optional<std::string>(std::move(name)), std::move(*sites),
+                std::move(couplings), std::move(operations),
+                std::move(durationUnit), StorageConstructorTag{});
+}
 
-CompilerTarget::CompilerTarget(std::vector<Site> sites,
-                               std::optional<std::vector<Coupling>> couplings,
-                               std::optional<std::vector<Operation>> operations,
-                               std::optional<DurationUnit> durationUnit)
-    : CompilerTarget(std::nullopt, std::move(sites), std::move(couplings),
-                     std::move(operations), std::move(durationUnit),
-                     StorageConstructorTag{}) {}
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(std::vector<Site> sites,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit) {
+  return create(std::nullopt, std::move(sites), std::move(couplings),
+                std::move(operations), std::move(durationUnit),
+                StorageConstructorTag{});
+}
 
-CompilerTarget::CompilerTarget(std::string name, std::vector<Site> sites,
-                               std::optional<std::vector<Coupling>> couplings,
-                               std::optional<std::vector<Operation>> operations,
-                               std::optional<DurationUnit> durationUnit)
-    : CompilerTarget(std::optional<std::string>(std::move(name)),
-                     std::move(sites), std::move(couplings),
-                     std::move(operations), std::move(durationUnit),
-                     StorageConstructorTag{}) {}
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(std::string name, std::vector<Site> sites,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit) {
+  return create(std::optional<std::string>(std::move(name)), std::move(sites),
+                std::move(couplings), std::move(operations),
+                std::move(durationUnit), StorageConstructorTag{});
+}
 
-CompilerTarget::CompilerTarget(
+llvm::Expected<CompilerTarget> CompilerTarget::create(
     std::optional<std::string> name, std::vector<Site> sites,
     std::optional<std::vector<Coupling>> couplings,
     std::optional<std::vector<Operation>> operations,
     std::optional<DurationUnit> durationUnit,
+    [[maybe_unused]] StorageConstructorTag storageConstructorTag) {
+  auto storage =
+      Storage::create(std::move(name), std::move(sites), std::move(couplings),
+                      std::move(operations), std::move(durationUnit));
+  if (!storage) {
+    return storage.takeError();
+  }
+  return CompilerTarget(std::move(*storage), StorageConstructorTag{});
+}
+
+CompilerTarget::CompilerTarget(
+    std::shared_ptr<const Storage> storage,
     [[maybe_unused]] StorageConstructorTag storageConstructorTag)
-    : storage_(std::make_shared<const Storage>(
-          std::move(name), std::move(sites), std::move(couplings),
-          std::move(operations), std::move(durationUnit))) {}
+    : storage_(std::move(storage)) {}
 
 std::optional<StringRef> CompilerTarget::name() const noexcept {
   if (!storage_->name) {
@@ -579,9 +675,7 @@ CompilerTarget::vertexForSite(const SiteId site) const noexcept {
 }
 
 SiteId CompilerTarget::siteForVertex(const size_t vertex) const {
-  if (vertex >= numQubits()) {
-    throwVertexOutOfRange();
-  }
+  assert(vertex < numQubits() && "Compiler target vertex is out of range");
   return storage_->siteIds[vertex];
 }
 
@@ -598,9 +692,8 @@ ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
 
 bool CompilerTarget::areAdjacent(const size_t source,
                                  const size_t target) const {
-  if (source >= numQubits() || target >= numQubits()) {
-    throwVertexOutOfRange();
-  }
+  assert(source < numQubits() && target < numQubits() &&
+         "Compiler target vertex is out of range");
   if (!hasExplicitTopology()) {
     return source != target;
   }
@@ -611,9 +704,7 @@ void CompilerTarget::forEachNeighbour(
     const size_t vertex,
     const llvm::function_ref<void(size_t)> callback) const {
   if (!hasExplicitTopology()) {
-    if (vertex >= numQubits()) {
-      throwVertexOutOfRange();
-    }
+    assert(vertex < numQubits() && "Compiler target vertex is out of range");
     for (size_t neighbour = 0; neighbour < numQubits(); ++neighbour) {
       if (neighbour != vertex) {
         callback(neighbour);
@@ -628,9 +719,8 @@ void CompilerTarget::forEachNeighbour(
 
 size_t CompilerTarget::distanceBetween(const size_t source,
                                        const size_t target) const {
-  if (source >= numQubits() || target >= numQubits()) {
-    throwVertexOutOfRange();
-  }
+  assert(source < numQubits() && target < numQubits() &&
+         "Compiler target vertex is out of range");
   if (!hasExplicitTopology()) {
     return source == target ? 0 : 1;
   }
@@ -638,14 +728,8 @@ size_t CompilerTarget::distanceBetween(const size_t source,
 }
 
 ArrayRef<size_t> CompilerTarget::explicitNeighbours(const size_t vertex) const {
-  if (vertex >= numQubits()) {
-    throwVertexOutOfRange();
-  }
+  assert(vertex < numQubits() && "Compiler target vertex is out of range");
   return storage_->adjacency[vertex];
-}
-
-void CompilerTarget::throwVertexOutOfRange() {
-  throw std::out_of_range("Compiler target vertex is out of range");
 }
 
 size_t CompilerTarget::maxDegree() const noexcept {

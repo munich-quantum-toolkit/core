@@ -12,6 +12,8 @@
 
 #include "mlir/Compiler/Target.h"
 
+#include <llvm/Support/Error.h>
+
 namespace fomac {
 class Device;
 } // namespace fomac
@@ -26,7 +28,7 @@ namespace mlir {
  * zone models and site-dependent operation support are not supported by the
  * circuit-model compiler pipeline.
  */
-[[nodiscard]] CompilerTarget
+[[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const fomac::Device& device);
 
 } // namespace mlir
