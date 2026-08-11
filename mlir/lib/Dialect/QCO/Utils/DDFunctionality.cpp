@@ -10,8 +10,13 @@
 
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "dd/CachedEdge.hpp"
+#include "dd/Complex.hpp"
+#include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
+#include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
@@ -27,9 +32,7 @@
 
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/APInt.h>
-#include <llvm/ADT/APSInt.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -42,6 +45,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Visitors.h>
@@ -50,6 +54,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -163,12 +168,6 @@ struct TensorMap {
   }
 };
 
-[[nodiscard]] static bool isQTensorType(Type type) {
-  const auto tensorType = dyn_cast<RankedTensorType>(type);
-  return tensorType && tensorType.getRank() == 1 &&
-         isa<QubitType>(tensorType.getElementType());
-}
-
 struct ClassicalEnv {
   DenseMap<Value, bool> bools;
   DenseMap<Value, int64_t> indices;
@@ -211,7 +210,7 @@ struct ClassicalEnv {
       integers[dest] = it->second;
       return success();
     }
-    if (isa<FloatType>(dest.getType())) {
+    if (dest.getType().isIntOrFloat()) {
       const auto it = floats.find(source);
       if (it == floats.end()) {
         return op->emitError()
@@ -275,6 +274,12 @@ struct ActiveCallGuard {
 };
 
 } // namespace
+
+[[nodiscard]] static bool isQTensorType(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
 
 static FailureOr<double>
 resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
@@ -408,7 +413,7 @@ buildDensityMatrix(const dd::VectorDD& ket, const dd::VectorDD& bra,
   }
   const auto child = [level](const dd::VectorDD& edge,
                              const size_t index) -> dd::VectorDD {
-    if (!edge.isTerminal() && edge.p->v == level) {
+    if (!edge.isTerminal() && std::cmp_equal(edge.p->v, level)) {
       return edge.p->e[index];
     }
     return index == 0 ? dd::VectorDD{.p = edge.p, .w = dd::Complex::one()}
@@ -932,7 +937,7 @@ static FailureOr<APInt> lookupIntegerLike(Value value, ClassicalEnv& classical,
     if (failed(bit)) {
       return failure();
     }
-    return APInt(1, *bit);
+    return APInt(1, static_cast<uint64_t>(*bit));
   }
   if (isa<IndexType>(value.getType())) {
     auto index = lookupIndex(value, classical, op);
@@ -1049,7 +1054,7 @@ static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
   classical.memrefs[alloc.getResult()] =
       std::make_shared<ClassicalEnv::MemRefStorage>(ClassicalEnv::MemRefStorage{
           .values = SmallVector<ClassicalEnv::Scalar>(static_cast<size_t>(size),
-                                                      std::move(zero))});
+                                                      zero)});
   return success();
 }
 
@@ -2060,7 +2065,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                      << "qtensor index out of range for QCO DD simulation";
             }
             TensorSlots outputSlots = *inputSlots;
-            outputSlots[static_cast<size_t>(*index)] = *wire;
+            outputSlots[static_cast<size_t>(*index)] = wire;
             walk.tensors.bind(insert.getResult(), std::move(outputSlots));
             return success();
           })
@@ -2142,7 +2147,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return measureOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          char bit;
+          char bit = '0';
           if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
             bit = walk.dd.measureOneCollapsing(state, *q, *walk.rng);
           } else {
@@ -2171,7 +2176,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return resetOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          char bit;
+          char bit = '0';
           if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
             bit = walk.dd.measureOneCollapsing(state, *q, *walk.rng);
           } else {
@@ -2520,10 +2525,12 @@ static LogicalResult walkFunction(func::FuncOp func, WalkState& walk,
   return validateReturn(*returnOp, walk.qubits, walk.tensors);
 }
 
+namespace {
 struct PreparedState {
   QubitMap qubits;
   TensorMap tensors;
 };
+} // namespace
 
 static FailureOr<PreparedState>
 prepare(func::FuncOp func, const dd::Package& dd, const DDBindings& bindings) {
@@ -2667,10 +2674,12 @@ dd::MatrixDD makeDensityMatrix(const dd::VectorDD& state,
   return density;
 }
 
+namespace {
 struct DensitySimulationResult {
   dd::MatrixDD matrix;
   size_t numQubits;
 };
+} // namespace
 
 static FailureOr<DensitySimulationResult>
 simulateDensityImpl(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,

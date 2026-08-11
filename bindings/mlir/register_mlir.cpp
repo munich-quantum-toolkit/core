@@ -14,11 +14,13 @@
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
@@ -135,7 +137,7 @@ makeQCODDBindings(mlir::func::FuncOp func,
       throw nb::value_error("QCO DD binding argument index is out of range");
     }
 
-    mlir::Value argument = func.getArgument(static_cast<unsigned>(index));
+    const mlir::Value argument = func.getArgument(static_cast<unsigned>(index));
     mlir::Type type = argument.getType();
     mlir::Attribute attribute;
     if (type.isInteger(1)) {
@@ -146,9 +148,9 @@ makeQCODDBindings(mlir::func::FuncOp func,
       if (const auto* value = std::get_if<int64_t>(&binding)) {
         attribute = mlir::IntegerAttr::get(type, *value);
       }
-    } else if (const auto floatType = mlir::dyn_cast<mlir::FloatType>(type)) {
+    } else if (type.isIntOrFloat()) {
       if (const auto* value = std::get_if<double>(&binding)) {
-        attribute = mlir::FloatAttr::get(floatType, *value);
+        attribute = mlir::FloatAttr::get(type, *value);
       }
     } else if (const auto tensorType =
                    mlir::dyn_cast<mlir::RankedTensorType>(type);
