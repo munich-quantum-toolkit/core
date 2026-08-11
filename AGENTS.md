@@ -39,15 +39,6 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   CLI behavior. Normal test targets and dependencies belong in the test build;
   avoid promoting an otherwise optional production tool into the default build
   solely for subprocess testing.
-- When rewriting QCO modifiers, preserve the mapping from body `qco.yield`
-  operands to modifier results; valid bodies need not yield transformed qubits
-  in their input order.
-- Treat diagonal gates on measured qubits as removable only when no coherent
-  quantum control can receive phase kickback. Keep the corresponding correction
-  on every unmeasured control.
-- Make linear-quantum rewrite tests observe the surviving output wires. Fixtures
-  that only sink transformed qubits may be erased by canonicalization and pass
-  without exercising the intended rewrite.
 - Update `CHANGELOG.md` and `UPGRADING.md` for user-facing, breaking, or
   otherwise noteworthy changes.
 - Format changelog entries with the pull request reference and every
