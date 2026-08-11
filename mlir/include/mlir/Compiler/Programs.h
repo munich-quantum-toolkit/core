@@ -26,10 +26,6 @@
 #include <variant>
 #include <vector>
 
-namespace qc {
-class QuantumComputation;
-} // namespace qc
-
 namespace mqt::bindings::qiskit {
 class QCProgramAccess;
 } // namespace mqt::bindings::qiskit
@@ -159,10 +155,6 @@ public:
   /// Translate an OpenQASM 3 file to QC.
   [[nodiscard]] static std::optional<QCProgram>
   fromQASMFile(const std::filesystem::path& path);
-
-  /// Translate an MQT `QuantumComputation` to QC.
-  [[nodiscard]] static std::optional<QCProgram>
-  fromQuantumComputation(const ::qc::QuantumComputation& computation);
 
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;

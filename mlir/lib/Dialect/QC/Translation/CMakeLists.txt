@@ -38,22 +38,3 @@ target_sources(
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/OpenQASMAttributes.h
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)
-
-add_mlir_library(
-  MLIRQCTranslation
-  PARTIAL_SOURCES_INTENDED
-  TranslateQuantumComputationToQC.cpp
-  LINK_LIBS
-  PUBLIC
-  MLIRQCOpenQASMTranslation
-  MLIRQCDialect
-  MLIRQCProgramBuilder
-  MQT::CoreIR)
-
-mqt_mlir_target_use_project_options(MLIRQCTranslation)
-
-target_sources(
-  MLIRQCTranslation
-  PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-    ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h)

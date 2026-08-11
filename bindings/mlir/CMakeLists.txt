@@ -87,8 +87,7 @@ if(NOT TARGET ${TARGET_NAME})
     .
     LINK_LIBS
     MQTCompilerFoMaCAdapter
-    MQTCompilerPipeline
-    MQT::CoreIR)
+    MQTCompilerPipeline)
 
   target_sources(${TARGET_NAME} PRIVATE ${qiskit_adapter_objects})
   if(MQT_QISKIT_CAPI_CANDIDATE_VERSION)

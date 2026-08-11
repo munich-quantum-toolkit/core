@@ -16,7 +16,6 @@ from typing import Literal, overload
 import qiskit
 
 import mqt.core.fomac
-import mqt.core.ir
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -339,10 +338,6 @@ class QCProgram(Program):
         """Translate an OpenQASM 3 file to QC MLIR."""
 
     @staticmethod
-    def from_quantum_computation(computation: mqt.core.ir.QuantumComputation) -> QCProgram:
-        """Translate an MQT {py:class}`~mqt.core.ir.QuantumComputation` to QC MLIR."""
-
-    @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
         """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR."""
 
@@ -515,7 +510,6 @@ class QIRProgram(Program):
 def compile_program(
     program: str
     | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
@@ -533,7 +527,6 @@ def compile_program(
 def compile_program(
     program: str
     | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
@@ -551,7 +544,6 @@ def compile_program(
 def compile_program(
     program: str
     | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
@@ -568,7 +560,6 @@ def compile_program(
 def compile_program(
     program: str
     | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
@@ -586,7 +577,6 @@ def compile_program(
 def compile_program(
     program: str
     | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
@@ -604,7 +594,6 @@ def compile_program(
 def compile_program(
     program: str
     | os.PathLike[str]
-    | mqt.core.ir.QuantumComputation
     | qiskit.circuit.QuantumCircuit
     | QCProgram
     | QCOProgram
@@ -620,14 +609,14 @@ def compile_program(
 ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
     """Run the coordinated default MQT compiler pipeline.
 
-    Input source strings, files, MQT {py:class}`~mqt.core.ir.QuantumComputation`
-    objects, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed
-    compiler programs can be combined with any supported output format. Typed
-    program inputs are copied by default; set ``inplace=True`` to consume them.
-    Use the typed programs directly to construct a custom pipeline stage by stage.
+    Input source strings, files, Qiskit
+    {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler programs
+    can be combined with any supported output format. Typed program inputs are copied
+    by default; set ``inplace=True`` to consume them. Use the typed programs directly
+    to construct a custom pipeline stage by stage.
 
     Args:
-        program: Source text, a file path, a circuit, or a typed compiler program.
+        program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
         output: The requested output stage of the compiler pipeline.
         inplace: Whether a typed input program may be consumed.
         target: An optional compiler target for decomposition, mapping, and native

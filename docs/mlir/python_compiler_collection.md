@@ -10,10 +10,9 @@ mystnb:
 
 The {py:mod}`mqt.core.mlir` module provides Python access to the MQT Compiler
 Collection. It accepts source strings, {code}`.qasm`, {code}`.mlir`, and
-{code}`.jeff` files, MQT {py:class}`~mqt.core.ir.QuantumComputation` objects,
-Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler
-programs. The requested output format determines where compilation stops and
-which program type is returned.
+{code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects,
+and typed compiler programs. The requested output format determines where
+compilation stops and which program type is returned.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
