@@ -115,7 +115,7 @@ def tests(session: nox.Session) -> None:
     _run_tests(session)
 
 
-@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True, allow_parallel=True)
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
 def minimums(session: nox.Session) -> None:
     """Test the minimum versions of dependencies."""
     with preserve_lockfile():
