@@ -82,6 +82,19 @@ The CoreIR API cleanup requires the following migrations:
 The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
 `physicalQubitIsAncillary()` are now private implementation details.
 
+### Removal of the legacy circuit-to-MLIR translator
+
+The compiler no longer accepts `qc::QuantumComputation` or
+`mqt.core.ir.QuantumComputation` objects. The
+`mlir::QCProgram::fromQuantumComputation` and Python
+`QCProgram.from_quantum_computation` functions have been removed. Pass OpenQASM,
+a Qiskit circuit, or a typed MLIR program to the compiler instead. Existing
+Python code can convert a legacy circuit to OpenQASM 3 before compilation:
+
+```python
+program = compile_program(computation.qasm3_str())
+```
+
 ### Removal of the ZX-calculus library
 
 MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
