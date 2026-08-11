@@ -38,8 +38,10 @@ it and must remain independently buildable and testable.
       records the C++ source migration.
 - [x] (2026-08-11 00:52Z) Publish the first layer as draft pull request #2049,
   based on #2040 at its unchanged exact head.
-- [ ] Replace non-local OpenQASM semantic exceptions with explicit diagnostic
-  propagation and validate all semantic error paths in the second layer.
+- [x] (2026-08-11 01:41Z) Replace non-local OpenQASM semantic exceptions with
+      explicit `FailureOr` and `LogicalResult` propagation. The complete
+      OpenQASM target suite passes all 183 tests, including exact diagnostic
+      coverage for recursive custom gates after body analysis.
 - [ ] Introduce the CMake no-exception contract, isolate or omit integrations
   whose upstream APIs still require exception handling, add CI coverage and
   documentation, and validate the final layer.
@@ -66,6 +68,11 @@ it and must remain independently buildable and testable.
   interpreter does not provide nanobind. Supplying the established LLVM 22.1.3
   `MLIR_DIR` and the worktree's `.venv/bin/python` makes both configurations
   reproducible; these were environment boundaries, not source failures.
+- Observation: the semantic analyzer has 169 error-producing call sites spread
+  across constant evaluation, type resolution, structured control flow, gate
+  graph validation, and output finalization. Encoding failure in each return
+  type let the compiler expose every missed propagation site during the
+  conversion; no public frontend result type had to change.
 
 ## Decision Log
 
@@ -86,14 +93,21 @@ it and must remain independently buildable and testable.
   no-exception consumers need an exception-free compiler core, while Python and
   legacy Core integrations still require their established error behavior.
   Date/Author: 2026-08-11, Codex.
+- Decision: Retain only the first semantic diagnostic in the analyzer and stop
+  immediately after failure. Rationale: this preserves the previous exception
+  unwinding behavior exactly while making propagation visible in function
+  signatures and keeping syntax-level multi-diagnostic recovery separate.
+  Date/Author: 2026-08-11, Codex.
 
 ## Outcomes & Retrospective
 
-The first stack layer is complete locally. Compiler-target construction and the
-FoMaC snapshot adapter use explicit LLVM errors throughout the C++ layer while
-the nanobind boundary preserves Python `ValueError`. Valid target behavior is
-unchanged across the compiler, mapping, and native-synthesis suites. The
-remaining analyzer and build-enforcement layers are in progress.
+The first two stack layers are complete locally. Compiler-target construction
+and the FoMaC snapshot adapter use explicit LLVM errors throughout the C++ layer
+while the nanobind boundary preserves Python `ValueError`. The OpenQASM semantic
+analyzer now propagates every error explicitly and preserves its existing
+diagnostics. Valid target behavior is unchanged across the compiler, mapping,
+native-synthesis, and complete OpenQASM suites. The build-enforcement layer
+remains in progress.
 
 ## Context and Orientation
 
@@ -257,7 +271,7 @@ reviews or review threads. This commit is evidence for the initial dependency
 only; refresh it before publication because remote state can change.
 
 The first implementation layer is draft pull request #2049 at signed commit
-`86508b872c902569966532ee5a965d50f0b8eb54`. Its base branch is
+`801bf71231fb143cf84b28789a6f0369a51dfcaf`. Its base branch is
 `agent/issue-1128-angle-precision`; the local and remote bases were exact when
 the pull request was created.
 
