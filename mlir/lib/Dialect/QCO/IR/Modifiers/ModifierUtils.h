@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -38,6 +39,20 @@ namespace qco::detail {
  * yields back is not acted upon and can be dropped from the modifier.
  */
 [[nodiscard]] SmallVector<size_t> getUsedQubitIndices(Block& body);
+
+/**
+ * @brief Rebuild a modifier with only the qubits used by its body.
+ *
+ * @param modifierOp The modifier to replace.
+ * @param body The modifier body.
+ * @param qubits The modifier qubits corresponding to the body arguments.
+ * @param rebuild A callback that creates and returns the narrowed modifier.
+ * @param rewriter The rewriter used to replace the modifier.
+ */
+[[nodiscard]] LogicalResult
+dropUnusedQubits(Operation* modifierOp, Block& body, ValueRange qubits,
+                 function_ref<Operation*(ValueRange, ArrayRef<size_t>)> rebuild,
+                 RewriterBase& rewriter);
 
 /**
  * @brief Inline @p body into the modifier currently being built, dropping the

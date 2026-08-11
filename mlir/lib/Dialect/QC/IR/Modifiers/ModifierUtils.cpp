@@ -15,6 +15,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
@@ -65,6 +66,22 @@ SmallVector<size_t> getUsedQubitIndices(Block& body) {
     }
   }
   return used;
+}
+
+LogicalResult
+dropUnusedQubits(Operation* modifierOp, Block& body, ValueRange qubits,
+                 function_ref<void(ValueRange, ArrayRef<size_t>)> rebuild,
+                 RewriterBase& rewriter) {
+  const auto used = getUsedQubitIndices(body);
+  if (used.size() == qubits.size()) {
+    return failure();
+  }
+
+  const auto narrowedQubits = llvm::map_to_vector(
+      used, [&](const size_t index) { return qubits[index]; });
+  rebuild(narrowedQubits, used);
+  rewriter.eraseOp(modifierOp);
+  return success();
 }
 
 void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,

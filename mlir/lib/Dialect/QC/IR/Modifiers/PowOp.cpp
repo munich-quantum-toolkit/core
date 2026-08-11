@@ -647,26 +647,23 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 /**
  * @brief Drop the qubits that the body does not use.
  */
-struct DropUnusedQubits final : OpRewritePattern<PowOp> {
+struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto used = qc::detail::getUsedQubitIndices(*body);
-    if (used.size() == op.getNumQubits()) {
-      return failure();
-    }
-
-    const auto qubits = llvm::map_to_vector(
-        used, [&](const size_t index) { return op.getQubits()[index]; });
-    PowOp::create(rewriter, op.getLoc(), op.getExponent(), qubits,
-                  [&](ValueRange args) {
-                    qc::detail::inlineNarrowedBody(*body, op.getQubits(), used,
-                                                   args, rewriter);
-                  });
-    rewriter.eraseOp(op);
-    return success();
+    const auto qubits = op.getQubits();
+    return qc::detail::dropUnusedQubits(
+        op, *body, qubits,
+        [&](ValueRange narrowedQubits, ArrayRef<size_t> used) {
+          PowOp::create(rewriter, op.getLoc(), op.getExponent(), narrowedQubits,
+                        [&](ValueRange args) {
+                          qc::detail::inlineNarrowedBody(*body, qubits, used,
+                                                         args, rewriter);
+                        });
+        },
+        rewriter);
   }
 };
 
@@ -725,8 +722,7 @@ LogicalResult PowOp::verify() {
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results
-      .add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-           MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow, DropUnusedQubits>(
-          context);
+  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
+              MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow,
+              DropUnusedPowQubits>(context);
 }

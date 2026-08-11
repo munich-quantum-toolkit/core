@@ -720,29 +720,25 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 /**
  * @brief Drop the qubits that the body does not use.
  */
-struct DropUnusedQubits final : OpRewritePattern<PowOp> {
+struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto used = qco::detail::getUsedQubitIndices(*body);
-    if (used.size() == op.getNumQubits()) {
-      return failure();
-    }
-
-    const auto qubits = llvm::map_to_vector(
-        used, [&](const size_t index) { return op.getQubitsIn()[index]; });
-    auto newOp =
-        PowOp::create(rewriter, op.getLoc(), qubits, op.getExponent(),
-                      [&](ValueRange args) -> SmallVector<Value> {
-                        return qco::detail::inlineNarrowedBody(
-                            *body, op.getQubitsIn(), used, args, rewriter);
-                      });
-
-    rewriter.replaceOp(op, qco::detail::restoreUnusedQubits(
-                               op.getQubitsIn(), used, newOp.getResults()));
-    return success();
+    const auto qubits = op.getQubitsIn();
+    return qco::detail::dropUnusedQubits(
+        op, *body, qubits,
+        [&](ValueRange narrowedQubits, ArrayRef<size_t> used) -> Operation* {
+          auto newOp = PowOp::create(
+              rewriter, op.getLoc(), narrowedQubits, op.getExponent(),
+              [&](ValueRange args) -> SmallVector<Value> {
+                return qco::detail::inlineNarrowedBody(*body, qubits, used,
+                                                       args, rewriter);
+              });
+          return newOp;
+        },
+        rewriter);
   }
 };
 
@@ -866,10 +862,9 @@ LogicalResult PowOp::verify() {
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results
-      .add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-           MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow, DropUnusedQubits>(
-          context);
+  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
+              MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow,
+              DropUnusedPowQubits>(context);
 }
 
 // This structural query deliberately avoids constructing the body matrix or

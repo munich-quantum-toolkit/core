@@ -402,29 +402,25 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
 /**
  * @brief Drop the qubits that the body does not use.
  */
-struct DropUnusedQubits final : OpRewritePattern<InvOp> {
+struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto used = qco::detail::getUsedQubitIndices(*body);
-    if (used.size() == op.getNumQubits()) {
-      return failure();
-    }
-
-    const auto qubits = llvm::map_to_vector(
-        used, [&](const size_t index) { return op.getQubitsIn()[index]; });
-    auto newOp =
-        InvOp::create(rewriter, op.getLoc(), qubits,
-                      [&](ValueRange args) -> SmallVector<Value> {
-                        return qco::detail::inlineNarrowedBody(
-                            *body, op.getQubitsIn(), used, args, rewriter);
-                      });
-
-    rewriter.replaceOp(op, qco::detail::restoreUnusedQubits(
-                               op.getQubitsIn(), used, newOp.getResults()));
-    return success();
+    const auto qubits = op.getQubitsIn();
+    return qco::detail::dropUnusedQubits(
+        op, *body, qubits,
+        [&](ValueRange narrowedQubits, ArrayRef<size_t> used) -> Operation* {
+          auto newOp =
+              InvOp::create(rewriter, op.getLoc(), narrowedQubits,
+                            [&](ValueRange args) -> SmallVector<Value> {
+                              return qco::detail::inlineNarrowedBody(
+                                  *body, qubits, used, args, rewriter);
+                            });
+          return newOp;
+        },
+        rewriter);
   }
 };
 
@@ -516,7 +512,7 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<MoveCtrlOutsideInv, InvPowToNegPow, InlineSelfAdjoint,
               ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv,
-              DropUnusedQubits>(context);
+              DropUnusedInvQubits>(context);
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {

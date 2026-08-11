@@ -79,6 +79,24 @@ SmallVector<Value> restoreUnusedQubits(ValueRange inputs, ArrayRef<size_t> used,
   return results;
 }
 
+LogicalResult
+dropUnusedQubits(Operation* modifierOp, Block& body, ValueRange qubits,
+                 function_ref<Operation*(ValueRange, ArrayRef<size_t>)> rebuild,
+                 RewriterBase& rewriter) {
+  const auto used = getUsedQubitIndices(body);
+  if (used.size() == qubits.size()) {
+    return failure();
+  }
+
+  const auto narrowedQubits = llvm::map_to_vector(
+      used, [&](const size_t index) { return qubits[index]; });
+  auto* narrowedModifier = rebuild(narrowedQubits, used);
+  rewriter.replaceOp(
+      modifierOp,
+      restoreUnusedQubits(qubits, used, narrowedModifier->getResults()));
+  return success();
+}
+
 SmallVector<Value> inlineNarrowedBody(Block& body, ValueRange qubits,
                                       ArrayRef<size_t> used, ValueRange args,
                                       RewriterBase& rewriter) {
