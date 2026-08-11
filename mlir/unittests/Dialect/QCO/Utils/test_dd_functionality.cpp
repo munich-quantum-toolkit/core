@@ -1761,6 +1761,116 @@ TEST_F(QCODDFunctionalityTest, ClassicalCmpSelectAndIndexBitwise) {
   expectSimulatesFromZero(mainFunc(*mod), 1, {true});
 }
 
+TEST_F(QCODDFunctionalityTest, WiderClassicalArithmeticAndMemRefs) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %size = arith.constant 1 : index
+        %i0 = arith.constant 0 : index
+        %ints = memref.alloc(%size) : memref<?xi16>
+        %c7 = arith.constant 7 : i16
+        %c5 = arith.constant 5 : i16
+        %c2 = arith.constant 2 : i16
+        %c3 = arith.constant 3 : i16
+        %c1 = arith.constant 1 : i16
+        %sum = arith.addi %c7, %c5 : i16
+        %difference = arith.subi %sum, %c2 : i16
+        %product = arith.muli %difference, %c3 : i16
+        %xor = arith.xori %product, %c1 : i16
+        %shifted = arith.shli %xor, %c1 : i16
+        %restored = arith.shrui %shifted, %c1 : i16
+        %quotient = arith.divui %restored, %c1 : i16
+        %remainder = arith.remui %restored, %c2 : i16
+        memref.store %restored, %ints[%i0] : memref<?xi16>
+        %loaded = memref.load %ints[%i0] : memref<?xi16>
+        %wide = arith.extui %loaded : i16 to i64
+        %narrow = arith.trunci %wide : i64 to i8
+        %signed = arith.extsi %narrow : i8 to i64
+        %index = arith.index_castui %loaded : i16 to index
+        %negative = arith.constant -8 : i8
+        %signedTwo = arith.constant 2 : i8
+        %signedOne = arith.constant 1 : i8
+        %signedQuotient = arith.divsi %negative, %signedTwo : i8
+        %signedRemainder = arith.remsi %negative, %signedTwo : i8
+        %signedShift = arith.shrsi %negative, %signedOne : i8
+        %signedIndex = arith.index_cast %negative : i8 to index
+        %expectedInt = arith.constant 31 : i64
+        %expectedIndex = arith.constant 31 : index
+        %expectedNegative = arith.constant -4 : i8
+        %expectedZero = arith.constant 0 : i8
+        %expectedSignedIndex = arith.constant -8 : index
+        %intOk = arith.cmpi eq, %signed, %expectedInt : i64
+        %indexOk = arith.cmpi eq, %index, %expectedIndex : index
+        %quotientOk = arith.cmpi eq, %quotient, %restored : i16
+        %remainderOk = arith.cmpi eq, %remainder, %c1 : i16
+        %signedQuotientOk = arith.cmpi eq, %signedQuotient, %expectedNegative : i8
+        %signedRemainderOk = arith.cmpi eq, %signedRemainder, %expectedZero : i8
+        %signedShiftOk = arith.cmpi eq, %signedShift, %expectedNegative : i8
+        %signedIndexOk = arith.cmpi eq, %signedIndex, %expectedSignedIndex : index
+        %selected = arith.select %intOk, %wide, %expectedInt : i64
+        %selectOk = arith.cmpi eq, %selected, %expectedInt : i64
+
+        %floats = memref.alloc(%size) : memref<?xf64>
+        %f15 = arith.constant 1.5 : f64
+        %f05 = arith.constant 0.5 : f64
+        %f2 = arith.constant 2.0 : f64
+        %f0 = arith.constant 0.0 : f64
+        %fSum = arith.addf %f15, %f05 : f64
+        %fDifference = arith.subf %fSum, %f05 : f64
+        %fProduct = arith.mulf %fDifference, %f2 : f64
+        %fQuotient = arith.divf %fProduct, %f2 : f64
+        %fNegated = arith.negf %fQuotient : f64
+        %fRemainder = arith.remf %f15, %f05 : f64
+        %fromUnsigned = arith.uitofp %loaded : i16 to f64
+        %fromSigned = arith.sitofp %negative : i8 to f64
+        %toUnsigned = arith.fptoui %fQuotient : f64 to i16
+        %toSigned = arith.fptosi %fNegated : f64 to i16
+        memref.store %fNegated, %floats[%i0] : memref<?xf64>
+        %fLoaded = memref.load %floats[%i0] : memref<?xf64>
+        %floatOk = arith.cmpf olt, %fLoaded, %f0 : f64
+        %remainderFloatOk = arith.cmpf oeq, %fRemainder, %f0 : f64
+        %expectedUnsignedFloat = arith.constant 31.0 : f64
+        %expectedSignedFloat = arith.constant -8.0 : f64
+        %unsignedFloatOk = arith.cmpf oeq, %fromUnsigned, %expectedUnsignedFloat : f64
+        %signedFloatOk = arith.cmpf oeq, %fromSigned, %expectedSignedFloat : f64
+        %expectedUnsigned = arith.constant 1 : i16
+        %expectedSigned = arith.constant -1 : i16
+        %toUnsignedOk = arith.cmpi eq, %toUnsigned, %expectedUnsigned : i16
+        %toSignedOk = arith.cmpi eq, %toSigned, %expectedSigned : i16
+
+        %intAndIndexOk = arith.andi %intOk, %indexOk : i1
+        %unsignedOpsOk = arith.andi %quotientOk, %remainderOk : i1
+        %signedOps0Ok = arith.andi %signedQuotientOk, %signedRemainderOk : i1
+        %signedOps1Ok = arith.andi %signedShiftOk, %signedIndexOk : i1
+        %signedOpsOk = arith.andi %signedOps0Ok, %signedOps1Ok : i1
+        %integerOpsOk = arith.andi %unsignedOpsOk, %signedOpsOk : i1
+        %floatOps0Ok = arith.andi %floatOk, %remainderFloatOk : i1
+        %floatOps1Ok = arith.andi %unsignedFloatOk, %signedFloatOk : i1
+        %floatOps2Ok = arith.andi %toUnsignedOk, %toSignedOk : i1
+        %floatCastsOk = arith.andi %floatOps1Ok, %floatOps2Ok : i1
+        %floatOpsOk = arith.andi %floatOps0Ok, %floatCastsOk : i1
+        %scalarOps0Ok = arith.andi %intAndIndexOk, %integerOpsOk : i1
+        %scalarOps1Ok = arith.andi %selectOk, %floatOpsOk : i1
+        %all = arith.andi %scalarOps0Ok, %scalarOps1Ok : i1
+        %out = scf.if %all -> !qco.qubit {
+          %x = qco.x %q : !qco.qubit -> !qco.qubit
+          scf.yield %x : !qco.qubit
+        } else {
+          scf.yield %q : !qco.qubit
+        }
+        memref.dealloc %floats : memref<?xf64>
+        memref.dealloc %ints : memref<?xi16>
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
+}
+
 TEST_F(QCODDFunctionalityTest, ClassicalBindThroughScfForAndCall) {
   // Exercise ClassicalEnv::bindFrom via scf.for iter_args and func.call.
   auto mod = parseSourceString<ModuleOp>(R"mlir(
@@ -1844,12 +1954,12 @@ TEST_F(QCODDFunctionalityTest, ClassicalMemRefErrorsAndDealloc) {
   ASSERT_TRUE(ok);
   expectSimulatesFromZero(mainFunc(*ok), 1, {false}, /*seed=*/5);
 
-  // Wrong element type / rank rejected.
+  // Unsupported element type / rank rejected.
   expectMlirFails(0, R"mlir(
     module {
       func.func @main() {
-        %c = memref.alloc() : memref<2xi32>
-        memref.dealloc %c : memref<2xi32>
+        %c = memref.alloc() : memref<2xcomplex<f64>>
+        memref.dealloc %c : memref<2xcomplex<f64>>
         return
       }
     }
@@ -1938,13 +2048,13 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
   expectSimulateFail(mainFunc(*missingBody), 1);
 
   // Unsupported classical op
-  auto div = parseSourceString<ModuleOp>(R"mlir(
+  auto maximum = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main() {
         %q = qco.static 0 : !qco.qubit
         %c2 = arith.constant 2 : index
         %c1 = arith.constant 1 : index
-        %d = arith.divui %c2, %c1 : index
+        %d = arith.maxsi %c2, %c1 : index
         %q1 = qco.index_switch %d -> !qco.qubit
         default args(%arg0 = %q) {
           qco.yield %arg0 : !qco.qubit
@@ -1954,9 +2064,9 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
       }
     }
   )mlir",
-                                         context.get());
-  ASSERT_TRUE(div);
-  expectSimulateFail(mainFunc(*div), 1);
+                                             context.get());
+  ASSERT_TRUE(maximum);
+  expectSimulateFail(mainFunc(*maximum), 1);
 
   auto shruiBad = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
@@ -2017,8 +2127,8 @@ TEST_F(QCODDFunctionalityTest, ClassicalErrorPathsAndCalleeMeasureSample) {
   ASSERT_TRUE(unmapped);
   expectSimulateFail(mainFunc(*unmapped), 1);
 
-  // Unsupported classical type for bindFrom (i64).
-  auto badType = parseSourceString<ModuleOp>(R"mlir(
+  // Wider classical values are propagated through func.call.
+  auto widerType = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @use(%q: !qco.qubit, %x: i64) -> !qco.qubit {
         return %q : !qco.qubit
@@ -2032,11 +2142,11 @@ TEST_F(QCODDFunctionalityTest, ClassicalErrorPathsAndCalleeMeasureSample) {
       }
     }
   )mlir",
-                                             context.get());
-  ASSERT_TRUE(badType);
-  expectSimulateFail(mainFunc(*badType), 1);
+                                               context.get());
+  ASSERT_TRUE(widerType);
+  expectSimulatesFromZero(mainFunc(*widerType), 1, {false});
 
-  // Non-index shifts / bad select / bad trunci / bad cmpi result type.
+  // i1 shifts remain invalid because their amount cannot address a bit width.
   expectMlirFails(1, R"mlir(
     module {
       func.func @main() {
@@ -2049,31 +2159,6 @@ TEST_F(QCODDFunctionalityTest, ClassicalErrorPathsAndCalleeMeasureSample) {
       }
     }
   )mlir");
-  expectMlirFails(1, R"mlir(
-    module {
-      func.func @main() {
-        %q = qco.static 0 : !qco.qubit
-        %t = arith.constant true
-        %c0 = arith.constant 0 : i64
-        %c1 = arith.constant 1 : i64
-        %s = arith.select %t, %c0, %c1 : i64
-        qco.sink %q : !qco.qubit
-        return
-      }
-    }
-  )mlir");
-  expectMlirFails(1, R"mlir(
-    module {
-      func.func @main() {
-        %q = qco.static 0 : !qco.qubit
-        %c = arith.constant 1 : i64
-        %w = arith.trunci %c : i64 to i1
-        qco.sink %q : !qco.qubit
-        return
-      }
-    }
-  )mlir");
-
   // Unmapped memref / dynamic alloc.
   auto unmappedMem = parseSourceString<ModuleOp>(R"mlir(
     module {

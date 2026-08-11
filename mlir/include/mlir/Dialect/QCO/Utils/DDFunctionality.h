@@ -41,6 +41,8 @@ namespace mlir::qco {
  * - Concrete `qco.if` / `qco.index_switch`, bounded `scf.for` / `scf.while`,
  *   standard `scf.if` / `scf.index_switch` / single-block
  *   `scf.execute_region`, and non-recursive single-block `func.call`
+ * - Concrete integer, index, and floating-point `arith` operations and
+ *   one-dimensional `memref` storage over those scalar types
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
  *   `sink` is ignored; `arith.constant` is ignored for matrix construction;
  *   `func.return` accepts qubit results only in canonical wire order
@@ -63,8 +65,9 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  *
  * @details Same supported unitary op set as @ref buildFunctionality, plus
  * concrete classical control-flow (`qco.if`, `qco.index_switch`, `scf.if`,
- * `scf.index_switch`, and single-block `scf.execute_region`) and static-shape
- * 1-D `memref<Nxi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
+ * `scf.index_switch`, and single-block `scf.execute_region`) and static- or
+ * concrete dynamic-shape 1-D `memref` registers of integer, index, or
+ * floating-point values (`alloc`/`store`/`load`/`dealloc`).
  * `qco.alloc` and `qtensor.alloc` append zero-state wires, while
  * `qtensor.from_elements` / `extract` / `insert` / `dealloc` track their linear
  * ownership. QTensor sizes and indices must be concrete classical values.
@@ -94,12 +97,11 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @details Supports the unitary op set of @ref buildFunctionality, plus
  * `qco.measure` / `qco.reset` (collapsing via @p rng) and `qco.if` /
  * `qco.index_switch` when the branch selector is a concrete classical SSA value
- * (`arith.constant` `i1`/`index`, a prior measurement, `arith.index_castui`,
- * `arith.extui`/`trunci` between `i1` and `index`, `arith.cmpi`,
- * `arith.select`, `arith.addi`/`subi`/`muli`,
- * `andi`/`ori`/`xori`/`shli`/`shrui` on those values). Classical registers as
- * static-shape 1-D `memref<Nxi1>` with `memref.alloc` / `store` / `load` /
- * `dealloc` are supported. Dynamic qubit and qtensor allocation and qtensor
+ * (`arith.constant`, a prior measurement, integer and floating-point
+ * arithmetic/comparisons, casts, shifts, and `arith.select`). Classical
+ * registers are supported as static- or concrete dynamic-shape 1-D `memref`s
+ * of integer, index, or floating-point values with `memref.alloc` / `store` /
+ * `load` / `dealloc`. Dynamic qubit and qtensor allocation and qtensor
  * ownership operations are supported as described by the non-RNG overload.
  * Deterministic control-flow without measure/reset also works on the non-RNG
  * overload. Only one-dimensional qtensors of qubits are supported. Nested

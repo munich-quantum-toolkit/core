@@ -25,6 +25,9 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/APInt.h>
+#include <llvm/ADT/APSInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -55,6 +58,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mlir::qco {
@@ -132,8 +136,11 @@ struct TensorMap {
 struct ClassicalEnv {
   DenseMap<Value, bool> bools;
   DenseMap<Value, int64_t> indices;
-  /// Backing storage for static-shape 1-D `memref<Nxi1>` classical registers.
-  DenseMap<Value, SmallVector<bool>> memrefs;
+  DenseMap<Value, APInt> integers;
+  DenseMap<Value, double> floats;
+  using Scalar = std::variant<bool, int64_t, APInt, double>;
+  /// Backing storage for one-dimensional classical registers.
+  DenseMap<Value, SmallVector<Scalar>> memrefs;
 
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
     if (dest.getType().isInteger(1)) {
@@ -152,6 +159,26 @@ struct ClassicalEnv {
                                   "for QCO DD simulation";
       }
       indices[dest] = it->second;
+      return success();
+    }
+    if (isa<IntegerType>(dest.getType())) {
+      const auto it = integers.find(source);
+      if (it == integers.end()) {
+        return op->emitError()
+               << "classical integer SSA value is not mapped for QCO DD "
+                  "simulation";
+      }
+      integers[dest] = it->second;
+      return success();
+    }
+    if (isa<FloatType>(dest.getType())) {
+      const auto it = floats.find(source);
+      if (it == floats.end()) {
+        return op->emitError()
+               << "classical floating-point SSA value is not mapped for QCO "
+                  "DD simulation";
+      }
+      floats[dest] = it->second;
       return success();
     }
     return op->emitError()
@@ -476,6 +503,11 @@ static LogicalResult recordConstant(arith::ConstantOp constant,
     classical.bools[constant.getResult()] = boolAttr.getValue();
     return success();
   }
+  if (auto floatAttr = dyn_cast<FloatAttr>(constant.getValue())) {
+    classical.floats[constant.getResult()] =
+        floatAttr.getValue().convertToDouble();
+    return success();
+  }
   auto attr = dyn_cast<IntegerAttr>(constant.getValue());
   if (!attr) {
     return success();
@@ -484,6 +516,8 @@ static LogicalResult recordConstant(arith::ConstantOp constant,
     classical.bools[constant.getResult()] = attr.getValue() != 0;
   } else if (isa<IndexType>(constant.getType())) {
     classical.indices[constant.getResult()] = attr.getInt();
+  } else if (isa<IntegerType>(constant.getType())) {
+    classical.integers[constant.getResult()] = attr.getValue();
   }
   return success();
 }
@@ -504,6 +538,27 @@ static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
   if (it == classical.indices.end()) {
     return op->emitError()
            << "classical index SSA value is not mapped for QCO DD simulation";
+  }
+  return it->second;
+}
+
+static FailureOr<APInt> lookupInteger(Value value, ClassicalEnv& classical,
+                                      Operation* op) {
+  const auto it = classical.integers.find(value);
+  if (it == classical.integers.end()) {
+    return op->emitError()
+           << "classical integer SSA value is not mapped for QCO DD simulation";
+  }
+  return it->second;
+}
+
+static FailureOr<double> lookupFloat(Value value, ClassicalEnv& classical,
+                                     Operation* op) {
+  const auto it = classical.floats.find(value);
+  if (it == classical.floats.end()) {
+    return op->emitError()
+           << "classical floating-point SSA value is not mapped "
+              "for QCO DD simulation";
   }
   return it->second;
 }
@@ -540,40 +595,70 @@ static FailureOr<TensorSlots> allocateZeroQubits(const size_t count,
   return slots;
 }
 
-/// Cast a concrete `i1` SSA value to `index` (shared by `extui` /
-/// `index_castui`).
-static LogicalResult applyI1ToIndex(Value in, Value out, Operation* op,
-                                    ClassicalEnv& classical) {
-  if (!isa<IndexType>(out.getType())) {
-    return op->emitError()
-           << "QCO DD simulation only supports casting i1 to index";
+static FailureOr<APInt> lookupIntegerLike(Value value, ClassicalEnv& classical,
+                                          Operation* op) {
+  if (value.getType().isInteger(1)) {
+    auto bit = lookupBool(value, classical, op);
+    if (failed(bit)) {
+      return failure();
+    }
+    return APInt(1, *bit);
   }
-  if (!in.getType().isInteger(1)) {
-    return op->emitError()
-           << "QCO DD simulation only supports casting from i1 to index";
+  if (isa<IndexType>(value.getType())) {
+    auto index = lookupIndex(value, classical, op);
+    if (failed(index)) {
+      return failure();
+    }
+    return APInt(64, static_cast<uint64_t>(*index));
   }
-  auto bit = lookupBool(in, classical, op);
-  if (failed(bit)) {
-    return failure();
+  return lookupInteger(value, classical, op);
+}
+
+static LogicalResult bindIntegerLike(Value out, const APInt& value,
+                                     ClassicalEnv& classical) {
+  if (out.getType().isInteger(1)) {
+    classical.bools[out] = value[0];
+  } else if (isa<IndexType>(out.getType())) {
+    classical.indices[out] = static_cast<int64_t>(value.getZExtValue());
+  } else {
+    classical.integers[out] = value;
   }
-  classical.indices[out] = *bit ? 1 : 0;
   return success();
 }
 
-[[nodiscard]] static bool isStaticI1MemRef(Type type) {
-  auto memref = dyn_cast<MemRefType>(type);
-  return memref && memref.getRank() == 1 && memref.hasStaticShape() &&
-         memref.getElementType().isInteger(1);
+static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
+                                      ClassicalEnv& classical,
+                                      const bool isSigned) {
+  auto value = lookupIntegerLike(in, classical, op);
+  if (failed(value)) {
+    return failure();
+  }
+  const unsigned outWidth = isa<IndexType>(out.getType())
+                                ? 64U
+                                : cast<IntegerType>(out.getType()).getWidth();
+  APInt converted = *value;
+  if (outWidth > converted.getBitWidth()) {
+    converted = isSigned ? converted.sext(outWidth) : converted.zext(outWidth);
+  } else if (outWidth < converted.getBitWidth()) {
+    converted = converted.trunc(outWidth);
+  }
+  return bindIntegerLike(out, converted, classical);
 }
 
-/// Resolve a static-shape 1-D `i1` memref classical register and a concrete
-/// index.
-static FailureOr<std::pair<SmallVector<bool>*, int64_t>>
-lookupI1MemRefSlot(Value memref, Value index, ClassicalEnv& classical,
-                   Operation* op) {
-  if (!isStaticI1MemRef(memref.getType())) {
-    return op->emitError() << "QCO DD simulation only supports static-shape "
-                              "1-D memref<Nxi1> classical registers";
+[[nodiscard]] static bool isSupportedClassicalType(Type type) {
+  return isa<IndexType, IntegerType, FloatType>(type);
+}
+
+/// Resolve a one-dimensional classical memref and a concrete index.
+static FailureOr<ClassicalEnv::Scalar*>
+lookupMemRefSlot(Value memref, Value index, ClassicalEnv& classical,
+                 Operation* op) {
+  const auto type = dyn_cast<MemRefType>(memref.getType());
+  if (!type || type.getRank() != 1 ||
+      !isSupportedClassicalType(type.getElementType())) {
+    return op->emitError()
+           << "QCO DD simulation only supports one-dimensional memrefs of "
+              "integer, index, or floating-point values";
   }
   auto idx = lookupIndex(index, classical, op);
   if (failed(idx)) {
@@ -588,22 +673,51 @@ lookupI1MemRefSlot(Value memref, Value index, ClassicalEnv& classical,
     return op->emitError()
            << "classical memref index out of range for QCO DD simulation";
   }
-  return std::pair{&it->second, *idx};
+  return &it->second[static_cast<size_t>(*idx)];
 }
 
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
                                       ClassicalEnv& classical) {
-  if (!isStaticI1MemRef(alloc.getType())) {
-    return alloc.emitError() << "QCO DD simulation only supports static-shape "
-                                "1-D memref<Nxi1> classical registers";
-  }
-  if (!alloc.getDynamicSizes().empty() || !alloc.getSymbolOperands().empty()) {
+  const auto type = dyn_cast<MemRefType>(alloc.getType());
+  if (!type || type.getRank() != 1 ||
+      !isSupportedClassicalType(type.getElementType())) {
     return alloc.emitError()
-           << "QCO DD simulation does not support dynamic memref allocation";
+           << "QCO DD simulation only supports one-dimensional memrefs of "
+              "integer, index, or floating-point values";
   }
-  auto type = cast<MemRefType>(alloc.getType());
-  classical.memrefs[alloc.getResult()] =
-      SmallVector<bool>(static_cast<size_t>(type.getDimSize(0)), false);
+  if (!alloc.getSymbolOperands().empty()) {
+    return alloc.emitError()
+           << "QCO DD simulation does not support symbolic memref operands";
+  }
+  int64_t size = type.getDimSize(0);
+  if (type.isDynamicDim(0)) {
+    if (alloc.getDynamicSizes().size() != 1) {
+      return alloc.emitError() << "dynamic 1-D memref requires one size";
+    }
+    auto dynamicSize =
+        lookupIndex(alloc.getDynamicSizes()[0], classical, alloc);
+    if (failed(dynamicSize)) {
+      return failure();
+    }
+    size = *dynamicSize;
+  }
+  if (size < 0) {
+    return alloc.emitError() << "classical memref size must be non-negative "
+                                "for QCO DD simulation";
+  }
+  ClassicalEnv::Scalar zero;
+  Type elementType = type.getElementType();
+  if (elementType.isInteger(1)) {
+    zero = false;
+  } else if (isa<IndexType>(elementType)) {
+    zero = int64_t{0};
+  } else if (auto integerType = dyn_cast<IntegerType>(elementType)) {
+    zero = APInt(integerType.getWidth(), 0);
+  } else {
+    zero = 0.0;
+  }
+  classical.memrefs[alloc.getResult()] = SmallVector<ClassicalEnv::Scalar>(
+      static_cast<size_t>(size), std::move(zero));
   return success();
 }
 
@@ -613,22 +727,39 @@ static LogicalResult applyMemRefStore(memref::StoreOp store,
     return store.emitError()
            << "QCO DD simulation only supports 1-D memref.store";
   }
-  Value value = store.getValue();
-  if (!value.getType().isInteger(1)) {
-    return store.emitError()
-           << "QCO DD simulation only supports storing i1 into classical "
-              "registers";
-  }
-  auto bit = lookupBool(value, classical, store);
-  if (failed(bit)) {
-    return failure();
-  }
-  auto slot = lookupI1MemRefSlot(store.getMemref(), store.getIndices()[0],
-                                 classical, store);
+  auto slot = lookupMemRefSlot(store.getMemref(), store.getIndices()[0],
+                               classical, store);
   if (failed(slot)) {
     return failure();
   }
-  (*slot->first)[static_cast<size_t>(slot->second)] = *bit;
+  Value value = store.getValue();
+  if (value.getType().isInteger(1)) {
+    auto concrete = lookupBool(value, classical, store);
+    if (failed(concrete)) {
+      return failure();
+    }
+    **slot = *concrete;
+  } else if (isa<IndexType>(value.getType())) {
+    auto concrete = lookupIndex(value, classical, store);
+    if (failed(concrete)) {
+      return failure();
+    }
+    **slot = *concrete;
+  } else if (isa<IntegerType>(value.getType())) {
+    auto concrete = lookupInteger(value, classical, store);
+    if (failed(concrete)) {
+      return failure();
+    }
+    **slot = *concrete;
+  } else if (isa<FloatType>(value.getType())) {
+    auto concrete = lookupFloat(value, classical, store);
+    if (failed(concrete)) {
+      return failure();
+    }
+    **slot = *concrete;
+  } else {
+    return store.emitError() << "unsupported classical memref element type";
+  }
   return success();
 }
 
@@ -638,18 +769,23 @@ static LogicalResult applyMemRefLoad(memref::LoadOp load,
     return load.emitError()
            << "QCO DD simulation only supports 1-D memref.load";
   }
-  if (!load.getResult().getType().isInteger(1)) {
-    return load.emitError()
-           << "QCO DD simulation only supports loading i1 from classical "
-              "registers";
-  }
-  auto slot = lookupI1MemRefSlot(load.getMemref(), load.getIndices()[0],
-                                 classical, load);
+  auto slot =
+      lookupMemRefSlot(load.getMemref(), load.getIndices()[0], classical, load);
   if (failed(slot)) {
     return failure();
   }
-  classical.bools[load.getResult()] =
-      (*slot->first)[static_cast<size_t>(slot->second)];
+  Type type = load.getType();
+  if (type.isInteger(1)) {
+    classical.bools[load.getResult()] = std::get<bool>(**slot);
+  } else if (isa<IndexType>(type)) {
+    classical.indices[load.getResult()] = std::get<int64_t>(**slot);
+  } else if (isa<IntegerType>(type)) {
+    classical.integers[load.getResult()] = std::get<APInt>(**slot);
+  } else if (isa<FloatType>(type)) {
+    classical.floats[load.getResult()] = std::get<double>(**slot);
+  } else {
+    return load.emitError() << "unsupported classical memref element type";
+  }
   return success();
 }
 
@@ -685,12 +821,58 @@ static LogicalResult applyBinaryIndex(OpTy op, ClassicalEnv& classical,
   return success();
 }
 
+template <typename OpTy, typename Combine>
+static LogicalResult applyBinaryInteger(OpTy op, ClassicalEnv& classical,
+                                        Combine combine) {
+  if (!isa<IntegerType>(op.getType()) || op.getType().isInteger(1)) {
+    return op.emitError() << "expected a concrete integer operation";
+  }
+  auto lhs = lookupInteger(op.getLhs(), classical, op);
+  auto rhs = lookupInteger(op.getRhs(), classical, op);
+  if (failed(lhs) || failed(rhs)) {
+    return failure();
+  }
+  classical.integers[op.getResult()] = combine(*lhs, *rhs);
+  return success();
+}
+
+template <typename OpTy, typename Combine>
+static LogicalResult applyBinaryFloat(OpTy op, ClassicalEnv& classical,
+                                      Combine combine) {
+  auto lhs = lookupFloat(op.getLhs(), classical, op);
+  auto rhs = lookupFloat(op.getRhs(), classical, op);
+  if (failed(lhs) || failed(rhs)) {
+    return failure();
+  }
+  classical.floats[op.getResult()] = combine(*lhs, *rhs);
+  return success();
+}
+
+template <typename OpTy, typename Combine>
+static LogicalResult applyBinaryIntegerLike(OpTy op, ClassicalEnv& classical,
+                                            Combine combine) {
+  auto lhs = lookupIntegerLike(op.getLhs(), classical, op);
+  auto rhs = lookupIntegerLike(op.getRhs(), classical, op);
+  if (failed(lhs) || failed(rhs)) {
+    return failure();
+  }
+  if (rhs->isZero()) {
+    return op.emitError() << "division by zero during QCO DD simulation";
+  }
+  return bindIntegerLike(op.getResult(), combine(*lhs, *rhs), classical);
+}
+
 static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .Case<arith::AndIOp>([&](arith::AndIOp andOp) -> LogicalResult {
         if (andOp.getType().isInteger(1)) {
           return applyBinaryI1(andOp, classical,
                                [](bool a, bool b) { return a && b; });
+        }
+        if (isa<IntegerType>(andOp.getType())) {
+          return applyBinaryInteger(
+              andOp, classical,
+              [](const APInt& a, const APInt& b) { return a & b; });
         }
         return applyBinaryIndex(andOp, classical,
                                 [](int64_t a, int64_t b) { return a & b; });
@@ -700,6 +882,11 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           return applyBinaryI1(orOp, classical,
                                [](bool a, bool b) { return a || b; });
         }
+        if (isa<IntegerType>(orOp.getType())) {
+          return applyBinaryInteger(
+              orOp, classical,
+              [](const APInt& a, const APInt& b) { return a | b; });
+        }
         return applyBinaryIndex(orOp, classical,
                                 [](int64_t a, int64_t b) { return a | b; });
       })
@@ -708,28 +895,93 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           return applyBinaryI1(xorOp, classical,
                                [](bool a, bool b) { return a != b; });
         }
+        if (isa<IntegerType>(xorOp.getType())) {
+          return applyBinaryInteger(
+              xorOp, classical,
+              [](const APInt& a, const APInt& b) { return a ^ b; });
+        }
         return applyBinaryIndex(xorOp, classical,
                                 [](int64_t a, int64_t b) { return a ^ b; });
       })
       .Case<arith::AddIOp>([&](arith::AddIOp addOp) {
+        if (addOp.getType().isInteger(1)) {
+          return applyBinaryI1(addOp, classical,
+                               [](bool a, bool b) { return a != b; });
+        }
+        if (isa<IntegerType>(addOp.getType())) {
+          return applyBinaryInteger(
+              addOp, classical,
+              [](const APInt& a, const APInt& b) { return a + b; });
+        }
         return applyBinaryIndex(addOp, classical, [](int64_t a, int64_t b) {
           return static_cast<int64_t>(static_cast<uint64_t>(a) +
                                       static_cast<uint64_t>(b));
         });
       })
       .Case<arith::SubIOp>([&](arith::SubIOp subOp) {
+        if (subOp.getType().isInteger(1)) {
+          return applyBinaryI1(subOp, classical,
+                               [](bool a, bool b) { return a != b; });
+        }
+        if (isa<IntegerType>(subOp.getType())) {
+          return applyBinaryInteger(
+              subOp, classical,
+              [](const APInt& a, const APInt& b) { return a - b; });
+        }
         return applyBinaryIndex(subOp, classical, [](int64_t a, int64_t b) {
           return static_cast<int64_t>(static_cast<uint64_t>(a) -
                                       static_cast<uint64_t>(b));
         });
       })
       .Case<arith::MulIOp>([&](arith::MulIOp mulOp) {
+        if (mulOp.getType().isInteger(1)) {
+          return applyBinaryI1(mulOp, classical,
+                               [](bool a, bool b) { return a && b; });
+        }
+        if (isa<IntegerType>(mulOp.getType())) {
+          return applyBinaryInteger(
+              mulOp, classical,
+              [](const APInt& a, const APInt& b) { return a * b; });
+        }
         return applyBinaryIndex(mulOp, classical, [](int64_t a, int64_t b) {
           return static_cast<int64_t>(static_cast<uint64_t>(a) *
                                       static_cast<uint64_t>(b));
         });
       })
+      .Case<arith::DivUIOp>([&](arith::DivUIOp div) {
+        return applyBinaryIntegerLike(
+            div, classical,
+            [](const APInt& a, const APInt& b) { return a.udiv(b); });
+      })
+      .Case<arith::DivSIOp>([&](arith::DivSIOp div) {
+        return applyBinaryIntegerLike(
+            div, classical,
+            [](const APInt& a, const APInt& b) { return a.sdiv(b); });
+      })
+      .Case<arith::RemUIOp>([&](arith::RemUIOp rem) {
+        return applyBinaryIntegerLike(
+            rem, classical,
+            [](const APInt& a, const APInt& b) { return a.urem(b); });
+      })
+      .Case<arith::RemSIOp>([&](arith::RemSIOp rem) {
+        return applyBinaryIntegerLike(
+            rem, classical,
+            [](const APInt& a, const APInt& b) { return a.srem(b); });
+      })
       .Case<arith::ShLIOp>([&](arith::ShLIOp shli) -> LogicalResult {
+        if (auto integerType = dyn_cast<IntegerType>(shli.getType())) {
+          auto lhs = lookupInteger(shli.getLhs(), classical, shli);
+          auto rhs = lookupInteger(shli.getRhs(), classical, shli);
+          if (failed(lhs) || failed(rhs)) {
+            return failure();
+          }
+          if (rhs->uge(integerType.getWidth())) {
+            return shli.emitError()
+                   << "shift amount out of range for QCO DD simulation";
+          }
+          classical.integers[shli.getResult()] = lhs->shl(rhs->getZExtValue());
+          return success();
+        }
         if (!isa<IndexType>(shli.getType())) {
           return shli.emitError() << "QCO DD simulation only supports index "
                                   << arith::ShLIOp::getOperationName();
@@ -748,6 +1000,20 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return success();
       })
       .Case<arith::ShRUIOp>([&](arith::ShRUIOp shrui) -> LogicalResult {
+        if (auto integerType = dyn_cast<IntegerType>(shrui.getType())) {
+          auto lhs = lookupInteger(shrui.getLhs(), classical, shrui);
+          auto rhs = lookupInteger(shrui.getRhs(), classical, shrui);
+          if (failed(lhs) || failed(rhs)) {
+            return failure();
+          }
+          if (rhs->uge(integerType.getWidth())) {
+            return shrui.emitError()
+                   << "shift amount out of range for QCO DD simulation";
+          }
+          classical.integers[shrui.getResult()] =
+              lhs->lshr(rhs->getZExtValue());
+          return success();
+        }
         if (!isa<IndexType>(shrui.getType())) {
           return shrui.emitError() << "QCO DD simulation only supports index "
                                    << arith::ShRUIOp::getOperationName();
@@ -764,6 +1030,19 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         classical.indices[shrui.getResult()] = static_cast<int64_t>(
             static_cast<uint64_t>(*lhs) >> static_cast<unsigned>(*rhs));
         return success();
+      })
+      .Case<arith::ShRSIOp>([&](arith::ShRSIOp shrsi) -> LogicalResult {
+        auto lhs = lookupIntegerLike(shrsi.getLhs(), classical, shrsi);
+        auto rhs = lookupIntegerLike(shrsi.getRhs(), classical, shrsi);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        if (rhs->uge(lhs->getBitWidth())) {
+          return shrsi.emitError()
+                 << "shift amount out of range for QCO DD simulation";
+        }
+        return bindIntegerLike(shrsi.getResult(),
+                               lhs->ashr(rhs->getZExtValue()), classical);
       })
       .Case<arith::CmpIOp>([&](arith::CmpIOp cmp) -> LogicalResult {
         if (!cmp.getType().isInteger(1)) {
@@ -822,9 +1101,50 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           }
           classical.bools[cmp.getResult()] = result;
           return success();
+        } else if (isa<IntegerType>(cmp.getLhs().getType())) {
+          auto a = lookupInteger(cmp.getLhs(), classical, cmp);
+          auto b = lookupInteger(cmp.getRhs(), classical, cmp);
+          if (failed(a) || failed(b)) {
+            return failure();
+          }
+          bool result = false;
+          switch (cmp.getPredicate()) {
+          case arith::CmpIPredicate::eq:
+            result = *a == *b;
+            break;
+          case arith::CmpIPredicate::ne:
+            result = *a != *b;
+            break;
+          case arith::CmpIPredicate::slt:
+            result = a->slt(*b);
+            break;
+          case arith::CmpIPredicate::sle:
+            result = a->sle(*b);
+            break;
+          case arith::CmpIPredicate::sgt:
+            result = a->sgt(*b);
+            break;
+          case arith::CmpIPredicate::sge:
+            result = a->sge(*b);
+            break;
+          case arith::CmpIPredicate::ult:
+            result = a->ult(*b);
+            break;
+          case arith::CmpIPredicate::ule:
+            result = a->ule(*b);
+            break;
+          case arith::CmpIPredicate::ugt:
+            result = a->ugt(*b);
+            break;
+          case arith::CmpIPredicate::uge:
+            result = a->uge(*b);
+            break;
+          }
+          classical.bools[cmp.getResult()] = result;
+          return success();
         } else {
           return cmp.emitError()
-                 << "QCO DD simulation only supports cmpi on i1 or index";
+                 << "QCO DD simulation only supports cmpi on integers or index";
         }
         if (failed(lhs) || failed(rhs)) {
           return failure();
@@ -890,32 +1210,120 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           classical.indices[select.getResult()] = *cond ? *t : *f;
           return success();
         }
+        if (isa<IntegerType>(select.getType())) {
+          auto t = lookupInteger(select.getTrueValue(), classical, select);
+          auto f = lookupInteger(select.getFalseValue(), classical, select);
+          if (failed(t) || failed(f)) {
+            return failure();
+          }
+          classical.integers[select.getResult()] = *cond ? *t : *f;
+          return success();
+        }
+        if (isa<FloatType>(select.getType())) {
+          auto t = lookupFloat(select.getTrueValue(), classical, select);
+          auto f = lookupFloat(select.getFalseValue(), classical, select);
+          if (failed(t) || failed(f)) {
+            return failure();
+          }
+          classical.floats[select.getResult()] = *cond ? *t : *f;
+          return success();
+        }
         return select.emitError()
-               << "QCO DD simulation only supports select on i1 or index";
+               << "QCO DD simulation only supports select on scalar values";
       })
       .Case<arith::ExtUIOp>([&](arith::ExtUIOp ext) {
-        return applyI1ToIndex(ext.getIn(), ext.getOut(), ext, classical);
+        return applyIntegerCast(ext.getIn(), ext.getOut(), ext, classical,
+                                /*isSigned=*/false);
+      })
+      .Case<arith::ExtSIOp>([&](arith::ExtSIOp ext) {
+        return applyIntegerCast(ext.getIn(), ext.getOut(), ext, classical,
+                                /*isSigned=*/true);
       })
       .Case<arith::IndexCastUIOp>([&](arith::IndexCastUIOp cast) {
-        return applyI1ToIndex(cast.getIn(), cast.getOut(), cast, classical);
+        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
+                                /*isSigned=*/false);
       })
-      .Case<arith::TruncIOp>([&](arith::TruncIOp trunc) -> LogicalResult {
-        if (!trunc.getType().isInteger(1)) {
-          return trunc.emitError()
-                 << "QCO DD simulation only supports trunci to i1";
-        }
-        Value in = trunc.getIn();
-        if (!isa<IndexType>(in.getType())) {
-          return trunc.emitError()
-                 << "QCO DD simulation only supports trunci from index";
-        }
-        auto idx = lookupIndex(in, classical, trunc);
-        if (failed(idx)) {
+      .Case<arith::IndexCastOp>([&](arith::IndexCastOp cast) {
+        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
+                                /*isSigned=*/true);
+      })
+      .Case<arith::TruncIOp>([&](arith::TruncIOp trunc) {
+        return applyIntegerCast(trunc.getIn(), trunc.getOut(), trunc, classical,
+                                /*isSigned=*/false);
+      })
+      .Case<arith::AddFOp>([&](arith::AddFOp add) {
+        return applyBinaryFloat(add, classical,
+                                [](double a, double b) { return a + b; });
+      })
+      .Case<arith::SubFOp>([&](arith::SubFOp sub) {
+        return applyBinaryFloat(sub, classical,
+                                [](double a, double b) { return a - b; });
+      })
+      .Case<arith::MulFOp>([&](arith::MulFOp mul) {
+        return applyBinaryFloat(mul, classical,
+                                [](double a, double b) { return a * b; });
+      })
+      .Case<arith::DivFOp>([&](arith::DivFOp div) {
+        return applyBinaryFloat(div, classical,
+                                [](double a, double b) { return a / b; });
+      })
+      .Case<arith::RemFOp>([&](arith::RemFOp rem) {
+        return applyBinaryFloat(
+            rem, classical, [](double a, double b) { return std::fmod(a, b); });
+      })
+      .Case<arith::NegFOp>([&](arith::NegFOp neg) -> LogicalResult {
+        auto value = lookupFloat(neg.getOperand(), classical, neg);
+        if (failed(value)) {
           return failure();
         }
-        classical.bools[trunc.getOut()] = (*idx & 1) != 0;
+        classical.floats[neg.getResult()] = -*value;
         return success();
       })
+      .Case<arith::CmpFOp>([&](arith::CmpFOp cmp) -> LogicalResult {
+        auto lhs = lookupFloat(cmp.getLhs(), classical, cmp);
+        auto rhs = lookupFloat(cmp.getRhs(), classical, cmp);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        classical.bools[cmp.getResult()] = arith::applyCmpPredicate(
+            cmp.getPredicate(), APFloat(*lhs), APFloat(*rhs));
+        return success();
+      })
+      .Case<arith::SIToFPOp, arith::UIToFPOp>(
+          [&](Operation* castOp) -> LogicalResult {
+            Value in = castOp->getOperand(0);
+            auto value = lookupIntegerLike(in, classical, castOp);
+            if (failed(value)) {
+              return failure();
+            }
+            const bool isSigned = isa<arith::SIToFPOp>(castOp);
+            classical.floats[castOp->getResult(0)] =
+                value->roundToDouble(isSigned);
+            return success();
+          })
+      .Case<arith::FPToSIOp, arith::FPToUIOp>(
+          [&](Operation* castOp) -> LogicalResult {
+            auto value = lookupFloat(castOp->getOperand(0), classical, castOp);
+            if (failed(value)) {
+              return failure();
+            }
+            Value out = castOp->getResult(0);
+            const unsigned width =
+                isa<IndexType>(out.getType())
+                    ? 64U
+                    : cast<IntegerType>(out.getType()).getWidth();
+            const bool isSigned = isa<arith::FPToSIOp>(castOp);
+            APSInt result(width, /*isUnsigned=*/!isSigned);
+            bool exact = false;
+            const auto status = APFloat(*value).convertToInteger(
+                result, APFloat::rmTowardZero, &exact);
+            if ((status & APFloat::opInvalidOp) != 0) {
+              return castOp->emitError()
+                     << "floating-point value is outside the destination "
+                        "integer range during QCO DD simulation";
+            }
+            return bindIntegerLike(out, result, classical);
+          })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
                << "unsupported classical op for QCO DD simulation: "
@@ -1222,10 +1630,15 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return applyMemRefLoad(load, walk.classical);
       })
       .template Case<memref::DeallocOp>([](auto) { return success(); })
-      .template Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
-                     arith::SubIOp, arith::MulIOp, arith::ShLIOp,
-                     arith::ShRUIOp, arith::CmpIOp, arith::SelectOp,
-                     arith::ExtUIOp, arith::IndexCastUIOp, arith::TruncIOp>(
+      .template Case<
+          arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
+          arith::SubIOp, arith::MulIOp, arith::DivUIOp, arith::DivSIOp,
+          arith::RemUIOp, arith::RemSIOp, arith::ShLIOp, arith::ShRUIOp,
+          arith::ShRSIOp, arith::CmpIOp, arith::SelectOp, arith::ExtUIOp,
+          arith::ExtSIOp, arith::IndexCastUIOp, arith::IndexCastOp,
+          arith::TruncIOp, arith::AddFOp, arith::SubFOp, arith::MulFOp,
+          arith::DivFOp, arith::RemFOp, arith::NegFOp, arith::CmpFOp,
+          arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp, arith::FPToUIOp>(
           [&](Operation* classicalOp) {
             return applyClassicalOp(*classicalOp, walk.classical);
           })
