@@ -44,6 +44,16 @@ inline bool checkDeadGate(Operation* op) {
   });
 }
 
+/// Check whether @p type carries a linear qubit value.
+[[nodiscard]] inline bool isLinearQubitType(Type type) {
+  if (isa<QubitType>(type)) {
+    return true;
+  }
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
+
 /// Maximum number of modifier targets supported by @ref
 /// composeBodyMatrix.
 inline constexpr size_t kMaxModifierTargetQubits = 10;

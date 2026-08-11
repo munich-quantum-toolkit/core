@@ -29,8 +29,8 @@ namespace mlir::qco::decomposition {
 
 using namespace std::complex_literals;
 
-static constexpr double PI = std::numbers::pi;
-static constexpr double PI_OVER_4 = PI / 4.0;
+static constexpr double BASIS_PI = std::numbers::pi;
+static constexpr double BASIS_PI_OVER_4 = BASIS_PI / 4.0;
 static constexpr double INV_SQRT2 = 1.0 / std::numbers::sqrt2;
 
 static constexpr Matrix2x2 K12_R_ARR = Matrix2x2::fromElements(
@@ -80,7 +80,7 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
   const auto basisWeyl =
       TwoQubitWeylDecomposition::create(basisMatrix, WEYL_DEFAULT_FIDELITY);
   const auto isSuperControlled =
-      relativeEq(basisWeyl.a(), PI_OVER_4, WEYL_DIAGONALIZATION_TOLERANCE,
+      relativeEq(basisWeyl.a(), BASIS_PI_OVER_4, WEYL_DIAGONALIZATION_TOLERANCE,
                  WEYL_SUPER_CONTROLLED_MAX_RELATIVE) &&
       relativeEq(basisWeyl.c(), 0.0, WEYL_DIAGONALIZATION_TOLERANCE,
                  WEYL_SUPER_CONTROLLED_MAX_RELATIVE);
@@ -216,9 +216,9 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   double globalPhase = targetDecomposition.globalPhase();
   globalPhase -= bestNbasis * basisWeyl.globalPhase();
   if (bestNbasis == 2) {
-    globalPhase += PI;
+    globalPhase += BASIS_PI;
   }
-  globalPhase = remEuclid(globalPhase, 2.0 * PI);
+  globalPhase = remEuclid(globalPhase, 2.0 * BASIS_PI);
 
   return TwoQubitNativeDecomposition{
       .numBasisUses = bestNbasis,
@@ -283,10 +283,10 @@ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
                                     std::cos(target.c()),
                                 std::sin(target.a()) * std::sin(target.b()) *
                                     std::sin(target.c())},
-      4. * std::complex<double>{std::cos(PI_OVER_4 - target.a()) *
+      4. * std::complex<double>{std::cos(BASIS_PI_OVER_4 - target.a()) *
                                     std::cos(basisWeyl.b() - target.b()) *
                                     std::cos(target.c()),
-                                std::sin(PI_OVER_4 - target.a()) *
+                                std::sin(BASIS_PI_OVER_4 - target.a()) *
                                     std::sin(basisWeyl.b() - target.b()) *
                                     std::sin(target.c())},
       std::complex<double>{4. * std::cos(target.c()), 0.},
