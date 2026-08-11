@@ -32,7 +32,6 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/MathExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -319,70 +318,52 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   return std::optional{std::move(decoded)};
 }
 
-/// QCO matrices are MSB-first (operand 0 = high bit).
-[[nodiscard]] static size_t qcoIndexFromDdIndex(const size_t ddIndex,
-                                                const size_t numQubits) {
-  // Dense embed is capped at 12 qubits; guard the shift width for the analyzer.
-  if (numQubits == 0 || numQubits > 63) {
-    return ddIndex;
+static dd::mCachedEdge
+buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
+                     const DenseMap<qc::Qubit, size_t>& operandForWire,
+                     const size_t numOperands, const int64_t level,
+                     const size_t row, const size_t col) {
+  if (level < 0) {
+    return dd::mCachedEdge::terminal(
+        local(static_cast<int64_t>(row), static_cast<int64_t>(col)));
   }
-  const auto shift = static_cast<unsigned>(64U - numQubits);
-  return llvm::reverseBits(static_cast<uint64_t>(ddIndex)) >> shift;
+  const auto wire = static_cast<qc::Qubit>(level);
+  const auto operand = operandForWire.find(wire);
+  if (operand == operandForWire.end()) {
+    const auto child = buildEmbeddedLocalDD(dd, local, operandForWire,
+                                            numOperands, level - 1, row, col);
+    return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
+        wire, {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
+  }
+
+  const size_t operandMask = size_t{1} << (numOperands - 1 - operand->second);
+  const auto edge00 = buildEmbeddedLocalDD(dd, local, operandForWire,
+                                           numOperands, level - 1, row, col);
+  const auto edge01 =
+      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
+                           row, col | operandMask);
+  const auto edge10 =
+      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
+                           row | operandMask, col);
+  const auto edge11 =
+      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
+                           row | operandMask, col | operandMask);
+  return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
+      wire, {edge00, edge01, edge10, edge11});
 }
 
-[[nodiscard]] static dd::CMat toCMatInDdBasis(const DynamicMatrix& qcoMatrix,
-                                              size_t numQubits) {
-  const auto dim = static_cast<size_t>(qcoMatrix.rows());
-  dd::CMat out(dim, dd::CVec(dim));
-  for (size_t row = 0; row < dim; ++row) {
-    for (size_t col = 0; col < dim; ++col) {
-      out[row][col] =
-          qcoMatrix(static_cast<int64_t>(qcoIndexFromDdIndex(row, numQubits)),
-                    static_cast<int64_t>(qcoIndexFromDdIndex(col, numQubits)));
-    }
+static dd::MatrixDD makeEmbeddedLocalDD(dd::Package& dd,
+                                        const DynamicMatrix& local,
+                                        const size_t numQubits,
+                                        const ArrayRef<qc::Qubit> wires) {
+  DenseMap<qc::Qubit, size_t> operandForWire;
+  for (auto [operand, wire] : llvm::enumerate(wires)) {
+    operandForWire[wire] = operand;
   }
-  return out;
-}
-
-/// Embed a k-qubit QCO/MSB matrix onto @p wires of an n-qubit register.
-[[nodiscard]] static DynamicMatrix
-embedLocalInNQubitMsb(const DynamicMatrix& local, size_t n,
-                      ArrayRef<qc::Qubit> wires) {
-  const size_t k = wires.size();
-  const auto dimN = static_cast<int64_t>(size_t{1} << n);
-  DynamicMatrix out(dimN);
-  const auto dimNSz = static_cast<size_t>(dimN);
-  auto bitAt = [](size_t idx, size_t nQ, size_t q) -> size_t {
-    return (idx >> (nQ - 1 - q)) & 1U;
-  };
-  llvm::SmallDenseSet<qc::Qubit, 8> wireSet;
-  wireSet.insert(wires.begin(), wires.end());
-  for (size_t row = 0; row < dimNSz; ++row) {
-    for (size_t col = 0; col < dimNSz; ++col) {
-      bool idleMatch = true;
-      for (size_t q = 0; q < n; ++q) {
-        if (wireSet.contains(static_cast<qc::Qubit>(q))) {
-          continue;
-        }
-        if (bitAt(row, n, q) != bitAt(col, n, q)) {
-          idleMatch = false;
-          break;
-        }
-      }
-      if (!idleMatch) {
-        continue;
-      }
-      size_t rLoc = 0;
-      size_t cLoc = 0;
-      for (size_t i = 0; i < k; ++i) {
-        rLoc = (rLoc << 1) | bitAt(row, n, wires[i]);
-        cLoc = (cLoc << 1) | bitAt(col, n, wires[i]);
-      }
-      out(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
-          local(static_cast<int64_t>(rLoc), static_cast<int64_t>(cLoc));
-    }
-  }
-  return out;
+  const auto root =
+      buildEmbeddedLocalDD(dd, local, operandForWire, wires.size(),
+                           static_cast<int64_t>(numQubits) - 1, 0, 0);
+  return {.p = root.p, .w = dd.cn.lookup(root.w)};
 }
 
 template <typename StateDD>
@@ -418,6 +399,11 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return failure();
   }
   const ArrayRef<qc::Qubit> wires = *wiresOr;
+  if (wires.size() >= 63 ||
+      local.rows() != static_cast<int64_t>(size_t{1} << wires.size())) {
+    return unitary.emitError()
+           << "unitary matrix dimension does not match its target count";
+  }
 
   if (wires.size() == 1) {
     const dd::GateMatrix mat{local(0, 0), local(0, 1), local(1, 0),
@@ -452,25 +438,8 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return walk.qubits.remapUnitary(unitary);
   }
 
-  // Dense embed of a k-qubit QCO/MSB matrix into n wires, then rewrite to
-  // DD/LSB. Cap at 12 qubits (~256 MiB dense `CMat`).
-  if (walk.qubits.numQubits > 12) {
-    return unitary.emitError()
-           << "QCO DD matrix fallback supports at most 12 qubits";
-  }
-
-  DynamicMatrix embedded = local;
-  const bool fullWidthCanonical =
-      wires.size() == walk.qubits.numQubits &&
-      llvm::all_of(llvm::enumerate(wires),
-                   [](const auto& it) { return it.value() == it.index(); });
-  if (!fullWidthCanonical) {
-    embedded = embedLocalInNQubitMsb(local, walk.qubits.numQubits, wires);
-  }
-
-  state = walk.dd.applyOperation(walk.dd.makeDDFromMatrix(toCMatInDdBasis(
-                                     embedded, walk.qubits.numQubits)),
-                                 state);
+  state = walk.dd.applyOperation(
+      makeEmbeddedLocalDD(walk.dd, local, walk.qubits.numQubits, wires), state);
   return walk.qubits.remapUnitary(unitary);
 }
 

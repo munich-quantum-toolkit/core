@@ -2319,28 +2319,42 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
   expectBuildAndSimFail(mainFunc(*shruiBad), 1);
 }
 
-TEST_F(QCODDFunctionalityTest, RejectsDenseFallbackAboveTwelveQubits) {
-  // 4-qubit inv on a 13-qubit register forces the dense embed path and fails.
+TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
+  // Four active, non-contiguous wires in a 13-qubit register must not require
+  // a dense 13-qubit matrix.
   auto mod = buildModule([](QCOProgramBuilder& b) {
     SmallVector<Value> qs;
     qs.reserve(13);
     for (unsigned i = 0; i < 13; ++i) {
       qs.push_back(b.staticQubit(i));
     }
-    auto outs = b.inv({qs[0], qs[1], qs[2], qs[3]},
-                      [&](ValueRange t) -> SmallVector<Value> {
-                        return {b.x(t[0]), t[1], t[2], t[3]};
-                      });
-    for (unsigned i = 0; i < 4; ++i) {
-      b.sink(outs[i]);
-    }
-    for (unsigned i = 4; i < 13; ++i) {
-      b.sink(qs[i]);
+    auto outs = b.inv(
+        {qs[0], qs[4], qs[8], qs[12]}, [&](ValueRange t) -> SmallVector<Value> {
+          return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2]), b.h(t[3])};
+        });
+    for (unsigned i = 0; i < 13; ++i) {
+      if (i == 0) {
+        b.sink(outs[0]);
+      } else if (i == 4) {
+        b.sink(outs[1]);
+      } else if (i == 8) {
+        b.sink(outs[2]);
+      } else if (i == 12) {
+        b.sink(outs[3]);
+      } else {
+        b.sink(qs[i]);
+      }
     }
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
-  expectBuildAndSimFail(mainFunc(*mod), 13);
+
+  qc::QuantumComputation qc(13);
+  qc.rx(-0.2, 0);
+  qc.ry(-0.3, 4);
+  qc.rz(-0.4, 8);
+  qc.h(12);
+  expectEqualToQc(mainFunc(*mod), qc);
 }
 
 TEST_F(QCODDFunctionalityTest, ClassicalErrorPathsAndCalleeMeasureSample) {
