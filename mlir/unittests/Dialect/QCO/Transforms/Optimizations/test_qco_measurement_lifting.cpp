@@ -139,15 +139,15 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q12[1], q12[0]}, q0Vec, [&](ValueRange target) {
-        return SmallVector{programBuilder.h(target[0])};
+        return SmallVector<Value>{programBuilder.h(target[0])};
       });
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q12[1], q12[0]}, q0Vec, [&](ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
 
   Value c1;
@@ -181,15 +181,15 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r12[1], r12[0]}, r0Vec, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.h(target[0])};
+        return SmallVector<Value>{referenceBuilder.h(target[0])};
       });
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r12[1], r12[0]}, r0Vec, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
 
   r0 = referenceBuilder.h(r0Vec[0]);
@@ -230,7 +230,7 @@ TEST_F(QCOMeasurementLiftingTest,
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
 
   Value c1;
@@ -258,7 +258,7 @@ TEST_F(QCOMeasurementLiftingTest,
   SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
 
   referenceBuilder.sink(r0Vec[0]);
