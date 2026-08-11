@@ -104,6 +104,15 @@ for a textual program and `bytes` for an exact binary payload.
 expects a null-terminated UTF-8 text payload and rejects known binary or
 non-text formats.
 
+Every DDSIM QIR job owns its JIT session, runtime, simulator state,
+random-number generator, and output sink. QIR jobs can therefore execute
+concurrently without sharing measurements or interleaving runtime output.
+Sampling supports Base and Adaptive formats. Statevector extraction is limited
+to Base formats: the JIT stops the selected entry point immediately before the
+first call to a function marked `irreversible`, following the semantic boundary
+defined by the Base Profile. It rejects other profiles and Base Profile programs
+whose irreversible region is not terminal.
+
 The generic submission APIs intentionally reject QDMI calibration and batch-job
 formats. Calibration jobs do not carry a program, while batch jobs contain job
 handles rather than serialized program bytes. Their format identifiers remain

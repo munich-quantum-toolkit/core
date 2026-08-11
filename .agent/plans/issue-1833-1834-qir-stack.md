@@ -78,10 +78,14 @@ own diff before the next layer is created.
       deterministic seeding, complete metadata, and exit codes. Validate all
       fixtures with LLVM 22 plus the 69-test runtime, 21-test JIT, 5-test
       runner, and 9-test DDSIM QIR suites.
-- [ ] Create stack layer 3, then migrate DDSIM sampling/state extraction and add
-      concurrency and end-to-end tests.
-- [ ] Run cumulative release-build tests, lint, diff checks, and a fresh audit
-  of each adjacent branch diff.
+- [x] (2026-08-10 17:08Z) Revise stack layer 3 around Base-only semantic state
+      extraction, eliminate the raw LLVM instruction replacement behind the CI
+      analyzer failure, and validate all 25 JIT and 48 DDSIM tests plus both
+      focused Python QIR execution tests.
+- [x] (2026-08-10) Run the cumulative release build, all 4,622 CTest cases, the
+      focused QIR and DDSIM suites, the full repository lint session, diff
+      checks, and a fresh audit of each adjacent branch diff. The two
+      environment-dependent job-ID tests were skipped by their fixtures.
 - [x] (2026-08-10 02:18Z) Publish all three branches with native GitHub stacked
       PRs, add policy-compliant PR descriptions and labels, and verify the
       remote stack, bases, and heads.
@@ -113,6 +117,12 @@ own diff before the next layer is created.
   Evidence: after replacing all four lists with `mlir/Conversion/GateTable.def`,
   the release build compiled every gate family and all 58 runtime, 9 JIT, 112
   builder, 267 QC-to-QIR, and 304 QC/QCO conversion tests passed.
+- Observation: state extraction cannot be implemented by erasing a fixed list of
+  measurement and result symbols. Evidence: that rewrite left arbitrary gates
+  after the first measurement executable and depended on spellings rather than
+  the Base Profile's required `irreversible` attribute. Truncating the selected
+  entry point at the semantic boundary removes the entire terminal
+  measurement/output region and supports backend-defined measurement names.
 
 ## Decision Log
 
@@ -150,6 +160,11 @@ own diff before the next layer is created.
   `Activation` helper. Rationale: this preserves plain exported C entry points
   while isolating parallel JIT sessions and DDSIM jobs without making dispatch
   mechanics part of the public runtime API. Date/Author: 2026-08-09 / Codex.
+- Decision: Derive state extraction from the selected Base Profile entry point's
+  `irreversible` boundary and reject every other profile. Rationale: this
+  follows the profile's semantic contract, remains compatible with
+  backend-defined measurement names, and fails safely rather than changing
+  adaptive behavior. Date/Author: 2026-08-10 / Codex.
 - Decision: Use GitHub's `gh stack` public-preview feature for publication.
   Rationale: it creates the requested linked stack object and maintains the
   correct adjacent PR bases rather than merely presenting three unrelated PRs.
@@ -157,10 +172,14 @@ own diff before the next layer is created.
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. The expected outcome is a three-layer stack in
-which the bottom PR closes the compiler/runtime parity and controlled-gate ABI
-gaps, the middle PR makes the general runtime and runner complete and safe, and
-the top PR proves that DDSIM consumes the same contract without shared state.
+The implementation is complete as a three-layer stack. The bottom PR owns the
+shared MLIR gate registry and compiler/runtime QIS contract. The middle PR owns
+the current QIR 2.1 resource APIs, strict JIT validation, session-local runtime,
+and runner usability. The top PR owns DDSIM integration, Base-profile semantic
+state extraction, and concurrent-job isolation. The cumulative release build,
+all 4,622 CTest cases, the focused QIR and DDSIM suites, repository lint, and
+diff checks pass. Two job-ID queries remain fixture-skipped because no external
+job service is configured; no implementation was weakened for them.
 
 ## Context and Orientation
 
