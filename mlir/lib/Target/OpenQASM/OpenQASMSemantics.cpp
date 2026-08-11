@@ -273,7 +273,8 @@ namespace {
   if (::mlir::failed(NAME##Result)) {                                          \
     return ::mlir::failure();                                                  \
   }                                                                            \
-  auto NAME = *std::move(NAME##Result)
+  /* NOLINTNEXTLINE(bugprone-macro-parentheses) */                             \
+  auto NAME = std::move(*NAME##Result)
 
 class SemanticAnalyzer {
 public:
@@ -1292,12 +1293,11 @@ private:
           return fail(expression.location,
                       "bit indexing requires an int, uint, or angle scalar");
         }
-        MQT_OQ3_TRY_ASSIGN(
-            index, constantIndex(*expression.lhs, symbol->constant->bitWidth,
-                                 expression.location));
+        MQT_OQ3_TRY_ASSIGN(index, constantIndex(*expression.lhs,
+                                                symbol->constant->bitWidth,
+                                                expression.location));
         if (!index || *index >= symbol->constant->bitWidth) {
-          return fail(expression.location,
-                      "scalar bit index is out of bounds");
+          return fail(expression.location, "scalar bit index is out of bounds");
         }
         const auto bits = symbol->constant->type == ScalarType::Int
                               ? static_cast<uint64_t>(
@@ -1694,7 +1694,7 @@ private:
     if (failed(result)) {
       return failure();
     }
-    constantTypes[id] = *result;
+    constantTypes[id].emplace(*result);
     return *result;
   }
 
@@ -2075,9 +2075,8 @@ private:
         scalar = addConstant(*symbol->constant);
       } else {
         if (!initializedScalars.at(symbol->id)) {
-          return fail(expression.location,
-                      "scalar '" + expression.identifier +
-                          "' is uninitialized");
+          return fail(expression.location, "scalar '" + expression.identifier +
+                                               "' is uninitialized");
         }
         scalar = addExpression({.kind = ExpressionKind::Variable,
                                 .type = symbol->type,
@@ -2085,26 +2084,23 @@ private:
                                 .variable = symbol->id});
       }
       ExpressionId index = 0;
-      MQT_OQ3_TRY_ASSIGN(
-          constant, constantIndex(*expression.lhs, symbol->bitWidth,
-                                  expression.location));
+      MQT_OQ3_TRY_ASSIGN(constant,
+                         constantIndex(*expression.lhs, symbol->bitWidth,
+                                       expression.location));
       if (constant) {
         if (*constant >= symbol->bitWidth) {
-          return fail(expression.location,
-                      "scalar bit index is out of bounds");
+          return fail(expression.location, "scalar bit index is out of bounds");
         }
         index = addExpression({.kind = ExpressionKind::Constant,
                                .type = ScalarType::Int,
                                .bitWidth = SCALAR_WIDTH_LIMIT,
                                .constant = static_cast<int64_t>(*constant)});
       } else {
-        MQT_OQ3_TRY_ASSIGN(dynamicIndex,
-                           analyzeExpression(*expression.lhs));
+        MQT_OQ3_TRY_ASSIGN(dynamicIndex, analyzeExpression(*expression.lhs));
         index = dynamicIndex;
       }
       if (!isInteger(program.expressions[index].type)) {
-        return fail(expression.location,
-                    "scalar bit index must be an integer");
+        return fail(expression.location, "scalar bit index must be an integer");
       }
       return addBitVectorExpression(
           {.kind = BitVectorExpressionKind::ScalarExtract,
@@ -2113,19 +2109,17 @@ private:
            .distance = index});
     }
     if (expression.kind == Expr::Kind::Cast && expression.bitCast) {
-      const auto width = expression.rhs
-                             ? [&]() -> FailureOr<uint32_t> {
-                                 return scalarBitWidth(
-                                     ScalarKind::Uint, expression.rhs,
-                                     expression.location);
-                               }()
-                             : FailureOr<uint32_t>{uint32_t{1}};
+      const auto width = expression.rhs ? [&]() -> FailureOr<uint32_t> {
+        return scalarBitWidth(ScalarKind::Uint, expression.rhs,
+                              expression.location);
+      }()
+          : FailureOr<uint32_t>{uint32_t{1}};
       if (failed(width)) {
         return failure();
       }
       if (refersToBitVector(*expression.lhs)) {
-        MQT_OQ3_TRY_ASSIGN(
-            operand, analyzeBitVectorExpression(*expression.lhs));
+        MQT_OQ3_TRY_ASSIGN(operand,
+                           analyzeBitVectorExpression(*expression.lhs));
         if (program.bitVectorExpressions[operand].width != *width) {
           return fail(expression.location,
                       "casts between bit registers require equal widths");
@@ -2209,8 +2203,8 @@ private:
         width = evaluatedWidth;
       }
       if (!expression.bitCast && refersToBitVector(*expression.lhs)) {
-        MQT_OQ3_TRY_ASSIGN(
-            operand, analyzeBitVectorExpression(*expression.lhs));
+        MQT_OQ3_TRY_ASSIGN(operand,
+                           analyzeBitVectorExpression(*expression.lhs));
         if (target != ScalarType::Bool &&
             program.bitVectorExpressions[operand].width != width) {
           return fail(expression.location,
@@ -2478,14 +2472,12 @@ private:
                     "bitwise operands must have the same type and width");
       } else if (lhsType == ScalarType::Angle) {
         bitWidth = std::max(bitWidth, program.expressions[*rhs].bitWidth);
-        MQT_OQ3_TRY_ASSIGN(
-            convertedLhs,
-            castExpression(lhs, ScalarType::Angle, expression.location,
-                           bitWidth));
-        MQT_OQ3_TRY_ASSIGN(
-            convertedRhs,
-            castExpression(*rhs, ScalarType::Angle, expression.location,
-                           bitWidth));
+        MQT_OQ3_TRY_ASSIGN(convertedLhs,
+                           castExpression(lhs, ScalarType::Angle,
+                                          expression.location, bitWidth));
+        MQT_OQ3_TRY_ASSIGN(convertedRhs,
+                           castExpression(*rhs, ScalarType::Angle,
+                                          expression.location, bitWidth));
         lhs = convertedLhs;
         *rhs = convertedRhs;
       }
@@ -2547,14 +2539,12 @@ private:
         }
         bitWidth = std::max(program.expressions[lhs].bitWidth,
                             program.expressions[*rhs].bitWidth);
-        MQT_OQ3_TRY_ASSIGN(
-            convertedLhs,
-            castExpression(lhs, ScalarType::Angle, expression.location,
-                           bitWidth));
-        MQT_OQ3_TRY_ASSIGN(
-            convertedRhs,
-            castExpression(*rhs, ScalarType::Angle, expression.location,
-                           bitWidth));
+        MQT_OQ3_TRY_ASSIGN(convertedLhs,
+                           castExpression(lhs, ScalarType::Angle,
+                                          expression.location, bitWidth));
+        MQT_OQ3_TRY_ASSIGN(convertedRhs,
+                           castExpression(*rhs, ScalarType::Angle,
+                                          expression.location, bitWidth));
         lhs = convertedLhs;
         *rhs = convertedRhs;
       } else if (kind == ExpressionKind::Multiply &&
@@ -3077,10 +3067,10 @@ private:
                              symbol->bitWidth, /*bitPatternCast=*/true));
           typed.value = convertedValue;
         } else {
-          MQT_OQ3_TRY_ASSIGN(
-              convertedValue,
-              castExpression(value, symbol->type, syntaxValue.location,
-                             symbol->bitWidth));
+          MQT_OQ3_TRY_ASSIGN(convertedValue,
+                             castExpression(value, symbol->type,
+                                            syntaxValue.location,
+                                            symbol->bitWidth));
           typed.value = convertedValue;
         }
       }
@@ -3110,10 +3100,9 @@ private:
              ++bit) {
           markBitInitialized({.reg = targetReg, .index = bit});
         }
-        MQT_OQ3_TRY_ASSIGN(
-            statement,
-            addStatement(location,
-                         BitVectorAssignmentStatement{.target = targetReg,
+        MQT_OQ3_TRY_ASSIGN(statement,
+                           addStatement(location, BitVectorAssignmentStatement{
+                                                      .target = targetReg,
                                                       .value = bitVector}));
         destination.push_back(statement);
         return success();
@@ -3125,10 +3114,10 @@ private:
       MQT_OQ3_TRY_ASSIGN(targets, resolveBits(assignment.target));
       assert(targets.size() == 1);
       markBitInitialized(targets.front());
-      MQT_OQ3_TRY_ASSIGN(
-          statement,
-          addStatement(location, BitAssignmentStatement{.target = targets.front(),
-                                                        .bitVector = bitVector}));
+      MQT_OQ3_TRY_ASSIGN(statement,
+                         addStatement(location, BitAssignmentStatement{
+                                                    .target = targets.front(),
+                                                    .bitVector = bitVector}));
       destination.push_back(statement);
       return success();
     }
@@ -4122,14 +4111,14 @@ private:
                             constant, ScalarType::Float, SCALAR_WIDTH_LIMIT,
                             /*bitPatternCast=*/false,
                             syntax.expressions[expression].location));
-          constant = std::move(promoted);
+          constant = promoted;
         }
         MQT_OQ3_TRY_ASSIGN(angle,
                            explicitCastConstant(
                                constant, ScalarType::Angle, SCALAR_WIDTH_LIMIT,
                                /*bitPatternCast=*/false,
                                syntax.expressions[expression].location));
-        constant = std::move(angle);
+        constant = angle;
         parameters.push_back(addConstant(constant));
         continue;
       }
