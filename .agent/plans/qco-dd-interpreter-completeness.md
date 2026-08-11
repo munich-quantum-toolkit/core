@@ -23,9 +23,13 @@ concrete programs executable without requiring prior canonicalization.
 - [x] (2026-08-11 09:49Z) Interpreted matching and default `cf.switch`
   successors and multi-block `scf.execute_region` through one concrete CFG
   walker.
-- [ ] Add common integer and floating-point min/max and math operations.
-- [ ] Add semantic and failure-path tests.
-- [ ] Update documentation and validate.
+- [x] (2026-08-11 10:24Z) Added signed/unsigned integer min/max, floating-point
+      min/max variants, and the common unary math and power operations emitted
+      by current MLIR flows.
+- [x] (2026-08-11 10:27Z) Replaced the old `arith.maxsi` rejection with a
+  semantic test that gates a qubit on every newly supported result.
+- [x] (2026-08-11 10:30Z) Ran all 144 QCO utility tests successfully.
+- [ ] Run repository lint validation after the remaining DD slices.
 
 ## Surprises & Discoveries
 
@@ -39,6 +43,10 @@ concrete programs executable without requiring prior canonicalization.
 - Observation: MLIR textual SSA names are scoped to the entire region, including
   block arguments. Evidence: the first multi-block tests were rejected for
   reusing `%arg`; unique block-argument names fixed the test input.
+- Observation: Adding Math dialect operation classes requires both loading the
+  dialect in parser-based tests and linking `MLIRMathDialect` from the utility.
+  Evidence: the focused classical-operation test now constructs and executes
+  `math.absf`, transcendental operations, and `math.powf`.
 
 ## Decision Log
 
@@ -52,7 +60,9 @@ concrete programs executable without requiring prior canonicalization.
 
 ## Outcomes & Retrospective
 
-Implementation is pending.
+The interpreter now carries memref aliases across calls, traverses concrete CFG
+switches and multi-block execute regions, and evaluates the selected common
+arith/math operations. Final suite and lint validation remain pending.
 
 ## Context and Orientation
 
@@ -127,3 +137,6 @@ corresponding CMake target dependency. Do not add a third-party evaluator.
 
 Revision note: Initial plan created for memref aliasing, concrete CFG coverage,
 and common classical operations.
+
+Revision note (2026-08-11): Recorded completion of all implementation slices and
+their focused semantic tests; only aggregate validation remains.

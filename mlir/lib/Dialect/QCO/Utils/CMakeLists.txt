@@ -67,6 +67,7 @@ add_mlir_library(
   MLIRArithDialect
   MLIRControlFlowDialect
   MLIRFuncDialect
+  MLIRMathDialect
   MLIRMemRefDialect
   MQT::CoreDD)
 

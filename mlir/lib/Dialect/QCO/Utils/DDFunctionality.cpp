@@ -35,6 +35,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -52,6 +53,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -987,6 +989,17 @@ static LogicalResult applyBinaryFloat(OpTy op, ClassicalEnv& classical,
   return success();
 }
 
+template <typename OpTy, typename Apply>
+static LogicalResult applyUnaryFloat(OpTy op, ClassicalEnv& classical,
+                                     Apply apply) {
+  auto value = lookupFloat(op.getOperand(), classical, op);
+  if (failed(value)) {
+    return failure();
+  }
+  classical.floats[op.getResult()] = apply(*value);
+  return success();
+}
+
 template <typename OpTy, typename Combine>
 static LogicalResult applyBinaryIntegerLike(OpTy op, ClassicalEnv& classical,
                                             Combine combine) {
@@ -1106,6 +1119,42 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return applyBinaryIntegerLike(
             rem, classical,
             [](const APInt& a, const APInt& b) { return a.srem(b); });
+      })
+      .Case<arith::MaxSIOp>([&](arith::MaxSIOp maximum) {
+        auto lhs = lookupIntegerLike(maximum.getLhs(), classical, maximum);
+        auto rhs = lookupIntegerLike(maximum.getRhs(), classical, maximum);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        return bindIntegerLike(maximum.getResult(),
+                               lhs->sgt(*rhs) ? *lhs : *rhs, classical);
+      })
+      .Case<arith::MinSIOp>([&](arith::MinSIOp minimum) {
+        auto lhs = lookupIntegerLike(minimum.getLhs(), classical, minimum);
+        auto rhs = lookupIntegerLike(minimum.getRhs(), classical, minimum);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        return bindIntegerLike(minimum.getResult(),
+                               lhs->slt(*rhs) ? *lhs : *rhs, classical);
+      })
+      .Case<arith::MaxUIOp>([&](arith::MaxUIOp maximum) {
+        auto lhs = lookupIntegerLike(maximum.getLhs(), classical, maximum);
+        auto rhs = lookupIntegerLike(maximum.getRhs(), classical, maximum);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        return bindIntegerLike(maximum.getResult(),
+                               lhs->ugt(*rhs) ? *lhs : *rhs, classical);
+      })
+      .Case<arith::MinUIOp>([&](arith::MinUIOp minimum) {
+        auto lhs = lookupIntegerLike(minimum.getLhs(), classical, minimum);
+        auto rhs = lookupIntegerLike(minimum.getRhs(), classical, minimum);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        return bindIntegerLike(minimum.getResult(),
+                               lhs->ult(*rhs) ? *lhs : *rhs, classical);
       })
       .Case<arith::ShLIOp>([&](arith::ShLIOp shli) -> LogicalResult {
         if (auto integerType = dyn_cast<IntegerType>(shli.getType())) {
@@ -1410,6 +1459,32 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return applyBinaryFloat(
             rem, classical, [](double a, double b) { return std::fmod(a, b); });
       })
+      .Case<arith::MaximumFOp>([&](arith::MaximumFOp maximum) {
+        return applyBinaryFloat(maximum, classical, [](double a, double b) {
+          if (std::isnan(a) || std::isnan(b)) {
+            return std::numeric_limits<double>::quiet_NaN();
+          }
+          return std::fmax(a, b);
+        });
+      })
+      .Case<arith::MinimumFOp>([&](arith::MinimumFOp minimum) {
+        return applyBinaryFloat(minimum, classical, [](double a, double b) {
+          if (std::isnan(a) || std::isnan(b)) {
+            return std::numeric_limits<double>::quiet_NaN();
+          }
+          return std::fmin(a, b);
+        });
+      })
+      .Case<arith::MaxNumFOp>([&](arith::MaxNumFOp maximum) {
+        return applyBinaryFloat(maximum, classical, [](double a, double b) {
+          return std::fmax(a, b);
+        });
+      })
+      .Case<arith::MinNumFOp>([&](arith::MinNumFOp minimum) {
+        return applyBinaryFloat(minimum, classical, [](double a, double b) {
+          return std::fmin(a, b);
+        });
+      })
       .Case<arith::NegFOp>([&](arith::NegFOp neg) -> LogicalResult {
         auto value = lookupFloat(neg.getOperand(), classical, neg);
         if (failed(value)) {
@@ -1463,6 +1538,46 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             }
             return bindIntegerLike(out, result, classical);
           })
+      .Case<math::AbsFOp>([&](math::AbsFOp abs) {
+        return applyUnaryFloat(abs, classical,
+                               [](double value) { return std::abs(value); });
+      })
+      .Case<math::CeilOp>([&](math::CeilOp ceil) {
+        return applyUnaryFloat(ceil, classical,
+                               [](double value) { return std::ceil(value); });
+      })
+      .Case<math::CosOp>([&](math::CosOp cos) {
+        return applyUnaryFloat(cos, classical,
+                               [](double value) { return std::cos(value); });
+      })
+      .Case<math::ExpOp>([&](math::ExpOp exp) {
+        return applyUnaryFloat(exp, classical,
+                               [](double value) { return std::exp(value); });
+      })
+      .Case<math::FloorOp>([&](math::FloorOp floor) {
+        return applyUnaryFloat(floor, classical,
+                               [](double value) { return std::floor(value); });
+      })
+      .Case<math::LogOp>([&](math::LogOp log) {
+        return applyUnaryFloat(log, classical,
+                               [](double value) { return std::log(value); });
+      })
+      .Case<math::SinOp>([&](math::SinOp sin) {
+        return applyUnaryFloat(sin, classical,
+                               [](double value) { return std::sin(value); });
+      })
+      .Case<math::SqrtOp>([&](math::SqrtOp sqrt) {
+        return applyUnaryFloat(sqrt, classical,
+                               [](double value) { return std::sqrt(value); });
+      })
+      .Case<math::TanOp>([&](math::TanOp tan) {
+        return applyUnaryFloat(tan, classical,
+                               [](double value) { return std::tan(value); });
+      })
+      .Case<math::PowFOp>([&](math::PowFOp pow) {
+        return applyBinaryFloat(
+            pow, classical, [](double a, double b) { return std::pow(a, b); });
+      })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
                << "unsupported classical op for QCO DD simulation: "
@@ -1867,12 +1982,16 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<
           arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
           arith::SubIOp, arith::MulIOp, arith::DivUIOp, arith::DivSIOp,
-          arith::RemUIOp, arith::RemSIOp, arith::ShLIOp, arith::ShRUIOp,
+          arith::RemUIOp, arith::RemSIOp, arith::MaxSIOp, arith::MinSIOp,
+          arith::MaxUIOp, arith::MinUIOp, arith::ShLIOp, arith::ShRUIOp,
           arith::ShRSIOp, arith::CmpIOp, arith::SelectOp, arith::ExtUIOp,
           arith::ExtSIOp, arith::IndexCastUIOp, arith::IndexCastOp,
           arith::TruncIOp, arith::AddFOp, arith::SubFOp, arith::MulFOp,
-          arith::DivFOp, arith::RemFOp, arith::NegFOp, arith::CmpFOp,
-          arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp, arith::FPToUIOp>(
+          arith::DivFOp, arith::RemFOp, arith::MaximumFOp, arith::MinimumFOp,
+          arith::MaxNumFOp, arith::MinNumFOp, arith::NegFOp, arith::CmpFOp,
+          arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp, arith::FPToUIOp,
+          math::AbsFOp, math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp,
+          math::LogOp, math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp>(
           [&](Operation* classicalOp) {
             return applyClassicalOp(*classicalOp, walk.classical);
           })

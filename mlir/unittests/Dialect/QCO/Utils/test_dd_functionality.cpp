@@ -27,6 +27,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -64,7 +65,7 @@ protected:
     DialectRegistry registry;
     registry.insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                     cf::ControlFlowDialect, func::FuncDialect, scf::SCFDialect,
-                    memref::MemRefDialect>();
+                    math::MathDialect, memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -2399,27 +2400,6 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
   ASSERT_TRUE(missingBody);
   expectSimulateFail(mainFunc(*missingBody), 1);
 
-  // Unsupported classical op
-  auto maximum = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %q = qco.static 0 : !qco.qubit
-        %c2 = arith.constant 2 : index
-        %c1 = arith.constant 1 : index
-        %d = arith.maxsi %c2, %c1 : index
-        %q1 = qco.index_switch %d -> !qco.qubit
-        default args(%arg0 = %q) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        qco.sink %q1 : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                             context.get());
-  ASSERT_TRUE(maximum);
-  expectSimulateFail(mainFunc(*maximum), 1);
-
   auto shruiBad = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
     auto one = arith::ConstantIndexOp::create(b, 1).getResult();
@@ -2434,6 +2414,66 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {
   });
   ASSERT_TRUE(shruiBad);
   expectBuildAndSimFail(mainFunc(*shruiBad), 1);
+}
+
+TEST_F(QCODDFunctionalityTest, InterpretsMinMaxAndCommonMathOperations) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    const Value i0 = arith::ConstantIntOp::create(b, -1, 8);
+    const Value i1 = arith::ConstantIntOp::create(b, 2, 8);
+    const Value i2 = arith::ConstantIntOp::create(b, 3, 8);
+    SmallVector<Value> checks{
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MaxSIOp::create(b, i0, i2), i2),
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MinSIOp::create(b, i0, i2), i0),
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MaxUIOp::create(b, i0, i1), i0),
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MinUIOp::create(b, i0, i1), i1)};
+
+    const auto f64 = b.getF64Type();
+    const auto constant = [&](const double value) -> Value {
+      return arith::ConstantFloatOp::create(b, f64, APFloat(value));
+    };
+    const auto fm2 = constant(-2.0);
+    const auto f0 = constant(0.0);
+    const auto f1 = constant(1.0);
+    const auto f12 = constant(1.2);
+    const auto f18 = constant(1.8);
+    const auto f2 = constant(2.0);
+    const auto f4 = constant(4.0);
+    const auto checkFloat = [&](Value actual, Value expected) {
+      checks.emplace_back(arith::CmpFOp::create(b, arith::CmpFPredicate::OEQ,
+                                                actual, expected));
+    };
+    checkFloat(arith::MaximumFOp::create(b, fm2, f2), f2);
+    checkFloat(arith::MinimumFOp::create(b, fm2, f2), fm2);
+    checkFloat(arith::MaxNumFOp::create(b, fm2, f2), f2);
+    checkFloat(arith::MinNumFOp::create(b, fm2, f2), fm2);
+    checkFloat(math::AbsFOp::create(b, fm2), f2);
+    checkFloat(math::CeilOp::create(b, f12), f2);
+    checkFloat(math::CosOp::create(b, f0), f1);
+    checkFloat(math::ExpOp::create(b, f0), f1);
+    checkFloat(math::FloorOp::create(b, f18), f1);
+    checkFloat(math::LogOp::create(b, f1), f0);
+    checkFloat(math::SinOp::create(b, f0), f0);
+    checkFloat(math::SqrtOp::create(b, f4), f2);
+    checkFloat(math::TanOp::create(b, f0), f0);
+    checkFloat(math::PowFOp::create(b, f2, f2), f4);
+
+    Value all = checks.front();
+    for (size_t i = 1; i < checks.size(); ++i) {
+      all = arith::AndIOp::create(b, all, checks[i]);
+    }
+    q = b.qcoIf(
+        all, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), 1, {true});
 }
 
 TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
