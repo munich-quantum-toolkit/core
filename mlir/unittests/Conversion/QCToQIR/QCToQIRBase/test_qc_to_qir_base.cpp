@@ -39,7 +39,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
 
 #include <cstddef>
 #include <iosfwd>
