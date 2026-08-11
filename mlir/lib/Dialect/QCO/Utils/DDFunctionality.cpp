@@ -981,7 +981,7 @@ static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
 }
 
 [[nodiscard]] static bool isSupportedClassicalType(Type type) {
-  return isa<IndexType, IntegerType, FloatType>(type);
+  return isa<IndexType>(type) || type.isIntOrFloat();
 }
 
 /// Resolve a one-dimensional classical memref and a concrete index.
@@ -1087,7 +1087,7 @@ static LogicalResult applyMemRefStore(memref::StoreOp store,
       return failure();
     }
     **slot = *concrete;
-  } else if (isa<FloatType>(value.getType())) {
+  } else if (value.getType().isIntOrFloat()) {
     auto concrete = lookupFloat(value, classical, store);
     if (failed(concrete)) {
       return failure();
@@ -1117,7 +1117,7 @@ static LogicalResult applyMemRefLoad(memref::LoadOp load,
     classical.indices[load.getResult()] = std::get<int64_t>(**slot);
   } else if (isa<IntegerType>(type)) {
     classical.integers[load.getResult()] = std::get<APInt>(**slot);
-  } else if (isa<FloatType>(type)) {
+  } else if (type.isIntOrFloat()) {
     classical.floats[load.getResult()] = std::get<double>(**slot);
   } else {
     return load.emitError() << "unsupported classical memref element type";
@@ -1602,7 +1602,7 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           classical.integers[select.getResult()] = *cond ? *t : *f;
           return success();
         }
-        if (isa<FloatType>(select.getType())) {
+        if (select.getType().isIntOrFloat()) {
           auto t = lookupFloat(select.getTrueValue(), classical, select);
           auto f = lookupFloat(select.getFalseValue(), classical, select);
           if (failed(t) || failed(f)) {
