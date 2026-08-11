@@ -41,10 +41,10 @@ namespace mlir::qco {
  *   `func.return` accepts qubit results only in canonical wire order
  *
  * Known one-, two-, and three-qubit matrices are constructed directly as DD
- * gates. Larger compile-time unitaries (including partial wire subsets) use a
- * dense embed into the full register, rewritten from QCO/MSB to DD/LSB, limited
- * to 12 qubits (`2^n × 2^n` storage). Measurements, resets, symbolic
- * parameters, and control-flow ops are not supported.
+ * gates. Larger compile-time unitaries are embedded directly into a DD over
+ * their target wires, so idle register qubits do not enlarge the local matrix.
+ * Measurements, resets, symbolic parameters, and control-flow ops are not
+ * supported.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)

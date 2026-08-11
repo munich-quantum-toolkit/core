@@ -981,19 +981,26 @@ TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
   EXPECT_TRUE(failed(sample(mainFunc(*unitary), *tooSmall, 1, rng)));
 }
 
-TEST_F(QCODDFunctionalityTest, RejectsDenseFallbackBeyondLimit) {
+TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     SmallVector<Value, 13> qs;
     for (int64_t i = 0; i < 13; ++i) {
       qs.push_back(b.staticQubit(i));
     }
-    auto outs =
-        b.inv({qs[0], qs[1], qs[2], qs[3]},
-              [&](ValueRange args) -> SmallVector<Value> {
-                return {b.h(args[0]), b.x(args[1]), b.y(args[2]), b.z(args[3])};
-              });
-    for (size_t i = 0; i < outs.size(); ++i) {
-      qs[i] = outs[i];
+    auto outs = b.inv(
+        {qs[0], qs[4], qs[8], qs[12]}, [&](ValueRange t) -> SmallVector<Value> {
+          return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2]), b.h(t[3])};
+        });
+    for (size_t i = 0; i < qs.size(); ++i) {
+      if (i == 0) {
+        qs[i] = outs[0];
+      } else if (i == 4) {
+        qs[i] = outs[1];
+      } else if (i == 8) {
+        qs[i] = outs[2];
+      } else if (i == 12) {
+        qs[i] = outs[3];
+      }
     }
     for (Value q : qs) {
       b.sink(q);
@@ -1002,8 +1009,12 @@ TEST_F(QCODDFunctionalityTest, RejectsDenseFallbackBeyondLimit) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(13);
-  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  qc::QuantumComputation qc(13);
+  qc.rx(-0.2, 0);
+  qc.ry(-0.3, 4);
+  qc.rz(-0.4, 8);
+  qc.h(12);
+  expectEqualToQc(mainFunc(*mod), qc);
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsInvalidClassicalOperations) {
