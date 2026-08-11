@@ -27,16 +27,17 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
 - [x] (2026-08-11 09:36Z) Audit production code, public headers, CMake targets,
   bindings, generated stubs, and tests for every `QuantumComputation` and
   `MLIRQCTranslation` dependency.
-- [x] (2026-08-11 09:54Z) Remove the public translator, compiler factory,
-  Python entry points, dedicated translation tests, and legacy program
-  fixtures.
-- [x] (2026-08-11 09:54Z) Relink surviving compiler and OpenQASM targets directly to the native
-  OpenQASM-to-QC translation library and prove that non-DD MLIR code no longer
-  depends on `QuantumComputation` or `MQT::CoreIR`.
+- [x] (2026-08-11 09:54Z) Remove the public translator, compiler factory, Python
+      entry points, dedicated translation tests, and legacy program fixtures.
+- [x] (2026-08-11 09:54Z) Relink surviving compiler and OpenQASM targets
+      directly to the native OpenQASM-to-QC translation library and prove that
+      non-DD MLIR code no longer depends on `QuantumComputation` or
+      `MQT::CoreIR`.
 - [ ] Regenerate Python stubs, update the generic compiler-collection changelog
-  entry with the new pull request number, and validate C++, Python, DD, and
-  repository lint. The stubs, focused C++/Python/DD tests, targeted clang-tidy,
-  and full repository lint are complete; only the changelog number remains.
+      entry with the new pull request number, and validate C++, Python, DD, and
+      repository lint. The stubs, focused C++/Python/DD tests, targeted
+      clang-tidy, and full repository lint are complete; only the changelog
+      number remains.
 - [ ] Publish the signed branch as the new middle pull request in the issue
   #1590 stack without merging it.
 
@@ -90,10 +91,9 @@ Validation and publication must be refreshed after the stack rebase.
 `include/mqt-core/ir` and `src/ir`. The MLIR QC dialect is a separate compiler
 intermediate representation under `mlir/include/mlir/Dialect/QC` and
 `mlir/lib/Dialect/QC`. The target named `MLIRQCTranslation` currently connects
-those two representations through
-`TranslateQuantumComputationToQC.cpp`. By contrast,
-`MLIRQCOpenQASMTranslation` imports OpenQASM directly into the QC dialect and
-must remain.
+those two representations through `TranslateQuantumComputationToQC.cpp`. By
+contrast, `MLIRQCOpenQASMTranslation` imports OpenQASM directly into the QC
+dialect and must remain.
 
 `mlir/include/mlir/Compiler/Programs.h` exposes typed compiler program classes.
 `QCProgram::fromQuantumComputation` wraps the translator, while the direct
@@ -105,8 +105,7 @@ for this bridge.
 The DD boundary lives in `mlir/include/mlir/Dialect/QCO/Utils/DDFunctionality.h`
 and `mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp`. It maps static QCO
 operations directly to the DD package. Tests under `mlir/unittests/Dialect/QCO`
-may continue to use the older circuit simulator as an independent result
-oracle.
+may continue to use the older circuit simulator as an independent result oracle.
 
 ## Plan of Work
 
@@ -125,9 +124,9 @@ circuit merely to reach QCO with equivalent OpenQASM input.
 
 Delete the dedicated translator test source and its CMake dependencies. Delete
 the `quantum_computation_programs` fixture library. Simplify the compiler
-pipeline parameterization to native QC builders only and remove regression
-tests that existed solely to verify the deleted translator. Keep all DD files
-and their tests unchanged except for build adjustments proven necessary.
+pipeline parameterization to native QC builders only and remove regression tests
+that existed solely to verify the deleted translator. Keep all DD files and
+their tests unchanged except for build adjustments proven necessary.
 
 Regenerate `python/mqt/core/mlir.pyi` through the repository stub session. Fold
 the user-facing removal into the existing generic MQT Compiler Collection
@@ -152,8 +151,8 @@ compiler, OpenQASM, and QCO DD test binaries:
     ./.agent/run.sh build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
     ./.agent/run.sh build/release/mlir/unittests/Target/OpenQASM/mqt-core-mlir-unittest-openqasm-target
 
-Build the bindings, regenerate stubs, and run the focused Python tests using
-the repository's established Nox and pytest workflows. Finish with:
+Build the bindings, regenerate stubs, and run the focused Python tests using the
+repository's established Nox and pytest workflows. Finish with:
 
     ./.agent/run.sh uvx nox --non-interactive -s lint
 
@@ -161,10 +160,9 @@ the repository's established Nox and pytest workflows. Finish with:
 
 The structural contract is accepted when no installed MLIR header, compiler
 library, MLIR binding, `mqt-cc`, or non-DD MLIR test references
-`QuantumComputation`, `TranslateQuantumComputationToQC`,
-`MLIRQCTranslation`, or `MLIRQuantumComputationPrograms`. CMake must no longer
-define those two legacy targets, and the MLIR Python module must not link
-`MQT::CoreIR`.
+`QuantumComputation`, `TranslateQuantumComputationToQC`, `MLIRQCTranslation`, or
+`MLIRQuantumComputationPrograms`. CMake must no longer define those two legacy
+targets, and the MLIR Python module must not link `MQT::CoreIR`.
 
 OpenQASM strings and files, Qiskit circuits, textual QC MLIR, and typed compiler
 programs must still traverse the default compiler pipeline. Supplying a legacy
@@ -182,8 +180,8 @@ Search, configure, build, test, stub generation, and lint commands are safe to
 repeat. Deletions are tracked by Git and remain recoverable from the branch
 parent until committed. If a surviving target still requests
 `MLIRQCTranslation`, identify whether it uses OpenQASM translation and link
-`MLIRQCOpenQASMTranslation` directly; do not recreate a compatibility alias.
-If generated stubs differ beyond `mqt.core.mlir`, inspect the build environment
+`MLIRQCOpenQASMTranslation` directly; do not recreate a compatibility alias. If
+generated stubs differ beyond `mqt.core.mlir`, inspect the build environment
 before committing and preserve unrelated generated modules.
 
 ## Artifacts and Notes
