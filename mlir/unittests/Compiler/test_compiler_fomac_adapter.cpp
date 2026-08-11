@@ -81,8 +81,8 @@ TEST(CompilerFoMaCAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 }
 
 TEST(CompilerFoMaCAdapterTest, PreservesMissingTopologyAsAllToAll) {
-  const auto device = fomac::Session::openDevice("mqt.ddsim.default");
-  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  const auto target =
+      llvm::cantFail(mlir::compilerTargetFromDeviceId("mqt.ddsim.default"));
 
   EXPECT_EQ(target.numQubits(), 65535);
   EXPECT_FALSE(target.hasExplicitTopology());
@@ -90,6 +90,14 @@ TEST(CompilerFoMaCAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("h", 1, 0));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
+}
+
+TEST(CompilerFoMaCAdapterTest, ConvertsDeviceOpenExceptionsToErrors) {
+  auto target = mlir::compilerTargetFromDeviceId("unknown.device");
+  ASSERT_FALSE(target);
+  const auto message = llvm::toString(target.takeError());
+  EXPECT_NE(message.find("Failed to open QDMI device 'unknown.device'"),
+            std::string::npos);
 }
 
 TEST(CompilerFoMaCAdapterTest, RejectsNonhomogeneousOperationSupport) {

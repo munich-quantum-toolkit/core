@@ -50,7 +50,7 @@ include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
 set(LLVM_ENABLE_RTTI ON)
-set(LLVM_ENABLE_EH ON)
+set(LLVM_ENABLE_EH OFF)
 include(HandleLLVMOptions)
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})

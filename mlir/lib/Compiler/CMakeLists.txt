@@ -24,6 +24,7 @@ target_sources(MQTCompilerTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SO
                                         FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
 
 # Build the optional FoMaC-to-compiler-target adapter
+set(LLVM_REQUIRES_EH ON)
 add_mlir_library(
   MQTCompilerFoMaCAdapter
   PARTIAL_SOURCES_INTENDED
@@ -36,6 +37,7 @@ add_mlir_library(
   MQT::CoreFoMaC)
 
 mqt_mlir_target_use_project_options(MQTCompilerFoMaCAdapter)
+unset(LLVM_REQUIRES_EH)
 
 target_sources(
   MQTCompilerFoMaCAdapter PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES

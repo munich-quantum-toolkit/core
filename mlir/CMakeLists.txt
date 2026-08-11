@@ -12,6 +12,7 @@ endif()
 
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
+  llvm_update_compile_flags(${target_name})
 
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-Wno-cast-qual" COMPILER_SUPPORTS_WNO_CAST_QUAL)

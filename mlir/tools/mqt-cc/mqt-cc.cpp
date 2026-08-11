@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
@@ -65,7 +64,6 @@
 
 #include <cstdint>
 #include <cstdlib>
-#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -449,8 +447,7 @@ static int runCompiler(int argc, char** argv) {
             .failed()) {
       return 1;
     }
-    const auto device = fomac::Session::openDevice(qdmiDevice);
-    auto target = compilerTargetFromDevice(device);
+    auto target = compilerTargetFromDeviceId(qdmiDevice);
     if (!target) {
       llvm::errs() << "Failed to create compiler target from QDMI device '"
                    << qdmiDevice << "': " << llvm::toString(target.takeError())
@@ -655,13 +652,4 @@ static int runCompiler(int argc, char** argv) {
   return 0;
 }
 
-int main(int argc, char** argv) {
-  try {
-    return runCompiler(argc, argv);
-  } catch (const std::exception& error) {
-    llvm::errs() << "mqt-cc failed: " << error.what() << "\n";
-  } catch (...) {
-    llvm::errs() << "mqt-cc failed with an unknown exception\n";
-  }
-  return 1;
-}
+int main(int argc, char** argv) { return runCompiler(argc, argv); }

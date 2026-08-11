@@ -23,14 +23,34 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
 
 namespace mlir {
+
+llvm::Expected<CompilerTarget>
+compilerTargetFromDeviceId(const std::string_view deviceId) {
+  try {
+    const auto device = fomac::Session::openDevice(deviceId);
+    return compilerTargetFromDevice(device);
+  } catch (const std::exception& error) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        llvm::Twine("Failed to open QDMI device '") + deviceId +
+            "': " + error.what());
+  } catch (...) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        llvm::Twine("Failed to open QDMI device '") + deviceId +
+            "': unknown error");
+  }
+}
 
 [[nodiscard]] static llvm::Error
 requireAdapterInput(const bool condition, const llvm::Twine& message) {

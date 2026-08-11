@@ -38,7 +38,7 @@ target_link_libraries(
           LLVMSupport
           MQT::CoreDD)
 
-mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-dialect-utils)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-dialect-utils REQUIRES_EH)
 
 gtest_discover_tests(mqt-core-mlir-unittests-dialect-utils PROPERTIES LABELS mqt-mlir-unittests
                                                                       DISCOVERY_TIMEOUT 60)
