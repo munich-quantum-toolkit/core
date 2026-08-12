@@ -6,6 +6,16 @@
 #
 # Licensed under the MIT License
 
+add_mlir_library(MLIRQCTranslationSupport PARTIAL_SOURCES_INTENDED StandardGate.cpp LINK_LIBS
+                 MLIRQCDialect)
+
+mqt_mlir_target_use_project_options(MLIRQCTranslationSupport)
+
+target_sources(
+  MLIRQCTranslationSupport
+  PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/StandardGate.h)
+
 add_mlir_library(
   MLIRQCOpenQASMTranslation
   PARTIAL_SOURCES_INTENDED
@@ -23,7 +33,8 @@ add_mlir_library(
   MLIRSCFDialect
   MLIRUBDialect
   MLIRQCDialect
-  MLIRQCProgramBuilder)
+  MLIRQCProgramBuilder
+  MLIRQCTranslationSupport)
 
 mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)
 

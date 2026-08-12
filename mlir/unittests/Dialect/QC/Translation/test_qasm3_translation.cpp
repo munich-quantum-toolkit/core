@@ -166,6 +166,13 @@ static SmallVector<Value> legacyMultipleControlledU(qc::QCProgramBuilder& b) {
   return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
+static Value legacyTripleControlledSx(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl(ValueRange{q[0], q[1], q[2]}, q[3],
+         [&](const Value target) { b.sx(target); });
+  return measureToRegister(b, q.qubits);
+}
+
 using Complex = std::complex<double>;
 
 namespace {
@@ -1213,6 +1220,11 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"MultipleControlledSX",
                                  qasm::multipleControlledSx,
                                  MQT_NAMED_BUILDER(qc::multipleControlledSx)},
+        QASM3TranslationTestCase{
+            "LegacyTripleControlledSqrtX",
+            "OPENQASM 2.0; include \"qelib1.inc\"; qreg q[4]; creg c[4]; "
+            "c3sqrtx q[0], q[1], q[2], q[3]; measure q -> c;",
+            MQT_NAMED_BUILDER(legacyTripleControlledSx)},
         QASM3TranslationTestCase{"SXdg", qasm::sxdg,
                                  MQT_NAMED_BUILDER(qc::sxdg)},
         QASM3TranslationTestCase{"SingleControlledSXdg",
