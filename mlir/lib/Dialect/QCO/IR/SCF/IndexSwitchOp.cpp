@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -32,15 +32,6 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-
-static bool isLinearType(Type type) {
-  if (isa<QubitType>(type)) {
-    return true;
-  }
-  const auto tensorType = dyn_cast<RankedTensorType>(type);
-  return tensorType && tensorType.getRank() == 1 &&
-         isa<QubitType>(tensorType.getElementType());
-}
 
 void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                           Value arg, Value target, ArrayRef<int64_t> cases,
@@ -177,7 +168,7 @@ LogicalResult IndexSwitchOp::verify() {
   }
 
   for (Type type : getClassicalResults().getTypes()) {
-    if (isLinearType(type)) {
+    if (isLinearQubitType(type)) {
       return emitOpError("classical results must not use QCO linear types");
     }
   }

@@ -20,8 +20,8 @@
 
 namespace na {
 namespace {
-auto printParams(const std::vector<qc::fp>& params, std::ostringstream& os)
-    -> void {
+auto printGlobalParams(const std::vector<qc::fp>& params,
+                       std::ostringstream& os) -> void {
   if (!params.empty()) {
     for (const auto& p : params) {
       os << p << " ";
@@ -35,14 +35,14 @@ auto GlobalOp::toString() const -> std::string {
   ss << std::setprecision(5) << std::fixed;
   ss << "@+ " << name_ << " ";
   if (zones_.size() == 1) {
-    printParams(params_, ss);
+    printGlobalParams(params_, ss);
     ss << *zones_.front();
     return ss.str();
   }
   ss << "[\n";
   for (const auto& atom : zones_) {
     ss << "    ";
-    printParams(params_, ss);
+    printGlobalParams(params_, ss);
     ss << *atom << "\n";
   }
   ss << "]";

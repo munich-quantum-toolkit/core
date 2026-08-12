@@ -24,6 +24,7 @@ target_link_libraries(
           MLIRQCToQCO
           MLIRQCDialect
           MLIRQCODDFunctionality
+          MLIRExactUnitaryTest
           MLIRQCODialect
           MLIRQTensorDialect
           MLIRSupport

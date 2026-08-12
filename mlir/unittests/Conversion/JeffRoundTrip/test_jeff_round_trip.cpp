@@ -13,6 +13,8 @@
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -31,6 +33,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -42,6 +45,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -53,8 +57,9 @@ namespace {
 
 struct JeffRoundTripTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  bool expectPowAfterCleanup = false;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);
@@ -62,10 +67,10 @@ struct JeffRoundTripTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
-  return os << "JeffRoundTrip{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "JeffRoundTrip{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
@@ -93,9 +98,8 @@ static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
   return c;
 }
 
-// DCX and U are the only gates that `FoldPowIntoGate` leaves alone, so they are
-// the only way to get a power modifier past the QCO cleanup pipeline and into
-// the jeff conversion.
+// DCX and U gates with dynamic parameters survive `FoldPowIntoGate`, so they
+// exercise power modifiers that reach the jeff conversion.
 
 static Value powDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
@@ -157,6 +161,15 @@ static Value powU(qco::QCOProgramBuilder& b) {
   const auto powOut =
       b.pow(3.0, q[0], [&](Value qubit) { return b.u(0.1, 0.2, 0.3, qubit); });
   return b.measure(powOut).second;
+}
+
+static void makePowUParameterDynamic(ModuleOp program) {
+  auto funcOp = cast<func::FuncOp>(program.getBody()->front());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(
+      0, Float64Type::get(program.getContext()), {}, funcOp.getLoc())));
+  auto powOp = *funcOp.getBody().getOps<qco::PowOp>().begin();
+  auto uOp = *powOp.getBody()->getOps<qco::UOp>().begin();
+  uOp.getThetaMutable().assign(funcOp.getArgument(0));
 }
 
 static Value ifWithAngle(qco::QCOProgramBuilder& b) {
@@ -301,6 +314,7 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
 
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCOToJeff());
   return pm.run(module);
 }
@@ -349,7 +363,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
                   memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
-  auto program = mqt::test::buildMLIRProgram(
+  auto program = ::mqt::test::buildMLIRProgram(
       &context, MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit));
   ASSERT_TRUE(program);
   ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
@@ -435,18 +449,27 @@ module {
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
-  const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
+  const auto& [nameStr, programBuilder, referenceBuilder,
+               expectPowAfterCleanup] = GetParam();
   const auto name = " (" + nameStr + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
+  if (expectPowAfterCleanup) {
+    makePowUParameterDynamic(*program);
+  }
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+  if (expectPowAfterCleanup) {
+    size_t powCount = 0;
+    program->walk([&](qco::PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, 1U);
+  }
 
   EXPECT_TRUE(succeeded(convertQCOToJeff(program.get())));
   printer.record(program.get(), "Converted jeff IR" + name);
@@ -473,8 +496,12 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference =
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
+  if (expectPowAfterCleanup) {
+    makePowUParameterDynamic(*reference);
+  }
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -486,24 +513,34 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/// \name JeffRoundTrip/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(QCOCtrlOpTest, JeffRoundTripTest,
+                         testing::Values(JeffRoundTripTestCase{
+                             "CtrlTwo", MQT_NAMED_BUILDER(qco::ctrlTwo),
+                             MQT_NAMED_BUILDER(qco::ctrlTwoUnrolled)}));
+/// @}
+
 /// \name JeffRoundTrip/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, JeffRoundTripTest,
-    testing::Values(JeffRoundTripTestCase{"InverseiSWAP",
-                                          MQT_NAMED_BUILDER(qco::inverseIswap),
-                                          MQT_NAMED_BUILDER(qco::inverseIswap)},
-                    JeffRoundTripTestCase{
-                        "InverseMultipleControllediSWAP",
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
-                    JeffRoundTripTestCase{"InverseDCX",
-                                          MQT_NAMED_BUILDER(qco::inverseDcx),
-                                          MQT_NAMED_BUILDER(qco::inverseDcx)},
-                    JeffRoundTripTestCase{
-                        "InverseMultipleControlledDCX",
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
+    testing::Values(
+        JeffRoundTripTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
+                              MQT_NAMED_BUILDER(qco::invTwoUnrolled)},
+        JeffRoundTripTestCase{"InverseiSWAP",
+                              MQT_NAMED_BUILDER(qco::inverseIswap),
+                              MQT_NAMED_BUILDER(qco::inverseIswap)},
+        JeffRoundTripTestCase{
+            "InverseMultipleControllediSWAP",
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
+        JeffRoundTripTestCase{"InverseDCX", MQT_NAMED_BUILDER(qco::inverseDcx),
+                              MQT_NAMED_BUILDER(qco::inverseDcx)},
+        JeffRoundTripTestCase{
+            "InverseMultipleControlledDCX",
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
 /// @}
 
 /// \name JeffRoundTrip/Modifiers/PowOp.cpp
@@ -527,7 +564,7 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"CtrlPowInvDcx", MQT_NAMED_BUILDER(ctrlPowInvDcx),
                               MQT_NAMED_BUILDER(ctrlPowInvDcx)},
         JeffRoundTripTestCase{"PowU", MQT_NAMED_BUILDER(powU),
-                              MQT_NAMED_BUILDER(powU)}));
+                              MQT_NAMED_BUILDER(powU), true}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp

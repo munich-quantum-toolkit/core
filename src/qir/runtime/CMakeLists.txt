@@ -17,8 +17,16 @@ if(NOT TARGET ${TARGET_NAME})
                                         ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/Runtime.hpp)
 
   # Add headers using file sets
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/QIR.h)
+  target_sources(
+    ${TARGET_NAME}
+    PUBLIC FILE_SET
+           HEADERS
+           BASE_DIRS
+           ${MQT_CORE_INCLUDE_BUILD_DIR}
+           ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+           FILES
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/QIR.h
+           ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Conversion/GateTable.def)
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreIR MQT::CoreDD)

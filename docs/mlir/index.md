@@ -20,12 +20,15 @@ We define multiple dialects, each with its dedicated purpose:
 - The {doc}`QTensor dialect <QTensor>` adds support for one-dimensional tensors
   of qubits with linear typing and is used in the QCO dialect to represent
   collections of qubits such as registers.
-- The {doc}`OpenQASM support <OpenQASM>` translates supported OpenQASM input
-  directly to QC and emits structured OpenQASM from QC.
 
 These dialects define various canonicalization and transformation passes that
-enable the compilation of quantum programs to native quantum hardware. For
-interoperability, we provide {doc}`conversions <Conversions>` between dialects.
+enable the compilation of quantum programs to native quantum hardware. Passes
+that are not tied to a single dialect are documented on the
+{doc}`passes <Transforms>` page. For interoperability, we provide
+{doc}`conversions <Conversions>` between dialects.
+
+The {doc}`OpenQASM interface <OpenQASM>` translates supported OpenQASM input
+directly to QC and emits structured OpenQASM from QC.
 
 ```{toctree}
 :maxdepth: 2
@@ -35,8 +38,9 @@ target_compilation
 QC
 QCO
 QTensor
-OpenQASM
+Transforms
 Conversions
+OpenQASM
 ```
 
 :::{note}

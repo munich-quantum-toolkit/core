@@ -16,7 +16,6 @@
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qir/helpers/test_utils.hpp"
-#include "qir/runtime/Runtime.hpp"
 
 #include <gtest/gtest.h>
 #include <llvm/AsmParser/Parser.h>
@@ -30,7 +29,6 @@
 #include <memory>
 #include <numeric>
 #include <ranges>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -40,10 +38,6 @@ namespace {
 
 class HistogramTest : public ::testing::Test {
 protected:
-  std::ostringstream sink;
-  void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
-  void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
-
   using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
   static constexpr size_t NUM_SHOTS = 1024;
   static constexpr size_t NUM_QUBITS = 3;

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>

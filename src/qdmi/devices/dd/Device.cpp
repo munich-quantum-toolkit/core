@@ -48,6 +48,7 @@
 #include <numeric>
 #include <ranges>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -481,7 +482,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
-    auto& runtime = qir::Runtime::getInstance();
     auto irBytes = std::visit(
         [](const auto& p) {
           return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
@@ -489,12 +489,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
         },
         program_);
     auto jitSession = qir::JitSession(irBytes, "QDMI job");
+    auto& runtime = jitSession.runtime();
+    std::ostringstream output;
+    runtime.setOstream(output);
     runtime.outputProgramHeader();
     for (size_t i = 0; i < numShots_; ++i) {
       runtime.reset();
       runtime.outputShotStart();
       const auto rc = jitSession.run();
-      runtime.outputShotEnd();
+      runtime.outputShotEnd(rc);
       if (rc != 0) {
         throw std::runtime_error(
             llvm::formatv("QIR program failed with error: {}", rc));
@@ -506,25 +509,26 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
     -> QDMI_STATUS {
-  // State extraction strips measurement calls from the IR, which only
-  // preserves semantics for QIR Base Profile (measurements are terminal there).
-  // Adaptive Profile has measurement-dependent control flow, so stripping would
-  // silently change the program's meaning.
+  // State extraction stops the entry point at its first irreversible operation.
+  // This preserves Base Profile semantics because measurements are terminal,
+  // whereas Adaptive Profile measurements may feed later quantum control.
   if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
       format_ != QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   return submitProgramAsync([this]() {
-    auto& runtime = qir::Runtime::getInstance();
-    runtime.reset();
     auto irBytes = std::visit(
         [](const auto& p) {
           return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
                                  p.size());
         },
         program_);
-    auto jitSession =
-        qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
+    const qir::SessionOptions options{.execution =
+                                          qir::Execution::StateExtraction};
+    auto jitSession = qir::JitSession(irBytes, "QDMI job", options);
+    auto& runtime = jitSession.runtime();
+    std::ostringstream output;
+    runtime.setOstream(output);
     if (const auto rc = jitSession.run(); rc != 0) {
       throw std::runtime_error(
           llvm::formatv("QIR program failed with error: {}", rc));

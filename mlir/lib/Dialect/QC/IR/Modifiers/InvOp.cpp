@@ -39,7 +39,7 @@ namespace {
  * @brief Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
  * ctrl(inv(x))`.
  */
-struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
+struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InvOp op,
@@ -346,22 +346,30 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   }
 };
 
-} // namespace
+/**
+ * @brief Drop the qubits that the body does not use.
+ */
+struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-static void
-buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
-                  const size_t numBlockArgs,
-                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
-  auto& block = odsState.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < numBlockArgs; ++i) {
-    block.addArgument(qubitType, odsState.location);
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    const auto qubits = op.getQubits();
+    return qc::detail::dropUnusedQubits(
+        op, *body, qubits,
+        [&](ValueRange narrowedQubits, ArrayRef<size_t> used) {
+          InvOp::create(rewriter, op.getLoc(), narrowedQubits,
+                        [&](ValueRange args) {
+                          qc::detail::inlineNarrowedBody(*body, qubits, used,
+                                                         args, rewriter);
+                        });
+        },
+        rewriter);
   }
+};
 
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  emitBody(odsBuilder, block);
-}
+} // namespace
 
 size_t InvOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
@@ -375,22 +383,23 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   ValueRange qubits,
                   const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, qubits);
-  buildModifierBody(odsBuilder, odsState, qubits.size(),
-                    [&](OpBuilder& builder, Block& block) {
-                      body(block.getArguments());
-                      YieldOp::create(builder, odsState.location);
-                    });
+  utils::buildModifierBody<QubitType>(odsBuilder, odsState, qubits.size(),
+                                      [&](OpBuilder& builder, Block& block) {
+                                        body(block.getArguments());
+                                        YieldOp::create(builder,
+                                                        odsState.location);
+                                      });
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   const function_ref<void(Value)>& bodyBuilder) {
   odsState.addOperands(qubit);
   odsState.addRegion();
-  buildModifierBody(odsBuilder, odsState, 1,
-                    [&](OpBuilder& builder, Block& block) {
-                      bodyBuilder(block.getArgument(0));
-                      YieldOp::create(builder, odsState.location);
-                    });
+  utils::buildModifierBody<QubitType>(
+      odsBuilder, odsState, 1, [&](OpBuilder& builder, Block& block) {
+        bodyBuilder(block.getArgument(0));
+        YieldOp::create(builder, odsState.location);
+      });
 }
 
 LogicalResult InvOp::verify() {
@@ -399,6 +408,7 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow,
-              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv>(context);
+  results.add<CancelNestedInv, MoveCtrlOutsideInv, InvPowToNegPow,
+              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv,
+              DropUnusedInvQubits>(context);
 }

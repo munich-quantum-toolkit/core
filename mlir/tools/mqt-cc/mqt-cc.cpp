@@ -22,6 +22,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "qdmi/driver/Driver.hpp"
 
@@ -35,6 +36,7 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
+#include <llvm/Support/Path.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
@@ -81,7 +83,10 @@ static llvm::cl::opt<std::string> inputFormat(
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
 static llvm::cl::opt<std::string>
-    outputFilename("o", llvm::cl::desc("Output filename"),
+    outputFilename("o",
+                   llvm::cl::desc("Output filename (for QIR, - and .ll write "
+                                  "textual LLVM IR; .bc and other names write "
+                                  "LLVM bitcode)"),
                    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> outputFormat(
@@ -360,7 +365,7 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
       writeBytecodeToFile(mod, output->os());
     }
   } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
-    if (filename == "-") {
+    if (filename == "-" || llvm::sys::path::extension(filename) == ".ll") {
       mod->print(output->os(), nullptr);
     } else {
       llvm::WriteBitcodeToFile(*mod, output->os());
@@ -548,6 +553,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -569,6 +575,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRBase &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCToQIRBase());
         populateQIRCleanupPipeline(pm, false);
         return success();
@@ -578,6 +585,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCToQIRAdaptive());
         populateQIRCleanupPipeline(pm, true);
         return success();
