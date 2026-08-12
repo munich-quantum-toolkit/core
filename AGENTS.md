@@ -28,6 +28,16 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   discard or overwrite changes that are outside the task.
 - Follow the patterns in neighboring files and prefer the smallest change that
   fully solves the problem.
+- Write code comments, documentation, tests, changelog entries, and public text
+  for the final design. Do not preserve prompts, review chronology, former
+  names, or abandoned approaches unless they remain necessary user-facing
+  context.
+- Add tests that protect intended behavior or reproduce a concrete regression.
+  Do not test provisional implementation choices that are not part of the
+  supported contract.
+- Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
+  workaround or suppression only when it is still necessary, scope it as
+  narrowly as possible, and document the technical reason.
 - Add or update automated tests for every behavioral code change. During
   development, run the narrowest relevant test first, then the required lint
   checks before handoff.
