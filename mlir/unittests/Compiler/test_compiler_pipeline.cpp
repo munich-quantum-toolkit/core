@@ -584,10 +584,9 @@ ratio = 2.0;
   ASSERT_TRUE(restoredQC);
   auto emitted = restoredQC->toOpenQASM3();
   ASSERT_TRUE(emitted);
-  EXPECT_NE(emitted->source().find("output int _mqt_out0;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("output int count;"), std::string::npos);
   EXPECT_NE(emitted->source().find("output bit[2] bits;"), std::string::npos);
-  EXPECT_NE(emitted->source().find("output float _mqt_out1;"),
-            std::string::npos);
+  EXPECT_NE(emitted->source().find("output float ratio;"), std::string::npos);
   EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
 }
 
