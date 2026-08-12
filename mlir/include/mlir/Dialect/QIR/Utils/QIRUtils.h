@@ -49,7 +49,7 @@ namespace mlir::qir {
 /// the integer and floating-point widths used by Adaptive Profile classical
 /// computations. This function repairs the scalar flag widths and derives the
 /// optional Adaptive Profile flags from the translated LLVM module.
-void normalizeQIRModuleFlags(llvm::Module& module, bool useAdaptive);
+void normalizeQIRModuleFlags(llvm::Module& moduleOp, bool useAdaptive);
 
 // QIR function names
 

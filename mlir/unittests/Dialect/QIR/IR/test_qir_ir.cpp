@@ -17,9 +17,13 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -232,9 +236,9 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
         [](QIRProgramBuilder& builder) { return builder.intConstant(0); },
         profile);
   };
-  const auto findFlag = [](ModuleOp module, const StringRef name) {
+  const auto findFlag = [](ModuleOp moduleOp, const StringRef name) {
     LLVM::ModuleFlagAttr result;
-    module->walk([&](LLVM::ModuleFlagsOp flagsOp) {
+    moduleOp->walk([&](LLVM::ModuleFlagsOp flagsOp) {
       for (const auto flag :
            flagsOp.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
         if (flag.getKey().getValue() == name) {
@@ -269,40 +273,38 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
 
 TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
   llvm::LLVMContext context;
-  llvm::Module module("adaptive", context);
+  llvm::Module moduleOp("adaptive", context);
   auto* function = llvm::Function::Create(
       llvm::FunctionType::get(llvm::Type::getInt64Ty(context), false),
-      llvm::Function::ExternalLinkage, "main", module);
+      llvm::Function::ExternalLinkage, "main", moduleOp);
   function->addFnAttr("entry_point");
   auto* entry = llvm::BasicBlock::Create(context, "entry", function);
   llvm::IRBuilder builder(entry);
   builder.CreateRet(builder.getInt64(0));
 
   auto* helper = llvm::Function::Create(
-      llvm::FunctionType::get(builder.getInt8Ty(),
-                              {builder.getInt8Ty(), builder.getDoubleTy()},
+      llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()},
                               false),
-      llvm::Function::InternalLinkage, "helper", module);
+      llvm::Function::InternalLinkage, "helper", moduleOp);
   auto* helperEntry = llvm::BasicBlock::Create(context, "entry", helper);
   builder.SetInsertPoint(helperEntry);
-  auto argument = helper->arg_begin();
-  auto* integer = &*argument++;
-  auto* floating = &*argument;
+  auto* integer = helper->getArg(0);
+  auto* floating = builder.CreateUIToFP(integer, builder.getDoubleTy());
   builder.CreateFAdd(floating,
                      llvm::ConstantFP::get(builder.getDoubleTy(), 1.0));
   builder.CreateRet(builder.CreateAdd(integer, builder.getInt8(1)));
 
-  normalizeQIRModuleFlags(module, true);
+  normalizeQIRModuleFlags(moduleOp, true);
 
   const auto* integerTypes =
-      llvm::dyn_cast<llvm::MDNode>(module.getModuleFlag("int_computations"));
+      llvm::dyn_cast<llvm::MDNode>(moduleOp.getModuleFlag("int_computations"));
   ASSERT_NE(integerTypes, nullptr);
   ASSERT_EQ(integerTypes->getNumOperands(), 1U);
   EXPECT_EQ(
       llvm::cast<llvm::MDString>(integerTypes->getOperand(0))->getString(),
       "i8");
-  const auto* floatingTypes =
-      llvm::dyn_cast<llvm::MDNode>(module.getModuleFlag("float_computations"));
+  const auto* floatingTypes = llvm::dyn_cast<llvm::MDNode>(
+      moduleOp.getModuleFlag("float_computations"));
   ASSERT_NE(floatingTypes, nullptr);
   ASSERT_EQ(floatingTypes->getNumOperands(), 1U);
   EXPECT_EQ(
@@ -310,28 +312,28 @@ TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
       "double");
 
   std::string text;
-  llvm::raw_string_ostream(text) << module;
+  llvm::raw_string_ostream(text) << moduleOp;
   EXPECT_NE(text.find("!\"ir_functions\", i1 true"), std::string::npos);
 
   helper->eraseFromParent();
-  normalizeQIRModuleFlags(module, true);
-  EXPECT_EQ(module.getModuleFlag("int_computations"), nullptr);
-  EXPECT_EQ(module.getModuleFlag("float_computations"), nullptr);
-  EXPECT_EQ(module.getModuleFlag("ir_functions"), nullptr);
+  normalizeQIRModuleFlags(moduleOp, true);
+  EXPECT_EQ(moduleOp.getModuleFlag("int_computations"), nullptr);
+  EXPECT_EQ(moduleOp.getModuleFlag("float_computations"), nullptr);
+  EXPECT_EQ(moduleOp.getModuleFlag("ir_functions"), nullptr);
 }
 
 TEST(QIRModuleFlagsTest, RemovesAdaptiveFlagsFromBaseModules) {
   llvm::LLVMContext context;
-  llvm::Module module("base", context);
-  module.addModuleFlag(llvm::Module::Error, "backwards_branching", 3U);
-  module.addModuleFlag(llvm::Module::Error, "arrays", 1U);
-  module.addModuleFlag(llvm::Module::Error, "ir_functions", 1U);
+  llvm::Module moduleOp("base", context);
+  moduleOp.addModuleFlag(llvm::Module::Error, "backwards_branching", 3U);
+  moduleOp.addModuleFlag(llvm::Module::Error, "arrays", 1U);
+  moduleOp.addModuleFlag(llvm::Module::Error, "ir_functions", 1U);
 
-  normalizeQIRModuleFlags(module, false);
+  normalizeQIRModuleFlags(moduleOp, false);
 
-  EXPECT_EQ(module.getModuleFlag("backwards_branching"), nullptr);
-  EXPECT_EQ(module.getModuleFlag("arrays"), nullptr);
-  EXPECT_EQ(module.getModuleFlag("ir_functions"), nullptr);
+  EXPECT_EQ(moduleOp.getModuleFlag("backwards_branching"), nullptr);
+  EXPECT_EQ(moduleOp.getModuleFlag("arrays"), nullptr);
+  EXPECT_EQ(moduleOp.getModuleFlag("ir_functions"), nullptr);
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp

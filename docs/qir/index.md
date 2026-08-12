@@ -98,13 +98,6 @@ QIR entry points take no arguments and return an `i64` exit code. Runtime and
 QIS declarations are checked before JIT compilation; a mismatched or unsupported
 declaration is reported with its actual and accepted LLVM function types.
 
-The QIR 2.1 profile publication identifies its bitcode format with
-`qir_major_version = 2` and `qir_minor_version = 0`. MQT Core emits those
-version flags and uses the integer widths prescribed by the profiles for
-resource-management and Adaptive capability flags. Adaptive output also records
-the integer and floating-point widths used by classical computations. Here, “QIR
-2.1” names the profile publication, not a `2.1` module-version tuple.
-
 MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT
 accepts one exact LLVM type for each runtime declaration, so unsupported or
 outdated overloads fail before execution.

@@ -42,10 +42,10 @@
 
 namespace mlir::qir {
 
-[[nodiscard]] static uint64_t moduleFlagIntegerValue(llvm::Module& module,
+[[nodiscard]] static uint64_t moduleFlagIntegerValue(llvm::Module& moduleOp,
                                                      const StringRef key) {
   const auto* constant = llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(
-      module.getModuleFlag(key));
+      moduleOp.getModuleFlag(key));
   const auto* integer =
       constant != nullptr
           ? llvm::dyn_cast<llvm::ConstantInt>(constant->getValue())
@@ -53,12 +53,12 @@ namespace mlir::qir {
   return integer != nullptr ? integer->getZExtValue() : 0;
 }
 
-static void setIntegerModuleFlag(llvm::Module& module,
+static void setIntegerModuleFlag(llvm::Module& moduleOp,
                                  const llvm::Module::ModFlagBehavior behavior,
                                  const StringRef key, const unsigned bitWidth,
                                  const uint64_t value) {
-  auto& context = module.getContext();
-  module.setModuleFlag(
+  auto& context = moduleOp.getContext();
+  moduleOp.setModuleFlag(
       behavior, key,
       llvm::ConstantInt::get(llvm::IntegerType::get(context, bitWidth), value));
 }
@@ -73,9 +73,9 @@ stringTuple(llvm::LLVMContext& context, const std::set<std::string>& values) {
   return llvm::MDTuple::get(context, entries);
 }
 
-static void removeModuleFlags(llvm::Module& module,
+static void removeModuleFlags(llvm::Module& moduleOp,
                               const ArrayRef<StringRef> keys) {
-  auto* flags = module.getModuleFlagsMetadata();
+  auto* flags = moduleOp.getModuleFlagsMetadata();
   if (flags == nullptr) {
     return;
   }
@@ -92,27 +92,28 @@ static void removeModuleFlags(llvm::Module& module,
   }
 }
 
-void normalizeQIRModuleFlags(llvm::Module& module, const bool useAdaptive) {
+void normalizeQIRModuleFlags(llvm::Module& moduleOp, const bool useAdaptive) {
   for (const auto* const key :
        {"dynamic_qubit_management", "dynamic_result_management", "arrays"}) {
-    if (module.getModuleFlag(key) != nullptr) {
-      setIntegerModuleFlag(module, llvm::Module::Error, key, 1,
-                           moduleFlagIntegerValue(module, key));
+    if (moduleOp.getModuleFlag(key) != nullptr) {
+      setIntegerModuleFlag(moduleOp, llvm::Module::Error, key, 1,
+                           moduleFlagIntegerValue(moduleOp, key));
     }
   }
-  if (module.getModuleFlag("backwards_branching") != nullptr) {
-    setIntegerModuleFlag(module, llvm::Module::Error, "backwards_branching", 2,
-                         moduleFlagIntegerValue(module, "backwards_branching"));
+  if (moduleOp.getModuleFlag("backwards_branching") != nullptr) {
+    setIntegerModuleFlag(
+        moduleOp, llvm::Module::Error, "backwards_branching", 2,
+        moduleFlagIntegerValue(moduleOp, "backwards_branching"));
   }
   if (!useAdaptive) {
-    removeModuleFlags(module,
+    removeModuleFlags(moduleOp,
                       {"int_computations", "float_computations", "ir_functions",
                        "backwards_branching", "multiple_target_branching",
                        "multiple_return_points", "arrays"});
     return;
   }
 
-  removeModuleFlags(module,
+  removeModuleFlags(moduleOp,
                     {"int_computations", "float_computations", "ir_functions",
                      "multiple_target_branching", "multiple_return_points"});
 
@@ -136,7 +137,7 @@ void normalizeQIRModuleFlags(llvm::Module& module, const bool useAdaptive) {
     }
   };
 
-  for (const auto& function : module.functions()) {
+  for (const auto& function : moduleOp.functions()) {
     if (function.isDeclaration()) {
       continue;
     }
@@ -158,40 +159,30 @@ void normalizeQIRModuleFlags(llvm::Module& module, const bool useAdaptive) {
         }
         usesMultipleTargetBranching |= llvm::isa<llvm::SwitchInst>(instruction);
         recordType(instruction.getType());
-#ifndef __clang_analyzer__
-        // LLVM stores operands in an intrusive allocation adjacent to User.
-        // The static analyzer cannot model that representation and reports
-        // the canonical operands() accessor as an out-of-bounds access.
-        for (const auto& operand : instruction.operands()) {
-          if (!llvm::isa<llvm::Constant>(operand.get())) {
-            recordType(operand->getType());
-          }
-        }
-#endif
       }
     }
     usesMultipleReturnPoints |= returnCount > 1;
   }
 
-  auto& context = module.getContext();
+  auto& context = moduleOp.getContext();
   if (!integerTypes.empty()) {
-    module.setModuleFlag(llvm::Module::Append, "int_computations",
-                         stringTuple(context, integerTypes));
+    moduleOp.setModuleFlag(llvm::Module::Append, "int_computations",
+                           stringTuple(context, integerTypes));
   }
   if (!floatingTypes.empty()) {
-    module.setModuleFlag(llvm::Module::Append, "float_computations",
-                         stringTuple(context, floatingTypes));
+    moduleOp.setModuleFlag(llvm::Module::Append, "float_computations",
+                           stringTuple(context, floatingTypes));
   }
   if (usesIRFunctions) {
-    setIntegerModuleFlag(module, llvm::Module::Error, "ir_functions", 1, 1);
+    setIntegerModuleFlag(moduleOp, llvm::Module::Error, "ir_functions", 1, 1);
   }
   if (usesMultipleTargetBranching) {
-    setIntegerModuleFlag(module, llvm::Module::Error,
+    setIntegerModuleFlag(moduleOp, llvm::Module::Error,
                          "multiple_target_branching", 1, 1);
   }
   if (usesMultipleReturnPoints) {
-    setIntegerModuleFlag(module, llvm::Module::Error, "multiple_return_points",
-                         1, 1);
+    setIntegerModuleFlag(moduleOp, llvm::Module::Error,
+                         "multiple_return_points", 1, 1);
   }
 }
 
@@ -333,16 +324,16 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
 }
 
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    module = op->getParentOfType<ModuleOp>();
+  auto moduleOp = dyn_cast<ModuleOp>(op);
+  if (!moduleOp) {
+    moduleOp = op->getParentOfType<ModuleOp>();
   }
-  if (!module) {
+  if (!moduleOp) {
     return nullptr;
   }
 
   // Search for function with entry_point attribute
-  for (const auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
+  for (const auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
     if (!passthrough) {
       continue;
@@ -369,14 +360,14 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     const OpBuilder::InsertionGuard guard(builder);
 
     // Create the declaration at the end of the module
-    auto module = dyn_cast<ModuleOp>(op);
-    if (!module) {
-      module = op->getParentOfType<ModuleOp>();
+    auto moduleOp = dyn_cast<ModuleOp>(op);
+    if (!moduleOp) {
+      moduleOp = op->getParentOfType<ModuleOp>();
     }
-    if (!module) {
+    if (!moduleOp) {
       llvm::reportFatalInternalError("Module not found");
     }
-    builder.setInsertionPointToEnd(module.getBody());
+    builder.setInsertionPointToEnd(moduleOp.getBody());
 
     fnDecl = LLVM::LLVMFuncOp::create(builder, op->getLoc(), fnName, fnType);
 
@@ -395,24 +386,24 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    module = op->getParentOfType<ModuleOp>();
+  auto moduleOp = dyn_cast<ModuleOp>(op);
+  if (!moduleOp) {
+    moduleOp = op->getParentOfType<ModuleOp>();
   }
-  if (!module) {
+  if (!moduleOp) {
     llvm::reportFatalInternalError("Module not found");
   }
 
   const auto symbolName =
       builder.getStringAttr((symbolPrefix + "_" + label).str());
 
-  if (!module.lookupSymbol<LLVM::GlobalOp>(symbolName)) {
+  if (!moduleOp.lookupSymbol<LLVM::GlobalOp>(symbolName)) {
     const auto llvmArrayType = LLVM::LLVMArrayType::get(
         builder.getIntegerType(8), static_cast<unsigned>(label.size() + 1));
     const auto stringInitializer = builder.getStringAttr(label.str() + '\0');
 
     // Create the declaration at the start of the module
-    builder.setInsertionPointToStart(module.getBody());
+    builder.setInsertionPointToStart(moduleOp.getBody());
 
     const auto globalOp = LLVM::GlobalOp::create(
         builder, op->getLoc(), llvmArrayType, /*isConstant=*/true,

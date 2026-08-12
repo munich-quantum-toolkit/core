@@ -650,7 +650,7 @@ result = measure q;
     ASSERT_TRUE(llvmIR);
     EXPECT_NE(llvmIR->find("define i64 @main()"), std::string::npos);
     EXPECT_NE(llvmIR->find("!\"qir_major_version\", i32 2"), std::string::npos);
-    EXPECT_NE(llvmIR->find("!\"qir_minor_version\", i32 0"), std::string::npos);
+    EXPECT_NE(llvmIR->find("!\"qir_minor_version\", i32 1"), std::string::npos);
     if (profile == QIRProfile::Adaptive) {
       EXPECT_NE(llvmIR->find("!\"dynamic_qubit_management\", i1 true"),
                 std::string::npos);

@@ -84,7 +84,7 @@ private:
   /// - `required_num_qubits`: Number of qubits used
   /// - `required_num_results`: Number of measurement results
   /// - `qir_major_version`: 2
-  /// - `qir_minor_version`: 0
+  /// - `qir_minor_version`: 1
   /// - `dynamic_qubit_management`: true/false
   /// - `dynamic_result_management`: true/false
   ///
@@ -124,7 +124,7 @@ private:
 
     SmallVector<Attribute> flags{
         createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
-        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 0),
+        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
         createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
                        metadata.useDynamicQubit),
         createBoolFlag(LLVM::ModFlagBehavior::Error,
