@@ -16,6 +16,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dominance.h>
@@ -83,7 +84,7 @@ private:
   /// - `required_num_qubits`: Number of qubits used
   /// - `required_num_results`: Number of measurement results
   /// - `qir_major_version`: 2
-  /// - `qir_minor_version`: 1
+  /// - `qir_minor_version`: 0
   /// - `dynamic_qubit_management`: true/false
   /// - `dynamic_result_management`: true/false
   ///
@@ -93,10 +94,17 @@ private:
                    IRRewriter& rewriter) {
     auto m = getOperation();
     const auto createFlag = [&](LLVM::ModFlagBehavior behavior, StringRef name,
-                                int32_t val) {
+                                Attribute value) {
       return LLVM::ModuleFlagAttr::get(m->getContext(), behavior,
-                                       rewriter.getStringAttr(name),
-                                       rewriter.getI32IntegerAttr(val));
+                                       rewriter.getStringAttr(name), value);
+    };
+    const auto createI32Flag = [&](LLVM::ModFlagBehavior behavior,
+                                   StringRef name, int32_t value) {
+      return createFlag(behavior, name, rewriter.getI32IntegerAttr(value));
+    };
+    const auto createBoolFlag = [&](LLVM::ModFlagBehavior behavior,
+                                    StringRef name, bool value) {
+      return createFlag(behavior, name, rewriter.getBoolAttr(value));
     };
 
     const SmallVector<Attribute> attributes{
@@ -115,19 +123,20 @@ private:
     rewriter.setInsertionPointToEnd(m.getBody());
 
     SmallVector<Attribute> flags{
-        createFlag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
-        createFlag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
-        createFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
-                   static_cast<int32_t>(metadata.useDynamicQubit)),
-        createFlag(LLVM::ModFlagBehavior::Error, "dynamic_result_management",
-                   static_cast<int32_t>(metadata.useDynamicResult))};
+        createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
+        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 0),
+        createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
+                       metadata.useDynamicQubit),
+        createBoolFlag(LLVM::ModFlagBehavior::Error,
+                       "dynamic_result_management", metadata.useDynamicResult)};
 
     if (useAdaptive) {
-      flags.emplace_back(createFlag(LLVM::ModFlagBehavior::Error,
-                                    "backwards_branching",
-                                    metadata.backwardsBranching));
-      flags.emplace_back(createFlag(LLVM::ModFlagBehavior::Error, "arrays",
-                                    static_cast<int32_t>(metadata.useArrays)));
+      flags.emplace_back(
+          createFlag(LLVM::ModFlagBehavior::Error, "backwards_branching",
+                     rewriter.getIntegerAttr(rewriter.getIntegerType(2),
+                                             metadata.backwardsBranching)));
+      flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays",
+                                        metadata.useArrays));
     }
 
     removeExistingModuleFlags(m, rewriter);

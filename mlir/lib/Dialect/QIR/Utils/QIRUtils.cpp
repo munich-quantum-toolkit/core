@@ -11,6 +11,13 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -26,12 +33,167 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <limits>
+#include <set>
 #include <string>
 
 namespace mlir::qir {
+
+[[nodiscard]] static uint64_t moduleFlagIntegerValue(llvm::Module& module,
+                                                     const StringRef key) {
+  const auto* constant = llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(
+      module.getModuleFlag(key));
+  const auto* integer =
+      constant != nullptr
+          ? llvm::dyn_cast<llvm::ConstantInt>(constant->getValue())
+          : nullptr;
+  return integer != nullptr ? integer->getZExtValue() : 0;
+}
+
+static void setIntegerModuleFlag(llvm::Module& module,
+                                 const llvm::Module::ModFlagBehavior behavior,
+                                 const StringRef key, const unsigned bitWidth,
+                                 const uint64_t value) {
+  auto& context = module.getContext();
+  module.setModuleFlag(
+      behavior, key,
+      llvm::ConstantInt::get(llvm::IntegerType::get(context, bitWidth), value));
+}
+
+[[nodiscard]] static llvm::MDNode*
+stringTuple(llvm::LLVMContext& context, const std::set<std::string>& values) {
+  SmallVector<llvm::Metadata*> entries;
+  entries.reserve(values.size());
+  llvm::transform(values, std::back_inserter(entries), [&](const auto& value) {
+    return llvm::MDString::get(context, value);
+  });
+  return llvm::MDTuple::get(context, entries);
+}
+
+static void removeModuleFlags(llvm::Module& module,
+                              const ArrayRef<StringRef> keys) {
+  auto* flags = module.getModuleFlagsMetadata();
+  if (flags == nullptr) {
+    return;
+  }
+  SmallVector<llvm::MDNode*> retained;
+  for (auto* flag : flags->operands()) {
+    const auto* key = llvm::dyn_cast<llvm::MDString>(flag->getOperand(1));
+    if (key == nullptr || !llvm::is_contained(keys, key->getString())) {
+      retained.emplace_back(flag);
+    }
+  }
+  flags->clearOperands();
+  for (auto* flag : retained) {
+    flags->addOperand(flag);
+  }
+}
+
+void normalizeQIRModuleFlags(llvm::Module& module, const bool useAdaptive) {
+  for (const auto* const key :
+       {"dynamic_qubit_management", "dynamic_result_management", "arrays"}) {
+    if (module.getModuleFlag(key) != nullptr) {
+      setIntegerModuleFlag(module, llvm::Module::Error, key, 1,
+                           moduleFlagIntegerValue(module, key));
+    }
+  }
+  if (module.getModuleFlag("backwards_branching") != nullptr) {
+    setIntegerModuleFlag(module, llvm::Module::Error, "backwards_branching", 2,
+                         moduleFlagIntegerValue(module, "backwards_branching"));
+  }
+  if (!useAdaptive) {
+    removeModuleFlags(module,
+                      {"int_computations", "float_computations", "ir_functions",
+                       "backwards_branching", "multiple_target_branching",
+                       "multiple_return_points", "arrays"});
+    return;
+  }
+
+  removeModuleFlags(module,
+                    {"int_computations", "float_computations", "ir_functions",
+                     "multiple_target_branching", "multiple_return_points"});
+
+  std::set<std::string> integerTypes;
+  std::set<std::string> floatingTypes;
+  bool usesIRFunctions = false;
+  bool usesMultipleTargetBranching = false;
+  bool usesMultipleReturnPoints = false;
+
+  const auto recordType = [&](const llvm::Type* type) {
+    if (const auto* integer = llvm::dyn_cast<llvm::IntegerType>(type)) {
+      if (integer->getBitWidth() > 1) {
+        integerTypes.emplace("i" + std::to_string(integer->getBitWidth()));
+      }
+    } else if (type->isHalfTy()) {
+      floatingTypes.emplace("half");
+    } else if (type->isFloatTy()) {
+      floatingTypes.emplace("float");
+    } else if (type->isDoubleTy()) {
+      floatingTypes.emplace("double");
+    }
+  };
+
+  for (const auto& function : module.functions()) {
+    if (function.isDeclaration()) {
+      continue;
+    }
+    const auto isEntryPoint = function.hasFnAttribute("entry_point");
+    usesIRFunctions |= !isEntryPoint;
+    if (!isEntryPoint) {
+      recordType(function.getReturnType());
+      for (const auto& argument : function.args()) {
+        recordType(argument.getType());
+      }
+    }
+
+    size_t returnCount = 0;
+    for (const auto& block : function) {
+      for (const auto& instruction : block) {
+        if (llvm::isa<llvm::ReturnInst>(instruction)) {
+          ++returnCount;
+          continue;
+        }
+        usesMultipleTargetBranching |= llvm::isa<llvm::SwitchInst>(instruction);
+        recordType(instruction.getType());
+#ifndef __clang_analyzer__
+        // LLVM stores operands in an intrusive allocation adjacent to User.
+        // The static analyzer cannot model that representation and reports
+        // the canonical operands() accessor as an out-of-bounds access.
+        for (const auto& operand : instruction.operands()) {
+          if (!llvm::isa<llvm::Constant>(operand.get())) {
+            recordType(operand->getType());
+          }
+        }
+#endif
+      }
+    }
+    usesMultipleReturnPoints |= returnCount > 1;
+  }
+
+  auto& context = module.getContext();
+  if (!integerTypes.empty()) {
+    module.setModuleFlag(llvm::Module::Append, "int_computations",
+                         stringTuple(context, integerTypes));
+  }
+  if (!floatingTypes.empty()) {
+    module.setModuleFlag(llvm::Module::Append, "float_computations",
+                         stringTuple(context, floatingTypes));
+  }
+  if (usesIRFunctions) {
+    setIntegerModuleFlag(module, llvm::Module::Error, "ir_functions", 1, 1);
+  }
+  if (usesMultipleTargetBranching) {
+    setIntegerModuleFlag(module, llvm::Module::Error,
+                         "multiple_target_branching", 1, 1);
+  }
+  if (usesMultipleReturnPoints) {
+    setIntegerModuleFlag(module, llvm::Module::Error, "multiple_return_points",
+                         1, 1);
+  }
+}
 
 void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
                  const ValueRange parameters, const ValueRange controls,

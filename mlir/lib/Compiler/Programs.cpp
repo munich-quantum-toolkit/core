@@ -24,6 +24,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
@@ -580,17 +581,20 @@ bool QIRProgram::cleanup() {
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
-translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
+translateToLLVM(ModuleOp mod, llvm::LLVMContext& context,
+                const QIRProfile profile) {
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
+    return nullptr;
   }
+  qir::normalizeQIRModuleFlags(*llvmModule, profile == QIRProfile::Adaptive);
   return llvmModule;
 }
 
 std::optional<std::string> QIRProgram::llvmIR() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context);
+  auto llvmModule = translateToLLVM(mod(), context, profile_);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -602,7 +606,7 @@ std::optional<std::string> QIRProgram::llvmIR() const {
 
 std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context);
+  auto llvmModule = translateToLLVM(mod(), context, profile_);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -617,7 +621,7 @@ std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
 
 bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context);
+  auto llvmModule = translateToLLVM(mod(), context, profile_);
   if (!llvmModule) {
     return false;
   }

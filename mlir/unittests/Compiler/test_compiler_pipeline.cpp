@@ -632,6 +632,44 @@ if (flag) {
   EXPECT_TRUE(qir->llvmIR().has_value());
 }
 
+TEST_F(CompilerPipelineTest, EmitsQIR21ProfileModuleFlags) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+qubit q;
+bit result;
+h q;
+result = measure q;
+)qasm";
+
+  auto input = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(input);
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto qir = std::move(input->copy()).intoQIR(profile);
+    ASSERT_TRUE(qir);
+    const auto llvmIR = qir->llvmIR();
+    ASSERT_TRUE(llvmIR);
+    EXPECT_NE(llvmIR->find("define i64 @main()"), std::string::npos);
+    EXPECT_NE(llvmIR->find("!\"qir_major_version\", i32 2"), std::string::npos);
+    EXPECT_NE(llvmIR->find("!\"qir_minor_version\", i32 0"), std::string::npos);
+    if (profile == QIRProfile::Adaptive) {
+      EXPECT_NE(llvmIR->find("!\"dynamic_qubit_management\", i1 true"),
+                std::string::npos);
+      EXPECT_NE(llvmIR->find("!\"dynamic_result_management\", i1 true"),
+                std::string::npos);
+      EXPECT_NE(llvmIR->find("!\"backwards_branching\", i2 0"),
+                std::string::npos);
+      EXPECT_NE(llvmIR->find("!\"arrays\", i1 true"), std::string::npos);
+    } else {
+      EXPECT_NE(llvmIR->find("!\"dynamic_qubit_management\", i1 false"),
+                std::string::npos);
+      EXPECT_NE(llvmIR->find("!\"dynamic_result_management\", i1 false"),
+                std::string::npos);
+      EXPECT_EQ(llvmIR->find("!\"backwards_branching\""), std::string::npos);
+      EXPECT_EQ(llvmIR->find("!\"arrays\""), std::string::npos);
+    }
+  }
+}
+
 enum class OutputRecordingShape : std::uint8_t { AdaptiveArrays, BaseArrays };
 
 } // namespace

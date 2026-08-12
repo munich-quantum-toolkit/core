@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
@@ -619,6 +620,8 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
     }
+    qir::normalizeQIRModuleFlags(*llvmMod, *parsedOutputFormat ==
+                                               OutputFormat::QIRAdaptive);
     if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
       return 1;
     }
