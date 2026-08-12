@@ -76,16 +76,23 @@ the compiler-owned target:
 #include "fomac/FoMaC.hpp"
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
+#include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
 
 auto device = fomac::Session::openDevice("mqt.sc.iqm.garnet");
 auto target = mlir::compilerTargetFromDevice(device);
+if (!target) {
+  llvm::errs() << "Failed to create compiler target: "
+               << llvm::toString(target.takeError()) << '\n';
+  return 1;
+}
 
 auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
 if (!qc) {
   return 1;
 }
 auto qco = std::move(*qc).intoQCO();
-if (!qco || !qco->compileForTarget(target)) {
+if (!qco || !qco->compileForTarget(*target)) {
   return 1;
 }
 ```
