@@ -907,8 +907,7 @@ LLVM bitcode.)pb");
             });
       },
       "program"_a, "dd_package"_a, nb::kw_only(),
-      "bindings"_a.sig("Mapping[int, bool | int | float] = ...") =
-          QCODDBindingMap{},
+      "bindings"_a = QCODDBindingMap{},
       // Keep the DD package alive while the returned matrix DD is alive
       // (arg index 2; free-function equivalent of method keep_alive<0, 1>).
       nb::keep_alive<0, 2>(),
