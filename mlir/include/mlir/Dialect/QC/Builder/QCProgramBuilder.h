@@ -108,6 +108,9 @@ public:
    */
   void initialize(TypeRange returnTypes);
 
+  /** Initialize the entry point with explicit input and return types. */
+  void initialize(TypeRange inputTypes, TypeRange returnTypes);
+
   /**
    * @brief Modify the return types of the main function after initialization.
    * @param returnTypes The new return types for the main function

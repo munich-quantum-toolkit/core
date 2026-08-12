@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "qasm_programs.h"
 
@@ -43,7 +44,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <numbers>
 #include <string>
 #include <variant>
 #include <vector>
@@ -77,12 +77,12 @@ TEST(OpenQASMTargetTest, ProductionTranslationUsesTheStagedPipeline) {
   EXPECT_TRUE(hasQuantumOperation);
 }
 
-TEST(OpenQASMTargetTest, EmitsTypedMixedNumericGateExpressions) {
+TEST(OpenQASMTargetTest, EmitsTypedGateAngleExpressions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
 include "stdgates.inc";
 gate shifted(theta) q {
-  rx(theta + 1) q;
+  rx(theta + angle[64](1.0)) q;
 }
 qubit q;
 shifted(0.5) q;
@@ -92,12 +92,6 @@ shifted(0.5) q;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  size_t numericCasts = 0;
-  moduleOp->walk([&](Operation* operation) {
-    numericCasts += isa<arith::SIToFPOp, arith::UIToFPOp>(operation);
-  });
-  EXPECT_EQ(numericCasts, 1);
 }
 
 TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
@@ -148,8 +142,16 @@ rx(arccos(unsigned_value) + arcsin(signed_value) + arctan(float_value)) q;
     arcCosines += isa<math::AcosOp>(operation);
     arcSines += isa<math::AsinOp>(operation);
     arcTangents += isa<math::AtanOp>(operation);
-    unsignedConversions += isa<arith::UIToFPOp>(operation);
-    signedConversions += isa<arith::SIToFPOp>(operation);
+    if (auto conversion = dyn_cast<arith::UIToFPOp>(operation)) {
+      unsignedConversions +=
+          llvm::any_of(conversion->getUsers(),
+                       [](Operation* user) { return isa<math::AcosOp>(user); });
+    }
+    if (auto conversion = dyn_cast<arith::SIToFPOp>(operation)) {
+      signedConversions +=
+          llvm::any_of(conversion->getUsers(),
+                       [](Operation* user) { return isa<math::AsinOp>(user); });
+    }
   });
   EXPECT_EQ(arcCosines, 1);
   EXPECT_EQ(arcSines, 1);
@@ -319,11 +321,9 @@ rounded(0.5) q;
       analyzed.program->statements[analyzed.program->body[2]].data);
   const auto& parameter =
       analyzed.program->expressions.at(constantApplication.parameters.front());
-  ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Cast);
+  ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Constant);
   EXPECT_EQ(parameter.type, oq3::frontend::ScalarType::Angle);
-  const auto& constant = analyzed.program->expressions.at(parameter.lhs);
-  ASSERT_EQ(constant.kind, oq3::frontend::ExpressionKind::Constant);
-  EXPECT_DOUBLE_EQ(std::get<double>(constant.constant), 0.0);
+  EXPECT_EQ(std::get<uint64_t>(parameter.constant), 0);
 
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
@@ -334,7 +334,9 @@ rounded(0.5) q;
   size_t floors = 0;
   moduleOp->walk([&](Operation* operation) {
     ceilings += isa<math::CeilOp>(operation);
-    floors += isa<math::FloorOp>(operation);
+    if (auto floor = dyn_cast<math::FloorOp>(operation)) {
+      floors += floor.getOperand().getDefiningOp<arith::DivFOp>() == nullptr;
+    }
   });
   EXPECT_EQ(ceilings, 1);
   EXPECT_EQ(floors, 1);
@@ -850,7 +852,9 @@ TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {
 OPENQASM 3.1;
 include "stdgates.inc";
 gate repeated(theta) q {
-  for int i in [0:2] { rx(theta + pi + i) q; }
+  for int i in [0:2] {
+    rx(theta + angle(pi + float(i))) q;
+  }
   while (false) { x q; }
 }
 qubit q;
@@ -891,9 +895,13 @@ g q;
   qc::RXOp rotation;
   moduleOp->walk([&](qc::RXOp application) { rotation = application; });
   ASSERT_TRUE(rotation);
-  FloatAttr angle;
-  EXPECT_TRUE(matchPattern(rotation.getParameter(0), m_Constant(&angle)));
-  EXPECT_DOUBLE_EQ(angle.getValueAsDouble(), std::numbers::pi / 2);
+  const auto converted =
+      mqt::angle::matchQuantizedRadians(rotation.getParameter(0));
+  ASSERT_TRUE(converted);
+  EXPECT_EQ(converted->bitWidth, 64);
+  APInt bits;
+  ASSERT_TRUE(matchPattern(converted->bits, m_ConstantInt(&bits)));
+  EXPECT_EQ(bits, APInt(64, 1).shl(62));
 }
 
 TEST(OpenQASMTargetTest, SupportsWholeBitRegisterAssignment) {

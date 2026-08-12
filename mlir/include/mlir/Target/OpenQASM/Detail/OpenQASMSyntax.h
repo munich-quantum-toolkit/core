@@ -37,6 +37,9 @@ struct SyntaxExpression {
   uint64_t integer = 0;
   double floatingPoint = 0.0;
   bool boolean = false;
+  ScalarKind scalarKind = ScalarKind::Int;
+  bool bitCast = false;
+  bool compoundAssignment = false;
   StringRef identifier;
   StringRef wideInteger;
   std::optional<uint64_t> hardwareQubit;
@@ -73,9 +76,11 @@ struct SyntaxGateCall {
 struct SyntaxScalarDeclaration {
   ScalarKind kind = ScalarKind::Int;
   StringRef identifier;
+  std::optional<SyntaxExpressionId> width;
   std::optional<SyntaxExpressionId> initializer;
   bool isConst = false;
   bool output = false;
+  bool input = false;
 };
 
 struct SyntaxAssignment {
@@ -204,8 +209,9 @@ public:
   standardLibraryInclude(SMLoc location, StandardLibraryKind kind);
   [[nodiscard]] LogicalResult scalarDecl(SMLoc location, ScalarKind kind,
                                          StringRef identifier,
+                                         const Expr* width,
                                          const Expr* initializer, bool isConst,
-                                         bool output);
+                                         bool output, bool input);
   [[nodiscard]] LogicalResult
   assignment(SMLoc location, const BitReference& target, const Expr& value);
   [[nodiscard]] LogicalResult

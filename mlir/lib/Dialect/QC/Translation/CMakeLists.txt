@@ -19,6 +19,7 @@ add_mlir_library(
   MLIROpenQASMFrontend
   MLIRControlFlowDialect
   MLIRMathDialect
+  MLIRMQTAngleUtils
   MLIRMemRefDialect
   MLIRSCFDialect
   MLIRUBDialect
@@ -34,6 +35,7 @@ target_sources(
          BASE_DIRS
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/OpenQASMAttributes.h
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)
 

@@ -60,7 +60,7 @@ releases may include breaking changes.
 - ✨ Add an LLVM-native staged OpenQASM frontend with typed semantic analysis
   and direct QC emission, including lexical scope, assignment, inclusive ranges,
   structured control flow, and alias-safe qubit-register access ([#1910],
-  [#1987], [#1994], [#2026]) ([**@burgholzer**], [**@denialhaag**])
+  [#1987], [#1994], [#2026], [#2040]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add Python bindings for the MQT Compiler Collection ([#1815])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -738,6 +738,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
+[#2040]: https://github.com/munich-quantum-toolkit/core/pull/2040
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
 [#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036

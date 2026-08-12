@@ -6,18 +6,22 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-dialect-utils test_global_phase_normalization.cpp
-                                                     test_utils.cpp)
+add_executable(mqt-core-mlir-unittests-dialect-utils
+               test_angle_conversion.cpp test_global_phase_normalization.cpp test_utils.cpp)
 
 target_link_libraries(
   mqt-core-mlir-unittests-dialect-utils
   PRIVATE GTest::gtest_main
+          MLIRArithToLLVM
           MLIRArithDialect
           MLIRControlFlowDialect
           MLIRDialectUtils
+          MLIRExecutionEngine
           MLIRFuncDialect
+          MLIRFuncToLLVM
           MLIRIR
           MLIRMemRefDialect
+          MLIRMQTAngleUtils
           MLIRParser
           MLIRMQTTransforms
           MLIRQCProgramBuilder
@@ -28,7 +32,9 @@ target_link_libraries(
           MLIRQCODialect
           MLIRQTensorDialect
           MLIRSupport
+          MLIRTargetLLVMIRExport
           MLIRSCFDialect
+          MLIRReconcileUnrealizedCasts
           LLVMSupport
           MQT::CoreDD)
 

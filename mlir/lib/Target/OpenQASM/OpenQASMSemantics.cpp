@@ -10,6 +10,7 @@
 
 #include "mlir/Target/OpenQASM/Detail/OpenQASMSemantics.h"
 
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
 #include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
@@ -30,6 +31,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -52,6 +54,7 @@ namespace {
 
 constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
 constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
+constexpr uint32_t SCALAR_WIDTH_LIMIT = mqt::angle::MACHINE_WIDTH;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
 constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
 constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
@@ -66,6 +69,7 @@ public:
 
 struct Constant {
   ScalarType type = ScalarType::Int;
+  uint32_t bitWidth = SCALAR_WIDTH_LIMIT;
   std::variant<bool, int64_t, uint64_t, double> value = int64_t{0};
 };
 
@@ -87,6 +91,7 @@ enum class SymbolKind : uint8_t {
 struct Symbol {
   SymbolKind kind = SymbolKind::Scalar;
   ScalarType type = ScalarType::Int;
+  uint32_t bitWidth = SCALAR_WIDTH_LIMIT;
   uint32_t id = 0;
   std::optional<Constant> constant;
 };
@@ -103,6 +108,8 @@ struct Symbol {
     return ScalarType::Uint;
   case ScalarKind::Float:
     return ScalarType::Float;
+  case ScalarKind::Angle:
+    return ScalarType::Angle;
   }
   llvm_unreachable("unknown syntax scalar kind");
 }
@@ -139,8 +146,46 @@ belongsToStdGates(const GateAvailability availability) {
 }
 
 [[nodiscard]] static double asDouble(const Constant& constant) {
+  if (constant.type == ScalarType::Angle) {
+    const auto bits = std::get<uint64_t>(constant.value);
+    const auto turns = std::ldexp(static_cast<double>(bits),
+                                  -static_cast<int>(constant.bitWidth));
+    return turns * (2.0 * std::numbers::pi);
+  }
   return std::visit([](const auto value) { return static_cast<double>(value); },
                     constant.value);
+}
+
+[[nodiscard]] static uint64_t widthMask(const uint32_t width) {
+  assert(width >= 1 && width <= SCALAR_WIDTH_LIMIT);
+  return width == SCALAR_WIDTH_LIMIT ? std::numeric_limits<uint64_t>::max()
+                                     : (uint64_t{1} << width) - 1U;
+}
+
+[[nodiscard]] static uint64_t resizeAngleBits(const uint64_t bits,
+                                              const uint32_t sourceWidth,
+                                              const uint32_t targetWidth) {
+  return mqt::angle::resize(bits, sourceWidth, targetWidth);
+}
+
+[[nodiscard]] static uint64_t rotateBitPattern(const uint64_t bits,
+                                               const uint32_t bitWidth,
+                                               const int64_t distance,
+                                               const bool left) {
+  assert(bitWidth >= 1 && bitWidth <= SCALAR_WIDTH_LIMIT);
+  const auto width = static_cast<int64_t>(bitWidth);
+  auto normalized = distance % width;
+  if (normalized < 0) {
+    normalized += width;
+  }
+  if (!left && normalized != 0) {
+    normalized = width - normalized;
+  }
+  if (normalized == 0) {
+    return bits & widthMask(bitWidth);
+  }
+  const auto shift = static_cast<uint32_t>(normalized);
+  return ((bits << shift) | (bits >> (bitWidth - shift))) & widthMask(bitWidth);
 }
 
 [[nodiscard]] static int64_t asSigned(const Constant& constant) {
@@ -165,27 +210,42 @@ belongsToStdGates(const GateAvailability availability) {
            destination == ScalarType::Float;
   case ScalarType::Int:
     return destination == ScalarType::Float ||
-           destination == ScalarType::Angle ||
            (destination == ScalarType::Uint &&
             std::get<int64_t>(initializer.value) >= 0);
   case ScalarType::Uint:
     return destination == ScalarType::Float ||
-           destination == ScalarType::Angle ||
            (destination == ScalarType::Int &&
             std::get<uint64_t>(initializer.value) <=
                 static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
   case ScalarType::Float:
     return destination == ScalarType::Angle;
   case ScalarType::Angle:
-    return destination == ScalarType::Float;
+    return false;
   }
   llvm_unreachable("unknown scalar type");
 }
 
 [[nodiscard]] static int compareNumericConstants(const Constant& lhs,
                                                  const Constant& rhs) {
-  if (lhs.type == ScalarType::Float || lhs.type == ScalarType::Angle ||
-      rhs.type == ScalarType::Float || rhs.type == ScalarType::Angle) {
+  if (lhs.type == ScalarType::Angle || rhs.type == ScalarType::Angle) {
+    const auto width =
+        std::max(lhs.type == ScalarType::Angle ? lhs.bitWidth : 0,
+                 rhs.type == ScalarType::Angle ? rhs.bitWidth : 0);
+    const auto angleBits = [width](const Constant& constant) {
+      if (constant.type == ScalarType::Angle) {
+        return resizeAngleBits(std::get<uint64_t>(constant.value),
+                               constant.bitWidth, width);
+      }
+      return *mqt::angle::quantize(asDouble(constant), width);
+    };
+    const auto left = angleBits(lhs);
+    const auto right = angleBits(rhs);
+    if (left < right) {
+      return -1;
+    }
+    return left > right ? 1 : 0;
+  }
+  if (lhs.type == ScalarType::Float || rhs.type == ScalarType::Float) {
     const auto left = asDouble(lhs);
     const auto right = asDouble(rhs);
     if (left < right) {
@@ -368,6 +428,8 @@ private:
     const auto& left = program.expressions[lhs];
     const auto& right = program.expressions[rhs];
     if (left.kind != right.kind || left.type != right.type ||
+        left.bitWidth != right.bitWidth ||
+        left.bitPatternCast != right.bitPatternCast ||
         left.constant != right.constant || left.parameter != right.parameter ||
         left.variable != right.variable) {
       return false;
@@ -378,9 +440,12 @@ private:
     case ExpressionKind::Variable:
       return true;
     case ExpressionKind::PopCount:
+    case ExpressionKind::BitVectorCast:
       return sameBitVectorExpression(left.bitVector, right.bitVector);
+    case ExpressionKind::ScalarPopCount:
     case ExpressionKind::Cast:
     case ExpressionKind::Negate:
+    case ExpressionKind::BitwiseNot:
     case ExpressionKind::ArcCos:
     case ExpressionKind::ArcSin:
     case ExpressionKind::ArcTan:
@@ -410,6 +475,12 @@ private:
     if (left.kind == BitVectorExpressionKind::Register) {
       return left.reg == right.reg;
     }
+    if (left.kind == BitVectorExpressionKind::ScalarCast ||
+        left.kind == BitVectorExpressionKind::ScalarExtract) {
+      return sameExpression(left.scalar, right.scalar) &&
+             (left.kind != BitVectorExpressionKind::ScalarExtract ||
+              sameExpression(left.distance, right.distance));
+    }
     return sameBitVectorExpression(left.operand, right.operand) &&
            sameExpression(left.distance, right.distance);
   }
@@ -420,6 +491,14 @@ private:
     const auto& value = program.bitVectorExpressions[expression];
     if (value.kind == BitVectorExpressionKind::Register) {
       dependencies.emplace_back(value.reg, bitGenerations[value.reg]);
+      return;
+    }
+    if (value.kind == BitVectorExpressionKind::ScalarCast ||
+        value.kind == BitVectorExpressionKind::ScalarExtract) {
+      collectDependencies(value.scalar, dependencies);
+      if (value.kind == BitVectorExpressionKind::ScalarExtract) {
+        collectDependencies(value.distance, dependencies);
+      }
       return;
     }
     collectBitVectorDependencies(value.operand, dependencies);
@@ -439,13 +518,15 @@ private:
         value.kind == ExpressionKind::GateParameter) {
       return;
     }
-    if (value.kind == ExpressionKind::PopCount) {
+    if (value.kind == ExpressionKind::PopCount ||
+        value.kind == ExpressionKind::BitVectorCast) {
       collectBitVectorDependencies(value.bitVector, dependencies);
       return;
     }
     collectDependencies(value.lhs, dependencies);
     if (value.kind != ExpressionKind::Cast &&
         value.kind != ExpressionKind::Negate &&
+        value.kind != ExpressionKind::BitwiseNot &&
         value.kind != ExpressionKind::ArcCos &&
         value.kind != ExpressionKind::ArcSin &&
         value.kind != ExpressionKind::ArcTan &&
@@ -456,7 +537,8 @@ private:
         value.kind != ExpressionKind::Tan &&
         value.kind != ExpressionKind::Exp &&
         value.kind != ExpressionKind::Log &&
-        value.kind != ExpressionKind::Sqrt) {
+        value.kind != ExpressionKind::Sqrt &&
+        value.kind != ExpressionKind::ScalarPopCount) {
       collectDependencies(value.rhs, dependencies);
     }
   }
@@ -640,6 +722,9 @@ private:
   [[nodiscard]] ExpressionId addConstant(const Constant& constant) {
     return addExpression({.kind = ExpressionKind::Constant,
                           .type = constant.type,
+                          .bitWidth = constant.type == ScalarType::Bool
+                                          ? uint32_t{1}
+                                          : constant.bitWidth,
                           .constant = constant.value});
   }
 
@@ -650,48 +735,179 @@ private:
     }
     switch (source) {
     case ScalarType::Bool:
-      return target == ScalarType::Int || target == ScalarType::Uint ||
-             target == ScalarType::Float;
     case ScalarType::Int:
     case ScalarType::Uint:
       return target == ScalarType::Int || target == ScalarType::Uint ||
-             target == ScalarType::Float || target == ScalarType::Angle;
+             target == ScalarType::Float;
     case ScalarType::Float:
       return target == ScalarType::Int || target == ScalarType::Uint ||
              target == ScalarType::Angle;
     case ScalarType::Angle:
-      return target == ScalarType::Float;
+      return false;
     }
     llvm_unreachable("unknown scalar type");
   }
 
-  [[nodiscard]] ExpressionId castExpression(const ExpressionId expression,
-                                            const ScalarType target,
-                                            const SMLoc location) {
-    const auto source = program.expressions[expression].type;
-    if (source == target) {
+  [[nodiscard]] ExpressionId
+  castExpression(const ExpressionId expression, const ScalarType target,
+                 const SMLoc location,
+                 const uint32_t targetWidth = SCALAR_WIDTH_LIMIT,
+                 const bool bitPatternCast = false) {
+    const auto& sourceExpression = program.expressions[expression];
+    const auto source = sourceExpression.type;
+    if (source == target && sourceExpression.bitWidth == targetWidth &&
+        !bitPatternCast) {
       return expression;
     }
-    if (!canImplicitlyConvert(source, target)) {
+    if (!bitPatternCast && !canImplicitlyConvert(source, target)) {
       fail(location, "expression of type '" + scalarTypeName(source) +
                          "' cannot be implicitly converted to '" +
                          scalarTypeName(target) + "'");
     }
-    return addExpression(
-        {.kind = ExpressionKind::Cast, .type = target, .lhs = expression});
+    return addExpression({.kind = ExpressionKind::Cast,
+                          .type = target,
+                          .bitWidth = targetWidth,
+                          .bitPatternCast = bitPatternCast,
+                          .lhs = expression});
   }
 
-  [[nodiscard]] Constant promoteConstInitializer(const Constant& initializer,
-                                                 const ScalarType destination,
-                                                 const SMLoc location) const {
+  [[nodiscard]] Constant explicitCastConstant(const Constant& source,
+                                              const ScalarType target,
+                                              const uint32_t targetWidth,
+                                              const bool bitPatternCast,
+                                              const SMLoc location) const {
+    if (bitPatternCast) {
+      if (target == ScalarType::Angle) {
+        if (source.type != ScalarType::Uint || source.bitWidth != targetWidth) {
+          fail(location,
+               "bit-to-angle casts require equal source and target widths");
+        }
+        return {.type = ScalarType::Angle,
+                .bitWidth = targetWidth,
+                .value =
+                    std::get<uint64_t>(source.value) & widthMask(targetWidth)};
+      }
+      if (target != ScalarType::Uint || source.type == ScalarType::Float ||
+          source.bitWidth != targetWidth) {
+        fail(location,
+             "casts to bit require an equal-width bool, int, uint, or angle");
+      }
+      uint64_t bits = 0;
+      switch (source.type) {
+      case ScalarType::Bool:
+        bits = static_cast<uint64_t>(std::get<bool>(source.value));
+        break;
+      case ScalarType::Int:
+        bits = static_cast<uint64_t>(std::get<int64_t>(source.value));
+        break;
+      case ScalarType::Uint:
+      case ScalarType::Angle:
+        bits = std::get<uint64_t>(source.value);
+        break;
+      case ScalarType::Float:
+        llvm_unreachable("float-to-bit cast rejected above");
+      }
+      return {.type = ScalarType::Uint,
+              .bitWidth = targetWidth,
+              .value = bits & widthMask(targetWidth)};
+    }
+
+    if (target == ScalarType::Angle) {
+      if (source.type == ScalarType::Angle) {
+        return {.type = ScalarType::Angle,
+                .bitWidth = targetWidth,
+                .value = resizeAngleBits(std::get<uint64_t>(source.value),
+                                         source.bitWidth, targetWidth)};
+      }
+      if (source.type != ScalarType::Float) {
+        fail(location, "only float and bit values can be cast to angle");
+      }
+      const auto bits =
+          mqt::angle::quantize(std::get<double>(source.value), targetWidth);
+      if (!bits) {
+        fail(location, "non-finite constant cannot be converted to angle");
+      }
+      return {
+          .type = ScalarType::Angle, .bitWidth = targetWidth, .value = *bits};
+    }
+    if (source.type == ScalarType::Angle) {
+      if (target != ScalarType::Bool) {
+        fail(location, "angle values can only be cast to bool or bit");
+      }
+      return {.type = ScalarType::Bool,
+              .bitWidth = 1,
+              .value = std::get<uint64_t>(source.value) != 0};
+    }
+    if (target == ScalarType::Bool) {
+      return {.type = ScalarType::Bool,
+              .bitWidth = 1,
+              .value = asDouble(source) != 0.0};
+    }
+    if (target == ScalarType::Float) {
+      return {.type = ScalarType::Float,
+              .bitWidth = targetWidth,
+              .value = asDouble(source)};
+    }
+    if (target == ScalarType::Uint) {
+      uint64_t value = 0;
+      if (source.type == ScalarType::Float) {
+        value = static_cast<uint64_t>(std::get<double>(source.value));
+      } else if (source.type == ScalarType::Bool) {
+        value = static_cast<uint64_t>(std::get<bool>(source.value));
+      } else if (source.type == ScalarType::Int) {
+        value = static_cast<uint64_t>(std::get<int64_t>(source.value));
+      } else {
+        value = std::get<uint64_t>(source.value);
+      }
+      return {.type = ScalarType::Uint,
+              .bitWidth = targetWidth,
+              .value = value & widthMask(targetWidth)};
+    }
+    assert(target == ScalarType::Int);
+    int64_t value = 0;
+    if (source.type == ScalarType::Float) {
+      value = static_cast<int64_t>(std::get<double>(source.value));
+    } else if (source.type == ScalarType::Bool) {
+      value = static_cast<int64_t>(std::get<bool>(source.value));
+    } else if (source.type == ScalarType::Uint) {
+      value = static_cast<int64_t>(std::get<uint64_t>(source.value));
+    } else {
+      value = std::get<int64_t>(source.value);
+    }
+    return {.type = ScalarType::Int, .bitWidth = targetWidth, .value = value};
+  }
+
+  [[nodiscard]] Constant
+  promoteConstInitializer(const Constant& initializer,
+                          const ScalarType destination, const SMLoc location,
+                          const uint32_t bitWidth = SCALAR_WIDTH_LIMIT) const {
     if (!canImplicitlyPromote(initializer, destination)) {
       fail(location, "constant initializer of type '" +
                          scalarTypeName(initializer.type) +
                          "' cannot be implicitly promoted to '" +
                          scalarTypeName(destination) + "'");
     }
-    if (initializer.type == destination) {
+    if (initializer.type == destination && initializer.bitWidth == bitWidth) {
       return initializer;
+    }
+    if (initializer.type == ScalarType::Angle &&
+        destination == ScalarType::Angle) {
+      return {.type = ScalarType::Angle,
+              .bitWidth = bitWidth,
+              .value = resizeAngleBits(std::get<uint64_t>(initializer.value),
+                                       initializer.bitWidth, bitWidth)};
+    }
+    if (initializer.type == ScalarType::Uint &&
+        destination == ScalarType::Uint) {
+      return {.type = ScalarType::Uint,
+              .bitWidth = bitWidth,
+              .value =
+                  std::get<uint64_t>(initializer.value) & widthMask(bitWidth)};
+    }
+    if (initializer.type == destination) {
+      auto converted = initializer;
+      converted.bitWidth = bitWidth;
+      return converted;
     }
     switch (destination) {
     case ScalarType::Bool:
@@ -699,25 +915,36 @@ private:
     case ScalarType::Int:
       if (initializer.type == ScalarType::Bool) {
         return {.type = ScalarType::Int,
+                .bitWidth = bitWidth,
                 .value =
                     static_cast<int64_t>(std::get<bool>(initializer.value))};
       }
       return {.type = ScalarType::Int,
+              .bitWidth = bitWidth,
               .value =
                   static_cast<int64_t>(std::get<uint64_t>(initializer.value))};
     case ScalarType::Uint:
       if (initializer.type == ScalarType::Bool) {
         return {.type = ScalarType::Uint,
+                .bitWidth = bitWidth,
                 .value =
                     static_cast<uint64_t>(std::get<bool>(initializer.value))};
       }
       return {.type = ScalarType::Uint,
+              .bitWidth = bitWidth,
               .value =
                   static_cast<uint64_t>(std::get<int64_t>(initializer.value))};
     case ScalarType::Float:
-      return {.type = ScalarType::Float, .value = asDouble(initializer)};
-    case ScalarType::Angle:
-      return {.type = ScalarType::Angle, .value = asDouble(initializer)};
+      return {.type = ScalarType::Float,
+              .bitWidth = bitWidth,
+              .value = asDouble(initializer)};
+    case ScalarType::Angle: {
+      const auto bits = mqt::angle::quantize(asDouble(initializer), bitWidth);
+      if (!bits) {
+        fail(location, "non-finite constant cannot be converted to angle");
+      }
+      return {.type = ScalarType::Angle, .bitWidth = bitWidth, .value = *bits};
+    }
     }
     llvm_unreachable("unknown scalar type");
   }
@@ -746,8 +973,11 @@ private:
               (symbol->kind == SymbolKind::Register &&
                program.registers[symbol->id].kind == RegisterKind::Bit));
     }
-    case Expr::Kind::Index:
-      return true;
+    case Expr::Kind::Index: {
+      const auto* symbol = lookup(expression.identifier);
+      return symbol != nullptr && symbol->kind == SymbolKind::Register &&
+             program.registers[symbol->id].kind == RegisterKind::Bit;
+    }
     default:
       return false;
     }
@@ -765,13 +995,35 @@ private:
                                sources, syntax.expressions[syntaxId].location),
                            .literal = asDouble(constant) != 0.0});
     }
-    const auto value = analyzeExpression(syntaxId);
-    const auto type = program.expressions[value].type;
-    auto zeroValue = Constant{.type = ScalarType::Int, .value = int64_t{0}};
-    if (type == ScalarType::Float || type == ScalarType::Angle) {
+    const auto& syntaxExpression = syntax.expressions[syntaxId];
+    const bool bitVectorBoolCast =
+        syntaxExpression.kind == Expr::Kind::Cast &&
+        scalarType(syntaxExpression.scalarKind) == ScalarType::Bool &&
+        refersToBitVector(*syntaxExpression.lhs);
+    const auto value =
+        syntaxExpression.kind == Expr::Kind::Cast &&
+                scalarType(syntaxExpression.scalarKind) == ScalarType::Bool &&
+                !bitVectorBoolCast
+            ? analyzeExpression(*syntaxExpression.lhs)
+            : analyzeExpression(syntaxId);
+    const auto& expression = program.expressions[value];
+    const auto type = expression.type;
+    auto zeroValue = Constant{.type = ScalarType::Int,
+                              .bitWidth = expression.bitWidth,
+                              .value = int64_t{0}};
+    if (type == ScalarType::Bool) {
+      zeroValue =
+          Constant{.type = ScalarType::Bool, .bitWidth = 1, .value = false};
+    } else if (type == ScalarType::Float) {
       zeroValue = Constant{.type = ScalarType::Float, .value = 0.0};
     } else if (type == ScalarType::Uint) {
-      zeroValue = Constant{.type = ScalarType::Uint, .value = uint64_t{0}};
+      zeroValue = Constant{.type = ScalarType::Uint,
+                           .bitWidth = expression.bitWidth,
+                           .value = uint64_t{0}};
+    } else if (type == ScalarType::Angle) {
+      zeroValue = Constant{.type = ScalarType::Angle,
+                           .bitWidth = expression.bitWidth,
+                           .value = uint64_t{0}};
     }
     const auto zero = addConstant(zeroValue);
     return addCondition({.kind = ConditionKind::Comparison,
@@ -785,10 +1037,10 @@ private:
   [[nodiscard]] static std::optional<Constant>
   builtinConstant(StringRef identifier) {
     if (identifier == "pi" || identifier == "π") {
-      return Constant{.type = ScalarType::Angle, .value = std::numbers::pi};
+      return Constant{.type = ScalarType::Float, .value = std::numbers::pi};
     }
     if (identifier == "tau" || identifier == "τ") {
-      return Constant{.type = ScalarType::Angle,
+      return Constant{.type = ScalarType::Float,
                       .value = 2.0 * std::numbers::pi};
     }
     if (identifier == "euler" || identifier == "ℇ") {
@@ -819,6 +1071,21 @@ private:
         return {.type = ScalarType::Float, .value = expression.floatingPoint};
       case Expr::Kind::Bool:
         return {.type = ScalarType::Bool, .value = expression.boolean};
+      case Expr::Kind::Cast: {
+        const auto target = scalarType(expression.scalarKind);
+        const auto width =
+            expression.bitCast && !expression.rhs
+                ? uint32_t{1}
+                : scalarBitWidth(expression.scalarKind, expression.rhs,
+                                 expression.location);
+        const auto& operandSyntax = syntax.expressions[*expression.lhs];
+        const bool bitPatternCast =
+            expression.bitCast ||
+            (target == ScalarType::Angle &&
+             operandSyntax.kind == Expr::Kind::Cast && operandSyntax.bitCast);
+        return explicitCastConstant(evaluateConstant(*expression.lhs), target,
+                                    width, bitPatternCast, expression.location);
+      }
       case Expr::Kind::Identifier: {
         if (const auto builtin = builtinConstant(expression.identifier)) {
           return *builtin;
@@ -837,9 +1104,16 @@ private:
           fail(expression.location,
                "numeric negation requires a numeric operand");
         }
-        if (operand.type == ScalarType::Float ||
-            operand.type == ScalarType::Angle) {
-          return {.type = operand.type, .value = -asDouble(operand)};
+        if (operand.type == ScalarType::Angle) {
+          return {.type = ScalarType::Angle,
+                  .bitWidth = operand.bitWidth,
+                  .value = (uint64_t{0} - std::get<uint64_t>(operand.value)) &
+                           widthMask(operand.bitWidth)};
+        }
+        if (operand.type == ScalarType::Float) {
+          return {.type = ScalarType::Float,
+                  .bitWidth = operand.bitWidth,
+                  .value = -std::get<double>(operand.value)};
         }
         if (operand.type == ScalarType::Uint) {
           const auto value = std::get<uint64_t>(operand.value);
@@ -867,9 +1141,16 @@ private:
                 .value = !std::get<bool>(operand.value)};
       }
       case Expr::Kind::BitNot: {
-        fail(expression.location,
-             "bitwise operators require explicitly sized uint, bit, or angle "
-             "operands, which are not supported yet");
+        const auto operand = evaluateConstant(*expression.lhs);
+        if (operand.type != ScalarType::Uint &&
+            operand.type != ScalarType::Angle) {
+          fail(expression.location,
+               "bitwise negation requires a uint or angle operand");
+        }
+        return {.type = operand.type,
+                .bitWidth = operand.bitWidth,
+                .value = ~std::get<uint64_t>(operand.value) &
+                         widthMask(operand.bitWidth)};
       }
       case Expr::Kind::And:
       case Expr::Kind::Or: {
@@ -917,6 +1198,15 @@ private:
               std::get<bool>(lhs.value) == std::get<bool>(rhs.value);
           result = expression.kind == Expr::Kind::Equal ? equal : !equal;
         } else {
+          if ((lhs.type == ScalarType::Angle ||
+               rhs.type == ScalarType::Angle) &&
+              ((lhs.type != ScalarType::Angle &&
+                lhs.type != ScalarType::Float) ||
+               (rhs.type != ScalarType::Angle &&
+                rhs.type != ScalarType::Float))) {
+            fail(expression.location,
+                 "angle comparisons require angle or float operands");
+          }
           const auto ordering = compareNumericConstants(lhs, rhs);
           switch (expression.kind) {
           case Expr::Kind::Equal:
@@ -942,6 +1232,29 @@ private:
           }
         }
         return {.type = ScalarType::Bool, .value = result};
+      }
+      case Expr::Kind::Index: {
+        const auto* symbol = lookup(expression.identifier);
+        if (symbol == nullptr || symbol->kind != SymbolKind::Constant ||
+            !symbol->constant ||
+            (symbol->constant->type != ScalarType::Int &&
+             symbol->constant->type != ScalarType::Uint &&
+             symbol->constant->type != ScalarType::Angle)) {
+          fail(expression.location,
+               "bit indexing requires an int, uint, or angle scalar");
+        }
+        const auto index = constantIndex(
+            *expression.lhs, symbol->constant->bitWidth, expression.location);
+        if (!index || *index >= symbol->constant->bitWidth) {
+          fail(expression.location, "scalar bit index is out of bounds");
+        }
+        const auto bits = symbol->constant->type == ScalarType::Int
+                              ? static_cast<uint64_t>(
+                                    std::get<int64_t>(symbol->constant->value))
+                              : std::get<uint64_t>(symbol->constant->value);
+        return {.type = ScalarType::Bool,
+                .bitWidth = 1,
+                .value = ((bits >> *index) & 1U) != 0};
       }
       case Expr::Kind::ArcCos:
       case Expr::Kind::ArcSin:
@@ -1013,8 +1326,7 @@ private:
           fail(expression.location,
                "constant math expression has a non-finite result");
         }
-        return {.type = inverseTrig ? ScalarType::Angle : ScalarType::Float,
-                .value = result};
+        return {.type = ScalarType::Float, .value = result};
       }
       case Expr::Kind::Add:
       case Expr::Kind::Sub:
@@ -1029,17 +1341,90 @@ private:
       case Expr::Kind::BitOr:
       case Expr::Kind::BitXor:
       case Expr::Kind::ShiftLeft:
-      case Expr::Kind::ShiftRight:
-        fail(expression.location,
-             "bitwise operators require explicitly sized uint, bit, or angle "
-             "operands, which are not supported yet");
-      case Expr::Kind::Index:
-        fail(expression.location, "expression is not a compile-time constant");
-      case Expr::Kind::PopCount:
+      case Expr::Kind::ShiftRight: {
+        const auto lhs = evaluateConstant(*expression.lhs);
+        const auto rhs = evaluateConstant(*expression.rhs);
+        if (lhs.type != ScalarType::Uint && lhs.type != ScalarType::Angle) {
+          fail(expression.location,
+               "bitwise operators require a uint or angle left operand");
+        }
+        auto left = std::get<uint64_t>(lhs.value);
+        auto resultWidth = lhs.bitWidth;
+        uint64_t result = 0;
+        if (expression.kind == Expr::Kind::ShiftLeft ||
+            expression.kind == Expr::Kind::ShiftRight) {
+          if (!isInteger(rhs.type) || (rhs.type == ScalarType::Int &&
+                                       std::get<int64_t>(rhs.value) < 0)) {
+            fail(expression.location,
+                 "shift distance must be an unsigned integer");
+          }
+          const auto distance =
+              rhs.type == ScalarType::Uint
+                  ? std::get<uint64_t>(rhs.value)
+                  : static_cast<uint64_t>(std::get<int64_t>(rhs.value));
+          if (distance < lhs.bitWidth) {
+            result = expression.kind == Expr::Kind::ShiftLeft
+                         ? left << distance
+                         : left >> distance;
+          }
+        } else {
+          if (rhs.type != lhs.type) {
+            fail(expression.location,
+                 "bitwise operands must have the same type and width");
+          }
+          auto right = std::get<uint64_t>(rhs.value);
+          if (lhs.type == ScalarType::Angle) {
+            resultWidth = std::max(lhs.bitWidth, rhs.bitWidth);
+            left = resizeAngleBits(left, lhs.bitWidth, resultWidth);
+            right = resizeAngleBits(right, rhs.bitWidth, resultWidth);
+          } else if (rhs.bitWidth != lhs.bitWidth) {
+            fail(expression.location,
+                 "bitwise operands must have the same type and width");
+          }
+          if (expression.kind == Expr::Kind::BitAnd) {
+            result = left & right;
+          } else if (expression.kind == Expr::Kind::BitOr) {
+            result = left | right;
+          } else {
+            result = left ^ right;
+          }
+        }
+        return {.type = lhs.type,
+                .bitWidth = resultWidth,
+                .value = result & widthMask(resultWidth)};
+      }
+      case Expr::Kind::PopCount: {
+        const auto operand = evaluateConstant(*expression.lhs);
+        if (operand.type != ScalarType::Uint &&
+            operand.type != ScalarType::Angle) {
+          fail(expression.location,
+               "popcount requires a bit register, uint, or angle operand");
+        }
+        return {.type = ScalarType::Uint,
+                .value = static_cast<uint64_t>(
+                    std::popcount(std::get<uint64_t>(operand.value) &
+                                  widthMask(operand.bitWidth)))};
+      }
       case Expr::Kind::RotateLeft:
-      case Expr::Kind::RotateRight:
-        fail(expression.location,
-             "bit-register expressions are not compile-time constants");
+      case Expr::Kind::RotateRight: {
+        const auto operand = evaluateConstant(*expression.lhs);
+        const auto distance = evaluateConstant(*expression.rhs);
+        if (operand.type != ScalarType::Uint &&
+            operand.type != ScalarType::Angle) {
+          fail(expression.location,
+               "rotations require a bit register, uint, or angle operand");
+        }
+        if (distance.type != ScalarType::Int) {
+          fail(expression.location,
+               "rotation distance must have signed int type");
+        }
+        return {.type = operand.type,
+                .bitWidth = operand.bitWidth,
+                .value = rotateBitPattern(
+                    std::get<uint64_t>(operand.value), operand.bitWidth,
+                    std::get<int64_t>(distance.value),
+                    expression.kind == Expr::Kind::RotateLeft)};
+      }
       }
       llvm_unreachable("unknown syntax expression kind");
     }();
@@ -1068,6 +1453,8 @@ private:
         return ScalarType::Float;
       case Expr::Kind::Bool:
         return ScalarType::Bool;
+      case Expr::Kind::Cast:
+        return evaluateConstant(id).type;
       case Expr::Kind::Identifier: {
         if (const auto builtin = builtinConstant(expression.identifier)) {
           return builtin->type;
@@ -1116,6 +1503,11 @@ private:
                  "bool values only support equality comparisons with bool "
                  "values");
           }
+        } else if ((lhs == ScalarType::Angle || rhs == ScalarType::Angle) &&
+                   ((lhs != ScalarType::Angle && lhs != ScalarType::Float) ||
+                    (rhs != ScalarType::Angle && rhs != ScalarType::Float))) {
+          fail(expression.location,
+               "angle comparisons require angle or float operands");
         }
         return ScalarType::Bool;
       }
@@ -1129,7 +1521,7 @@ private:
         if (constantExpressionType(*expression.lhs) == ScalarType::Bool) {
           fail(expression.location, "math functions require numeric operands");
         }
-        return ScalarType::Angle;
+        return ScalarType::Float;
       case Expr::Kind::Ceiling:
       case Expr::Kind::Exp:
       case Expr::Kind::Floor:
@@ -1171,22 +1563,7 @@ private:
                "floating-point remainder");
         }
         if (lhs == ScalarType::Angle || rhs == ScalarType::Angle) {
-          if (expression.kind == Expr::Kind::Add ||
-              expression.kind == Expr::Kind::Sub ||
-              (expression.kind == Expr::Kind::Mul &&
-               lhs != ScalarType::Angle) ||
-              (expression.kind == Expr::Kind::Mul &&
-               rhs != ScalarType::Angle) ||
-              (expression.kind == Expr::Kind::Div && lhs == ScalarType::Angle &&
-               rhs != ScalarType::Angle)) {
-            return ScalarType::Angle;
-          }
-          if (expression.kind == Expr::Kind::Div && lhs == ScalarType::Angle &&
-              rhs == ScalarType::Angle) {
-            return ScalarType::Float;
-          }
-          fail(expression.location,
-               "unsupported arithmetic operation on angle operands");
+          return evaluateConstant(id).type;
         }
         if (lhs == ScalarType::Float || rhs == ScalarType::Float) {
           return ScalarType::Float;
@@ -1204,22 +1581,24 @@ private:
                    : ScalarType::Int;
       }
       case Expr::Kind::BitNot:
+        if (const auto type = constantExpressionType(*expression.lhs);
+            type == ScalarType::Uint || type == ScalarType::Angle) {
+          return type;
+        }
+        fail(expression.location,
+             "bitwise negation requires a uint or angle operand");
       case Expr::Kind::BitAnd:
       case Expr::Kind::BitOr:
       case Expr::Kind::BitXor:
       case Expr::Kind::ShiftLeft:
       case Expr::Kind::ShiftRight:
-        fail(expression.location,
-             "bitwise operators require explicitly sized uint, bit, or angle "
-             "operands, which are not supported yet");
       case Expr::Kind::Index:
-        fail(expression.location, "expression is not a compile-time constant");
+        return evaluateConstant(id).type;
       case Expr::Kind::PopCount:
         return ScalarType::Uint;
       case Expr::Kind::RotateLeft:
       case Expr::Kind::RotateRight:
-        fail(expression.location,
-             "bit-register rotations are not scalar expressions");
+        return evaluateConstant(id).type;
       }
       llvm_unreachable("unknown syntax expression kind");
     }();
@@ -1229,8 +1608,8 @@ private:
 
   [[nodiscard]] Constant
   evaluateConstantBinary(const SyntaxExpression& expression) const {
-    const auto lhs = evaluateConstant(*expression.lhs);
-    const auto rhs = evaluateConstant(*expression.rhs);
+    auto lhs = evaluateConstant(*expression.lhs);
+    auto rhs = evaluateConstant(*expression.rhs);
     if (lhs.type == ScalarType::Bool || rhs.type == ScalarType::Bool) {
       fail(expression.location,
            "arithmetic operators require numeric operands");
@@ -1239,24 +1618,70 @@ private:
                                    rhs.type == ScalarType::Int &&
                                    std::get<int64_t>(rhs.value) < 0;
     if (lhs.type == ScalarType::Angle || rhs.type == ScalarType::Angle) {
-      const auto left = asDouble(lhs);
-      const auto right = asDouble(rhs);
-      if (expression.kind == Expr::Kind::Add ||
-          expression.kind == Expr::Kind::Sub) {
+      if ((expression.kind == Expr::Kind::Add ||
+           expression.kind == Expr::Kind::Sub) &&
+          lhs.type == ScalarType::Angle && rhs.type == ScalarType::Angle) {
+        const auto width = std::max(lhs.bitWidth, rhs.bitWidth);
+        const auto left =
+            resizeAngleBits(std::get<uint64_t>(lhs.value), lhs.bitWidth, width);
+        const auto right =
+            resizeAngleBits(std::get<uint64_t>(rhs.value), rhs.bitWidth, width);
         return {.type = ScalarType::Angle,
-                .value = expression.kind == Expr::Kind::Add ? left + right
-                                                            : left - right};
+                .bitWidth = width,
+                .value = (expression.kind == Expr::Kind::Add ? left + right
+                                                             : left - right) &
+                         widthMask(width)};
       }
       if (expression.kind == Expr::Kind::Mul &&
           (lhs.type == ScalarType::Angle) != (rhs.type == ScalarType::Angle)) {
-        return {.type = ScalarType::Angle, .value = left * right};
+        const auto angle = lhs.type == ScalarType::Angle ? lhs : rhs;
+        auto multiplier = lhs.type == ScalarType::Angle ? rhs : lhs;
+        if (multiplier.type == ScalarType::Int &&
+            std::get<int64_t>(multiplier.value) >= 0) {
+          multiplier = explicitCastConstant(
+              multiplier, ScalarType::Uint, angle.bitWidth,
+              /*bitPatternCast=*/false, expression.location);
+        }
+        if (multiplier.type != ScalarType::Uint ||
+            multiplier.bitWidth != angle.bitWidth) {
+          fail(expression.location,
+               "angle multiplication requires an equal-width uint operand");
+        }
+        return {.type = ScalarType::Angle,
+                .bitWidth = angle.bitWidth,
+                .value = (std::get<uint64_t>(angle.value) *
+                          std::get<uint64_t>(multiplier.value)) &
+                         widthMask(angle.bitWidth)};
       }
       if (expression.kind == Expr::Kind::Div && lhs.type == ScalarType::Angle) {
-        if (right == 0.0) {
+        if (rhs.type == ScalarType::Int && std::get<int64_t>(rhs.value) >= 0) {
+          rhs = explicitCastConstant(rhs, ScalarType::Uint, lhs.bitWidth,
+                                     /*bitPatternCast=*/false,
+                                     expression.location);
+        }
+        if (rhs.type != ScalarType::Angle && rhs.type != ScalarType::Uint) {
+          fail(expression.location,
+               "angle division requires an angle or uint operand");
+        }
+        const auto width = rhs.type == ScalarType::Angle
+                               ? std::max(lhs.bitWidth, rhs.bitWidth)
+                               : lhs.bitWidth;
+        if (rhs.type == ScalarType::Uint && rhs.bitWidth != width) {
+          fail(expression.location,
+               "angle division requires an equal-width uint operand");
+        }
+        const auto left =
+            resizeAngleBits(std::get<uint64_t>(lhs.value), lhs.bitWidth, width);
+        const auto right = rhs.type == ScalarType::Angle
+                               ? resizeAngleBits(std::get<uint64_t>(rhs.value),
+                                                 rhs.bitWidth, width)
+                               : std::get<uint64_t>(rhs.value);
+        if (right == 0) {
           fail(expression.location, "division by zero");
         }
-        return {.type = rhs.type == ScalarType::Angle ? ScalarType::Float
+        return {.type = rhs.type == ScalarType::Angle ? ScalarType::Uint
                                                       : ScalarType::Angle,
+                .bitWidth = width,
                 .value = left / right};
       }
       fail(expression.location,
@@ -1461,11 +1886,11 @@ private:
       case Expr::Kind::Float:
       case Expr::Kind::Bool:
         return true;
-      case Expr::Kind::Index:
-      case Expr::Kind::PopCount:
-      case Expr::Kind::RotateLeft:
-      case Expr::Kind::RotateRight:
-        return false;
+      case Expr::Kind::Index: {
+        const auto* symbol = lookup(expression.identifier);
+        return symbol != nullptr && symbol->kind == SymbolKind::Constant &&
+               expression.lhs && isConstantExpression(*expression.lhs);
+      }
       default:
         return (!expression.lhs || isConstantExpression(*expression.lhs)) &&
                (!expression.rhs || isConstantExpression(*expression.rhs));
@@ -1490,9 +1915,114 @@ private:
     }
   }
 
+  [[nodiscard]] bool
+  refersToBitVector(const SyntaxExpressionId syntaxId) const {
+    const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::Identifier) {
+      const auto* symbol = lookup(expression.identifier);
+      return symbol != nullptr && symbol->kind == SymbolKind::Register &&
+             program.registers[symbol->id].kind == RegisterKind::Bit;
+    }
+    if (expression.kind == Expr::Kind::Cast && expression.bitCast) {
+      return true;
+    }
+    if (expression.kind == Expr::Kind::Index) {
+      const auto* symbol = lookup(expression.identifier);
+      return symbol != nullptr &&
+             (symbol->kind == SymbolKind::Scalar ||
+              symbol->kind == SymbolKind::GateLocalScalar ||
+              symbol->kind == SymbolKind::Constant) &&
+             (symbol->type == ScalarType::Int ||
+              symbol->type == ScalarType::Uint ||
+              symbol->type == ScalarType::Angle);
+    }
+    return (expression.kind == Expr::Kind::RotateLeft ||
+            expression.kind == Expr::Kind::RotateRight) &&
+           refersToBitVector(*expression.lhs);
+  }
+
   [[nodiscard]] BitVectorExpressionId
   analyzeBitVectorExpression(const SyntaxExpressionId syntaxId) {
     const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::Index) {
+      const auto* symbol = lookup(expression.identifier);
+      if (symbol == nullptr ||
+          (symbol->kind != SymbolKind::Scalar &&
+           symbol->kind != SymbolKind::GateLocalScalar &&
+           symbol->kind != SymbolKind::Constant) ||
+          (symbol->type != ScalarType::Int &&
+           symbol->type != ScalarType::Uint &&
+           symbol->type != ScalarType::Angle)) {
+        fail(expression.location,
+             "bit indexing requires an int, uint, or angle scalar");
+      }
+      if (symbol->kind == SymbolKind::Constant &&
+          isConstantExpression(syntaxId)) {
+        return addBitVectorExpression(
+            {.kind = BitVectorExpressionKind::ScalarCast,
+             .width = 1,
+             .scalar = addConstant(evaluateConstant(syntaxId))});
+      }
+      ExpressionId scalar = 0;
+      if (symbol->kind == SymbolKind::Constant) {
+        assert(symbol->constant);
+        scalar = addConstant(*symbol->constant);
+      } else {
+        if (!initializedScalars.at(symbol->id)) {
+          fail(expression.location,
+               "scalar '" + expression.identifier + "' is uninitialized");
+        }
+        scalar = addExpression({.kind = ExpressionKind::Variable,
+                                .type = symbol->type,
+                                .bitWidth = symbol->bitWidth,
+                                .variable = symbol->id});
+      }
+      ExpressionId index = 0;
+      if (const auto constant = constantIndex(*expression.lhs, symbol->bitWidth,
+                                              expression.location)) {
+        if (*constant >= symbol->bitWidth) {
+          fail(expression.location, "scalar bit index is out of bounds");
+        }
+        index = addExpression({.kind = ExpressionKind::Constant,
+                               .type = ScalarType::Int,
+                               .bitWidth = SCALAR_WIDTH_LIMIT,
+                               .constant = static_cast<int64_t>(*constant)});
+      } else {
+        index = analyzeExpression(*expression.lhs);
+      }
+      if (!isInteger(program.expressions[index].type)) {
+        fail(expression.location, "scalar bit index must be an integer");
+      }
+      return addBitVectorExpression(
+          {.kind = BitVectorExpressionKind::ScalarExtract,
+           .width = 1,
+           .scalar = scalar,
+           .distance = index});
+    }
+    if (expression.kind == Expr::Kind::Cast && expression.bitCast) {
+      const auto width = expression.rhs
+                             ? scalarBitWidth(ScalarKind::Uint, expression.rhs,
+                                              expression.location)
+                             : uint32_t{1};
+      if (refersToBitVector(*expression.lhs)) {
+        const auto operand = analyzeBitVectorExpression(*expression.lhs);
+        if (program.bitVectorExpressions[operand].width != width) {
+          fail(expression.location,
+               "casts between bit registers require equal widths");
+        }
+        return operand;
+      }
+      const auto scalar = analyzeExpression(*expression.lhs);
+      const auto& source = program.expressions[scalar];
+      if (source.type == ScalarType::Float || source.bitWidth != width) {
+        fail(expression.location,
+             "casts to bit require an equal-width bool, int, uint, or angle");
+      }
+      return addBitVectorExpression(
+          {.kind = BitVectorExpressionKind::ScalarCast,
+           .width = width,
+           .scalar = scalar});
+    }
     if (expression.kind == Expr::Kind::Identifier) {
       const auto* symbol = lookup(expression.identifier);
       if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
@@ -1501,10 +2031,6 @@ private:
              "bit-vector expression requires a bit register");
       }
       const auto reg = static_cast<RegisterId>(symbol->id);
-      if (program.registers[reg].isScalar) {
-        fail(expression.location,
-             "bit-vector expression requires a bit register, not scalar bit");
-      }
       const auto width = program.registers[reg].width;
       for (uint64_t bit = 0; bit < width; ++bit) {
         ensureBitInitialized({.reg = reg, .index = bit}, expression.location);
@@ -1539,10 +2065,78 @@ private:
     if (insideGate) {
       validateGateExpression(syntaxId);
     }
+    if (expression.kind == Expr::Kind::Index && refersToBitVector(syntaxId)) {
+      fail(expression.location,
+           "scalar bit indexing produces bit[1]; use it in a bit context or "
+           "cast it explicitly");
+    }
     if (isConstantExpression(syntaxId)) {
       return addConstant(evaluateConstant(syntaxId));
     }
+    if (expression.kind == Expr::Kind::Cast) {
+      const auto target = scalarType(expression.scalarKind);
+      const auto width =
+          expression.bitCast && !expression.rhs
+              ? uint32_t{1}
+              : scalarBitWidth(expression.scalarKind, expression.rhs,
+                               expression.location);
+      if (!expression.bitCast && refersToBitVector(*expression.lhs)) {
+        const auto operand = analyzeBitVectorExpression(*expression.lhs);
+        if (target != ScalarType::Bool &&
+            program.bitVectorExpressions[operand].width != width) {
+          fail(expression.location,
+               "casts from bit registers require equal widths");
+        }
+        if (target == ScalarType::Float) {
+          fail(expression.location, "bit values cannot be cast to float");
+        }
+        return addExpression({.kind = ExpressionKind::BitVectorCast,
+                              .type = target,
+                              .bitWidth = width,
+                              .bitPatternCast = true,
+                              .bitVector = operand});
+      }
+      const auto operand = analyzeExpression(*expression.lhs);
+      const auto& source = program.expressions[operand];
+      const bool bitPatternCast = expression.bitCast;
+      if (expression.bitCast) {
+        if (source.type == ScalarType::Float || source.bitWidth != width) {
+          fail(expression.location,
+               "casts to bit require an equal-width bool, int, uint, or angle");
+        }
+      } else if (target == ScalarType::Angle) {
+        if (source.type != ScalarType::Float &&
+            source.type != ScalarType::Angle) {
+          fail(expression.location,
+               "only float and equal-width bit values can be cast to angle");
+        }
+      } else if (source.type == ScalarType::Angle &&
+                 target != ScalarType::Bool) {
+        fail(expression.location,
+             "angle values can only be cast to bool or bit");
+      }
+      if (source.type == target && source.bitWidth == width &&
+          !bitPatternCast) {
+        return operand;
+      }
+      return addExpression({.kind = ExpressionKind::Cast,
+                            .type = target,
+                            .bitWidth = width,
+                            .bitPatternCast = bitPatternCast,
+                            .lhs = operand});
+    }
     if (expression.kind == Expr::Kind::PopCount) {
+      if (!refersToBitVector(*expression.lhs)) {
+        const auto operand = analyzeExpression(*expression.lhs);
+        const auto& value = program.expressions[operand];
+        if (value.type != ScalarType::Uint && value.type != ScalarType::Angle) {
+          fail(expression.location,
+               "popcount requires a bit register, uint, or angle operand");
+        }
+        return addExpression({.kind = ExpressionKind::ScalarPopCount,
+                              .type = ScalarType::Uint,
+                              .lhs = operand});
+      }
       return addExpression(
           {.kind = ExpressionKind::PopCount,
            .type = ScalarType::Uint,
@@ -1557,6 +2151,7 @@ private:
       if (symbol->kind == SymbolKind::GateParameter) {
         return addExpression({.kind = ExpressionKind::GateParameter,
                               .type = ScalarType::Angle,
+                              .bitWidth = symbol->bitWidth,
                               .parameter = symbol->id});
       }
       if (symbol->kind != SymbolKind::Scalar &&
@@ -1570,18 +2165,17 @@ private:
       }
       return addExpression({.kind = ExpressionKind::Variable,
                             .type = symbol->type,
+                            .bitWidth = symbol->bitWidth,
                             .variable = symbol->id});
     }
-
     auto kind = ExpressionKind::Constant;
     switch (expression.kind) {
     case Expr::Kind::Neg:
       kind = ExpressionKind::Negate;
       break;
     case Expr::Kind::BitNot:
-      fail(expression.location,
-           "bitwise operators require explicitly sized uint, bit, or angle "
-           "operands, which are not supported yet");
+      kind = ExpressionKind::BitwiseNot;
+      break;
     case Expr::Kind::Add:
       kind = ExpressionKind::Add;
       break;
@@ -1603,17 +2197,26 @@ private:
       kind = ExpressionKind::Power;
       break;
     case Expr::Kind::BitAnd:
+      kind = ExpressionKind::BitwiseAnd;
+      break;
     case Expr::Kind::BitOr:
+      kind = ExpressionKind::BitwiseOr;
+      break;
     case Expr::Kind::BitXor:
+      kind = ExpressionKind::BitwiseXor;
+      break;
     case Expr::Kind::ShiftLeft:
+      kind = ExpressionKind::ShiftLeft;
+      break;
     case Expr::Kind::ShiftRight:
-      fail(expression.location,
-           "bitwise operators require explicitly sized uint, bit, or angle "
-           "operands, which are not supported yet");
+      kind = ExpressionKind::ShiftRight;
+      break;
     case Expr::Kind::RotateLeft:
+      kind = ExpressionKind::RotateLeft;
+      break;
     case Expr::Kind::RotateRight:
-      fail(expression.location,
-           "bit-register rotations require a whole-register assignment");
+      kind = ExpressionKind::RotateRight;
+      break;
     case Expr::Kind::PopCount:
       llvm_unreachable("handled bit-register population count");
     case Expr::Kind::ArcCos:
@@ -1681,6 +2284,72 @@ private:
            "arithmetic operators require numeric operands");
     }
 
+    if (kind == ExpressionKind::RotateLeft ||
+        kind == ExpressionKind::RotateRight) {
+      if (lhsType != ScalarType::Uint && lhsType != ScalarType::Angle) {
+        fail(expression.location,
+             "rotations require a bit register, uint, or angle operand");
+      }
+      assert(rhs && rhsType && "rotation requires a distance operand");
+      if (*rhsType != ScalarType::Int) {
+        fail(syntax.expressions[*expression.rhs].location,
+             "rotation distance must have signed int type");
+      }
+      return addExpression({.kind = kind,
+                            .type = lhsType,
+                            .bitWidth = program.expressions[lhs].bitWidth,
+                            .lhs = lhs,
+                            .rhs = *rhs});
+    }
+
+    const bool bitwise = kind == ExpressionKind::BitwiseNot ||
+                         kind == ExpressionKind::BitwiseAnd ||
+                         kind == ExpressionKind::BitwiseOr ||
+                         kind == ExpressionKind::BitwiseXor ||
+                         kind == ExpressionKind::ShiftLeft ||
+                         kind == ExpressionKind::ShiftRight;
+    if (bitwise) {
+      if (lhsType != ScalarType::Uint && lhsType != ScalarType::Angle) {
+        fail(expression.location,
+             "bitwise operators require a uint or angle left operand");
+      }
+      auto bitWidth = program.expressions[lhs].bitWidth;
+      if (kind == ExpressionKind::BitwiseNot) {
+        return addExpression(
+            {.kind = kind, .type = lhsType, .bitWidth = bitWidth, .lhs = lhs});
+      }
+      assert(rhs && rhsType && "binary bitwise expression requires rhs");
+      if (kind == ExpressionKind::ShiftLeft ||
+          kind == ExpressionKind::ShiftRight) {
+        if (*rhsType == ScalarType::Int &&
+            program.expressions[*rhs].kind == ExpressionKind::Constant &&
+            std::get<int64_t>(program.expressions[*rhs].constant) >= 0) {
+          *rhs = castExpression(*rhs, ScalarType::Uint, expression.location);
+          rhsType = ScalarType::Uint;
+        }
+        if (*rhsType != ScalarType::Uint) {
+          fail(expression.location,
+               "shift distance must be an unsigned integer");
+        }
+      } else if (*rhsType != lhsType ||
+                 (lhsType != ScalarType::Angle &&
+                  program.expressions[*rhs].bitWidth != bitWidth)) {
+        fail(expression.location,
+             "bitwise operands must have the same type and width");
+      } else if (lhsType == ScalarType::Angle) {
+        bitWidth = std::max(bitWidth, program.expressions[*rhs].bitWidth);
+        lhs = castExpression(lhs, ScalarType::Angle, expression.location,
+                             bitWidth);
+        *rhs = castExpression(*rhs, ScalarType::Angle, expression.location,
+                              bitWidth);
+      }
+      return addExpression({.kind = kind,
+                            .type = lhsType,
+                            .bitWidth = bitWidth,
+                            .lhs = lhs,
+                            .rhs = *rhs});
+    }
+
     const bool inverseTrig = kind == ExpressionKind::ArcCos ||
                              kind == ExpressionKind::ArcSin ||
                              kind == ExpressionKind::ArcTan;
@@ -1698,15 +2367,17 @@ private:
                  ? "inverse trigonometric functions require a float operand"
                  : "this math function does not accept an angle operand");
       }
-      lhs = castExpression(lhs, trig ? ScalarType::Angle : ScalarType::Float,
-                           expression.location);
+      if (!trig || lhsType != ScalarType::Angle) {
+        lhs = castExpression(lhs, ScalarType::Float, expression.location);
+      }
       return addExpression(
-          {.kind = kind,
-           .type = inverseTrig ? ScalarType::Angle : ScalarType::Float,
-           .lhs = lhs});
+          {.kind = kind, .type = ScalarType::Float, .lhs = lhs});
     }
     if (!rhs) {
-      return addExpression({.kind = kind, .type = lhsType, .lhs = lhs});
+      return addExpression({.kind = kind,
+                            .type = lhsType,
+                            .bitWidth = program.expressions[lhs].bitWidth,
+                            .lhs = lhs});
     }
 
     if (expression.kind == Expr::Kind::Mod &&
@@ -1719,30 +2390,79 @@ private:
 
     if (lhsType == ScalarType::Angle || *rhsType == ScalarType::Angle) {
       ScalarType type = ScalarType::Angle;
+      uint32_t bitWidth = SCALAR_WIDTH_LIMIT;
       if (kind == ExpressionKind::Add || kind == ExpressionKind::Subtract) {
-        lhs = castExpression(lhs, ScalarType::Angle, expression.location);
-        *rhs = castExpression(*rhs, ScalarType::Angle, expression.location);
+        if (lhsType != ScalarType::Angle || *rhsType != ScalarType::Angle) {
+          fail(expression.location,
+               "angle addition and subtraction require angle operands");
+        }
+        bitWidth = std::max(program.expressions[lhs].bitWidth,
+                            program.expressions[*rhs].bitWidth);
+        lhs = castExpression(lhs, ScalarType::Angle, expression.location,
+                             bitWidth);
+        *rhs = castExpression(*rhs, ScalarType::Angle, expression.location,
+                              bitWidth);
       } else if (kind == ExpressionKind::Multiply &&
                  (lhsType == ScalarType::Angle) !=
                      (*rhsType == ScalarType::Angle)) {
-        if (lhsType != ScalarType::Angle) {
-          lhs = castExpression(lhs, ScalarType::Float, expression.location);
-        } else {
-          *rhs = castExpression(*rhs, ScalarType::Float, expression.location);
+        const auto angle = lhsType == ScalarType::Angle ? lhs : *rhs;
+        auto multiplier = lhsType == ScalarType::Angle ? *rhs : lhs;
+        const auto& multiplierExpression = program.expressions[multiplier];
+        if (multiplierExpression.type == ScalarType::Int &&
+            multiplierExpression.kind == ExpressionKind::Constant &&
+            std::get<int64_t>(multiplierExpression.constant) >= 0) {
+          multiplier =
+              castExpression(multiplier, ScalarType::Uint, expression.location,
+                             program.expressions[angle].bitWidth);
+          if (lhsType == ScalarType::Angle) {
+            *rhs = multiplier;
+          } else {
+            lhs = multiplier;
+          }
         }
+        if (program.expressions[multiplier].type != ScalarType::Uint ||
+            program.expressions[multiplier].bitWidth !=
+                program.expressions[angle].bitWidth) {
+          fail(expression.location,
+               "angle multiplication requires an equal-width uint operand");
+        }
+        bitWidth = program.expressions[angle].bitWidth;
       } else if (kind == ExpressionKind::Divide &&
                  lhsType == ScalarType::Angle) {
         if (*rhsType == ScalarType::Angle) {
-          type = ScalarType::Float;
+          type = ScalarType::Uint;
+          bitWidth = std::max(program.expressions[lhs].bitWidth,
+                              program.expressions[*rhs].bitWidth);
+          lhs = castExpression(lhs, ScalarType::Angle, expression.location,
+                               bitWidth);
+          *rhs = castExpression(*rhs, ScalarType::Angle, expression.location,
+                                bitWidth);
         } else {
-          *rhs = castExpression(*rhs, ScalarType::Float, expression.location);
+          const auto& divisorExpression = program.expressions[*rhs];
+          if (divisorExpression.type == ScalarType::Int &&
+              divisorExpression.kind == ExpressionKind::Constant &&
+              std::get<int64_t>(divisorExpression.constant) >= 0) {
+            *rhs = castExpression(*rhs, ScalarType::Uint, expression.location,
+                                  program.expressions[lhs].bitWidth);
+            rhsType = ScalarType::Uint;
+          }
+          if (*rhsType != ScalarType::Uint ||
+              program.expressions[*rhs].bitWidth !=
+                  program.expressions[lhs].bitWidth) {
+            fail(expression.location,
+                 "angle division requires an equal-width uint operand");
+          }
+          bitWidth = program.expressions[lhs].bitWidth;
         }
       } else {
         fail(expression.location,
              "unsupported arithmetic operation on angle operands");
       }
-      return addExpression(
-          {.kind = kind, .type = type, .lhs = lhs, .rhs = *rhs});
+      return addExpression({.kind = kind,
+                            .type = type,
+                            .bitWidth = bitWidth,
+                            .lhs = lhs,
+                            .rhs = *rhs});
     }
 
     if (expression.kind == Expr::Kind::BuiltinPow) {
@@ -1807,6 +2527,51 @@ private:
                          Twine(REGISTER_WIDTH_LIMIT));
     }
     return value;
+  }
+
+  [[nodiscard]] uint32_t
+  scalarBitWidth(const ScalarKind kind,
+                 const std::optional<SyntaxExpressionId> width,
+                 const SMLoc location) const {
+    if (kind == ScalarKind::Bool) {
+      if (width) {
+        fail(location, "bool values do not accept an explicit width");
+      }
+      return 1;
+    }
+    if (!width) {
+      return SCALAR_WIDTH_LIMIT;
+    }
+    if (!isConstantExpression(*width)) {
+      fail(location, "scalar width must be a constant integer expression");
+    }
+    const auto constant = evaluateConstant(*width);
+    if (!isInteger(constant.type)) {
+      fail(location, "scalar width must be an integer expression");
+    }
+    if (constant.type == ScalarType::Int &&
+        std::get<int64_t>(constant.value) <= 0) {
+      fail(location, "scalar width must be greater than zero");
+    }
+    const auto value =
+        constant.type == ScalarType::Uint
+            ? std::get<uint64_t>(constant.value)
+            : static_cast<uint64_t>(std::get<int64_t>(constant.value));
+    if (value == 0) {
+      fail(location, "scalar width must be greater than zero");
+    }
+    if (value > SCALAR_WIDTH_LIMIT) {
+      fail(location, Twine("scalar width exceeds the limit of ") +
+                         Twine(SCALAR_WIDTH_LIMIT));
+    }
+    if (kind == ScalarKind::Int) {
+      fail(location,
+           "Integer declarations with explicit widths are not supported");
+    }
+    if (kind == ScalarKind::Float && value != SCALAR_WIDTH_LIMIT) {
+      fail(location, "only float[64] is supported");
+    }
+    return static_cast<uint32_t>(value);
   }
 
   [[nodiscard]] std::optional<uint64_t>
@@ -1931,32 +2696,45 @@ private:
                                 const SyntaxScalarDeclaration& declaration,
                                 std::vector<StatementId>& destination,
                                 const bool global) {
-    if (declaration.output && !global) {
-      fail(location, "outputs must be declared at global scope");
+    if ((declaration.output || declaration.input) && !global) {
+      fail(location, "inputs and outputs must be declared at global scope");
     }
     const auto type = scalarType(declaration.kind);
+    const auto bitWidth =
+        scalarBitWidth(declaration.kind, declaration.width, location);
     if (declaration.isConst) {
       if (!declaration.initializer ||
           !isConstantExpression(*declaration.initializer)) {
         fail(location, "const declaration requires a constant initializer");
       }
+      if (type == ScalarType::Bool &&
+          refersToBitVector(*declaration.initializer)) {
+        fail(location, "bit values must be explicitly cast to bool");
+      }
       auto constant = promoteConstInitializer(
-          evaluateConstant(*declaration.initializer), type, location);
-      declare(
-          location, declaration.identifier,
-          {.kind = SymbolKind::Constant, .type = type, .constant = constant});
+          evaluateConstant(*declaration.initializer), type, location, bitWidth);
+      declare(location, declaration.identifier,
+              {.kind = SymbolKind::Constant,
+               .type = type,
+               .bitWidth = bitWidth,
+               .constant = constant});
       return;
     }
 
     const auto id = static_cast<ScalarId>(program.scalars.size());
     program.scalars.push_back({.type = type,
+                               .bitWidth = bitWidth,
+                               .input = declaration.input,
                                .name = declaration.identifier.str(),
                                .location = getSourceLocation(location)});
-    initializedScalars.push_back(false);
+    initializedScalars.push_back(declaration.input);
     scalarGenerations.push_back(0);
     declare(location, declaration.identifier,
-            {.kind = SymbolKind::Scalar, .type = type, .id = id});
-    if (global) {
+            {.kind = SymbolKind::Scalar,
+             .type = type,
+             .bitWidth = bitWidth,
+             .id = id});
+    if (global && !declaration.input) {
       const ProgramOutput output{.kind = OutputKind::Scalar, .symbol = id};
       implicitOutputs.push_back(output);
       if (declaration.output) {
@@ -1964,13 +2742,18 @@ private:
       }
     }
     ScalarDeclarationStatement typed{.scalar = id};
-    if (declaration.initializer) {
+    if (declaration.input) {
+      assert(!declaration.initializer && "input cannot have an initializer");
+    } else if (declaration.initializer) {
       if (type == ScalarType::Bool) {
+        if (refersToBitVector(*declaration.initializer)) {
+          fail(location, "bit values must be explicitly cast to bool");
+        }
         typed.conditionInitializer = analyzeBoolValue(*declaration.initializer);
       } else {
         typed.initializer = castExpression(
             analyzeExpression(*declaration.initializer), type,
-            syntax.expressions[*declaration.initializer].location);
+            syntax.expressions[*declaration.initializer].location, bitWidth);
       }
       initializedScalars[id] = true;
     }
@@ -2003,11 +2786,63 @@ private:
       }
       ScalarAssignmentStatement typed{.scalar = symbol->id};
       if (symbol->type == ScalarType::Bool) {
+        if (refersToBitVector(assignment.value)) {
+          fail(location, "bit values must be explicitly cast to bool");
+        }
         typed.condition = analyzeBoolValue(assignment.value);
       } else {
-        typed.value =
-            castExpression(analyzeExpression(assignment.value), symbol->type,
-                           syntax.expressions[assignment.value].location);
+        const auto value = analyzeExpression(assignment.value);
+        const auto& syntaxValue = syntax.expressions[assignment.value];
+        const auto& analyzedValue = program.expressions[value];
+        const auto originalAngleWidth =
+            [&](const ExpressionId operand,
+                const SyntaxExpressionId syntaxOperand) {
+              const auto& expression = program.expressions[operand];
+              if (expression.type != ScalarType::Angle) {
+                return uint32_t{0};
+              }
+              if (syntax.expressions[syntaxOperand].kind != Expr::Kind::Cast &&
+                  expression.kind == ExpressionKind::Cast) {
+                const auto& source = program.expressions[expression.lhs];
+                if (source.type == ScalarType::Angle) {
+                  return source.bitWidth;
+                }
+              }
+              return expression.bitWidth;
+            };
+        const bool requiresEqualWidthAngleOperands =
+            syntaxValue.compoundAssignment &&
+            (syntaxValue.kind == Expr::Kind::Add ||
+             syntaxValue.kind == Expr::Kind::Sub ||
+             syntaxValue.kind == Expr::Kind::Div ||
+             syntaxValue.kind == Expr::Kind::BitAnd ||
+             syntaxValue.kind == Expr::Kind::BitOr ||
+             syntaxValue.kind == Expr::Kind::BitXor) &&
+            program.expressions[analyzedValue.lhs].type == ScalarType::Angle &&
+            program.expressions[analyzedValue.rhs].type == ScalarType::Angle;
+        if (symbol->type == ScalarType::Angle &&
+            requiresEqualWidthAngleOperands &&
+            (originalAngleWidth(analyzedValue.lhs, *syntaxValue.lhs) !=
+                 symbol->bitWidth ||
+             originalAngleWidth(analyzedValue.rhs, *syntaxValue.rhs) !=
+                 symbol->bitWidth)) {
+          fail(syntaxValue.location,
+               "angle compound assignment requires equal-width angle "
+               "operands");
+        }
+        if (symbol->type == ScalarType::Angle &&
+            syntaxValue.compoundAssignment &&
+            syntaxValue.kind == Expr::Kind::Div &&
+            analyzedValue.type == ScalarType::Uint) {
+          assert(analyzedValue.kind == ExpressionKind::Divide &&
+                 "angle compound division must remain a divide expression");
+          typed.value = castExpression(value, ScalarType::Angle,
+                                       syntaxValue.location, symbol->bitWidth,
+                                       /*bitPatternCast=*/true);
+        } else {
+          typed.value = castExpression(value, symbol->type,
+                                       syntaxValue.location, symbol->bitWidth);
+        }
       }
       initializedScalars[symbol->id] = true;
       ++scalarGenerations[symbol->id];
@@ -2019,28 +2854,33 @@ private:
       fail(location, "cannot assign to '" + assignment.target.identifier + "'");
     }
     const auto targetReg = static_cast<RegisterId>(symbol->id);
-    const auto& value = syntax.expressions[assignment.value];
-    const auto* valueSymbol = value.kind == Expr::Kind::Identifier
-                                  ? lookup(value.identifier)
-                                  : nullptr;
-    const bool bitVectorValue =
-        value.kind == Expr::Kind::RotateLeft ||
-        value.kind == Expr::Kind::RotateRight ||
-        (valueSymbol != nullptr && valueSymbol->kind == SymbolKind::Register &&
-         program.registers[valueSymbol->id].kind == RegisterKind::Bit &&
-         !program.registers[valueSymbol->id].isScalar);
-    if (!assignment.target.index && bitVectorValue) {
+    const bool bitVectorValue = refersToBitVector(assignment.value);
+    if (bitVectorValue) {
       const auto bitVector = analyzeBitVectorExpression(assignment.value);
-      if (program.bitVectorExpressions[bitVector].width !=
-          program.registers[targetReg].width) {
+      const auto sourceWidth = program.bitVectorExpressions[bitVector].width;
+      if (!assignment.target.index &&
+          sourceWidth != program.registers[targetReg].width) {
         fail(location, "bit-register assignment widths must match");
       }
-      for (uint64_t bit = 0; bit < program.registers[targetReg].width; ++bit) {
-        markBitInitialized({.reg = targetReg, .index = bit});
+      if (!assignment.target.index) {
+        for (uint64_t bit = 0; bit < program.registers[targetReg].width;
+             ++bit) {
+          markBitInitialized({.reg = targetReg, .index = bit});
+        }
+        destination.push_back(addStatement(
+            location, BitVectorAssignmentStatement{.target = targetReg,
+                                                   .value = bitVector}));
+        return;
       }
-      destination.push_back(
-          addStatement(location, BitVectorAssignmentStatement{
-                                     .target = targetReg, .value = bitVector}));
+      if (sourceWidth != 1) {
+        fail(location, "an indexed bit assignment requires a single-bit value");
+      }
+      auto targets = resolveBits(assignment.target);
+      assert(targets.size() == 1);
+      markBitInitialized(targets.front());
+      destination.push_back(addStatement(
+          location, BitAssignmentStatement{.target = targets.front(),
+                                           .bitVector = bitVector}));
       return;
     }
     auto targets = resolveBits(assignment.target);
@@ -2109,10 +2949,6 @@ private:
         addStatement(location, DeclarationStatement{.reg = id}));
     if constexpr (!isQubit) {
       if (declaration.initializer) {
-        if (width != 1) {
-          fail(location,
-               "bit expression initializers require a scalar bit declaration");
-        }
         analyzeAssignment(
             location,
             SyntaxAssignment{
@@ -2170,6 +3006,7 @@ private:
       declare(location, parameter,
               {.kind = SymbolKind::GateParameter,
                .type = ScalarType::Angle,
+               .bitWidth = SCALAR_WIDTH_LIMIT,
                .id = static_cast<uint32_t>(index)});
     }
     for (const auto [index, qubit] : llvm::enumerate(declaration.qubits)) {
@@ -2652,6 +3489,18 @@ private:
       break;
     }
     case Expr::Kind::Index: {
+      const auto* symbol = lookup(condition.identifier);
+      if (symbol != nullptr && (symbol->kind == SymbolKind::Scalar ||
+                                symbol->kind == SymbolKind::GateLocalScalar)) {
+        typed.kind = ConditionKind::Comparison;
+        typed.comparisonLhs = analyzeExpression(syntaxId);
+        typed.comparisonRhs = addExpression({.kind = ExpressionKind::Constant,
+                                             .type = ScalarType::Bool,
+                                             .bitWidth = 1,
+                                             .constant = true});
+        typed.comparison = ComparisonKind::Equal;
+        break;
+      }
       auto bits = resolveBits({.location = condition.location,
                                .identifier = condition.identifier,
                                .index = condition.lhs});
@@ -2779,12 +3628,34 @@ private:
         } else if (lhsType == ScalarType::Uint || rhsType == ScalarType::Uint) {
           comparisonType = ScalarType::Uint;
         }
-        typed.comparisonLhs =
-            castExpression(typed.comparisonLhs, comparisonType,
-                           syntax.expressions[*condition.lhs].location);
-        typed.comparisonRhs =
-            castExpression(typed.comparisonRhs, comparisonType,
-                           syntax.expressions[*condition.rhs].location);
+        if (comparisonType == ScalarType::Angle) {
+          if ((lhsType != ScalarType::Angle && lhsType != ScalarType::Float) ||
+              (rhsType != ScalarType::Angle && rhsType != ScalarType::Float)) {
+            fail(condition.location,
+                 "angle comparisons require angle or float operands");
+          }
+          const auto width =
+              std::max(lhsType == ScalarType::Angle
+                           ? program.expressions[typed.comparisonLhs].bitWidth
+                           : 0,
+                       rhsType == ScalarType::Angle
+                           ? program.expressions[typed.comparisonRhs].bitWidth
+                           : 0);
+          const auto promote = [&](ExpressionId value, const SMLoc valueLoc) {
+            return castExpression(value, ScalarType::Angle, valueLoc, width);
+          };
+          typed.comparisonLhs = promote(
+              typed.comparisonLhs, syntax.expressions[*condition.lhs].location);
+          typed.comparisonRhs = promote(
+              typed.comparisonRhs, syntax.expressions[*condition.rhs].location);
+        } else {
+          typed.comparisonLhs =
+              castExpression(typed.comparisonLhs, comparisonType,
+                             syntax.expressions[*condition.lhs].location);
+          typed.comparisonRhs =
+              castExpression(typed.comparisonRhs, comparisonType,
+                             syntax.expressions[*condition.rhs].location);
+        }
       }
       switch (condition.kind) {
       case Expr::Kind::Equal:
@@ -2893,6 +3764,27 @@ private:
       auto parameter = analyzeExpression(expression);
       if (program.expressions[parameter].type == ScalarType::Bool) {
         fail(call.location, "gate parameters require numeric expressions");
+      }
+      if (program.expressions[parameter].kind == ExpressionKind::Constant) {
+        const auto& typed = program.expressions[parameter];
+        Constant constant{.type = typed.type,
+                          .bitWidth = typed.bitWidth,
+                          .value = typed.constant};
+        if (isInteger(constant.type)) {
+          constant = explicitCastConstant(
+              constant, ScalarType::Float, SCALAR_WIDTH_LIMIT,
+              /*bitPatternCast=*/false,
+              syntax.expressions[expression].location);
+        }
+        constant = explicitCastConstant(
+            constant, ScalarType::Angle, SCALAR_WIDTH_LIMIT,
+            /*bitPatternCast=*/false, syntax.expressions[expression].location);
+        parameters.push_back(addConstant(constant));
+        continue;
+      }
+      if (isInteger(program.expressions[parameter].type)) {
+        parameter = castExpression(parameter, ScalarType::Float,
+                                   syntax.expressions[expression].location);
       }
       parameter = castExpression(parameter, ScalarType::Angle,
                                  syntax.expressions[expression].location);

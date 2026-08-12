@@ -21,10 +21,11 @@ namespace mlir::qasm {
 struct OpenQASMProgram {
   llvm::StringRef name;
   llvm::StringRef source;
+  bool supportsAdaptiveQIR = true;
 };
 
-/// OpenQASM programs expected to traverse QC, optimized QCO, reconstructed QC,
-/// and Adaptive QIR.
+/// OpenQASM programs expected to traverse QC, optimized QCO, and reconstructed
+/// QC. The per-program flag records frozen QIR 2.1 Adaptive compatibility.
 [[nodiscard]] llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms();
 
 /// OpenQASM programs that additionally round-trip through jeff.

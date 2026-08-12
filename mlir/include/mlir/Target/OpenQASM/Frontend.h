@@ -104,7 +104,9 @@ enum class ExpressionKind : uint8_t {
   GateParameter,
   Variable,
   Cast,
+  BitVectorCast,
   Negate,
+  BitwiseNot,
   ArcCos,
   ArcSin,
   ArcTan,
@@ -117,17 +119,27 @@ enum class ExpressionKind : uint8_t {
   Log,
   Sqrt,
   PopCount,
+  ScalarPopCount,
+  RotateLeft,
+  RotateRight,
   Add,
   Subtract,
   Multiply,
   Divide,
   Modulo,
   Power,
+  BitwiseAnd,
+  BitwiseOr,
+  BitwiseXor,
+  ShiftLeft,
+  ShiftRight,
 };
 
 struct ScalarExpression {
   ExpressionKind kind = ExpressionKind::Constant;
   ScalarType type = ScalarType::Float;
+  uint32_t bitWidth = 64;
+  bool bitPatternCast = false;
   std::variant<bool, int64_t, uint64_t, double> constant = 0.0;
   uint32_t parameter = 0;
   ScalarId variable = 0;
@@ -138,6 +150,8 @@ struct ScalarExpression {
 
 enum class BitVectorExpressionKind : uint8_t {
   Register,
+  ScalarCast,
+  ScalarExtract,
   RotateLeft,
   RotateRight,
 };
@@ -146,12 +160,15 @@ struct BitVectorExpression {
   BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
   uint64_t width = 0;
   RegisterId reg = 0;
+  ExpressionId scalar = 0;
   BitVectorExpressionId operand = 0;
   ExpressionId distance = 0;
 };
 
 struct ScalarDeclaration {
   ScalarType type = ScalarType::Int;
+  uint32_t bitWidth = 64;
+  bool input = false;
   std::string name;
   SourceLocation location;
 };
@@ -270,6 +287,7 @@ struct ScalarAssignmentStatement {
 struct BitAssignmentStatement {
   BitReference target;
   ConditionId value = 0;
+  std::optional<BitVectorExpressionId> bitVector;
 };
 
 struct BitVectorAssignmentStatement {

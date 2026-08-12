@@ -519,7 +519,6 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
        .source = "OPENQASM 3.1; qubit q; x $;"},
       {.name = "float-overflow",
        .source = "OPENQASM 3.1; float value = 1e99999;"},
-      {.name = "unsupported-angle", .source = "OPENQASM 3.1; angle theta;"},
       {.name = "unsupported-duration",
        .source = "OPENQASM 3.1; duration delay;"},
       {.name = "unsupported-opaque",
@@ -558,10 +557,10 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",        "cal",      "defcal",  "extern", "box",
-      "let",           "break",      "continue", "end",     "return", "pragma",
-      "input",         "readonly",   "mutable",  "complex", "array",  "void",
-      "stretch",       "durationof", "delay",    "im",      "#dim",   "#pragma",
+      "defcalgrammar", "def",     "cal",      "defcal", "extern",  "box",
+      "let",           "break",   "continue", "end",    "return",  "pragma",
+      "readonly",      "mutable", "complex",  "array",  "void",    "stretch",
+      "durationof",    "delay",   "im",       "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -576,7 +575,6 @@ TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
 
 TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
-      "OPENQASM 3.1; input int value;",
       "OPENQASM 3.1; const complex value = 0;",
       "OPENQASM 3.1; output array[int, 2] values;",
       "OPENQASM 3.1; for complex value in [0:1] {}",
