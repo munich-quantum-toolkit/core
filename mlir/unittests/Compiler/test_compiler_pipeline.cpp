@@ -35,6 +35,7 @@
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -205,13 +206,18 @@ makeSparseUCZTarget(const bool includeMeasure) {
   using Operation = CompilerTarget::Operation;
   using Site = CompilerTarget::Site;
 
-  std::vector operations{Operation{"u", 1, 3}, Operation{"cz", 2, 0}};
+  std::vector operations{llvm::cantFail(Operation::create("u", 1, 3)),
+                         llvm::cantFail(Operation::create("cz", 2, 0))};
   if (includeMeasure) {
-    operations.emplace_back("measure", 1, 0);
+    operations.emplace_back(llvm::cantFail(Operation::create("measure", 1, 0)));
   }
-  return CompilerTarget{"sparse-line", std::vector{Site{5}, Site{9}, Site{17}},
-                        std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
-                        std::move(operations)};
+  std::vector sites{llvm::cantFail(Site::create(5)),
+                    llvm::cantFail(Site::create(9)),
+                    llvm::cantFail(Site::create(17))};
+  return llvm::cantFail(CompilerTarget::create(
+      "sparse-line", std::move(sites),
+      std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
+      std::move(operations)));
 }
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
@@ -1131,8 +1137,9 @@ c = measure q;
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
 
-  const CompilerTarget target{std::vector<CompilerTarget::Site>{
-      CompilerTarget::Site{2472}, CompilerTarget::Site{18449}}};
+  std::vector sites{llvm::cantFail(CompilerTarget::Site::create(2472)),
+                    llvm::cantFail(CompilerTarget::Site::create(18449))};
+  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
   ASSERT_TRUE(qco->compileForTarget(target));
 
   auto compiled = parseRecordedModule(qco->str());
@@ -1273,7 +1280,7 @@ h q;
       CompilerInput{std::move(*customPipelineInput)}, ProgramFormat::QCO,
       nullptr, "builtin.module(merge-single-qubit-rotation-gates)"));
 
-  const CompilerTarget target{1};
+  const auto target = llvm::cantFail(CompilerTarget::create(1));
   auto targetedImport = QCProgram::fromQASMString(qasm);
   auto targetedRawQCO = QCProgram::fromQASMString(qasm);
   auto targetedJeff = QCProgram::fromQASMString(qasm);

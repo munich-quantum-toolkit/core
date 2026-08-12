@@ -26,6 +26,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -234,7 +235,8 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
     }
   }
 
-  return CompilerTarget(numTarget, std::move(couplings));
+  return llvm::cantFail(
+      CompilerTarget::create(numTarget, std::move(couplings)));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -325,9 +327,9 @@ class MappingPassTest : public MappingPassFixture,
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
-  const CompilerTarget target(
+  const auto target = llvm::cantFail(CompilerTarget::create(
       3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::vector<CompilerTarget::Operation>{});
+      std::vector<CompilerTarget::Operation>{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -364,14 +366,14 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   constexpr int64_t size = 3;
 
   std::vector<CompilerTarget::Site> sites;
-  sites.emplace_back(7);
-  sites.emplace_back(19);
-  sites.emplace_back(42);
+  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
+  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
+  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
 
-  const CompilerTarget target(
+  const auto target = llvm::cantFail(CompilerTarget::create(
       std::move(sites),
       std::vector<CompilerTarget::Coupling>{{7, 19}, {19, 42}},
-      std::vector<CompilerTarget::Operation>{});
+      std::vector<CompilerTarget::Operation>{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -414,7 +416,8 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
     couplings.emplace_back(0, static_cast<int64_t>(site));
   }
 
-  const CompilerTarget target(numTargetQubits, std::move(couplings));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(numTargetQubits, std::move(couplings)));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
@@ -1625,8 +1628,8 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
 }
 
 TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
-  const CompilerTarget target(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}});
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
