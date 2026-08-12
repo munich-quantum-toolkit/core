@@ -68,20 +68,20 @@ public:
 
 private:
   /// Marks a qubit argument that never reaches a result.
-  static constexpr std::int64_t KEPT = -1;
+  static constexpr int64_t KEPT = -1;
 
   /// @returns for each qubit argument position of @p callOp's callee, the index
   /// of the call result it flows into, or `KEPT`.
-  ArrayRef<std::int64_t> mappingFor(func::CallOp callOp);
+  ArrayRef<int64_t> mappingFor(func::CallOp callOp);
 
   /// Derive the mapping of @p callee by threading each of its qubit arguments.
-  SmallVector<std::int64_t> computeMapping(func::FuncOp callee);
+  SmallVector<int64_t> computeMapping(func::FuncOp callee);
 
   /// Pair qubit arguments and results by position, used when no body is
   /// available.
-  static SmallVector<std::int64_t> positionalMapping(func::FuncOp callee);
+  static SmallVector<int64_t> positionalMapping(func::FuncOp callee);
 
-  DenseMap<Operation*, SmallVector<std::int64_t>> cache;
+  DenseMap<Operation*, SmallVector<int64_t>> cache;
   DenseSet<Operation*> inProgress;
 };
 
@@ -182,15 +182,18 @@ private:
   Value qubit_;
   bool isFinal_;
   bool isSentinel_;
-  /// @returns the mapping to resolve calls with, shared when one was supplied.
-  CallQubitMapping& callMapping() const;
+  /// @returns the call result continuing the wire of @p operand, resolved
+  /// through the shared mapping when one was supplied.
+  Value resultForOperand(func::CallOp callOp, Value operand) const;
 
-  /// Shared, cached call mapping. Null means the scratch mapping below is used
-  /// instead, which is still correct but re-threads callees. The iterator keeps
-  /// only a pointer to the shared one so that copying it stays cheap.
+  /// @returns the call operand feeding the wire of @p result, resolved through
+  /// the shared mapping when one was supplied.
+  Value operandForResult(func::CallOp callOp, Value result) const;
+
+  /// Shared, cached call mapping. Null means each query threads the callee
+  /// afresh, which is still correct but not cached. The iterator holds only
+  /// this pointer, so that copying it stays cheap.
   CallQubitMapping* mapping_ = nullptr;
-  /// Scratch mapping used when no shared one was supplied.
-  mutable CallQubitMapping localMapping;
 };
 
 /**

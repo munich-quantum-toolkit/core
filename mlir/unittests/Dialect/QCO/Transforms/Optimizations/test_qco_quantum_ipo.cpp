@@ -926,6 +926,49 @@ TEST_F(QCOQuantumIPOTest, noPromotionWithoutMatchingInsert) {
 }
 
 /**
+ * @brief An element whose path from extraction to re-insertion runs through a
+ * call is not promoted.
+ *
+ * @details
+ * The walk only recognises the operations it knows to thread a qubit. A call is
+ * not one of them, and guessing that its first result carries the qubit on
+ * would let a slot be promoted that no longer holds the extracted qubit, so the
+ * callee is left alone.
+ */
+TEST_F(QCOQuantumIPOTest, noPromotionWhenCallSitsOnExtractedPath) {
+  const auto tensorType = programBuilder.getQubitTensorType(2);
+
+  const auto buildProgram = [&](QCOProgramBuilder& b) {
+    const auto qubitType = b.getQubitType();
+    b.initialize();
+
+    // The helper takes the qubit as its second operand and returns one qubit.
+    auto helperArgs =
+        b.startFunction("helper", {qubitType, qubitType}, {qubitType});
+    b.sink(helperArgs[0]);
+    b.endFunction({b.h(helperArgs[1])});
+
+    auto args = b.startFunction("f", {tensorType}, {tensorType});
+    auto [rest, inner] = b.qtensorExtract(args[0], 0);
+    auto helped = b.call("helper", {b.allocQubit(), inner})[0];
+    b.endFunction({b.qtensorInsert(helped, rest, 0)});
+
+    auto q0 = b.allocQubit();
+    auto q1 = b.allocQubit();
+    auto tensor = b.qtensorFromElements({q0, q1});
+    auto results = b.call("f", {tensor});
+    b.qtensorDealloc(results[0]);
+  };
+
+  buildProgram(programBuilder);
+  moduleOp = programBuilder.finalize();
+  buildProgram(referenceBuilder);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
  * @brief A tensor argument that never has an element taken out of it has
  * nothing to promote.
  */

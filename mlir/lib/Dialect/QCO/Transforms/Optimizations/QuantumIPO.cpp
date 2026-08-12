@@ -17,6 +17,7 @@
 // IWYU pragma: end_keep
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -36,10 +37,8 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <map>
 #include <numbers>
 #include <string>
-#include <tuple>
 #include <utility>
 
 namespace mlir::qco {
@@ -79,13 +78,26 @@ static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
 
 namespace {
 
+/// One cached rotation specialization: the parameter it was created for, the
+/// angle baked into it, and the resulting copy of the callee.
+struct RotationSpecialization {
+  uint32_t operand;
+  double angle;
+  func::FuncOp func;
+};
+
 /// Caches the specializations already created for a callee, so that call sites
 /// sharing the same context reuse one copy instead of cloning it repeatedly.
+///
+/// All three are keyed by callee name first, which lets lookups take a
+/// `StringRef` without building a temporary `std::string`.
 struct PreviousSpecializations {
-  std::map<std::pair<std::string, uint32_t>, func::FuncOp> zeroSpecializations;
-  std::map<std::pair<std::string, uint32_t>, func::FuncOp> plusSpecializations;
-  std::map<std::tuple<std::string, uint32_t, double>, func::FuncOp>
-      rotationSpecializations;
+  /// Keyed by callee name, then by the specialized parameter index.
+  llvm::StringMap<DenseMap<uint32_t, func::FuncOp>> zeroSpecializations;
+  llvm::StringMap<DenseMap<uint32_t, func::FuncOp>> plusSpecializations;
+  /// Keyed by callee name; angles are compared with the same tolerance the
+  /// pass uses elsewhere rather than for exact equality.
+  llvm::StringMap<SmallVector<RotationSpecialization>> rotationSpecializations;
 };
 
 /**
@@ -311,19 +323,22 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
-    auto key = std::make_pair(funcOp.getName().str(), operand);
-    if (previousSpecializations.zeroSpecializations.contains(key)) {
-      updateSpecializedCall(callOp,
-                            previousSpecializations.zeroSpecializations.at(key),
-                            rewriter);
-      return true;
+    const auto calleeName = funcOp.getName();
+    if (const auto it =
+            previousSpecializations.zeroSpecializations.find(calleeName);
+        it != previousSpecializations.zeroSpecializations.end()) {
+      if (const auto cached = it->second.find(operand);
+          cached != it->second.end()) {
+        updateSpecializedCall(callOp, cached->second, rewriter);
+        return true;
+      }
     }
 
     auto newFunc =
         copyFunction(funcOp, funcOp.getName().str() + "_spec_zero_arg_" +
                                  std::to_string(operand));
     symbolTable.insert(newFunc);
-    previousSpecializations.zeroSpecializations.insert({key, newFunc});
+    previousSpecializations.zeroSpecializations[calleeName][operand] = newFunc;
 
     // Drop the whole run of operations that leave the |0> state alone, not just
     // the first one. Every iteration erases an operation, so this terminates.
@@ -381,19 +396,22 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
-    auto key = std::make_pair(funcOp.getName().str(), operand);
-    if (previousSpecializations.plusSpecializations.contains(key)) {
-      updateSpecializedCall(callOp,
-                            previousSpecializations.plusSpecializations.at(key),
-                            rewriter);
-      return true;
+    const auto calleeName = funcOp.getName();
+    if (const auto it =
+            previousSpecializations.plusSpecializations.find(calleeName);
+        it != previousSpecializations.plusSpecializations.end()) {
+      if (const auto cached = it->second.find(operand);
+          cached != it->second.end()) {
+        updateSpecializedCall(callOp, cached->second, rewriter);
+        return true;
+      }
     }
 
     auto newFunc =
         copyFunction(funcOp, funcOp.getName().str() + "_spec_plus_arg_" +
                                  std::to_string(operand));
     symbolTable.insert(newFunc);
-    previousSpecializations.plusSpecializations.insert({key, newFunc});
+    previousSpecializations.plusSpecializations[calleeName][operand] = newFunc;
 
     auto newParameter = newFunc.getArgument(operand);
     while (newParameter.hasOneUse() &&
@@ -441,12 +459,19 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
-    auto key = std::make_tuple(funcOp.getName().str(), operand, angle);
-    if (previousSpecializations.rotationSpecializations.contains(key)) {
-      updateSpecializedCall(
-          callOp, previousSpecializations.rotationSpecializations.at(key),
-          rewriter);
-      return true;
+    const auto calleeName = funcOp.getName();
+    if (const auto it =
+            previousSpecializations.rotationSpecializations.find(calleeName);
+        it != previousSpecializations.rotationSpecializations.end()) {
+      const auto* const cached =
+          llvm::find_if(it->second, [&](const RotationSpecialization& entry) {
+            return entry.operand == operand &&
+                   anglesAreEqual(entry.angle, angle);
+          });
+      if (cached != it->second.end()) {
+        updateSpecializedCall(callOp, cached->func, rewriter);
+        return true;
+      }
     }
 
     auto newFunc =
@@ -454,7 +479,9 @@ struct ContextSensitiveSpecializationPattern final
                                  std::to_string(operand));
     markRotationSpecialization(newFunc, operand, angle, rewriter);
     symbolTable.insert(newFunc);
-    previousSpecializations.rotationSpecializations.insert({key, newFunc});
+    previousSpecializations.rotationSpecializations[calleeName].emplace_back(
+        RotationSpecialization{
+            .operand = operand, .angle = angle, .func = newFunc});
 
     auto newParameter = newFunc.getArgument(operand);
     const OpBuilder::InsertionGuard guard(rewriter);

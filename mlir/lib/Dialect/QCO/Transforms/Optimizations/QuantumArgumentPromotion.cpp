@@ -8,10 +8,6 @@
  * Licensed under the MIT License
  */
 
-/**
- * @brief This pass performs quantum inter-procedural optimizations (IPO).
- */
-
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"

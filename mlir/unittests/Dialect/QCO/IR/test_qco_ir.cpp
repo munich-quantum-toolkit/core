@@ -214,6 +214,35 @@ TEST_F(QCOTest, BuilderRejectsMisuseOfAdditionalFunctions) {
       "Callee not found in module");
 }
 
+TEST_F(QCOTest, BuilderRejectsSignatureMismatchesOnAdditionalFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        Value bit;
+        auto qubit = args[0];
+        std::tie(qubit, bit) = builder.measure(qubit);
+        builder.sink(qubit);
+        // The function promises a qubit but hands back the measurement outcome.
+        builder.endFunction({bit});
+      },
+      "Return values do not match the declared function result types");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        builder.endFunction({args[0]});
+        // The callee expects a qubit, not a float.
+        builder.call("f", {builder.floatConstant(0.5)});
+      },
+      "Call operands do not match the declared function argument types");
+}
+
 TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
   EXPECT_DEATH(
       {

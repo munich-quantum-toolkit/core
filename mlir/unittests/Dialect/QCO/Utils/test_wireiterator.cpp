@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
@@ -239,11 +240,13 @@ INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),
  */
 TEST_F(WireIteratorTest, TraversalThroughThreadingCall) {
   qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
 
   const auto qubitType = builder.getQubitType();
   const auto floatType = builder.getF64Type();
   const auto bitType = builder.getI1Type();
+
+  // `main` hands the measurement outcome back, so it has to be typed for it.
+  builder.initialize({bitType});
 
   // The qubit is operand 0 but result 1, so pairing by raw index would pick the
   // classical result instead.
