@@ -27,7 +27,6 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -980,36 +979,33 @@ private:
     return {layouts[0], std::move(swaps[0]), std::move(swaps[1])};
   }
 
-  /// Return the "average" layout by computing the borda count, where each
-  /// layout is a voter and each hardware index counts as a candidate. One vote
-  /// is the order (the permutation) of program-to-hardware indices.
+  /// Compute a routing-friendly layout compromise between a range of layouts.
+  /// Using the first layout of the range as an anchor, the function repeatedly
+  /// nudges the current layout towards the next one using happy SWAP chains.
+  /// Inspired by SABRE and to reduce ordering bias, the function performs an
+  /// additional backward pass.
   template <typename Range>
-  Layout vote(Range layouts, const size_t niterations = 1) {
+  Layout driveby(Range layouts, const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
 
     FGraph f(*target);
     Layout curr(*(layouts.begin()));
 
-    for (size_t i = 0; i < niterations; ++i) {
-      for (const auto& layout : llvm::drop_begin(layouts)) {
-        f.reset();
-        f.construct(curr, layout);
-        if (const auto happy = f.findHappySWAPChain()) {
-          for (const auto& swap : *happy) {
-            curr.swap(swap.first, swap.second);
-          }
+    // Nudge curr towards target by applying a happy SWAP chain.
+    const auto merge = [&](const Layout& target) {
+      f.reset();
+      f.construct(curr, target);
+      if (const auto happy = f.findHappySWAPChain()) {
+        for (const auto& swap : *happy) {
+          curr.swap(swap.first, swap.second);
         }
       }
+    };
 
-      for (const auto& layout : llvm::drop_begin(llvm::reverse(layouts))) {
-        f.reset();
-        f.construct(curr, layout);
-        if (const auto happy = f.findHappySWAPChain()) {
-          for (const auto& swap : *happy) {
-            curr.swap(swap.first, swap.second);
-          }
-        }
-      }
+    // Perform multiple rounds of forward and backward drive-by's.
+    for (size_t i = 0; i < niterations; ++i) {
+      for_each(drop_begin(layouts), merge);
+      for_each(drop_begin(reverse(layouts)), merge);
     }
 
     return curr;
@@ -1478,15 +1474,15 @@ private:
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
-              auto winner = vote(map_range(
+              auto compromise = driveby(map_range(
                   children, [](const RoutingBundle& b) -> const Layout& {
                     return b.layout;
                   }));
               for (RoutingBundle& child : children) {
-                const auto swaps = restore(child.layout, winner);
+                const auto swaps = restore(child.layout, compromise);
                 insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
               }
-              return winner;
+              return compromise;
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
