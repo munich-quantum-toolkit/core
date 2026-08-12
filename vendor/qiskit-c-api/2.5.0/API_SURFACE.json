@@ -506,7 +506,7 @@
     },
     "qk_import": {
       "capsule": null,
-      "declaration": "static int qk_import(void) { PyObject *accelerate = PyImport_ImportModule(\"qiskit._accelerate\");"
+      "declaration": "static int qk_import(void);"
     },
     "qk_param_as_real": {
       "capsule": {
