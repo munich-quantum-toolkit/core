@@ -307,6 +307,13 @@ openQASM2UMatrix(const double theta, const double phi, const double lambda) {
       return static_cast<double>(integerValue.getInt());
     }
   }
+  if (auto conversion = value.getDefiningOp<arith::UIToFPOp>()) {
+    if (auto integer = conversion.getIn().getDefiningOp<arith::ConstantOp>()) {
+      if (const auto attribute = dyn_cast<IntegerAttr>(integer.getValue())) {
+        return static_cast<double>(attribute.getValue().getZExtValue());
+      }
+    }
+  }
   if (auto add = value.getDefiningOp<arith::AddFOp>()) {
     const auto lhs = evaluateScalar(add.getLhs());
     const auto rhs = evaluateScalar(add.getRhs());
@@ -486,8 +493,9 @@ TEST(QASM3TranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
   constexpr double phi = -0.29;
   constexpr double lambda = 0.83;
   constexpr double gamma = -0.41;
+  const auto normalizedPhi = phi + (2.0 * std::numbers::pi);
   const auto qasm3U = openQASM3UMatrix(theta, phi, lambda);
-  const auto qasm2U = openQASM2UMatrix(theta, phi, lambda);
+  const auto qasm2U = openQASM2UMatrix(theta, normalizedPhi, lambda);
 
   struct OneQubitCase {
     llvm::StringRef source;
@@ -500,7 +508,8 @@ TEST(QASM3TranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
        .expected = qasm2U},
       {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
                  "u2(-0.29, 0.83) q;",
-       .expected = openQASM2UMatrix(std::numbers::pi / 2.0, phi, lambda)},
+       .expected =
+           openQASM2UMatrix(std::numbers::pi / 2.0, normalizedPhi, lambda)},
       {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
                  "u3(0.37, -0.29, 0.83) q;",
        .expected = qasm2U},
@@ -728,8 +737,12 @@ static Value expressionArithmetic(qc::QCProgramBuilder& b) {
 static Value expressionUnaryMinus(qc::QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
-  b.rx(-0.5, q);
-  b.ry(-(1.0 + 2.0), q);
+  // OpenQASM gate parameters cross the angle[64] boundary, whose canonical
+  // representative is in [0, 2pi). Use that exact rounded representation in
+  // this structural equivalence oracle; the negative angles are physically
+  // equivalent but not bit-identical after floating-point materialization.
+  b.rx((2.0 * std::numbers::pi) - 0.5, q);
+  b.ry((2.0 * std::numbers::pi) - (1.0 + 2.0), q);
   b.rz(-(-0.25), q);
   return measureToRegister(b, {q});
 }
@@ -753,7 +766,7 @@ static Value expressionMathFunctions(qc::QCProgramBuilder& b) {
   b.rx(std::exp(0.5), q);
   b.rx(std::numbers::ln2, q);
   b.rx(std::fmod(5.5, 2.0), q);
-  b.rx(std::pow(2.0, 3.0), q);
+  b.rx(std::fmod(std::pow(2.0, 3.0), 2.0 * std::numbers::pi), q);
   b.rx(std::sin(0.5), q);
   b.rx(std::numbers::sqrt2, q);
   b.rx(std::tan(0.5), q);
@@ -792,7 +805,7 @@ expressionConstIntArithmetic(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(8);
   b.h(q[3]);
   b.h(q[5]);
-  b.rx(8.0, q[3]);
+  b.rx(std::fmod(8.0, 2.0 * std::numbers::pi), q[3]);
   return {measureToRegister(b, {q[3], q[5]})};
 }
 

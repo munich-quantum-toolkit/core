@@ -14,7 +14,8 @@ add_mlir_library(
   OpenQASMSemantics.cpp
   OpenQASMSyntax.cpp
   LINK_LIBS
-  LLVMSupport)
+  LLVMSupport
+  MLIRMQTAngleUtils)
 
 mqt_mlir_target_use_project_options(MLIROpenQASMFrontend)
 

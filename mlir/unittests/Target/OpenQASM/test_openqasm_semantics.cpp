@@ -9,6 +9,7 @@
  */
 
 #include "OpenQASMTestUtils.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -30,6 +31,564 @@ using namespace mlir;
 using namespace mlir::oq3::test;
 
 namespace {
+
+TEST(OpenQASMFrontendTest, ResolvesFixedWidthAngleConstantsAndCasts) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+const float[64] halfway = 6.283185307179586 * (127.0 / 512.0);
+angle[8] tied = angle[8](halfway);
+angle[8] exact = angle[8](bit[8](uint[8](64)));
+qubit q;
+rx(tied) q;
+ry(exact) q;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_EQ(analyzed.program->scalars.size(), 2);
+  EXPECT_EQ(analyzed.program->scalars[0].type,
+            oq3::frontend::ScalarType::Angle);
+  EXPECT_EQ(analyzed.program->scalars[0].bitWidth, 8);
+
+  for (const auto statement : analyzed.program->body) {
+    const auto* declaration =
+        std::get_if<oq3::frontend::ScalarDeclarationStatement>(
+            &analyzed.program->statements[statement].data);
+    if (declaration == nullptr) {
+      continue;
+    }
+    ASSERT_TRUE(declaration->initializer);
+    const auto& initializer =
+        analyzed.program->expressions[*declaration->initializer];
+    ASSERT_EQ(initializer.kind, oq3::frontend::ExpressionKind::Constant);
+    EXPECT_EQ(initializer.type, oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(initializer.bitWidth, 8);
+    EXPECT_EQ(std::get<uint64_t>(initializer.constant), 64);
+  }
+}
+
+TEST(OpenQASMFrontendTest, ImplementsFixedWidthAngleRingAndResizeSemantics) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+angle unsized = angle(bit[64](uint[64](1)));
+angle[4] wrapped = angle[4](bit[4](uint[4](15))) +
+                   angle[4](bit[4](uint[4](1)));
+angle[8] promoted = angle[4](bit[4](uint[4](15))) +
+                    angle[8](bit[8](uint[8](1)));
+angle[4] negated = -angle[4](bit[4](uint[4](1)));
+angle[4] product = angle[4](bit[4](uint[4](3))) * uint[4](2);
+angle[4] quotient = angle[4](bit[4](uint[4](7))) / uint[4](2);
+angle[4] literal_product = angle[4](bit[4](uint[4](3))) * 2;
+angle[4] literal_left_product = 2 * angle[4](bit[4](uint[4](3)));
+angle[4] literal_quotient = angle[4](bit[4](uint[4](7))) / 2;
+uint[4] ratio = angle[4](bit[4](uint[4](6))) /
+                angle[4](bit[4](uint[4](2)));
+angle[8] widened = angle[8](angle[4](bit[4](uint[4](3))));
+angle[4] rounded_even = angle[4](angle[8](bit[8](uint[8](40))));
+angle[4] rounded_odd = angle[4](angle[8](bit[8](uint[8](56))));
+angle[4] bitwise = angle[4](bit[4](uint[4](10))) ^
+                   angle[4](bit[4](uint[4](3)));
+angle[4] shifted = angle[4](bit[4](uint[4](3))) << 1;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  constexpr std::array<oq3::frontend::ScalarType, 15> expectedTypes{
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Uint,
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Angle};
+  constexpr std::array<uint32_t, 15> expectedWidths{64, 4, 8, 4, 4, 4, 4, 4,
+                                                    4,  4, 8, 4, 4, 4, 4};
+  constexpr std::array<uint64_t, 15> expectedValues{1, 0, 241, 15, 6, 3, 6, 6,
+                                                    3, 3, 48,  2,  4, 9, 6};
+
+  size_t declarationIndex = 0;
+  for (const auto statement : analyzed.program->body) {
+    const auto* declaration =
+        std::get_if<oq3::frontend::ScalarDeclarationStatement>(
+            &analyzed.program->statements[statement].data);
+    ASSERT_NE(declaration, nullptr);
+    ASSERT_TRUE(declaration->initializer);
+    const auto& initializer =
+        analyzed.program->expressions[*declaration->initializer];
+    ASSERT_EQ(initializer.kind, oq3::frontend::ExpressionKind::Constant);
+    ASSERT_LT(declarationIndex, expectedValues.size());
+    EXPECT_EQ(initializer.type, expectedTypes[declarationIndex]);
+    EXPECT_EQ(initializer.bitWidth, expectedWidths[declarationIndex]);
+    EXPECT_EQ(std::get<uint64_t>(initializer.constant),
+              expectedValues[declarationIndex]);
+    ++declarationIndex;
+  }
+  EXPECT_EQ(declarationIndex, expectedValues.size());
+}
+
+TEST(OpenQASMFrontendTest, FoldsFixedWidthScalarCastAndBitPatternMatrix) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+angle[8] quarter = angle[8](bit[8](uint[8](64)));
+angle[8] half = angle[8](bit[8](uint[8](128)));
+bool angle_nonzero = bool(angle[8](bit[8](uint[8](64))));
+float sine = sin(angle[8](bit[8](uint[8](64))));
+bool less = angle[8](bit[8](uint[8](64))) <
+            angle[8](bit[8](uint[8](128)));
+bool equal = angle[8](bit[8](uint[8](64))) ==
+             angle[8](bit[8](uint[8](64)));
+bool greater = angle[8](bit[8](uint[8](128))) >
+               angle[8](bit[8](uint[8](64)));
+int signed_value = -1;
+uint[64] int_bits = uint[64](bit[64](signed_value));
+bool float_nonzero = bool(0.5);
+uint[8] float_to_uint = uint[8](3.5);
+uint[8] bool_to_uint = uint[8](true);
+int float_to_int = int(3.5);
+int bool_to_int = int(true);
+int uint_to_int = int(uint[8](3));
+angle[8] inverted = ~angle[8](bit[8](uint[8](64)));
+angle[8] conjunction = angle[8](bit[8](uint[8](64))) &
+                       angle[8](bit[8](uint[8](128)));
+angle[8] disjunction = angle[8](bit[8](uint[8](64))) |
+                       angle[8](bit[8](uint[8](128)));
+angle[8] shifted = angle[8](bit[8](uint[8](128))) >> 1;
+angle[8] rotated_negative =
+    rotl(angle[8](bit[8](uint[8](64))), -1);
+angle[8] rotated_full = rotl(angle[8](bit[8](uint[8](64))), 8);
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_EQ(analyzed.program->body.size(), 21);
+
+  for (const auto index : std::array<size_t, 5>{2, 4, 5, 6, 9}) {
+    const auto statement = analyzed.program->body[index];
+    const auto& declaration =
+        std::get<oq3::frontend::ScalarDeclarationStatement>(
+            analyzed.program->statements[statement].data);
+    ASSERT_TRUE(declaration.conditionInitializer);
+    const auto& condition =
+        analyzed.program->conditions[*declaration.conditionInitializer];
+    EXPECT_EQ(condition.kind, oq3::frontend::ConditionKind::Literal);
+    EXPECT_TRUE(condition.literal);
+  }
+
+  constexpr std::array<uint64_t, 6> expectedAngleValues{191, 0,  192,
+                                                        64,  32, 64};
+  for (const auto [offset, expected] : llvm::enumerate(expectedAngleValues)) {
+    const auto statement = analyzed.program->body[15 + offset];
+    const auto& declaration =
+        std::get<oq3::frontend::ScalarDeclarationStatement>(
+            analyzed.program->statements[statement].data);
+    ASSERT_TRUE(declaration.initializer);
+    const auto& initializer =
+        analyzed.program->expressions[*declaration.initializer];
+    EXPECT_EQ(initializer.kind, oq3::frontend::ExpressionKind::Constant);
+    EXPECT_EQ(initializer.type, oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(std::get<uint64_t>(initializer.constant), expected);
+  }
+}
+
+TEST(OpenQASMFrontendTest, PromotesRuntimeAngleLiteralOperands) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] theta;
+output angle[8] product_right;
+output angle[8] product_left;
+output angle[8] shifted;
+product_right = theta * 2;
+product_left = 2 * theta;
+shifted = theta << 1;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_EQ(analyzed.program->outputs.size(), 3);
+  for (const auto output : analyzed.program->outputs) {
+    EXPECT_EQ(analyzed.program->scalars[output.symbol].type,
+              oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(analyzed.program->scalars[output.symbol].bitWidth, 8);
+  }
+}
+
+TEST(OpenQASMFrontendTest, PromotesMixedWidthAngleBitwiseOperands) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[4] narrow;
+input angle[8] wide;
+output angle[8] conjunction;
+output angle[8] disjunction;
+output angle[8] exclusive;
+conjunction = narrow & wide;
+disjunction = narrow | wide;
+exclusive = narrow ^ wide;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  for (const auto output : analyzed.program->outputs) {
+    EXPECT_EQ(analyzed.program->scalars[output.symbol].type,
+              oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(analyzed.program->scalars[output.symbol].bitWidth, 8);
+  }
+  size_t assignments = 0;
+  for (const auto statementId : analyzed.program->body) {
+    const auto* assignment =
+        std::get_if<oq3::frontend::ScalarAssignmentStatement>(
+            &analyzed.program->statements[statementId].data);
+    if (assignment == nullptr) {
+      continue;
+    }
+    ++assignments;
+    ASSERT_TRUE(assignment->value);
+    const auto& operation = analyzed.program->expressions[*assignment->value];
+    EXPECT_EQ(operation.type, oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(operation.bitWidth, 8);
+    const auto& lhs = analyzed.program->expressions[operation.lhs];
+    const auto& rhs = analyzed.program->expressions[operation.rhs];
+    EXPECT_EQ(lhs.type, oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(rhs.type, oq3::frontend::ScalarType::Angle);
+    EXPECT_EQ(lhs.bitWidth, 8);
+    EXPECT_EQ(rhs.bitWidth, 8);
+    EXPECT_EQ(lhs.kind, oq3::frontend::ExpressionKind::Cast);
+  }
+  EXPECT_EQ(assignments, 3);
+}
+
+TEST(OpenQASMFrontendTest, PreservesAngleCompoundDivisionAssignment) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] rhs;
+output angle[8] quotient;
+quotient = angle[8](1.0);
+quotient /= rhs;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  const auto assignmentId = analyzed.program->body.back();
+  const auto& assignment = std::get<oq3::frontend::ScalarAssignmentStatement>(
+      analyzed.program->statements[assignmentId].data);
+  ASSERT_TRUE(assignment.value);
+  const auto& bitCast = analyzed.program->expressions[*assignment.value];
+  EXPECT_EQ(bitCast.kind, oq3::frontend::ExpressionKind::Cast);
+  EXPECT_EQ(bitCast.type, oq3::frontend::ScalarType::Angle);
+  EXPECT_TRUE(bitCast.bitPatternCast);
+  const auto& division = analyzed.program->expressions[bitCast.lhs];
+  EXPECT_EQ(division.kind, oq3::frontend::ExpressionKind::Divide);
+  EXPECT_EQ(division.type, oq3::frontend::ScalarType::Uint);
+  EXPECT_EQ(division.bitWidth, 8);
+
+  const auto invalid = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; input angle[16] rhs; angle[8] lhs = "
+      "angle[8](1.0); lhs /= rhs;");
+  ASSERT_FALSE(invalid);
+  ASSERT_FALSE(invalid.diagnostics.empty());
+  EXPECT_NE(invalid.diagnostics.front().message.find("equal-width"),
+            std::string::npos);
+
+  const auto explicitlyResized = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; input angle[4] rhs; angle[8] lhs = "
+      "angle[8](1.0); lhs /= angle[8](rhs);");
+  EXPECT_TRUE(explicitlyResized)
+      << explicitlyResized.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, EnforcesAngleCompoundAssignmentWidths) {
+  constexpr auto operators =
+      std::to_array<llvm::StringLiteral>({"+=", "-=", "&=", "|=", "^="});
+  for (const auto operation : operators) {
+    const auto source =
+        (llvm::Twine("OPENQASM 3.1; input angle[4] rhs; angle[8] lhs = ") +
+         "angle[8](1.0); lhs " + operation + " rhs;")
+            .str();
+    const auto invalid = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(invalid) << source;
+    ASSERT_FALSE(invalid.diagnostics.empty());
+    EXPECT_NE(invalid.diagnostics.front().message.find("equal-width"),
+              std::string::npos)
+        << source;
+
+    const auto explicitSource =
+        (llvm::Twine("OPENQASM 3.1; input angle[4] rhs; angle[8] lhs = ") +
+         "angle[8](1.0); lhs " + operation + " angle[8](rhs);")
+            .str();
+    const auto valid = oq3::frontend::analyzeOpenQASM(explicitSource);
+    EXPECT_TRUE(valid) << explicitSource << '\n'
+                       << valid.diagnostics.front().message;
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidDynamicScalarOperations) {
+  constexpr auto invalidSources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; input float value; uint[64] bits = bit[64](value);",
+      "OPENQASM 3.1; input uint[8] bits; angle[8] a = angle[8](bits);",
+      "OPENQASM 3.1; input angle[8] a; uint[8] u = uint[8](a);",
+      "OPENQASM 3.1; input float f; uint count = popcount(f);",
+      "OPENQASM 3.1; input float f; float value = rotl(f, 1);",
+      "OPENQASM 3.1; input uint[8] u; uint[8] value = rotl(u, uint(1));",
+      "OPENQASM 3.1; input float f; float value = ~f;",
+      "OPENQASM 3.1; input uint[8] u; uint[8] value = u << -1;",
+      "OPENQASM 3.1; input uint[8] a; input uint[4] b; "
+      "uint[8] value = a & b;",
+      "OPENQASM 3.1; input angle[8] a; input int n; "
+      "angle[8] value = a * n;",
+      "OPENQASM 3.1; input angle[8] a; input int n; "
+      "angle[8] value = a / n;",
+      "OPENQASM 3.1; input angle[8] a; angle[8] value = a % a;",
+      "OPENQASM 3.1; input uint width; uint[width] value;",
+      "OPENQASM 3.1; uint[1.0] value;",
+      "OPENQASM 3.1; gate g q { input uint value; }",
+  });
+  for (const auto& source : invalidSources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
+TEST(OpenQASMFrontendTest, PromotesIntegerLiteralsForGateAngleDivision) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+gate half(theta) q {
+  U(0, 0, theta / 2) q;
+}
+qubit q;
+half(pi / 2) q;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_FALSE(analyzed.program->gates.empty());
+  const auto& gate = analyzed.program->gates.front();
+  ASSERT_FALSE(gate.body.empty());
+  const auto& statement = analyzed.program->statements[gate.body.front()];
+  const auto& invocation =
+      std::get<oq3::frontend::GateApplication>(statement.data);
+  ASSERT_EQ(invocation.parameters.size(), 3);
+  const auto& expression =
+      analyzed.program->expressions[invocation.parameters.back()];
+  EXPECT_EQ(expression.kind, oq3::frontend::ExpressionKind::Divide);
+  EXPECT_EQ(expression.type, oq3::frontend::ScalarType::Angle);
+  EXPECT_EQ(expression.bitWidth, 64);
+  const auto& divisor = analyzed.program->expressions[expression.rhs];
+  EXPECT_EQ(divisor.kind, oq3::frontend::ExpressionKind::Cast);
+  EXPECT_EQ(divisor.type, oq3::frontend::ScalarType::Uint);
+  EXPECT_EQ(divisor.bitWidth, 64);
+  const auto& literal = analyzed.program->expressions[divisor.lhs];
+  EXPECT_EQ(literal.kind, oq3::frontend::ExpressionKind::Constant);
+  EXPECT_EQ(literal.type, oq3::frontend::ScalarType::Int);
+  EXPECT_EQ(std::get<int64_t>(literal.constant), 2);
+}
+
+TEST(OpenQASMFrontendTest, RejectsIntegerGateAngleAddition) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+gate shifted(theta) q {
+  rx(theta + 1) q;
+}
+)qasm";
+
+  const auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find(
+                "angle addition and subtraction require angle operands"),
+            std::string::npos);
+}
+
+TEST(OpenQASMFrontendTest, ImplementsScalarUintAndAngleBitBuiltins) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+angle[8] left = rotl(angle[8](pi), 1);
+angle[8] right = rotr(angle[8](pi), 1);
+uint count = popcount(angle[8](pi));
+uint[8] rotated_uint = rotl(uint[8](129), 1);
+angle[8] large = angle[8](1.0e20);
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  constexpr std::array<oq3::frontend::ScalarType, 5> expectedTypes{
+      oq3::frontend::ScalarType::Angle, oq3::frontend::ScalarType::Angle,
+      oq3::frontend::ScalarType::Uint, oq3::frontend::ScalarType::Uint,
+      oq3::frontend::ScalarType::Angle};
+  constexpr std::array<uint32_t, 5> expectedWidths{8, 8, 64, 8, 8};
+  constexpr std::array<uint64_t, 5> expectedValues{1, 64, 1, 3, 77};
+
+  for (size_t index = 0; index < analyzed.program->body.size(); ++index) {
+    const auto statement = analyzed.program->body[index];
+    const auto& declaration =
+        std::get<oq3::frontend::ScalarDeclarationStatement>(
+            analyzed.program->statements[statement].data);
+    ASSERT_TRUE(declaration.initializer);
+    const auto& initializer =
+        analyzed.program->expressions[*declaration.initializer];
+    EXPECT_EQ(initializer.kind, oq3::frontend::ExpressionKind::Constant);
+    EXPECT_EQ(initializer.type, expectedTypes[index]);
+    EXPECT_EQ(initializer.bitWidth, expectedWidths[index]);
+    EXPECT_EQ(std::get<uint64_t>(initializer.constant), expectedValues[index]);
+  }
+}
+
+TEST(OpenQASMFrontendTest, SupportsAngleBitRegisterCastsAndIndexing) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] source;
+qubit[8] q;
+bit[8] measured = measure q;
+output angle[8] packed;
+packed = angle[8](measured);
+output bit[8] unpacked;
+unpacked = bit[8](source);
+output bit selected;
+selected = source[-1];
+output bool any;
+any = bool(measured);
+)qasm";
+
+  const auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->expressions, [](const auto& value) {
+        return value.kind == oq3::frontend::ExpressionKind::BitVectorCast;
+      }));
+  EXPECT_TRUE(llvm::any_of(
+      analyzed.program->bitVectorExpressions, [](const auto& value) {
+        return value.kind == oq3::frontend::BitVectorExpressionKind::ScalarCast;
+      }));
+  EXPECT_TRUE(llvm::any_of(
+      analyzed.program->bitVectorExpressions, [](const auto& value) {
+        return value.kind ==
+               oq3::frontend::BitVectorExpressionKind::ScalarExtract;
+      }));
+}
+
+TEST(OpenQASMFrontendTest, FoldsConstantScalarBitIndexing) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+const angle[8] half_turn = pi;
+const uint[8] two = 2;
+output bit angle_msb;
+angle_msb = half_turn[-1];
+output bit uint_bit;
+uint_bit = two[1];
+)qasm";
+
+  const auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_GE(
+      llvm::count_if(
+          analyzed.program->bitVectorExpressions,
+          [&](const auto& value) {
+            return value.kind ==
+                       oq3::frontend::BitVectorExpressionKind::ScalarCast &&
+                   analyzed.program->expressions[value.scalar].kind ==
+                       oq3::frontend::ExpressionKind::Constant &&
+                   std::get<bool>(
+                       analyzed.program->expressions[value.scalar].constant);
+          }),
+      2);
+}
+
+TEST(OpenQASMFrontendTest, RejectsMismatchedAngleBitCastsAndIndices) {
+  constexpr std::array invalidSources{
+      "OPENQASM 3.1; input angle[8] a; output bit[4] b; b = bit[4](a);",
+      "OPENQASM 3.1; qubit[4] q; bit[4] b = measure q; output angle[8] a; "
+      "a = angle[8](b);",
+      "OPENQASM 3.1; input angle[8] a; output bit b; b = a[8];",
+      "OPENQASM 3.1; input angle[8] a; input int i; output bool b; b = a < i;",
+      "OPENQASM 3.1; input angle[8] a; input uint[8] u; output bool b; "
+      "b = a == u;",
+      "OPENQASM 3.1; const angle[8] a = pi; bool b = a == 1;",
+      "OPENQASM 3.1; const angle[8] a = pi; bool b = a == uint[8](1);",
+      "OPENQASM 3.1; input angle[8] a; bool b = a[7];",
+      "OPENQASM 3.1; qubit[8] q; bit[8] b = measure q; "
+      "angle[8] a = angle[8](uint[8](b));",
+  };
+  for (const auto* const source : invalidSources) {
+    SCOPED_TRACE(source);
+    const auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    EXPECT_FALSE(analyzed);
+    EXPECT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
+TEST(OpenQASMFrontendTest, AppliesUnsignedAngleComparisonsAndTrigRules) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+angle[4] low = angle[4](bit[4](uint[4](1)));
+angle[8] high = angle[8](bit[8](uint[8](32)));
+bool less = low < high;
+float sine = sin(low);
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+
+  const auto& comparisonDeclaration =
+      std::get<oq3::frontend::ScalarDeclarationStatement>(
+          analyzed.program->statements[2].data);
+  ASSERT_TRUE(comparisonDeclaration.conditionInitializer);
+  const auto& comparison =
+      analyzed.program->conditions[*comparisonDeclaration.conditionInitializer];
+  EXPECT_EQ(comparison.kind, oq3::frontend::ConditionKind::Comparison);
+  EXPECT_EQ(comparison.comparison, oq3::frontend::ComparisonKind::Less);
+  const auto& comparisonLhs =
+      analyzed.program->expressions[comparison.comparisonLhs];
+  const auto& comparisonRhs =
+      analyzed.program->expressions[comparison.comparisonRhs];
+  EXPECT_EQ(comparisonLhs.type, oq3::frontend::ScalarType::Angle);
+  EXPECT_EQ(comparisonRhs.type, oq3::frontend::ScalarType::Angle);
+  EXPECT_EQ(comparisonLhs.bitWidth, 8);
+  EXPECT_EQ(comparisonRhs.bitWidth, 8);
+
+  const auto& trigDeclaration =
+      std::get<oq3::frontend::ScalarDeclarationStatement>(
+          analyzed.program->statements[3].data);
+  ASSERT_TRUE(trigDeclaration.initializer);
+  const auto& trig =
+      analyzed.program->expressions[*trigDeclaration.initializer];
+  EXPECT_EQ(trig.type, oq3::frontend::ScalarType::Float);
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidAngleCastsAndNonFiniteConstants) {
+  constexpr auto invalidSources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; angle[8] a = angle[8](bit[4](uint[4](1)));",
+      "OPENQASM 3.1; angle[8] a = angle[8](bit[8](uint[8](1))); "
+      "float f = float(a);",
+      "OPENQASM 3.1; angle[8] a = angle[8](bit[8](uint[8](1))); "
+      "uint[8] u = uint[8](a);",
+      "OPENQASM 3.1; angle[8] a = angle[8](sqrt(-1.0));",
+      "OPENQASM 3.1; angle[8] a = angle[8](exp(10000.0));",
+      "OPENQASM 3.1; angle[8] a = angle[8](pi); angle[8] b = a + 1.0;",
+      "OPENQASM 3.1; angle[8] a = angle[8](pi); angle[8] b = a + 1;",
+      "OPENQASM 3.1; angle[8] a = rotl(angle[8](pi), uint(1));",
+      "OPENQASM 3.1; uint n = popcount(1.0);",
+      "OPENQASM 3.1; float[32] f;",
+      "OPENQASM 3.1; bool b = bool[8](true);",
+  });
+  for (const auto source : invalidSources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsUnsupportedAngleWidths) {
+  for (const auto* const source :
+       {"OPENQASM 3.1; angle[0] a;", "OPENQASM 3.1; angle[65] a;"}) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("scalar width"),
+              std::string::npos);
+  }
+}
 
 TEST(OpenQASMFrontendTest, SemanticAnalysisIsIndependentOfMLIR) {
   auto parsed = oq3::frontend::parseOpenQASM(BROADCAST_PROGRAM);
@@ -61,7 +620,7 @@ int[32] counter;
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(analyzed.diagnostics.front().message.find("Integer declarations"),
+  EXPECT_NE(analyzed.diagnostics.front().message.find("default width"),
             std::string::npos);
 }
 
@@ -392,9 +951,6 @@ vector[0] = scalar;
 TEST(OpenQASMFrontendTest, RejectsInvalidBitVectorBuiltinUses) {
   const std::vector<llvm::StringLiteral> invalidSources{
       "OPENQASM 3.1; qubit q; uint n = popcount(q);",
-      "OPENQASM 3.1; bit value = true; uint n = popcount(value);",
-      "OPENQASM 3.1; bit value = true; value = rotl(value, 1);",
-      "OPENQASM 3.1; bit value = true; value = rotr(value, -1);",
       R"qasm(OPENQASM 3.1;
 bit[2] value;
 value[0] = false;
@@ -419,6 +975,18 @@ target = rotr(source, 1);
       "OPENQASM 3.1; bit[2] value; value = rotl(value);"));
   EXPECT_FALSE(oq3::frontend::parseOpenQASM(
       "OPENQASM 3.1; bit[2] value; uint n = popcount(value, 1);"));
+}
+
+TEST(OpenQASMFrontendTest, SupportsScalarBitBuiltins) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+bit value = true;
+uint population = popcount(value);
+value = rotl(value, 1);
+value = rotr(value, -1);
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 
 TEST(OpenQASMFrontendTest, InvalidatesPopcountIndexFactsOnBitMutation) {
@@ -768,11 +1336,9 @@ if (mixed_order) { x q; }
       ASSERT_EQ(application->parameters.size(), 1);
       const auto& parameter =
           analyzed.program->expressions[application->parameters.front()];
-      ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Cast);
+      ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Constant);
       ASSERT_EQ(parameter.type, oq3::frontend::ScalarType::Angle);
-      const auto& operand = analyzed.program->expressions[parameter.lhs];
-      sawWrappedParameter = operand.type == oq3::frontend::ScalarType::Uint &&
-                            std::get<uint64_t>(operand.constant) == 0;
+      sawWrappedParameter = std::get<uint64_t>(parameter.constant) == 0;
     }
     if (const auto* conditional =
             std::get_if<oq3::frontend::IfStatement>(&data)) {
@@ -818,8 +1384,8 @@ if (operand >= 9.0) { x q; }
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 
-  constexpr std::array<uint64_t, 8> expectedParameters{13, 5, 36, 2,
-                                                       1,  1, 81, 81};
+  constexpr std::array<double, 8> expectedParameters{13, 5, 36, 2,
+                                                     1,  1, 81, 81};
   size_t parameterIndex = 0;
   size_t trueConditions = 0;
   for (const auto statement : analyzed.program->body) {
@@ -831,13 +1397,12 @@ if (operand >= 9.0) { x q; }
       ASSERT_EQ(application->parameters.size(), 1);
       const auto& parameter =
           analyzed.program->expressions[application->parameters.front()];
-      ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Cast);
+      ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Constant);
       ASSERT_EQ(parameter.type, oq3::frontend::ScalarType::Angle);
-      const auto& operand = analyzed.program->expressions[parameter.lhs];
-      ASSERT_EQ(operand.kind, oq3::frontend::ExpressionKind::Constant);
-      ASSERT_EQ(operand.type, oq3::frontend::ScalarType::Uint);
-      EXPECT_EQ(std::get<uint64_t>(operand.constant),
-                expectedParameters[parameterIndex]);
+      const auto expected =
+          mqt::angle::quantize(expectedParameters[parameterIndex], 64);
+      ASSERT_TRUE(expected);
+      EXPECT_EQ(std::get<uint64_t>(parameter.constant), *expected);
       ++parameterIndex;
     }
     if (const auto* conditional =

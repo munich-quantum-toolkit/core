@@ -98,6 +98,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("creg", TokenKind::CReg)
       .Case("gate", TokenKind::Gate)
       .Case("opaque", TokenKind::Opaque)
+      .Case("input", TokenKind::Input)
       .Case("output", TokenKind::Output)
       .Case("barrier", TokenKind::Barrier)
       .Case("reset", TokenKind::Reset)
@@ -128,8 +129,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Cases("extern", "box", "let", "break", "continue",
              TokenKind::UnsupportedKeyword)
       .Cases("end", "return", TokenKind::UnsupportedKeyword)
-      .Cases("pragma", "input", "readonly", "mutable",
-             TokenKind::UnsupportedKeyword)
+      .Cases("pragma", "readonly", "mutable", TokenKind::UnsupportedKeyword)
       .Cases("complex", "array", "void", "stretch",
              TokenKind::UnsupportedKeyword)
       .Cases("durationof", "delay", "im", TokenKind::UnsupportedKeyword)

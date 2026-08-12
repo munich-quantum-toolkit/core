@@ -55,14 +55,18 @@ QCProgramBuilder::QCProgramBuilder(
   ctx->loadDialect<QCDialect>();
 }
 
-void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
+void QCProgramBuilder::initialize() { initialize({}, {getI64Type()}); }
 
 void QCProgramBuilder::initialize(TypeRange returnTypes) {
+  initialize({}, returnTypes);
+}
+
+void QCProgramBuilder::initialize(TypeRange inputTypes, TypeRange returnTypes) {
   // Set insertion point to the module body
   setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, returnTypes);
+  auto funcType = getFunctionType(inputTypes, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -70,8 +74,8 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
   mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
 
   // Create entry block and set insertion point
-  auto& entryBlock = mainFunc.getBody().emplaceBlock();
-  setInsertionPointToStart(&entryBlock);
+  auto* entryBlock = mainFunc.addEntryBlock();
+  setInsertionPointToStart(entryBlock);
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {

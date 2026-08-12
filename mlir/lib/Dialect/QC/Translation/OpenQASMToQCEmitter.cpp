@@ -13,6 +13,8 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/OpenQASMAttributes.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -42,6 +44,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <bit>
 #include <cassert>
 #include <cstddef>
@@ -129,7 +132,20 @@ public:
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
                      memref::MemRefDialect, scf::SCFDialect, ub::UBDialect>();
     builder.setListener(&emissionBudget);
-    builder.initialize();
+    SmallVector<Type> inputTypes;
+    for (const auto& scalar : program.scalars) {
+      if (scalar.input) {
+        inputTypes.push_back(scalarType(scalar));
+      }
+    }
+    builder.initialize(inputTypes, {builder.getI64Type()});
+    size_t inputIndex = 0;
+    for (const auto [index, scalar] : llvm::enumerate(program.scalars)) {
+      if (scalar.input) {
+        scalarValues[index] =
+            builder.getInsertionBlock()->getArgument(inputIndex++);
+      }
+    }
     for (const auto& gate : program.gates) {
       customGateIndex.try_emplace(gate.name, &gate);
     }
@@ -195,6 +211,7 @@ public:
     if (emissionBudget.isExhausted()) {
       return nullptr;
     }
+    attachInterfaceMetadata(*moduleOp);
     return moduleOp;
   }
 
@@ -235,6 +252,52 @@ private:
 
   static constexpr size_t PROJECTED_EMISSION_LIMIT =
       EmissionBudget::OPERATION_LIMIT;
+
+  [[nodiscard]] static StringRef
+  scalarKindName(const frontend::ScalarType type) {
+    switch (type) {
+    case frontend::ScalarType::Bool:
+      return "bool";
+    case frontend::ScalarType::Int:
+      return "int";
+    case frontend::ScalarType::Uint:
+      return "uint";
+    case frontend::ScalarType::Float:
+      return "float";
+    case frontend::ScalarType::Angle:
+      return "angle";
+    }
+    llvm_unreachable("unknown scalar type");
+  }
+
+  [[nodiscard]] DictionaryAttr
+  interfaceMetadata(const frontend::ScalarDeclaration& scalar) const {
+    Builder attributes(&context);
+    return attributes.getDictionaryAttr(
+        {{attributes.getStringAttr("kind"),
+          attributes.getStringAttr(scalarKindName(scalar.type))},
+         {attributes.getStringAttr("name"),
+          attributes.getStringAttr(scalar.name)}});
+  }
+
+  void attachInterfaceMetadata(ModuleOp moduleOp) const {
+    auto function = *moduleOp.getOps<func::FuncOp>().begin();
+    size_t argumentIndex = 0;
+    for (const auto& scalar : program.scalars) {
+      if (scalar.input) {
+        function.setArgAttr(argumentIndex++, openqasm::SCALAR_ATTR,
+                            interfaceMetadata(scalar));
+      }
+    }
+    for (const auto [resultIndex, output] : llvm::enumerate(program.outputs)) {
+      if (output.kind != frontend::OutputKind::Scalar) {
+        continue;
+      }
+      const auto& scalar = program.scalars.at(output.symbol);
+      function.setResultAttr(resultIndex, openqasm::SCALAR_ATTR,
+                             interfaceMetadata(scalar));
+    }
+  }
 
   [[nodiscard]] static bool
   isExactlyRepresentableAsDouble(const uint64_t magnitude) {
@@ -370,15 +433,44 @@ private:
     case frontend::ExpressionKind::GateParameter:
     case frontend::ExpressionKind::Variable:
       return remember(0);
-    case frontend::ExpressionKind::Cast:
-      return remember(unary(1));
+    case frontend::ExpressionKind::BitVectorCast: {
+      const auto& bitVector =
+          program.bitVectorExpressions.at(expression.bitVector);
+      return remember(add(bitVectorExpressionEmissionCost(expression.bitVector),
+                          4 * static_cast<size_t>(bitVector.width)));
+    }
+    case frontend::ExpressionKind::Cast: {
+      const auto& source = program.expressions.at(expression.lhs);
+      // Keep these local costs aligned with the canonical builders in
+      // AngleConversion.cpp. Operand costs are charged recursively.
+      size_t local = 1;
+      if (expression.bitPatternCast) {
+        local = 1;
+      } else if (expression.type == frontend::ScalarType::Angle &&
+                 source.type == frontend::ScalarType::Float) {
+        local = mqt::angle::FLOAT_TO_BITS_OPERATION_ESTIMATE;
+      } else if (expression.type == frontend::ScalarType::Angle &&
+                 source.type == frontend::ScalarType::Angle) {
+        if (source.bitWidth < expression.bitWidth) {
+          local = 3;
+        } else if (source.bitWidth > expression.bitWidth) {
+          local = 16;
+        } else {
+          local = 0;
+        }
+      }
+      return remember(unary(local));
+    }
     case frontend::ExpressionKind::Negate:
       if (expression.type == frontend::ScalarType::Float ||
           expression.type == frontend::ScalarType::Angle) {
         return remember(unary(1));
       }
-      return remember(
-          unary(expression.type == frontend::ScalarType::Uint ? 2 : 10));
+      if (expression.type == frontend::ScalarType::Uint) {
+        return remember(unary(2));
+      }
+      return remember(unary(10));
+    case frontend::ExpressionKind::BitwiseNot:
     case frontend::ExpressionKind::ArcCos:
     case frontend::ExpressionKind::ArcSin:
     case frontend::ExpressionKind::ArcTan:
@@ -397,6 +489,11 @@ private:
       return remember(add(bitVectorExpressionEmissionCost(expression.bitVector),
                           (4 * static_cast<size_t>(bitVector.width)) + 2));
     }
+    case frontend::ExpressionKind::ScalarPopCount:
+      return remember(unary(2));
+    case frontend::ExpressionKind::RotateLeft:
+    case frontend::ExpressionKind::RotateRight:
+      return remember(binary(6));
     case frontend::ExpressionKind::Add:
     case frontend::ExpressionKind::Subtract:
     case frontend::ExpressionKind::Multiply:
@@ -406,6 +503,13 @@ private:
       }
       return remember(
           binary(expression.type == frontend::ScalarType::Uint ? 2 : 11));
+    case frontend::ExpressionKind::BitwiseAnd:
+    case frontend::ExpressionKind::BitwiseOr:
+    case frontend::ExpressionKind::BitwiseXor:
+      return remember(binary(1));
+    case frontend::ExpressionKind::ShiftLeft:
+    case frontend::ExpressionKind::ShiftRight:
+      return remember(binary(10));
     case frontend::ExpressionKind::Divide:
     case frontend::ExpressionKind::Modulo:
       if (expression.type == frontend::ScalarType::Float ||
@@ -436,6 +540,23 @@ private:
     };
     if (expression.kind == frontend::BitVectorExpressionKind::Register) {
       return remember(0);
+    }
+    if (expression.kind == frontend::BitVectorExpressionKind::ScalarCast) {
+      const auto scalar = expressionEmissionCost(expression.scalar);
+      const auto unpack = 2 * static_cast<size_t>(expression.width);
+      return remember(scalar > PROJECTED_EMISSION_LIMIT - unpack
+                          ? PROJECTED_EMISSION_LIMIT + 1
+                          : scalar + unpack);
+    }
+    if (expression.kind == frontend::BitVectorExpressionKind::ScalarExtract) {
+      const auto scalar = expressionEmissionCost(expression.scalar);
+      const auto distance = expressionEmissionCost(expression.distance);
+      return remember(scalar > PROJECTED_EMISSION_LIMIT ||
+                              distance > PROJECTED_EMISSION_LIMIT ||
+                              scalar > PROJECTED_EMISSION_LIMIT - distance ||
+                              scalar + distance > PROJECTED_EMISSION_LIMIT - 10
+                          ? PROJECTED_EMISSION_LIMIT + 1
+                          : scalar + distance + 10);
     }
     const auto operand = bitVectorExpressionEmissionCost(expression.operand);
     if (program.expressions.at(expression.distance).kind ==
@@ -743,8 +864,15 @@ private:
         } else if (const auto* assignment =
                        std::get_if<frontend::BitAssignmentStatement>(
                            &statement.data)) {
-          if (!chargeConditionEmission(assignment->value, multiplicity,
-                                       projectedEmission, statement.location)) {
+          const auto valueFits =
+              assignment->bitVector
+                  ? chargeScaledEmission(
+                        bitVectorExpressionEmissionCost(*assignment->bitVector),
+                        multiplicity, projectedEmission, statement.location)
+                  : chargeConditionEmission(assignment->value, multiplicity,
+                                            projectedEmission,
+                                            statement.location);
+          if (!valueFits) {
             return false;
           }
           if (assignment->target.dynamicIndex) {
@@ -859,6 +987,10 @@ private:
       const auto* gate = findCustomGate(application->callee);
       if (gate == nullptr) {
         auto leafCost = modifierEmissionCost(*application) + 1;
+        for (const auto parameter : application->parameters) {
+          const auto type = program.expressions.at(parameter).type;
+          leafCost += type == frontend::ScalarType::Angle ? 3 : 1;
+        }
         if (const auto* catalog =
                 oq3::frontend::lookupGate(application->callee)) {
           if (catalog->controlCount != 0 || catalog->variadicControls) {
@@ -1114,7 +1246,11 @@ private:
     SmallVector<Value> bits;
     bits.reserve(width);
     if (width == 1) {
-      bits.push_back(packed);
+      auto loc = UnknownLoc::get(opBuilder.getContext());
+      auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 1);
+      auto extracted = arith::AndIOp::create(opBuilder, loc, packed, one);
+      extracted->setAttr(openqasm::BIT_EXTRACT_ATTR, opBuilder.getUnitAttr());
+      bits.push_back(extracted);
       return bits;
     }
     auto loc = UnknownLoc::get(opBuilder.getContext());
@@ -1126,8 +1262,10 @@ private:
                                                   static_cast<unsigned>(width));
         selected = arith::ShRUIOp::create(opBuilder, loc, packed, shift);
       }
-      bits.push_back(arith::TruncIOp::create(opBuilder, loc,
-                                             opBuilder.getI1Type(), selected));
+      auto extracted = arith::TruncIOp::create(opBuilder, loc,
+                                               opBuilder.getI1Type(), selected);
+      extracted->setAttr(openqasm::BIT_EXTRACT_ATTR, opBuilder.getUnitAttr());
+      bits.push_back(extracted);
     }
     return bits;
   }
@@ -1153,15 +1291,87 @@ private:
     return value.bits;
   }
 
+  [[nodiscard]] Value
+  emitScalarBitExtraction(OpBuilder& opBuilder,
+                          const frontend::ExpressionId scalarExpression,
+                          const frontend::ExpressionId indexExpression,
+                          const ValueRange gateParameters) {
+    auto loc = UnknownLoc::get(opBuilder.getContext());
+    auto scalar = emitExpression(opBuilder, scalarExpression, gateParameters);
+    const auto scalarWidth = cast<IntegerType>(scalar.getType()).getWidth();
+    const auto& index = program.expressions.at(indexExpression);
+    Value distance;
+    if (index.kind == frontend::ExpressionKind::Constant) {
+      const auto value =
+          index.type == frontend::ScalarType::Uint
+              ? std::get<uint64_t>(index.constant)
+              : static_cast<uint64_t>(std::get<int64_t>(index.constant));
+      distance = arith::ConstantIntOp::create(
+          opBuilder, loc, static_cast<int64_t>(value), scalarWidth);
+    } else {
+      auto value = emitExpression(opBuilder, indexExpression, gateParameters);
+      const auto indexWidth = cast<IntegerType>(value.getType()).getWidth();
+      if (indexWidth < 64) {
+        value = arith::ExtUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
+                                       value);
+      }
+      auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
+      auto limit = arith::ConstantIntOp::create(
+          opBuilder, loc, static_cast<int64_t>(scalarWidth), 64);
+      Value inRange;
+      if (index.type == frontend::ScalarType::Int) {
+        auto negative = arith::CmpIOp::create(
+            opBuilder, loc, arith::CmpIPredicate::slt, value, zero);
+        auto adjusted = arith::AddIOp::create(opBuilder, loc, value, limit);
+        value =
+            arith::SelectOp::create(opBuilder, loc, negative, adjusted, value);
+        auto nonnegative = arith::CmpIOp::create(
+            opBuilder, loc, arith::CmpIPredicate::sge, value, zero);
+        auto belowLimit = arith::CmpIOp::create(
+            opBuilder, loc, arith::CmpIPredicate::slt, value, limit);
+        inRange =
+            arith::AndIOp::create(opBuilder, loc, nonnegative, belowLimit);
+      } else {
+        inRange = arith::CmpIOp::create(
+            opBuilder, loc, arith::CmpIPredicate::ult, value, limit);
+      }
+      cf::AssertOp::create(opBuilder, loc, inRange,
+                           "scalar bit index out of bounds");
+      distance = scalarWidth < 64
+                     ? arith::TruncIOp::create(
+                           opBuilder, loc,
+                           opBuilder.getIntegerType(scalarWidth), value)
+                     : value;
+    }
+    auto shifted = arith::ShRUIOp::create(opBuilder, loc, scalar, distance);
+    auto extracted =
+        arith::TruncIOp::create(opBuilder, loc, opBuilder.getI1Type(), shifted);
+    extracted->setAttr(openqasm::BIT_EXTRACT_ATTR, opBuilder.getUnitAttr());
+    return extracted;
+  }
+
   [[nodiscard]] EmittedBitVector
   emitBitVectorExpression(OpBuilder& opBuilder,
-                          const frontend::BitVectorExpressionId id) {
+                          const frontend::BitVectorExpressionId id,
+                          const ValueRange gateParameters = {}) {
     const auto& expression = program.bitVectorExpressions.at(id);
     auto loc = UnknownLoc::get(opBuilder.getContext());
     if (expression.kind == frontend::BitVectorExpressionKind::Register) {
       return {.width = expression.width, .bits = bitValues.at(expression.reg)};
     }
-    auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+    if (expression.kind == frontend::BitVectorExpressionKind::ScalarCast) {
+      return {.width = expression.width,
+              .packed =
+                  emitExpression(opBuilder, expression.scalar, gateParameters)};
+    }
+    if (expression.kind == frontend::BitVectorExpressionKind::ScalarExtract) {
+      return {.width = 1,
+              .bits = {emitScalarBitExtraction(opBuilder, expression.scalar,
+                                               expression.distance,
+                                               gateParameters)}};
+    }
+    auto operand =
+        emitBitVectorExpression(opBuilder, expression.operand, gateParameters);
     const auto& distanceExpression =
         program.expressions.at(expression.distance);
     if (distanceExpression.kind == frontend::ExpressionKind::Constant) {
@@ -1201,7 +1411,8 @@ private:
       return {.width = expression.width, .bits = std::move(rotated)};
     }
 
-    auto distance = emitExpression(opBuilder, expression.distance, {});
+    auto distance =
+        emitExpression(opBuilder, expression.distance, gateParameters);
     auto widthConstant = arith::ConstantIntOp::create(
         opBuilder, loc, static_cast<int64_t>(expression.width), 64);
     auto remainder =
@@ -1230,6 +1441,71 @@ private:
 
   Value emitExpression(OpBuilder& opBuilder, const frontend::ExpressionId id,
                        ValueRange gateParameters) {
+    auto value = emitExpressionImpl(opBuilder, id, gateParameters);
+    const auto& expression = program.expressions.at(id);
+    if (auto* definingOp = value.getDefiningOp()) {
+      const bool isBitPatternCast =
+          expression.bitPatternCast &&
+          (expression.kind == frontend::ExpressionKind::Cast ||
+           expression.kind == frontend::ExpressionKind::BitVectorCast);
+      const bool isAliasedValue =
+          expression.kind == frontend::ExpressionKind::Variable ||
+          expression.kind == frontend::ExpressionKind::GateParameter;
+      if (expression.type == frontend::ScalarType::Angle && !isBitPatternCast &&
+          !isAliasedValue) {
+        definingOp->setAttr(openqasm::ANGLE_VALUE_ATTR,
+                            opBuilder.getUnitAttr());
+      }
+      if (expression.type == frontend::ScalarType::Uint && !isBitPatternCast &&
+          !isAliasedValue) {
+        definingOp->setAttr(openqasm::UINT_VALUE_ATTR, opBuilder.getUnitAttr());
+      }
+      SmallVector<int32_t> angleOperands;
+      const auto addAngleOperand = [&](const frontend::ExpressionId operand,
+                                       const int32_t position) {
+        if (program.expressions.at(operand).type ==
+            frontend::ScalarType::Angle) {
+          angleOperands.push_back(position);
+        }
+      };
+      switch (expression.kind) {
+      case frontend::ExpressionKind::Negate:
+        addAngleOperand(expression.lhs, 1);
+        break;
+      case frontend::ExpressionKind::BitwiseNot:
+        addAngleOperand(expression.lhs, 0);
+        break;
+      case frontend::ExpressionKind::RotateLeft:
+      case frontend::ExpressionKind::RotateRight:
+        if (program.expressions.at(expression.lhs).type ==
+            frontend::ScalarType::Angle) {
+          angleOperands.append({0, 1});
+        }
+        break;
+      case frontend::ExpressionKind::Add:
+      case frontend::ExpressionKind::Subtract:
+      case frontend::ExpressionKind::Multiply:
+      case frontend::ExpressionKind::Divide:
+      case frontend::ExpressionKind::BitwiseAnd:
+      case frontend::ExpressionKind::BitwiseOr:
+      case frontend::ExpressionKind::BitwiseXor:
+        addAngleOperand(expression.lhs, 0);
+        addAngleOperand(expression.rhs, 1);
+        break;
+      default:
+        break;
+      }
+      if (!angleOperands.empty() && !isBitPatternCast && !isAliasedValue) {
+        definingOp->setAttr(openqasm::ANGLE_OPERANDS_ATTR,
+                            opBuilder.getDenseI32ArrayAttr(angleOperands));
+      }
+    }
+    return value;
+  }
+
+  Value emitExpressionImpl(OpBuilder& opBuilder,
+                           const frontend::ExpressionId id,
+                           ValueRange gateParameters) {
     const auto& expression = program.expressions.at(id);
     auto loc = opBuilder.getInsertionPoint() == opBuilder.getBlock()->end()
                    ? opBuilder.getUnknownLoc()
@@ -1245,13 +1521,16 @@ private:
         return arith::ConstantIntOp::create(
             opBuilder, loc, std::get<int64_t>(expression.constant), 64);
       case frontend::ScalarType::Uint:
+      case frontend::ScalarType::Angle: {
+        const auto type = opBuilder.getIntegerType(expression.bitWidth);
         return arith::ConstantOp::create(
             opBuilder, loc,
-            IntegerAttr::get(opBuilder.getI64Type(),
-                             APInt(64, std::get<uint64_t>(expression.constant),
+            IntegerAttr::get(type,
+                             APInt(expression.bitWidth,
+                                   std::get<uint64_t>(expression.constant),
                                    /*isSigned=*/false)));
+      }
       case frontend::ScalarType::Float:
-      case frontend::ScalarType::Angle:
         return arith::ConstantFloatOp::create(
             opBuilder, loc, opBuilder.getF64Type(),
             APFloat(std::get<double>(expression.constant)));
@@ -1261,19 +1540,34 @@ private:
       return gateParameters[expression.parameter];
     case frontend::ExpressionKind::Variable:
       return scalarValues.at(expression.variable);
+    case frontend::ExpressionKind::BitVectorCast: {
+      auto bitVector = emitBitVectorExpression(opBuilder, expression.bitVector,
+                                               gateParameters);
+      auto packed = ensurePacked(opBuilder, bitVector);
+      if (expression.type != frontend::ScalarType::Bool) {
+        return packed;
+      }
+      auto zero = arith::ConstantIntOp::create(
+          opBuilder, loc, 0, cast<IntegerType>(packed.getType()).getWidth());
+      return arith::CmpIOp::create(opBuilder, loc, arith::CmpIPredicate::ne,
+                                   packed, zero);
+    }
     case frontend::ExpressionKind::Cast: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
-      return emitScalarCast(opBuilder, loc, operand,
-                            program.expressions.at(expression.lhs).type,
-                            expression.type);
+      const auto& source = program.expressions.at(expression.lhs);
+      return emitScalarCast(opBuilder, loc, operand, source.type,
+                            source.bitWidth, expression.type,
+                            expression.bitWidth, expression.bitPatternCast);
     }
     case frontend::ExpressionKind::Negate: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
       if (isa<FloatType>(operand.getType())) {
         return arith::NegFOp::create(opBuilder, loc, operand);
       }
-      if (expression.type == frontend::ScalarType::Uint) {
-        auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
+      if (expression.type == frontend::ScalarType::Uint ||
+          expression.type == frontend::ScalarType::Angle) {
+        const auto width = cast<IntegerType>(operand.getType()).getWidth();
+        auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, width);
         return arith::SubIOp::create(opBuilder, loc, zero, operand);
       }
       auto i128 = opBuilder.getIntegerType(128);
@@ -1282,6 +1576,63 @@ private:
       auto negated = arith::SubIOp::create(opBuilder, loc, zero, operandWide);
       return checkedSignedResult(opBuilder, loc, negated,
                                  "integer negation overflows i64");
+    }
+    case frontend::ExpressionKind::BitwiseNot: {
+      auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      const auto width = cast<IntegerType>(operand.getType()).getWidth();
+      auto ones = arith::ConstantIntOp::create(
+          opBuilder, loc, APInt::getAllOnes(width).getSExtValue(), width);
+      return arith::XOrIOp::create(opBuilder, loc, operand, ones);
+    }
+    case frontend::ExpressionKind::BitwiseAnd:
+    case frontend::ExpressionKind::BitwiseOr:
+    case frontend::ExpressionKind::BitwiseXor: {
+      auto lhs = emitExpression(opBuilder, expression.lhs, gateParameters);
+      auto rhs = emitExpression(opBuilder, expression.rhs, gateParameters);
+      if (expression.kind == frontend::ExpressionKind::BitwiseAnd) {
+        return arith::AndIOp::create(opBuilder, loc, lhs, rhs);
+      }
+      if (expression.kind == frontend::ExpressionKind::BitwiseOr) {
+        return arith::OrIOp::create(opBuilder, loc, lhs, rhs);
+      }
+      return arith::XOrIOp::create(opBuilder, loc, lhs, rhs);
+    }
+    case frontend::ExpressionKind::ShiftLeft:
+    case frontend::ExpressionKind::ShiftRight: {
+      auto lhs = emitExpression(opBuilder, expression.lhs, gateParameters);
+      auto rhs = emitExpression(opBuilder, expression.rhs, gateParameters);
+      const auto lhsWidth = cast<IntegerType>(lhs.getType()).getWidth();
+      const auto rhsWidth = cast<IntegerType>(rhs.getType()).getWidth();
+      const auto operationWidth = std::max(lhsWidth, rhsWidth);
+      const auto operationType = opBuilder.getIntegerType(operationWidth);
+      if (lhsWidth < operationWidth) {
+        lhs = arith::ExtUIOp::create(opBuilder, loc, operationType, lhs);
+      }
+      if (rhsWidth < operationWidth) {
+        rhs = arith::ExtUIOp::create(opBuilder, loc, operationType, rhs);
+      }
+      auto zero =
+          arith::ConstantIntOp::create(opBuilder, loc, 0, operationWidth);
+      auto limit = arith::ConstantOp::create(
+          opBuilder, loc,
+          opBuilder.getIntegerAttr(operationType,
+                                   static_cast<int64_t>(lhsWidth)));
+      auto inRange = arith::CmpIOp::create(
+          opBuilder, loc, arith::CmpIPredicate::ult, rhs, limit);
+      auto safeDistance =
+          arith::SelectOp::create(opBuilder, loc, inRange, rhs, zero);
+      Value shifted =
+          expression.kind == frontend::ExpressionKind::ShiftLeft
+              ? arith::ShLIOp::create(opBuilder, loc, lhs, safeDistance)
+                    .getResult()
+              : arith::ShRUIOp::create(opBuilder, loc, lhs, safeDistance)
+                    .getResult();
+      shifted = arith::SelectOp::create(opBuilder, loc, inRange, shifted, zero);
+      if (operationWidth != lhsWidth) {
+        shifted = arith::TruncIOp::create(
+            opBuilder, loc, opBuilder.getIntegerType(lhsWidth), shifted);
+      }
+      return shifted;
     }
     case frontend::ExpressionKind::ArcCos:
     case frontend::ExpressionKind::ArcSin:
@@ -1295,6 +1646,10 @@ private:
     case frontend::ExpressionKind::Log:
     case frontend::ExpressionKind::Sqrt: {
       Value operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      if (program.expressions.at(expression.lhs).type ==
+          frontend::ScalarType::Angle) {
+        operand = mqt::angle::buildBitsToRadians(opBuilder, loc, operand);
+      }
       assert(isa<FloatType>(operand.getType()) &&
              "semantic analysis must normalize math operands");
       switch (expression.kind) {
@@ -1327,7 +1682,8 @@ private:
     case frontend::ExpressionKind::PopCount: {
       const auto& bitVector =
           program.bitVectorExpressions.at(expression.bitVector);
-      auto value = emitBitVectorExpression(opBuilder, expression.bitVector);
+      auto value = emitBitVectorExpression(opBuilder, expression.bitVector,
+                                           gateParameters);
       auto packed = ensurePacked(opBuilder, value);
       auto count = math::CtPopOp::create(opBuilder, loc, packed);
       if (bitVector.width < 64) {
@@ -1340,6 +1696,40 @@ private:
       }
       return count;
     }
+    case frontend::ExpressionKind::ScalarPopCount: {
+      auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      auto count = math::CtPopOp::create(opBuilder, loc, operand);
+      const auto width = cast<IntegerType>(operand.getType()).getWidth();
+      if (width < 64) {
+        return arith::ExtUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
+                                      count);
+      }
+      return count;
+    }
+    case frontend::ExpressionKind::RotateLeft:
+    case frontend::ExpressionKind::RotateRight: {
+      auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);
+      auto distance = emitExpression(opBuilder, expression.rhs, gateParameters);
+      const auto width = cast<IntegerType>(operand.getType()).getWidth();
+      auto widthConstant = arith::ConstantIntOp::create(
+          opBuilder, loc, static_cast<int64_t>(width), 64);
+      auto remainder =
+          arith::RemSIOp::create(opBuilder, loc, distance, widthConstant);
+      auto positive =
+          arith::AddIOp::create(opBuilder, loc, remainder, widthConstant);
+      auto normalized =
+          arith::RemSIOp::create(opBuilder, loc, positive, widthConstant);
+      Value shift = normalized;
+      if (width < 64) {
+        shift = arith::TruncIOp::create(
+            opBuilder, loc, opBuilder.getIntegerType(width), normalized);
+      }
+      return expression.kind == frontend::ExpressionKind::RotateLeft
+                 ? LLVM::FshlOp::create(opBuilder, loc, operand, operand, shift)
+                       .getResult()
+                 : LLVM::FshrOp::create(opBuilder, loc, operand, operand, shift)
+                       .getResult();
+    }
     case frontend::ExpressionKind::Add:
     case frontend::ExpressionKind::Subtract:
     case frontend::ExpressionKind::Multiply:
@@ -1348,10 +1738,11 @@ private:
     case frontend::ExpressionKind::Power: {
       auto lhs = emitExpression(opBuilder, expression.lhs, gateParameters);
       auto rhs = emitExpression(opBuilder, expression.rhs, gateParameters);
-      if (expression.type != frontend::ScalarType::Float &&
-          expression.type != frontend::ScalarType::Angle) {
-        const bool isUnsigned = expression.type == frontend::ScalarType::Uint;
-        auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
+      if (expression.type != frontend::ScalarType::Float) {
+        const bool isUnsigned = expression.type == frontend::ScalarType::Uint ||
+                                expression.type == frontend::ScalarType::Angle;
+        const auto width = cast<IntegerType>(lhs.getType()).getWidth();
+        auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, width);
         if (expression.kind == frontend::ExpressionKind::Divide ||
             expression.kind == frontend::ExpressionKind::Modulo) {
           auto nonzero = arith::CmpIOp::create(
@@ -1451,10 +1842,19 @@ private:
                                        const int64_t width,
                                        const llvm::StringRef message) {
     auto index = emitExpression(builder, expression, {});
+    const auto expressionType = program.expressions.at(expression).type;
+    const auto integerType = cast<IntegerType>(index.getType());
+    if (integerType.getWidth() < 64) {
+      index = expressionType == frontend::ScalarType::Uint
+                  ? arith::ExtUIOp::create(builder, builder.getI64Type(), index)
+                        .getResult()
+                  : arith::ExtSIOp::create(builder, builder.getI64Type(), index)
+                        .getResult();
+    }
     auto zero = builder.intConstant(0);
     auto upper = builder.intConstant(width);
     Value inBounds;
-    if (program.expressions.at(expression).type == frontend::ScalarType::Uint) {
+    if (expressionType == frontend::ScalarType::Uint) {
       inBounds = arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
                                        index, upper);
     } else {
@@ -1852,11 +2252,21 @@ private:
                            ValueRange gateQubits) {
     SmallVector<Value> parameters;
     parameters.reserve(application.parameters.size());
+    const auto customGate = findCustomGate(application.callee) != nullptr;
     for (const auto expression : application.parameters) {
       Value parameter = emitExpression(opBuilder, expression, gateParameters);
-      if (isa<IntegerType>(parameter.getType())) {
-        if (program.expressions.at(expression).type ==
-            frontend::ScalarType::Uint) {
+      const auto expressionType = program.expressions.at(expression).type;
+      if (customGate) {
+        assert(expressionType == frontend::ScalarType::Angle &&
+               isa<IntegerType>(parameter.getType()) &&
+               "custom-gate parameters must be resolved angle bits");
+        parameters.push_back(parameter);
+        continue;
+      }
+      if (expressionType == frontend::ScalarType::Angle) {
+        parameter = mqt::angle::buildBitsToRadians(opBuilder, loc, parameter);
+      } else if (isa<IntegerType>(parameter.getType())) {
+        if (expressionType == frontend::ScalarType::Uint) {
           parameter = arith::UIToFPOp::create(
               opBuilder, loc, opBuilder.getF64Type(), parameter);
         } else {
@@ -1968,23 +2378,39 @@ private:
     }
   }
 
-  [[nodiscard]] static Value emitScalarCast(OpBuilder& opBuilder,
-                                            const Location loc, Value value,
-                                            const frontend::ScalarType source,
-                                            const frontend::ScalarType target) {
-    if (source == target ||
-        (source == frontend::ScalarType::Int &&
-         target == frontend::ScalarType::Uint) ||
-        (source == frontend::ScalarType::Uint &&
-         target == frontend::ScalarType::Int) ||
-        ((source == frontend::ScalarType::Float ||
-          source == frontend::ScalarType::Angle) &&
-         (target == frontend::ScalarType::Float ||
-          target == frontend::ScalarType::Angle))) {
+  [[nodiscard]] static Value
+  emitScalarCast(OpBuilder& opBuilder, const Location loc, Value value,
+                 const frontend::ScalarType source, const uint32_t sourceWidth,
+                 const frontend::ScalarType target, const uint32_t targetWidth,
+                 const bool bitPatternCast) {
+    if (bitPatternCast) {
+      assert(sourceWidth == targetWidth && isa<IntegerType>(value.getType()) &&
+             "semantic analysis must validate bit-pattern casts");
       return value;
     }
-    if (target == frontend::ScalarType::Float ||
+    if (source == target && sourceWidth == targetWidth) {
+      return value;
+    }
+    if (source == frontend::ScalarType::Angle &&
         target == frontend::ScalarType::Angle) {
+      return mqt::angle::buildResize(opBuilder, loc, value, targetWidth);
+    }
+    if (target == frontend::ScalarType::Angle) {
+      assert(source == frontend::ScalarType::Float &&
+             "semantic analysis must validate angle casts");
+      return mqt::angle::buildFloatToBits(opBuilder, loc, value, targetWidth);
+    }
+    if (source == frontend::ScalarType::Angle) {
+      assert(target == frontend::ScalarType::Bool &&
+             "semantic analysis must validate casts from angle");
+      auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, sourceWidth);
+      auto comparison = arith::CmpIOp::create(
+          opBuilder, loc, arith::CmpIPredicate::ne, value, zero);
+      comparison->setAttr(openqasm::ANGLE_OPERANDS_ATTR,
+                          opBuilder.getDenseI32ArrayAttr({0, 1}));
+      return comparison;
+    }
+    if (target == frontend::ScalarType::Float) {
       if (source == frontend::ScalarType::Bool ||
           source == frontend::ScalarType::Uint) {
         return arith::UIToFPOp::create(opBuilder, loc, opBuilder.getF64Type(),
@@ -1993,22 +2419,36 @@ private:
       return arith::SIToFPOp::create(opBuilder, loc, opBuilder.getF64Type(),
                                      value);
     }
-    if (source == frontend::ScalarType::Bool) {
-      return arith::ExtUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                    value);
+    if (target == frontend::ScalarType::Bool) {
+      if (source == frontend::ScalarType::Float) {
+        auto zero = arith::ConstantFloatOp::create(
+            opBuilder, loc, opBuilder.getF64Type(), APFloat(0.0));
+        return arith::CmpFOp::create(opBuilder, loc, arith::CmpFPredicate::UNE,
+                                     value, zero);
+      }
+      auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, sourceWidth);
+      return arith::CmpIOp::create(opBuilder, loc, arith::CmpIPredicate::ne,
+                                   value, zero);
     }
-    if ((source == frontend::ScalarType::Float ||
-         source == frontend::ScalarType::Angle) &&
-        target == frontend::ScalarType::Uint) {
-      return arith::FPToUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                     value);
+    const auto targetType = opBuilder.getIntegerType(targetWidth);
+    if (source == frontend::ScalarType::Float) {
+      return target == frontend::ScalarType::Uint
+                 ? arith::FPToUIOp::create(opBuilder, loc, targetType, value)
+                       .getResult()
+                 : arith::FPToSIOp::create(opBuilder, loc, targetType, value)
+                       .getResult();
     }
-    if (source == frontend::ScalarType::Float ||
-        source == frontend::ScalarType::Angle) {
-      return arith::FPToSIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                     value);
+    if (sourceWidth == targetWidth) {
+      return value;
     }
-    llvm_unreachable("unsupported standard scalar conversion");
+    if (sourceWidth > targetWidth) {
+      return arith::TruncIOp::create(opBuilder, loc, targetType, value);
+    }
+    return source == frontend::ScalarType::Int
+               ? arith::ExtSIOp::create(opBuilder, loc, targetType, value)
+                     .getResult()
+               : arith::ExtUIOp::create(opBuilder, loc, targetType, value)
+                     .getResult();
   }
 
   [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
@@ -2050,8 +2490,7 @@ private:
     const auto rhsType = program.expressions.at(condition.comparisonRhs).type;
     assert(lhsType == rhsType &&
            "semantic analysis must normalize comparison operands");
-    if (lhsType == frontend::ScalarType::Float ||
-        lhsType == frontend::ScalarType::Angle) {
+    if (lhsType == frontend::ScalarType::Float) {
       const auto predicate = [&] {
         switch (condition.comparison) {
         case frontend::ComparisonKind::Equal:
@@ -2072,7 +2511,8 @@ private:
       return arith::CmpFOp::create(builder, predicate, lhs, rhs);
     }
 
-    const bool isUnsigned = lhsType == frontend::ScalarType::Uint;
+    const bool isUnsigned = lhsType == frontend::ScalarType::Uint ||
+                            lhsType == frontend::ScalarType::Angle;
     const auto predicate = [&] {
       switch (condition.comparison) {
       case frontend::ComparisonKind::Equal:
@@ -2094,7 +2534,12 @@ private:
       }
       llvm_unreachable("unknown integer comparison");
     }();
-    return arith::CmpIOp::create(builder, predicate, lhs, rhs);
+    auto comparison = arith::CmpIOp::create(builder, predicate, lhs, rhs);
+    if (lhsType == frontend::ScalarType::Angle) {
+      comparison->setAttr(openqasm::ANGLE_OPERANDS_ATTR,
+                          builder.getDenseI32ArrayAttr({0, 1}));
+    }
+    return comparison;
   }
 
   [[nodiscard]] Value emitCondition(const frontend::ConditionId id,
@@ -2369,15 +2814,17 @@ private:
         statement.data);
   }
 
-  [[nodiscard]] Type scalarType(const frontend::ScalarType type) {
+  [[nodiscard]] Type scalarType(const frontend::ScalarDeclaration& scalar) {
+    const auto type = scalar.type;
     switch (type) {
     case frontend::ScalarType::Bool:
       return builder.getI1Type();
     case frontend::ScalarType::Int:
-    case frontend::ScalarType::Uint:
       return builder.getI64Type();
-    case frontend::ScalarType::Float:
+    case frontend::ScalarType::Uint:
     case frontend::ScalarType::Angle:
+      return builder.getIntegerType(scalar.bitWidth);
+    case frontend::ScalarType::Float:
       return builder.getF64Type();
     }
     llvm_unreachable("unknown scalar type");
@@ -2386,8 +2833,13 @@ private:
   void
   emitScalarDeclaration(const frontend::ScalarDeclarationStatement& statement,
                         ValueRange gateQubits) {
-    const auto type = program.scalars.at(statement.scalar).type;
-    Value value = ub::PoisonOp::create(builder, scalarType(type)).getResult();
+    const auto& scalar = program.scalars.at(statement.scalar);
+    if (scalar.input) {
+      assert(scalarValues.at(statement.scalar) &&
+             "input value must be mapped to a function argument");
+      return;
+    }
+    Value value = ub::PoisonOp::create(builder, scalarType(scalar)).getResult();
     if (statement.initializer) {
       value = emitExpression(builder, *statement.initializer, {});
     } else if (statement.conditionInitializer) {
@@ -2482,6 +2934,13 @@ private:
 
   void emitBitAssignment(const frontend::BitAssignmentStatement& assignment,
                          ValueRange gateQubits) {
+    if (assignment.bitVector) {
+      auto value = emitBitVectorExpression(builder, *assignment.bitVector);
+      const auto bits = ensureBits(builder, value);
+      assert(bits.size() == 1 && "semantic analysis enforces bit[1]");
+      assignBit(assignment.target, bits.front());
+      return;
+    }
     assignBit(assignment.target,
               emitCondition(assignment.value, {}, gateQubits));
   }

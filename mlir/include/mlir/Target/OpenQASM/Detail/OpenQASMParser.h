@@ -40,7 +40,7 @@ struct Version {
   uint32_t minor = 0;
 };
 
-enum class ScalarKind : uint8_t { Bool, Int, Uint, Float };
+enum class ScalarKind : uint8_t { Bool, Int, Uint, Float, Angle };
 
 /**
  * @defgroup ParseVocabulary Transient parse vocabulary
@@ -66,6 +66,7 @@ struct Expr {
     Float,
     Bool,
     Identifier,
+    Cast,
     Index,
     Neg,
     Not,
@@ -113,6 +114,9 @@ struct Expr {
   uint64_t intValue = 0;
   double floatValue = 0.0;
   bool boolValue = false;
+  ScalarKind scalarKind = ScalarKind::Int;
+  bool bitCast = false;
+  bool compoundAssignment = false;
   StringRef identifier;
   StringRef wideInteger;
   std::optional<uint64_t> hardwareQubit;
@@ -211,7 +215,7 @@ concept QASMSink =
       s.error(loc, str);
       s.version(loc, version);
       s.include(loc, str);
-      s.scalarDecl(loc, ScalarKind::Int, str, &expr, flag, flag);
+      s.scalarDecl(loc, ScalarKind::Int, str, &expr, &expr, flag, flag, flag);
       s.assignment(loc, reference, expr);
       s.qubitRegister(loc, str, &expr);
       s.classicalRegister(loc, str, &expr, &expr, flag);
@@ -333,12 +337,11 @@ private:
     case TokenKind::Int:
     case TokenKind::Uint:
     case TokenKind::Float:
-      return parseScalarDeclaration(/*isOutput=*/false);
     case TokenKind::Angle:
+      return parseScalarDeclaration(/*isOutput=*/false);
     case TokenKind::Duration:
       return sink.error(current().loc,
-                        "'angle' and 'duration' declarations are not supported "
-                        "yet");
+                        "'duration' declarations are not supported yet");
     case TokenKind::Qubit:
       return parseQuantumDecl();
     case TokenKind::Qreg:
@@ -349,6 +352,8 @@ private:
       return parseCregDecl();
     case TokenKind::Output:
       return parseOutputDecl();
+    case TokenKind::Input:
+      return parseInputDecl();
     case TokenKind::Gate:
       return parseGateStatement();
     case TokenKind::Opaque:
@@ -508,8 +513,9 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  /// Parse `[const] (int|uint|float|bool) <id> [= <initializer>];`.
-  [[nodiscard]] LogicalResult parseScalarDeclaration(const bool isOutput) {
+  /// Parse `[const] (int|uint|float|bool|angle) <id> [= <initializer>];`.
+  [[nodiscard]] LogicalResult
+  parseScalarDeclaration(const bool isOutput, const bool isInput = false) {
     const auto loc = current().loc;
 
     bool isConst = false;
@@ -524,12 +530,11 @@ private:
     case TokenKind::Int:
     case TokenKind::Uint:
     case TokenKind::Float:
-      break;
     case TokenKind::Angle:
+      break;
     case TokenKind::Duration:
       return sink.error(current().loc,
-                        "'angle' and 'duration' declarations are not supported "
-                        "yet");
+                        "'duration' declarations are not supported yet");
     case TokenKind::UnsupportedKeyword:
       return unsupportedKeyword();
     default:
@@ -537,11 +542,19 @@ private:
     }
     advance(); // type
 
-    if ((kind == TokenKind::Int || kind == TokenKind::Uint) &&
-        current().kind == TokenKind::LBracket) {
+    const Expr* width = nullptr;
+    if (current().kind == TokenKind::LBracket &&
+        (kind == TokenKind::Uint || kind == TokenKind::Float ||
+         kind == TokenKind::Angle)) {
+      auto designator = parseDesignator();
+      if (failed(designator)) {
+        return failure();
+      }
+      width = *designator;
+    } else if (current().kind == TokenKind::LBracket) {
       return sink.error(current().loc,
-                        "Integer declarations currently require the default "
-                        "64-bit width");
+                        "this scalar type currently requires its default "
+                        "width");
     }
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected identifier");
@@ -550,11 +563,12 @@ private:
     advance();
 
     const bool hasInitializer = current().kind == TokenKind::Equals;
-    if (isOutput && hasInitializer) {
+    if ((isOutput || isInput) && hasInitializer) {
       return sink.error(
           current().loc,
-          "output declarations cannot have an initializer; assign the output "
-          "in a separate statement");
+          isOutput ? "output declarations cannot have an initializer; assign "
+                     "the output in a separate statement"
+                   : "input declarations cannot have an initializer");
     }
     if (hasInitializer) {
       advance();
@@ -592,9 +606,11 @@ private:
       scalarKind = ScalarKind::Int;
     } else if (kind == TokenKind::Uint) {
       scalarKind = ScalarKind::Uint;
+    } else if (kind == TokenKind::Angle) {
+      scalarKind = ScalarKind::Angle;
     }
-    if (failed(sink.scalarDecl(loc, scalarKind, id, initializer, isConst,
-                               isOutput))) {
+    if (failed(sink.scalarDecl(loc, scalarKind, id, width, initializer, isConst,
+                               isOutput, isInput))) {
       return failure();
     }
     if (measureSource) {
@@ -661,16 +677,27 @@ private:
     }
     if (current().kind == TokenKind::Bool || current().kind == TokenKind::Int ||
         current().kind == TokenKind::Uint ||
-        current().kind == TokenKind::Float) {
+        current().kind == TokenKind::Float ||
+        current().kind == TokenKind::Angle) {
       return parseScalarDeclaration(/*isOutput=*/true);
     }
-    if (current().kind == TokenKind::Angle ||
-        current().kind == TokenKind::Duration) {
+    if (current().kind == TokenKind::Duration) {
       return sink.error(current().loc,
-                        "'angle' and 'duration' declarations are not supported "
-                        "yet");
+                        "'duration' declarations are not supported yet");
     }
     return sink.error(current().loc, "expected a classical output type");
+  }
+
+  /// Parse `input <scalar-type> <id>;`.
+  [[nodiscard]] LogicalResult parseInputDecl() {
+    advance(); // input
+    if (current().kind == TokenKind::Bool || current().kind == TokenKind::Int ||
+        current().kind == TokenKind::Uint ||
+        current().kind == TokenKind::Float ||
+        current().kind == TokenKind::Angle) {
+      return parseScalarDeclaration(/*isOutput=*/false, /*isInput=*/true);
+    }
+    return sink.error(current().loc, "expected a classical scalar input type");
   }
 
   /// Parse `bit[<n>] <id> (= <measurement>);`.
@@ -817,8 +844,10 @@ private:
       previous->loc = loc;
       previous->kind = Expr::Kind::Identifier;
       previous->identifier = target->identifier;
-      assignedValue =
+      auto* compoundValue =
           makeBinary(*kind, previous, assignedValue, compoundLocation);
+      compoundValue->compoundAssignment = true;
+      assignedValue = compoundValue;
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
@@ -1595,6 +1624,55 @@ private:
       }
       advance();
       return expr;
+    case TokenKind::Bool:
+    case TokenKind::Int:
+    case TokenKind::Uint:
+    case TokenKind::Float:
+    case TokenKind::Angle:
+    case TokenKind::Bit: {
+      expr->kind = Expr::Kind::Cast;
+      expr->bitCast = current().kind == TokenKind::Bit;
+      switch (current().kind) {
+      case TokenKind::Bool:
+        expr->scalarKind = ScalarKind::Bool;
+        break;
+      case TokenKind::Int:
+        expr->scalarKind = ScalarKind::Int;
+        break;
+      case TokenKind::Uint:
+      case TokenKind::Bit:
+        expr->scalarKind = ScalarKind::Uint;
+        break;
+      case TokenKind::Float:
+        expr->scalarKind = ScalarKind::Float;
+        break;
+      case TokenKind::Angle:
+        expr->scalarKind = ScalarKind::Angle;
+        break;
+      default:
+        llvm_unreachable("not a scalar cast token");
+      }
+      advance();
+      if (current().kind == TokenKind::LBracket) {
+        auto width = parseDesignator();
+        if (failed(width)) {
+          return failure();
+        }
+        expr->rhs = *width;
+      }
+      if (failed(expect(TokenKind::LParen))) {
+        return failure();
+      }
+      auto operand = parseExpression();
+      if (failed(operand)) {
+        return failure();
+      }
+      expr->lhs = *operand;
+      if (failed(expect(TokenKind::RParen))) {
+        return failure();
+      }
+      return expr;
+    }
     case TokenKind::Identifier: {
       if (peek().kind == TokenKind::LParen) {
         const auto kind = getMathFunctionKind(current().identifier);

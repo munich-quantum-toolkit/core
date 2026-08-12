@@ -99,6 +99,9 @@ SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
                           .integer = current->intValue,
                           .floatingPoint = current->floatValue,
                           .boolean = current->boolValue,
+                          .scalarKind = current->scalarKind,
+                          .bitCast = current->bitCast,
+                          .compoundAssignment = current->compoundAssignment,
                           .identifier = current->identifier,
                           .wideInteger = current->wideInteger,
                           .hardwareQubit = current->hardwareQubit};
@@ -156,13 +159,18 @@ SyntaxGateCall SyntaxBuilder::copyGateCall(const GateCall& call) {
 }
 
 LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
-                                        StringRef identifier,
+                                        StringRef identifier, const Expr* width,
                                         const Expr* initializer,
-                                        const bool isConst, const bool output) {
+                                        const bool isConst, const bool output,
+                                        const bool input) {
   SyntaxScalarDeclaration declaration{.kind = kind,
                                       .identifier = identifier,
                                       .isConst = isConst,
-                                      .output = output};
+                                      .output = output,
+                                      .input = input};
+  if (width != nullptr) {
+    declaration.width = copyExpression(*width);
+  }
   if (initializer != nullptr) {
     declaration.initializer = copyExpression(*initializer);
   }
