@@ -27,14 +27,18 @@
 #include <mlir/IR/Location.h>
 #include <mlir/Pass/Pass.h> // IWYU pragma: keep (factory return type)
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 
 #include <array>
+#include <bit>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <random>
 #include <utility>
 
 [[nodiscard]] static mlir::func::FuncOp
@@ -110,6 +114,24 @@ TEST(AngleConversionTest, ConvertsBitsToCanonicalBinary64Radians) {
             15.0 * std::ldexp(2.0 * std::numbers::pi, -8));
 }
 
+TEST(AngleConversionTest, RecognizesRuntimeFloatToBits) {
+  mlir::DialectRegistry registry;
+  mlir::MLIRContext context(registry);
+  context.loadDialect<mlir::arith::ArithDialect, mlir::func::FuncDialect>();
+  auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
+  for (const auto width : std::array<uint32_t, 2>{8, 64}) {
+    auto function = buildRuntimeQuantizer(module, width);
+    auto bits = function.getBody().front().getTerminator()->getOperand(0);
+    if (auto extension = bits.getDefiningOp<mlir::arith::ExtUIOp>()) {
+      bits = extension.getIn();
+    }
+    ASSERT_EQ(bits.getType().getIntOrFloatBitWidth(), width);
+    const auto source = mlir::mqt::angle::matchFloatToBits(bits);
+    ASSERT_TRUE(source);
+    EXPECT_EQ(*source, function.getArgument(0));
+  }
+}
+
 TEST(AngleConversionTest, ExecutesRuntimeFloatToBitsExactly) {
   ASSERT_FALSE(llvm::InitializeNativeTarget());
   ASSERT_FALSE(llvm::InitializeNativeTargetAsmPrinter());
@@ -124,6 +146,16 @@ TEST(AngleConversionTest, ExecutesRuntimeFloatToBitsExactly) {
   for (const auto width : std::array<uint32_t, 4>{1, 8, 53, 64}) {
     buildRuntimeQuantizer(module, width);
   }
+  module.walk([](mlir::Operation* operation) {
+    for (const auto result : operation->getResults()) {
+      const auto type = mlir::dyn_cast<mlir::IntegerType>(result.getType());
+      if (type) {
+        EXPECT_LE(type.getWidth(), 64)
+            << "runtime angle conversion emitted an i" << type.getWidth()
+            << " value";
+      }
+    }
+  });
 
   mlir::PassManager passManager(&context);
   passManager.addPass(mlir::createArithToLLVMConversionPass());
@@ -136,6 +168,15 @@ TEST(AngleConversionTest, ExecutesRuntimeFloatToBitsExactly) {
     FAIL() << llvm::toString(engineOrError.takeError());
   }
   auto engine = std::move(*engineOrError);
+  const auto execute = [&](const double radians, const uint32_t width) {
+    uint64_t actual = 0;
+    const auto function = (llvm::Twine("quantize_") + llvm::Twine(width)).str();
+    if (auto error = engine->invoke(function, radians,
+                                    mlir::ExecutionEngine::result(actual))) {
+      ADD_FAILURE() << llvm::toString(std::move(error));
+    }
+    return actual;
+  };
 
   struct Case {
     double radians;
@@ -161,15 +202,23 @@ TEST(AngleConversionTest, ExecutesRuntimeFloatToBitsExactly) {
            .expected = 0},
   };
   for (const auto& testCase : cases) {
-    uint64_t actual = 0;
-    const auto function =
-        (llvm::Twine("quantize_") + llvm::Twine(testCase.width)).str();
-    if (auto error = engine->invoke(function, testCase.radians,
-                                    mlir::ExecutionEngine::result(actual))) {
-      FAIL() << llvm::toString(std::move(error));
-    }
+    const auto actual = execute(testCase.radians, testCase.width);
     EXPECT_EQ(actual, testCase.expected)
         << "width " << testCase.width << ", radians " << testCase.radians;
+  }
+
+  std::mt19937_64 generator(0xA1161EULL);
+  for (size_t sample = 0; sample < 256; ++sample) {
+    const auto radians = std::bit_cast<double>(generator());
+    if (!std::isfinite(radians)) {
+      continue;
+    }
+    for (const auto width : std::array<uint32_t, 4>{1, 8, 53, 64}) {
+      const auto expected = mlir::mqt::angle::quantize(radians, width);
+      ASSERT_TRUE(expected);
+      EXPECT_EQ(execute(radians, width), *expected)
+          << "width " << width << ", radians " << radians;
+    }
   }
 }
 

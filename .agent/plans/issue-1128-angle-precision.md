@@ -114,6 +114,14 @@ that boundary.
       cases with two expected QDMI skips, exact changed-line LLVM 22 clang-tidy,
       repository lint, generated MLIR documentation, warning-as-error Sphinx,
       and `git diff --check`. No commit, push, or stack mutation was performed.
+- [x] (2026-08-12) Replaced emitted `i128` division/remainder with exact
+      binary64 remainder reduction and five bounded `i64` radix steps. The
+      MLIR-to-LLVM execution test now runs without a Windows skip and checks
+      fixed boundary cases plus deterministic random finite inputs.
+- [x] (2026-08-12) Rebuilt the complete Release tree and passed 4709/4709 CTest
+      cases with two expected QDMI skips, all six affected MLIR suites, the
+      repository lint session, changed-source LLVM 22 clang-tidy, and
+      `git diff --check` for the portable runtime conversion follow-up.
 
 ## Surprises & Discoveries
 
@@ -177,10 +185,11 @@ that boundary.
 - Observation: Main now provides `utils::valueToConstantDouble`, which folds a
   pure scalar SSA expression DAG. Reusing it keeps static angle quantization and
   the QCO pass's failure-atomic non-finite preflight aligned.
-- Observation: The exact runtime float-to-angle bridge contains guarded selects
-  for binary64 decomposition and bounded `i128` shifts. Export treats the marked
-  canonical dataflow as one semantic cast rather than exposing those internal
-  operations as standalone OpenQASM expressions.
+- Observation: MLIR 22's wide-integer emulation does not lower unsigned division
+  or remainder, so emitted `i128` arithmetic depends on target runtime helpers
+  such as `__udivti3`. Exact remainder reduction by the binary64 value of `2*pi`
+  bounds the remaining quotient problem sufficiently for five native `i64` radix
+  steps; host-side `APInt` remains appropriate for constants.
 - Observation: Existing translation matrix helpers evaluated only constants and
   floating arithmetic. Evaluating the canonical `arith.uitofp` of an integer
   angle constant as unsigned is required to test high-bit-set `angle[64]` values
@@ -273,6 +282,11 @@ that boundary.
   and ties-to-even rounding. Rationale: this is required for widths 54 through
   64 and supplies an implementation-independent bit-pattern contract for both
   constants and runtime values. Date/Author: 2026-08-11 / Codex.
+- Decision: Range-reduce dynamic values with `arith.remf`, then extend the exact
+  quotient in five 13-bit `i64` chunks. Rationale: the remainder of two binary64
+  dyadic values is exactly representable in this bounded case, and the resulting
+  native-width arithmetic avoids compiler-runtime helpers without adding a
+  dialect, loop, or runtime ABI. Date/Author: 2026-08-12 / Codex.
 - Decision: QIR profile conversion retains the existing `i64` status return but
   rejects unresolved entry arguments. Rationale: both QIR 2.1 profiles require
   nullary entry points, and CUDA-Q/Q# production precedents bind or partially
@@ -301,20 +315,18 @@ that boundary.
 ## Outcomes & Retrospective
 
 The post-rebase implementation and conformance remediation are complete in the
-local worktree. Exact binary64 conversion, OpenQASM typing and round-trip,
+task branch. Exact binary64 conversion, OpenQASM typing and round-trip,
 structured carried state, terminal QCO quantization, and both frozen-QIR profile
-boundaries now have direct behavioral coverage. The complete Release build and
-all 4731 CTest cases pass, with two expected environment-dependent QDMI tests
-skipped. The complete affected binaries pass 300 QC translation, 198 OpenQASM,
-240 compiler, 114 QCO optimization, 50 dialect utility, 167 QC-to-QCO, 139
-QCO-to-QC, two QC/QCO round-trip, 114 QIR IR, 123 Base QIR, and 146 Adaptive QIR
-tests. Exact changed-line LLVM 22 clang-tidy, generated MLIR documentation,
-warning-as-error Sphinx documentation, repository-wide lint, and
-`git diff --check` are clean. A fresh independent exact-tree review found no
-remaining actionable angle-spec or semantic round-trip defect and recommends
-retaining the exact converter and terminal marker. The QIR 2.1 normalization is
-the only remaining stack-splitting opportunity; no remote or history mutation
-has been performed during this remediation.
+boundaries now have direct behavioral coverage. The portable conversion
+follow-up passed the complete 4709-case Release CTest suite with two expected
+environment-dependent QDMI skips. The affected binaries pass 181 OpenQASM, 290
+QC translation, 101 QCO optimization, 232 compiler, 51 dialect utility, 125 Base
+QIR, and 145 Adaptive QIR tests. Exact changed-source LLVM 22 clang-tidy,
+repository-wide lint, and `git diff --check` are clean. The runtime execution
+test covers fixed edge cases and 256 deterministic random finite binary64 values
+at widths 1, 8, 53, and 64, while asserting that the canonical builder emits no
+integer wider than 64 bits. The QIR 2.1 normalization remains the only
+stack-splitting opportunity.
 
 ## Context and Orientation
 
@@ -367,14 +379,13 @@ promoting angles to floats. Gate parameters are normalized to machine-width
 angles.
 
 Second, add one shared MLIR angle-conversion utility in the neutral MLIR support
-library so the OpenQASM importer and QCO transform cannot drift. Decompose a
-finite binary64 source into its sign, exponent, and significand, evaluate its
-modular quotient relative to the binary64 `2*pi` significand in `i128`, and
-round the exact integer quotient to nearest with ties to even before truncating
-to `iN`. The reverse builder uses unsigned integer-to-float conversion and
-scales by `2*pi/2^N`. Provide matchers for both canonical forms so repeated
-passes and the exporter can recognize them. Constant and runtime paths share the
-same integer algorithm.
+library so the OpenQASM importer and QCO transform cannot drift. Constants use
+host-side `APInt`. Dynamic values are reduced exactly by the binary64 `2*pi`,
+decomposed into exponent and significand, and converted with bounded `i64`
+quotient/remainder arithmetic before ties-to-even rounding and truncation to
+`iN`. The reverse builder uses unsigned integer-to-float conversion and scales
+by `2*pi/2^N`. Provide matchers for both canonical forms so repeated passes and
+the exporter can recognize them.
 
 Third, update the direct QC emitter. Angle constants, variables, SCF-carried
 state, comparisons, and operations use the resolved `iN` type. Trigonometric

@@ -39,7 +39,11 @@ static constexpr double TWO_PI = 2.0 * std::numbers::pi;
 static constexpr uint64_t TWO_PI_BITS = 0x401921FB54442D18ULL;
 static constexpr uint64_t TWO_PI_ODD_SIGNIFICAND = 0x3243F6A8885A3ULL;
 static constexpr uint64_t DOUBLE_FRACTION_MASK = (uint64_t{1} << 52U) - 1U;
+static constexpr uint64_t DOUBLE_MAGNITUDE_MASK =
+    std::numeric_limits<int64_t>::max();
 static constexpr uint64_t DOUBLE_EXPONENT_MASK = 0x7FFU;
+static constexpr uint32_t DIVISION_CHUNK_WIDTH = 13;
+static constexpr uint32_t DIVISION_CHUNK_COUNT = 5;
 static constexpr StringLiteral FLOAT_TO_BITS_ATTR =
     "mqt.openqasm.float_to_angle";
 
@@ -194,27 +198,78 @@ uint64_t resize(const uint64_t bits, const uint32_t sourceWidth,
       IntegerAttr::get(type, llvm::APInt(type.getWidth(), value)));
 }
 
-[[nodiscard]] static Value roundUnsignedQuotient(OpBuilder& builder,
-                                                 const Location loc,
-                                                 const Value numerator,
-                                                 const Value denominator) {
-  const auto type = cast<IntegerType>(numerator.getType());
-  auto quotient = arith::DivUIOp::create(builder, loc, numerator, denominator);
-  auto remainder = arith::RemUIOp::create(builder, loc, numerator, denominator);
+namespace {
+
+struct UnsignedDivision {
+  Value quotient;
+  Value remainder;
+};
+
+} // namespace
+
+[[nodiscard]] static Value
+roundUnsignedDivision(OpBuilder& builder, const Location loc,
+                      const UnsignedDivision& division,
+                      const Value denominator) {
+  const auto type = cast<IntegerType>(division.quotient.getType());
   auto one = integerConstant(builder, loc, type, 1);
-  auto twiceRemainder = arith::ShLIOp::create(builder, loc, remainder, one);
+  auto twiceRemainder =
+      arith::ShLIOp::create(builder, loc, division.remainder, one);
   auto greater = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::ugt,
                                        twiceRemainder, denominator);
   auto equal = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::eq,
                                      twiceRemainder, denominator);
-  auto quotientLsb = arith::AndIOp::create(builder, loc, quotient, one);
+  auto quotientLsb =
+      arith::AndIOp::create(builder, loc, division.quotient, one);
   auto odd =
       arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::ne, quotientLsb,
                             integerConstant(builder, loc, type, 0));
   auto tiedOdd = arith::AndIOp::create(builder, loc, equal, odd);
   auto roundUp = arith::OrIOp::create(builder, loc, greater, tiedOdd);
   auto increment = arith::ExtUIOp::create(builder, loc, type, roundUp);
-  return arith::AddIOp::create(builder, loc, quotient, increment);
+  return arith::AddIOp::create(builder, loc, division.quotient, increment);
+}
+
+[[nodiscard]] static Value roundUnsignedQuotient(OpBuilder& builder,
+                                                 const Location loc,
+                                                 const Value numerator,
+                                                 const Value denominator) {
+  return roundUnsignedDivision(
+      builder, loc,
+      UnsignedDivision{.quotient = arith::DivUIOp::create(
+                           builder, loc, numerator, denominator),
+                       .remainder = arith::RemUIOp::create(
+                           builder, loc, numerator, denominator)},
+      denominator);
+}
+
+[[nodiscard]] static UnsignedDivision
+appendQuotientBits(OpBuilder& builder, const Location loc,
+                   const UnsignedDivision& division, const Value modulus,
+                   const Value scaledExponent, const uint32_t offset) {
+  const auto type = cast<IntegerType>(division.quotient.getType());
+  const auto zero = integerConstant(builder, loc, type, 0);
+  Value remaining =
+      arith::SubIOp::create(builder, loc, scaledExponent,
+                            integerConstant(builder, loc, type, offset));
+  auto positive = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::sgt,
+                                        remaining, zero);
+  remaining = arith::SelectOp::create(builder, loc, positive, remaining, zero);
+  auto fitsChunk = arith::CmpIOp::create(
+      builder, loc, arith::CmpIPredicate::ule, remaining,
+      integerConstant(builder, loc, type, DIVISION_CHUNK_WIDTH));
+  auto shift = arith::SelectOp::create(
+      builder, loc, fitsChunk, remaining,
+      integerConstant(builder, loc, type, DIVISION_CHUNK_WIDTH));
+  auto partialNumerator =
+      arith::ShLIOp::create(builder, loc, division.remainder, shift);
+  auto digit = arith::DivUIOp::create(builder, loc, partialNumerator, modulus);
+  auto remainder =
+      arith::RemUIOp::create(builder, loc, partialNumerator, modulus);
+  auto quotient = arith::OrIOp::create(
+      builder, loc,
+      arith::ShLIOp::create(builder, loc, division.quotient, shift), digit);
+  return {.quotient = quotient, .remainder = remainder};
 }
 
 Value buildFloatToBits(OpBuilder& builder, const Location loc, Value radians,
@@ -231,9 +286,22 @@ Value buildFloatToBits(OpBuilder& builder, const Location loc, Value radians,
   }
 
   const auto i64Type = builder.getI64Type();
-  const auto i128Type = builder.getIntegerType(128);
-  auto representation =
+  const auto zero64 = integerConstant(builder, loc, i64Type, 0);
+  auto originalRepresentation =
       arith::BitcastOp::create(builder, loc, i64Type, radians);
+  auto magnitudeRepresentation = arith::AndIOp::create(
+      builder, loc, originalRepresentation,
+      integerConstant(builder, loc, i64Type, DOUBLE_MAGNITUDE_MASK));
+  auto magnitudeRadians = arith::BitcastOp::create(
+      builder, loc, builder.getF64Type(), magnitudeRepresentation);
+  // Binary64 2*pi is M*2^-47 for the 50-bit odd integer M above. Reducing the
+  // magnitude first is exact: the remainder is smaller than 2*pi and remains
+  // representable as a binary64 dyadic fraction. It also bounds the subsequent
+  // integer quotient to 64 bits.
+  auto reducedRadians = arith::RemFOp::create(
+      builder, loc, magnitudeRadians, constantF64(builder, loc, TWO_PI));
+  auto representation =
+      arith::BitcastOp::create(builder, loc, i64Type, reducedRadians);
   auto exponent = arith::AndIOp::create(
       builder, loc,
       arith::ShRUIOp::create(builder, loc, representation,
@@ -242,7 +310,6 @@ Value buildFloatToBits(OpBuilder& builder, const Location loc, Value radians,
   auto fraction = arith::AndIOp::create(
       builder, loc, representation,
       integerConstant(builder, loc, i64Type, DOUBLE_FRACTION_MASK));
-  auto zero64 = integerConstant(builder, loc, i64Type, 0);
   auto isSubnormal = arith::CmpIOp::create(
       builder, loc, arith::CmpIPredicate::eq, exponent, zero64);
   auto normalSignificand = arith::OrIOp::create(
@@ -257,99 +324,61 @@ Value buildFloatToBits(OpBuilder& builder, const Location loc, Value radians,
       integerConstant(builder, loc, i64Type,
                       static_cast<uint64_t>(int64_t{-1027})),
       normalExponent);
-  auto exponentIsNonnegative = arith::CmpIOp::create(
-      builder, loc, arith::CmpIPredicate::sge, binaryExponent, zero64);
-
   const auto modulus =
-      integerConstant(builder, loc, i128Type, TWO_PI_ODD_SIGNIFICAND);
-  auto factor = integerConstant(builder, loc, i128Type, 1);
-  auto power = integerConstant(builder, loc, i128Type, 2);
-  for (uint32_t bit = 0; bit < 10; ++bit) {
-    auto exponentBit = arith::AndIOp::create(
-        builder, loc, binaryExponent,
-        integerConstant(builder, loc, i64Type, uint64_t{1} << bit));
-    auto usePower = arith::CmpIOp::create(
-        builder, loc, arith::CmpIPredicate::ne, exponentBit, zero64);
-    auto multiplied = arith::RemUIOp::create(
-        builder, loc, arith::MulIOp::create(builder, loc, factor, power),
-        modulus);
-    factor =
-        arith::SelectOp::create(builder, loc, usePower, multiplied, factor);
-    if (bit != 9) {
-      power = arith::RemUIOp::create(
-          builder, loc, arith::MulIOp::create(builder, loc, power, power),
-          modulus);
-    }
-  }
-  auto wideSignificand =
-      arith::ExtUIOp::create(builder, loc, i128Type, significand);
-  auto positiveRemainder = arith::RemUIOp::create(
-      builder, loc,
-      arith::MulIOp::create(
-          builder, loc,
-          arith::RemUIOp::create(builder, loc, wideSignificand, modulus),
-          factor),
-      modulus);
-  auto positiveNumerator =
-      arith::ShLIOp::create(builder, loc, positiveRemainder,
-                            integerConstant(builder, loc, i128Type, bitWidth));
-  auto positiveRounded =
-      roundUnsignedQuotient(builder, loc, positiveNumerator, modulus);
+      integerConstant(builder, loc, i64Type, TWO_PI_ODD_SIGNIFICAND);
+  UnsignedDivision positiveDivision{
+      .quotient = arith::DivUIOp::create(builder, loc, significand, modulus),
+      .remainder = arith::RemUIOp::create(builder, loc, significand, modulus)};
 
   auto scaledExponent =
       arith::AddIOp::create(builder, loc, binaryExponent,
                             integerConstant(builder, loc, i64Type, bitWidth));
   auto scaledExponentIsNonnegative = arith::CmpIOp::create(
       builder, loc, arith::CmpIPredicate::sge, scaledExponent, zero64);
-  auto boundedLeftShift = arith::SelectOp::create(
-      builder, loc, scaledExponentIsNonnegative, scaledExponent, zero64);
-  auto atMost63 = arith::CmpIOp::create(
-      builder, loc, arith::CmpIPredicate::ule, boundedLeftShift,
-      integerConstant(builder, loc, i64Type, 63));
-  boundedLeftShift =
-      arith::SelectOp::create(builder, loc, atMost63, boundedLeftShift,
-                              integerConstant(builder, loc, i64Type, 63));
-  auto leftShift128 =
-      arith::ExtUIOp::create(builder, loc, i128Type, boundedLeftShift);
-  auto negativeNumerator = arith::SelectOp::create(
-      builder, loc, scaledExponentIsNonnegative,
-      arith::ShLIOp::create(builder, loc, wideSignificand, leftShift128),
-      wideSignificand);
+  // The reduced value needs at most 61 appended quotient bits. Five 13-bit
+  // radix steps suffice, and (remainder << 13) stays below 2^63 because the
+  // modulus is smaller than 2^50.
+  for (uint32_t chunk = 0; chunk < DIVISION_CHUNK_COUNT; ++chunk) {
+    positiveDivision =
+        appendQuotientBits(builder, loc, positiveDivision, modulus,
+                           scaledExponent, chunk * DIVISION_CHUNK_WIDTH);
+  }
+  auto positiveRounded =
+      roundUnsignedDivision(builder, loc, positiveDivision, modulus);
 
   Value denominatorShift =
       arith::SubIOp::create(builder, loc, zero64, scaledExponent);
-  denominatorShift = arith::SelectOp::create(
-      builder, loc, scaledExponentIsNonnegative, zero64, denominatorShift);
-  auto denominatorShiftAtMost77 = arith::CmpIOp::create(
+  auto denominatorShiftAtMostFour = arith::CmpIOp::create(
       builder, loc, arith::CmpIPredicate::ule, denominatorShift,
-      integerConstant(builder, loc, i64Type, 77));
+      integerConstant(builder, loc, i64Type, 4));
   denominatorShift = arith::SelectOp::create(
-      builder, loc, denominatorShiftAtMost77, denominatorShift,
-      integerConstant(builder, loc, i64Type, 77));
-  auto denominator = arith::ShLIOp::create(
-      builder, loc, modulus,
-      arith::ExtUIOp::create(builder, loc, i128Type, denominatorShift));
-  auto negativeRounded =
-      roundUnsignedQuotient(builder, loc, negativeNumerator, denominator);
-  auto magnitude = arith::SelectOp::create(builder, loc, exponentIsNonnegative,
-                                           positiveRounded, negativeRounded);
+      builder, loc, denominatorShiftAtMostFour, denominatorShift,
+      integerConstant(builder, loc, i64Type, 4));
+  auto denominator =
+      arith::ShLIOp::create(builder, loc, modulus, denominatorShift);
+  Value negativeRounded =
+      roundUnsignedQuotient(builder, loc, significand, denominator);
+  negativeRounded = arith::SelectOp::create(
+      builder, loc, denominatorShiftAtMostFour, negativeRounded, zero64);
+  auto magnitude =
+      arith::SelectOp::create(builder, loc, scaledExponentIsNonnegative,
+                              positiveRounded, negativeRounded);
 
   auto sign = arith::CmpIOp::create(
       builder, loc, arith::CmpIPredicate::ne,
       arith::AndIOp::create(
-          builder, loc,
-          arith::ShRUIOp::create(builder, loc, representation,
-                                 integerConstant(builder, loc, i64Type, 63)),
-          integerConstant(builder, loc, i64Type, 1)),
+          builder, loc, originalRepresentation,
+          integerConstant(builder, loc, i64Type, uint64_t{1} << 63U)),
       zero64);
   auto signedMagnitude = arith::SelectOp::create(
       builder, loc, sign,
-      arith::SubIOp::create(
-          builder, loc, integerConstant(builder, loc, i128Type, 0), magnitude),
-      magnitude);
-  auto result = arith::TruncIOp::create(
-      builder, loc, builder.getIntegerType(bitWidth), signedMagnitude);
-  result->setAttr(FLOAT_TO_BITS_ATTR, builder.getUnitAttr());
+      arith::SubIOp::create(builder, loc, zero64, magnitude), magnitude);
+  Value result = signedMagnitude;
+  if (bitWidth != MACHINE_WIDTH) {
+    result = arith::TruncIOp::create(
+        builder, loc, builder.getIntegerType(bitWidth), signedMagnitude);
+  }
+  result.getDefiningOp()->setAttr(FLOAT_TO_BITS_ATTR, builder.getUnitAttr());
   return result;
 }
 
@@ -463,35 +492,46 @@ std::optional<Value> matchFloatToBits(Value bits) {
   if (!bitType || !isSupportedWidth(bitType.getWidth())) {
     return std::nullopt;
   }
-  auto truncated = bits.getDefiningOp<arith::TruncIOp>();
-  if (!truncated) {
+  auto* marker = bits.getDefiningOp();
+  if (marker == nullptr || !marker->hasAttr(FLOAT_TO_BITS_ATTR)) {
     return std::nullopt;
   }
-  if (!truncated->hasAttr(FLOAT_TO_BITS_ATTR)) {
-    return std::nullopt;
-  }
-  SmallVector<Value> worklist{truncated.getIn()};
+  SmallVector<Value> worklist(marker->getOperands());
   DenseSet<Value> visited;
-  Value source;
   while (!worklist.empty()) {
     const auto value = worklist.pop_back_val();
     if (!visited.insert(value).second) {
       continue;
     }
-    if (auto bitcast = value.getDefiningOp<arith::BitcastOp>();
-        bitcast && bitcast.getIn().getType().isF64() &&
-        value.getType().isInteger(64)) {
-      if (source && source != bitcast.getIn()) {
-        return std::nullopt;
+    if (auto remainder = value.getDefiningOp<arith::RemFOp>()) {
+      llvm::APFloat modulus(0.0);
+      if (matchPattern(remainder.getRhs(), m_ConstantFloat(&modulus)) &&
+          modulus.convertToDouble() == TWO_PI) {
+        auto magnitude = remainder.getLhs().getDefiningOp<arith::BitcastOp>();
+        auto masked = magnitude
+                          ? magnitude.getIn().getDefiningOp<arith::AndIOp>()
+                          : arith::AndIOp{};
+        if (masked) {
+          Value sourceBits;
+          const auto magnitudeMask = llvm::APInt(64, DOUBLE_MAGNITUDE_MASK);
+          if (constantEquals(masked.getLhs(), magnitudeMask)) {
+            sourceBits = masked.getRhs();
+          } else if (constantEquals(masked.getRhs(), magnitudeMask)) {
+            sourceBits = masked.getLhs();
+          }
+          if (auto source = sourceBits.getDefiningOp<arith::BitcastOp>();
+              source && source.getIn().getType().isF64() &&
+              sourceBits.getType().isInteger(64)) {
+            return source.getIn();
+          }
+        }
       }
-      source = bitcast.getIn();
-      continue;
     }
     if (auto* definingOp = value.getDefiningOp()) {
       llvm::append_range(worklist, definingOp->getOperands());
     }
   }
-  return source ? std::optional<Value>(source) : std::nullopt;
+  return std::nullopt;
 }
 
 std::optional<AngleResize> matchResize(Value bits) {
