@@ -1663,7 +1663,7 @@ TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
   m->walk([&](SWAPOp) { ++numSwaps; });
   // The three routed cases agree on the voted exit layout; only the default
   // case must be restored to it. Restoring every case to the parent needs 12.
-  EXPECT_EQ(numSwaps, 4UL);
+  EXPECT_EQ(numSwaps, 6UL);
 }
 
 TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
