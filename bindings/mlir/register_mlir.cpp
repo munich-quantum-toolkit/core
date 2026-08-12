@@ -638,6 +638,10 @@ operations.)pb");
            &BooleanMemberAdapter<
                &mlir::QCOProgram::mergeSingleQubitRotationGates>::call,
            "Merge compatible consecutive single-qubit rotation gates.")
+      .def("quantize_gate_angles",
+           &BooleanMemberAdapter<&mlir::QCOProgram::quantizeGateAngles>::call,
+           nb::kw_only(), "precision_bits"_a,
+           "Quantize gate parameters to fixed-width OpenQASM angles.")
       .def(
           "fuse_single_qubit_unitary_runs",
           &BooleanMemberAdapter<

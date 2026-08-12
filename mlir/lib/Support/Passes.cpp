@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -54,6 +55,7 @@ void registerMQTCompilerPasses() {
     qco::registerHadamardLifting();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
+    qco::registerQuantizeGateAngles();
     qco::registerQuantumLoopUnroll();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
@@ -111,7 +113,11 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   return pm.run(mod);
 }
 
-void populateQCCleanupPipeline(OpPassManager& pm) {
+void populateQCCleanupPipeline(OpPassManager& pm,
+                               const bool preserveQuantizedAngles) {
+  if (preserveQuantizedAngles) {
+    return;
+  }
   pm.addPass(createCanonicalizerPass());
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
@@ -119,7 +125,11 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm) {
+void populateQCOCleanupPipeline(OpPassManager& pm,
+                                const bool preserveQuantizedAngles) {
+  if (preserveQuantizedAngles) {
+    return;
+  }
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
@@ -141,13 +151,23 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(mod, populateQCCleanupPipeline,
-                            "Failed to run the QC cleanup pipeline.");
+  return runWithPassManager(
+      mod,
+      [&](OpPassManager& pm) {
+        populateQCCleanupPipeline(
+            pm, mod->hasAttr(mqt::angle::FINAL_QUANTIZATION_ATTR));
+      },
+      "Failed to run the QC cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(mod, populateQCOCleanupPipeline,
-                            "Failed to run the QCO cleanup pipeline.");
+  return runWithPassManager(
+      mod,
+      [&](OpPassManager& pm) {
+        populateQCOCleanupPipeline(
+            pm, mod->hasAttr(mqt::angle::FINAL_QUANTIZATION_ATTR));
+      },
+      "Failed to run the QCO cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,

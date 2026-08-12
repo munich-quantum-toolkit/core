@@ -51,15 +51,21 @@ runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
 
 /**
  * @brief Populate a QC-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and QC qubit-register shrinking.
+ * @details Adds generic cleanup and QC qubit-register shrinking. A terminally
+ * quantized module must pass @p preserveQuantizedAngles to keep its canonical
+ * angle-conversion sequences intact; no cleanup passes are added in that case.
  */
-void populateQCCleanupPipeline(mlir::OpPassManager& pm);
+void populateQCCleanupPipeline(mlir::OpPassManager& pm,
+                               bool preserveQuantizedAngles = false);
 
 /**
  * @brief Populate a QCO-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and qtensor shrink-to-fit.
+ * @details Adds generic cleanup and qtensor shrink-to-fit. A terminally
+ * quantized module must pass @p preserveQuantizedAngles to keep its canonical
+ * angle-conversion sequences intact; no cleanup passes are added in that case.
  */
-void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
+                                bool preserveQuantizedAngles = false);
 
 /**
  * @brief Populate a QIR-oriented cleanup pipeline on the given pass manager.

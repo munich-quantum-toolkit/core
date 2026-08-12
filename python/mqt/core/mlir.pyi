@@ -400,6 +400,9 @@ class QCOProgram(Program):
     def merge_single_qubit_rotation_gates(self) -> None:
         """Merge compatible consecutive single-qubit rotation gates."""
 
+    def quantize_gate_angles(self, *, precision_bits: int) -> None:
+        """Quantize gate parameters to fixed-width OpenQASM angles."""
+
     def fuse_single_qubit_unitary_runs(self, *, basis: str = "zyz") -> None:
         """Fuse single-qubit unitary runs into the chosen decomposition basis."""
 

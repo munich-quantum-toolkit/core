@@ -300,10 +300,7 @@ QCProgram::fromQuantumComputation(const ::qc::QuantumComputation& computation) {
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
 
-bool QCProgram::cleanup() {
-  return succeeded(runPasses(mod(), populateQCCleanupPipeline,
-                             "failed to run the QC cleanup pipeline"));
-}
+bool QCProgram::cleanup() { return succeeded(runQCCleanupPipeline(mod())); }
 
 bool QCProgram::normalizeGlobalPhases() {
   return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
@@ -371,10 +368,7 @@ QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
 
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
 
-bool QCOProgram::cleanup() {
-  return succeeded(runPasses(mod(), populateQCOCleanupPipeline,
-                             "failed to run the QCO cleanup pipeline"));
-}
+bool QCOProgram::cleanup() { return succeeded(runQCOCleanupPipeline(mod())); }
 
 bool QCOProgram::normalizeGlobalPhases() {
   return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
@@ -394,6 +388,17 @@ bool QCOProgram::mergeSingleQubitRotationGates() {
         pm.addPass(qco::createMergeSingleQubitRotationGates());
       },
       "failed to merge single-qubit rotation gates"));
+}
+
+bool QCOProgram::quantizeGateAngles(const uint32_t precisionBits) {
+  qco::QuantizeGateAnglesOptions options;
+  options.precisionBits = precisionBits;
+  return succeeded(runPasses(
+      mod(),
+      [&options](OpPassManager& pm) {
+        pm.addPass(qco::createQuantizeGateAngles(options));
+      },
+      "failed to quantize QCO gate angles"));
 }
 
 bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {

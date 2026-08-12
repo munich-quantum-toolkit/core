@@ -211,6 +211,9 @@ public:
   /// Merge consecutive single-qubit rotation gates.
   [[nodiscard]] bool mergeSingleQubitRotationGates();
 
+  /// Quantize gate parameters to fixed-width OpenQASM angles.
+  [[nodiscard]] bool quantizeGateAngles(uint32_t precisionBits);
+
   /// Fuse single-qubit unitary runs into the selected Euler basis.
   [[nodiscard]] bool fuseSingleQubitUnitaryRuns(std::string_view basis = "zyz");
 

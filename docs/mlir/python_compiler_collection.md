@@ -149,6 +149,22 @@ assert not qco.is_valid
 print(final_qc.ir)
 ```
 
+Hardware angle precision is an explicit post-synthesis choice. Apply it after
+the last synthesis or fusion pass, because those transformations may introduce
+new parameters:
+
+```{code-cell} ipython3
+qco = qc.to_qco(copy=True)
+qco.merge_single_qubit_rotation_gates()
+qco.quantize_gate_angles(precision_bits=8)
+quantized_qc = qco.to_qc()
+```
+
+The equivalent textual module pass is `quantize-gate-angles{precision-bits=8}`.
+Valid precision values are 1 through 64. Repeating the pass at the same
+precision is idempotent; applying another precision composes another
+OpenQASM-defined angle conversion.
+
 Architecture-independent QCO transformations can also be composed with MLIR's
 textual pass-pipeline syntax. The same pass names and options are accepted by
 {code}`mqt-cc`:
@@ -187,7 +203,14 @@ controls before applying the raw {code}`reuse-qubits` pass.
 
 The {code}`qco_pipeline` argument replaces the default QCO optimization
 pipeline. It is applied when compilation proceeds beyond the raw
-{code}`OutputFormat.QCO` checkpoint.
+{code}`OutputFormat.QCO` checkpoint. The compiler applies full cleanup before a
+custom pipeline and normally cleans up its result again. Keep
+`quantize-gate-angles` last so no later synthesis or fusion pass creates
+unquantized parameters. The pass marks that terminal precision stage; subsequent
+QC and QCO cleanup calls become no-ops so the canonical conversion sequences and
+emitted OpenQASM `angle[N]` casts remain intact. Export rejects a marked module
+if a later transformation changed a gate parameter. Code using the program API
+should therefore call `cleanup()` before `quantize_gate_angles()`.
 
 ## Serialize programs and generate QIR
 
